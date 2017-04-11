@@ -83,9 +83,13 @@ TBA
 ###### RPC :
 TBA
 ###### InsightAPI :
+- `SDK.Explorer.API.getStatus()` - Retrieve information `Object`. (diff, blocks...)
+- `SDK.Explorer.API.getBlock()` - Retrieve block information `Object` from either an hash `String` or an height `Number`
+   It worth mentioning that retrieving from height is slower (2 call) than from an hash you might want to use Blockchain method instead.
 - `SDK.Explorer.API.getLastBlockHeight()` - Retrieve the last height `Number`.
 - `SDK.Explorer.API.getLastDifficulty()` - Retrieve the last diff `Number`.(float)
-- `SDK.Explorer.API.getStatus()` - Retrieve information `Object`. (diff, blocks...)
+- `SDK.Explorer.API.getHashFromHeight()` - Retrieve hash value `String` from an height `Number|String`.
+- `SDK.Explorer.API.getHeightFromHash()` - Retrieve hash value `Number` from an hash `String`.
 
 ##### Blockchain :
 

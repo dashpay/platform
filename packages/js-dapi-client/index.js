@@ -59,6 +59,8 @@ const SDK = async function(options){
             self.emitter.emit(message._reqId, message);
         }
     })
+    self.emitter.emit('ready',"ready");
+
     return self;
 }
 module.exports = SDK;
