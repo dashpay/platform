@@ -23,12 +23,11 @@ const DAPISDK = require('dapi-sdk');
 Most of the SDK methods will returns you a Promise.
 Therefore depending on your specific needs you can init or call methods of the SDK in a async way :
 ```js
-const options = {};
-DAPISDK(options)
+DAPISDK()
     .then(function (SDK) {
         SDK
             .Explorer
-            .insightAPI
+            .API
             .getLastBlockHeight()
             .then(function (height) {
                 console.log(`last height is ${height}`);
@@ -38,9 +37,8 @@ DAPISDK(options)
 
 or using async/await features provided in last NodeJS version :
 ```js
-const options = {};
-let SDK = await DAPISDK(options);
-let height = await SDK.Explorer.insightAPI.getLastBlockHeight();
+let SDK = await DAPISDK();
+let height = await SDK.Explorer.API.getLastBlockHeight();
 console.log(`last height is ${height}`);
 ```
 
