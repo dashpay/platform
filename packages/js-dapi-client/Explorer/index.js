@@ -6,6 +6,7 @@ exports.Explorer = function(){
             getStatus:require('./insightAPI/getStatus').getStatus.call(self),
             getBlock:require('./insightAPI/getBlock').getBlock.call(self),
             getHashFromHeight:require('./insightAPI/getHashFromHeight').getHashFromHeight.call(self),
+            getLastBlockHash:require('./insightAPI/getLastBlockHash').getLastBlockHash.call(self),
             /* Methods that will use another call and works as a alias */
             getBlockConfirmations:require('./insightAPI/getBlockConfirmations').getBlockConfirmations.call(self),
             getBlockSize:require('./insightAPI/getBlockSize').getBlockSize.call(self),

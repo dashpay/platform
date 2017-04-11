@@ -86,11 +86,12 @@ TBA
 - `SDK.Explorer.API.getStatus()` - Retrieve information `Object`. (diff, blocks...)
 - `SDK.Explorer.API.getBlock()` - Retrieve block information `Object` from either an hash `String` or an height `Number`
    It worth mentioning that retrieving from height is slower (2 call) than from an hash you might want to use Blockchain method instead.
+- `SDK.Explorer.API.getLastBlockHash()` - Retrieve last block hash `String`.
+- `SDK.Explorer.API.getHashFromHeight()` - Retrieve hash value `String` from an height `Number|String`.
 
-
+In this section, you retrieve a single value from one of the call (above), see theses methods as aliases.
 - `SDK.Explorer.API.getLastBlockHeight()` - Retrieve the last height `Number`.
 - `SDK.Explorer.API.getLastDifficulty()` - Retrieve the last diff `Number`.(float)
-- `SDK.Explorer.API.getHashFromHeight()` - Retrieve hash value `String` from an height `Number|String`.
 - `SDK.Explorer.API.getHeightFromHash()` - Retrieve hash value `Number` from an hash `String`.
 - `SDK.Explorer.API.getBlockConfirmations()` - Retrieve the `Number` of confirmations of any block height `Number` or block hash `String`.
 - `SDK.Explorer.API.getBlockSize()` - Retrieve the size `Number` of any block height `Number` or block hash `String`.
