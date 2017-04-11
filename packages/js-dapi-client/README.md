@@ -94,6 +94,12 @@ TBA
 - `SDK.Explorer.API.getHeightFromHash()` - Retrieve hash value `Number` from an hash `String`.
 - `SDK.Explorer.API.getBlockConfirmations()` - Retrieve the `Number` of confirmations of any block height `Number` or block hash `String`.
 - `SDK.Explorer.API.getBlockSize()` - Retrieve the size `Number` of any block height `Number` or block hash `String`.
+- `SDK.Explorer.API.getBlockBits()` - Retrieve the bits `String` of any block height `Number` or block hash `String`.
+- `SDK.Explorer.API.getBlockChainwork()` - Retrieve the chainwork `String` of any block height `Number` or block hash `String`.
+- `SDK.Explorer.API.getBlockMerkleRoot()` - Retrieve the merkle root `String` of any block height `Number` or block hash `String`.
+- `SDK.Explorer.API.getBlockTransactions()` - Retrieve the transactions `Array[String]` of any block height `Number` or block hash `String`.
+- `SDK.Explorer.API.getBlockTime()` - Retrieve the timestamp (epoch in sec) `Number` of any block height `Number` or block hash `String`.
+- `SDK.Explorer.API.getBlockVersion()` - Retrieve the version `Number` of any block height `Number` or block hash `String`.
 
 ##### Blockchain :
 
