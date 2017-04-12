@@ -3,10 +3,10 @@ const {math} = require('khal');
 
 exports.getInsightCandidate = function() {
     let self = this;
-    return async function(query, update){
+    return async function(){
         return new Promise(async function (resolve, reject) {
             let validMNList = self.Discover.Masternode.validMNList;
-            if(validMNList.length>0){
+            if(validMNList && validMNList.length>0){
                 //Select randomnly one of them
                 let selectedMNIdx = math.randomBetweenMinAndMax(0, validMNList.length-1);
                 return resolve({URI:validMNList[selectedMNIdx],idx:selectedMNIdx});

@@ -51,6 +51,8 @@ When initializing the SDK, you might want to pass some options.
 - Log errors : `errors:true`. Default `true`
 - Log warnings : `warnings:true`. Default `true`
 - Debug Mode : `debug:true`. Default `true`
+- DISCOVER :
+    - INSIGHT-SEEDS : DAPI-SDK will first try to fetch a list of insight-api from MN in seeds, you can also provide seeds by giving it here an `Array`
 
 For instance, if you want DAPI-SDK to just shut the fuck up :
 ```js
@@ -59,6 +61,22 @@ const options = {
     verbose:false,
     errors:false,
     warnings:false
+};
+let SDK = await DAPISDK(options);
+```
+Or if you want DAPI-SDK to have specific insight api as seeds :
+
+```js
+const options = {
+   DISCOVER:{
+           INSIGHT_SEEDS:[{
+               protocol:"https",
+               path:'/api',
+               base:"insight.dash.siampm.com",
+               port: 80,
+               fullPath:"https://insight.dash.siampm.com/api"
+           }]
+       }
 };
 let SDK = await DAPISDK(options);
 ```

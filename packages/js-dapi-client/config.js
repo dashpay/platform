@@ -1,18 +1,18 @@
 const Config = {
     DISCOVER: {
         INSIGHT_SEEDS: [
-            {
+            /*{
                 protocol:"https",
                 path:'/api',
                 base:"insight.dash.siampm.com",
                 port: 80,
                 fullPath:"https://insight.dash.siampm.com/api"
-            }
+            }*/
         ],
         SOCKET_SEEDS: {
-            ipv6: [
+            /*ipv6: [
                 {uri: "::", port: 80}
-            ]
+            ]*/
         }
     },
     ROUTER:{
