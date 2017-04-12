@@ -5,6 +5,7 @@ exports.init = function () {
     let self = this;
     return async function (query, update) {
         return new Promise(async function (resolve, reject) {
+            self.Blockchain.blocks={};
             if (self._config.verbose) console.log('Blockchain - init - try to restore Blockchain state');
             let socketURI = (await self.Discover.getSocketCandidate()).URI;
             let socketConf = {
@@ -20,10 +21,12 @@ exports.init = function () {
                 socket.emit('subscribe', 'inv');
                 socket.emit('subscribe', 'sync');
                 if(self._config.verbose)  console.log('Connected to socket -',socketURI);
-                socket.on('block', function (block) {
-                    var blockHash = block.toString();
-                    if (self._config.verbose) console.log('Received Block', block);
-                    console.log(blockHash);
+                socket.on('block', async function (_block) {
+                    let blockHash = _block.toString();
+                    if (self._config.verbose) console.log('Received Block', blockHash);
+                    let block = await self.Explorer.API.getBlock(blockHash);
+                    self.Blockchain.addBlock(block);
+                    console.log('Estimated next diff', self.Blockchain.expectNextDifficulty());
                 });
                 // socket.on('tx',function(tx){
                 //     console.log('Received TX',tx);

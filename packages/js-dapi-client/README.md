@@ -126,7 +126,11 @@ In this section, you retrieve a single value from one of the call (above), see t
 DAPI-SDK has a internal Blockchain. These function will use the internal blockchain when possible and will retrieve when it won't.
 
 - `SDK.Blockchain.expectNextDifficulty()` - Will expect the likely difficulty `Number` of the next block.
-- `SDK.Blockchain.validateBlocks(hash|height, [nbBlocks,[direction]])` - Will validate 25 or `Number` of block headers from an height `Number` or a Hash `String` in a `Number` direction.
+//- `SDK.Blockchain.validateBlocks(hash|height, [nbBlocks,[direction]])` - Will validate 25 or `Number` of block headers from an height `Number` or a Hash `String` in a `Number` direction.
+
+- `SDK.Blockchain.getBlock(height)` - Will return a block by it's height `Number`.
+- `SDK.Blockchain.getLastBlock()` - Will return the last block stored.
+- `SDK.Blockchain.addBlock(block)` - Will add a block headers.
 
 You will also able to use some internals. Mind that this is not advised.
 ##### EventEmitter :
