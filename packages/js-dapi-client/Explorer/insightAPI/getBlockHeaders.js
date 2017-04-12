@@ -31,8 +31,9 @@ exports.getBlockHeaders = function () {
             let url = `${getInsightURI}/block-headers/${identifier}/${nbOfBlocks}`;
             _fetch({type: "GET", url: url}, function (err, data) {
                 if (err) {
-                    console.error(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
-                    //TODO: Do this thing!
+                    //This probably means that the getHeaders is not provided by the API (not updated version of insight API)
+                    //Inform user of that
+                    console.error(`The insight API provided by ${getInsightCandidate.URI} do not handle this feature.`);
                     return resolve(false);
                 }
                 if (data) {

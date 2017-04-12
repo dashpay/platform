@@ -9,6 +9,7 @@ const Fetcher = {
                     cb(null, r);
                 })
                 .catch(function(e){
+                    console.error('Error while fetching :', e);
                     cb(e, null);
                 });
         };
@@ -19,6 +20,7 @@ const Fetcher = {
                     cb(null, r);
                 })
                 .catch(function(e){
+                    console.error('Error while fetching :', e);
                     cb(e, null);
                 });
         };

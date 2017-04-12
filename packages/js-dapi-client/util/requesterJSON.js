@@ -2,6 +2,7 @@ const url = require('url');
 const http = require('http');
 const https = require('https');
 const timeout = 10 * 1000;//60 seconde timeout (time to get the response)
+const {is} = require('khal');
 
 const requesterJSON = {
     prepareRequest: function (URL) {
@@ -40,6 +41,8 @@ const requesterJSON = {
                     response.on('data', (chunk) => rawData += chunk);
                     response.on('end', () => {
                         try {
+                            if(!is.stringified(rawData))
+                                return reject('Not JSON - [GET]'+_url);
                             let parsedData = JSON.parse(rawData);
                             return resolve(parsedData);
                         } catch (e) {
@@ -103,6 +106,8 @@ const requesterJSON = {
                     response.on('data', (chunk) => rawData += chunk);
                     response.on('end', () => {
                         try {
+                            if(!is.stringified(rawData))
+                                return reject('Not JSON - [POST]'+_hostname,_port,_path);
                             let parsedData = JSON.parse(rawData);
                             return resolve(parsedData);
                         } catch (e) {
