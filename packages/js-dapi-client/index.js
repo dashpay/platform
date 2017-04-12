@@ -38,17 +38,20 @@ const SDK = async function(options={}){
     //This will include for exemple all the headers for exemple
     self.Blockchain = require('./Blockchain').Blockchain.call(self);
 
-    self.CONNECTOR_TYPE="CLIENT";
-    self.IS_CONNECTED=false;
+    // self.CONNECTOR_TYPE="CLIENT";
+    // self.CONNECTOR_HOST="CLIENT";
+    // self.CONNECTOR_PORT="CLIENT";
+    // self.IS_CONNECTED=false;
 
     //Prepare EventEmitter
     self.emitter = new EE2();
 
+
     //Create Socket
-    let socketOpened = await Connector.createSocket(self);
-    if(!socketOpened){
-       if(self._config.errors) console.error(`Socket - Couldn't connect to any MN`);
-    }
+    // let socketOpened = await Connector.createSocket(self);
+    // if(!socketOpened){
+    //    if(self._config.errors) console.error(`Socket - Couldn't connect to any MN`);
+    // }
     //Init masternode fetching
     await self.Discover.init();
 
@@ -57,13 +60,13 @@ const SDK = async function(options={}){
     await self.Blockchain.init();
 
     //Special attachment : When receives a message with _reqId, will emit an event.
-    self.socket.on('message',function(msg){
-        let message = JSON.parse(msg);
-        if(message.hasOwnProperty('_reqId')){
-            self.emitter.emit(message._reqId, message);
-        }
-    })
-    self.emitter.emit('ready',"ready");
+    // self.socket.on('message',function(msg){
+    //     let message = JSON.parse(msg);
+    //     if(message.hasOwnProperty('_reqId')){
+    //         self.emitter.emit(message._reqId, message);
+    //     }
+    // })
+    // self.emitter.emit('ready',"ready");
 
     return self;
 }

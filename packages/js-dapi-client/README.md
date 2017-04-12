@@ -70,11 +70,11 @@ Or if you want DAPI-SDK to have specific insight api as seeds :
 const options = {
    DISCOVER:{
            INSIGHT_SEEDS:[{
+               //fullPath: https://insight.dash.siampm.com/api
                protocol:"https",
-               path:'/api',
+               path:'api',
                base:"insight.dash.siampm.com",
-               port: 80,
-               fullPath:"https://insight.dash.siampm.com/api"
+               port: 443
            }]
        }
 };
@@ -123,6 +123,10 @@ In this section, you retrieve a single value from one of the call (above), see t
 - `SDK.Explorer.API.getBlockVersion(hash|height)` - Retrieve the version `Number` of any block height `Number` or block hash `String`.
 
 ##### Blockchain :
+DAPI-SDK has a internal Blockchain. These function will use the internal blockchain when possible and will retrieve when it won't.
+
+- `SDK.Blockchain.expectNextDifficulty()` - Will expect the likely difficulty `Number` of the next block.
+- `SDK.Blockchain.validateBlocks(hash|height, [nbBlocks,[direction]])` - Will validate 25 or `Number` of block headers from an height `Number` or a Hash `String` in a `Number` direction.
 
 You will also able to use some internals. Mind that this is not advised.
 ##### EventEmitter :

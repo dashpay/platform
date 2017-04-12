@@ -4,6 +4,7 @@ exports.Discover = function(){
     return {
         Masternode: Masternode.call(self),
         getInsightCandidate:require('./getInsightCandidate').getInsightCandidate.call(self),
+        getSocketCandidate:require('./getSocketCandidate').getSocketCandidate.call(self),
         init:require('./init').init.call(self)
     };
 };

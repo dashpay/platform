@@ -13,7 +13,11 @@ exports.fetcher = function() {
                 return resolve(0);
             }
             for(let i = 0 ; i<INSIGHT_SEED.length; i++){
-                knownNodes.push(INSIGHT_SEED[i].fullPath);
+                let elem = INSIGHT_SEED[i];
+                let fullBase = `${elem.protocol}://${elem.base}:${elem.port}/`;
+                let apiPath = elem.path;
+                let socketPath = 'socket.io/?transport=websocket';
+                knownNodes.push({protocol:elem.protocol, port:elem.port, base:elem.base, fullBase:fullBase, insightPath:apiPath, socketPath:socketPath});
             }
 
             let unvalidatedMasternodeList = [].concat(knownNodes);

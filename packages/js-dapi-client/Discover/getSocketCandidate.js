@@ -1,7 +1,7 @@
-//Choose a random insight uri
+//Choose a random socket.io endpoint to connect
 const {math} = require('khal');
 
-exports.getInsightCandidate = function() {
+exports.getSocketCandidate = function() {
     let self = this;
     return async function(){
         return new Promise(async function (resolve, reject) {
@@ -10,7 +10,8 @@ exports.getInsightCandidate = function() {
                 //Select randomnly one of them
                 let selectedMNIdx = math.randomBetweenMinAndMax(0, validMNList.length-1);
                 let el = validMNList[selectedMNIdx];
-                return resolve({URI:el.fullBase+el.insightPath,idx:selectedMNIdx});
+                let socketPath = `${el.fullBase}`;
+                return resolve({URI:socketPath,idx:selectedMNIdx});
             }else{
                 throw new Error('No MN found :( Sadness & emptyness');
                 return resolve(false);

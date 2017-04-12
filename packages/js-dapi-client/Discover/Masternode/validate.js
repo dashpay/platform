@@ -3,9 +3,9 @@ const requesterJSON = require('../../util/requesterJSON.js');
 const {uuid}=require('khal');
 
 
-const isPingable = function(URI){
+const isPingable = function(el){
     return new Promise(function (resolve, reject) {
-        let uri = URI+'/status';
+        let uri = el.fullBase+el.insightPath+'/status';
         requesterJSON
             .get(uri)
             .then(function (resp) {

@@ -41,11 +41,7 @@ const requesterJSON = {
                     response.on('data', (chunk) => rawData += chunk);
                     response.on('end', () => {
                         try {
-                            if(!is.stringified(rawData)){
-                                return reject('Not JSON - [GET]'+_url);
-                            }
-                            let parsedData = JSON.parse(rawData);
-                            return resolve(parsedData);
+                            return resolve(rawData);
                         } catch (e) {
                             return resolve(e.message);
                         }
@@ -85,7 +81,7 @@ const requesterJSON = {
             const _path = options.path || '/';
             const _port = options.port || 80;
             const _req = http;
-            const _requestData = JSON.stringify(data);
+            const _requestData = data;
 
             const post_options = {
                 hostname:_hostname,
@@ -107,11 +103,7 @@ const requesterJSON = {
                     response.on('data', (chunk) => rawData += chunk);
                     response.on('end', () => {
                         try {
-                            if(!is.stringified(rawData)){
-                                return reject('Not JSON - [POST]'+_hostname,_port,_path);
-                            }
-                            let parsedData = JSON.parse(rawData);
-                            return resolve(parsedData);
+                            return resolve(rawData);
                         } catch (e) {
                             return resolve(e.message);
                         }
