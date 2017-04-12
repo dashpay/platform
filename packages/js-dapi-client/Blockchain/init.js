@@ -25,8 +25,8 @@ exports.init = function () {
                     let blockHash = _block.toString();
                     if (self._config.verbose) console.log('Received Block', blockHash);
                     let block = await self.Explorer.API.getBlock(blockHash);
-                    self.Blockchain.addBlock(block);
-                    console.log('Estimated next diff', self.Blockchain.expectNextDifficulty());
+                    await self.Blockchain.addBlock(block);
+                    console.log('Estimated next diff', await self.Blockchain.expectNextDifficulty());
                 });
                 // socket.on('tx',function(tx){
                 //     console.log('Received TX',tx);
