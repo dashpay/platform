@@ -90,7 +90,7 @@ Make a note that this will be performed only once.
 
 - `Blockchain` will allow you to have access to some components such as : getting an object stored in your in-mem db, or validate multiple blocks, calculate the next difficulty.
 The initialization must be done by yourself using : `await SDK.Blockchain.init()` in order to beneficiate theses function.
-
+Using `SDK.Blockchain.chain` enable you to use the [blockchain-spv-dash](https://github.com/snogcel/blockchain-spv-dash) methods
 ### API
 
 ##### Accounts :

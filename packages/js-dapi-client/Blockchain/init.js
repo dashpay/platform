@@ -10,8 +10,6 @@ exports.init = function () {
     let self = this;
     return async function (query, update) {
         return new Promise(async function (resolve, reject) {
-            self.Blockchain.chain = {};
-
             let genesisHeader = null;
             let listOfHeader = [];
 
@@ -27,21 +25,17 @@ exports.init = function () {
             }
 
             listOfHeader.push(lastTip);
-            listOfHeader = listOfHeader.map(function(_bh){
-                return self.Blockchain._normalizeHeader(_bh)
-            });
             //Genesis is the oldest
-             genesisHeader=self.Blockchain._normalizeHeader(listOfHeader[0]);
+             genesisHeader=listOfHeader[0];
             listOfHeader=(listOfHeader.slice(1,listOfHeader.length));
             //Set it as a genesis (even if we know it's not the case, that a requirement of BSPVDash.
             //Mind that the height will be wrong and that we won't be able to go before the designated block.
             //If you want, you can look for an alternate way in Blockchain/alternate which have not these limitation.
             self.params.blockchain.genesisHeader = self.Blockchain._normalizeHeader(genesisHeader);
-            var chain = new BSPVDash(self.params.blockchain, db, { ignoreCheckpoints: true }); // TODO: get rid of checkpoints
+            self.Blockchain.chain = new BSPVDash(self.params.blockchain, db, { ignoreCheckpoints: true }); // TODO: get rid of checkpoints
 
-            chain.addHeaders(listOfHeader,function(err){
-                if(err) console.error(err);
-            });
+            await self.Blockchain.addBlock(listOfHeader);
+
 
             let socketURI = (await self.Discover.getSocketCandidate()).URI;
             const socket = require('socket.io-client')(socketURI, {
@@ -60,10 +54,7 @@ exports.init = function () {
                     //TODO : We want this to be async.
                     let block = await self.Explorer.API.getBlock(blockHash);
                     if(block){
-                        block=self.Blockchain._normalizeHeader(block);
-                        chain.addHeaders([block],function(err){
-                            if(err) console.error(err);
-                        });
+                        await self.Blockchain.addBlock([block]);
                     }
 
                     // await self.Blockchain.addBlock(block);
@@ -93,8 +84,8 @@ exports.init = function () {
              // if(self._config.verbose) console.log(`Blockchain - init - Restored ? ${restored}`);
              // if(self._config.verbose) console.log(`Blockchain - Start background fetching missing Blockheaders`);//TODO fetch and emit event when finished!
              if (self._config.verbose) console.log(`Blockchain ready \n`)
-
-             return resolve(true);*/
+                */
+             return resolve(true);
         });
     }
 }

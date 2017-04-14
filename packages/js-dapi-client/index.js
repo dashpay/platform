@@ -60,7 +60,7 @@ const SDK = async function(options={}){
 
     //First we restore the last Blockchain we have stored.
     //Then we fetch last one
-    await self.Blockchain.init();
+    // await self.Blockchain.init();
 
     //Special attachment : When receives a message with _reqId, will emit an event.
     // self.socket.on('message',function(msg){
