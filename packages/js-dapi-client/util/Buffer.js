@@ -31,4 +31,32 @@ Buffer.toJSON = function(){
     return arr2;
 };
 
+/**
+ * Attempts to turn a value into a `Buffer`. As input it supports `Buffer`, `String`, `Number`, null/undefined, `BN` and other objects with a `toArray()` method.
+ * @param {*} v the value
+ */
+Buffer.toBuffer = function (v) {
+    if (!Buffer.isBuffer(v)) {
+        if (Array.isArray(v)) {
+            v = Buffer.from(v)
+        } else if (typeof v === 'string') {
+            if (exports.isHexPrefixed(v)) {
+                v = Buffer.from(exports.padToEven(exports.stripHexPrefix(v)), 'hex')
+            } else {
+                v = Buffer.from(v)
+            }
+        } else if (typeof v === 'number') {
+            v = exports.intToBuffer(v)
+        } else if (v === null || v === undefined) {
+            v = Buffer.allocUnsafe(0)
+        } else if (v.toArray) {
+            // converts a BN to a Buffer
+            v = Buffer.from(v.toArray())
+        } else {
+            throw new Error('invalid type')
+        }
+    }
+    return v
+}
+
 module.exports = Buffer;

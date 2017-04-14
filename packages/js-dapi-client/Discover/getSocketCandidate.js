@@ -4,7 +4,13 @@ const {math} = require('khal');
 exports.getSocketCandidate = function() {
     let self = this;
     return async function(){
+        let args = arguments;
         return new Promise(async function (resolve, reject) {
+            if(self.Discover._state!=="ready"){
+                await self.Discover.init();
+                return resolve(self.Discover.getInsightCandidate.apply(null, args));
+            }
+
             let validMNList = self.Discover.Masternode.validMNList;
             if(validMNList && validMNList.length>0){
                 //Select randomnly one of them

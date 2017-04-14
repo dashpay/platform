@@ -5,7 +5,7 @@ exports.getLastBlock = function() {
             let keys = Object.keys(self.Blockchain.blocks);
             keys.sort();
             let lastHeight = keys[keys.length-1];
-            if(lastHeight.constructor.name=="Number"){
+            if(lastHeight){
                 return resolve(self.Blockchain.blocks[lastHeight]);
             }else{
                 return resolve(null);

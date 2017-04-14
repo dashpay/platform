@@ -13,6 +13,7 @@ exports.init = function() {
             self.Discover.Masternode.validMNList = fetched;
             if(self._config.verbose) console.log(`Discover - init - Fetched ${fetched.length} MNs`);
             if(self._config.verbose) console.log(`Discover ready \n`)
+            self.Discover._state = "ready";
             return resolve(true);
         });
     }

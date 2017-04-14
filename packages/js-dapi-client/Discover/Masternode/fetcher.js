@@ -5,7 +5,6 @@ exports.fetcher = function() {
     let self = this;
     return async function () {
         return new Promise(async function (resolve, reject) {
-
             //Assume that this is a list of masternode fetched from an internal cache, or may be some starting point.
             const knownNodes = [];
             const INSIGHT_SEED = (self._config.DISCOVER.INSIGHT_SEEDS);

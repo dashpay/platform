@@ -7,6 +7,12 @@ exports.Explorer = function(){
             getBlock:require('./insightAPI/getBlock').getBlock.call(self),
             getHashFromHeight:require('./insightAPI/getHashFromHeight').getHashFromHeight.call(self),
             getLastBlockHash:require('./insightAPI/getLastBlockHash').getLastBlockHash.call(self),
+            /**
+             * @param  {String|Number} - identifier - A number (height) or a string (hash) of the starting point from which to retrieve
+             * @param {Number=25} - nbOfBlock - the number of block to retrieve
+             * @param {Number=1} - direction - a direction to take where 1 is asc and -1 desc.
+             * @returns {Promise} - When resolved, contains a list of headers
+             */
             getBlockHeaders:require('./insightAPI/getBlockHeaders').getBlockHeaders.call(self),
             /* Methods that will use another call and works as a alias */
             getBlockConfirmations:require('./insightAPI/getBlockConfirmations').getBlockConfirmations.call(self),
@@ -20,6 +26,7 @@ exports.Explorer = function(){
             getHeightFromHash:require('./insightAPI/getHeightFromHash').getHeightFromHash.call(self),
             getLastDifficulty:require('./insightAPI/getLastDifficulty').getLastDifficulty.call(self),
             getLastBlockHeight:require('./insightAPI/getLastBlockHeight').getLastBlockHeight.call(self),
+            getLastBlock:require('./insightAPI/getLastBlock').getLastBlock.call(self),
         }
     };
 };

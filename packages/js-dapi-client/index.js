@@ -1,9 +1,13 @@
 const {merge} = require('khal').misc;
 const Connector = require('./util/Connector');
 const EE2 = require('eventemitter2').EventEmitter2;
+const webcoinDash = require('webcoin-dash');
 
 const SDK = async function(options={}){
     let self = {};
+    self.params = {};
+    self.params.blockchain = webcoinDash.blockchain;
+    self.params.net = webcoinDash.net;
 
     //TODO : Which components will be used to calculate the fees Wallet.Fees.calculate(prepareTx) ?
     //Contains some seeds like for MN or Socket.
@@ -36,7 +40,10 @@ const SDK = async function(options={}){
 
     //Blockchain is where will be stored all the blockchain information
     //This will include for exemple all the headers for exemple
-    self.Blockchain = require('./Blockchain').Blockchain.call(self);
+    self.Blockchain = require('./Blockchain/').Blockchain.call(self);
+
+    //Another way :
+    // self.Blockchain = require('./Blockchain/alternate/').Blockchain.call(self);
 
     // self.CONNECTOR_TYPE="CLIENT";
     // self.CONNECTOR_HOST="CLIENT";
@@ -47,13 +54,9 @@ const SDK = async function(options={}){
     self.emitter = new EE2();
 
 
-    //Create Socket
-    // let socketOpened = await Connector.createSocket(self);
-    // if(!socketOpened){
-    //    if(self._config.errors) console.error(`Socket - Couldn't connect to any MN`);
-    // }
     //Init masternode fetching
-    await self.Discover.init();
+    //This part is now dynamic.
+    // await self.Discover.init();
 
     //First we restore the last Blockchain we have stored.
     //Then we fetch last one
