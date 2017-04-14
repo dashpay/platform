@@ -81,6 +81,16 @@ const options = {
 let SDK = await DAPISDK(options);
 ```
 
+
+You will then have access to many components :
+
+- `Explorer` will allow you to perform some command on the Insight-API of a masternode (chosen randomnly on a validated list). As it will use some `Discover` methods
+in order to get the Insight Candidate, calling an Explorer call will first perform an init of Discover (and therefore will fetch and validate the list) before returning the value.
+Make a note that this will be performed only once.
+
+- `Blockchain` will allow you to have access to some components such as : getting an object stored in your in-mem db, or validate multiple blocks, calculate the next difficulty.
+The initialization must be done by yourself using : `await SDK.Blockchain.init()` in order to beneficiate theses function.
+
 ### API
 
 ##### Accounts :
