@@ -1,3 +1,4 @@
+const _fetch = require('../../util/fetcher.js')._fetch;
 exports.getLastBlockHash = function() {
     let self = this;
     return async function(){
