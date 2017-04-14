@@ -1,4 +1,5 @@
 const _fetch = require('../../util/fetcher.js')._fetch;
+
 exports.getBlockHeaders = function () {
     let self = this;
     return async function (identifier, nbOfBlocks = 25, direction = 1) {
@@ -36,8 +37,8 @@ exports.getBlockHeaders = function () {
                     console.error(`The insight API provided by ${getInsightCandidate.URI} do not handle this feature.`);
                     return resolve(false);
                 }
-                if (data) {
-                    return resolve(data);
+                if (data && data.hasOwnProperty('headers')) {
+                    return resolve(data.headers);
                 } else {
                     return resolve(null);
                 }
