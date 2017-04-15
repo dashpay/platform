@@ -91,6 +91,11 @@ Make a note that this will be performed only once.
 - `Blockchain` will allow you to have access to some components such as : getting an object stored in your in-mem db, or validate multiple blocks, calculate the next difficulty.
 The initialization must be done by yourself using : `await SDK.Blockchain.init()` in order to beneficiate theses function.
 Using `SDK.Blockchain.chain` enable you to use the [blockchain-spv-dash](https://github.com/snogcel/blockchain-spv-dash) methods
+
+- `tools` will allow to access to some of the dependencies of the SDK. Most notably, you have access to :
+    - `SDK.tools.util` which correspond to a library of handy stuff such as toHash(hex), compressTarget, expandTarget. API here : [dash-util](https://github.com/snogcel/dash-util)
+    - `SDK.tools.bitcore` which correspond to a library used in insight-api, see API here : [bitcore-dash-library](https://github.com/dashpay/bitcore-lib-dash). Contains elements that allow to generate address, sign/verify a message...
+
 ### API
 
 ##### Accounts :

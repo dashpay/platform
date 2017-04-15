@@ -45,6 +45,13 @@ const SDK = async function(options={}){
     //Another way :
     // self.Blockchain = require('./Blockchain/alternate/').Blockchain.call(self);
 
+    //Theses are some dependencies of DAPI-SDK that because there are creatly built, do not need to be redone again.
+    //Therefore I've set them as direct part of the SDK
+    self.tools = {};
+
+    self.tools.bitcore = require('bitcore-lib-dash');
+
+    self.tools.util = require('dash-util');
     // self.CONNECTOR_TYPE="CLIENT";
     // self.CONNECTOR_HOST="CLIENT";
     // self.CONNECTOR_PORT="CLIENT";
