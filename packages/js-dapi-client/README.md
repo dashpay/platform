@@ -84,12 +84,14 @@ let SDK = await DAPISDK(options);
 
 You will then have access to many components :
 
-- `Explorer` will allow you to perform some command on the Insight-API of a masternode (chosen randomnly on a validated list). As it will use some `Discover` methods
-in order to get the Insight Candidate, calling an Explorer call will first perform an init of Discover (and therefore will fetch and validate the list) before returning the value.
+- `Explorer` will allow you to perform some command on the Insight-API of a masternode (chosen randomnly on a validated list).
+As it will use some `Discover` methods in order to get the Insight Candidate, calling an Explorer call will first perform an init of Discover (and therefore will fetch and validate the list) before returning the value.
 Make a note that this will be performed only once.
 
 - `Blockchain` will allow you to have access to some components such as : getting an object stored in your in-mem db, or validate multiple blocks, calculate the next difficulty.
 The initialization must be done by yourself using : `await SDK.Blockchain.init()` in order to beneficiate theses function.
+Make note that by default it will connect to a randomnly selected insight-api by websocket and will listen to all block. When a block is emitter by the API, it will add it in the blockchain.
+This comportement can be disable by passing to init the corresponding options (see below).
 Using `SDK.Blockchain.chain` enable you to use the [blockchain-spv-dash](https://github.com/snogcel/blockchain-spv-dash) methods
 
 - `tools` will allow to access to some of the dependencies of the SDK. Most notably, you have access to :
@@ -140,21 +142,24 @@ In this section, you retrieve a single value from one of the call (above), see t
 ##### Blockchain :
 DAPI-SDK has a internal Blockchain. These function will use the internal blockchain when possible and will retrieve when it won't.
 
-- `SDK.Blockchain.expectNextDifficulty()` - Will expect the likely difficulty `Number` of the next block.
-//- `SDK.Blockchain.validateBlocks(hash|height, [nbBlocks,[direction]])` - Will validate 25 or `Number` of block headers from an height `Number` or a Hash `String` in a `Number` direction.
+- `SDK.Blockchain.init([options])` - Initialize the blockchain in order to be used. Optional default can be changed by passing one of these options :
+    - options :
+        - `autoConnect` - `Boolean` by default `true`. Disabling it will prevent the automatic socket connection.
+        - `numberOfHeadersToFetch` - `Number` by default `100`, allow to specify how many headers to fetch at init.
+        - `fullFetch` - `Boolean` by default `false`. Activating it allow to fetch all the blockchain headers from genesis to last tip. (event `fullFetched` emitted when end)
+        This way you can setup a full blockchain fetch (numberOfHeadersFetched will then be ignored).
 
-- `SDK.Blockchain.getBlock(height)` - Will return a block by it's height `Number`.
-- `SDK.Blockchain.getLastBlock()` - Will return the last block stored.
-- `SDK.Blockchain.addBlock(block)` - Will add a block headers.
+//- `SDK.Blockchain.expectNextDifficulty()` - Will expect the likely difficulty `Number` of the next block.
+//- `SDK.Blockchain.validateBlocks(hash|height, [nbBlocks,[direction]])` - Will validate 25 or `Number` of block headers from an height `Number` or a Hash `String` in a `Number` direction.
+//- `SDK.Blockchain.getBlock(height)` - Will return a block by it's height `Number`.
+//- `SDK.Blockchain.getLastBlock()` - Will return the last block stored.
+//- `SDK.Blockchain.addBlock(block)` - Will add a block headers.
 
 You will also able to use some internals. Mind that this is not advised.
 ##### EventEmitter :
-- `SDK.emitter.emit()`
-
+//- `SDK.emitter.emit()`
 ##### Socket :
-- `SDK.socket.send()`
-
-
+//- `SDK.socket.send()`
 ### Particular examples :
 
 #### getBlockHeaders
