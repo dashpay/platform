@@ -11,7 +11,11 @@ exports.addBlock = function() {
             if(!Array.isArray(blocks)){
                 listOfHeader.push(blocks);
             }else{
-                listOfHeader=blocks;
+                if(blocks.length>0){
+                    listOfHeader=blocks;
+                }else{
+                    return resolve(false);
+                }
             }
             listOfHeader = listOfHeader.map(function(_bh){
                 return self.Blockchain._normalizeHeader(_bh)

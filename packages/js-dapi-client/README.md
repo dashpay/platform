@@ -155,27 +155,23 @@ DAPI-SDK has a internal Blockchain. These function will use the internal blockch
 //- `SDK.Blockchain.getLastBlock()` - Will return the last block stored.
 //- `SDK.Blockchain.addBlock(block)` - Will add a block headers.
 
+The blockchain provide you also some events such as
+    - `ready`
+    - `socket.connected` - Where the argument provided is the socket itself.
+    - `socket.block` - Where the argument provided is the block.
+    - `socket.tx` - Where the argument provided is the TX.
+
+
+### Internals
+
 You will also able to use some internals. Mind that this is not advised.
 ##### EventEmitter :
 //- `SDK.emitter.emit()`
 ##### Socket :
 //- `SDK.socket.send()`
-### Particular examples :
+### Particular examples and usecases :
 
-#### getBlockHeaders
-```js
-    let SDK = await DAPISDK();
-    let height =  await SDK.Explorer.API.getLastBlockHeight();
-    //This will fetch the last 25 blocks headers.
-    let blockHeaders = await SDK.Explorer.API.getBlockHeaders(height, 25, -1);
+You can see some usecases and examples : [here](USECASES.md)
 
-    let hash="0000041461694567a06dccb44caebcd99b5075cbb0b5e96fdd0f1400aba1b483";//Hash for block 25
-    //This will fetch from block 25 to block 124.
-    let blockHeaders2 = await SDK.Explorer.API.getBlockHeaders(hash, 100, -1);
-
-    //This will fetch from block 0 to block 24 (height:0, nb:25, direction:1)
-    let blockHeaders3 = await SDK.Explorer.API.getBlockHeaders();
-```
-
-### Changelog
+### [Changelog](CHANGELOG.md)
 ### License
