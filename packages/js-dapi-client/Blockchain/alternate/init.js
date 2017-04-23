@@ -1,6 +1,5 @@
 const has = require('../../util/has.js');
 const {uuid}=require('khal');
-const Connector = require('../../util/Connector');
 const BSPVDash = require('blockchain-spv-dash');
 const Promise = require('bluebird');//TODO Performance wise we might want to make Bluebird default for promise everywhere.
 

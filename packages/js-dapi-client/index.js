@@ -1,5 +1,4 @@
 const {merge} = require('khal').misc;
-const Connector = require('./util/Connector');
 const EE2 = require('eventemitter2').EventEmitter2;
 const webcoinDash = require('webcoin-dash');
 const SDK = async function(options={}){
@@ -50,10 +49,6 @@ const SDK = async function(options={}){
     self.tools.bitcore = require('bitcore-lib-dash');
 
     self.tools.util = require('dash-util');
-    // self.CONNECTOR_TYPE="CLIENT";
-    // self.CONNECTOR_HOST="CLIENT";
-    // self.CONNECTOR_PORT="CLIENT";
-    // self.IS_CONNECTED=false;
 
     //Prepare EventEmitter
     self.emitter = new EE2();
