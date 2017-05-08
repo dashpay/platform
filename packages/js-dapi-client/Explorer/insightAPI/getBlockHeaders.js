@@ -1,4 +1,5 @@
 const _fetch = require('../../util/fetcher.js')._fetch;
+const axios = require('axios');
 
 exports.getBlockHeaders = function () {
     let self = this;
@@ -30,22 +31,21 @@ exports.getBlockHeaders = function () {
 
             //Block-headers accept height or hash.
             let url = `${getInsightURI}/block-headers/${identifier}/${nbOfBlocks}`;
-            _fetch({type: "GET", url: url}, function (err, data) {
-                if (err) {
-                    //This probably means that the getHeaders is not provided by the API (not updated version of insight API)
-                    //Inform user of that
-                    console.error(`The insight API provided by ${getInsightCandidate.URI} do not handle this feature.`);
-                    return resolve(false);
-                }
-                if (data && data.hasOwnProperty('headers')) {
-                    return resolve(data.headers);
-                } else {
-                    return resolve(null);
-                }
-            });
+            return axios
+                .get(url)
+                .then(function(response){
+                    if(response.hasOwnProperty('data') && response.data.hasOwnProperty('headers'))
+                        return resolve(response.data.headers);
+                    else
+                        return resolve(null);
+                })
+                .catch(function(error){
+                    if(error){
+                        //TODO : Signaling + removal feat
+                        console.error(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
+                        return resolve(false);
+                    }
+                });
         });
     }
-}
-/*
- getBlockHeaders(hash|height, [nbBlocks,[direction]])
- */
+};

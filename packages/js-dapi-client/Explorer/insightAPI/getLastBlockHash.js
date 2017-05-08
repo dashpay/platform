@@ -1,4 +1,6 @@
 const _fetch = require('../../util/fetcher.js')._fetch;
+const axios = require('axios');
+
 exports.getLastBlockHash = function() {
     let self = this;
     return async function(){
@@ -6,14 +8,21 @@ exports.getLastBlockHash = function() {
             let getInsightCandidate = await self.Discover.getInsightCandidate();
             let getInsightURI = getInsightCandidate.URI;
             let url = `${getInsightURI}/status?q=getLastBlockHash`;
-            _fetch({type: "GET", url: url}, function (err, data) {
-                if(err){
-                    console.error(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
-                    //TODO: Do this thing!
-                    return resolve(false);
-                }
-                return resolve(data.lastblockhash);
-            });
+            return axios
+                .get(url)
+                .then(function(response){
+                    if(response.hasOwnProperty('data') && response.data.hasOwnProperty('lastblockhash'))
+                        return resolve(response.data.lastblockhash);
+                    else
+                        return resolve(null);
+                })
+                .catch(function(error){
+                    if(error){
+                        //TODO : Signaling + removal feat
+                        console.error(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
+                        return resolve(false);
+                    }
+                });
         });
     }
 }

@@ -22,9 +22,12 @@
     "webcoin-dash": "^3.1.4",
     "ws": "^2.2.3"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "mocha": "^3.3.0",
+    "should": "^11.2.1"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha tests/_test_suite.js"
   },
   "author": "",
   "license": "ISC"
