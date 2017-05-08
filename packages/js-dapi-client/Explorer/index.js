@@ -4,6 +4,7 @@ exports.Explorer = function(){
         API:{
             //Method that do call by themselves  */
             getStatus:require('./insightAPI/getStatus').getStatus.call(self),
+            getMNlist:require('./insightAPI/getStatus').getMNlist.call(self),
             getBlock:require('./insightAPI/getBlock').getBlock.call(self),
             getHashFromHeight:require('./insightAPI/getHashFromHeight').getHashFromHeight.call(self),
             getLastBlockHash:require('./insightAPI/getLastBlockHash').getLastBlockHash.call(self),
