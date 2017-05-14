@@ -1,4 +1,4 @@
-const has = require('../../util/has.js'); //test
+const has = require('../../util/has.js');
 const {uuid}=require('khal');
 
 exports.login = function () {
