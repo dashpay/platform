@@ -1,4 +1,3 @@
-const _fetch = require('../../util/fetcher.js')._fetch;
 const axios = require('axios');
 
 exports.getStatus = function() {

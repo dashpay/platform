@@ -28,6 +28,14 @@ exports.Explorer = function(){
             getLastDifficulty:require('./insightAPI/getLastDifficulty').getLastDifficulty.call(self),
             getLastBlockHeight:require('./insightAPI/getLastBlockHeight').getLastBlockHeight.call(self),
             getLastBlock:require('./insightAPI/getLastBlock').getLastBlock.call(self),
+            // address routes
+            getBalance:require('./insightAPI/address').getBalance.call(self),
+            getUTXO:require('./insightAPI/address').getUTXO.call(self),
+            send:require('./insightAPI/tx').send.call(self),
+            // util routes
+            estimateFees:require('./insightAPI/utils').estimateFees.call(self),
+
+
         }
     };
 };
