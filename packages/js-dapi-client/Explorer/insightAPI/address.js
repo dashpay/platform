@@ -1,8 +1,10 @@
 const axios = require('axios');
 
-exports.getBalance = function(addr) {
+exports.getBalance = function() {
     let self = this;
-    return async function(){
+
+    return async function(addr){
+      console.log('addr', addr)
         return new Promise(async function (resolve, reject) {
             let getInsightCandidate = await self.Discover.getInsightCandidate();
             let getInsightURI = getInsightCandidate.URI;
@@ -24,9 +26,10 @@ exports.getBalance = function(addr) {
     }
 }
 
-exports.getUTXO = function(addr) {
+exports.getUTXO = function() {
     let self = this;
-    return async function(){
+    return async function(addr){
+      console.log('addr', addr)
         return new Promise(async function (resolve, reject) {
             let getInsightCandidate = await self.Discover.getInsightCandidate();
             let getInsightURI = getInsightCandidate.URI;

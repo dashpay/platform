@@ -31,7 +31,10 @@ exports.Explorer = function(){
             // address routes
             getBalance:require('./insightAPI/address').getBalance.call(self),
             getUTXO:require('./insightAPI/address').getUTXO.call(self),
+            // TX routes
             send:require('./insightAPI/tx').send.call(self),
+            getTx:require('./insightAPI/tx').getTx.call(self),
+
             // util routes
             estimateFees:require('./insightAPI/utils').estimateFees.call(self),
 

@@ -1,8 +1,8 @@
 const axios = require('axios');
 
-exports.estimateFees = function(blockNumber) {
+exports.estimateFees = function() {
     let self = this;
-    return async function(){
+    return async function(blockNumber){
         return new Promise(async function (resolve, reject) {
             let getInsightCandidate = await self.Discover.getInsightCandidate();
             let getInsightURI = getInsightCandidate.URI;
