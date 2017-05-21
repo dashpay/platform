@@ -1,0 +1,21 @@
+{
+  "name": "dash",
+  "version": "1.0.0",
+  "description": "Dash Decentralized API (DAPI)",
+  "scripts": {
+      "start":"./scripts/start",
+      "stop":"./scripts/stop"
+  },
+  "dependencies": {
+    "bitcore-lib-dash": "git+https://github.com/dashpay/bitcore-lib-dash.git",
+    "bluebird": "^3.4.6",
+    "crypto": "0.0.3",
+    "express": "^4.14.0",
+    "lodash": "^4.16.4",
+    "node-json-rpc2": "^1.0.1",
+    "zmq": "^2.15.3"
+  },
+  "devDependencies": {
+    "khal": "^1.0.0"
+  }
+}
