@@ -7,7 +7,7 @@ exports.send = function() {
             let getInsightCandidate = await self.Discover.getInsightCandidate();
             let getInsightURI = getInsightCandidate.URI;
             let url = `https://dev-test.dash.org/insight-api-dash/tx/send`;  //hard coded for now due to version issue
-            console.log('rawtx', rawtx)
+            // console.log('rawtx', rawtx)
             return axios
               .post(url, {rawtx: rawtx})
               .then(function(response){
@@ -29,12 +29,12 @@ exports.send = function() {
 exports.getTx = function() {
     let self = this;
     return async function(txId){
-      console.log('txId', txId)
+    //   console.log('txId', txId)
         return new Promise(async function (resolve, reject) {
             let getInsightCandidate = await self.Discover.getInsightCandidate();
             let getInsightURI = getInsightCandidate.URI;
             let url = `${getInsightURI}/tx/${txId}`;
-            console.log('url', url)
+            // console.log('url', url)
             return axios
               .get(url)
               .then(function(response){

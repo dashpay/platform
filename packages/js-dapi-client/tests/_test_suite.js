@@ -1,4 +1,6 @@
 require('./index.js');
+require('./Accounts/User/create.js')
+require('./Accounts/User/login.js')
 require('./Explorer/insightAPI/getStatus.js')
 require('./Explorer/insightAPI/getBlock.js')
 require('./Explorer/insightAPI/getBlockBits.js')
