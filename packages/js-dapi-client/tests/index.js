@@ -8,6 +8,12 @@ const options = {
     DISCOVER:{
         INSIGHT_SEEDS:[
             {
+                protocol:'http',
+                path:"insight-api-dash",
+                base:"51.15.5.18",
+                port:3001
+            },
+            {
                 protocol:'https',
                 path:"insight-api-dash",
                 base:"dev-test.dash.org",

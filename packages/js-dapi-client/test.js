@@ -8,31 +8,19 @@ const options = {
     errors:true,
     warnings:true,
     debug:true,
-    // DISCOVER:{
-    //     INSIGHT_SEEDS:[{
-    //         protocol:"https",
-    //         path:'/api',
-    //         base:"insight.dash.siampm.com",
-    //         port: 80,
-    //         fullPath:"http://192.168.0.20:3001/insight-api-dash"
-    //     }]
-    // }io
     DISCOVER:{
         INSIGHT_SEEDS:[
-
             {
                 protocol:'https',
                 path:"insight-api-dash",
                 base:"dev-test.dash.org",
                 port:443
-                // https://dev-test.dash.org/insight-api-dash/block-headers/1000/10
+            },
+            { protocol:'http',
+                path:"insight-api-dash",
+                base:"51.15.5.18",
+                port:3001
             }
-            //     {
-            //     protocol:"https",
-            //     path:'api',
-            //     base:"insight.dash.siampm.com",
-            //     port: 443
-            // }
         ]
     }
 };
