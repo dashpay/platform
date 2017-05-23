@@ -8,7 +8,7 @@ class AuthService {
     resolveChallenge(txId, signature) {
         return this.app.rpc.getTransaction(txId)
             .then(txData => {
-                if(!txData || !txData.hasOwnProperty('vout'))
+                    if(!txData || !txData.hasOwnProperty('vout'))
                     throw Error('Empty transaction');
                 //pvr: move to bitcore-lib-dash?
                 let rawData = txData.vout.filter(o => o.scriptPubKey.asm.includes('OP_RETURN'))[0]

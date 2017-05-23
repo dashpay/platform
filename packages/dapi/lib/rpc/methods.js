@@ -7,7 +7,9 @@ module.exports = {
     'getRawTransaction':'string number',
     'getSpentInfo':'object',
     'getInfo':'',
-    'getTransaction':'',
+    'getRawTransaction':'string number',
+    'getTransaction':'string',
+    'getTxOut':'string number boolean',
     'estimateFee':'number',
     'getAddressTxids':'object',
     'getAddressBalance':'object'

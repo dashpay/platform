@@ -24,25 +24,26 @@ class RPC {
     }
     createMethod(methodName, params) {
         let self = this;
-        let argList = (arguments) ? Array.prototype.slice.call(arguments, 0) : [];
-        _.each(params, function (el, i) {
-            if (argList[1][i] !== params[i]) {
-                if (typeof argList[1][i] == 'undefined') {
-                    throw new Error('Provide arguments ' + i + ' of type "' + params[i] + '"');
-                } else {
-                    throw new Error('Expected arguments N°' + i + ' being type "' + params[i] + '" received type:' + typeof argList[1][i]);
-                }
-            }
-        });
         return function () {
+            let argList = (arguments) ? Array.prototype.slice.call(arguments, 0) : [];
+            // if(params.length<argList.length)
+            //     throw new Error('Unexpected length');
+            _.each(params, function (el, i) {
+                if (typeof argList[i] !== params[i]) {
+                    if (typeof argList[i] == 'undefined') {
+                        throw new Error('Provide arguments ' + i + ' of type "' + params[i] + '"');
+                    } else {
+                        throw new Error('Expected arguments N°' + i + ' being type "' + params[i] + '" received type:' + typeof argList[i]);
+                    }
+                }
+            });
             return new Promise(function (resolve, reject) {
                 self.rpcClient.call({
                     method: methodName,
                     params: argList
                 }, function (err, res) {
                     if (err) {
-                        console.log(err, res);
-                        return resolve({})
+                        return resolve(err)
                     }
                     return resolve(res);
                 });
