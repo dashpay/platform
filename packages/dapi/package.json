@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "bitcore-lib-dash": "git+https://github.com/dashpay/bitcore-lib-dash.git",
+    "bitcore-message-dash": "^1.0.5",
     "bluebird": "^3.4.6",
     "crypto": "0.0.3",
     "express": "^4.14.0",
