@@ -4,6 +4,9 @@ const RpcClient = require('node-json-rpc2').Client;
 const methodList = require('./methods');
 class RPC {
     constructor(app){
+        if(!app.hasOwnProperty('config') || !app.config.hasOwnProperty('rpc')){
+            throw new Error('Missing config for rpc.');
+        }
         app.rpc = this;
         let self = this;
         this.rpcClient = new RpcClient(app.config.rpc);
@@ -12,13 +15,17 @@ class RPC {
             if(expectedValue.length>0){
                 params = expectedValue.split(' ');
             }
-            self[methodName] = self.createMethod(methodName.toLowerCase(),params)
+            if(!app.hasOwnProperty('config') || !app.config.hasOwnProperty('rpc') || (app.config.rpc.hasOwnProperty('enable') && app.config.rpc.enable===false)){
+                self[methodName]=function(){return new Promise(function(resolve, reject){return reject('RPC Shutted down.')})};
+            }else{
+                self[methodName] = self.createMethod(methodName.toLowerCase(),params)
+            }
         })
     }
     createMethod(methodName, params) {
         let self = this;
         let argList = (arguments) ? Array.prototype.slice.call(arguments, 0) : [];
-        _.each(params, function(el,i) {
+        _.each(params, function (el, i) {
             if (argList[1][i] !== params[i]) {
                 if (typeof argList[1][i] == 'undefined') {
                     throw new Error('Provide arguments ' + i + ' of type "' + params[i] + '"');
@@ -27,21 +34,21 @@ class RPC {
                 }
             }
         });
-        return function(){
+        return function () {
             return new Promise(function (resolve, reject) {
                 self.rpcClient.call({
                     method: methodName,
                     params: argList
-                },function(err, res){
+                }, function (err, res) {
                     if (err) {
-                        console.log(err,res);
+                        console.log(err, res);
                         return resolve({})
                     }
                     return resolve(res);
                 });
             });
         }
-        
     }
+        
 }
 module.exports = RPC;

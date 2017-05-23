@@ -2,7 +2,13 @@ const zmq = require('zmq');
 
 class ZMQ {
     constructor(app){
-        app.zmq = this;
+        if(!app.hasOwnProperty('config') || !app.config.hasOwnProperty('zmq')){
+                   throw new Error('Missing config for zmq.');
+        }
+        if((app.config.zmq.hasOwnProperty('enable') && app.config.zmq.enable===false)){
+            app.zmq = this;
+            return false;
+        }
         this.setup(app);
     }
     setup(app){

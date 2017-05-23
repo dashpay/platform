@@ -1,5 +1,13 @@
 class Socket {
     constructor(app){
+        if(!app.hasOwnProperty('config') || !app.config.hasOwnProperty('socket')){
+            throw new Error('Missing config for socket.');
+        }
+        if((app.config.socket.hasOwnProperty('enable') && app.config.socket.enable===false)){
+            app.socket = this;
+            return false;
+        }
+        
         app.socket = require('socket.io')();
         app.socket.on('connection', function(client){
             let host = null;
