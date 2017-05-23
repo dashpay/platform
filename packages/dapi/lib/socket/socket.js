@@ -17,8 +17,8 @@ class Socket {
             console.log(`Client ${client.conn.id} has connected from ${host}`);
 
         });
-        app.socket.listen(app.config.websocket.port);
-        console.log('Websocket started...', app.config.websocket.port);
+        app.socket.listen(app.config.socket.port);
+        console.log('Websocket started...', app.config.socket.port);
     }
 }
 module.exports=Socket;
