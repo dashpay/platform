@@ -20,5 +20,8 @@
   },
   "express":{
     "port":3000
+  },
+  "websocket":{
+    "port":2999
   }
 }
