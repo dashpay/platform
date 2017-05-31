@@ -4,7 +4,8 @@
   "description": "Dash Decentralized API (DAPI)",
   "scripts": {
     "start": "./scripts/start",
-    "stop": "./scripts/stop"
+    "stop": "./scripts/stop",
+    "test": "mocha --recursive"
   },
   "dependencies": {
     "bitcore-lib-dash": "git+https://github.com/dashpay/bitcore-lib-dash.git",
@@ -18,7 +19,10 @@
     "zmq": "^2.15.3"
   },
   "devDependencies": {
-    "khal": "^1.0.0"
+    "bitcore-mnemonic-dash": "^1.0.3",
+    "khal": "^1.0.0",
+    "mocha": "^3.4.1",
+    "should": "^11.2.1"
   },
   "main": "index.js",
   "repository": {
