@@ -1,5 +1,5 @@
 {
-  "name": "dapi-sdk",
+  "name": "@dashevo/dapi-sdk",
   "version": "1.0.0",
   "description": "Client SDK for DASH DAPI.",
   "main": "index.js",
