@@ -1,11 +1,9 @@
 const has = require('../../util/has.js');
-const {uuid}=require('khal');
+const { uuid } = require('khal');
 
-exports.update = function() {
+exports.update = function(query, update) {
     let self = this;
-    return async function(query, update){
-        return new Promise(function (resolve, reject) {
-            return resolve(true);
-        });
-    }
+    return new Promise(function(resolve, reject) {
+        resolve(true);
+    });
 }

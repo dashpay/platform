@@ -29,7 +29,7 @@
     "should": "^11.2.1"
   },
   "scripts": {
-    "test": "mocha tests/_test_suite.js"
+    "test": "mocha tests/_test_suite.js --no-timeouts"
   },
   "author": "",
   "license": "ISC"

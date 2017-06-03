@@ -1,10 +1,10 @@
-exports.getBlockSize = function() {
-    let self = this;
-    return async function(identifier){
-        return new Promise(function (resolve, reject) {
-            return self.Explorer.API.getBlock(identifier).then(function (_block) {
-                return resolve(_block.size);
-            });
-        });
-    }
+exports.getBlockSize = function(identifier) {
+
+    return new Promise(function(resolve, reject) {
+        return SDK.Explorer.API.getBlock(identifier)
+            .then(function(_block) {
+                resolve(_block.size);
+            })
+            .catch(err => reject(err));
+    });
 }

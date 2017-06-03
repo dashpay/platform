@@ -1,10 +1,10 @@
-exports.getBlockConfirmations = function() {
-    let self = this;
-    return async function(identifier){
-        return new Promise(function (resolve, reject) {
-            return self.Explorer.API.getBlock(identifier).then(function (_block) {
-                return resolve(_block.confirmations);
-            });
-        });
-    }
+exports.getBlockConfirmations = function(identifier) {
+
+    return new Promise(function(resolve, reject) {
+        return SDK.Explorer.API.getBlock(identifier)
+            .then(function(_block) {
+                resolve(_block.confirmations);
+            })
+            .catch(error => reject(error));
+    });
 }

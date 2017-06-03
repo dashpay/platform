@@ -1,8 +1,8 @@
 const Masternode = function(){
     let self = this;
     return {
-        fetcher:require('./fetcher').fetcher.call(self),
-        validate:require('./validate').validate.call(self),
+        fetcher:require('./fetcher').fetcher,
+        validate:require('./validate').validate,
     }
 };
 

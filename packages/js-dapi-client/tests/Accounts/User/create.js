@@ -1,4 +1,3 @@
-require('../../_before.js');
 const should = require('should');
 const Mnemonic = require('bitcore-mnemonic-dash')
 

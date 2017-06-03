@@ -1,30 +1,21 @@
-const _fetch = require('../../util/fetcher.js')._fetch;
-const axios = require('axios');
-exports.getBlock = function() {
-    let self = this;
-    return async function(identifier){
-        return new Promise(async function (resolve, reject) {
-            let hash = identifier;
-            if(identifier.constructor.name=="Number"){hash = await self.Explorer.API.getHashFromHeight(identifier);}
+const explorerGet = require('./common/ExplorerHelper').explorerGet;
 
-            let getInsightCandidate = await self.Discover.getInsightCandidate();
-            let getInsightURI = getInsightCandidate.URI;
-            let url = `${getInsightURI}/block/${hash}`;
-            return axios
-                .get(url)
-                .then(function(response){
-                    if(response.hasOwnProperty('data'))
-                        return resolve(response.data);
-                    else
-                        return resolve(null);
-                })
-                .catch(function(error){
-                    if(error){
-                        //TODO : Signaling + removal feat
-                        console.error(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
-                        return resolve(false);
-                    }
-                });
-        });
-    }
+exports.getBlock = function(identifier) {
+
+    return new Promise(function(resolve, reject) {
+
+        (Number.isInteger(identifier)
+            ? SDK.Explorer.API.getHashFromHeight(identifier)
+            : Promise.resolve(identifier))
+            .then(id => {
+                return explorerGet(`/block/${id}`)
+            })
+            .then(block => {
+                resolve(block)
+            })
+            .catch(function(error) {
+                //TODO : Signaling + removal feat
+                reject(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
+            });
+    });
 }

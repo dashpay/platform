@@ -1,28 +1,19 @@
 const _fetch = require('../../util/fetcher.js')._fetch;
 const axios = require('axios');
+const explorerGet = require('./common/ExplorerHelper').explorerGet;
 
 exports.getLastBlockHash = function() {
-    let self = this;
-    return async function(){
-        return new Promise(async function (resolve, reject) {
-            let getInsightCandidate = await self.Discover.getInsightCandidate();
-            let getInsightURI = getInsightCandidate.URI;
-            let url = `${getInsightURI}/status?q=getLastBlockHash`;
-            return axios
-                .get(url)
-                .then(function(response){
-                    if(response.hasOwnProperty('data') && response.data.hasOwnProperty('lastblockhash'))
-                        return resolve(response.data.lastblockhash);
-                    else
-                        return resolve(null);
-                })
-                .catch(function(error){
-                    if(error){
-                        //TODO : Signaling + removal feat
-                        console.error(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
-                        return resolve(false);
-                    }
-                });
-        });
-    }
+
+    return new Promise(function(resolve, reject) {
+        explorerGet(`/status?q=getLastBlockHash`)
+            .then(data => {
+                if (data.hasOwnProperty('lastblockhash'))
+                    resolve(data.lastblockhash);
+                else
+                    reject(null);
+            })
+            .catch(error => {
+                reject(`An error was triggered while fetching address ${addr} :` + error);
+            })
+    });
 }

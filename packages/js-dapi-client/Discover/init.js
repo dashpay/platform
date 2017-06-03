@@ -1,20 +1,27 @@
 const has = require('../util/has.js');
-const {uuid}=require('khal');
+const { uuid } = require('khal');
 
-exports.init = function() {
-    let self = this;
-    return async function(query, update){
-        return new Promise(async function (resolve, reject) {
-            if(self._config.verbose) console.log('Discover - init - Fetch valid MN list');
-            let fetched = await self.Discover.Masternode.fetcher();
-            if(!fetched || fetched.length==0){
-                console.error('Explorer.API will throw an error if called as it has no INSIGHT-API seeds provided.');
-            }
-            self.Discover.Masternode.validMNList = fetched;
-            if(self._config.verbose) console.log(`Discover - init - Fetched ${fetched.length} MNs`);
-            if(self._config.verbose) console.log(`Discover ready \n`)
-            self.Discover._state = "ready";
-            return resolve(true);
-        });
-    }
+exports.init = function(query, update) {
+
+    return new Promise(function(resolve, reject) {
+        if (SDK._config.verbose) console.log('Discover - init - Fetch valid MN list');
+
+        return SDK.Discover.Masternode.fetcher()
+            .then(fetched => {
+                if (!fetched || fetched.length == 0) {
+                    reject('Explorer.API will throw an error if called as it has no INSIGHT-API seeds provided.');
+                }
+                else {
+                    SDK.Discover.Masternode.validMNList = fetched
+                }
+
+                if (SDK._config.verbose) console.log(`Discover - init - Fetched ${fetched.length} MNs`);
+                if (SDK._config.verbose) console.log(`Discover ready \n`)
+                SDK.Discover._state = "ready";
+                resolve(true);
+            })
+            .catch(err => {
+                reject(err)
+            })
+    });
 }

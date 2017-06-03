@@ -103,7 +103,7 @@ const startQuickFetch = async function (self, config) {
         throw new Error('Missing config. Error.');
     //Fetching last block
     let lastHeight = lastTip.height;
-    let blockHeaders = await self.Explorer.API.getBlockHeaders(lastHeight - 1, config.numberOfHeadersToFetch, -1);
+    let blockHeaders = await self.Explorer.API.getBlockHeaders(lastHeight - 1, config.numberOfHeadersToFetch, false);
     if (!blockHeaders || blockHeaders.length < 1) {
         console.log(blockHeaders);
         throw new Error('Missing block. Initialization impossible.');

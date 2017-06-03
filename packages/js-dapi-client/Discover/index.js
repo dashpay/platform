@@ -1,11 +1,12 @@
 const Masternode = require('./Masternode/').Masternode;
-exports.Discover = function(){
+exports.Discover = function() {
     let self = this;
     return {
-        _state:"waiting",
-        Masternode: Masternode.call(self),
-        getInsightCandidate:require('./getInsightCandidate').getInsightCandidate.call(self),
-        getSocketCandidate:require('./getSocketCandidate').getSocketCandidate.call(self),
-        init:require('./init').init.call(self)
+        _state: "waiting",
+        Masternode: Masternode(),
+        getInsightCandidate: require('./getInsightCandidate').getInsightCandidate,
+        getInsightCandidateURI: require('./getInsightCandidateURI').getInsightCandidateURI,
+        getSocketCandidate: require('./getSocketCandidate').getSocketCandidate,
+        init: require('./init').init
     };
 };

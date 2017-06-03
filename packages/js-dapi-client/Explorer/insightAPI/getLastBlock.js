@@ -1,10 +1,10 @@
 exports.getLastBlock = function() {
-    let self = this;
-    return async function(){
-        return new Promise(async function (resolve, reject) {
-            let lastHash = await self.Explorer.API.getLastBlockHash();
-            let block = await self.Explorer.API.getBlock(lastHash);
-            return resolve(block);
-        });
-    }
+
+    return new Promise(function(resolve, reject) {
+        SDK.Explorer.API.getLastBlockHash()
+            .then(lastHash => {
+                return SDK.Explorer.API.getBlock(lastHash)
+            })
+            .then(block => resolve(block))
+    });
 }

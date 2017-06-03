@@ -1,38 +1,29 @@
 const has = require('../../util/has.js');
 const requesterJSON = require('../../util/requesterJSON.js');
-const {uuid}=require('khal');
+const { uuid } = require('khal');
 
-
-const isPingable = function(el){
-    return new Promise(function (resolve, reject) {
-        let uri = el.fullBase+el.insightPath+'/status';
-        requesterJSON
-            .get(uri)
-            .then(function (resp) {
+isPingable = function(el) {
+    return new Promise(function(resolve, reject) {
+        let uri = el.fullBase + el.insightPath + '/status';
+        requesterJSON.get(uri)
+            .then(function(resp) {
                 if ((resp && resp.hasOwnProperty('info'))) {
-                    return resolve(true);
-                }else{
-                    return resolve(false);
+                    resolve(el);
+                } else {
+                    //pvr: some error handling
                 }
             })
-            .catch(function (err) {
-                return resolve(false);
+            .catch(function(err) {
+                console.log(err);
             });
     })
 };
-exports.validate = function() {
-    let self = this;
-    return async function (_unvalidList) {
-        return new Promise(async function (resolve, reject) {
-            let validList = [];
-            for(let i =0; i<_unvalidList.length; i++){
-                if(await isPingable(_unvalidList[i])){
-                    validList.push(_unvalidList[i]);
-                }else{
-                    if(self._config.verbose) console.log('Not valid found', _unvalidList[i]);
-                }
-            }
-            return resolve(validList);
-        });
-    }
+exports.validate = function(_unvalidList) {
+
+    return new Promise(function(resolve, reject) {
+        Promise.all(_unvalidList.map(ul => isPingable(ul)))
+            .then(validList => {
+                resolve(validList)
+            })
+    });
 }
