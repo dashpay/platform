@@ -44,6 +44,9 @@ const SDK = function(options = {}) {
 
     //Theses are some dependencies of DAPI-SDK that because there are creatly built, do not need to be redone again.
     //Therefore I've set them as direct part of the SDK
+
+    self.BWS = require('./BWS/').BWS.call(self)
+
     self.tools = {};
 
     self.tools.bitcore = require('bitcore-lib-dash');

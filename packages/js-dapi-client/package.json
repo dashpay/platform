@@ -6,6 +6,7 @@
   "dependencies": {
     "app-module-path": "^2.2.0",
     "axios": "^0.16.1",
+    "bip39": "^2.3.1",
     "bitcore-lib-dash": "^0.13.20",
     "bitcore-message-dash": "^1.0.5",
     "bitcore-mnemonic-dash": "^1.0.3",

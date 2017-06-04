@@ -11,7 +11,6 @@ exports.getBalance = function(addr) {
                 reject(`An error was triggered while fetching address ${addr} :` + error);
             })
     });
-
 }
 
 exports.getUTXO = function(addr) {

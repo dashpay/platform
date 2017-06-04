@@ -34,5 +34,6 @@ describe('Init DAPI-SDK', function() {
         global.SDK.should.have.property('Blockchain');
         global.SDK.should.have.property('Discover');
         global.SDK.should.have.property('Explorer');
+        global.SDK.should.have.property('BWS');
     })
 });
