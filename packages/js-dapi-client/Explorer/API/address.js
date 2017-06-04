@@ -1,7 +1,6 @@
 const explorerGet = require('./common/ExplorerHelper').explorerGet;
 
 exports.getBalance = function(addr) {
-
     return new Promise(function(resolve, reject) {
         explorerGet(`/addr/${addr}/balance`)
             .then(data => {

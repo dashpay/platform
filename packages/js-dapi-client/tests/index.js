@@ -4,15 +4,15 @@ const options = {
     verbose: false,
     errors: true,
     warnings: true,
-    debug: false,
+    debug: true,
     DISCOVER: {
         INSIGHT_SEEDS: [
-            {
+            /*{
                 protocol: 'http',
                 path: "insight-api-dash",
                 base: "51.15.5.18",
                 port: 3001
-            },
+            },*/
             {
                 protocol: 'https',
                 path: "insight-api-dash",
@@ -24,6 +24,7 @@ const options = {
 };
 describe('Init DAPI-SDK', function() {
     it('should start the SDK', function() {
+        //noinspection JSAnnotator
         global.SDK = DAPISDK(options);
     });
 

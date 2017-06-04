@@ -9,7 +9,7 @@ exports.getStatus = function() {
                 resolve(data);
             })
             .catch(error => {
-                reject(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list:` + error);
+                reject(`An error was triggered while fetching candidate - signaling and removing from list:` + error);
             })
     });
 }
@@ -26,11 +26,11 @@ exports.getMNlist = function() {
                 let protocol = url.split(':')[0];
                 let path = url.split(/(\/+)/)[4];
 
-                console.log('./Explorer/insightAPI/getStatus', `replace with this when PR done: ${getInsightURI}/status?q=getMNlist`); //!!!! replace with this when PR done
+                console.log('./Explorer/API/getStatus', `replace with this when PR done: ${getInsightURI}/status?q=getMNlist`); //!!!! replace with this when PR done
 
                 _fetch({ type: "GET", url: url }, function(err, data) {
                     if (err) {
-                        console.error(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
+                        console.error(`An error was triggered while fetching candidate - signaling and removing from list`);
                         //TODO: Do this thing!
                         resolve(false);
                     }

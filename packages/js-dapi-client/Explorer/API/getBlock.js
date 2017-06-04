@@ -15,7 +15,9 @@ exports.getBlock = function(identifier) {
             })
             .catch(function(error) {
                 //TODO : Signaling + removal feat
-                reject(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
+                console.log(error);
+                reject("Unhandled error");
+                // reject(`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`);
             });
     });
 }
