@@ -1,42 +1,41 @@
 exports.Explorer = function(){
-    let self = this;
     return {
         API:{
             //Method that do call by themselves  */
-            getStatus:require('./insightAPI/getStatus').getStatus,
-            getMNlist:require('./insightAPI/getStatus').getMNlist,
-            getBlock:require('./insightAPI/getBlock').getBlock,//,
-            getHashFromHeight:require('./insightAPI/getHashFromHeight').getHashFromHeight,//,
-            getLastBlockHash:require('./insightAPI/getLastBlockHash').getLastBlockHash,
+            getStatus:require('./API/getStatus').getStatus,
+            getMNlist:require('./API/getStatus').getMNlist,
+            getBlock:require('./API/getBlock').getBlock,//,
+            getHashFromHeight:require('./API/getHashFromHeight').getHashFromHeight,//,
+            getLastBlockHash:require('./API/getLastBlockHash').getLastBlockHash,
             /**
              * @param  {String|Number} - identifier - A number (height) or a string (hash) of the starting point from which to retrieve
              * @param {Number=25} - nbOfBlock - the number of block to retrieve
              * @param {Number=1} - direction - a direction to take where 1 is asc and -1 desc.
              * @returns {Promise} - When resolved, contains a list of headers
              */
-            getBlockHeaders:require('./insightAPI/getBlockHeaders').getBlockHeaders,
+            getBlockHeaders:require('./API/getBlockHeaders').getBlockHeaders,
             /* Methods that will use another call and works as a alias */
-            getBlockConfirmations:require('./insightAPI/getBlockConfirmations').getBlockConfirmations,
-            getBlockSize:require('./insightAPI/getBlockSize').getBlockSize,
-            getBlockBits:require('./insightAPI/getBlockBits').getBlockBits,
-            getBlockChainwork:require('./insightAPI/getBlockChainwork').getBlockChainwork,
-            getBlockMerkleRoot:require('./insightAPI/getBlockMerkleRoot').getBlockMerkleRoot,
-            getBlockTransactions:require('./insightAPI/getBlockTransactions').getBlockTransactions,
-            getBlockTime:require('./insightAPI/getBlockTime').getBlockTime,
-            getBlockVersion:require('./insightAPI/getBlockVersion').getBlockVersion,
-            getHeightFromHash:require('./insightAPI/getHeightFromHash').getHeightFromHash,
-            getLastDifficulty:require('./insightAPI/getLastDifficulty').getLastDifficulty,
-            getLastBlockHeight:require('./insightAPI/getLastBlockHeight').getLastBlockHeight,
-            getLastBlock:require('./insightAPI/getLastBlock').getLastBlock,
+            getBlockConfirmations:require('./API/getBlockConfirmations').getBlockConfirmations,
+            getBlockSize:require('./API/getBlockSize').getBlockSize,
+            getBlockBits:require('./API/getBlockBits').getBlockBits,
+            getBlockChainwork:require('./API/getBlockChainwork').getBlockChainwork,
+            getBlockMerkleRoot:require('./API/getBlockMerkleRoot').getBlockMerkleRoot,
+            getBlockTransactions:require('./API/getBlockTransactions').getBlockTransactions,
+            getBlockTime:require('./API/getBlockTime').getBlockTime,
+            getBlockVersion:require('./API/getBlockVersion').getBlockVersion,
+            getHeightFromHash:require('./API/getHeightFromHash').getHeightFromHash,
+            getLastDifficulty:require('./API/getLastDifficulty').getLastDifficulty,
+            getLastBlockHeight:require('./API/getLastBlockHeight').getLastBlockHeight,
+            getLastBlock:require('./API/getLastBlock').getLastBlock,
             // address routes
-            getBalance:require('./insightAPI/address').getBalance,//,
-            getUTXO:require('./insightAPI/address').getUTXO,//,
+            getBalance:require('./API/address').getBalance,//,
+            getUTXO:require('./API/address').getUTXO,//,
             // TX routes
-            send:require('./insightAPI/tx').send,
-            getTx:require('./insightAPI/tx').getTx,
+            send:require('./API/tx').send,
+            getTx:require('./API/tx').getTx,
 
             // util routes
-            estimateFees:require('./insightAPI/utils').estimateFees,
+            estimateFees:require('./API/utils').estimateFees,
 
 
         }
