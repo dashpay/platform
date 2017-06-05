@@ -1,6 +1,6 @@
 const explorerGet = require('../Explorer/API/common/ExplorerHelper').explorerGet;
 
-exports.broadcastRawTx = function (opts, network, rawTx, cb) {
+exports.broadcastRawTx = function (opts, network, rawTx) {
     return new Promise(function (resolve, reject) {
         return SDK
             .Explorer
@@ -8,7 +8,7 @@ exports.broadcastRawTx = function (opts, network, rawTx, cb) {
             .send(rawTx)
             .then(function (res) {
                 console.log(res);
-                return resolve(cb(null, res));
+                return resolve(res);
             })
             .catch(function (err){
                 console.log(err);

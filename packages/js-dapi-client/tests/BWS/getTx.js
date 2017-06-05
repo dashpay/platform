@@ -1,15 +1,13 @@
 const should = require('should');
 require('../_before.js');
 
-let addrs =  ['yb21342iADyqAotjwcn4imqjvAcdYhnzeH', 'yUGETMg58sQd7mTHEZJKqaEYvvXc7udrsh']
+let _txid = '65d4f6369bf8a0785ae05052c86da4a57f76866805e3adadc82a13f7da41cbdf'
 
-describe('BWS - getUtxos', function() {
-    it('should return the utxos of a address array', function(){
-        return SDK.BWS.getUtxos((err, x)=> x, 'placeholder', addrs)
-            .then(res => {
-                res.should.be.a.Array();
-                res[0].should.have.property('address');
-                res[10].address.should.equal(addrs[1])
-            });
+describe('BWS - getTx', function() {
+    it('should return the transaction', async function(){
+         let res = await SDK.BWS.getTx(_txid)
+              res.should.be.a.Object();
+              res.should.have.property('txid');
+              res.txid.should.equal(_txid)
     });
 });

@@ -2,8 +2,9 @@ const moment = require('moment');
 const explorerGet = require('../Explorer/API/common/ExplorerHelper').explorerGet;
 const lastHeight = require('../Explorer/API/getLastBlockHeight').getLastBlockHeight;
 
-exports.getUtxos = function (cb, opts, addresses) {
+exports.getUtxos = function (opts, addresses) {
     return new Promise(function (resolve, reject) {
+      console.log(addresses)
         let promises = [];
         addresses.forEach(addr => {
             promises.push(explorerGet(`/addr/${addr}/utxo`));

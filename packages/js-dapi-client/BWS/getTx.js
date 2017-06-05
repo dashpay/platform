@@ -1,10 +1,10 @@
 const explorerGet = require('../Explorer/API/common/ExplorerHelper').explorerGet;
 
-exports.getTx=function(txid, cb){
+exports.getTx=function(txid){
     return new Promise(function(resolve, reject){
         explorerGet(`/tx/${txid}`)
             .then(resp=>{
-                return resolve(cb(null, resp.data));
+                return resolve(resp);
             })
             .catch(err => reject(err))
     });

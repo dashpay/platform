@@ -4,7 +4,7 @@ const moment = require('moment');
 const Mnemonic = require('../util/mnemonic');
 const Bitcoin = require('bitcoinjs-lib');
 
-exports.getMainAddress = function (opts, noVerify, limit, reverse, cb, rootKey, _mnemonic, _seed) {
+exports.getMainAddress = function (opts, noVerify, limit, reverse, rootKey, _mnemonic, _seed) {
     return new Promise(async function (resolve, reject) {
             // console.log(113, Mnemonic, Mnemonic.generateSeedFromMnemonic )
             let bip32Seed = _seed ? _seed : Mnemonic.generateSeedFromMnemonic(_mnemonic);
@@ -51,7 +51,7 @@ exports.getMainAddress = function (opts, noVerify, limit, reverse, cb, rootKey, 
                     break
                 }
             }
-            return resolve(cb(null, rt))
+            return resolve(rt)
         }
     );
 };

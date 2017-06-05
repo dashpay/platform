@@ -1,7 +1,7 @@
 require('./index.js');
-// require('./Accounts/User/create.js')
-// require('./Accounts/User/login.js')
-// require('./BWS/broadcastRawTx.js');
+require('./Accounts/User/create.js')
+require('./Accounts/User/login.js')
+require('./BWS/broadcastRawTx.js');
 require('./BWS/getBalance.js');
 require('./BWS/getFeeLevels.js');
 require('./BWS/getFiatRate.js');

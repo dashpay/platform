@@ -7,7 +7,7 @@ exports.getBalance = function (twoStep, cb, addy) {
             .API
             .getBalance(addy)
             .then(function (res) {
-                return resolve(cb(null, res));
+                return resolve(res);
             })
             .catch(err => reject(err))
     });
