@@ -116,7 +116,7 @@ returns: a  (positive number or -1 if error)
 
 (will eventually return a fiat rate based on ISO4217 currency code)
 
-params: (network~, cb-optional)
+params: (network ~, cb-optional)
 
 cb: a callback function, 
 > example: x=>console.log(x)
