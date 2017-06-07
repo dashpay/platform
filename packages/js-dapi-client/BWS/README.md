@@ -13,7 +13,7 @@ Some routes will currently only returns static results . (these are marked by 
 )
 
 ## how to use example: 
-BWS is promised based... it's recommended to use async await.
+BWS is promised based... you may consider using asyn await pattern.
 ...
 ```js
 let broadcastResult = await SDK.BWS.broadcastRawTx(opts,network,rawTx);
@@ -108,7 +108,7 @@ params: (network*, cb-optional)
 cb: a callback function, 
 > example: x=>console.log(x)
 
-returns: a  (positive number)
+returns: a  (positive number or -1 if error)
 
 
 **getFiatRate:** returns a fiat rate. #static
