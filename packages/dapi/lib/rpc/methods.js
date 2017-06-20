@@ -9,8 +9,10 @@ module.exports = {
     'getInfo':'',
     'getRawTransaction':'string number',
     'getTransaction':'string',
+    'getTransactionHash':'string',
     'getTxOut':'string number boolean',
     'estimateFee':'number',
     'getAddressTxids':'object',
     'getAddressBalance':'object'
 };
+

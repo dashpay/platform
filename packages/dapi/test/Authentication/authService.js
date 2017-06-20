@@ -7,7 +7,7 @@ let mnemonic = new Mnemonic('jaguar paddle monitor scrub stage believe odor frow
 let privKey = mnemonic.toHDPrivateKey().derive("m/1/1495176227").privateKey;
 let txId = 'cb1aa5d405c148a4990ff0035a6cd86cc73857ea57be3e49539cd8a9d0358315'
 
-describe('Auth', function() {
+describe('Auth - EXPECTED TO FAIL PENDING DASHD HOOKUP ', function() {
 
     let challenge = dapi.authService.getChallenge();
     it('should get a challenge string', function() {
@@ -15,6 +15,18 @@ describe('Auth', function() {
     });
 
     it('should return a valid signature for challenge', function() {
-        dapi.authService.resolveChallenge(txId, new Message(challenge).sign(privKey)).should.equal.true;
+        let nonce = 2;
+        return dapi.authService.resolveChallenge('pierre', nonce, new Message(nonce.toString()).sign(privKey))
+            .then(res => {
+                res.should.be.true
+            })
+    });
+
+    it('it should fail for invalid nonce', function() {
+        let nonce = 0;
+        return dapi.authService.resolveChallenge('pierre', nonce, new Message(nonce.toString()).sign(privKey))
+            .then(res => {
+                res.should.be.false
+            })
     });
 });
