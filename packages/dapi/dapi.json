@@ -28,5 +28,14 @@
   "socket":{
     "enable":true,
     "port":2999
+  },
+  "node":{
+    "pubKey":"XkifrWK9yHVzXLgeAaqjhjDJuFad6b",
+    "rep":{
+      "port":40000
+    },
+    "pub":{
+      "port":50000
+    }
   }
 }

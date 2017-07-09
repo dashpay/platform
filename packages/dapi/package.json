@@ -12,15 +12,21 @@
     "bitcore-message-dash": "^1.0.5",
     "bluebird": "^3.4.6",
     "crypto": "0.0.3",
+    "eventemitter2": "^4.1.0",
     "express": "^4.14.0",
+    "extend": "^3.0.1",
+    "externalip": "^1.0.2",
     "lodash": "^4.16.4",
     "node-json-rpc2": "^1.0.1",
+    "portfinder": "^1.0.13",
     "socket.io": "^2.0.1",
     "zmq": "^2.15.3"
   },
   "devDependencies": {
+    "assert": "^1.4.1",
     "bitcore-mnemonic-dash": "^1.0.3",
     "khal": "^1.0.0",
+    "memwatch-next": "^0.3.0",
     "mocha": "^3.4.1",
     "should": "^11.2.1"
   },
