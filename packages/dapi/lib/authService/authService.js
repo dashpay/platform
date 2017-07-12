@@ -1,7 +1,7 @@
 'use strict'
 const Message = require('bitcore-message-dash');
 const inMemDb = require('./inMemDb');
-const mocks = require('./mocks')
+const mocks = require('../mocks/mocks')
 
 class AuthService {
 
