@@ -1,6 +1,6 @@
 class KeyValueStore extends require('./mempoolBase') {
-    constructor(namespace = 'dapinet') {
-        super()
+    constructor(port, namespace = 'dapinet') {
+        super(port)
         this.kvs = this.orbitdb.kvstore(namespace)
         this.init();
     }
@@ -25,6 +25,10 @@ class KeyValueStore extends require('./mempoolBase') {
 
     getValue(key = 'message') {
         return this.kvs.get(key)
+    }
+
+    contains(key) {
+        return this.kvs.get(key) !== 'undefined'
     }
 
 }

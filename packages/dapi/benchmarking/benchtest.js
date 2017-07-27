@@ -1,27 +1,27 @@
-const {cl, misc} = require('khal');
+const { cl, misc } = require('khal');
 const memwatch = require('memwatch-next');
 const Benchtest = {
-    getConsumption:function(){
+    getConsumption: function() {
         let snapshot = new memwatch.HeapDiff();
         let diff = snapshot.end();
         let memuse = process.memoryUsage();
         return {
-            memory:{
-                os:{
-                    freemem:misc.formatByteSize(os.freemem()),
-                    total:misc.formatByteSize(os.totalmem())
+            memory: {
+                os: {
+                    freemem: misc.formatByteSize(os.freemem()),
+                    total: misc.formatByteSize(os.totalmem())
                 },
-                nodeUsage:{
-                    rss:misc.formatByteSize(memuse.rss),
-                    heapTotal:misc.formatByteSize(memuse.heapTotal),
-                    heapUsed:misc.formatByteSize(memuse.heapUsed),
-                    external:misc.formatByteSize(memuse.external),
+                nodeUsage: {
+                    rss: misc.formatByteSize(memuse.rss),
+                    heapTotal: misc.formatByteSize(memuse.heapTotal),
+                    heapUsed: misc.formatByteSize(memuse.heapUsed),
+                    external: misc.formatByteSize(memuse.external),
                 }
             },
-            snapshotDiff:diff,
+            snapshotDiff: diff,
         };
     },
-    startInternal:function(){
+    startInternal: function() {
         cl(`Benchmarking - Internal test (non-connected to the DAPI network)`);
         cl(this.getConsumption());
         cl(`--- Networking`);

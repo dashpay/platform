@@ -1,22 +1,35 @@
 'use strict'
 const should = require('should');
 const assert = require('assert');
-const kvs = require('../../lib/mempool/keyValueStore');
+const Node = require('../../lib/node/node');
+const mocks = require('../../lib/mocks/mocks');
 
 describe('Network - Mempool', function() {
 
-    it('should create 2 nodes and write a value on node 1 and get synced data on node 2', function(done) {
-        const value = new Date().getTime();
-        let n1 = new kvs();
-        let n2 = new kvs();
+    it('should verify ipfs deamon is running', function(done) {
+        //todo
+        done()
+    })
 
-        n1.writeValue(value);
+    it('should sync a value on the list of masternodes', function(done) {
+        const key = 'testKey';
+        const value = new Date().getTime();
+        var parms = {}; //use default values
+        var nodes = [];
+
+        mocks.mnList.map(mn => {
+            nodes.push(new Node(parms));
+        })
+
+        nodes[0].addMemPoolData(value, key, 'validPK', 'validSignature');
 
         setTimeout(() => {
-            n2.getValue().should.equal(value);
+            nodes.filter(n => {
+                return n.getMemPoolData(key) == value;
+            }).length.should.equal(mocks.mnList.length);
             done();
-        }, 500)
 
+        }, 1000)
     })
 
 

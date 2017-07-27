@@ -5,34 +5,36 @@
 const Net = require('../net/net');
 const Pool = require('../node/pool');
 const Peer = require('../node/peer');
-const {cl} = require('khal');
+const kvs = require('../mempool/keyValueStore');
+const { cl } = require('khal');
 const _ = require('lodash');
 const Messages = require('../node/messages');
 const emitter = require('./eventBus');
-
 
 class Node {
     constructor(params) {
         this.config = {
             pubKey: _.get(params, 'pubKey') || 'InvalidPubKey',
             rep: {
-                uri: '127.0.0.1:' + _.get(params, 'rep.port') || '40000'
+                uri: '127.0.0.1:' + (_.get(params, 'rep.port') || '40000')
             },
             pub: {
-                uri: '127.0.0.1:' + _.get(params, 'pub.port') || '50000'
+                uri: '127.0.0.1:' + (_.get(params, 'pub.port') || '50000')
             }
         };
         cl('Config :', this.config);
 
         this.socks = {};
+        this.mempool = new kvs(_.get(params, 'orbitPort'))
         this.init();
-        
+
         let self = this;
-        setTimeout(function () {
+        setTimeout(function() {
             self.start();
         }, 1000)//We set this with a delay to let time for our node to bound. Later we will remove that : FIXME.
     }
-    init(){
+
+    init() {
         cl('Initializing...');
         const net = new Net();
         //setup replier on the port 40000. 
@@ -53,6 +55,7 @@ class Node {
             onMessage: onPublisherMessage.bind(this)
         });
     }
+
     start() {
         cl(`Started node \n`);
         this.pool = new Pool(this.config);
@@ -61,10 +64,10 @@ class Node {
 
     announceNewPeer() {
         let self = this;
-        emitter.on('peer.announceNew', function (peer) {
+        emitter.on('peer.announceNew', function(peer) {
             if (peer.hasOwnProperty("pubKey") && peer.hasOwnProperty('rep') && peer.hasOwnProperty('pub')) {
                 let newPeerMsg = new Messages('newPeer');
-                newPeerMsg.addData({peer: peer});
+                newPeerMsg.addData({ peer: peer });
                 console.log('SEND PUB', newPeerMsg.prepare());
                 self.socks.pub.socket.send(newPeerMsg.prepare());
             }
@@ -75,26 +78,43 @@ class Node {
     stop() {
 
     }
+
+    //move this to to an utility library?
+    isValidSignature(hash, signature) {
+        return true;
+    }
+
+    addMemPoolData(value, key, mnPubKey, mnSignature) {
+        if (this.isValidSignature(mnPubKey, mnSignature) && this.getMemPoolData(key) === undefined) {
+            this.mempool.writeValue(value, key);
+        }
+    }
+
+    getMemPoolData(key) {
+        return this.mempool.getValue(key);
+    }
 }
+
 function onPublisherMessage(msg) {
     let self = this;
     console.log('----- PUBLISHER received :')
     console.log(msg);
     console.log('----- /pub:')
 }
+
 function onReplierMessage(msg) {
     let self = this;
     if (msg && msg.hasOwnProperty('type')) {
         switch (msg.type) {
             case "ping":
                 let pong = new Messages('pong');
-                pong.addData({correlationId: msg.correlationId});
+                pong.addData({ correlationId: msg.correlationId });
                 this.socks.rep.socket.send(pong.prepare());
                 break;
             case "peerList":
                 let cleanedList = self.pool.getList();
                 let peerList = new Messages('peerList');
-                peerList.addData({list: cleanedList});
+                peerList.addData({ list: cleanedList });
                 self.socks.rep.socket.send(peerList.prepare());
                 break;
             case "identity":
@@ -114,4 +134,5 @@ function onReplierMessage(msg) {
         }
     }
 }
+
 module.exports = Node;

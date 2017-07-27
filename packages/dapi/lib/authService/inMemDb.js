@@ -3,7 +3,7 @@ const inMemDb = {
     getChallenge(key) {
         return this.challenges[key];
     },
-    setChallenge(key, value){
+    setChallenge(key, value) {
         this.challenges[key] = value;
     }
 };

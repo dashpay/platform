@@ -1,6 +1,6 @@
 const Handlers = require('./handlers');
-const Routes={
-    setup:function(app){
+const Routes = {
+    setup: function(app) {
         let handlers = new Handlers(app);
         app.server.get('/', handlers.getHello);
         app.server.get('/blockcount', handlers.getBlockCount);

@@ -4,7 +4,12 @@ const ipfsapi = require('ipfs-api'),
 
 class MempoolBase {
     constructor(port = 5001) {
-        this.orbitdb = new OrbitDB(ipfsapi('127.0.0.1', port));
+        try {
+            this.orbitdb = new OrbitDB(ipfsapi('127.0.0.1', port));
+        }
+        catch (e) {
+            console.log(`Check if ipfs deamon is running on port ${port}. Exception: ${ex}`)
+        }
     }
 
     dump_obj(obj) {
