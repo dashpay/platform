@@ -22,7 +22,6 @@
     "node-json-rpc2": "^1.0.1",
     "orbit-db": "^0.17.3",
     "portfinder": "^1.0.13",
-    "socket.io": "^2.0.1",
     "zmq": "^2.15.3"
   },
   "devDependencies": {

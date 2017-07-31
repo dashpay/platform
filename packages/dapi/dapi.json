@@ -1,33 +1,7 @@
 {
-  "rpc":{
-    "enable":true,
-    "protocol":"http",
-    "host":"127.0.0.1",
-    "user":"dash",
-    "password":"local321",
-    "port":9998
-  },
-  "zmq":{
-    "enable":true,
-    "protocol":"tcp",
-    "host":"127.0.0.1",
-    "port":28332,
-    "url":"tcp://127.0.0.1:28332"
-  },
-  "insight":{
-    "api":{
-      "enable":true,
-      "port":3001,
-      "path":"/insight-api-dash/"
-    }
-  },
   "server":{
     "enable":true,
     "port":3000
-  },
-  "socket":{
-    "enable":true,
-    "port":2999
   },
   "node":{
     "pubKey":"XkifrWK9yHVzXLgeAaqjhjDJuFad6b",
