@@ -15,6 +15,7 @@ class Node {
     constructor(params) {
         this.config = {
             pubKey: _.get(params, 'pubKey') || 'InvalidPubKey',
+            privKey: _.get(params, 'privKey') || 'InvalidPubKey',
             rep: {
                 uri: '127.0.0.1:' + (_.get(params, 'rep.port') || '40000')
             },
@@ -79,19 +80,18 @@ class Node {
 
     }
 
-    //move this to to an utility library?
-    isValidSignature(hash, signature) {
-        return true;
-    }
-
-    addMemPoolData(value, key, mnPubKey, mnSignature) {
-        if (this.isValidSignature(mnPubKey, mnSignature) && this.getMemPoolData(key) === undefined) {
-            this.mempool.writeValue(value, key);
+    addMemPoolData(mnPrivKey, mnPubAdr, value, key) {
+        if (this.isUniqueKey(key)) {
+            this.mempool.writeValue(mnPrivKey, mnPubAdr, value, key);
         }
     }
 
     getMemPoolData(key) {
         return this.mempool.getValue(key);
+    }
+
+    isUniqueKey(key) {
+        return !this.mempool.getValue(key);
     }
 }
 

@@ -11,22 +11,56 @@ describe('Network - Mempool', function() {
         done()
     })
 
-    it('should sync a value on the list of masternodes', function(done) {
-        const key = 'testKey';
+    it('should sync a value from a VALID masternode on the list of masternodes', function(done) {
+        const key = 'mn_valid_sync';
         const value = new Date().getTime();
-        var parms = {}; //use default values
         var nodes = [];
 
         mocks.mnList.map(mn => {
+            let parms = {
+                pubKey: mn.publicAdr,
+                privKey: mn.privKey
+            }
             nodes.push(new Node(parms));
         })
 
-        nodes[0].addMemPoolData(value, key, 'validPK', 'validSignature');
+        nodes[0].addMemPoolData(nodes[0].config.privKey, nodes[0].config.pubKey, value, key);
 
         setTimeout(() => {
+
             nodes.filter(n => {
-                return n.getMemPoolData(key) == value;
+                let data = n.getMemPoolData(key)
+                return data && data.value == value;
             }).length.should.equal(mocks.mnList.length);
+            done();
+
+        }, 1000)
+    })
+
+    it('should sync a value from a VALID masternode on the list of masternodes', function(done) {
+        const key = 'mn_invalid_sync';
+        const value = new Date().getTime();
+        var nodes = [];
+
+        mocks.mnList.map(mn => {
+            let parms = {
+                pubKey: mn.publicAdr,
+                privKey: mn.privKey
+            }
+            nodes.push(new Node(parms));
+        })
+
+        //change MN privkey to valid key but not in the mnList to simulate invalid MN
+        nodes[0].config.privKey = 'ce0e2e1b39cef330e8d645ddec8724f737f2f44b7c9f4f78dc3b33d62de003cd'
+
+        nodes[0].addMemPoolData(nodes[0].config.privKey, nodes[0].config.pubKey, value, key);
+
+        setTimeout(() => {
+
+            nodes.filter(n => {
+                let data = n.getMemPoolData(key)
+                return data && data.value == value
+            }).length.should.equal(0);
             done();
 
         }, 1000)

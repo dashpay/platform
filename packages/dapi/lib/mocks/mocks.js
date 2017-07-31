@@ -35,18 +35,56 @@ const mocks = {
             "Status": 0
         }
     },
-    mnList: [
-        { id: 'Masternode_0', PubKey: '4501b8e705efb73cf52cd040d26f3f1d78f76dd80ff02b0a4019486f7eabdf92' },
-        { id: 'Masternode_1', PubKey: '282a8b83d2e7e6075c11f5e5ff9eca6a43cee8573dc90693a99cbeeb6bf385bd' },
-        { id: 'Masternode_2', PubKey: '9b2e91a1b5ac68de45f749ad037e8c69ee417d2b0709988f6ddf2ca434f3a293' },
-        { id: 'Masternode_3', PubKey: '7d1f41211710159c0acd34be26abd695d03bf8dabcbdcb2fd3fdea42f67a4b4f' },
-        { id: 'Masternode_4', PubKey: '1f4d166e31eebf1db53e3564cbf1bdba8afe6bdb11d2cfb6d52f40b2fa65693b' },
-        { id: 'Masternode_5', PubKey: '9c275f411927d5e82bae5def80034664a4b1e5b4d199da109ada531deb2f32fb' },
-        { id: 'Masternode_6', PubKey: 'f445df03267eeb4bdcf359f6c1ce894dbd0dd035ef94b68219ee991b4adbb978' },
-        { id: 'Masternode_7', PubKey: 'a86b1bf86330cba53fb2083c99a3f3a883b07f244373f2629b359f129235a98f' },
-        { id: 'Masternode_8', PubKey: 'ff0ae33eef11fc07d5a073c3d98bea160e68c4770a394995c2011e11157da034' },
-        { id: 'Masternode_9', PubKey: 'c7e95aac5fd20170404ebb62a6bdf8721954d801d85cf2a58ae492b1a9601801' }
-    ]
+    mnList: [{
+        id: 'MasterNode_0',
+        privKey: '16d5bd5088656193913414cc9141394bc38b02d717f0d2b55dcaeebe00adc8f3',
+        publicAdr: 'Xc7HnuA5t9x5Gyvw5QfvKAcPpMDbjwtPch'
+    },
+    {
+        id: 'MasterNode_1',
+        privKey: 'a593a85cb8e1ddcfcc389a1b6220c2da9c8be23044ab9700a075e77b12e45b38',
+        publicAdr: 'XduvHodMDGeUFwUdVqX93zihgPfxvHLCXN'
+    },
+    {
+        id: 'MasterNode_2',
+        privKey: 'bcdae83c99b77f230bc98fc73af5f4d886b294fcd7eccd578f4981bb0f2f8b3a',
+        publicAdr: 'XjCNThZyPfGUb7dwkQsA77tHoG3QbUcbte'
+    },
+    {
+        id: 'MasterNode_3',
+        privKey: 'decfa6906d6ae148e86ea27bdc9d93b1fbafaf88812f7d1d723f342af82f8ad0',
+        publicAdr: 'XpWT1u9NWXMHnxLAUy9oia5UHmppB5be2A'
+    },
+    {
+        id: 'MasterNode_4',
+        privKey: 'bd3b2904f8be0e43f0c34807457038f0c8312e214a89a0c14804826af90f8b0f',
+        publicAdr: 'Xodhk14TsEgsxNdEJUEGQBoAmerv74TfzT'
+    },
+    {
+        id: 'MasterNode_5',
+        privKey: '0830081b2f685d05663d756155c5b78573f24fbc7bd81e91cd25272e78a10bd8',
+        publicAdr: 'XnvG8dvwg7QH6HgPcKxiJFZthNKWjAy4Rz'
+    },
+    {
+        id: 'MasterNode_6',
+        privKey: 'acffcc3cd2d3503f2acc66136ffba7ef4f5afcd0c8e6470a667fdd8ee638d49c',
+        publicAdr: 'XwK32NqbXGpNK8Utsg9sZjcPjhNxyVGRM7'
+    },
+    {
+        id: 'MasterNode_7',
+        privKey: '167174feb02956ea149d78e0f3667e0a9676755be0cebb3095d03131971051',
+        publicAdr: 'Xj6v64MpMNtYhKPrRJK5x9hibdRiXefZr5'
+    },
+    {
+        id: 'MasterNode_8',
+        privKey: 'be46751b9883001bc172a11754f1b5f35563b7fd3bf1a481ead341fd901ff4e9',
+        publicAdr: 'XjJzGkP8juDyPGJ3zJNHftzu4mKvneuFSZ'
+    },
+    {
+        id: 'MasterNode_9',
+        privKey: '95bc48b247349aebeb6a17139aad31aa223d5823c0ae47e42e17002eb35a28c4',
+        publicAdr: 'XprYm1Dd693SYpUoTCAPWZXTyhVZBrx54A'
+    }]
 };
 
 module.exports = mocks;
