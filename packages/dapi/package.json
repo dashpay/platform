@@ -8,7 +8,7 @@
     "test": "mocha --recursive"
   },
   "dependencies": {
-    "bitcore-lib-dash": "^0.13.20",
+    "bitcore-lib-dash": "^0.14.3",
     "bitcore-message-dash": "^1.0.5",
     "bluebird": "^3.4.6",
     "crypto": "0.0.3",
@@ -22,12 +22,13 @@
     "node-json-rpc2": "^1.0.1",
     "orbit-db": "^0.17.3",
     "portfinder": "^1.0.13",
+    "request": "^2.81.0",
     "zmq": "^2.15.3"
   },
   "devDependencies": {
     "assert": "^1.4.1",
     "bitcore-mnemonic-dash": "^1.0.3",
-    "khal": "^1.0.0",
+    "khal": "^2.0.0",
     "memwatch-next": "^0.3.0",
     "mocha": "^3.4.1",
     "should": "^11.2.1"

@@ -19,7 +19,7 @@ class AuthService {
     }
 
     //Possibly depricated using 'auth on each request' model
-    getChallenge(txId) {
+    getChallenge(identifier) {
 
         //pvr: pseudo random only, needs to be updated for production
         //In the case of multisig this will also be updated to send locking script instead of a str mesagge
@@ -27,7 +27,7 @@ class AuthService {
 
         //pvr: For now local memory is used to keep track of state
         //will be reconcidered after 'stateless decentralized session management' problem has been solved
-        inMemDb.setChallenge(txId, challenge);
+        inMemDb.setChallenge(identifier, challenge);
 
         return challenge;
     }
@@ -39,7 +39,6 @@ class AuthService {
     }
 
     resolveChallenge(username, nonce, signature) {
-        // return this.app.rpc.getTransactionHash(username) -> Use this line when available from DashD
         return this.getUserObj(username)
             .then(userObj => {
                 if (nonce != userObj.Header.ObjNonce + 1) {

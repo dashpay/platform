@@ -1,35 +1,40 @@
-//TODO: investigate Mnemonic lib causing a duplicate reference of bitcore-lib
+const authServiceLib = require('../../lib/authService/authService');
+const should = require('should');
+
+const Mnemonic = require('bitcore-mnemonic-dash');
+const Message = require('bitcore-message-dash');
+let mnemonic = new Mnemonic('jaguar paddle monitor scrub stage believe odor frown honey ahead harsh talk');
+let privKey = mnemonic.toHDPrivateKey().derive("m/1/1495176227").privateKey;
+let txId = 'cb1aa5d405c148a4990ff0035a6cd86cc73857ea57be3e49539cd8a9d0358315';
 
 
-// 'use strict'
-// require('../_before.js')
+//Todo: some bitcore version incompatiblities causing error 
+//"bitcore.ErrorInvalidArgument: Invalid Argument: First argument should be an instance of PrivateKey"
+//retry after dependancies is update
+//tests might be removed from here anyway as already covered in SDK
 
-// const Mnemonic = require('bitcore-mnemonic-dash');
-// const Message = require('bitcore-message-dash');
-// let mnemonic = new Mnemonic('jaguar paddle monitor scrub stage believe odor frown honey ahead harsh talk');
-// let privKey = mnemonic.toHDPrivateKey().derive("m/1/1495176227").privateKey;
-// let txId = 'cb1aa5d405c148a4990ff0035a6cd86cc73857ea57be3e49539cd8a9d0358315'
+describe('AuthService ', function() {
 
-// describe('Auth - EXPECTED TO FAIL PENDING DASHD HOOKUP ', function() {
+    let authService = new authServiceLib();
 
-//     let challenge = dapi.authService.getChallenge();
-//     it('should get a challenge string', function() {
-//         (challenge.length > 0).should.equal.true;
-//     });
+    // let challenge = authService.getChallenge();
+    // it('should get a challenge string', function() {
+    //     challenge.should.exist;
+    // });
 
-//     it('should return a valid signature for challenge', function() {
-//         let nonce = 2;
-//         return dapi.authService.resolveChallenge('pierre', nonce, new Message(nonce.toString()).sign(privKey))
-//             .then(res => {
-//                 res.should.be.true
-//             })
-//     });
+    // it('should resolve a valid signature for challenge', function() {
+    //     let nonce = 2;
+    //     return authService.resolveChallenge('pierre', nonce, new Message(nonce.toString()).sign(privKey))
+    //         .then(res => {
+    //             res.should.be.true
+    //         })
+    // });
 
-//     it('it should fail for invalid nonce', function() {
-//         let nonce = 0;
-//         return dapi.authService.resolveChallenge('pierre', nonce, new Message(nonce.toString()).sign(privKey))
-//             .then(res => {
-//                 res.should.be.false
-//             })
-//     });
-// });
+    // it('it should fail for invalid nonce', function() {
+    //     let nonce = 0;
+    //     return authService.resolveChallenge('pierre', nonce, new Message(nonce.toString()).sign(privKey))
+    //         .then(res => {
+    //             res.should.be.false
+    //         })
+    // });
+});
