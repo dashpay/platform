@@ -1,12 +1,12 @@
 const has = require('../../util/has.js');
-const {uuid}=require('khal');
+const { uuid } = require('khal');
 const BSPVDash = require('blockchain-spv-dash');
 const Promise = require('bluebird');//TODO Performance wise we might want to make Bluebird default for promise everywhere.
 
-exports.init = function () {
+exports.init = function() {
     let self = this;
-    return async function (query, update) {
-        return new Promise(async function (resolve, reject) {
+    return async function(query, update) {
+        return new Promise(async function(resolve, reject) {
             self.Blockchain.chain = {};
 
             const genesisHeader = {
@@ -46,7 +46,7 @@ exports.init = function () {
 
             //Instantiate blockchain with genesis header, and assign to store on a inmem db.
             const Blkchain = require('./blockchain.js');
-            self.Blockchain.chain = await new Blkchain({genesisHeader:genesisHeader});
+            self.Blockchain.chain = await new Blkchain({ genesisHeader: genesisHeader });
             let chain = self.Blockchain.chain;
             // console.log(await chain.getBlock(0));
             // console.log(await chain.getBlock("00000ffd590b1485b3caadc19b22e6379c733355108f107a430458cdf3407ab6"));
@@ -65,25 +65,25 @@ exports.init = function () {
             //Fetching last block
             let lastTip = await self.Explorer.API.getLastBlock();
             await chain.addHeader(lastTip);
-            socket.on('connect', function () {
+            socket.on('connect', function() {
                 socket.emit('subscribe', 'inv');
                 socket.emit('subscribe', 'sync');
                 if (self._config.verbose) console.log('Connected to socket -', socketURI);
 
-                socket.on('block', async function (_block) {
+                socket.on('block', async function(_block) {
                     let blockHash = _block.toString();
                     if (self._config.verbose) console.log('Received Block', blockHash);
                     //Checkout the full block from Explorer (insightAPI)
                     //TODO : We want this to be async.
                     let block = await self.Explorer.API.getBlock(blockHash);
                     await chain.addHeader(block);
-                    console.log("tip is",await chain.tip);
+                    console.log("tip is", await chain.tip);
                 });
                 // socket.on('tx',function(tx){
                 //     console.log('Received TX',tx);
                 // });
             });
-             if (self._config.verbose) console.log(`Blockchain ready \n`)
+            if (self._config.verbose) console.log(`Blockchain ready \n`)
 
         });
     }

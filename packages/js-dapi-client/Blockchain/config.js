@@ -1,10 +1,10 @@
 const Config = {
-    socket:{
-        autoConnect:true,
-        autoAddBlock:true
+    socket: {
+        autoConnect: true,
+        autoAddBlock: true
     },
-    numberOfHeadersToFetch:100,
-    fullFetch:false,
-    smartFetch:false
+    numberOfHeadersToFetch: 100,
+    fullFetch: false,
+    smartFetch: false
 };
 module.exports = Config;
