@@ -1,7 +1,11 @@
 const User = require('./User/').User;
-exports.Accounts = function(){
-    let self = this;
+const AuthService = require('./AuthService/authService').AuthService;
+
+exports.Accounts = function() {
     return {
-        User: User()
-    };
+        API: {
+            User: User(),
+            AuthService: AuthService
+        }
+    }
 };

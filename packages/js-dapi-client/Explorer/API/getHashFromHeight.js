@@ -1,4 +1,4 @@
-const explorerGet = require('./common/ExplorerHelper').explorerGet;
+const explorerGet = require('../../Common/ExplorerHelper').explorerGet;
 
 exports.getHashFromHeight = function(height) {
 
@@ -9,7 +9,7 @@ exports.getHashFromHeight = function(height) {
             })
             .catch(error => {
                 reject(`An error was triggered while fetching candidate  :` + error);
-                //pvr: (`An error was triggered while fetching candidate ${getInsightCandidate.idx} - signaling and removing from list`)
+                //pvr: (`An error was triggered while fetching candidate ${getConnectorCandidate.idx} - signaling and removing from list`)
                 //not sure why error message relates to insight candidate?
             })
     })

@@ -1,10 +1,13 @@
 const should = require('should');
-const DAPISDK = require('../index.js');
-const options = {
+const _config = require('../config')
+
+const REFSDK = _config.useTrustedServer ? require('../Connector/trustedFactory.js') : require('../Connector/dapiFactory.js');
+
+const options = { //no effect for dapi - using defaults
     verbose: false,
-    errors: true,
-    warnings: true,
-    debug: true,
+    errors: false,
+    warnings: false,
+    debug: false,
     DISCOVER: {
         INSIGHT_SEEDS: [
             /*{
@@ -15,26 +18,23 @@ const options = {
             },*/
             {
                 protocol: 'https',
-                path: "insight-api-dash",
+                path: "/insight-api-dash",
                 base: "dev-test.dash.org",
                 port: 443
             }
         ]
     }
 };
+
 describe('Init DAPI-SDK', function() {
     it('should start the SDK', function() {
-        //noinspection JSAnnotator
-        global.SDK = DAPISDK(options);
+        global.SDK = REFSDK(options);
     });
-
 
     it('should have the right components', function() {
         should.exist(global.SDK);
         global.SDK.should.have.property('Accounts');
-        global.SDK.should.have.property('Blockchain');
         global.SDK.should.have.property('Discover');
         global.SDK.should.have.property('Explorer');
-        global.SDK.should.have.property('BWS');
     })
 });

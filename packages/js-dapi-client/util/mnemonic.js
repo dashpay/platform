@@ -1,5 +1,5 @@
 const Mnemonic = {
-    generateMnemonicAndSeed:function(lang = 'english', passphrase = ''){
+    generateMnemonicAndSeed: function(lang = 'english', passphrase = '') {
         const bip39 = require('bip39');
 
         let strenght = 128;
@@ -14,16 +14,16 @@ const Mnemonic = {
         let seed = bip39.mnemonicToSeedHex(mnemonic, passphrase);
 
         return {
-                bits: strenght,
-                language: lang,
-                seed: seed,
-                entropy: entropy,
-                phrase: mnemonic,
-                passphrase: passphrase
+            bits: strenght,
+            language: lang,
+            seed: seed,
+            entropy: entropy,
+            phrase: mnemonic,
+            passphrase: passphrase
 
         }
     },
-    generateSeedFromMnemonic:function(mnemonic, passphrase=''){
+    generateSeedFromMnemonic: function(mnemonic, passphrase = '') {
         const bip39 = require('bip39');
         let seed = bip39.mnemonicToSeedHex(mnemonic, passphrase);
         return seed;//return HEX seed

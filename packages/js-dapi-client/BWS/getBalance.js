@@ -1,12 +1,12 @@
-const explorerGet = require('../Explorer/API/common/ExplorerHelper').explorerGet;
+const explorerGet = require('../Common/ExplorerHelper').explorerGet;
 
-exports.getBalance = function (twoStep, cb, addy) {
-    return new Promise(function (resolve, reject) {
+exports.getBalance = function(twoStep, cb, addy) {
+    return new Promise(function(resolve, reject) {
         SDK
             .Explorer
             .API
             .getBalance(addy)
-            .then(function (res) {
+            .then(function(res) {
                 return resolve(res);
             })
             .catch(err => reject(err))

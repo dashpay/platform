@@ -1,13 +1,15 @@
 const should = require('should');
 require('../_before.js');
 
-let addrs =  ['yb21342iADyqAotjwcn4imqjvAcdYhnzeH', 'yUGETMg58sQd7mTHEZJKqaEYvvXc7udrsh']
+let addrs = ['yb21342iADyqAotjwcn4imqjvAcdYhnzeH', 'yUGETMg58sQd7mTHEZJKqaEYvvXc7udrsh']
 
 describe('BWS - getUtxos', function() {
-    it('should return the utxos of a address array', async function(){
-        let res = await SDK.BWS.getUtxos('placeholder', addrs)
+    it('should return the utxos of a address array', async function() {
+        return SDK.BWS.getUtxos('placeholder', addrs)
+            .then(res => {
                 res.should.be.a.Array();
                 res[0].should.have.property('address');
-                res[10].address.should.equal(addrs[1])
+                res[10].address.should.equal(addrs[1]);
+            })
     });
 });

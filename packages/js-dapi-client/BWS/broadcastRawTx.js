@@ -1,16 +1,16 @@
-const explorerGet = require('../Explorer/API/common/ExplorerHelper').explorerGet;
+const explorerGet = require('../Common/ExplorerHelper').explorerGet;
 
-exports.broadcastRawTx = function (opts, network, rawTx) {
-    return new Promise(function (resolve, reject) {
+exports.broadcastRawTx = function(opts, network, rawTx) {
+    return new Promise(function(resolve, reject) {
         return SDK
             .Explorer
             .API
             .send(rawTx)
-            .then(function (res) {
+            .then(function(res) {
                 console.log(res);
                 return resolve(res);
             })
-            .catch(function (err){
+            .catch(function(err) {
                 console.log(err);
                 reject(err)
             })

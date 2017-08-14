@@ -1,9 +1,9 @@
-exports.getInsightCandidateURI = function() {
+exports.getConnectorCandidateURI = function() {
 
     return new Promise(function(resolve, reject) {
-        SDK.Discover.getInsightCandidate()
+        SDK.Discover.getConnectorCandidate()
             .then(candidate => {
-                resolve(candidate.URI)
+                resolve(`http://${candidate.ip}`)
             })
             .catch(err => {
                 reject(err);

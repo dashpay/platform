@@ -1,10 +1,10 @@
-const explorerGet = require('./common/ExplorerHelper').explorerGet;
-const explorerPost = require('./common/ExplorerHelper').explorerPost;
+const explorerGet = require('../../Common/ExplorerHelper').explorerGet;
+const explorerPost = require('../../Common/ExplorerHelper').explorerPost;
 const axios = require('axios');
 
-exports.send = function (rawtx) {
-    return new Promise(function (resolve, reject) {
-        return explorerPost(`/tx/send`, {rawtx})
+exports.send = function(rawtx) {
+    return new Promise(function(resolve, reject) {
+        return explorerPost(`/tx/send`, { rawtx })
             .then(data => {
                 resolve(data);
             })
@@ -15,8 +15,8 @@ exports.send = function (rawtx) {
 
 }
 
-exports.getTx = function (txId) {
-    return new Promise(function (resolve, reject) {
+exports.getTx = function(txId) {
+    return new Promise(function(resolve, reject) {
         return explorerGet(`/tx/${txId}`)
             .then(data => {
                 resolve(data);

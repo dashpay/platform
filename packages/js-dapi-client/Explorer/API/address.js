@@ -1,4 +1,4 @@
-const explorerGet = require('./common/ExplorerHelper').explorerGet;
+const explorerGet = require('../../Common/ExplorerHelper').explorerGet;
 
 exports.getBalance = function(addr) {
     return new Promise(function(resolve, reject) {

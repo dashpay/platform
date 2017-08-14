@@ -5,6 +5,8 @@ exports.getLastBlock = function() {
             .then(lastHash => {
                 return SDK.Explorer.API.getBlock(lastHash)
             })
-            .then(block => resolve(block))
+            .then(block => {
+                resolve(block)
+            })
     });
 }

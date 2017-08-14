@@ -12,6 +12,8 @@ describe('Insight-API - getBlockBits', function() {
     })
     it('should return the valid block from height', function() {
         return SDK.Explorer.API.getBlockBits(validBlockHeight)
-            .then(bits => bits.should.equal('1d01000d'))
+            .then(bits => {
+                bits.should.equal('1d01000d')
+            })
     });
 });

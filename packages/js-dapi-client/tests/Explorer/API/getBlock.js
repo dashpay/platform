@@ -19,12 +19,14 @@ describe('Insight-API - getBlock', function() {
                 block.should.have.property('chainwork');
                 block.should.have.property('confirmations');
                 block.should.have.property('previousblockhash');
-                block.should.have.property('reward');
-                block.should.have.property('isMainChain'); ``
-                block.should.have.property('poolInfo');
+                // block.should.have.property('reward');
+                block.should.have.property('isMainChain');
+                // block.should.have.property('poolInfo');
                 block.hash.should.equal(validBlockHash);
             })
-            .catch(e => console.log(e))
+            .catch(e => {
+                console.log(e)
+            })
 
     });
     it('should return the valid block from height', function() {
@@ -43,9 +45,9 @@ describe('Insight-API - getBlock', function() {
                 block.should.have.property('chainwork');
                 block.should.have.property('confirmations');
                 block.should.have.property('previousblockhash');
-                block.should.have.property('reward');
+                // block.should.have.property('reward');
                 block.should.have.property('isMainChain');
-                block.should.have.property('poolInfo');
+                // block.should.have.property('poolInfo');
                 block.hash.should.equal(validBlockHash);
             })
             .catch(e => console.log(e))

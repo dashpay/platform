@@ -1,23 +1,80 @@
-const has = require('../../util/has.js');
-const { uuid } = require('khal');
+const axios = require('axios'),
+    SpvUtils = require('../../util/SpvUtils'),
+    _ = require('underscore'),
+    fs = require('fs')
 
-exports.fetcher = function() {
 
-    //Assume that this is a list of masternode fetched from an internal cache, or may be some starting point.
-    const knownNodes = [];
-    const INSIGHT_SEED = (SDK._config.DISCOVER.INSIGHT_SEEDS);
-    if (!INSIGHT_SEED) {
-        resolve(0);
-    }
-    for (let i = 0; i < INSIGHT_SEED.length; i++) {
-        let elem = INSIGHT_SEED[i];
-        let fullBase = `${elem.protocol}://${elem.base}:${elem.port}/`;
-        let apiPath = elem.path;
-        let socketPath = 'socket.io/?transport=websocket';
-        knownNodes.push({ protocol: elem.protocol, port: elem.port, base: elem.base, fullBase: fullBase, insightPath: apiPath, socketPath: socketPath });
-    }
+getStoredMasternodes = () => {
+    return new Promise((resolve, reject) => {
+        let path = './masterNodeList.dat' //move to config
 
-    let unvalidatedMasternodeList = [].concat(knownNodes);
+        if (fs.existsSync(path)) {
+            resolve(fs.readFileSync());
+        }
+        else {
+            resolve(null);
+        }
 
-    return SDK.Discover.Masternode.validate(unvalidatedMasternodeList);
+        //todo: filter out old/outdated mastnernodes & some other logic?
+    })
+}
+
+getSeedUris = () => {
+    return SDK._config.DISCOVER.DAPI_SEEDS
+        .map(n => {
+            return `${n.protocol}://${n.base}:${n.port}`
+        })
+}
+
+getMnListsFromSeeds = () => {
+
+    return new Promise((resolve, reject) => {
+        Promise.all(getSeedUris().map(uri => {
+            return axios.get(`${uri}/masternodes/list`)
+        }))
+            .then(res => {
+                resolve(res.map(r => { return r.data }));
+            })
+            .catch(err => {
+                console.log(err);
+            })
+    })
+
+}
+
+
+const mnCount = 10; //random number of mns to connect to (move to config)
+chooseRandomMns = (mnLists) => {
+    return mnLists.map(mnList => {
+        return _.sample(mnList, Math.round(mnLists.length / mnCount));
+    })
+}
+
+exports.fetcher = () => {
+    return new Promise((resolve, reject) => {
+        getStoredMasternodes()
+            .then(mns => {
+                if (mns) {
+                    resolve(mns);
+                }
+                else {
+                    return getMnListsFromSeeds();
+                }
+            })
+            .then(mnLists => {
+                return SpvUtils.getMnListOnLongestChain(mnLists);
+            })
+            .then(bestMnList => {
+                return SpvUtils.getSpvValidMns(bestMnList);
+            })
+            .then(validMnList => {
+                if (validMnList) {
+                    resolve(validMnList);
+                }
+                else {
+                    reject('No valid MN found');
+                }
+            })
+            .catch(err => console.log(err))
+    })
 }

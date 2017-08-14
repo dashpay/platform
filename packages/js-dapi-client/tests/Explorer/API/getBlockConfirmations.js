@@ -10,6 +10,9 @@ describe('Insight-API - getBlockConfirmations', function() {
                 let expectedDiff = (lastBlock.height - validBlockHeight) + 1;
                 confirmations.should.equal(expectedDiff);
             })
+            .catch(e => {
+                console.log(e)
+            })
 
     });
     it('should return the valid confirmations from height', function() {
@@ -17,6 +20,9 @@ describe('Insight-API - getBlockConfirmations', function() {
             .then(([lastBlock, confirmations]) => {
                 let expectedDiff = (lastBlock.height - validBlockHeight) + 1;
                 confirmations.should.equal(expectedDiff);
+            })
+            .catch(e => {
+                console.log(e)
             })
     })
 

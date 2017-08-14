@@ -10,13 +10,12 @@ let authHeadAddr = mnemonic.toHDPrivateKey().derive("m/1/" + (new Date() / 1000)
 describe('Accounts - Create', function() {
     it('should create transaction on the blockchain with user object data', function() {
 
-        return SDK.Accounts.User.create(fundedAddr, username, authHeadAddr, privKey)
+        return SDK.Accounts.API.User.create(fundedAddr, username, authHeadAddr, privKey)
             .then(res => {
                 res.should.have.property('txid').with.lengthOf(64);
             })
             .catch(err => {
                 console.log(err);
-                should.fail;
             })
     });
 });
