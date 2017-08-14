@@ -3,7 +3,7 @@ exports.Explorer = function(){
         API:{
             //Method that do call by themselves  */
             getStatus:require('./API/getStatus').getStatus,
-            getMNlist:require('./API/getStatus').getMNlist,
+            getMasternodeList:require('./API/getMasternodeList').getMasternodeList,
             getBlock:require('./API/getBlock').getBlock,//,
             getHashFromHeight:require('./API/getHashFromHeight').getHashFromHeight,//,
             getLastBlockHash:require('./API/getLastBlockHash').getLastBlockHash,
