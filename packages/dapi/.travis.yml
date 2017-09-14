@@ -1,0 +1,9 @@
+os: linux
+language: node_js
+node_js:
+  - '8'
+before_install:
+ - sudo apt-get update -qq
+ - sudo apt-get install -qq libzmq3-dev
+install:
+  - npm install
