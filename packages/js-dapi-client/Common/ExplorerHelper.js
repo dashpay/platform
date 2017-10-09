@@ -15,7 +15,7 @@ function explorerPost(apiMethod, data) {
                 reject(error);
             })
     })
-}; 124
+};
 function explorerGet(apiMethod) {
     return new Promise(function(resolve, reject) {
         SDK.Discover.getConnectorCandidateURI()
