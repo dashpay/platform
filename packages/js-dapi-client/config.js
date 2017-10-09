@@ -1,13 +1,13 @@
 const Config = {
-    useTrustedServer: false,
+    useTrustedServer: true,
     DISCOVER: {
         INSIGHT_SEEDS: [
             {
                 protocol: "https",
                 path: '/api',
-                base: "insight.dash.siampm.com",
+                base: "test.insight.dash.siampm.com",
                 port: 443,
-                fullPath: "https://insight.dash.siampm.com/api"
+                fullPath: "https://test.insight.dash.siampm.com/api"
             }
         ],
         DAPI_SEEDS: [

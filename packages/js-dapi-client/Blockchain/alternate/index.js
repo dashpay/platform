@@ -4,3 +4,5 @@ exports.Blockchain = function() {
         init: require('./init').init
     };
 };
+
+require('./init').init()

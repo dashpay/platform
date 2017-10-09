@@ -1,6 +1,9 @@
 const has = require('../util/has.js');
 const { uuid } = require('khal');
-const BSPVDash = require('blockchain-spv-dash');
+
+// const BSPVDash = require('blockchain-spv-dash');
+// depericated (use spv-dash instead) - removed to work around bitcore-lib duplicate issue still present in blockchain-spv-dash
+
 const Promise = require('bluebird');//TODO Performance wise we might want to make Bluebird default for promise everywhere.
 const levelup = require('levelup');
 const db = levelup('dash.chain', { db: require('memdown') });

@@ -9,12 +9,10 @@ exports.getLastBlock = function() {
         } else {
             reject(null);
         }
+    }).then(lastHeight => {
+        resolve(lastHeight);
+    }).catch(err => {
+        reject(err)
     })
-        .then(lastHeight => {
-            resolve(lastHeight);
-        })
-        .catch(err => {
-            reject(err)
-        })
 
 }
