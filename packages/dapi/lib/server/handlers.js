@@ -1,5 +1,4 @@
 const { cl, is } = require('khal')
-const quorum = new require('../quorum/quorum')()
 
 function handleBody(req, res) {
 	if (req && req.hasOwnProperty('body')) {
