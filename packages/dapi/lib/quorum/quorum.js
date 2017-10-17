@@ -1,9 +1,66 @@
+const message = require('bitcore-message-dash');
+const quorumManager = require('./quorummanager')
+
 class Quorum {
 	constructor(app) {
 		this.logger = app.logger;
 
 		this.logger.debug('- Init Quorum');
 	}
+
+	//Todo: temp insight calls to insight until rpc
+	userIsInQuorum(insight, txId) {
+
+		return new Promise(function(resolve, reject) {
+
+			let tmpMnList = []; //used to resolve vin from ip while rpc implementation is pending
+
+			Promise.all([insight.getMnList(), insight.getLastBlockHash()])
+				.then(r => {
+					tmpMnList = r[0]
+					return quorumManager.getQuorum(r[0], r[1], txId);
+				})
+				.then(quorum => {
+					let vin = quorumManager.resolveVinFromIp(tmpMnList, quorum.ip); //temp until rpc to get outpoint
+
+					resolve(true);
+				})
+		})
+	}
+	validate(data, signature, insight) {
+		let self = this;
+		return new Promise(function(resolve, reject) {
+			insight.getAddress(data.txId)
+				.then(addr => {
+					if (!message(data.toString()).verify(addr, signature)) {
+						return false;
+					}
+					else {
+						return true;
+					}
+				})
+				.then(signatureValid => {
+					if (signatureValid) {
+						return self.userIsInQuorum(insight, data.txId)
+					}
+					else {
+						this.logger.debug('Invalid signature');
+						return false;
+					}
+				})
+				.then(inQuorum => {
+					if (inQuorum) {
+						resolve(true);
+					}
+					else {
+						resolve(false);
+					}
+				}).catch(ex => {
+					console.log(ex);
+				})
+		})
+	}
+
 	performAction(type, val) {
 		this.logger.debug('Quorum - Received action ', type, val);
 		switch (type) {

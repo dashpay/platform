@@ -1,4 +1,5 @@
 const { cl, is } = require('khal')
+const quorum = new require('../quorum/quorum')()
 
 function handleBody(req, res) {
 	if (req && req.hasOwnProperty('body')) {
@@ -68,7 +69,6 @@ function handleRequiredField(body, expectedFields, res, next) {
 class Handlers {
 	constructor(app) {
 		let debug = app.logger.debug;
-		let quorum = app.quorum;
 		let insight = app.insight;
 		let authService = app.authService;
 
@@ -76,30 +76,43 @@ class Handlers {
 			post: {
 				quorum: function(req, res, next) {
 					let body = handleBody(req, res);
+
 					if (!handleRequiredField(body, {
 						verb: { required: true, type: 'enum', value: ['add', 'commit', 'remove', 'state', 'listen', 'migrate', 'auth'] },
 						qid: { required: true, type: 'number' },
-						data: { required: true, type: 'json' }
+						data: { required: true, type: 'json' },
 					}, res)) {
 						//If field doesn't meet required rules, will be returned false and enter here in order to break
 						//continuation of the logic
 						return next();
 					}
-					//At this point, we know we have required field with expected type.
-					switch (body.verb) {
-						case "add":
-							returnResponse(quorum.performAction('add', { qid: body.qid, data: body.data }), res);
-							break;
-						case "commit":
-							returnResponse(quorum.performAction('commit', { qid: body.qid, data: body.data }), res);
-							break;
-						case "remove":
-							returnResponse(quorum.performAction('remove', { qid: body.qid, data: body.data }), res);
-							break;
-						default:
-							returnResponse(`Not Implemented`, res);
-							break;
-					}
+
+					//Quorum determination
+					quorum.validate(body.data, body.signature, insight)
+						.then(res => {
+							if (!res.success) {
+								console.log(res.error)
+								next();
+							}
+							else {
+								//At this point, we know we have required field with expected type.
+								switch (body.verb) {
+									case "add":
+										returnResponse(quorum.performAction('add', { qid: body.qid, data: body.data }), res);
+										break;
+									case "commit":
+										returnResponse(quorum.performAction('commit', { qid: body.qid, data: body.data }), res);
+										break;
+									case "remove":
+										returnResponse(quorum.performAction('remove', { qid: body.qid, data: body.data }), res);
+										break;
+									default:
+										returnResponse(`Not Implemented`, res);
+										break;
+								}
+							}
+						})
+
 				},
 				tx: {
 					send: function(req, res) {
