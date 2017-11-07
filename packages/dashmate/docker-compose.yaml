@@ -21,7 +21,7 @@ services:
       - "127.0.0.1:8081:8081"
     volumes:
       - ./data/ipfs:/data/ipfs
-    # TODO: may need to also over-ride entrypoint here...
+    # TODO: may need to also over-ride entrypoint here..., or use modified IPFS image
     command: /sbin/tini -- /usr/local/bin/start_ipfs daemon --migrate=true --enable-pubsub-experiment
 
   drive:
