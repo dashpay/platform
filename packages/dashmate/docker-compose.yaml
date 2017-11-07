@@ -8,6 +8,8 @@ services:
       - 19999:19999
       - 127.0.0.1:19998:19998
       - 127.0.0.1:29998:29998
+    volumes:
+      - ./data/core:/data
 
   ipfs:
     image: jbenet/go-ipfs:latest
