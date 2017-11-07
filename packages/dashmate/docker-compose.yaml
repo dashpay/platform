@@ -9,6 +9,7 @@ services:
       - 127.0.0.1:19998:19998
       - 127.0.0.1:29998:29998
     volumes:
+      - ./data/dash.conf:/dashcore/dash.conf
       - ./data/core:/data
 
   ipfs:
