@@ -15,14 +15,24 @@ services:
   ipfs:
     image: jbenet/go-ipfs:latest
     ports:
-      - "4001:4001"
-      - "4001:4002/udp"
-      - "127.0.0.1:5001:5001"
-      - "127.0.0.1:8080:8080"
-      - "127.0.0.1:8081:8081"
+      - 4001:4001
+      - 4001:4002/udp
+      - 127.0.0.1:5001:5001
+      - 127.0.0.1:8080:8080
+      - 127.0.0.1:8081:8081
     volumes:
       - ./data/ipfs:/data/ipfs
     command: daemon --migrate=true --enable-pubsub-experiment
+
+  insight:
+    image: $REPO_URL/dashevo/insight:latest
+    restart: always
+    ports:
+      - 127.0.0.1:3001:3001
+    links:
+      - core:dashcore
+    volumes:
+      - ./data/bitcore-node-dash.json:/insight/bitcore-node-dash.json
 
 #  drive:
 #    links:
