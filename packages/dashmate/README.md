@@ -16,10 +16,24 @@
 $(aws ecr get-login --no-include-email)
 ```
 
-You can ignore the warning about `--stdin`, blah.
+You can ignore the warning that states: `WARNING! Using --password via the CLI is insecure. Use --password-stdin.`
 
-2. Bootstrap
+2. Bootstrap / start up services
+
+To view output of services in the foreground:
 
 ```
 docker-compose up
+```
+
+... you can also choose to throw the services into the background (e.g. daemonize them):
+
+```
+docker-compose up -d
+```
+
+If you do this, you will eventually want to shut them down:
+
+```
+docker-compose down
 ```
