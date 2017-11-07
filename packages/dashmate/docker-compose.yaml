@@ -1,0 +1,34 @@
+version: '3'
+
+services:
+  core:
+    image: $REPO_URL/dashevo/dashcore:testnet
+    restart: always
+    ports:
+      - 19999:19999
+      - 127.0.0.1:19998:19998
+      - 127.0.0.1:29998:29998
+
+  ipfs:
+    image: jbenet/go-ipfs:latest
+    ports:
+      - "4001:4001"
+      - "4001:4002/udp"
+      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./data/ipfs:/data/ipfs
+    # TODO: may need to also over-ride entrypoint here...
+    command: /sbin/tini -- /usr/local/bin/start_ipfs daemon --migrate=true --enable-pubsub-experiment
+
+  drive:
+    links:
+      - core
+      - ipfs
+
+  dapi:
+    links:
+      - core
+      - drive
+      - ipfs
