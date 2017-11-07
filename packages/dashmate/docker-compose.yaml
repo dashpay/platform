@@ -22,15 +22,16 @@ services:
     volumes:
       - ./data/ipfs:/data/ipfs
     # TODO: may need to also over-ride entrypoint here..., or use modified IPFS image
-    command: /sbin/tini -- /usr/local/bin/start_ipfs daemon --migrate=true --enable-pubsub-experiment
+    # command: daemon /sbin/tini -- /usr/local/bin/start_ipfs daemon --migrate=true --enable-pubsub-experiment
+    command: daemon --migrate=true --enable-pubsub-experiment
 
-  drive:
-    links:
-      - core
-      - ipfs
+#  drive:
+#    links:
+#      - core
+#      - ipfs
 
-  dapi:
-    links:
-      - core
-      - drive
-      - ipfs
+#  dapi:
+#    links:
+#      - core
+#      - drive
+#      - ipfs
