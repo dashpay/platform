@@ -3,7 +3,7 @@
 ### Pre-requisites to be Installed
 
 * [Python](https://www.python.org/downloads/)
-* [docker](https://docs.docker.com/engine/installation/)
+* [docker](https://docs.docker.com/engine/installation/) (version 17.04.0+)
 * docker-compose (`pip install -U docker-compose`)
 * awscli - for private Docker registry aka "ECR" (`pip install -U awscli`)
 
