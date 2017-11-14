@@ -9,6 +9,13 @@
 
 ### Setup
 
+0. Clone this repo & cd to the directory:
+
+```
+git clone git@github.com:dashevo/mn-bootstrap.git ./mn-bootstrap
+cd mn-bootstrap
+```
+
 1. set AWS key vars & login to AWS ECR
 
 ```
