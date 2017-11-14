@@ -1,0 +1,20 @@
+{
+  "name": "dashdrive-api",
+  "version": "0.0.1",
+  "description": "DashDrive API",
+  "main": "index.js",
+  "scripts": {
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/dashdrive-api.git"
+  },
+  "authors": [
+    "Nathan Marley"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dashevo/dashdrive-api/issues"
+  },
+  "homepage": "https://github.com/dashevo/dashdrive-api"
+}
