@@ -9,4 +9,4 @@ var server = jayson.server({
   }
 })
 
-server.http().listen(3000, '127.0.0.1')
+server.http().listen(5001, '127.0.0.1')
