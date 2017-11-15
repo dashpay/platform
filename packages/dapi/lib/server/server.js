@@ -11,10 +11,11 @@ class Server {
             app.server = null;
             return false;
         }
+
         app.server = express();
         app.server.use(bodyParser.json());
-        app.server.use(bodyParser.urlencoded({extended:true}));
-	    routes.setup(app);
+        app.server.use(bodyParser.urlencoded({ extended: true }));
+        routes.setup(app);
         app.server.listen(app.config.server.port);
         app.logger.notice('Server listening on port:', app.config.server.port);
     }

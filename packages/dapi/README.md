@@ -20,6 +20,8 @@
   </a>
 </div>
 
+## Developer Notes
+//QDEVTEMP comments refers to temporary code in order to simulate a _testnet_ of dapi nodes to makes testing easier.
 
 ## Table of Content
 - [Getting Started](#getting-started)

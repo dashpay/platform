@@ -28,7 +28,7 @@ const fs = require('fs');
 const util  = require('util');
 class Logger {
 	//If a path is set, we log in file TODO
-	constructor(path) {
+	constructor(options={level:'INFO'}) {
 		let self = this;
 		let LEVELS = [
 			'FATAL',
@@ -71,8 +71,7 @@ class Logger {
 			};
 		});
 
-		this.level = self['INFO']; //By default.
-		// console.log(this);
+    this.level = self[options.level] || self['INFO'];
 	}
 }
 const Utils = {

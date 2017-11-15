@@ -1,16 +1,16 @@
 {
-  "livenet":false,
-  "server":{
-    "enable":true,
-    "port":3000
+  "livenet": false,
+  "server": {
+    "enable": true,
+    "port": 3000
   },
-  "node":{
-    "pubKey":"XkifrWK9yHVzXLgeAaqjhjDJuFad6b",
-    "rep":{
-      "port":40000
+  "node": {
+    "pubKey": "XkifrWK9yHVzXLgeAaqjhjDJuFad6b",
+    "rep": {
+      "port": 40000
     },
-    "pub":{
-      "port":50000
+    "pub": {
+      "port": 50000
     }
   }
 }

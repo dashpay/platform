@@ -41,6 +41,7 @@ const Routes = {
 		app.server.get('/version', handlers.get.version);
 
 		app.server.get('/masternodes/list', handlers.get.mnList);
+		app.server.get('/masternodes/updateList/:hash', handlers.get.mnUpdateList);
 	}
 };
 module.exports = Routes;

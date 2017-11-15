@@ -1,64 +1,45 @@
 const message = require('bitcore-message-dash');
-const quorumManager = require('./quorummanager')
+const qDash = require('quorums-dash')
 
 class Quorum {
 	constructor(app) {
 		this.logger = app.logger;
-
 		this.logger.debug('- Init Quorum');
+		this.insight = app.insight;
 	}
 
-	//Todo: temp insight calls to insight until rpc
-	userIsInQuorum(insight, txId) {
-
-		return new Promise(function(resolve, reject) {
-
-			let tmpMnList = []; //used to resolve vin from ip while rpc implementation is pending
-
-			Promise.all([insight.getMnList(), insight.getLastBlockHash()])
-				.then(r => {
-					tmpMnList = r[0]
-					return quorumManager.getQuorum(r[0], r[1], txId);
+	getQuorumHash() {
+		return new Promise((resolve, reject) => {
+			this.insight.getCurrentBlockHeight()
+				.then(height => {
+					return this.insight.getHashFromHeight(qDash.getRefHeight(height))
 				})
-				.then(quorum => {
-					let vin = quorumManager.resolveVinFromIp(tmpMnList, quorum.ip); //temp until rpc to get outpoint
-
-					resolve(true);
+				.then(hash => {
+					resolve(hash)
 				})
 		})
 	}
-	validate(data, signature, insight) {
-		let self = this;
-		return new Promise(function(resolve, reject) {
-			insight.getAddress(data.txId)
-				.then(addr => {
-					if (!message(data.toString()).verify(addr, signature)) {
-						return false;
+
+	isValidQuorum(body, qTempPort) {
+
+		return new Promise((resolve, reject) => {
+			Promise.all([this.insight.getMnList(), this.getQuorumHash(), this.insight.getAddress(body.data.txId)])
+				.then(([list, hash, addr]) => {
+					let quorumData = {
+						mnList: list,
+						refHash: hash,
+						refAddr: addr
 					}
-					else {
-						return true;
-					}
-				})
-				.then(signatureValid => {
-					if (signatureValid) {
-						return self.userIsInQuorum(insight, data.txId)
-					}
-					else {
-						this.logger.debug('Invalid signature');
-						return false;
-					}
-				})
-				.then(inQuorum => {
-					if (inQuorum) {
-						resolve(true);
-					}
-					else {
-						resolve(false);
-					}
-				}).catch(ex => {
-					console.log(ex);
+
+					resolve(qDash.validate(body.data, body.signature, quorumData, qTempPort)) ////QDEVTEMP - remove qTempPort
 				})
 		})
+
+	}
+
+	getQuroumFailedResponse() {
+		this.logger.debug('Invalid Quorum! - Signature invalid or invalid node for handling request ');
+		return { "response": "Failed" }
 	}
 
 	performAction(type, val) {
