@@ -1,5 +1,5 @@
-var jayson = require('jayson')
-var server = jayson.server({
+const jayson = require('jayson')
+let server = jayson.server({
 
   getBlockchainUser(args, callback) {
     callback(null, args["name"])
