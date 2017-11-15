@@ -5,7 +5,10 @@ LABEL description="Dockerised DashDrive API"
 RUN apk update && apk upgrade --no-cache
 
 WORKDIR /app
+COPY . /app
+RUN /usr/local/bin/npm install
 
 EXPOSE 5001
 
-CMD ["/bin/ash"]
+CMD ["/usr/local/bin/node", "/app/api.js"]
+# CMD ["/bin/ash"]
