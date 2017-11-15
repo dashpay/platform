@@ -1,0 +1,8 @@
+Dockerfile
+.dockerignore
+.git
+.idea
+.eslintrc
+.travis.yml
+build_docketr_image.sh
+npm-debug.log
