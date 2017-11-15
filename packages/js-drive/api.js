@@ -1,10 +1,10 @@
 var jayson = require('jayson')
 var server = jayson.server({
-  add: function(args, callback) {
+  add(args, callback) {
     callback(null, args[0] + args[1])
   },
 
-  getBlockchainUser: function(args, callback) {
+  getBlockchainUser(args, callback) {
     callback(null, args["name"])
   }
 })
