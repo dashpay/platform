@@ -1,4 +1,4 @@
-const { User } = require('dash-schema/lib').Consensus;
+const { User, Transition, State } = require('dash-schema/lib').Consensus;
 
 const mockedData = {
   user: {
@@ -8,17 +8,24 @@ const mockedData = {
     credits: 100000,
     subtx: [],
   },
+  transition: {},
 };
 
 // All methods are async because when we remove mocks there will be network calls
 const dashrpc = {
   async getUser(username) {
-    if (User.validateUsername(username)) {
+    if (!User.validateUsername(username)) {
       throw new Error('Username is not valid');
     }
     const user = Object.assign({}, mockedData.user);
     user.uname = username;
     return user;
+  },
+  async sendRawTransition(transitionData) {
+    if (!Transition.validate(transitionData)) {
+      throw new Error('Transition data is not valid');
+    }
+    return State.getTSID(transitionData);
   },
 };
 
