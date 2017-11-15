@@ -9,8 +9,8 @@ var server = jayson.server({
   }
 })
 
-// server.http().listen(5001, '127.0.0.1')
-server.http().listen(5001, '0.0.0.0')
+var bind_host = process.env.BIND_HOST || '0.0.0.0';
+server.http().listen(5001, bind_host)
 
 // break on ^C
 process.on('SIGINT', function() {
