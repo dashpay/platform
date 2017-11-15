@@ -1,12 +1,13 @@
 var jayson = require('jayson')
 var server = jayson.server({
-  add(args, callback) {
-    callback(null, args[0] + args[1])
-  },
-
   getBlockchainUser(args, callback) {
     callback(null, args["name"])
+  },
+
+  getBlockchainUserState(args, callback) {
+    callback(null, "name: " + args["name"] + ", dapid: " + args["dapid"])
   }
+
 })
 
 var bind_host = process.env.BIND_HOST || '0.0.0.0';
