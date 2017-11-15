@@ -5,7 +5,7 @@ var server = jayson.server({
   },
 
   getBlockchainUser: function(args, callback) {
-    callback(null, args[0] + args[1])
+    callback(null, args["name"])
   }
 })
 
