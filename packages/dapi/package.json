@@ -23,7 +23,7 @@
     "node-json-rpc2": "^1.0.1",
     "orbit-db": "^0.17.3",
     "portfinder": "^1.0.13",
-    "quorums-dash": "file:../quorums-dash",
+    "quorums-dash": "^1.0.0",
     "request": "^2.81.0",
     "request-promise-native": "^1.0.5",
     "zmq": "^2.15.3"
