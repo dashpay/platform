@@ -1,4 +1,4 @@
-const User = require('dash-schema/lib').Consensus.User;
+const { User } = require('dash-schema/lib').Consensus;
 
 const mockedData = {
   user: {
