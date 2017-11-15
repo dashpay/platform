@@ -9,7 +9,8 @@ var server = jayson.server({
   }
 })
 
-server.http().listen(5001, '127.0.0.1')
+// server.http().listen(5001, '127.0.0.1')
+server.http().listen(5001, '0.0.0.0')
 
 // break on ^C
 process.on('SIGINT', function() {
