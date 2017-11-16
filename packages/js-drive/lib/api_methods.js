@@ -4,7 +4,7 @@
  * @memberof DashDrive
  */
 function getBlockchainUser(args, callback) {
-  callback(null, args["name"])
+  callback(null, "Got BU: " + args["name"])
 }
 
 /**
@@ -14,7 +14,7 @@ function getBlockchainUser(args, callback) {
  * @memberof DashDrive
  */
 function getBlockchainUserStateSinceHeight(args, callback) {
-  callback(null, "name: " + args["name"] + ", height: " + args["height"])
+  callback(null, "Got BU: " + args["name"] + ", height: " + args["height"])
 }
 
 /**
@@ -24,7 +24,7 @@ function getBlockchainUserStateSinceHeight(args, callback) {
  * @memberof DashDrive
  */
 function getBlockchainUserState(args, callback) {
-  callback(null, "name: " + args["name"] + ", dapid: " + args["dapid"])
+  callback(null, "Got DAP state for BU: " + args["name"] + ", dapid: " + args["dapid"])
 }
 
 /**
@@ -34,7 +34,7 @@ function getBlockchainUserState(args, callback) {
  * @memberof DashDrive
  */
 function getDapSchema(args, callback) {
-  callback(null, "dapid: " + args["dapid"])
+  callback(null, "Got BU DAP Schema for dapid: " + args["dapid"])
 }
 
 
