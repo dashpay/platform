@@ -1,8 +1,38 @@
-## DAPI-SDK (1.1.0)
- 
-This module aim it's concerns at heping developers working with the DAPI on a Javascript landscape. 
+<h1 align="center">DAPI-SDK V.1.1.0</h1>
 
-It wraps all the work needed to answer to your real need (Tx, Blocks, Balance, UTXO..) and provide easy to use Promise-based method.
+<div align="center">
+  <strong>A Dash Library to work with the DAPI on a Javascript landscape.</strong>
+  <p>It wraps all the work needed to answer to your real need (Tx, Blocks, Balance, UTXO..) and provide easy to use Promise-based method.</p>
+</div>
+<br />
+<div align="center">
+  <!-- Stability -->
+  <a href="https://nodejs.org/api/documentation.html#documentation_stability_index">
+    <img src="https://img.shields.io/badge/stability-stable-green.svg?style=flat-square"
+      alt="API stability" />
+  </a>
+  <!-- Build Status -->
+  <a href="https://travis-ci.com/dashevo/dapi-sdl">
+    <img src="https://img.shields.io/travis/dashevo/dapi-sdk/master.svg?style=flat-square" alt="Build Status" />
+  </a>
+  <!-- NPM version -->
+  <a href="https://npmjs.org/package/dapi-sdk">
+    <img src="https://img.shields.io/npm/v/dapi-sdk.svg?style=flat-square" alt="NPM version" />
+  </a>
+</div>
+
+## Table of Content
+- [Features](#features)
+- [Getting Started](#getting-started)
+    - [Install DAPI-SDK](#install-dapi-sdk)
+- [Uses](#uses-)
+    - [Import the package](#import-the-package-)
+    - [Add Specific Insight-API node](#add-specific-insight-api-node)
+    - [Api Documentation](#api-documentation-)
+    - [Components](#components-)
+- [Use cases](https://github.com/dashevo/dapi-sdk/blob/master/USECASES.md)
+- [Changelog](https://github.com/dashevo/dapi-sdk/blob/master/CHANGELOG.md)
+- [License](https://github.com/dashevo/dapi-sdk/blob/master/LICENSE)
 
 ### Features :
 - Deliver a bitcore-wallet-service compatible D-API (see [BWS doc here](https://github.com/dashevo/dapi-sdk/blob/master/BWS/README.md)).
@@ -141,10 +171,3 @@ Using `SDK.Blockchain.chain` enable you to use the [blockchain-spv-dash](https:/
 - `tools` will allow to access to some of the dependencies of the SDK. Most notably, you have access to :
     - `SDK.tools.util` which correspond to a library of handy stuff such as toHash(hex), compressTarget, expandTarget. API here : [dash-util](https://github.com/snogcel/dash-util)
     - `SDK.tools.bitcore` which correspond to a library used in insight-api, see API here : [bitcore-dash-library](https://github.com/dashpay/bitcore-lib-dash). Contains elements that allow to generate address, sign/verify a message...
-
-### Particular examples and usecases :
-
-You can see some usecases and examples : [here](USECASES.md)
-
-### [Changelog](CHANGELOG.md)
-### License
