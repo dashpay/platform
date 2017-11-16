@@ -1,4 +1,4 @@
-const { User, Transition, State } = require('dash-schema/lib').Consensus;
+const { User, SubTx, Transition, State } = require('dash-schema/lib').Consensus;
 
 const mockedData = {
   user: {
@@ -27,6 +27,12 @@ const dashrpc = {
     }
     return State.getTSID(transitionData);
   },
+  async sendRawSubtx(transactionData) {
+    if (!SubTx.validate(transactionData)) {
+        throw new Error('SubTx data is not valid');
+    }
+    return State.getTSID(transactionData);
+}
 };
 
 module.exports = dashrpc;

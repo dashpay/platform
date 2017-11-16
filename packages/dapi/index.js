@@ -1,6 +1,6 @@
 const Dapi = require('./lib/dapi');
 //let dapi = new Dapi(require('./dapi.json'));
-const qDash = require('quorums-dash')
+const qDash = require('quorums-dash');
 
 //QDEVTEMP
 let dapiArr = [];
