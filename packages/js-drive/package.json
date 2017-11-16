@@ -24,6 +24,7 @@
     "mocha": "^4.0.1"
   },
   "dependencies": {
-    "jayson": "^2.0.4"
+    "jayson": "^2.0.4",
+    "dash-schema": "git+ssh://github.com/dashevo/dash-schema.git"
   }
 }
