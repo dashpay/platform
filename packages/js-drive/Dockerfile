@@ -20,5 +20,5 @@ COPY . /app
 
 EXPOSE 5001
 
-CMD ["/usr/local/bin/node", "/app/api.js"]
+CMD ["/usr/local/bin/node", "/app/lib/api.js"]
 # CMD ["/bin/ash"]
