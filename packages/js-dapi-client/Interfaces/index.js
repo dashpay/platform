@@ -1,5 +1,6 @@
 const jayson = require('jayson/promise');
-const bitcored = require('bitcore-lib-dash')
+const Transaction = require('bitcore-lib-dash').Transaction
+const Bitcore = require('bitcore-lib-dash')
 
 var client = jayson.client.http('http://172.30.30.239:4019');
 
@@ -9,12 +10,9 @@ module.exports = {
         return client.request('getUser', [username])
     },
 
-    createUser: function(username, pubKey, privKey) {
+    createUser: function(username, pubKey, privateKey) {
 
-        //todo: privKey.derive().getPrivKey().sign(xxx)
-        let signature = "INxlyf9JX8j1hfcBNf5W72+UALu7+5nF8l/MfUZSJlomNDkmwWfvva4eE4/tjJPUO+ByV6K3cbUgPhjbEZIM8Ik="
-
-        let preTx = {
+        let accData = {
             "description": "valid - registration subtx meta for alice",
             "data": {
                 "pver": 1,
@@ -22,17 +20,48 @@ module.exports = {
                 "action": 1,
                 "uname": `${username}`,
                 "pubkey": `${pubKey}`
-            },
-            "meta": {
-                "id": "ef6ab42e001144bfbaf4777b05148f56a9705b63cdc320c95171bc600df7088e",
-                "sig": `${signature}`
             }
         }
 
-        let rawTx = null
+        var utxo = new Transaction.UnspentOutput({
+            "txid": "a0a08e397203df68392ee95b3f08b0b3b3e2401410a38d46ae0874f74846f2e9",
+            "vout": 0,
+            "address": "ySw349uTAxzmckt2Z84EzMr2ApmuXBq472",
+            "scriptPubKey": "76a914089acaba6af8b2b4fb4bed3b747ab1e4e60b496588ac",
+            "amount": 0.00070000
+        });
 
-        return client.request('createUser', rawTx)
+        let tx = new Transaction()
+            .from(utxo)
+            .addData(JSON.stringify(accData))
+            .fee(100)
+            .sign(privateKey)
+            .serialize(true);
 
+        return client.request('createUser', { rawTx: tx })
+
+    },
+
+    doFriendRequest: function() {
+
+    },
+
+    payContact: function(privateKey, toUsername, xPubkey, dapId) {
+        client.request('getRelation', {
+            uname: toUsername
+        }).then(relId => {
+            client.request('payContact', {
+                pver: 1,
+                objtype: 'DashPayContact',
+                dapid: dapId || 0,
+                actn: 0, //Add
+                revn: 0, //?
+                leafn: 1, //?
+                relation: relId,
+                hdextpubkey: new Bitcore.HDPrivateKey(privateKey).derive("m/1").xPubkey.toString(),
+                agreetscs: 1  // accept the terms and conditions
+            })
+        })
     },
 
     getUserState: function(username, dapId) {

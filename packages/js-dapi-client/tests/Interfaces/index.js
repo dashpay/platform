@@ -5,7 +5,7 @@ SDK.getUser('alice')
         return res.result
     })
     .then(userRes => {
-        return client.createUser(userRes.uname, userRes.pubkey, )
+        return SDK.createUser(userRes.uname, userRes.pubkey, )
     })
     .then(createRes => {
         console.log(createRes)
