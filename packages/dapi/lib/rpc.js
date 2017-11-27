@@ -1,4 +1,9 @@
-const { User, SubTx, Transition, State } = require('dash-schema/lib').Consensus;
+const {
+  User, SubTx, Transition, State,
+} = require('dash-schema/lib').Consensus;
+const jayson = require('jayson');
+
+const log = console;
 
 const mockedData = {
   user: {
@@ -21,18 +26,104 @@ const dashrpc = {
     user.uname = username;
     return user;
   },
-  async sendRawTransition(transitionData) {
+  async createRawSubTx(userData) {
+    if (!User.validateUser(userData)) {
+      throw new Error('User data is not valid');
+    }
+    return mockedData.user.regtxid;
+  },
+  async sendRawTransaction(serializedTransaction) {
+    const txId = 'some_txid_provided_by_dashd';
+    return txId;
+  },
+};
+
+const logic = {
+  /**
+   * This method should do quorum validation
+   * @param transitionData
+   * @returns {Promise.<string>}
+   */
+  async sendTransition(transitionData) {
     if (!Transition.validate(transitionData)) {
       throw new Error('Transition data is not valid');
     }
-    return State.getTSID(transitionData);
+    const transition = Object.assign({}, transitionData);
+    transition.qsig = '1';
+    return State.getTSID(transition);
   },
   async sendRawSubtx(transactionData) {
     if (!SubTx.validate(transactionData)) {
-        throw new Error('SubTx data is not valid');
+      throw new Error('SubTx data is not valid');
     }
     return State.getTSID(transactionData);
-}
+  },
 };
 
-module.exports = dashrpc;
+const server = jayson.server({
+  /**
+   * Returns user
+   * @param args
+   * @param callback
+   */
+  async getUser(args, callback) {
+    const username = args[0];
+    try {
+      const user = await dashrpc.getUser(username);
+      // We need transition header
+      // If we do not have any transitions just do not return last transition header
+      return callback(null, user);
+    } catch (e) { return callback(e); }
+  },
+  /**
+   * Raw subscription transaction that need to be signed by the client.
+   * When client de-serialized and signed transaction,
+   * client needs to serialize it again and call sendRawTransaction method
+   * @param args
+   * @param callback
+   */
+  async createRawSubTx(args, callback) {
+    const user = {
+      data: Object.assign({}, args),
+      objtype: 'User',
+    };
+    try {
+      const subTx = await dashrpc.createRawSubTx(user);
+      return callback(null, subTx);
+    } catch (e) {
+      log.error(e);
+      return callback(e);
+    }
+  },
+  /**
+   * Passes signed transaction to dashd
+   * @param args
+   * @param callback
+   */
+  async sendRawTransaction(args, callback) {
+    const signedTransaction = args[0];
+    try {
+      const subTxId = await dashrpc.sendRawTransaction(signedTransaction);
+      return callback(null, subTxId);
+    } catch (e) {
+      log.error(e);
+      return callback(e);
+    }
+  },
+  async sendTransition(args, callback) {
+    const transitionData = args.data;
+    try {
+      const transitionId = await logic.sendTransition(transitionData);
+      callback(null, transitionId);
+    } catch (e) {
+      log.error(e);
+      callback(e);
+    }
+  },
+});
+
+const port = 4019;
+
+server.http().listen(port);
+console.log(`RPC server is listening on port ${port}`);
+
