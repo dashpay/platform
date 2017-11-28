@@ -1,16 +1,15 @@
 const Dapi = require('./lib/dapi');
-//let dapi = new Dapi(require('./dapi.json'));
+const config = require('./lib/config');
+// let dapi = new Dapi(config);
 const qDash = require('quorums-dash');
 
-//QDEVTEMP
-let dapiArr = [];
+// QDEVTEMP
+const dapiArr = [];
 
 for (let i = 0; i < qDash.config.quorumSize * qDash.config.dapiMultiplicator; i++) {
-    let config = require('./dapi.json');
-    config.server.port = 3000 + i;
-    dapiArr.push(new Dapi(config))
+  const newConfig = Object.assign({}, config);
+  newConfig.server.port = 3000 + i;
+  dapiArr.push(new Dapi(newConfig));
 }
-//QDEVTEMP END
-
-
+// QDEVTEMP END
 

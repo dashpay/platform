@@ -1,6 +1,6 @@
 const message = require('bitcore-message-dash');
 const qDash = require('quorums-dash');
-const { Schema } = require('dash-schema/lib').Consensus;
+const { Schema } = require('@dashevo/dash-schema/lib').Consensus;
 const { verbs } = require('../constants');
 
 class Quorum {

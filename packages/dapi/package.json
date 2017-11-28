@@ -5,7 +5,7 @@
   "scripts": {
     "start": "./scripts/start",
     "stop": "./scripts/stop",
-    "test": "mocha --recursive"
+    "test": "./node_modules/.bin/mocha test/ --recursive"
   },
   "dependencies": {
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
@@ -33,6 +33,7 @@
     "assert": "^1.4.1",
     "bitcore-mnemonic-dash": "^1.0.3",
     "chai": "^4.1.2",
+    "chai-as-promised": "^7.1.1",
     "eslint": "4.10.0",
     "eslint-config-airbnb-base": "12.1.0",
     "eslint-plugin-import": "2.8.0",

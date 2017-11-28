@@ -1,9 +1,11 @@
 const {
   User, SubTx, Transition, State,
-
 } = require('@dashevo/dash-schema/lib').Consensus;
-
 const jayson = require('jayson');
+
+const config = require('./config');
+const insight = require('./insight');
+
 const log = console;
 
 const mockedData = {
@@ -19,23 +21,11 @@ const mockedData = {
 
 // All methods are async because when we remove mocks there will be network calls
 const dashrpc = {
-  async getUser(username) {
-    if (!User.validateUsername(username)) {
-      throw new Error('Username is not valid');
-    }
-    const user = Object.assign({}, mockedData.user);
-    user.uname = username;
-    return user;
-  },
   async createRawSubTx(userData) {
     if (!User.validateUser(userData)) {
       throw new Error('User data is not valid');
     }
     return mockedData.user.regtxid;
-  },
-  async sendRawTransaction(serializedTransaction) {
-    const txId = 'some_txid_provided_by_dashd';
-    return txId;
   },
 };
 
@@ -69,45 +59,31 @@ const server = jayson.server({
    */
   async getUser(args, callback) {
     const username = args[0];
+    if (!User.validateUsername(username)) {
+      return callback({ code: 400, message: 'Username is not valid' });
+    }
     try {
-      const user = await dashrpc.getUser(username);
-      // We need transition header
+      const user = await insight.getUser(username);
+      // TODO: We need transition header
       // If we do not have any transitions just do not return last transition header
       return callback(null, user);
-    } catch (e) { return callback(e); }
-  },
-  /**
-   * Raw subscription transaction that need to be signed by the client.
-   * When client de-serialized and signed transaction,
-   * client needs to serialize it again and call sendRawTransaction method
-   * @param args
-   * @param callback
-   */
-  async createRawSubTx(args, callback) {
-    const user = {
-      data: Object.assign({}, args),
-      objtype: 'User',
-    };
-    try {
-      const subTx = await dashrpc.createRawSubTx(user);
-      return callback(null, subTx);
     } catch (e) {
-      log.error(e);
-      return callback(e);
+      log.error(e.stack);
+      return callback({ code: 400, message: e.message });
     }
   },
   /**
-   * Passes signed transaction to dashd
+   * Passes signed transaction to dashd. Transaction must be constructed and signed on client side.
    * @param args
    * @param callback
    */
   async sendRawTransaction(args, callback) {
     const signedTransaction = args[0];
     try {
-      const subTxId = await dashrpc.sendRawTransaction(signedTransaction);
+      const subTxId = await insight.sendRawTransaction(signedTransaction);
       return callback(null, subTxId);
     } catch (e) {
-      log.error(e);
+      log.error(e.stack);
       return callback(e);
     }
   },
@@ -126,5 +102,7 @@ const server = jayson.server({
 const port = 4019;
 
 server.http().listen(port);
-console.log(`RPC server is listening on port ${port}`);
+log.info(`RPC is running in ${config.name} mode`);
+log.info(`Insight uri is ${config.insightUri}`);
+log.info(`RPC server is listening on port ${port}`);
 
