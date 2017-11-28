@@ -1,8 +1,9 @@
 const {
   User, SubTx, Transition, State,
-} = require('dash-schema/lib').Consensus;
-const jayson = require('jayson');
 
+} = require('@dashevo/dash-schema/lib').Consensus;
+
+const jayson = require('jayson');
 const log = console;
 
 const mockedData = {

@@ -8,11 +8,11 @@
     "test": "mocha --recursive"
   },
   "dependencies": {
+    "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
     "bitcore-lib-dash": "^0.14.3",
     "bitcore-message-dash": "^1.0.5",
     "bluebird": "^3.4.6",
     "crypto": "0.0.3",
-    "dash-schema": "git+ssh://github.com/dashevo/dash-schema.git",
     "eventemitter2": "^4.1.0",
     "express": "^4.14.0",
     "extend": "^3.0.1",
