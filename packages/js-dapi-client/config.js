@@ -1,5 +1,5 @@
 const Config = {
-    useTrustedServer: true,
+    useTrustedServer: false,
     DISCOVER: {
         INSIGHT_SEEDS: [
             {
@@ -16,7 +16,8 @@ const Config = {
                 path: '',
                 base: "localhost",
                 port: 3000,
-                fullPath: "http://localhost:3000/api"
+                fullPath: "http://localhost:3000/api",
+                ip: "localhost:3000"
             }
         ],
         SOCKET_SEEDS: {
@@ -32,6 +33,7 @@ const Config = {
     debug: false,
     verbose: false,
     warnings: false,
-    errors: false
+    errors: false,
+    useQuorums: true
 };
 module.exports = Config;

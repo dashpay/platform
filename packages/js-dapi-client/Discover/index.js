@@ -4,9 +4,7 @@ exports.Discover = function() {
     return {
         _state: "waiting",
         Masternode: Masternode(),
-        getConnectorCandidate: require('./getConnectorCandidate').getConnectorCandidate,
         getConnectorCandidateURI: require('./getConnectorCandidateURI').getConnectorCandidateURI,
         getSocketCandidate: require('./getSocketCandidate').getSocketCandidate,
-        init: require('./init').init
     };
 };

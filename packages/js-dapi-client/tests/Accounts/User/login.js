@@ -4,14 +4,14 @@ const Mnemonic = require('bitcore-mnemonic-dash')
 
 let mnemonic = new Mnemonic('jaguar paddle monitor scrub stage believe odor frown honey ahead harsh talk');
 let privKey = mnemonic.toHDPrivateKey().derive("m/1/1495176227").privateKey;
-let txId = 'cb1aa5d405c148a4990ff0035a6cd86cc73857ea57be3e49539cd8a9d0358315'
+let txId = '89e3b3b4f62957ea94234293de9e01b3d509d5db67663c97d8369d018488bd12'
 
 describe('Accounts - Login', function() {
     it('should authenticate with a server', function() {
 
         return SDK.Accounts.API.User.login(txId, privKey)
             .then(isAuthenticated => {
-                res.should.be.true;
+                isAuthenticated.should.be.true;
             })
             .catch(err => {
                 console.log(err);
@@ -23,7 +23,7 @@ describe('Accounts - Login', function() {
 
         return SDK.Accounts.API.User.login(txId, privKey)
             .then(isAuthenticated => {
-                res.should.be.false;
+                isAuthenticated.should.be.false;
             })
             .catch(err => {
                 console.log(err);

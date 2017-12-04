@@ -1,4 +1,6 @@
 require('./index.js');
+require('./Quorums');
+require('./Accounts/Authentication/auth.js');
 require('./SPV/spv');
 // require('./Accounts/Authentication/auth.js');
 require('./Accounts/User/create.js'); //sendtx gives an issue to be investigated
@@ -29,5 +31,5 @@ require('./Explorer/API/getLastBlockHeight.js');
 require('./Explorer/API/getLastDifficulty.js');
 require('./util/mnemonic.js');
 
-// //FIXME If a block is mined during the fetching process, this data, when verified will be shifted and won't equal.
-// require('./Explorer/API/getBlockHeaders.js')
+// // //FIXME If a block is mined during the fetching process, this data, when verified will be shifted and won't equal.
+// // require('./Explorer/API/getBlockHeaders.js')

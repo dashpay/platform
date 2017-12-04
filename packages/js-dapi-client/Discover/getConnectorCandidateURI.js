@@ -1,12 +1,5 @@
-exports.getConnectorCandidateURI = function() {
+const _ = require('lodash')
 
-    return new Promise(function(resolve, reject) {
-        SDK.Discover.getConnectorCandidate()
-            .then(candidate => {
-                resolve(`http://${candidate.ip}`)
-            })
-            .catch(err => {
-                reject(err);
-            })
-    });
+exports.getConnectorCandidateURI = function() {
+    return `http://${_.sample(SDK.Discover.Masternode.candidateList).ip}`;
 }
