@@ -34,10 +34,11 @@ services:
     volumes:
       - ./data/bitcore-node-dash.json:/insight/bitcore-node-dash.json
 
-#  drive:
-#    links:
-#      - core
-#      - ipfs
+  drive_api:
+    image: $REPO_URL/dashevo/dashdrive-api:latest
+    restart: always
+    ports:
+      - 127.0.0.1:6000:5001
 
 #  dapi:
 #    links:
