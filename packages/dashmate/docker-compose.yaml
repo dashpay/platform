@@ -2,14 +2,14 @@ version: '3'
 
 services:
   core:
-    image: $REPO_URL/dashevo/dashcore:testnet
+    image: $REPO_URL/dashevo/dashcore:develop
     restart: always
     ports:
       - 19999:19999
       - 127.0.0.1:19998:19998
       - 127.0.0.1:29998:29998
     volumes:
-      - ./data/dash.conf:/dashcore/dash.conf
+      - ./data/dash.conf:/dash/dash.conf
       - ./data/core:/data
 
   ipfs:
