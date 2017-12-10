@@ -4,5 +4,6 @@ Dockerfile
 .idea
 .eslintrc
 .travis.yml
-build_docketr_image.sh
+build_docker_image.sh
 npm-debug.log
+node_modules
