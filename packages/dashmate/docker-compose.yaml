@@ -34,8 +34,8 @@ services:
     volumes:
       - ./data/bitcore-node-dash.json:/insight/bitcore-node-dash.json
 
-  drive_api:
-    image: $REPO_URL/dashevo/dashdrive-api:latest
+  drive:
+    image: $REPO_URL/dashevo/dashdrive:latest
     restart: always
     ports:
       - 127.0.0.1:6000:5001
