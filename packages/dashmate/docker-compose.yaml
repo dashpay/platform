@@ -40,8 +40,8 @@ services:
     ports:
       - 127.0.0.1:6000:5001
 
-#  dapi:
-#    links:
-#      - core
-#      - drive
-#      - ipfs
+  dapi:
+    image: $REPO_URL/dashevo/dapi:latest
+    restart: always
+    ports:
+      - 127.0.0.1:6001:3000
