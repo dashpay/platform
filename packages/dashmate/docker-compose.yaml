@@ -27,6 +27,8 @@ services:
   insight:
     image: $REPO_URL/dashevo/evoinsight:latest
     restart: always
+    depends_on:
+      - core
     ports:
       - 127.0.0.1:3001:3001
     links:
@@ -37,11 +39,18 @@ services:
   drive:
     image: $REPO_URL/dashevo/dashdrive:latest
     restart: always
+    depends_on:
+      - core
+      - ipfs
     ports:
       - 127.0.0.1:6000:5001
 
   dapi:
     image: $REPO_URL/dashevo/dapi:latest
     restart: always
+    depends_on:
+      - core
+      - ipfs
+      - insight
     ports:
       - 127.0.0.1:6001:3000
