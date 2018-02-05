@@ -4,7 +4,7 @@
  * @memberof DashDrive
  */
 function getBlockchainUser(args, callback) {
-  callback(null, "Got BU: " + args["name"])
+  callback(null, `Got BU: ${args.name}`);
 }
 
 /**
@@ -14,27 +14,29 @@ function getBlockchainUser(args, callback) {
  * @memberof DashDrive
  */
 function getBlockchainUserStateSinceHeight(args, callback) {
-  callback(null, "Got BU: " + args["name"] + ", height: " + args["height"])
+  callback(null, `Got BU: ${args.name}, height: ${args.height}`);
 }
 
 /**
- * Returns the current data state for a BU on a given Dap schema, that is resolved by relpaying packets of a BU up to the last transition on the blockchain
+ * Returns the current data state for a BU on a given Dap schema,
+ * that is resolved by relpaying packets of a BU up to the last transition on the blockchain
  * @param uname {string} Blockchain username
  * @param dapid {string} Hash of the DAP Schema
  * @memberof DashDrive
  */
 function getBlockchainUserState(args, callback) {
-  callback(null, "Got DAP state for BU: " + args["name"] + ", dapid: " + args["dapid"])
+  callback(null, `Got DAP state for BU: ${args.name}, dapid: ${args.dapid}`);
 }
 
 /**
  * Returns a DAP Schema registered in DashDrive by id
- * DAP Schemas have null dapids in their containing DAP Object to signify they are within the Platform DAP (constituting a DAP definition not a certain DAP's data)
+ * DAP Schemas have null dapids in their containing DAP Object to signify
+ * they are within the Platform DAP (constituting a DAP definition not a certain DAP's data)
  * @param dapid {string} Hash of the DAP Schema
  * @memberof DashDrive
  */
 function getDapSchema(args, callback) {
-  callback(null, "Got BU DAP Schema for dapid: " + args["dapid"])
+  callback(null, `Got BU DAP Schema for dapid: ${args.dapid}`);
 }
 
 
@@ -42,5 +44,5 @@ module.exports = {
   getBlockchainUser,
   getBlockchainUserStateSinceHeight,
   getBlockchainUserState,
-  getDapSchema
-}
+  getDapSchema,
+};
