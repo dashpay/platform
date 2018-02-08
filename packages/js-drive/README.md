@@ -2,6 +2,8 @@
 
 Dash network metadata storage backend service.
 
+An [event-sourced](https://martinfowler.com/eaaDev/EventSourcing.html) metadata service built around the Command-Query Responsibility Segregation ([CQRS](https://martinfowler.com/bliki/CQRS.html)) pattern.
+
 [![Build Status](https://travis-ci.com/dashevo/dashdrive.svg?token=Pzix7aqnMuGS9c6BmBz2&branch=master)](https://travis-ci.com/dashevo/dashdrive)
 
 ### TODO: Setup/Installation Instructions
