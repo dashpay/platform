@@ -7,8 +7,9 @@
     "node": ">=8"
   },
   "scripts": {
+    "rpc": "node scripts/rpc",
     "lint": "eslint **/*.js",
-    "test": "mocha"
+    "test": "mocha test/**/*.spec.js"
   },
   "pre-commit": [
     "lint",
@@ -35,7 +36,7 @@
     "pre-commit": "^1.2.2"
   },
   "dependencies": {
-    "jayson": "^2.0.4",
-    "dash-schema": "git+ssh://github.com/dashevo/dash-schema.git"
+    "dash-schema": "git+ssh://github.com/dashevo/dash-schema.git",
+    "jayson": "^2.0.5"
   }
 }
