@@ -10,7 +10,7 @@
     "bitcoind": {
       "connect": [{
         "rpchost": "dashcore",
-        "rpcport": 19998,
+        "rpcport": 20002,
         "rpcuser": "dashrpc",
         "rpcpassword": "password",
         "zmqpubrawtx": "tcp://dashcore:29998",

@@ -5,12 +5,25 @@ services:
     image: $REPO_URL/dashevo/dashcore:develop
     restart: always
     ports:
-      - 19999:19999
-      - 127.0.0.1:19998:19998
-      - 127.0.0.1:29998:29998
+      - $DASHD_PORT:$DASHD_PORT
+      - 127.0.0.1:$DASHD_RPC_PORT:20002
+      - 127.0.0.1:$DASHD_ZMQ_PORT:29998
     volumes:
       - ./data/dash.conf:/dash/dash.conf
-      - ./data/core:/data
+      - ./data/dash.conf:/root/.dashcore/dash.conf # Make dash-cli inside the container work
+      - ./data/$DASHD_DATADIR:/data
+    command: dashd -conf=/dash/dash.conf -datadir=/data -port=$DASHD_PORT $DASHD_SEED_NODE_ARGS $DASHD_NETWORK_ARGS $MASTERNODE_ARGS $EXTERNALIP_ARGS
+
+  sentinel:
+    image: ablock/sentinel
+    restart: always
+    environment:
+      - DEBUG=false
+      - RPCUSER=dashrpc
+      - RPCPASSWORD=password
+      - RPCHOST=core
+      - RPCPORT=20002
+      - NETWORK=$DASH_NETWORK
 
   ipfs:
     image: jbenet/go-ipfs:latest
