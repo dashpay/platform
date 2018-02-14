@@ -36,7 +36,7 @@
     "pre-commit": "^1.2.2"
   },
   "dependencies": {
-    "dash-schema": "git+ssh://github.com/dashevo/dash-schema.git",
+    "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
     "jayson": "^2.0.5"
   }
 }
