@@ -32,8 +32,7 @@
     "eslint": "^4.16.0",
     "eslint-config-airbnb-base": "^12.1.0",
     "eslint-plugin-import": "^2.8.0",
-    "mocha": "^4.0.1",
-    "pre-commit": "^1.2.2"
+    "mocha": "^4.0.1"
   },
   "dependencies": {
     "dash-schema": "git+ssh://github.com/dashevo/dash-schema.git",
