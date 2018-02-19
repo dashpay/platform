@@ -9,7 +9,7 @@
   "scripts": {
     "rpc": "node scripts/rpc",
     "lint": "eslint **/*.js",
-    "test": "mocha test/**/*.spec.js"
+    "test": "mocha --recursive"
   },
   "pre-commit": [
     "lint",
