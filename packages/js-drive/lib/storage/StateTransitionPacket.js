@@ -1,5 +1,9 @@
-module.exports = class StateTransitionPacket {
-  constructor() {
-    throw new Error('Not implemented yet');
+const Schema = require('@dashevo/dash-schema');
+
+module.exports = class StateTransitionPacket extends Schema.TransitionPacket {
+  constructor(data) {
+    super(data);
+
+    Object.assign(this, data);
   }
 };

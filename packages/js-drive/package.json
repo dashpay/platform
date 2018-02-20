@@ -32,10 +32,19 @@
     "eslint": "^4.16.0",
     "eslint-config-airbnb-base": "^12.1.0",
     "eslint-plugin-import": "^2.8.0",
-    "mocha": "^4.0.1"
+    "go-ipfs-dep": "^0.4.13",
+    "ipfsd-ctl": "^0.27.3",
+    "mocha": "^4.0.1",
+    "multihashes": "^0.4.13"
   },
   "dependencies": {
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
-    "jayson": "^2.0.5"
+    "jayson": "^2.0.5",
+    "cbor": "^3.0.3",
+    "cids": "^0.5.2",
+    "dotenv": "^5.0.0",
+    "ipfs-api": "^17.5.0",
+    "ipld-dag-pb": "^0.13.0",
+    "multihashing-async": "^0.4.7"
   }
 }
