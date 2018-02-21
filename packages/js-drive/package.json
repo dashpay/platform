@@ -11,10 +11,6 @@
     "lint": "eslint **/*.js",
     "test": "mocha './test/**/*.spec.js'"
   },
-  "pre-commit": [
-    "lint",
-    "test"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dashevo/dashdrive.git"
