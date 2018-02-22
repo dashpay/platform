@@ -1,0 +1,8 @@
+{
+    "extends": "airbnb-base",
+    "rules": {
+      "max-len": [0],
+      "no-plusplus": 0,
+      "eol-last": ["error", "always"]
+    }
+  }
