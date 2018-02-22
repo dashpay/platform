@@ -1,12 +1,10 @@
-/* eslint-disable */
-// TODO: Make this file pass linting!
-const utils = require('../lib/utils'),
-  DashUtil = require('dash-util');
+const utils = require('../lib/utils');
+const DashUtil = require('dash-util');
 
 module.exports = {
   getLowDiffGenesis() {
     // Custom genesis to test with lower difficulty
-    return utils._normalizeHeader({
+    return utils.normalizeHeader({
       version: 1,
       previousblockhash: null,
       merkleroot: DashUtil.nullHash.toString('hex'),
@@ -17,7 +15,7 @@ module.exports = {
   },
   getTestnetGenesis() {
     // Custom genesis to test with lower difficulty
-    return utils._normalizeHeader({
+    return utils.normalizeHeader({
       version: 1,
       previousblockhash: null,
       merkleroot: 'e0028eb9648db56b1ac77cf090b99048a8007e2bb64b68f092c03c7f56a662c7',
@@ -27,6 +25,6 @@ module.exports = {
     });
   },
   getLivenetGenesis() {
-    throw ('Livenet genesis not yet implemented');
+    throw Error('Livenet genesis not yet implemented');
   },
 };
