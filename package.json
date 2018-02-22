@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha --no-timeouts --recursive"
   },
   "author": "",
   "license": "MIT",
@@ -12,9 +12,13 @@
     "bitcoin-merkle-proof": "^0.1.0",
     "bitcore-lib-dash": "^0.14.3",
     "bitcore-p2p-dash": "^1.1.4",
-    "inherits": "^2.0.1"
+    "dash-util": "^2.0.3",
+    "inherits": "^2.0.1",
+    "levelup": "^2.0.2",
+    "memdown": "^2.0.0"
   },
   "devDependencies": {
-    "mocha": "^3.5.0"
+    "mocha": "^3.5.0",
+    "should": "^13.2.1"
   }
 }
