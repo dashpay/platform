@@ -31,10 +31,14 @@
     "go-ipfs-dep": "^0.4.13",
     "ipfsd-ctl": "^0.27.3",
     "mocha": "^4.0.1",
-    "multihashes": "^0.4.13"
+    "mocha-sinon": "^2.0.0",
+    "multihashes": "^0.4.13",
+    "sinon": "^4.3.0",
+    "sinon-chai": "^2.14.0"
   },
   "dependencies": {
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
+    "bitcoind-rpc-dash": "^1.0.1",
     "jayson": "^2.0.5",
     "cbor": "^3.0.3",
     "cids": "^0.5.2",
