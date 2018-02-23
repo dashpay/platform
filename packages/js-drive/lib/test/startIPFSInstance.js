@@ -1,6 +1,5 @@
 const util = require('util');
 
-// eslint-disable-next-line import/no-extraneous-dependencies
 const DaemonFactory = require('ipfsd-ctl');
 const IPFSApi = require('ipfs-api');
 
