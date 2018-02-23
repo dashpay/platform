@@ -21,7 +21,7 @@ module.exports = function startIPFSInstance() {
 
   return new Promise(((resolve) => {
     before(async function before() {
-      this.timeout(20 * 1000); // slow Ctl
+      this.timeout(25 * 1000); // slow Ctl
 
       const ipfsd = await spawn();
       stop = util.promisify(ipfsd.stop).bind(ipfsd);
