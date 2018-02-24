@@ -1,5 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies,no-cond-assign,no-await-in-loop */
-
 const fs = require('fs');
 const path = require('path');
 
@@ -65,6 +63,7 @@ describe('StateTransitionHeaderIterator', () => {
     let done;
     let header;
 
+    // eslint-disable-next-line no-cond-assign
     while ({ done, value: header } = await stateTransitionHeaderIterator.next()) {
       if (done) {
         break;

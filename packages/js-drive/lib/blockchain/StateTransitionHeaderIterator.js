@@ -1,5 +1,3 @@
-/* eslint-disable no-await-in-loop */
-
 // TODO: It might be part of SDK in the future
 
 const StateTransitionHeader = require('./StateTransitionHeader');

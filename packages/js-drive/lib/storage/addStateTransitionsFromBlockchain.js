@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop,no-cond-assign */
 /**
  * Add State Transitions from blockchain
  *
@@ -9,6 +8,7 @@ async function addStateTransitionsFromBlockchain(ipfsAPI, stateTransitionHeaderI
   let done;
   let stateTransitionHeader;
 
+  // eslint-disable-next-line no-cond-assign
   while ({ done, value: stateTransitionHeader } = await stateTransitionHeaderIterator.next()) {
     if (done) {
       break;

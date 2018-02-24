@@ -1,5 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies,no-cond-assign,no-await-in-loop */
-
 const fs = require('fs');
 const path = require('path');
 
@@ -50,6 +48,7 @@ describe('BlockIterator', () => {
     let done;
     let block;
 
+    // eslint-disable-next-line no-cond-assign
     while ({ done, value: block } = await blockIterator.next()) {
       if (done) {
         break;
