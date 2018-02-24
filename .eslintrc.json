@@ -5,5 +5,8 @@
       "no-plusplus": 0,
       "eol-last": ["error", "always"],
       "no-console": "off"
+    },
+    "env": {
+      "jasmine": true
     }
   }
