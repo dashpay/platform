@@ -6,7 +6,7 @@ module.exports = {
     // Custom genesis to test with lower difficulty
     return utils.normalizeHeader({
       version: 1,
-      previousblockhash: null,
+      previousblockhash: '0000000000000000000000000000000000000000000000000000000000000000',
       merkleroot: DashUtil.nullHash.toString('hex'),
       time: 1504510163,
       bits: '1fffffff',
