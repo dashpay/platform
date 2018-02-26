@@ -17,7 +17,7 @@ module.exports = {
     // Custom genesis to test with lower difficulty
     return utils.normalizeHeader({
       version: 1,
-      previousblockhash: null,
+      previousblockhash: '0000000000000000000000000000000000000000000000000000000000000000',
       merkleroot: 'e0028eb9648db56b1ac77cf090b99048a8007e2bb64b68f092c03c7f56a662c7',
       time: 1390666206,
       bits: '1e0ffff0',
