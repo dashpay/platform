@@ -1,4 +1,3 @@
-// create blockchain
 const Blockchain = require('../lib/spvchain');
 const chainManager = require('./chainmanager');
 
@@ -59,23 +58,15 @@ let headers = [];
 
 
 function initChain() {
-  return new Promise((resolve, reject) => {
-    chain = new Blockchain(null, 'testnet');
-    chain.on('ready', () => {
-      resolve(true);
-    }, this);
-
-    chain.on('error', (err) => {
-      reject(err);
-    });
-  });
+  chain = new Blockchain(null, 'testnet');
+  return chain.initStore();
 }
 
+/* eslint no-underscore-dangle: ["error", { "allow": ["_getHash"] }] */
+
+
 describe('SPV-DASH (forks & re-orgs)', () => {
-  it('should wait for chain to be ready', () => initChain()
-    .then((res) => {
-      res.should.be.true();
-    }));
+  before(() => initChain());
 
   // save to disk to speedup
   it('should mine 5 test headers', () => {
