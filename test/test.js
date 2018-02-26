@@ -3,7 +3,7 @@ const chainManager = require('./chainmanager');
 
 let chain = null;
 let headers = [];
-// const should = require('should');
+require('should');
 
 // function doConstuctChainThenValidateTest() {
 //   const filterAddr = 'yMSUh839et5ZF8bk3SXHA7NPbyDgigUbfG'; // optional for bloomfilters
