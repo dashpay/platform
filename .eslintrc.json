@@ -7,6 +7,6 @@
       "no-console": "off"
     },
     "env": {
-      "jasmine": true
+      "mocha": true
     }
   }
