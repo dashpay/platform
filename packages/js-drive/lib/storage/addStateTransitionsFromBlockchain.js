@@ -17,7 +17,7 @@ async function addStateTransitionsFromBlockchain(ipfsAPI, stateTransitionHeaderI
     // TODO: Check number of confirmations. Should be more or equal than 6?
     // TODO: Validate packet using header?
 
-    await ipfsAPI.pin.add(stateTransitionHeader.storageHash, { recursive: true });
+    await ipfsAPI.pin.add(stateTransitionHeader.getStorageHash(), { recursive: true });
   }
 }
 

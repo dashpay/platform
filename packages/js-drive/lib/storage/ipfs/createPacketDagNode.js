@@ -12,6 +12,7 @@ const createDagNode = util.promisify(dagPB.DAGNode.create);
  */
 module.exports = async function createPacketDagNode(packetData, objectCids) {
   const dagLinksToObjects = objectCids.map(objectCid => new dagPB.DAGLink('', 0, objectCid));
+  // TODO: Use CBOR to ensure deterministic object and eventually hash
   const serializedData = JSON.stringify(packetData);
 
   return createDagNode(serializedData, dagLinksToObjects);

@@ -1,6 +1,3 @@
-const fs = require('fs');
-const path = require('path');
-
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
@@ -8,8 +5,8 @@ const sinonChai = require('sinon-chai');
 use(sinonChai);
 
 const StateTransitionHeaderIterator = require('../../lib/blockchain/StateTransitionHeaderIterator');
-const StateTransitionHeader = require('../../lib/blockchain/StateTransitionHeader');
-
+const getTransitionHeaderFixtures = require('../../lib/test/fixtures/getTransitionHeaderFixtures');
+const getBlockFixtures = require('../../lib/test/fixtures/getBlockFixtures');
 
 describe('StateTransitionHeaderIterator', () => {
   let blocks;
@@ -25,17 +22,14 @@ describe('StateTransitionHeaderIterator', () => {
       this.sinon.restore();
     }
 
-    const blocksJSON = fs.readFileSync(path.join(__dirname, '/../fixtures/blocks.json'));
-    blocks = JSON.parse(blocksJSON);
-
-    const transitionHeadersJSON = fs.readFileSync(path.join(__dirname, '/../fixtures/stateTransitionHeaders.json'));
-    transitionHeaders = JSON.parse(transitionHeadersJSON);
+    blocks = getBlockFixtures();
+    transitionHeaders = getTransitionHeaderFixtures();
 
     let currentBlockIndex = 0;
     blockIteratorMock = {
       rpcClient: {
         getTransitionHeader(tsid, callback) {
-          callback(null, { result: transitionHeaders.find(header => header.tsid === tsid) });
+          callback(null, { result: transitionHeaders.find(h => h.getHash() === tsid) });
         },
       },
       async next() {
@@ -56,7 +50,7 @@ describe('StateTransitionHeaderIterator', () => {
   });
 
   it('should iterate over State Transitions from BlockIterator', async () => {
-    const obtainedHeaders = [];
+    const obtainedTransitionHeaders = [];
 
     const stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIteratorMock);
 
@@ -69,13 +63,15 @@ describe('StateTransitionHeaderIterator', () => {
         break;
       }
 
-      obtainedHeaders.push(header);
+      obtainedTransitionHeaders.push(header);
     }
 
     expect(getTransitionHeaderSpy).has.callCount(transitionHeaders.length);
     expect(nextSpy).has.callCount(blocks.length + 1);
 
-    const transitionHeaderObjects = transitionHeaders.map(h => new StateTransitionHeader(h));
-    expect(obtainedHeaders).to.be.deep.equal(transitionHeaderObjects);
+    const obtainedHeaderHashes = obtainedTransitionHeaders.map(h => h.getHash());
+    const transitionHeaderHashes = transitionHeaders.map(h => h.getHash());
+
+    expect(obtainedHeaderHashes).to.be.deep.equal(transitionHeaderHashes);
   });
 });

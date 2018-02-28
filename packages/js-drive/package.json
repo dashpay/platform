@@ -8,6 +8,7 @@
   },
   "scripts": {
     "rpc": "node scripts/rpc",
+    "storageSync": "node scripts/rpc",
     "lint": "eslint **/*.js",
     "test": "mocha './test/**/*.spec.js'"
   },
@@ -38,13 +39,14 @@
   },
   "dependencies": {
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
+    "bitcore-lib-dash": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop",
     "bitcoind-rpc-dash": "^1.0.1",
-    "jayson": "^2.0.5",
     "cbor": "^3.0.3",
     "cids": "^0.5.2",
     "dotenv": "^5.0.0",
     "ipfs-api": "^17.5.0",
     "ipld-dag-pb": "^0.13.0",
+    "jayson": "^2.0.5",
     "multihashing-async": "^0.4.7"
   }
 }
