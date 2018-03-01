@@ -12,10 +12,26 @@ module.exports = class StateTransitionHeaderIterator {
 
     this.promisifiedRpcClient = promisifyMethods(this.blockIterator.rpcClient, ['getTransitionHeader']);
 
+    this.reset(true);
+  }
+
+  /**
+   * Reset iterator
+   */
+  reset(onlyHeaders = false) {
+    if (!onlyHeaders) {
+      this.blockIterator.reset();
+    }
+
     this.currentBlock = null;
     this.currentTransitionIndex = 0;
   }
 
+  /**
+   * Get next ST header
+   *
+   * @return {Promise<Object>}
+   */
   async next() {
     for (;;) {
       if (!this.currentBlock) {

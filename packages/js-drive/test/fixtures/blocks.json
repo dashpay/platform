@@ -3,7 +3,7 @@
     "hash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f84",
     "confirmations": 3,
     "size": 377,
-    "height": 4612,
+    "height": 1,
     "version": 536870913,
     "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
     "tx": [
@@ -25,7 +25,7 @@
     "hash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f85",
     "confirmations": 2,
     "size": 377,
-    "height": 4613,
+    "height": 2,
     "version": 536870913,
     "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
     "tx": [
@@ -47,7 +47,7 @@
     "hash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f86",
     "confirmations": 1,
     "size": 377,
-    "height": 4614,
+    "height": 3,
     "version": 536870913,
     "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
     "tx": [

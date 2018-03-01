@@ -32,6 +32,9 @@ describe('StateTransitionHeaderIterator', () => {
           callback(null, { result: transitionHeaders.find(h => h.getHash() === tsid) });
         },
       },
+      getBlockHeight() {
+        return blocks[currentBlockIndex].height;
+      },
       async next() {
         if (!blocks[currentBlockIndex]) {
           return Promise.resolve({ done: true });
@@ -42,6 +45,9 @@ describe('StateTransitionHeaderIterator', () => {
         currentBlockIndex++;
 
         return Promise.resolve({ done: false, value: currentBlock });
+      },
+      reset() {
+        currentBlockIndex = 0;
       },
     };
 
@@ -73,5 +79,17 @@ describe('StateTransitionHeaderIterator', () => {
     const transitionHeaderHashes = transitionHeaders.map(h => h.getHash());
 
     expect(obtainedHeaderHashes).to.be.deep.equal(transitionHeaderHashes);
+  });
+
+  it('should iterate from begging when "reset" method is called', async () => {
+    const stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIteratorMock);
+
+    const { value: firstHeader } = await stateTransitionHeaderIterator.next();
+
+    stateTransitionHeaderIterator.reset();
+
+    const { value: secondHeader } = await stateTransitionHeaderIterator.next();
+
+    expect(firstHeader.getHash()).to.be.equal(secondHeader.getHash());
   });
 });

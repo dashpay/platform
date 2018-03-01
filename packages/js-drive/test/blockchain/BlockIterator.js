@@ -1,10 +1,13 @@
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
+const chaiAsPromised = require('chai-as-promised');
 
+use(chaiAsPromised);
 use(sinonChai);
 
 const BlockIterator = require('../../lib/blockchain/BlockIterator');
+const WrongBlocksSequenceError = require('../../lib/blockchain/WrongBlocksSequenceError');
 const getBlockFixtures = require('../../lib/test/fixtures/getBlockFixtures');
 
 describe('BlockIterator', () => {
@@ -23,14 +26,24 @@ describe('BlockIterator', () => {
     blocks = getBlockFixtures();
 
     rpcClientMock = {
+      getBlockReturnValue: null,
+
       getBlockHash(height, callback) {
-        callback(null, { result: blocks[0].hash });
+        const block = blocks.find(b => b.height === height);
+        callback(null, { result: block ? block.hash : null });
       },
       getBlock(hash, callback) {
-        callback(null, { result: blocks.find(block => block.hash === hash) });
+        let block = this.getBlockReturnValue;
+        if (!block) {
+          block = blocks.find(b => b.hash === hash);
+        }
+
+        callback(null, { result: block });
+      },
+      setGetBlockReturnValue(value) {
+        this.getBlockReturnValue = value;
       },
     };
-
 
     getBlockHashSpy = this.sinon.spy(rpcClientMock, 'getBlockHash');
     getBlockSpy = this.sinon.spy(rpcClientMock, 'getBlock');
@@ -57,5 +70,42 @@ describe('BlockIterator', () => {
     expect(getBlockHashSpy).to.be.calledOnce.and.calledWith(fromBlockHeight);
     expect(getBlockSpy).has.callCount(blocks.length);
     expect(obtainedBlocks).to.be.deep.equal(blocks);
+  });
+
+  it('should should throws error if blocks sequence is wrong (e.g. reorg)', async () => {
+    const blockIterator = new BlockIterator(rpcClientMock);
+
+    await blockIterator.next();
+
+    rpcClientMock.setGetBlockReturnValue(blocks[2]);
+
+    expect(blockIterator.next()).to.be.rejectedWith(WrongBlocksSequenceError);
+  });
+
+  it('should iterate from begging when "reset" method is called', async () => {
+    const blockIterator = new BlockIterator(rpcClientMock);
+
+    const { value: firstBlock } = await blockIterator.next();
+
+    blockIterator.reset();
+
+    const { value: secondBlock } = await blockIterator.next();
+
+    expect(firstBlock).to.be.equal(secondBlock);
+  });
+
+  it('should iterate since new blockHeight', async () => {
+    const blockIterator = new BlockIterator(rpcClientMock);
+
+    const { value: firstBlock } = await blockIterator.next();
+
+    blockIterator.setBlockHeight(1);
+
+    const { value: secondBlock } = await blockIterator.next();
+    const { value: thirdBlock } = await blockIterator.next();
+
+    expect(firstBlock).to.be.equal(secondBlock);
+
+    expect(blockIterator.getBlockHeight()).to.be.equal(thirdBlock.height);
   });
 });
