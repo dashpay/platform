@@ -1,15 +1,37 @@
-sudo: false
+sudo: required
 dist: trusty
 language: node_js
+
+services:
+  - docker
+
+addons:
+  apt:
+    packages:
+      - docker-ce
+
+env:
+  - DOCKER_COMPOSE_VERSION: 1.18.0
+
 node_js:
   - 'node'
 
 before_install:
+  # Install Node.js
   - nvm install 8
   - nvm use 8
 
+  # Install and start docker compose
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - chmod +x docker-compose
+  - sudo mv docker-compose /usr/local/bin
+  - docker-compose up -d
+  - docker ps
+
 install:
   - npm install
+  - cp .env.example .env
 
 script:
   - npm run lint
