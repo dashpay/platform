@@ -1,15 +1,15 @@
 /**
- * Add State Transitions from blockchain
+ * Add State Transition Packets from blockchain since block height
  *
  * @param {IpfsAPI} ipfsAPI
- * @param {StateTransitionHeaderIterator} stateTransitionHeaderIterator
+ * @param {StateTransitionHeaderIterator} stHeaderIterator
  */
-async function addStateTransitionsFromBlockchain(ipfsAPI, stateTransitionHeaderIterator) {
+module.exports = async function pinSTPacketsSinceBlock(ipfsAPI, stHeaderIterator) {
   let done;
   let stateTransitionHeader;
 
   // eslint-disable-next-line no-cond-assign
-  while ({ done, value: stateTransitionHeader } = await stateTransitionHeaderIterator.next()) {
+  while ({ done, value: stateTransitionHeader } = await stHeaderIterator.next()) {
     if (done) {
       break;
     }
@@ -19,6 +19,4 @@ async function addStateTransitionsFromBlockchain(ipfsAPI, stateTransitionHeaderI
 
     await ipfsAPI.pin.add(stateTransitionHeader.getStorageHash(), { recursive: true });
   }
-}
-
-module.exports = addStateTransitionsFromBlockchain;
+};
