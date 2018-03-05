@@ -40,12 +40,22 @@ module.exports = class BlockIterator {
   }
 
   /**
+   * Get current block
+   *
+   * @return {null|Object}
+   */
+  getCurrentBlock() {
+    return this.currentBlock;
+  }
+
+  /**
    * Reset iterator
    */
   reset() {
     this.nextBlockHash = null;
     this.nextBlockHeight = this.fromBlockHeight;
 
+    this.currentBlock = null;
     this.previousBlock = null;
   }
 
@@ -59,6 +69,7 @@ module.exports = class BlockIterator {
 
     if (this.nextBlockHash) {
       const { result: block } = await this.promisifiedRpcClient.getBlock(this.nextBlockHash);
+      this.currentBlock = block;
 
       if (!block) {
         throw new WrongBlocksSequenceError();

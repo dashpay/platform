@@ -94,18 +94,39 @@ describe('BlockIterator', () => {
     expect(firstBlock).to.be.equal(secondBlock);
   });
 
-  it('should iterate since new blockHeight', async () => {
+  it('should iterate since new block height', async () => {
     const blockIterator = new BlockIterator(rpcClientMock);
 
     const { value: firstBlock } = await blockIterator.next();
 
+    expect(blockIterator.getBlockHeight()).to.be.equal(firstBlock.height);
+
     blockIterator.setBlockHeight(1);
 
     const { value: secondBlock } = await blockIterator.next();
+
+    expect(blockIterator.getBlockHeight()).to.be.equal(secondBlock.height);
+
     const { value: thirdBlock } = await blockIterator.next();
 
     expect(firstBlock).to.be.equal(secondBlock);
 
     expect(blockIterator.getBlockHeight()).to.be.equal(thirdBlock.height);
+  });
+
+  it('should returns current block', async () => {
+    const blockIterator = new BlockIterator(rpcClientMock);
+
+    const { value: firstBlock } = await blockIterator.next();
+
+    expect(blockIterator.getCurrentBlock()).to.be.equal(firstBlock);
+
+    const { value: secondBlock } = await blockIterator.next();
+
+    expect(blockIterator.getCurrentBlock()).to.be.equal(secondBlock);
+
+    const { value: thirdBlock } = await blockIterator.next();
+
+    expect(blockIterator.getCurrentBlock()).to.be.equal(thirdBlock);
   });
 });

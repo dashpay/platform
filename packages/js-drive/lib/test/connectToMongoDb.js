@@ -22,7 +22,9 @@ function connectToMongoDb() {
     });
 
     after(async () => {
-      await client.close();
+      if (client) {
+        await client.close();
+      }
     });
   });
 }

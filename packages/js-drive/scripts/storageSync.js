@@ -6,9 +6,10 @@ const zmq = require('zeromq');
 const IpfsAPI = require('ipfs-api');
 const RpcClient = require('bitcoind-rpc-dash');
 
-const pinSTPacketsSinceBlock = require('../lib/storage/pinSTPacketsSinceBlock');
-const StateTransitionHeaderIterator = require('../lib/blockchain/StateTransitionHeaderIterator');
 const BlockIterator = require('../lib/blockchain/BlockIterator');
+const StateTransitionHeaderIterator = require('../lib/blockchain/StateTransitionHeaderIterator');
+const STHeadersIterationEventEmitter = require('../lib/blockchain/STHeadersIterationEventEmitter');
+const attachPinSTPacketHandler = require('../lib/storage/attachPinSTPacketHandler');
 
 const ipfsAPI = new IpfsAPI(process.env.STORAGE_IPFS_MULTIADDR);
 
@@ -28,7 +29,11 @@ async function main() {
   const blockIterator = new BlockIterator(rpcClient, process.env.EVO_GENESIS_BLOCK_HEIGHT);
   const stHeaderIterator = new StateTransitionHeaderIterator(blockIterator);
 
-  await pinSTPacketsSinceBlock(ipfsAPI, stHeaderIterator);
+  const iterationEmitter = new STHeadersIterationEventEmitter(stHeaderIterator);
+
+  attachPinSTPacketHandler(ipfsAPI, iterationEmitter);
+
+  await iterationEmitter.iterate();
 
   // Sync arriving ST packets
   const zmqSocket = zmq.createSocket('sub');
@@ -41,7 +46,7 @@ async function main() {
       return;
     }
 
-    await pinSTPacketsSinceBlock(ipfsAPI, stHeaderIterator);
+    await iterationEmitter.iterate();
 
     inSync = false;
   }).catch(handleError));
