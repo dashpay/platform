@@ -60,37 +60,33 @@ require('should');
 // }
 
 
-function initChain() {
-  chain = new Blockchain(null, 'testnet');
-  return chain.initStore();
-}
-
-/* eslint no-underscore-dangle: ["error", { "allow": ["_getHash"] }] */
-
-
 describe('SPV-DASH (forks & re-orgs)', () => {
-  before(() => initChain());
-
-  // save to disk to speedup
-  it('should mine 5 test headers', () => {
+  before(() => {
     headers = chainManager.fetchHeaders();
-    headers.length.should.equal(5);
+    chain = new Blockchain(null, 'testnet');
   });
 
-  it('should create a fork when adding header 0', () => {
+  it('should get 25 testnet headers', () => {
+    headers.length.should.equal(25);
+  });
+
+  it('should contain no forks when chain is initialised with genesis block', () => {
+    chain.forkedChains.length.should.equal(0);
+  });
+
+  it('should contain genesis hash', () => {
+    chain.getTipHash().should.equal('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c');
+  });
+
+  it('should contain a fork of 1 when first header is added', () => {
     chain.addHeader(headers[0]);
     chain.forkedChains.length.should.equal(1);
   });
 
-  it('should create a second fork when adding header 1', () => {
-    chain.addHeader(headers[1]);
-    chain.forkedChains.length.should.equal(2);
-  });
-
-  it('should have 4 total blocks on chain 2 (strongest chain) after adding headers 2,3 and 4', () => {
-    chain.addHeaders(headers.slice(2, 5));
-    // genesis block + 1 matured block + 2 forked/pending blocks
-    chain.getChainHeight().should.equal(4);
+  it('should contain correct tip and height when remaining headers [1..24] is added', () => {
+    headers.shift();
+    chain.addHeaders(headers);
+    chain.getChainHeight().should.equal(26);
   });
 });
 
