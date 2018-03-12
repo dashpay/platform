@@ -66,4 +66,14 @@ services:
       - ipfs
       - insight
     ports:
-      - 127.0.0.1:6001:3000
+      - 127.0.0.1:3000:3000
+    environment:
+      - INSIGHT_URI=http://insight:3001/insight-api-dash
+      - RPC_SERVER_PORT=3000
+      - DASHCORE_RPC_HOST=core
+      - DASHCORE_RPC_PORT=20002
+      - DASHCORE_RPC_USER=dashrpc
+      - DASHCORE_RPC_PASS=password
+      - DASHCORE_ZMQ_HOST=core
+      - DASHCORE_ZMQ_PORT=29998
+      - NETWORK=$DASH_NETWORK
