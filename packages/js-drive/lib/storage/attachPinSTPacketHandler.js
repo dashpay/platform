@@ -2,12 +2,12 @@
  * Add State Transition Packet from blockchain when new ST header will appear.
  *
  * @param {IpfsAPI} ipfsAPI
- * @param {STHeadersIterationEventEmitter} iterationEmitter
+ * @param {STHeadersReader} stHeadersReader
  */
-module.exports = function attachPinSTPacketHandler(ipfsAPI, iterationEmitter) {
+module.exports = function attachPinSTPacketHandler(ipfsAPI, stHeadersReader) {
   // TODO: Check number of confirmations. Should be more or equal than 6?
 
-  iterationEmitter.on('header', (header) => {
+  stHeadersReader.on('header', (header) => {
     ipfsAPI.pin.add(header.getStorageHash(), { recursive: true });
   });
 };

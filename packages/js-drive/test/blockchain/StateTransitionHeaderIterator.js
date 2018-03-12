@@ -4,16 +4,14 @@ const sinonChai = require('sinon-chai');
 
 use(sinonChai);
 
+const RpcClientMock = require('../../lib/test/mock/RpcClientMock');
+const BlockIterator = require('../../lib/blockchain/BlockIterator');
 const StateTransitionHeaderIterator = require('../../lib/blockchain/StateTransitionHeaderIterator');
-const getTransitionHeaderFixtures = require('../../lib/test/fixtures/getTransitionHeaderFixtures');
-const getBlockFixtures = require('../../lib/test/fixtures/getBlockFixtures');
 
 describe('StateTransitionHeaderIterator', () => {
-  let blocks;
-  let transitionHeaders;
-  let blockIteratorMock;
-  let getTransitionHeaderSpy;
-  let nextSpy;
+  let rpcClientMock;
+  let blockIterator;
+  let stateTransitionHeaderIterator;
 
   beforeEach(function beforeEach() {
     if (!this.sinon) {
@@ -22,43 +20,15 @@ describe('StateTransitionHeaderIterator', () => {
       this.sinon.restore();
     }
 
-    blocks = getBlockFixtures();
-    transitionHeaders = getTransitionHeaderFixtures();
+    rpcClientMock = new RpcClientMock(this.sinon);
+    blockIterator = new BlockIterator(rpcClientMock);
+    stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIterator);
 
-    let currentBlockIndex = 0;
-    blockIteratorMock = {
-      rpcClient: {
-        getTransitionHeader(tsid, callback) {
-          callback(null, { result: transitionHeaders.find(h => h.getHash() === tsid) });
-        },
-      },
-      getBlockHeight() {
-        return blocks[currentBlockIndex].height;
-      },
-      async next() {
-        if (!blocks[currentBlockIndex]) {
-          return Promise.resolve({ done: true });
-        }
-
-        const currentBlock = blocks[currentBlockIndex];
-
-        currentBlockIndex++;
-
-        return Promise.resolve({ done: false, value: currentBlock });
-      },
-      reset() {
-        currentBlockIndex = 0;
-      },
-    };
-
-    getTransitionHeaderSpy = this.sinon.spy(blockIteratorMock.rpcClient, 'getTransitionHeader');
-    nextSpy = this.sinon.spy(blockIteratorMock, 'next');
+    this.sinon.spy(blockIterator, 'next');
   });
 
-  it('should iterate over State Transitions from BlockIterator', async () => {
+  it('should iterate over ST from blocks from BlockIterator', async () => {
     const obtainedTransitionHeaders = [];
-
-    const stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIteratorMock);
 
     let done;
     let header;
@@ -72,18 +42,16 @@ describe('StateTransitionHeaderIterator', () => {
       obtainedTransitionHeaders.push(header);
     }
 
-    expect(getTransitionHeaderSpy).has.callCount(transitionHeaders.length);
-    expect(nextSpy).has.callCount(blocks.length + 1);
+    expect(rpcClientMock.getTransitionHeader).has.callCount(rpcClientMock.transitionHeaders.length);
+    expect(blockIterator.next).has.callCount(rpcClientMock.blocks.length + 1);
 
     const obtainedHeaderHashes = obtainedTransitionHeaders.map(h => h.getHash());
-    const transitionHeaderHashes = transitionHeaders.map(h => h.getHash());
+    const transitionHeaderHashes = rpcClientMock.transitionHeaders.map(h => h.getHash());
 
     expect(obtainedHeaderHashes).to.be.deep.equal(transitionHeaderHashes);
   });
 
   it('should iterate from begging when "reset" method is called', async () => {
-    const stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIteratorMock);
-
     const { value: firstHeader } = await stateTransitionHeaderIterator.next();
 
     stateTransitionHeaderIterator.reset();

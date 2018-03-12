@@ -1,7 +1,7 @@
 [
   {
     "hash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f84",
-    "confirmations": 3,
+    "confirmations": 4,
     "size": 377,
     "height": 1,
     "version": 536870913,
@@ -23,7 +23,7 @@
   },
   {
     "hash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f85",
-    "confirmations": 2,
+    "confirmations": 3,
     "size": 377,
     "height": 2,
     "version": 536870913,
@@ -45,7 +45,7 @@
   },
   {
     "hash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f86",
-    "confirmations": 1,
+    "confirmations": 2,
     "size": 377,
     "height": 3,
     "version": 536870913,
@@ -63,6 +63,27 @@
     "bits": "1d00dda1",
     "difficulty": 1.155066358813473,
     "chainwork": "000000000000000000000000000000000000000000000000000001c3e86f0f04",
-    "previousblockhash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f85"
+    "previousblockhash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f85",
+    "nextblockhash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f87"
+  },
+  {
+    "hash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f87",
+    "confirmations": 1,
+    "size": 377,
+    "height": 4,
+    "version": 536870913,
+    "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
+    "tx": [
+    ],
+    "ts": [
+      "074c4e99c3e0c8e7395739244d0153d3565225a68d81c6f095e8acd6a0f6681a"
+    ],
+    "time": 1507208925,
+    "mediantime": 1507208645,
+    "nonce": 1449878272,
+    "bits": "1d00dda1",
+    "difficulty": 1.155066358813473,
+    "chainwork": "000000000000000000000000000000000000000000000000000001c3e86f0f04",
+    "previousblockhash": "0000000037955fcc39af8b1ae75914ffb422313c0fca7eba96a1ac99c2e57f86"
   }
 ]

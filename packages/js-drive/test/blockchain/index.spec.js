@@ -2,5 +2,6 @@
 describe('Blockchain', () => {
   require('./BlockIterator');
   require('./StateTransitionHeaderIterator');
-  require('./STHeadersIterationEventEmitter');
+  require('./STHeadersReader');
+  require('./STHeadersReaderState');
 });

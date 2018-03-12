@@ -1,14 +1,17 @@
+const Emittery = require('emittery');
+
 const promisifyMethods = require('../util/promisifyMethods');
-const WrongBlocksSequenceError = require('./WrongBlocksSequenceError');
 
 // TODO: It might be part of SDK in the future
 
-module.exports = class BlockIterator {
+module.exports = class BlockIterator extends Emittery {
   /**
    * @param {RpcClient} rpcClient
    * @param {number} fromBlockHeight
    */
   constructor(rpcClient, fromBlockHeight = 1) {
+    super();
+
     this.rpcClient = rpcClient;
     this.promisifiedRpcClient = promisifyMethods(rpcClient, ['getBlockHash', 'getBlock']);
 
@@ -16,7 +19,7 @@ module.exports = class BlockIterator {
   }
 
   /**
-   * Set block height
+   * Set block height since iterator starts
    *
    * @param {number} height
    */
@@ -32,20 +35,11 @@ module.exports = class BlockIterator {
    * @return {number}
    */
   getBlockHeight() {
-    if (this.previousBlock) {
-      return this.previousBlock.height;
+    if (this.currentBlock) {
+      return this.currentBlock.height;
     }
 
     return this.fromBlockHeight;
-  }
-
-  /**
-   * Get current block
-   *
-   * @return {null|Object}
-   */
-  getCurrentBlock() {
-    return this.currentBlock;
   }
 
   /**
@@ -53,10 +47,9 @@ module.exports = class BlockIterator {
    */
   reset() {
     this.nextBlockHash = null;
-    this.nextBlockHeight = this.fromBlockHeight;
 
     this.currentBlock = null;
-    this.previousBlock = null;
+    this.firstIteration = true;
   }
 
   /**
@@ -70,21 +63,9 @@ module.exports = class BlockIterator {
     if (this.nextBlockHash) {
       const { result: block } = await this.promisifiedRpcClient.getBlock(this.nextBlockHash);
       this.currentBlock = block;
-
-      if (!block) {
-        throw new WrongBlocksSequenceError();
-      }
-
-      if (!this.previousBlock) {
-        this.previousBlock = block;
-      } else if (block.previousblockhash && block.previousblockhash !== this.previousBlock.hash) {
-        throw new WrongBlocksSequenceError();
-      }
-
-      this.nextBlockHeight = block.height + 1;
       this.nextBlockHash = block.nextblockhash;
 
-      this.previousBlock = block;
+      await this.emitSerial('block', block);
 
       return { done: false, value: block };
     }
@@ -97,11 +78,12 @@ module.exports = class BlockIterator {
    * @return {Promise<void>}
    */
   async initializeNextBlockHash() {
-    if (this.previousBlock) {
+    if (!this.firstIteration) {
       return;
     }
 
-    const response = await this.promisifiedRpcClient.getBlockHash(this.nextBlockHeight);
+    const response = await this.promisifiedRpcClient.getBlockHash(this.fromBlockHeight);
     this.nextBlockHash = response.result;
+    this.firstIteration = false;
   }
 };

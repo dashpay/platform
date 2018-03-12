@@ -8,7 +8,8 @@ const RpcClient = require('bitcoind-rpc-dash');
 
 const BlockIterator = require('../lib/blockchain/BlockIterator');
 const StateTransitionHeaderIterator = require('../lib/blockchain/StateTransitionHeaderIterator');
-const STHeadersIterationEventEmitter = require('../lib/blockchain/STHeadersIterationEventEmitter');
+const STHeadersReaderState = require('../lib/blockchain/STHeadersReaderState');
+const STHeadersReader = require('../lib/blockchain/STHeadersReader');
 const attachPinSTPacketHandler = require('../lib/storage/attachPinSTPacketHandler');
 
 const ipfsAPI = new IpfsAPI(process.env.STORAGE_IPFS_MULTIADDR);
@@ -26,14 +27,14 @@ async function main() {
     user: process.env.DASHCORE_JSON_RPC_USER,
     pass: process.env.DASHCORE_JSON_RPC_PASS,
   });
-  const blockIterator = new BlockIterator(rpcClient, process.env.EVO_GENESIS_BLOCK_HEIGHT);
+  const blockIterator = new BlockIterator(rpcClient, process.env.SYNC_EVO_START_BLOCK_HEIGHT);
   const stHeaderIterator = new StateTransitionHeaderIterator(blockIterator);
+  const readerState = new STHeadersReaderState([], process.env.SYNC_STATE_BLOCKS_LIMIT);
+  const stHeaderReader = new STHeadersReader(stHeaderIterator, readerState);
 
-  const iterationEmitter = new STHeadersIterationEventEmitter(stHeaderIterator);
+  attachPinSTPacketHandler(ipfsAPI, stHeaderReader);
 
-  attachPinSTPacketHandler(ipfsAPI, iterationEmitter);
-
-  await iterationEmitter.iterate();
+  await stHeaderReader.read();
 
   // Sync arriving ST packets
   const zmqSocket = zmq.createSocket('sub');
@@ -46,7 +47,7 @@ async function main() {
       return;
     }
 
-    await iterationEmitter.iterate();
+    await stHeaderReader.read();
 
     inSync = false;
   }).catch(handleError));

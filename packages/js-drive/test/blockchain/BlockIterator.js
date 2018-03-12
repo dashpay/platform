@@ -1,20 +1,18 @@
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
-const chaiAsPromised = require('chai-as-promised');
+const dirtyChai = require('dirty-chai');
 
-use(chaiAsPromised);
 use(sinonChai);
+use(dirtyChai);
 
+const RpcClientMock = require('../../lib/test/mock/RpcClientMock');
 const BlockIterator = require('../../lib/blockchain/BlockIterator');
-const WrongBlocksSequenceError = require('../../lib/blockchain/WrongBlocksSequenceError');
-const getBlockFixtures = require('../../lib/test/fixtures/getBlockFixtures');
 
 describe('BlockIterator', () => {
-  let blocks;
   let rpcClientMock;
-  let getBlockHashSpy;
-  let getBlockSpy;
+  let fromBlockHeight;
+  let blockIterator;
 
   beforeEach(function beforeEach() {
     if (!this.sinon) {
@@ -23,37 +21,13 @@ describe('BlockIterator', () => {
       this.sinon.restore();
     }
 
-    blocks = getBlockFixtures();
-
-    rpcClientMock = {
-      getBlockReturnValue: null,
-
-      getBlockHash(height, callback) {
-        const block = blocks.find(b => b.height === height);
-        callback(null, { result: block ? block.hash : null });
-      },
-      getBlock(hash, callback) {
-        let block = this.getBlockReturnValue;
-        if (!block) {
-          block = blocks.find(b => b.hash === hash);
-        }
-
-        callback(null, { result: block });
-      },
-      setGetBlockReturnValue(value) {
-        this.getBlockReturnValue = value;
-      },
-    };
-
-    getBlockHashSpy = this.sinon.spy(rpcClientMock, 'getBlockHash');
-    getBlockSpy = this.sinon.spy(rpcClientMock, 'getBlock');
+    fromBlockHeight = 1;
+    rpcClientMock = new RpcClientMock(this.sinon);
+    blockIterator = new BlockIterator(rpcClientMock, fromBlockHeight);
   });
 
   it('should iterate over blocks from blockchain', async () => {
-    const fromBlockHeight = 1;
     const obtainedBlocks = [];
-
-    const blockIterator = new BlockIterator(rpcClientMock, fromBlockHeight);
 
     let done;
     let block;
@@ -67,24 +41,12 @@ describe('BlockIterator', () => {
       obtainedBlocks.push(block);
     }
 
-    expect(getBlockHashSpy).to.be.calledOnce.and.calledWith(fromBlockHeight);
-    expect(getBlockSpy).has.callCount(blocks.length);
-    expect(obtainedBlocks).to.be.deep.equal(blocks);
-  });
-
-  it('should should throws error if blocks sequence is wrong (e.g. reorg)', async () => {
-    const blockIterator = new BlockIterator(rpcClientMock);
-
-    await blockIterator.next();
-
-    rpcClientMock.setGetBlockReturnValue(blocks[2]);
-
-    expect(blockIterator.next()).to.be.rejectedWith(WrongBlocksSequenceError);
+    expect(rpcClientMock.getBlockHash).to.be.calledOnce.and.calledWith(fromBlockHeight);
+    expect(rpcClientMock.getBlock).has.callCount(rpcClientMock.blocks.length);
+    expect(obtainedBlocks).to.be.deep.equal(rpcClientMock.blocks);
   });
 
   it('should iterate from begging when "reset" method is called', async () => {
-    const blockIterator = new BlockIterator(rpcClientMock);
-
     const { value: firstBlock } = await blockIterator.next();
 
     blockIterator.reset();
@@ -95,8 +57,6 @@ describe('BlockIterator', () => {
   });
 
   it('should iterate since new block height', async () => {
-    const blockIterator = new BlockIterator(rpcClientMock);
-
     const { value: firstBlock } = await blockIterator.next();
 
     expect(blockIterator.getBlockHeight()).to.be.equal(firstBlock.height);
@@ -114,19 +74,19 @@ describe('BlockIterator', () => {
     expect(blockIterator.getBlockHeight()).to.be.equal(thirdBlock.height);
   });
 
-  it('should returns current block', async () => {
-    const blockIterator = new BlockIterator(rpcClientMock);
+  it("should emit 'block' event", async function it() {
+    const blockHandlerStub = this.sinon.stub();
+
+    blockIterator.on('block', blockHandlerStub);
 
     const { value: firstBlock } = await blockIterator.next();
 
-    expect(blockIterator.getCurrentBlock()).to.be.equal(firstBlock);
+    expect(blockHandlerStub).to.be.calledOnce();
+    expect(blockHandlerStub).to.be.calledWith(firstBlock);
 
     const { value: secondBlock } = await blockIterator.next();
 
-    expect(blockIterator.getCurrentBlock()).to.be.equal(secondBlock);
-
-    const { value: thirdBlock } = await blockIterator.next();
-
-    expect(blockIterator.getCurrentBlock()).to.be.equal(thirdBlock);
+    expect(blockHandlerStub).to.be.calledTwice();
+    expect(blockHandlerStub).to.be.calledWith(secondBlock);
   });
 });
