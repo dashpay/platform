@@ -5,12 +5,14 @@ const promisifyMethods = require('../util/promisifyMethods');
 
 module.exports = class StateTransitionHeaderIterator {
   /**
-   * @param {BlockIterator} blockIterator
+   * @param {Iterator} blockIterator
+   * @param {RpcClient} rpcClient
    */
-  constructor(blockIterator) {
+  constructor(blockIterator, rpcClient) {
     this.blockIterator = blockIterator;
 
-    this.promisifiedRpcClient = promisifyMethods(this.blockIterator.rpcClient, ['getTransitionHeader']);
+    this.rpcClient = rpcClient;
+    this.promisifiedRpcClient = promisifyMethods(rpcClient, ['getTransitionHeader']);
 
     this.reset(true);
   }

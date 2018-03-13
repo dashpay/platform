@@ -5,7 +5,7 @@ const sinonChai = require('sinon-chai');
 use(sinonChai);
 
 const RpcClientMock = require('../../lib/test/mock/RpcClientMock');
-const BlockIterator = require('../../lib/blockchain/BlockIterator');
+const RpcBlockIterator = require('../../lib/blockchain/RpcBlockIterator');
 const StateTransitionHeaderIterator = require('../../lib/blockchain/StateTransitionHeaderIterator');
 
 describe('StateTransitionHeaderIterator', () => {
@@ -21,8 +21,8 @@ describe('StateTransitionHeaderIterator', () => {
     }
 
     rpcClientMock = new RpcClientMock(this.sinon);
-    blockIterator = new BlockIterator(rpcClientMock);
-    stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIterator);
+    blockIterator = new RpcBlockIterator(rpcClientMock);
+    stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIterator, rpcClientMock);
 
     this.sinon.spy(blockIterator, 'next');
   });

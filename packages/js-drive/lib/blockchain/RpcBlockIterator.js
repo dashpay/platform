@@ -4,7 +4,7 @@ const promisifyMethods = require('../util/promisifyMethods');
 
 // TODO: It might be part of SDK in the future
 
-module.exports = class BlockIterator extends Emittery {
+module.exports = class RpcBlockIterator extends Emittery {
   /**
    * @param {RpcClient} rpcClient
    * @param {number} fromBlockHeight

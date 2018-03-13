@@ -7,7 +7,7 @@ use(dirtyChai);
 use(sinonChai);
 
 const RpcClientMock = require('../../lib/test/mock/RpcClientMock');
-const BlockIterator = require('../../lib/blockchain/BlockIterator');
+const RpcBlockIterator = require('../../lib/blockchain/RpcBlockIterator');
 const StateTransitionHeaderIterator = require('../../lib/blockchain/StateTransitionHeaderIterator');
 const STHeadersReader = require('../../lib/blockchain/STHeadersReader');
 const STHeadersReaderState = require('../../lib/blockchain/STHeadersReaderState');
@@ -36,8 +36,8 @@ describe('STHeadersReader', () => {
     }
 
     rpcClientMock = new RpcClientMock(this.sinon);
-    blockIterator = new BlockIterator(rpcClientMock);
-    stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIterator);
+    blockIterator = new RpcBlockIterator(rpcClientMock);
+    stateTransitionHeaderIterator = new StateTransitionHeaderIterator(blockIterator, rpcClientMock);
 
     const stateData = rpcClientMock.blocks.slice(1, 2);
     const readerState = new STHeadersReaderState(stateData);
