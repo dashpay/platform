@@ -5,12 +5,16 @@ require('dotenv').config();
 const zmq = require('zeromq');
 const IpfsAPI = require('ipfs-api');
 const RpcClient = require('bitcoind-rpc-dash');
+const { MongoClient } = require('mongodb');
 
+const SyncStateRepository = require('../lib/syncState/SyncStateRepository');
 const BlockIterator = require('../lib/blockchain/BlockIterator');
 const StateTransitionHeaderIterator = require('../lib/blockchain/StateTransitionHeaderIterator');
 const STHeadersReaderState = require('../lib/blockchain/STHeadersReaderState');
 const STHeadersReader = require('../lib/blockchain/STHeadersReader');
+
 const attachPinSTPacketHandler = require('../lib/storage/attachPinSTPacketHandler');
+const attachStoreSyncStateHandler = require('../lib/syncState/attachStoreSyncStateHandler');
 
 const ipfsAPI = new IpfsAPI(process.env.STORAGE_IPFS_MULTIADDR);
 
@@ -29,16 +33,22 @@ async function main() {
   });
   const blockIterator = new BlockIterator(rpcClient, process.env.SYNC_EVO_START_BLOCK_HEIGHT);
   const stHeaderIterator = new StateTransitionHeaderIterator(blockIterator);
-  const readerState = new STHeadersReaderState([], process.env.SYNC_STATE_BLOCKS_LIMIT);
-  const stHeaderReader = new STHeadersReader(stHeaderIterator, readerState);
+  const stHeadersReaderState = new STHeadersReaderState([], process.env.SYNC_STATE_BLOCKS_LIMIT);
 
-  attachPinSTPacketHandler(ipfsAPI, stHeaderReader);
+  const mongoClient = await MongoClient.connect(process.env.STORAGE_MONGODB_URL);
+  const mongoDb = mongoClient.db(process.env.STORAGE_MONGODB_DB);
+  const syncStateRepository = new SyncStateRepository(mongoDb);
+  syncStateRepository.populate(stHeadersReaderState);
+
+  const stHeaderReader = new STHeadersReader(stHeaderIterator, stHeadersReaderState);
+
+  attachPinSTPacketHandler(stHeaderReader, ipfsAPI);
+  attachStoreSyncStateHandler(stHeaderReader, syncStateRepository);
 
   await stHeaderReader.read();
 
   // Sync arriving ST packets
   const zmqSocket = zmq.createSocket('sub');
-
   zmqSocket.connect(process.env.DASHCORE_ZMQ_PUB_RAWST);
 
   let inSync = true;
@@ -52,7 +62,7 @@ async function main() {
     inSync = false;
   }).catch(handleError));
 
-  zmqSocket.subscribe('zmqpubhashblock');
+  zmqSocket.subscribe('hashblock');
 }
 
 main().catch(handleError);

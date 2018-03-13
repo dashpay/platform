@@ -57,6 +57,15 @@ module.exports = class STHeadersReader extends Emittery {
   }
 
   /**
+   * Get state
+   *
+   * @return {STHeadersReaderState}
+   */
+  getState() {
+    return this.state;
+  }
+
+  /**
    * @private
    * @return {Promise<void>}
    */
@@ -64,34 +73,16 @@ module.exports = class STHeadersReader extends Emittery {
     const previousBlock = this.state.getLastBlock();
 
     if (this.isNotAbleToVerifySequence(currentBlock, previousBlock)) {
-      await this.emitSerial('wrongSequence', currentBlock);
-
-      this.state.clear();
-
-      this.stHeaderIterator.reset(true);
-      this.stHeaderIterator.blockIterator.setBlockHeight(this.initialBlockHeight);
-
-      this.isHeightChangedInBlockHandler = true;
-
-      return;
+      return this.resetIterator(this.initialBlockHeight, currentBlock);
     }
 
     if (this.isWrongSequence(currentBlock, previousBlock)) {
-      await this.emitSerial('wrongSequence', currentBlock);
-
-      this.state.removeLastBlock();
-
-      this.stHeaderIterator.reset(true);
-      this.stHeaderIterator.blockIterator.setBlockHeight(previousBlock.height);
-
-      this.isHeightChangedInBlockHandler = true;
-
-      return;
+      return this.resetIterator(previousBlock.height, currentBlock);
     }
 
-    await this.emitSerial('block', currentBlock);
-
     this.state.addBlock(currentBlock);
+
+    return this.emitSerial('block', currentBlock);
   }
 
   /**
@@ -116,5 +107,26 @@ module.exports = class STHeadersReader extends Emittery {
     return previousBlock &&
       currentBlock.previousblockhash &&
       currentBlock.previousblockhash !== previousBlock.hash;
+  }
+
+  /**
+   * @private
+   * @param {number} height
+   * @param {Object} currentBlock
+   * @return {Promise<void>}
+   */
+  async resetIterator(height, currentBlock) {
+    await this.emitSerial('wrongSequence', currentBlock);
+
+    this.stHeaderIterator.reset(true);
+    this.stHeaderIterator.blockIterator.setBlockHeight(height);
+
+    this.isHeightChangedInBlockHandler = true;
+
+    if (height === this.initialBlockHeight) {
+      this.state.clear();
+    } else {
+      this.state.removeLastBlock();
+    }
   }
 };

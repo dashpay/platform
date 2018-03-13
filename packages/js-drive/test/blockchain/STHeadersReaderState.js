@@ -25,9 +25,10 @@ describe('STHeadersReaderState', () => {
     expect(state.getLastBlock()).to.be.equals(blocks[1]);
   });
 
-  it('should add bunch of blocks passed to constructor and return all of them', () => {
-    const stateWithBlocks = new STHeadersReaderState(blocks);
-    expect(stateWithBlocks.getBlocks()).to.deep.be.equals(blocks);
+  it('should set blocks and return all of them', () => {
+    state.setBlocks(blocks);
+
+    expect(state.getBlocks()).to.deep.be.equals(blocks);
   });
 
   it('should validate blocks sequence', () => {

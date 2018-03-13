@@ -14,7 +14,7 @@ const getTransitionHeaderFixtures = require('../../lib/test/fixtures/getTransiti
 describe('attachPinSTPacketHandler', () => {
   let transitionHeaders;
   let ipfsAPIMock;
-  let iterationEmitter;
+  let stHeadersReaderMock;
 
   beforeEach(function beforeEach() {
     if (!this.sinon) {
@@ -37,18 +37,18 @@ describe('attachPinSTPacketHandler', () => {
 
     ipfsAPIMock = new IpfsAPI();
 
-    // Mock StateTransitionHeaderIterator
-    iterationEmitter = new Emitter();
+    // Mock STHeadersReader
+    stHeadersReaderMock = new Emitter();
   });
 
-  it('should pin ST packets when new header will appear', async () => {
+  it('should pin ST packets when new header appears', async () => {
     const header = transitionHeaders[0];
 
-    attachPinSTPacketHandler(ipfsAPIMock, iterationEmitter);
+    attachPinSTPacketHandler(stHeadersReaderMock, ipfsAPIMock);
 
-    await iterationEmitter.emitSerial('header', header);
+    await stHeadersReaderMock.emitSerial('header', header);
 
-    expect(ipfsAPIMock.pin.add).has.calledOnce();
-    expect(ipfsAPIMock.pin.add).has.calledWith(header.getStorageHash(), { recursive: true });
+    expect(ipfsAPIMock.pin.add).to.be.calledOnce();
+    expect(ipfsAPIMock.pin.add).to.be.calledWith(header.getStorageHash(), { recursive: true });
   });
 });

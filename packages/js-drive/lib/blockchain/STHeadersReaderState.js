@@ -6,6 +6,15 @@ module.exports = class STHeadersReaderState {
   constructor(blocks = [], blocksLimit = 12) {
     this.blocksLimit = blocksLimit;
 
+    this.setBlocks(blocks);
+  }
+
+  /**
+   * Set blocks
+   *
+   * @param {Object[]} blocks
+   */
+  setBlocks(blocks) {
     this.clear();
 
     blocks.forEach(this.addBlock.bind(this));
@@ -62,7 +71,7 @@ module.exports = class STHeadersReaderState {
   /**
    * Get blocks
    *
-   * @return {Array}
+   * @return {Object[]}
    */
   getBlocks() {
     return this.blocks.slice(this.firstBlockHeight);
