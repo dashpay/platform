@@ -1,5 +1,5 @@
-const ArrayBlockIterator = require('../blockchain/ArrayBlockIterator');
-const StateTransitionHeaderIterator = require('../blockchain/StateTransitionHeaderIterator');
+const ArrayBlockIterator = require('../blockchain/iterator/ArrayBlockIterator');
+const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTransitionHeaderIterator');
 
 /**
  * Add State Transition Packet from blockchain when new ST header will appear.
@@ -10,8 +10,8 @@ const StateTransitionHeaderIterator = require('../blockchain/StateTransitionHead
 module.exports = function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
-  stHeadersReader.on('header', (header) => {
-    ipfsAPI.pin.add(header.getStorageHash(), { recursive: true });
+  stHeadersReader.on('header', async (header) => {
+    await ipfsAPI.pin.add(header.getStorageHash(), { recursive: true });
   });
 
   stHeadersReader.on('wrongSequence', async (block) => {

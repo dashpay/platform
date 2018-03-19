@@ -6,8 +6,8 @@ const dirtyChai = require('dirty-chai');
 use(sinonChai);
 use(dirtyChai);
 
-const getBlockFixtures = require('../../lib/test/fixtures/getBlockFixtures');
-const ArrayBlockIterator = require('../../lib/blockchain/ArrayBlockIterator');
+const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
+const ArrayBlockIterator = require('../../../lib/blockchain/iterator/ArrayBlockIterator');
 
 describe('ArrayBlockIterator', () => {
   let blocks;

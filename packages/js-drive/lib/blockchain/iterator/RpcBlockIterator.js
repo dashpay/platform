@@ -1,10 +1,10 @@
 const Emittery = require('emittery');
 
-const promisifyMethods = require('../util/promisifyMethods');
+const promisifyMethods = require('../../util/promisifyMethods');
 
 // TODO: It might be part of SDK in the future
 
-module.exports = class RpcBlockIterator extends Emittery {
+class RpcBlockIterator extends Emittery {
   /**
    * @param {RpcClient} rpcClient
    * @param {number} fromBlockHeight
@@ -12,7 +12,6 @@ module.exports = class RpcBlockIterator extends Emittery {
   constructor(rpcClient, fromBlockHeight = 1) {
     super();
 
-    this.rpcClient = rpcClient;
     this.promisifiedRpcClient = promisifyMethods(rpcClient, ['getBlockHash', 'getBlock']);
 
     this.setBlockHeight(fromBlockHeight);
@@ -86,4 +85,6 @@ module.exports = class RpcBlockIterator extends Emittery {
     this.nextBlockHash = response.result;
     this.firstIteration = false;
   }
-};
+}
+
+module.exports = RpcBlockIterator;

@@ -46,6 +46,7 @@
     "bitcore-lib-dash": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop",
     "cbor": "^3.0.3",
     "cids": "^0.5.2",
+    "connect": "^3.6.6",
     "dotenv": "^5.0.1",
     "emittery": "^0.3.0",
     "ipfs-api": "^17.5.0",

@@ -25,6 +25,15 @@ module.exports = class RpcClientMock {
   }
 
   /**
+   *
+   * @param {Function} callback
+   */
+  getBlockCount(callback) {
+    const lastBlock = this.blocks[this.blocks.length - 1];
+    callback(null, { result: lastBlock ? lastBlock.height : 0 });
+  }
+
+  /**
    * @param {number} height
    * @param {Function} callback
    */

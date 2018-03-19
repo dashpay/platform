@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 require('dotenv').config();
 
 const zmq = require('zeromq');
@@ -7,23 +5,17 @@ const IpfsAPI = require('ipfs-api');
 const RpcClient = require('bitcoind-rpc-dash');
 const { MongoClient } = require('mongodb');
 
-const SyncStateRepository = require('../lib/syncState/SyncStateRepository');
-const RpcBlockIterator = require('../lib/blockchain/RpcBlockIterator');
-const StateTransitionHeaderIterator = require('../lib/blockchain/StateTransitionHeaderIterator');
-const STHeadersReaderState = require('../lib/blockchain/STHeadersReaderState');
-const STHeadersReader = require('../lib/blockchain/STHeadersReader');
+const SyncStateRepository = require('../lib/sync/state/repository/SyncStateRepository');
+const RpcBlockIterator = require('../lib/blockchain/iterator/RpcBlockIterator');
+const StateTransitionHeaderIterator = require('../lib/blockchain/iterator/StateTransitionHeaderIterator');
+const STHeadersReaderState = require('../lib/blockchain/reader/STHeadersReaderState');
+const STHeadersReader = require('../lib/blockchain/reader/STHeadersReader');
 
 const attachPinSTPacketHandler = require('../lib/storage/attachPinSTPacketHandler');
-const attachStoreSyncStateHandler = require('../lib/syncState/attachStoreSyncStateHandler');
+const attachStoreSyncStateHandler = require('../lib/sync/state/attachStoreSyncStateHandler');
+const errorHandler = require('../lib/util/errorHandler');
 
-const ipfsAPI = new IpfsAPI(process.env.STORAGE_IPFS_MULTIADDR);
-
-function handleError(e) {
-  console.error(e);
-}
-
-// Sync ST packets since genesis block
-async function main() {
+(async function main() {
   const rpcClient = new RpcClient({
     protocol: 'http',
     host: process.env.DASHCORE_JSON_RPC_HOST,
@@ -31,19 +23,32 @@ async function main() {
     user: process.env.DASHCORE_JSON_RPC_USER,
     pass: process.env.DASHCORE_JSON_RPC_PASS,
   });
-  const blockIterator = new RpcBlockIterator(rpcClient, process.env.SYNC_EVO_GENESIS_BLOCK_HEIGHT);
+
+  // TODO: Parse variable to int if present
+  const blockIterator = new RpcBlockIterator(
+    rpcClient,
+    process.env.SYNC_EVO_START_BLOCK_HEIGHT,
+  );
+
   const stHeaderIterator = new StateTransitionHeaderIterator(blockIterator, rpcClient);
-  const stHeadersReaderState = new STHeadersReaderState([], process.env.SYNC_STATE_BLOCKS_LIMIT);
 
   const mongoClient = await MongoClient.connect(process.env.STORAGE_MONGODB_URL);
   const mongoDb = mongoClient.db(process.env.STORAGE_MONGODB_DB);
   const syncStateRepository = new SyncStateRepository(mongoDb);
-  syncStateRepository.populate(stHeadersReaderState);
+  const syncState = await syncStateRepository.fetch();
+
+  // TODO: Parse variable to int if present
+  const stHeadersReaderState = new STHeadersReaderState(
+    syncState.getBlocks(),
+    process.env.SYNC_STATE_BLOCKS_LIMIT,
+  );
 
   const stHeaderReader = new STHeadersReader(stHeaderIterator, stHeadersReaderState);
 
+  const ipfsAPI = new IpfsAPI(process.env.STORAGE_IPFS_MULTIADDR);
+
   attachPinSTPacketHandler(stHeaderReader, ipfsAPI);
-  attachStoreSyncStateHandler(stHeaderReader, syncStateRepository);
+  attachStoreSyncStateHandler(stHeaderReader, syncState, syncStateRepository);
 
   await stHeaderReader.read();
 
@@ -57,15 +62,14 @@ async function main() {
       return;
     }
 
+    // Start sync from the last synced block + 1
     blockIterator.setBlockHeight(blockIterator.getBlockHeight() + 1);
     stHeaderIterator.reset(false);
 
     await stHeaderReader.read();
 
     inSync = false;
-  }).catch(handleError));
+  }).catch(errorHandler));
 
   zmqSocket.subscribe('hashblock');
-}
-
-main().catch(handleError);
+}()).catch(errorHandler);

@@ -6,11 +6,11 @@ const dirtyChai = require('dirty-chai');
 use(dirtyChai);
 use(sinonChai);
 
-const RpcClientMock = require('../../lib/test/mock/RpcClientMock');
-const RpcBlockIterator = require('../../lib/blockchain/RpcBlockIterator');
-const StateTransitionHeaderIterator = require('../../lib/blockchain/StateTransitionHeaderIterator');
-const STHeadersReader = require('../../lib/blockchain/STHeadersReader');
-const STHeadersReaderState = require('../../lib/blockchain/STHeadersReaderState');
+const RpcClientMock = require('../../../lib/test/mock/RpcClientMock');
+const RpcBlockIterator = require('../../../lib/blockchain/iterator/RpcBlockIterator');
+const StateTransitionHeaderIterator = require('../../../lib/blockchain/iterator/StateTransitionHeaderIterator');
+const STHeadersReader = require('../../../lib/blockchain/reader/STHeadersReader');
+const STHeadersReaderState = require('../../../lib/blockchain/reader/STHeadersReaderState');
 
 describe('STHeadersReader', () => {
   let rpcClientMock;
@@ -85,7 +85,7 @@ describe('STHeadersReader', () => {
     expect(endHandlerStub).to.be.calledWith(blockIterator.getBlockHeight());
   });
 
-  it("should emit 'wrongSequence' and read from initial block if not able to verity sequence", async function it() {
+  it('should emit "wrongSequence" and read from initial block if not able to verity sequence', async function it() {
     // 3th block will be wrong on first iteration
     const wrongBlock = setWrongBlockOnCall(this.sinon, 0);
 
@@ -108,7 +108,7 @@ describe('STHeadersReader', () => {
     });
   });
 
-  it("should emit 'wrongSequence' read from previous block if blocks sequence is wrong", async function it() {
+  it('should emit "wrongSequence" read from previous block if blocks sequence is wrong', async function it() {
     // 4th block will be wrong on first iteration
     const wrongBlock = setWrongBlockOnCall(this.sinon, 1);
 

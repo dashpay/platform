@@ -3,8 +3,8 @@ const dirtyChai = require('dirty-chai');
 
 use(dirtyChai);
 
-const STHeadersReaderState = require('../../lib/blockchain/STHeadersReaderState');
-const getBlockFixtures = require('../../lib/test/fixtures/getBlockFixtures');
+const STHeadersReaderState = require('../../../lib/blockchain/reader/STHeadersReaderState');
+const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
 
 describe('STHeadersReaderState', () => {
   let blocks;

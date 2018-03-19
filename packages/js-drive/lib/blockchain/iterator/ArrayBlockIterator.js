@@ -1,6 +1,6 @@
 const Emittery = require('emittery');
 
-module.exports = class ArrayBlockIterator extends Emittery {
+class ArrayBlockIterator extends Emittery {
   /**
    * @param {Object[]} blocks
    */
@@ -37,4 +37,6 @@ module.exports = class ArrayBlockIterator extends Emittery {
 
     return { done: false, value: block };
   }
-};
+}
+
+module.exports = ArrayBlockIterator;

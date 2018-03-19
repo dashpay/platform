@@ -1,3 +1,5 @@
+const SyncState = require('../SyncState');
+
 class SyncStateRepository {
   /**
    * @param {Db} mongoDb
@@ -9,13 +11,13 @@ class SyncStateRepository {
   /**
    * Store synced blocks
    *
-   * @param {STHeadersReaderState} state
+   * @param {SyncState} state
    * @return {Promise}
    */
   async store(state) {
     return this.getCollection().updateOne(
       SyncStateRepository.mongoDbCondition,
-      { $set: { blocks: state.getBlocks() } },
+      { $set: state.toJSON() },
       { upsert: true },
     );
   }
@@ -23,14 +25,15 @@ class SyncStateRepository {
   /**
    * Fetch synced blocks
    *
-   * @return {Promise<STHeadersReaderState>}
+   * @return {Promise<SyncState>}
    */
-  async populate(state) {
-    const { blocks } = await this.getCollection().findOne(SyncStateRepository.mongoDbCondition);
+  async fetch() {
+    const {
+      blocks,
+      lastSyncAt,
+    } = await this.getCollection().findOne(SyncStateRepository.mongoDbCondition);
 
-    state.setBlocks(blocks);
-
-    return state;
+    return new SyncState(blocks, lastSyncAt);
   }
 
   /**

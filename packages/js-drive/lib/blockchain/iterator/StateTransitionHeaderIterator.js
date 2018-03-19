@@ -1,9 +1,9 @@
 // TODO: It might be part of SDK in the future
 
-const StateTransitionHeader = require('./StateTransitionHeader');
-const promisifyMethods = require('../util/promisifyMethods');
+const StateTransitionHeader = require('../StateTransitionHeader');
+const promisifyMethods = require('../../util/promisifyMethods');
 
-module.exports = class StateTransitionHeaderIterator {
+class StateTransitionHeaderIterator {
   /**
    * @param {Iterator} blockIterator
    * @param {RpcClient} rpcClient
@@ -11,7 +11,6 @@ module.exports = class StateTransitionHeaderIterator {
   constructor(blockIterator, rpcClient) {
     this.blockIterator = blockIterator;
 
-    this.rpcClient = rpcClient;
     this.promisifiedRpcClient = promisifyMethods(rpcClient, ['getTransitionHeader']);
 
     this.reset(true);
@@ -61,4 +60,6 @@ module.exports = class StateTransitionHeaderIterator {
       this.currentBlock = null;
     }
   }
-};
+}
+
+module.exports = StateTransitionHeaderIterator;

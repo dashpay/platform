@@ -1,6 +1,6 @@
 const Emittery = require('emittery');
 
-module.exports = class STHeadersReader extends Emittery {
+class STHeadersReader extends Emittery {
   /**
    * @param {StateTransitionHeaderIterator} stHeaderIterator
    * @param {STHeadersReaderState} state
@@ -129,4 +129,6 @@ module.exports = class STHeadersReader extends Emittery {
       this.state.removeLastBlock();
     }
   }
-};
+}
+
+module.exports = STHeadersReader;

@@ -16,6 +16,7 @@ describe('addStateTransitionPacket', () => {
   });
 
   it('should add packets to storage and returns hash', async () => {
+    // TODO: extract to separate method
     const packetsJSON = fs.readFileSync(path.join(__dirname, '/../fixtures/stateTransitionPackets.json'));
     const packetsData = JSON.parse(packetsJSON);
 

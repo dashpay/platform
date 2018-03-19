@@ -1,4 +1,4 @@
-module.exports = class STHeadersReaderState {
+class STHeadersReaderState {
   /**
    * @param {Array} blocks
    * @param {number} blocksLimit
@@ -101,4 +101,6 @@ module.exports = class STHeadersReaderState {
     this.firstBlockHeight++;
     this.blocksCount--;
   }
-};
+}
+
+module.exports = STHeadersReaderState;

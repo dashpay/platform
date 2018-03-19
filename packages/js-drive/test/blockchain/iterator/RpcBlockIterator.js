@@ -6,8 +6,8 @@ const dirtyChai = require('dirty-chai');
 use(sinonChai);
 use(dirtyChai);
 
-const RpcClientMock = require('../../lib/test/mock/RpcClientMock');
-const RpcBlockIterator = require('../../lib/blockchain/RpcBlockIterator');
+const RpcClientMock = require('../../../lib/test/mock/RpcClientMock');
+const RpcBlockIterator = require('../../../lib/blockchain/iterator/RpcBlockIterator');
 
 describe('RpcBlockIterator', () => {
   let rpcClientMock;
