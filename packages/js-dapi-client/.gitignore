@@ -2,4 +2,6 @@
 node_modules/
 launch.json
 _temp/
-package-lock.json
+dist/
+!test/dist
+.nyc_output/

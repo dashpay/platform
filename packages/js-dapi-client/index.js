@@ -1,1 +1,1 @@
-module.exports = require('./Interfaces')
+module.exports = require('./src');

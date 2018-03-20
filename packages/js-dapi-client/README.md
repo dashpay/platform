@@ -21,6 +21,9 @@
   </a>
 </div>
 
+#### Note on software compatibility:
+This package requires the use of Node >= 8.0.0 and is broadly compatible with modern browsers implementing the ECMAScript 2015 standard or better.
+
 ## Table of Content
 - [Features](#features)
 - [Getting Started](#getting-started)

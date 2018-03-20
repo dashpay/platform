@@ -1,0 +1,3 @@
+test/
+dist/
+.nyc_output/
