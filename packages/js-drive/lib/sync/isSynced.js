@@ -14,7 +14,7 @@ module.exports = async function isSynced(rpcClient, stateRepositoryChangeListene
   const stateRepository = stateRepositoryChangeListener.getRepository();
 
   // Compare last block in chain and last synced block
-  const syncState = stateRepository.fetch();
+  const syncState = await stateRepository.fetch();
   const lastSyncedBlock = syncState.getLastBlock();
 
   const { result: blockCount } = await promisifiedRpcClient.getBlockCount();

@@ -56,4 +56,13 @@ describe('SyncStateRepository', () => {
 
     expect(stateFromMongo.toJSON()).to.be.deep.equals(syncState);
   });
+
+  it('should fetch empty state if not present', async () => {
+    const stateFromMongo = await syncStateRepository.fetch();
+
+    expect(stateFromMongo.toJSON()).to.be.deep.equals({
+      blocks: [],
+      lastSyncAt: null,
+    });
+  });
 });

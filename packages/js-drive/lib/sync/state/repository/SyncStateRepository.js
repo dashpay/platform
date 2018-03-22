@@ -28,10 +28,13 @@ class SyncStateRepository {
    * @return {Promise<SyncState>}
    */
   async fetch() {
-    const {
-      blocks,
-      lastSyncAt,
-    } = await this.getCollection().findOne(SyncStateRepository.mongoDbCondition);
+    const stateData = await this.getCollection().findOne(SyncStateRepository.mongoDbCondition);
+
+    let blocks = [];
+    let lastSyncAt = null;
+    if (stateData) {
+      ({ blocks, lastSyncAt } = stateData);
+    }
 
     return new SyncState(blocks, lastSyncAt);
   }

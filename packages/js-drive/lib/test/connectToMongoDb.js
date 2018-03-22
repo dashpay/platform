@@ -13,12 +13,16 @@ function connectToMongoDb() {
 
   return new Promise((resolve) => {
     let client;
+    let db;
 
     before(async () => {
       client = await MongoClient.connect(url);
-      const db = client.db(dbName);
-      await db.dropDatabase();
+      db = client.db(dbName);
       resolve(db);
+    });
+
+    beforeEach(async () => {
+      await db.dropDatabase();
     });
 
     after(async () => {
