@@ -8,7 +8,7 @@
   },
   "scripts": {
     "rpc": "node scripts/rpc",
-    "storageSync": "node scripts/rpc",
+    "storageSync": "node scripts/storageSync",
     "lint": "eslint **/*.js",
     "test": "mocha './test/**/*.spec.js'"
   },
