@@ -54,7 +54,7 @@ const errorHandler = require('../lib/util/errorHandler');
 
   // Sync arriving ST packets
   const zmqSocket = zmq.createSocket('sub');
-  zmqSocket.connect(process.env.DASHCORE_ZMQ_PUB_RAWST);
+  zmqSocket.connect(process.env.DASHCORE_ZMQ_PUB_HASHBLOCK);
 
   let inSync = true;
   zmqSocket.on('message', (async () => {
