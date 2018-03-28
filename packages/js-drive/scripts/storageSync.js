@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const zmq = require('zeromq');
 const IpfsAPI = require('ipfs-api');
-const RpcClient = require('bitcoind-rpc-dash');
+const RpcClient = require('@dashevo/bitcoind-rpc-dash/promise');
 const { MongoClient } = require('mongodb');
 
 const SyncStateRepository = require('../lib/sync/state/repository/SyncStateRepository');

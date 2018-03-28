@@ -20,43 +20,43 @@ module.exports = class RpcClientMock {
         proto[method].restore();
       }
 
-      sinonSandbox.spy(proto, method);
+      sinonSandbox.stub(proto, method).callThrough();
     }
   }
 
   /**
    *
-   * @param {Function} callback
    */
-  getBlockCount(callback) {
+  getBlockCount() {
     const lastBlock = this.blocks[this.blocks.length - 1];
-    callback(null, { result: lastBlock ? lastBlock.height : 0 });
+
+    return Promise.resolve({ result: lastBlock ? lastBlock.height : 0 });
   }
 
   /**
    * @param {number} height
-   * @param {Function} callback
    */
-  getBlockHash(height, callback) {
+  getBlockHash(height) {
     const block = this.blocks.find(b => b.height === height);
-    callback(null, { result: block ? block.hash : null });
+
+    return Promise.resolve({ result: block ? block.hash : null });
   }
 
   /**
    * @param {string} hash
-   * @param {Function} callback
    */
-  getBlock(hash, callback) {
+  getBlock(hash) {
     const block = this.blocks.find(b => b.hash === hash);
-    callback(null, { result: block });
+
+    return Promise.resolve({ result: block });
   }
 
   /**
    * @param {string} tsid
-   * @param {Function} callback
    */
-  getTransitionHeader(tsid, callback) {
+  getTransitionHeader(tsid) {
     const header = this.transitionHeaders.find(h => h.getHash() === tsid);
-    callback(null, { result: header });
+
+    return Promise.resolve({ result: header });
   }
 };

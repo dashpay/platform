@@ -41,8 +41,8 @@
     "sinon-chai": "^2.14.0"
   },
   "dependencies": {
+    "@dashevo/bitcoind-rpc-dash": "^1.0.1",
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
-    "bitcoind-rpc-dash": "^1.0.1",
     "bitcore-lib-dash": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop",
     "cbor": "^3.0.3",
     "cids": "^0.5.2",

@@ -1,5 +1,3 @@
-const promisifyMethods = require('../util/promisifyMethods');
-
 /**
  * Check is sync process complete
  *
@@ -10,18 +8,17 @@ const promisifyMethods = require('../util/promisifyMethods');
 module.exports = async function isSynced(rpcClient, stateRepositoryChangeListener) {
   // TODO: handle blockchain initial sync https://dash-docs.github.io/en/developer-reference#mnsync
 
-  const promisifiedRpcClient = promisifyMethods(rpcClient, ['getBlockCount', 'getBlockHash']);
   const stateRepository = stateRepositoryChangeListener.getRepository();
 
   // Compare last block in chain and last synced block
   const syncState = await stateRepository.fetch();
   const lastSyncedBlock = syncState.getLastBlock();
 
-  const { result: blockCount } = await promisifiedRpcClient.getBlockCount();
+  const { result: blockCount } = await rpcClient.getBlockCount();
 
   let lastBlockHash;
   if (blockCount > 0) {
-    ({ result: lastBlockHash } = await promisifiedRpcClient.getBlockHash(blockCount));
+    ({ result: lastBlockHash } = await rpcClient.getBlockHash(blockCount));
   }
 
   if (lastSyncedBlock && lastSyncedBlock.hash === lastBlockHash) {

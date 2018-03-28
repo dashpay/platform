@@ -21,9 +21,10 @@ describe('STHeadersReader', () => {
   function setWrongBlockOnCall(s, callCount) {
     const wrongBlock = Object.assign({}, rpcClientMock.blocks[3]);
     wrongBlock.previousblockhash = 'wrong';
-    const rpcMock = blockIterator.promisifiedRpcClient;
-    s.stub(rpcMock, 'getBlock');
-    rpcMock.getBlock.onCall(callCount).returns({ result: wrongBlock }).callThrough();
+    const rpcMock = blockIterator.rpcClient;
+    rpcMock.getBlock.onCall(callCount)
+      .returns(Promise.resolve({ result: wrongBlock }))
+      .callThrough();
 
     return wrongBlock;
   }
@@ -45,7 +46,7 @@ describe('STHeadersReader', () => {
     reader = new STHeadersReader(stateTransitionHeaderIterator, readerState);
   });
 
-  it("should set blockIterator's block height to last block from state + 1", () => {
+  it('should set blockIterator\'s block height to last block from state + 1', () => {
     expect(blockIterator.getBlockHeight(), reader.state.getLastBlock().height + 1);
   });
 

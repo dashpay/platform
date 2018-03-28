@@ -1,7 +1,6 @@
 // TODO: It might be part of SDK in the future
 
 const StateTransitionHeader = require('../StateTransitionHeader');
-const promisifyMethods = require('../../util/promisifyMethods');
 
 class StateTransitionHeaderIterator {
   /**
@@ -11,7 +10,7 @@ class StateTransitionHeaderIterator {
   constructor(blockIterator, rpcClient) {
     this.blockIterator = blockIterator;
 
-    this.promisifiedRpcClient = promisifyMethods(rpcClient, ['getTransitionHeader']);
+    this.rpcClient = rpcClient;
 
     this.reset(true);
   }
@@ -50,7 +49,7 @@ class StateTransitionHeaderIterator {
 
       if (transitionId) {
         const { result: transitionHeader } =
-          await this.promisifiedRpcClient.getTransitionHeader(transitionId);
+          await this.rpcClient.getTransitionHeader(transitionId);
 
         this.currentTransitionIndex++;
 
