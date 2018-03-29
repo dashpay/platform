@@ -9,7 +9,7 @@
   "scripts": {
     "rpc": "node scripts/rpc",
     "storageSync": "node scripts/storageSync",
-    "lint": "eslint **/*.js",
+    "lint": "eslint .",
     "test": "mocha './test/**/*.spec.js'"
   },
   "repository": {
