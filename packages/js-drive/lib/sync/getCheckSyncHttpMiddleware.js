@@ -9,12 +9,17 @@ const createError = server.prototype.error.bind(server);
  * @param {RpcClient} rpcClient
  * @param {SyncStateRepositoryChangeListener} stateRepositoryChangeListener
  */
-function getCheckSyncHttpMiddleware(inSynced, rpcClient, stateRepositoryChangeListener) {
+function getCheckSyncHttpMiddleware(
+  inSynced,
+  rpcClient,
+  stateRepositoryChangeListener,
+  checkInterval,
+) {
   // Get sync state
   let syncState;
   let error;
 
-  inSynced(rpcClient, stateRepositoryChangeListener).then((state) => {
+  inSynced(rpcClient, stateRepositoryChangeListener, checkInterval).then((state) => {
     syncState = state;
   }).catch((e) => {
     error = e;

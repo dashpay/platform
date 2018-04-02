@@ -37,6 +37,7 @@ const rpcHandlers = require('../lib/api/rpc');
     isSynced,
     rpcClient,
     repositoryChangeListener,
+    process.env.SYNC_CHAIN_CHECK_INTERVAL,
   );
 
   const rpc = jayson.server(rpcHandlers);

@@ -59,4 +59,12 @@ module.exports = class RpcClientMock {
 
     return Promise.resolve({ result: header });
   }
+
+  // eslint-disable-next-line class-methods-use-this
+  mnsync(mode) {
+    if (mode !== 'status') {
+      throw new Error('Not implemented yet!');
+    }
+    return Promise.resolve({ result: { IsBlockchainSynced: true } });
+  }
 };

@@ -15,6 +15,8 @@ const SyncState = require('../../lib/sync/state/SyncState');
 const RpcClientMock = require('../../lib/test/mock/RpcClientMock');
 
 describe('isSynced', () => {
+  const checkInterval = 0.5;
+
   let rpcClientMock;
   let syncStateRepositoryMock;
   let changeListenerMock;
@@ -51,11 +53,27 @@ describe('isSynced', () => {
     rpcClientMock = new RpcClientMock(this.sinon);
   });
 
+  it('should return state if blockchain initial sync is completed and the last block in the chain is synced', async () => {
+    const state = new SyncState(rpcClientMock.blocks, new Date());
+    syncStateRepositoryMock.fetch.returns(state);
+
+    rpcClientMock.mnsync.onCall(0).returns(Promise.resolve({
+      result: { IsBlockchainSynced: false },
+    }));
+    rpcClientMock.mnsync.onCall(1).returns(Promise.resolve({
+      result: { IsBlockchainSynced: true },
+    }));
+
+    const syncedState = await isSynced(rpcClientMock, changeListenerMock, checkInterval);
+
+    expect(state).to.be.equals(syncedState);
+  });
+
   it('should return state if last block in chain is synced', async () => {
     const state = new SyncState(rpcClientMock.blocks, new Date());
     syncStateRepositoryMock.fetch.returns(state);
 
-    const syncedState = await isSynced(rpcClientMock, changeListenerMock);
+    const syncedState = await isSynced(rpcClientMock, changeListenerMock, checkInterval);
 
     expect(state).to.be.equals(syncedState);
   });
@@ -64,7 +82,7 @@ describe('isSynced', () => {
     const state = new SyncState([], new Date());
     syncStateRepositoryMock.fetch.returns(state);
 
-    const isSyncedPromise = isSynced(rpcClientMock, changeListenerMock);
+    const isSyncedPromise = isSynced(rpcClientMock, changeListenerMock, checkInterval);
 
     setImmediate(() => {
       expect(changeListenerMock.listen).to.be.calledOnce();
@@ -95,7 +113,7 @@ describe('isSynced', () => {
     const state = new SyncState([], new Date());
     syncStateRepositoryMock.fetch.returns(state);
 
-    const isSyncedPromise = isSynced(rpcClientMock, changeListenerMock);
+    const isSyncedPromise = isSynced(rpcClientMock, changeListenerMock, checkInterval);
 
     setImmediate(() => {
       const error = new Error();
@@ -106,6 +124,4 @@ describe('isSynced', () => {
       done();
     });
   });
-
-  it('should handle blockchain initial sync');
 });

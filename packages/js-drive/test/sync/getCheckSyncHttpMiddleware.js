@@ -60,11 +60,13 @@ describe('getCheckSyncHttpMiddleware', () => {
     const rpcClientMock = new RpcClient();
     class SyncStateRepositoryChangeListener {}
     const changeListenerMock = new SyncStateRepositoryChangeListener();
+    const checkInterval = 0.5;
 
     middleware = getCheckSyncHttpMiddleware(
       inSyncedMock,
       rpcClientMock,
       changeListenerMock,
+      checkInterval,
     );
 
     requestMock = {};
