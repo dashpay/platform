@@ -9,4 +9,3 @@ services:
 
 volumes:
   mongodb:
-    driver: local

@@ -1,4 +1,6 @@
-node_modules
-Dockerfile
-.dockerignore
 .git
+.dockerignore
+.idea
+bin
+docker
+node_modules

@@ -1,19 +1,33 @@
 FROM 103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/v13-node-base:latest
+
 LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="Dockerised DashDrive API"
+LABEL description="DashDrive Node.JS"
 
-RUN apk update && apk upgrade --no-cache && apk add --no-cache git openssh-client
+RUN apk update && \
+    apk --no-cache upgrade && \
+    apk add --no-cache bash \
+                       git \
+                       openssh-client \
+                       python \
+                       alpine-sdk \
+                       zeromq-dev
 
-WORKDIR /app
+# Install dependencies first, in a different location
+# for easier app bind mounting for local development
+WORKDIR /
 
-# copy package manifest separately from code to avoid installing packages every
-# time code is changed
-COPY package.json package-lock.json /app/
-RUN /usr/local/bin/npm install
+# Install packages
+COPY package.json package-lock.json ./
+ENV npm_config_zmq_external=true
+RUN npm install
+ENV PATH /node_modules/.bin:$PATH
 
-COPY . /app
+# Copy project files
+WORKDIR /usr/src/app
+COPY . /usr/src/app
+RUN mv .env.example .env
 
-EXPOSE 5001
+ARG NODE_ENV=production
+ENV NODE_ENV ${NODE_ENV}
 
-CMD ["/usr/local/bin/node", "/app/lib/api.js"]
-# CMD ["/bin/ash"]
+EXPOSE 6000 9229

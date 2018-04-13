@@ -2,13 +2,12 @@
   "name": "dashdrive",
   "version": "0.0.1",
   "description": "DashDrive",
-  "main": "index.js",
   "engines": {
     "node": ">=8"
   },
   "scripts": {
-    "rpc": "node scripts/rpc",
-    "storageSync": "node scripts/storageSync",
+    "api": "node scripts/api",
+    "sync": "node scripts/sync",
     "lint": "eslint .",
     "test": "mocha './test/**/*.spec.js'"
   },
