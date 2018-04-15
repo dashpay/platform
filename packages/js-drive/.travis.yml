@@ -39,3 +39,12 @@ install:
 script:
   - npm run lint
   - npm run test
+
+before_deploy:
+  - pip install --user awscli
+
+deploy:
+  provider: script
+  script: bash bin/build_docker_images.sh
+  on:
+    branch: master
