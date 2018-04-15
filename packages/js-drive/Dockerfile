@@ -5,8 +5,7 @@ LABEL description="DashDrive Node.JS"
 
 RUN apk update && \
     apk --no-cache upgrade && \
-    apk add --no-cache bash \
-                       git \
+    apk add --no-cache git \
                        openssh-client \
                        python \
                        alpine-sdk \
