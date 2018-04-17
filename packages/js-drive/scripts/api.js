@@ -4,7 +4,7 @@ const connect = require('connect');
 const jayson = require('jayson/promise');
 
 const { MongoClient } = require('mongodb');
-const RpcClient = require('@dashevo/bitcoind-rpc-dash/promise');
+const RpcClient = require('bitcoind-rpc-dash/promise');
 
 const SyncStateRepository = require('../lib/sync/state/repository/SyncStateRepository');
 const SyncStateRepositoryChangeListener = require('../lib/sync/state/repository/SyncStateRepositoryChangeListener');
