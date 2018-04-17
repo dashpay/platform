@@ -24,9 +24,11 @@
   },
   "homepage": "https://github.com/dashevo/dashdrive",
   "devDependencies": {
+    "aws-sdk": "^2.224.1",
     "chai": "^4.1.2",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
+    "dockerode": "^2.5.4",
     "eslint": "^4.16.0",
     "eslint-config-airbnb-base": "^12.1.0",
     "eslint-plugin-import": "^2.8.0",

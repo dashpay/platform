@@ -5,7 +5,7 @@ const addStateTransitionPacket = require('../../../lib/storage/addStateTransitio
 const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
 const generatePacketMultihash = require('../../../lib/storage/ipfs/generatePacketMultihash');
 
-const startIPFSInstance = require('../../../lib/test/startIPFSInstance');
+const startIPFSInstance = require('../../../lib/test/services/IPFS/startIPFSInstance');
 
 describe('generatePacketMultihash', () => {
   let ipfsApi;
