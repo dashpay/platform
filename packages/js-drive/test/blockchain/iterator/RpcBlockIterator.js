@@ -1,11 +1,3 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-
-use(sinonChai);
-use(dirtyChai);
-
 const RpcClientMock = require('../../../lib/test/mock/RpcClientMock');
 const RpcBlockIterator = require('../../../lib/blockchain/iterator/RpcBlockIterator');
 
@@ -15,12 +7,6 @@ describe('RpcBlockIterator', () => {
   let blockIterator;
 
   beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.sandbox.create();
-    } else {
-      this.sinon.restore();
-    }
-
     fromBlockHeight = 1;
     rpcClientMock = new RpcClientMock(this.sinon);
     blockIterator = new RpcBlockIterator(rpcClientMock, fromBlockHeight);

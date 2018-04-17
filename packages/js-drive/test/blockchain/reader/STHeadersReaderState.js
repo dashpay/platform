@@ -1,8 +1,3 @@
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-
-use(dirtyChai);
-
 const STHeadersReaderState = require('../../../lib/blockchain/reader/STHeadersReaderState');
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
 

@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { expect } = require('chai');
 
 const addStateTransitionPacket = require('../../../lib/storage/addStateTransitionPacket');
 const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');

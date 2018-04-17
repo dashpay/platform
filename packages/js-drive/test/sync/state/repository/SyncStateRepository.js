@@ -1,13 +1,7 @@
-const dotenv = require('dotenv');
-const { expect } = require('chai');
-
 const SyncState = require('../../../../lib/sync/state/SyncState');
 const SyncStateRepository = require('../../../../lib/sync/state/repository/SyncStateRepository');
 const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
 const connectToMongoDb = require('../../../../lib/test/connectToMongoDb');
-
-// Will be called in bootstrap
-dotenv.config();
 
 // Will be set once in bootstrap
 connectToMongoDb.setUrl(process.env.STORAGE_MONGODB_URL)

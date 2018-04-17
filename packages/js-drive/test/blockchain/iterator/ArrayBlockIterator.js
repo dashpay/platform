@@ -1,11 +1,3 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-
-use(sinonChai);
-use(dirtyChai);
-
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
 const ArrayBlockIterator = require('../../../lib/blockchain/iterator/ArrayBlockIterator');
 
@@ -13,13 +5,7 @@ describe('ArrayBlockIterator', () => {
   let blocks;
   let blockIterator;
 
-  beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.sandbox.create();
-    } else {
-      this.sinon.restore();
-    }
-
+  beforeEach(() => {
     blocks = getBlockFixtures();
     blockIterator = new ArrayBlockIterator(blocks);
   });

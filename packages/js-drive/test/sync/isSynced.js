@@ -1,13 +1,3 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-
-use(dirtyChai);
-use(sinonChai);
-use(chaiAsPromised);
-
 const EventEmitter = require('events');
 
 const isSynced = require('../../lib/sync/isSynced');
@@ -22,12 +12,6 @@ describe('isSynced', () => {
   let changeListenerMock;
 
   beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.sandbox.create();
-    } else {
-      this.sinon.restore();
-    }
-
     syncStateRepositoryMock = {
       fetch: this.sinon.stub(),
     };

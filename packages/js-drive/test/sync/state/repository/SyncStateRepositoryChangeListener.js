@@ -1,11 +1,3 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-
-use(dirtyChai);
-use(sinonChai);
-
 const SyncState = require('../../../../lib/sync/state/SyncState');
 const SyncStateRepositoryChangeListener =
   require('../../../../lib/sync/state/repository/SyncStateRepositoryChangeListener');
@@ -19,12 +11,6 @@ describe('SyncStateRepositoryChangeListener', () => {
   let timers;
 
   beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.sandbox.create();
-    } else {
-      this.sinon.restore();
-    }
-
     const syncState = new SyncState([], new Date());
 
     class SyncStateRepository { }
@@ -35,7 +21,7 @@ describe('SyncStateRepositoryChangeListener', () => {
     checkInterval = 10;
     changeListener = new SyncStateRepositoryChangeListener(repositoryMock, checkInterval);
 
-    timers = sinon.useFakeTimers({ toFake: ['setInterval'] });
+    timers = this.sinon.useFakeTimers({ toFake: ['setInterval'] });
   });
 
   afterEach(() => {

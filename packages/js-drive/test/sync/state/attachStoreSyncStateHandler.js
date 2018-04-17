@@ -1,11 +1,3 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-
-use(dirtyChai);
-use(sinonChai);
-
 const Emitter = require('emittery');
 
 const SyncState = require('../../../lib/sync/state/SyncState');
@@ -21,12 +13,6 @@ describe('attachPinSTPacketHandler', () => {
   let stHeadersReaderMock;
 
   beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.sandbox.create();
-    } else {
-      this.sinon.restore();
-    }
-
     blocks = getBlockFixtures();
 
     // Mock STHeadersReader

@@ -1,8 +1,3 @@
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-
-use(dirtyChai);
-
 const SyncState = require('../../../lib/sync/state/SyncState');
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
 

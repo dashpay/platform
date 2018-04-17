@@ -1,11 +1,4 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
 const proxyquire = require('proxyquire');
-
-use(dirtyChai);
-use(sinonChai);
 
 describe('getCheckSyncHttpMiddleware', () => {
   let middleware;
@@ -19,12 +12,6 @@ describe('getCheckSyncHttpMiddleware', () => {
   let parseErrorMock;
 
   beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.sandbox.create();
-    } else {
-      this.sinon.restore();
-    }
-
     parsedRequestMock = { id: 1 };
     parseErrorMock = null;
     jaysonMock = {
