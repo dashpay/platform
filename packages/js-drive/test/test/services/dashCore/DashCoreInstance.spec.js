@@ -6,26 +6,8 @@ async function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function pruneNetworks() {
-  const docker = new Docker();
-  await docker.pruneNetworks();
-}
-
-async function stopRunningContainers() {
-  const docker = new Docker();
-  const containers = await docker.listContainers();
-
-  for (let i = 0; i < containers.length; i++) {
-    const container = containers[i];
-    await docker.getContainer(container.Id).stop();
-  }
-}
-
 describe('DashCoreInstance', function main() {
   this.timeout(40000);
-
-  before(async () => pruneNetworks());
-  before(async () => stopRunningContainers());
 
   describe('before start', () => {
     const instance = new DashCoreInstance();

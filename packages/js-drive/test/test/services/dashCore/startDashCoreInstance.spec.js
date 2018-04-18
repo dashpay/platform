@@ -1,25 +1,11 @@
-const Docker = require('dockerode');
-
 const startDashCoreInstance = require('../../../../lib/test/services/dashCore/startDashCoreInstance');
 
 async function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function stopRunningContainers() {
-  const docker = new Docker();
-  const containers = await docker.listContainers();
-
-  for (let i = 0; i < containers.length; i++) {
-    const container = containers[i];
-    await docker.getContainer(container.Id).stop();
-  }
-}
-
 describe('startDashCoreInstance', function main() {
   this.timeout(40000);
-
-  before(async () => stopRunningContainers());
 
   describe('One instance', () => {
     let instance;
