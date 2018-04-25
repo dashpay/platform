@@ -314,6 +314,7 @@ class DashCoreInstance {
       'Starting',
       'Verifying',
       'RPC',
+      'Masternode cache is empty',
     ];
     const loading = messages.filter(message => error.message.includes(message));
     return loading.length;

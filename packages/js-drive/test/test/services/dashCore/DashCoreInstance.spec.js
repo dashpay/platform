@@ -248,7 +248,7 @@ describe('DashCoreInstance', function main() {
       await instanceTwo.start();
       await instanceThree.start();
 
-      expect(instanceThreeSpy.callCount).to.be.equal(2);
+      expect(instanceThreeSpy.callCount).to.be.above(1);
     });
   });
 
