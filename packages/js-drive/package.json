@@ -9,7 +9,10 @@
     "api": "node scripts/api",
     "sync": "node scripts/sync",
     "lint": "eslint .",
-    "test": "mocha './test/**/*.spec.js'"
+    "test": "mocha './test/**/*.spec.js'",
+    "test:unit": "mocha './test/unit/**/*.spec.js'",
+    "test:integration": "mocha './test/integration/**/*.spec.js'",
+    "test:e2e": "mocha './test/e2e/**/*.spec.js'"
   },
   "repository": {
     "type": "git",

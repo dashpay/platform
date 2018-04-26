@@ -33,8 +33,6 @@ npm run storageSync
 npm run rpc
 ```
 
-### Run tests
+## Tests
 
-```
-npm test
-```
+[Read](test/) about tests in `test/` folder. 
