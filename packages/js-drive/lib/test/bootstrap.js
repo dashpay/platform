@@ -7,8 +7,8 @@ const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
 use(sinonChai);
-use(dirtyChai);
 use(chaiAsPromised);
+use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
