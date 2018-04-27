@@ -1,10 +1,12 @@
 const startIPFSInstance = require('../../../../../lib/test/services/IPFS/startIPFSInstance');
 
-describe('startIPFSInstance', () => {
+describe('startIPFSInstance', function main() {
+  this.timeout(40000);
+
   describe('One instance', () => {
     let ipfsAPI;
-    startIPFSInstance().then((_ipfsAPI) => {
-      ipfsAPI = _ipfsAPI;
+    before(async () => {
+      ipfsAPI = await startIPFSInstance();
     });
 
     it('should start one instance', async () => {
@@ -16,8 +18,8 @@ describe('startIPFSInstance', () => {
 
   describe('Three instances', () => {
     let ipfsAPIs;
-    startIPFSInstance.many(3).then((_ipfsAPIs) => {
-      ipfsAPIs = _ipfsAPIs;
+    before(async () => {
+      ipfsAPIs = await startIPFSInstance.many(3);
     });
 
     it('should start many instances', async () => {

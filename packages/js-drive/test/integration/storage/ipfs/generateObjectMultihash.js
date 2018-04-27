@@ -17,8 +17,8 @@ describe('generateObjectMultihash', () => {
   let ipfsApi;
   let multihash;
 
-  startIPFSInstance().then((_ipfsApi) => {
-    ipfsApi = _ipfsApi;
+  before(async () => {
+    ipfsApi = await startIPFSInstance();
   });
 
   beforeEach(async () => {

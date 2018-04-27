@@ -10,8 +10,8 @@ const startIPFSInstance = require('../../../lib/test/services/IPFS/startIPFSInst
 describe('addStateTransitionPacket', () => {
   let ipfsApi;
 
-  startIPFSInstance().then((_ipfsApi) => {
-    ipfsApi = _ipfsApi;
+  before(async () => {
+    ipfsApi = await startIPFSInstance();
   });
 
   it('should add packets to storage and returns hash', async () => {

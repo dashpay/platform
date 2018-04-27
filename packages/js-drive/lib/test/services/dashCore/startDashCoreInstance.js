@@ -1,12 +1,12 @@
-const DashCoreInstance = require('./DashCoreInstance');
+const createDashCoreInstance = require('./createDashCoreInstance');
 
 /**
  * Start and stop Dashcore instance for mocha tests
  *
  * @return {Promise<DashCoreInstance>}
  */
-async function startDashcoreInstance() {
-  const instances = await startDashcoreInstance.many(1);
+async function startDashCoreInstance() {
+  const instances = await startDashCoreInstance.many(1);
 
   return instances[0];
 }
@@ -16,7 +16,7 @@ async function startDashcoreInstance() {
  *
  * @return {Promise<DashCoreInstance[]>}
  */
-startDashcoreInstance.many = async function many(number) {
+startDashCoreInstance.many = async function many(number) {
   if (number < 1) {
     throw new Error('Invalid number of instances');
   }
@@ -24,7 +24,7 @@ startDashcoreInstance.many = async function many(number) {
   const instances = [];
 
   for (let i = 0; i < number; i++) {
-    const instance = new DashCoreInstance();
+    const instance = await createDashCoreInstance();
     await instance.start();
     if (instances.length > 0) {
       await instances[i - 1].connect(instance);
@@ -40,4 +40,4 @@ startDashcoreInstance.many = async function many(number) {
   return instances;
 };
 
-module.exports = startDashcoreInstance;
+module.exports = startDashCoreInstance;

@@ -10,8 +10,8 @@ const startIPFSInstance = require('../../../../lib/test/services/IPFS/startIPFSI
 describe('generatePacketMultihash', () => {
   let ipfsApi;
 
-  startIPFSInstance().then((_ipfsApi) => {
-    ipfsApi = _ipfsApi;
+  before(async () => {
+    ipfsApi = await startIPFSInstance();
   });
 
   it('should generate the same multihash as IPFS', async () => {

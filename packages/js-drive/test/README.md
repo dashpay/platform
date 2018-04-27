@@ -95,6 +95,21 @@ before(() => {
  - Use `many` method to start several Dash Core instances
  - `startDashCoreInstance` returns instance if [DashCoreInstance](../lib/test/services/dashCore/DashCoreInstance.js)
  - Dash Core process is restarted and data is cleaned up before each test
+ 
+### Start Dash Drive
+
+```js
+const startDashDriveInstance = require('../lib/test/services/dashDrive/startDashDriveInstance');
+
+let dashDriveInstance;
+before(() => {
+ dashDriveInstance = await startDashDriveInstance();
+});
+```
+
+- Use `many` method to start several Dash Drive instances
+- `startDashDriveInstance` returns instance if [DockerInstance](../lib/test/services/docker/DockerInstance.js)
+- Dash Drive process is restarted and data is cleaned up before each test
 
 ### Connect to MongoDB 
 

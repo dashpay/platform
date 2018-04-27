@@ -1,5 +1,5 @@
 /* eslint-disable global-require */
-describe('DashCore', () => {
-  require('./DashCoreInstance');
+describe('dashCore', () => {
+  require('./createDashCoreInstance');
   require('./startDashCoreInstance');
 });

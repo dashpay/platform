@@ -49,33 +49,29 @@ startIPFSInstance.many = function many(number) {
     throw new Error('Invalid number of instances');
   }
 
-  return new Promise(((resolve, reject) => {
-    before(async function before() {
-      this.timeout(number * 25 * 1000); // slow IPFS ctl
+  return new Promise(async (resolve, reject) => {
+    try {
+      const firstInstance = await spawnAndPromisifyIpfs();
+      ipfsInstances.push(firstInstance);
 
-      try {
-        const firstInstance = await spawnAndPromisifyIpfs();
-        ipfsInstances.push(firstInstance);
+      if (number > 1) {
+        const firstInstanceId = await firstInstance.api.id();
 
-        if (number > 1) {
-          const firstInstanceId = await firstInstance.api.id();
+        for (let i = 1; i < number; i++) {
+          const instance = await spawnAndPromisifyIpfs();
 
-          for (let i = 1; i < number; i++) {
-            const instance = await spawnAndPromisifyIpfs();
+          await instance.api.swarm.connect(firstInstanceId.addresses[0]);
 
-            await instance.api.swarm.connect(firstInstanceId.addresses[0]);
-
-            ipfsInstances.push(instance);
-          }
+          ipfsInstances.push(instance);
         }
-      } catch (e) {
-        reject(e);
-
-        throw e;
       }
+    } catch (e) {
+      reject(e);
 
-      resolve(ipfsInstances.map(instance => instance.api));
-    });
+      throw e;
+    }
+
+    resolve(ipfsInstances.map(instance => instance.api));
 
     afterEach(async () => {
       await callInParallel(ipfsInstances, 'cleanup');
@@ -84,7 +80,7 @@ startIPFSInstance.many = function many(number) {
     after(async () => {
       await callInParallel(ipfsInstances, 'stop');
     });
-  }));
+  });
 };
 
 module.exports = startIPFSInstance;
