@@ -1,4 +1,4 @@
-const TransitionHeader = require('bitcore-lib-dash/lib/stateTransition/transitionHeader');
+const TransitionHeader = require('@dashevo/dashcore-lib/lib/stateTransition/transitionHeader');
 
 class StateTransitionHeader extends TransitionHeader {
   constructor(data) {
