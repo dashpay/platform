@@ -3,8 +3,9 @@ require('dotenv').config();
 const connect = require('connect');
 const jayson = require('jayson/promise');
 
-const { MongoClient } = require('mongodb');
+const IpfsAPI = require('ipfs-api');
 const RpcClient = require('bitcoind-rpc-dash/promise');
+const { MongoClient } = require('mongodb');
 
 const SyncStateRepository = require('../lib/sync/state/repository/SyncStateRepository');
 const SyncStateRepositoryChangeListener = require('../lib/sync/state/repository/SyncStateRepositoryChangeListener');
@@ -13,7 +14,10 @@ const isSynced = require('../lib/sync/isSynced');
 const getCheckSyncStateHttpMiddleware = require('../lib/sync/getCheckSyncHttpMiddleware');
 const errorHandler = require('../lib/util/errorHandler');
 
-const rpcHandlers = require('../lib/api/rpc');
+const wrapToErrorHandler = require('../lib/api/jsonRpc/wrapToErrorHandler');
+
+const addSTPacketFactory = require('../lib/storage/addSTPacketFactory');
+const addSTPacketMethodFactory = require('../lib/api/methods/addSTPacketMethodFactory');
 
 (async function main() {
   const rpcClient = new RpcClient({
@@ -40,7 +44,16 @@ const rpcHandlers = require('../lib/api/rpc');
     process.env.SYNC_CHAIN_CHECK_INTERVAL,
   );
 
-  const rpc = jayson.server(rpcHandlers);
+  const ipfsAPI = new IpfsAPI(process.env.STORAGE_IPFS_MULTIADDR);
+  const addSTPacket = addSTPacketFactory(ipfsAPI);
+  const addSTPacketMethod = addSTPacketMethodFactory(addSTPacket);
+
+  // Initialize API methods
+  const rpcMethods = {
+    [addSTPacketMethod.name]: wrapToErrorHandler(addSTPacketMethod),
+  };
+
+  const rpc = jayson.server(rpcMethods);
   const server = connect();
 
   server.use(checkSyncState);

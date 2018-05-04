@@ -1,6 +1,6 @@
-const { utils, server } = require('jayson');
+const { utils } = require('jayson');
 
-const createError = server.prototype.error.bind(server);
+const createError = require('../api/jsonRpc/createError');
 
 /**
  * Returns error until initial sync process is not completed

@@ -1,20 +1,24 @@
-const addStateTransitionPacket = require('../../../lib/storage/addStateTransitionPacket');
+const addSTPacketFactory = require('../../../lib/storage/addSTPacketFactory');
 const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
 
 const startIPFSInstance = require('../../../lib/test/services/IPFS/startIPFSInstance');
 
 const getStateTransitionPackets = require('../../fixtures/getStateTransitionPackets');
 
-describe('addStateTransitionPacket', () => {
+describe('addSTPacket', () => {
   let ipfsApi;
-  before(async () => {
+  let addSTPacket;
+
+  before(async function before() {
+    this.timeout(25000);
     ipfsApi = await startIPFSInstance();
+    addSTPacket = addSTPacketFactory(ipfsApi);
   });
 
   it('should add packets to storage and returns hash', async () => {
     const packetsData = getStateTransitionPackets();
     const packets = packetsData.map(packetData => new StateTransitionPacket(packetData));
-    const addPacketsPromises = packets.map(addStateTransitionPacket.bind(null, ipfsApi));
+    const addPacketsPromises = packets.map(addSTPacket);
     const packetsCids = await Promise.all(addPacketsPromises);
 
     // 1. Packets should be available in IPFS

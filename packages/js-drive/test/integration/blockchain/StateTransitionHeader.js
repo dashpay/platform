@@ -3,7 +3,7 @@ const cbor = require('cbor');
 const multihashingAsync = require('multihashing-async');
 const multihashes = require('multihashes');
 const StateTransitionHeader = require('../../../lib/blockchain/StateTransitionHeader');
-const addStateTransitionPacket = require('../../../lib/storage/addStateTransitionPacket');
+const addSTPacketFactory = require('../../../lib/storage/addSTPacketFactory');
 const startIPFSInstance = require('../../../lib/test/services/IPFS/startIPFSInstance');
 const getStateTransitionPackets = require('../../fixtures/getStateTransitionPackets');
 const getStateTransitionHeaders = require('../../fixtures/getStateTransitionHeaders');
@@ -24,9 +24,12 @@ describe('StateTransitionHeader', () => {
   const headers = getStateTransitionHeaders();
   const header = headers[0];
 
-  let ipfsApi;
-  before(async () => {
-    ipfsApi = await startIPFSInstance();
+  let addSTPacket;
+
+  before(async function before() {
+    this.timeout(25000);
+    const ipfsApi = await startIPFSInstance();
+    addSTPacket = addSTPacketFactory(ipfsApi);
   });
 
   it('should StateTransitionHeader CID equal to IPFS CID', async () => {
@@ -34,7 +37,7 @@ describe('StateTransitionHeader', () => {
     const stHeader = new StateTransitionHeader(header);
 
     const stHeaderCid = stHeader.getPacketCID();
-    const ipfsCid = await addStateTransitionPacket(ipfsApi, packet);
+    const ipfsCid = await addSTPacket(packet);
 
     expect(stHeaderCid).to.equal(ipfsCid);
   });
