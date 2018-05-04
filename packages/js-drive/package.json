@@ -36,28 +36,27 @@
     "eslint-config-airbnb-base": "^12.1.0",
     "eslint-plugin-import": "^2.8.0",
     "go-ipfs-dep": "^0.4.13",
-    "ipfsd-ctl": "^0.31.0",
+    "ipfsd-ctl": "^0.32.1",
     "mocha": "^5.1.0",
     "mocha-sinon": "^2.0.0",
-    "multihashes": "^0.4.13",
+    "multihashing-async": "^0.4.7",
     "proxyquire": "^1.8.0",
     "sinon": "^4.3.0",
     "sinon-chai": "^2.14.0"
   },
   "dependencies": {
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
-    "bitcoind-rpc-dash": "git+ssh://git@github.com/dashevo/bitcoind-rpc-dash-private.git#develop",
     "@dashevo/dashcore-lib": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop",
+    "bitcoind-rpc-dash": "git+ssh://git@github.com/dashevo/bitcoind-rpc-dash-private.git#develop",
     "cbor": "^3.0.3",
     "cids": "^0.5.2",
     "connect": "^3.6.6",
     "dotenv": "^5.0.1",
     "emittery": "^0.3.0",
     "ipfs-api": "^17.5.0",
-    "ipld-dag-pb": "^0.13.0",
     "jayson": "^2.0.5",
     "mongodb": "^3.0.3",
-    "multihashing-async": "^0.4.7",
+    "multihashes": "^0.4.13",
     "zeromq": "^4.6.0"
   }
 }

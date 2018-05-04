@@ -46,7 +46,7 @@ describe('attachPinSTPacketHandler', () => {
     await stHeadersReaderMock.emitSerial('header', header);
 
     expect(ipfsAPIMock.pin.add).to.be.calledOnce();
-    expect(ipfsAPIMock.pin.add).to.be.calledWith(header.getStorageHash(), { recursive: true });
+    expect(ipfsAPIMock.pin.add).to.be.calledWith(header.getPacketCID(), { recursive: true });
   });
 
   it('should unpin ST packets in case of reorg', async () => {
@@ -57,7 +57,7 @@ describe('attachPinSTPacketHandler', () => {
     expect(ipfsAPIMock.pin.rm).has.callCount(block.ts.length);
 
     rpcClientMock.transitionHeaders.slice(0, block.ts.length).forEach((header) => {
-      expect(ipfsAPIMock.pin.rm).to.be.calledWith(header.getStorageHash(), { recursive: true });
+      expect(ipfsAPIMock.pin.rm).to.be.calledWith(header.getPacketCID(), { recursive: true });
     });
   });
 });

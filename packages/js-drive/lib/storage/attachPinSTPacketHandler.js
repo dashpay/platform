@@ -11,7 +11,7 @@ module.exports = function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
   stHeadersReader.on('header', async (header) => {
-    await ipfsAPI.pin.add(header.getStorageHash(), { recursive: true });
+    await ipfsAPI.pin.add(header.getPacketCID(), { recursive: true });
   });
 
   stHeadersReader.on('wrongSequence', async (block) => {
@@ -27,7 +27,7 @@ module.exports = function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
         break;
       }
 
-      await ipfsAPI.pin.rm(header.getStorageHash(), { recursive: true });
+      await ipfsAPI.pin.rm(header.getPacketCID(), { recursive: true });
     }
   });
 };
