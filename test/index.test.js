@@ -1,5 +1,6 @@
 const Blockchain = require('../lib/spvchain');
 const chainManager = require('./chainmanager');
+const utils = require('../lib/utils');
 
 let chain = null;
 let headers = [];
@@ -35,8 +36,16 @@ describe('SPV-DASH (forks & re-orgs)', () => {
   });
 });
 
-describe('SPV-DASH (merkle proofs)', () => {
-  // Tests included in dapi-sdk
-  // possibly add further tests here
+
+describe('Difficulty Calculation', () => {
+  it('should have difficulty of 1 when target is max', () => {
+    const testnetMaxTarget = 0x1e0ffff0;
+    utils.getDifficulty(testnetMaxTarget).should.equal(1);
+  });
+
+  it('should have difficulty higher than 1 when target is lower than max', () => {
+    const testnetMaxTarget = 0x1e0fffef;
+    utils.getDifficulty(testnetMaxTarget).should.be.greaterThan(1);
+  });
 });
 
