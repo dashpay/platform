@@ -115,9 +115,9 @@ describe('DockerInstance', function main() {
     });
 
     it('should retry start container with another port if it is busy', async () => {
-      instanceOne.container.ports = [4444];
-      instanceTwo.container.ports = [4444];
-      instanceThree.container.ports = [4444];
+      instanceOne.container.ports = ['4444:4444'];
+      instanceTwo.container.ports = ['4444:4444'];
+      instanceThree.container.ports = ['4444:4444'];
       const instanceThreeSpy = sandbox.spy(instanceThree, 'start');
 
       await instanceOne.start();

@@ -26,9 +26,9 @@ class DashCoreInstanceOptions extends DockerInstanceOptions {
         driver: 'bridge',
       },
       ports: [
-        dashdPort,
-        rpcPort,
-        zmqPort,
+        `${dashdPort}:${dashdPort}`,
+        `${rpcPort}:${rpcPort}`,
+        `${zmqPort}:${zmqPort}`,
       ],
       cmd: this.getCmd(),
     };
@@ -47,9 +47,9 @@ class DashCoreInstanceOptions extends DockerInstanceOptions {
     };
     this.rpc.port = rpcPort;
     this.container.ports = [
-      dashdPort,
-      rpcPort,
-      zmqPort,
+      `${dashdPort}:${dashdPort}`,
+      `${rpcPort}:${rpcPort}`,
+      `${zmqPort}:${zmqPort}`,
     ];
     this.container.cmd = this.getCmd();
 

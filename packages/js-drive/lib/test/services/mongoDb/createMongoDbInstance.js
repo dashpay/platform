@@ -2,7 +2,8 @@ const MongoDbInstanceOptions = require('./MongoDbInstanceOptions');
 const Network = require('../docker/Network');
 const Image = require('../docker/Image');
 const Container = require('../docker/Container');
-const DockerInstance = require('../docker/DockerInstance');
+const { MongoClient } = require('mongodb');
+const MongoDbInstance = require('./MongoDbInstance');
 
 /**
  * Create MongoDb instance
@@ -21,7 +22,7 @@ async function createMongoDbInstance() {
   const containerOptions = options.getContainerOptions();
   const container = new Container(networkName, imageName, containerOptions);
 
-  return new DockerInstance(network, image, container, options);
+  return new MongoDbInstance(network, image, container, MongoClient, options);
 }
 
 module.exports = createMongoDbInstance;

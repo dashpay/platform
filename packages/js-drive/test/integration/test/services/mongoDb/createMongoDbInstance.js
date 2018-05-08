@@ -30,5 +30,34 @@ describe('createMongoDbInstance', function main() {
         'mongod',
       ]);
     });
+
+    it('should get Mongo db client', async () => {
+      await instance.start();
+
+      const client = await instance.getMongoClient();
+      const db = client.collection('syncState');
+      const count = await db.count({});
+
+      expect(count).to.equal(0);
+    });
+  });
+
+  describe('Mongo client', () => {
+    let instance;
+
+    before(async () => {
+      instance = await createMongoDbInstance();
+    });
+    after(async () => instance.clean());
+
+    it('should not fail if mongod is not running yet (MongoNetworkError)', async () => {
+      await instance.start();
+
+      const client = await instance.getMongoClient();
+      const db = client.collection('syncState');
+      const count = await db.count({});
+
+      expect(count).to.equal(0);
+    });
   });
 });

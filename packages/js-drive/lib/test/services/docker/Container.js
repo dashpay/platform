@@ -172,7 +172,8 @@ class Container {
   createExposedPorts(ports) {
     return ports.reduce((exposedPorts, port) => {
       const result = exposedPorts;
-      result[`${port}/tcp`] = {};
+      const [hostPort] = port.split(':');
+      result[`${hostPort}/tcp`] = {};
       return result;
     }, {});
   }
@@ -186,7 +187,8 @@ class Container {
   createPortBindings(ports) {
     return ports.reduce((portBindings, port) => {
       const result = portBindings;
-      result[`${port}/tcp`] = [{ HostPort: port.toString() }];
+      const [hostPort, containerPort] = port.split(':');
+      result[`${containerPort}/tcp`] = [{ HostPort: hostPort.toString() }];
       return result;
     }, {});
   }
