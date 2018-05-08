@@ -14,6 +14,7 @@
     "bitcoin-merkle-proof": "^0.1.0",
     "bitcore-lib-dash": "^0.14.3",
     "bitcore-p2p-dash": "^1.1.4",
+    "bn.js": "^4.11.8",
     "dark-gravity-wave-js": "git+https://github.com/dashevo/dark-gravity-wave-js.git#develop",
     "dash-util": "^2.0.3",
     "inherits": "^2.0.1",
