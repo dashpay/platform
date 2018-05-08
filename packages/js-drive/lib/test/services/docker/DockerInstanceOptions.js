@@ -7,6 +7,7 @@ class DockerInstanceOptions {
       },
       image: null,
       cmd: [],
+      volumes: [],
       envs: [],
       ports: [],
     };

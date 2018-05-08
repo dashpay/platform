@@ -6,17 +6,20 @@ class Container {
    *
    * @param {Network} network
    * @param {Image} image
-   * @param {Array} cmd
-   * @param {Array} envs
-   * @param {Array} ports
+   * @param {Object} options
+   * @param {Array} options.cmd
+   * @param {Array} options.envs
+   * @param {Array} options.ports
+   * @param {Array} options.volumes
    */
-  constructor(network, image, { cmd, envs, ports }) {
+  constructor(network, image, options) {
     this.docker = new Docker();
     this.network = network;
     this.image = image;
-    this.cmd = cmd;
-    this.envs = envs;
-    this.ports = ports;
+    this.cmd = options.cmd;
+    this.envs = options.envs;
+    this.ports = options.ports;
+    this.volumes = options.volumes;
     this.container = null;
     this.containerIp = null;
     this.initialized = false;
@@ -95,14 +98,19 @@ class Container {
   /**
    * Set container options
    *
-   * @param {Object}
+   * @param {Object} options
+   * @param {Array} options.cmd
+   * @param {Array} options.envs
+   * @param {Array} options.ports
+   * @param {Array} options.volumes
    *
    * @return {void}
    */
-  setOptions({ cmd, envs, ports }) {
-    this.cmd = cmd;
-    this.envs = envs;
-    this.ports = ports;
+  setOptions(options) {
+    this.cmd = options.cmd;
+    this.envs = options.envs;
+    this.ports = options.ports;
+    this.volumes = options.volumes;
   }
 
   /**
@@ -127,11 +135,16 @@ class Container {
     const EndpointsConfig = {};
     EndpointsConfig[this.network] = {};
 
+    const Volumes = this.createVolumes(this.volumes);
+    const Binds = this.volumes;
+
     const params = {
       Image: this.image,
       Env: this.envs,
       ExposedPorts,
+      Volumes,
       HostConfig: {
+        Binds,
         PortBindings,
       },
       NetworkingConfig: {
@@ -189,6 +202,21 @@ class Container {
       const result = portBindings;
       const [hostPort, containerPort] = port.split(':');
       result[`${containerPort}/tcp`] = [{ HostPort: hostPort.toString() }];
+      return result;
+    }, {});
+  }
+
+  /**
+   * @private
+   *
+   * @return {Object}
+   */
+  // eslint-disable-next-line class-methods-use-this
+  createVolumes(volumes) {
+    return volumes.reduce((mountPoints, volume) => {
+      const result = mountPoints;
+      const [, containerPath] = volume.split(':');
+      result[containerPath] = {};
       return result;
     }, {});
   }

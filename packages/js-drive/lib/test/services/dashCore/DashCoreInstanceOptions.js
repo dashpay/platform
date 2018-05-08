@@ -19,7 +19,7 @@ class DashCoreInstanceOptions extends DockerInstanceOptions {
       password: 'password',
       port: rpcPort,
     };
-    this.container = {
+    const container = {
       image: '103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/dashcore:develop',
       network: {
         name: 'dash_test_network',
@@ -32,6 +32,7 @@ class DashCoreInstanceOptions extends DockerInstanceOptions {
       ],
       cmd: this.getCmd(),
     };
+    this.container = { ...this.container, ...container };
   }
 
   regeneratePorts() {
