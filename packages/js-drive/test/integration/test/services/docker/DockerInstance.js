@@ -52,6 +52,7 @@ describe('DockerInstance', function main() {
         `-rpcpassword=${options.getRpcPassword()}`,
         '-rpcallowip=0.0.0.0/0',
         '-regtest=1',
+        '-keypool=1',
         `-rpcport=${options.getRpcPort()}`,
         `-zmqpubhashblock=${options.getZmqSockets().hashblock}`,
       ]);

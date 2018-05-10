@@ -65,6 +65,7 @@ class DashCoreInstanceOptions extends DockerInstanceOptions {
       `-rpcpassword=${this.rpc.password}`,
       '-rpcallowip=0.0.0.0/0',
       '-regtest=1',
+      '-keypool=1',
       `-rpcport=${this.rpc.port}`,
       `-zmqpubhashblock=${this.zmqEndpoints.hashblock}`,
     ];

@@ -63,6 +63,7 @@ describe('createDashCoreInstance', function main() {
         `-rpcpassword=${instance.options.getRpcPassword()}`,
         '-rpcallowip=0.0.0.0/0',
         '-regtest=1',
+        '-keypool=1',
         `-rpcport=${instance.options.getRpcPort()}`,
         `-zmqpubhashblock=${instance.options.getZmqSockets().hashblock}`,
       ]);
