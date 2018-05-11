@@ -37,14 +37,6 @@ before_install:
   # Fix awslabs/amazon-ecr-credential-helper#9
   - echo '103738324493.dkr.ecr.us-west-2.amazonaws.com' | docker-credential-ecr-login get
 
-  # Install and start docker compose
-  - sudo rm /usr/local/bin/docker-compose
-  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
-  - chmod +x docker-compose
-  - sudo mv docker-compose /usr/local/bin
-  - docker-compose up -d
-  - docker ps
-
 install:
   - npm install
   - cp .env.example .env
