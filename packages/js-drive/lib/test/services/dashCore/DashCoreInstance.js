@@ -1,5 +1,9 @@
 const DockerInstance = require('../docker/DockerInstance');
 
+async function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 class DashCoreInstance extends DockerInstance {
   /**
    * Create DashCore instance
@@ -72,6 +76,7 @@ class DashCoreInstance extends DockerInstance {
         if (!this.isDashdLoading(error)) {
           throw error;
         }
+        await wait(1000);
       }
     }
   }

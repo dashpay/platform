@@ -1,5 +1,9 @@
 const DockerInstance = require('../docker/DockerInstance');
 
+async function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 class MongoDbInstance extends DockerInstance {
   /**
    * Create DashCore instance
@@ -17,16 +21,26 @@ class MongoDbInstance extends DockerInstance {
   }
 
   /**
+   * Start instance
+   *
+   * @return {Promise<void>}
+   */
+  async start() {
+    await super.start();
+    await this.initialization();
+  }
+
+  /**
    * Clean container and close MongoDb connection
    *
    * @return {Promise<void>}
    */
   async clean() {
-    await super.clean();
-
     if (this.mongoClient) {
       await this.mongoClient.close();
     }
+
+    await super.clean();
   }
 
   /**
@@ -38,28 +52,31 @@ class MongoDbInstance extends DockerInstance {
     if (!this.isInitialized()) {
       return {};
     }
-    if (this.mongoClient) {
+    if (this.mongoClient && this.mongoClient.isConnected(this.options.mongo.name)) {
       return this.mongoClient.db(this.options.mongo.name);
     }
 
-    this.mongoClient = await this.connectToMongo();
     return this.mongoClient.db(this.options.mongo.name);
   }
 
   /**
    * @private
    *
-   * @returns {Promise<MongoClient>}
+   * @return {Promise<void>}
    */
-  async connectToMongo() {
-    try {
-      const address = `mongodb://127.0.0.1:${this.options.mongo.port}`;
-      return await this.MongoClient.connect(address);
-    } catch (error) {
-      if (error.name !== 'MongoNetworkError') {
-        throw error;
+  async initialization() {
+    let mongoStarting = true;
+    while (mongoStarting) {
+      try {
+        const address = `mongodb://127.0.0.1:${this.options.mongo.port}`;
+        this.mongoClient = await this.MongoClient.connect(address);
+        mongoStarting = false;
+      } catch (error) {
+        if (error.name !== 'MongoNetworkError') {
+          throw error;
+        }
+        await wait(1000);
       }
-      return this.connectToMongo();
     }
   }
 }
