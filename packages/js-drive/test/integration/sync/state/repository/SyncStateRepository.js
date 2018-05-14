@@ -15,17 +15,15 @@ describe('SyncStateRepository', function main() {
   before(async () => {
     instance = await startMongoDbInstance();
     mongoDb = await instance.getMongoClient();
+    mongoCollection = mongoDb.collection('syncState');
   });
   beforeEach(async () => {
-    await mongoDb.dropDatabase();
-    mongoCollection = mongoDb.collection('syncState');
-
     const blocks = getBlockFixtures();
     syncState = new SyncState(blocks, new Date());
 
     syncStateRepository = new SyncStateRepository(mongoDb);
   });
-  after(async () => instance.clean());
+  after(async () => instance.remove());
 
 
   it('should store state', async () => {

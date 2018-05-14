@@ -14,7 +14,7 @@ describe('createDashDriveInstance', function main() {
     before(async () => {
       instance = await createDashDriveInstance(envs);
     });
-    after(async () => instance.clean());
+    after(async () => instance.remove());
 
     it('should start an instance with a bridge dash_test_network', async () => {
       await instance.start();

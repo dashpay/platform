@@ -35,11 +35,11 @@ class DockerInstance {
   }
 
   /**
-   * Clean container
+   * Remove container
    *
    * @return {Promise<void>}
    */
-  async clean() {
+  async remove() {
     await this.container.remove();
   }
 

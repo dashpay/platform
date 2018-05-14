@@ -61,8 +61,8 @@ startDashDriveInstance.many = async function many(number) {
   after(async function after() {
     this.timeout(40000);
     const promises = instances.map(instance => Promise.all([
-      instance.mongoDb.clean(),
-      instance.dashDrive.clean(),
+      instance.mongoDb.remove(),
+      instance.dashDrive.remove(),
     ]));
     await Promise.all(promises);
   });

@@ -41,7 +41,7 @@ describe('createDashCoreInstance', function main() {
       instance = await createDashCoreInstance();
     });
 
-    after(async () => instance.clean());
+    after(async () => instance.remove());
 
     it('should start an instance with a bridge dash_test_network', async () => {
       await instance.start();
@@ -98,8 +98,8 @@ describe('createDashCoreInstance', function main() {
     });
     after(async () => {
       await Promise.all([
-        instanceOne.clean(),
-        instanceTwo.clean(),
+        instanceOne.remove(),
+        instanceTwo.remove(),
       ]);
     });
 
@@ -140,7 +140,7 @@ describe('createDashCoreInstance', function main() {
     before(async () => {
       instance = await createDashCoreInstance();
     });
-    after(async () => instance.clean());
+    after(async () => instance.remove());
 
     it('should work after starting the instance', async () => {
       await instance.start();

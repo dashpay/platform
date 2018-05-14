@@ -33,7 +33,7 @@ startDashCoreInstance.many = async function many(number) {
   }
 
   after(async () => {
-    const promises = instances.map(instance => instance.clean());
+    const promises = instances.map(instance => instance.remove());
     await Promise.all(promises);
   });
 

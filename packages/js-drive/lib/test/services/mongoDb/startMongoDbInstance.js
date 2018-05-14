@@ -29,8 +29,12 @@ startMongoDbInstance.many = async function many(number) {
     instances.push(instance);
   }
 
-  after(async () => {
+  afterEach(async () => {
     const promises = instances.map(instance => instance.clean());
+    await Promise.all(promises);
+  });
+  after(async () => {
+    const promises = instances.map(instance => instance.remove());
     await Promise.all(promises);
   });
 

@@ -33,14 +33,25 @@ class MongoDbInstance extends DockerInstance {
   /**
    * Clean container and close MongoDb connection
    *
-   * @return {Promise<void>}
+   * @returns {Promise<void>}
    */
   async clean() {
-    if (this.mongoClient) {
+    if (this.isMongoClientConnected()) {
+      await this.mongoClient.db(this.options.mongo.name).dropDatabase();
+    }
+  }
+
+  /**
+   * Remove container and close MongoDb connection
+   *
+   * @returns {Promise<void>}
+   */
+  async remove() {
+    if (this.isMongoClientConnected()) {
       await this.mongoClient.close();
     }
 
-    await super.clean();
+    await super.remove();
   }
 
   /**
@@ -78,6 +89,15 @@ class MongoDbInstance extends DockerInstance {
         await wait(1000);
       }
     }
+  }
+
+  /**
+   * @private
+   *
+   * @return {boolean}
+   */
+  isMongoClientConnected() {
+    return this.mongoClient && this.mongoClient.isConnected(this.options.mongo.name);
   }
 }
 
