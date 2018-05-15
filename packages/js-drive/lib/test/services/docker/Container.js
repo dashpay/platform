@@ -71,6 +71,7 @@ class Container {
     }
     await this.container.stop();
     await this.container.remove();
+    this.container = null;
     this.initialized = false;
   }
 
@@ -80,6 +81,10 @@ class Container {
    * @return {Promise<details>}
    */
   async details() {
+    if (!this.container) {
+      throw new Error('Container not found');
+    }
+
     return this.container.inspect();
   }
 

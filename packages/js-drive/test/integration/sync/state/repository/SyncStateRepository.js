@@ -1,7 +1,7 @@
 const SyncState = require('../../../../../lib/sync/state/SyncState');
 const SyncStateRepository = require('../../../../../lib/sync/state/repository/SyncStateRepository');
 const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlockFixtures');
-const startMongoDbInstance = require('../../../../../lib/test/services/mongoDb/startMongoDbInstance');
+const startMongoDbInstance = require('../../../../../lib/test/services/mocha/startMongoDbInstance');
 
 describe('SyncStateRepository', function main() {
   this.timeout(90000);
@@ -12,19 +12,17 @@ describe('SyncStateRepository', function main() {
   let syncState;
   let instance;
 
-  before(async () => {
-    instance = await startMongoDbInstance();
+  startMongoDbInstance().then((_instance) => {
+    instance = _instance;
+  });
+
+  beforeEach(async () => {
     mongoDb = await instance.getMongoClient();
     mongoCollection = mongoDb.collection('syncState');
-  });
-  beforeEach(async () => {
     const blocks = getBlockFixtures();
     syncState = new SyncState(blocks, new Date());
-
     syncStateRepository = new SyncStateRepository(mongoDb);
   });
-  after(async () => instance.remove());
-
 
   it('should store state', async () => {
     await syncStateRepository.store(syncState);

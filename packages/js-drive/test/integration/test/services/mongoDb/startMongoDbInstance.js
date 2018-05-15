@@ -9,6 +9,7 @@ describe('startMongoDbInstance', function main() {
     before(async () => {
       instance = await startMongoDbInstance();
     });
+    after(async () => instance.remove());
 
     it('should has MongoDb container running', async () => {
       const { State } = await instance.container.details();
@@ -21,6 +22,10 @@ describe('startMongoDbInstance', function main() {
 
     before(async () => {
       instances = await startMongoDbInstance.many(3);
+    });
+    after(async () => {
+      const promises = instances.map(instance => instance.remove());
+      await Promise.all(promises);
     });
 
     it('should have MongoDb containers running', async () => {

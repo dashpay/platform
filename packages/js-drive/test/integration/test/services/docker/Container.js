@@ -77,6 +77,13 @@ describe('Container', function main() {
       expect(State.Status).to.equal('running');
     });
 
+    it('should start after remove', async () => {
+      await container.remove();
+      await container.start();
+      const { State } = await container.details();
+      expect(State.Status).to.equal('running');
+    });
+
     it('should return container IP', () => {
       expect(container.getIp()).to.be.equal(container.getIp());
     });
@@ -90,8 +97,7 @@ describe('Container', function main() {
       } catch (err) {
         error = err;
       }
-      expect(error.statusCode).to.equal(404);
-      expect(error.reason).to.equal('no such container');
+      expect(error.message).to.equal('Container not found');
     });
   });
 

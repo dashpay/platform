@@ -31,6 +31,16 @@ class DashCoreInstance extends DockerInstance {
   }
 
   /**
+   * Clean DashCore by restarting the instance
+   *
+   * @returns {Promise<void>}
+   */
+  async clean() {
+    await super.remove();
+    await this.start();
+  }
+
+  /**
    * Connect to another DashCore instance
    *
    * @param {Object} DashCoreInstance

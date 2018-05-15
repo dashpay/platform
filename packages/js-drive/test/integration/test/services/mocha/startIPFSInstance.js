@@ -1,14 +1,11 @@
-const startIPFSInstance = require('../../../../../lib/test/services/IPFS/startIPFSInstance');
+const startIPFSInstance = require('../../../../../lib/test/services/mocha/startIPFSInstance');
 
-describe('startIPFSInstance', function main() {
-  this.timeout(40000);
-
+describe('startIPFSInstance', () => {
   describe('One instance', () => {
     let ipfsAPI;
-    before(async () => {
-      ipfsAPI = await startIPFSInstance();
+    startIPFSInstance().then((_instance) => {
+      ipfsAPI = _instance;
     });
-    after(async () => ipfsAPI.remove());
 
     it('should start one instance', async () => {
       const actualTrueObject = await ipfsAPI.block.put(Buffer.from('{"true": true}'));
@@ -19,12 +16,8 @@ describe('startIPFSInstance', function main() {
 
   describe('Three instances', () => {
     let ipfsAPIs;
-    before(async () => {
-      ipfsAPIs = await startIPFSInstance.many(3);
-    });
-    after(async () => {
-      const promises = ipfsAPIs.map(instance => instance.remove());
-      await Promise.all(promises);
+    startIPFSInstance.many(3).then((_instances) => {
+      ipfsAPIs = _instances;
     });
 
     it('should start many instances', async () => {

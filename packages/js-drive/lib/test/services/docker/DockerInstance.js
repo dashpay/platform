@@ -35,6 +35,15 @@ class DockerInstance {
   }
 
   /**
+   * Clean instance
+   *
+   * @returns {Promise<DockerInstance>}
+   */
+  // eslint-disable-next-line
+  async clean() {
+  }
+
+  /**
    * Remove container
    *
    * @return {Promise<void>}

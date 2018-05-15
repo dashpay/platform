@@ -3,6 +3,17 @@ const startIPFSInstance = require('../IPFS/startIPFSInstance');
 const startDashCoreInstance = require('../dashCore/startDashCoreInstance');
 const createDashDriveInstance = require('./createDashDriveInstance');
 
+async function callInParallel(services, method) {
+  const instances = [
+    services.ipfs,
+    services.dashCore,
+    services.mongoDb,
+    services.dashDrive,
+  ];
+  const promises = instances.map(instance => instance[method]());
+  await Promise.all(promises);
+}
+
 /**
  * Create DashDrive instance
  *
@@ -53,19 +64,16 @@ startDashDriveInstance.many = async function many(number) {
       dashCore: dashCoreInstance,
       mongoDb: mongoDbInstance,
       dashDrive: dashDriveInstance,
+      clean: async function clean() {
+        await callInParallel(instance, 'clean');
+      },
+      remove: async function clean() {
+        await callInParallel(instance, 'remove');
+      },
     };
 
     instances.push(instance);
   }
-
-  after(async function after() {
-    this.timeout(40000);
-    const promises = instances.map(instance => Promise.all([
-      instance.mongoDb.remove(),
-      instance.dashDrive.remove(),
-    ]));
-    await Promise.all(promises);
-  });
 
   return instances;
 };

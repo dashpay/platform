@@ -9,6 +9,7 @@ describe('startDashDriveInstance', function main() {
     before(async () => {
       instance = await startDashDriveInstance();
     });
+    after(async () => instance.remove());
 
     it('should has DashCore container running', async () => {
       const { State } = await instance.dashCore.container.details();
@@ -76,6 +77,10 @@ describe('startDashDriveInstance', function main() {
 
     before(async () => {
       instances = await startDashDriveInstance.many(3);
+    });
+    after(async () => {
+      const promises = instances.map(instance => instance.remove());
+      await Promise.all(promises);
     });
 
     it('should have DashCore containers running', async () => {

@@ -88,8 +88,7 @@ describe('DockerInstance', function main() {
       } catch (err) {
         error = err;
       }
-      expect(error.statusCode).to.equal(404);
-      expect(error.reason).to.equal('no such container');
+      expect(error.message).to.equal('Container not found');
     });
   });
 

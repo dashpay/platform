@@ -58,78 +58,81 @@ All tools are [bootstrapped](../lib/test/bootstrap.js) before tests:
 ### Start IPFS
 
 ```js
-const startIPFSInstance = require('../lib/test/services/IPFS/startIPFSInstance');
+const startIPFSInstance = require('../lib/test/services/mocha/startIPFSInstance');
 
 let ipfsApi;
-before(() => {
-  ipfsApi = await startIPFSInstance();
+startIPFSInstance().then((instance) => {
+  ipfsApi = instance;
 });
 ```
 
 Use `many` method to start several IPFS instances:
 
 ```js
-const startIPFSInstance = require('../lib/test/services/IPFS/startIPFSInstance');
+const startIPFSInstance = require('../lib/test/services/mocha/startIPFSInstance');
 
 let ipfsApi1;
 let ipfsApi2;
-before(() => {
-  ([ipfsApi1, ipfsApi2] = await startIPFSInstance.many(2));
+startIPFSInstance.many(2).then((instances) => {
+  [ipfsApi1, ipfsApi2] = instances;
 });
 ```
 
  - `startIPFSInstance` returns instance of [IpfsApi](https://github.com/ipfs/js-ipfs-api#api)
  - IPFS storage is cleaned up before each test
+ - IPFS is stopped when tests are over
 
 ### Start Dash Core
 
 ```js
-const startDashCoreInstance = require('../lib/test/services/dashCore/startDashCoreInstance');
+const startDashCoreInstance = require('../lib/test/services/mocha/startDashCoreInstance');
 
 let dashCoreInstance;
-before(() => {
-  dashCoreInstance = await startDashCoreInstance();
+startDashCoreInstance().then((instance) => {
+  dashCoreInstance = instance;
 });
 ```
 
  - Use `many` method to start several Dash Core instances
- - `startDashCoreInstance` returns instance if [DashCoreInstance](../lib/test/services/dashCore/DashCoreInstance.js)
- - Dash Core process is restarted and data is cleaned up before each test
+ - `startDashCoreInstance` returns instance of [DashCoreInstance](../lib/test/services/dashCore/DashCoreInstance.js)
+ - Dash Core is restarted and data are cleaned up before each test
+ - Dash Core is removed when tests are over
  
 ### Start Dash Drive
 
 ```js
-const startDashDriveInstance = require('../lib/test/services/dashDrive/startDashDriveInstance');
+const startDashDriveInstance = require('../lib/test/services/mocha/startDashDriveInstance');
 
 let dashDriveInstance;
-before(() => {
- dashDriveInstance = await startDashDriveInstance();
+startDashDriveInstance().then((instance) => {
+  dashDriveInstance = instance;
 });
 ```
 
 - Use `many` method to start several Dash Drive instances
-- `startDashDriveInstance` returns instance if [DockerInstance](../lib/test/services/docker/DockerInstance.js)
-- Dash Drive process is restarted and data is cleaned up before each test
+- `startDashDriveInstance` returns an instance of:
+  - [ipfs](https://github.com/ipfs/js-ipfs-api#api)
+  - [dashCore](../lib/test/services/dashCore/DashCoreInstance.js)
+  - [dashDrive](../lib/test/services/docker/DockerInstance.js)
+  - [mongoDb](../lib/test/services/mongoDb/MongoDbInstance.js)
+- Dash Drive process is restarted and data are cleaned up before each test
+- Dash Drive is removed when tests are over
 
 ### Start MongoDB
 
 ```js
-const startMongoDbInstance = require('../lib/test/services/mongoDb/startMongoDbInstance');
+const startMongoDbInstance = require('../lib/test/services/mocha/startMongoDbInstance');
 
-describe('SomeTest', () => {
-  let instance;
-  let mongoDb;
-
-  before(async () => {
-    instance = startMongoDbInstance();
-    mongoDb = instance.getMongoClient();
-  });
-  beforeEach(async () => mongoDb.dropDatabase());
+let mongoDb;
+startMongoDbInstance().then((instance) => {
+  mongoDb = instance;
 });
 ```
 
 - Use `many` method to start several MongoDb instances
-- `startMongoDbInstance` returns instance if [MongoDbInstance](../lib/test/services/mongoDb/MongoDbInstance.js)
+- `startMongoDbInstance` returns instance of [MongoDbInstance](../lib/test/services/mongoDb/MongoDbInstance.js)
+- MongoDB is cleaned up after each tests
+- MongoDB is removed when tests are ove
 
 ## Fixtures
 

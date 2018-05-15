@@ -17,21 +17,13 @@ async function startIPFSInstance() {
   return ipfsAPIs[0];
 }
 
-/**
- * @param {Node[]} objects
- * @param {string} method
- * @return {Promise<[any]>}
- */
-async function callInParallel(objects, method) {
-  const promises = objects.map(object => object[method]());
-  return Promise.all(promises);
-}
-
 async function spawnAndPromisifyIpfs() {
   const ipfsd = await spawnIpfs();
 
   ipfsd.stop = util.promisify(ipfsd.stop).bind(ipfsd);
   ipfsd.cleanup = util.promisify(ipfsd.cleanup).bind(ipfsd);
+  ipfsd.api.clean = ipfsd.cleanup;
+  ipfsd.api.remove = ipfsd.stop;
 
   return ipfsd;
 }
@@ -72,14 +64,6 @@ startIPFSInstance.many = function many(number) {
     }
 
     resolve(ipfsInstances.map(instance => instance.api));
-
-    afterEach(async () => {
-      await callInParallel(ipfsInstances, 'cleanup');
-    });
-
-    after(async () => {
-      await callInParallel(ipfsInstances, 'stop');
-    });
   });
 };
 

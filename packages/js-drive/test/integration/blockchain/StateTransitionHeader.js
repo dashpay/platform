@@ -4,7 +4,7 @@ const multihashingAsync = require('multihashing-async');
 const multihashes = require('multihashes');
 const StateTransitionHeader = require('../../../lib/blockchain/StateTransitionHeader');
 const addSTPacketFactory = require('../../../lib/storage/addSTPacketFactory');
-const startIPFSInstance = require('../../../lib/test/services/IPFS/startIPFSInstance');
+const startIPFSInstance = require('../../../lib/test/services/mocha/startIPFSInstance');
 const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
 
@@ -22,10 +22,7 @@ describe('StateTransitionHeader', () => {
   const header = getTransitionHeaderFixtures()[0].toJSON();
 
   let addSTPacket;
-
-  before(async function before() {
-    this.timeout(25000);
-    const ipfsApi = await startIPFSInstance();
+  startIPFSInstance().then((ipfsApi) => {
     addSTPacket = addSTPacketFactory(ipfsApi);
   });
 
