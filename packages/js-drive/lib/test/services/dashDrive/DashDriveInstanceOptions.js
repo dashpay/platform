@@ -12,11 +12,7 @@ class DashDriveInstanceOptions extends DockerInstanceOptions {
     const container = {
       image: '103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/dashdrive',
       envs,
-      cmd: [
-        'npm',
-        'run',
-        'sync',
-      ],
+      cmd: ['sh', '-c', 'npm run sync & npm run api'],
       network: {
         name: 'dash_test_network',
         driver: 'bridge',
