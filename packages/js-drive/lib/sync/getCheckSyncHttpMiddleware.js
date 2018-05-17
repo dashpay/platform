@@ -37,7 +37,7 @@ function getCheckSyncHttpMiddleware(
       return;
     }
 
-    utils.parseBody(req, (err, request) => {
+    utils.parseBody(req, null, (err, request) => {
       if (err || !utils.Request.isValidRequest(request) || !request.id) {
         next();
 
@@ -48,7 +48,9 @@ function getCheckSyncHttpMiddleware(
       const errorResponse = createError(100, 'Initial sync in progress');
       const responses = requests.map(r => utils.response(errorResponse, null, r.id));
 
-      res.end(utils.Request.isBatch(request) ? requests : responses[0]);
+      const requestsStringify = JSON.stringify(requests);
+      const responsesStringify = JSON.stringify(responses[0]);
+      res.end(utils.Request.isBatch(request) ? requestsStringify : responsesStringify);
     });
   };
 }

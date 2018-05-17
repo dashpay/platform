@@ -16,7 +16,7 @@ describe('getCheckSyncHttpMiddleware', () => {
     parseErrorMock = null;
     jaysonMock = {
       utils: {
-        parseBody: (req, callback) => {
+        parseBody: (req, options, callback) => {
           callback(parseErrorMock, parsedRequestMock);
         },
         Request: {
@@ -91,7 +91,7 @@ describe('getCheckSyncHttpMiddleware', () => {
 
       expect(nextStub).not.to.be.called();
       expect(responseMock.end).to.be.calledOnce();
-      expect(responseMock.end).to.be.calledWith(errorResponse);
+      expect(responseMock.end).to.be.calledWith(JSON.stringify(errorResponse));
     });
     it('should pass further if we can\'t parse request', () => {
       parseErrorMock = true;

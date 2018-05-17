@@ -12,7 +12,7 @@ const InvalidParamsError = require('../InvalidParamsError');
 module.exports = function wrapToErrorHandler(method) {
   return async function apiMethodErrorHandler(params) {
     try {
-      return method(params);
+      return await method(params);
     } catch (e) {
       if (e instanceof InvalidParamsError) {
         throw createError(errors.INVALID_PARAMS, e.message);
