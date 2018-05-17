@@ -3,13 +3,14 @@ const Network = require('../docker/Network');
 const getAwsEcrAuthorizationToken = require('../docker/getAwsEcrAuthorizationToken');
 const Image = require('../docker/Image');
 const Container = require('../docker/Container');
-const DockerInstance = require('../docker/DockerInstance');
+const DashDriveInstance = require('./DashDriveInstance');
+
 
 /**
  * Create DashDrive instance
  *
  * @param {Array} envs
- * @returns {Promise<DockerInstance>}
+ * @returns {Promise<DashDriveInstance>}
  */
 async function createDashDriveInstance(envs) {
   const options = new DashDriveInstanceOptions({ envs });
@@ -25,7 +26,7 @@ async function createDashDriveInstance(envs) {
   const containerOptions = options.getContainerOptions();
   const container = new Container(networkName, imageName, containerOptions);
 
-  return new DockerInstance(network, image, container, options);
+  return new DashDriveInstance(network, image, container, options);
 }
 
 module.exports = createDashDriveInstance;

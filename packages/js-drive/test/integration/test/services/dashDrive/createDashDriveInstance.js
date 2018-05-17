@@ -40,5 +40,10 @@ describe('createDashDriveInstance', function main() {
       const { Args } = await instance.container.details();
       expect(Args).to.deep.equal(['run', 'sync']);
     });
+
+    it('should return DashDrive RPC port', async () => {
+      await instance.start();
+      expect(instance.getRpcPort()).to.equal(instance.options.rpc.port);
+    });
   });
 });
