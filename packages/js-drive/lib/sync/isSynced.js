@@ -20,7 +20,6 @@ async function isDriveSynced(rpcClient, syncState) {
   if (blockCount > 0) {
     ({ result: lastBlockHash } = await rpcClient.getBlockHash(blockCount));
   }
-
   if (lastSyncedBlock && lastSyncedBlock.hash === lastBlockHash) {
     return true;
   }
@@ -31,7 +30,8 @@ async function isDriveSynced(rpcClient, syncState) {
 async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState) {
   return new Promise((resolve, reject) => {
     const changeHandler = (updatedSyncState) => {
-      if (updatedSyncState.getLastSyncAt().getTime() === syncState.getLastSyncAt().getTime()) {
+      if (syncState.getLastSyncAt() &&
+        (updatedSyncState.getLastSyncAt().getTime() === syncState.getLastSyncAt().getTime())) {
         return;
       }
 

@@ -30,17 +30,15 @@ function getCheckSyncHttpMiddleware(
     if (error) {
       throw error;
     }
-
-    if (syncState) {
-      next();
-
-      return;
-    }
-
     utils.parseBody(req, null, (err, request) => {
-      if (err || !utils.Request.isValidRequest(request) || !request.id) {
-        next();
+      if (err) {
+        next(err);
+        return;
+      }
 
+      if (syncState || !utils.Request.isValidRequest(request) || !request.id) {
+        req.body = request;
+        next();
         return;
       }
 

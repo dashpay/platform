@@ -68,6 +68,13 @@ describe('getCheckSyncHttpMiddleware', () => {
   describe('middleware', () => {
     it('should pass further if sync is complete', async function it() {
       const parseBodyStub = this.sinon.stub(jaysonMock.utils, 'parseBody');
+      const parsedBody = {
+        method: 'addSTPacketMethod',
+        jsonrpc: '2.0',
+        params: { packet: {} },
+        id: 'ea9e45c4-bc90-4d79-a3ee-9c22576d69ba',
+      };
+      parseBodyStub.callsArgWith(2, null, parsedBody);
 
       const syncStateMock = {};
       resolveSync(syncStateMock);
@@ -76,8 +83,8 @@ describe('getCheckSyncHttpMiddleware', () => {
         setImmediate(() => {
           middleware(requestMock, responseMock, nextStub);
 
+          expect(requestMock.body).to.deep.equal(parsedBody);
           expect(nextStub).to.be.calledOnce();
-          expect(parseBodyStub).not.to.be.called();
 
           resolve();
         });
