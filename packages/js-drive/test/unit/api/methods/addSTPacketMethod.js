@@ -28,7 +28,7 @@ describe('addSTPacketMethod', () => {
 
     const serializedPacket = cbor.encodeCanonical(packetsData[0]);
 
-    await addSTPacketMethod({ packet: serializedPacket });
+    await addSTPacketMethod({ packet: serializedPacket.toString('hex') });
 
     expect(addSTPacket).to.be.calledOnce();
   });

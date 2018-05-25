@@ -53,7 +53,7 @@
     "connect": "^3.6.6",
     "dotenv": "^5.0.1",
     "emittery": "^0.3.0",
-    "ipfs-api": "^17.5.0",
+    "ipfs-api": "^20.0.1",
     "jayson": "^2.0.5",
     "mongodb": "^3.0.3",
     "multihashes": "^0.4.13",
