@@ -57,6 +57,23 @@ class DashCoreInstance extends DockerInstance {
   }
 
   /**
+   * Get ZeroMQ endpoints
+   *
+   * @returns {object}
+   */
+  getZmqSockets() {
+    if (!this.isInitialized()) {
+      return {};
+    }
+
+    const endpoints = {};
+    for (const [topicName, port] of Object.entries(this.options.getZmqPorts())) {
+      endpoints[topicName] = `tcp://${this.getIp()}:${port}`;
+    }
+    return endpoints;
+  }
+
+  /**
    * Get RPC client
    *
    * @return {Object}

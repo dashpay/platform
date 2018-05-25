@@ -54,7 +54,12 @@ describe('DockerInstance', function main() {
         '-regtest=1',
         '-keypool=1',
         `-rpcport=${options.getRpcPort()}`,
-        `-zmqpubhashblock=${options.getZmqSockets().hashblock}`,
+        `-zmqpubrawtx=tcp://0.0.0.0:${options.getZmqPorts().rawtx}`,
+        `-zmqpubrawtxlock=tcp://0.0.0.0:${options.getZmqPorts().rawtxlock}`,
+        `-zmqpubhashblock=tcp://0.0.0.0:${options.getZmqPorts().hashblock}`,
+        `-zmqpubhashtx=tcp://0.0.0.0:${options.getZmqPorts().hashtx}`,
+        `-zmqpubhashtxlock=tcp://0.0.0.0:${options.getZmqPorts().hashtxlock}`,
+        `-zmqpubrawblock=tcp://0.0.0.0:${options.getZmqPorts().rawblock}`,
       ]);
     });
 

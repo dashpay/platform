@@ -36,7 +36,7 @@ describe('startDashDriveInstance', function main() {
     it('should DashDrive container has the right DashCore settings', async () => {
       const { Config: { Env } } = await instance.dashDrive.container.details();
       const expectedEnv = [
-        `DASHCORE_ZMQ_PUB_HASHBLOCK=${instance.dashCore.options.getZmqSockets().hashblock}`,
+        `DASHCORE_ZMQ_PUB_HASHBLOCK=${instance.dashCore.getZmqSockets().hashblock}`,
         `DASHCORE_JSON_RPC_HOST=${instance.dashCore.getIp()}`,
         `DASHCORE_JSON_RPC_PORT=${instance.dashCore.options.getRpcPort()}`,
         `DASHCORE_JSON_RPC_USER=${instance.dashCore.options.getRpcUser()}`,

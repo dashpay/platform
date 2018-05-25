@@ -48,7 +48,7 @@ startDashDriveInstance.many = async function many(number) {
     await mongoDbInstance.start();
 
     const envs = [
-      `DASHCORE_ZMQ_PUB_HASHBLOCK=${dashCoreInstance.options.getZmqSockets().hashblock}`,
+      `DASHCORE_ZMQ_PUB_HASHBLOCK=${dashCoreInstance.getZmqSockets().hashblock}`,
       `DASHCORE_JSON_RPC_HOST=${dashCoreInstance.getIp()}`,
       `DASHCORE_JSON_RPC_PORT=${dashCoreInstance.options.getRpcPort()}`,
       `DASHCORE_JSON_RPC_USER=${dashCoreInstance.options.getRpcUser()}`,

@@ -65,13 +65,13 @@ describe('createDashCoreInstance', function main() {
         '-regtest=1',
         '-keypool=1',
         `-rpcport=${instance.options.getRpcPort()}`,
-        `-zmqpubhashblock=${instance.options.getZmqSockets().hashblock}`,
+        `-zmqpubrawtx=tcp://0.0.0.0:${instance.options.getZmqPorts().rawtx}`,
+        `-zmqpubrawtxlock=tcp://0.0.0.0:${instance.options.getZmqPorts().rawtxlock}`,
+        `-zmqpubhashblock=tcp://0.0.0.0:${instance.options.getZmqPorts().hashblock}`,
+        `-zmqpubhashtx=tcp://0.0.0.0:${instance.options.getZmqPorts().hashtx}`,
+        `-zmqpubhashtxlock=tcp://0.0.0.0:${instance.options.getZmqPorts().hashtxlock}`,
+        `-zmqpubrawblock=tcp://0.0.0.0:${instance.options.getZmqPorts().rawblock}`,
       ]);
-    });
-
-    it('should return ZMQ sockets configuration', () => {
-      const zmqSockets = instance.options.getZmqSockets();
-      expect(zmqSockets.hashblock).to.exist();
     });
 
     it('should return RPC client', () => {
