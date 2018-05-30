@@ -1,20 +1,26 @@
 const Docker = require('dockerode');
 
+const startMongoDbInstance = require('../../../../../lib/test/services/mongoDb/startMongoDbInstance');
 const createDashDriveInstance = require('../../../../../lib/test/services/dashDrive/createDashDriveInstance');
 
 describe('createDashDriveInstance', function main() {
   this.timeout(90000);
 
   describe('usage', () => {
-    const envs = [
-      'STORAGE_MONGODB_URL=mongodb://127.0.0.1',
-    ];
-
+    let mongoInstance;
+    let envs;
     let instance;
     before(async () => {
+      mongoInstance = await startMongoDbInstance();
+      envs = [`STORAGE_MONGODB_URL=mongodb://${mongoInstance.getIp()}`];
       instance = await createDashDriveInstance(envs);
     });
-    after(async () => instance.remove());
+    after(async () => {
+      await Promise.all([
+        mongoInstance.remove(),
+        instance.remove(),
+      ]);
+    });
 
     it('should start an instance with a bridge dash_test_network', async () => {
       await instance.start();
@@ -32,7 +38,7 @@ describe('createDashDriveInstance', function main() {
       const { Config: { Env } } = await instance.container.details();
 
       const instanceEnv = Env.filter(variable => envs.includes(variable));
-      expect(envs.length).to.deep.equal(instanceEnv.length);
+      expect(envs.length).to.equal(instanceEnv.length);
     });
 
     it('should start an instance with the default options', async () => {
@@ -44,6 +50,31 @@ describe('createDashDriveInstance', function main() {
     it('should return DashDrive RPC port', async () => {
       await instance.start();
       expect(instance.getRpcPort()).to.equal(instance.options.rpc.port);
+    });
+  });
+
+  describe('RPC', () => {
+    let mongoInstance;
+    let instance;
+    before(async () => {
+      mongoInstance = await startMongoDbInstance();
+      const envs = [`STORAGE_MONGODB_URL=mongodb://${mongoInstance.getIp()}`];
+      instance = await createDashDriveInstance(envs);
+    });
+    after(async () => {
+      await Promise.all([
+        mongoInstance.remove(),
+        instance.remove(),
+      ]);
+    });
+
+    it('should DashDrive api return error if initial sync in progress', async () => {
+      await instance.start();
+
+      const rpc = instance.getApi();
+      const res = await rpc.request('addSTPacketMethod', {});
+
+      expect(res.error.message).to.equal('Initial sync in progress');
     });
   });
 });

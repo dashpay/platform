@@ -4,7 +4,7 @@ const getAwsEcrAuthorizationToken = require('../docker/getAwsEcrAuthorizationTok
 const Image = require('../docker/Image');
 const Container = require('../docker/Container');
 const DashDriveInstance = require('./DashDriveInstance');
-
+const { client: jaysonClient } = require('jayson');
 
 /**
  * Create DashDrive instance
@@ -26,7 +26,7 @@ async function createDashDriveInstance(envs) {
   const containerOptions = options.getContainerOptions();
   const container = new Container(networkName, imageName, containerOptions);
 
-  return new DashDriveInstance(network, image, container, options);
+  return new DashDriveInstance(network, image, container, jaysonClient, options);
 }
 
 module.exports = createDashDriveInstance;
