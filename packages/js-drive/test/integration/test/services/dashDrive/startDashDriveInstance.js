@@ -26,6 +26,11 @@ describe('startDashDriveInstance', function main() {
       expect(State.Status).to.equal('running');
     });
 
+    it('should has IPFS container running', async () => {
+      const { State } = await instance.ipfs.container.details();
+      expect(State.Status).to.equal('running');
+    });
+
     it('should DashDrive container has the right MongoDb address', async () => {
       const { Config: { Env } } = await instance.dashDrive.container.details();
       const expectedEnv = `STORAGE_MONGODB_URL=mongodb://${instance.mongoDb.getIp()}`;
@@ -49,13 +54,13 @@ describe('startDashDriveInstance', function main() {
     it('should DashDrive container has the right IPFS settings', async () => {
       const { Config: { Env } } = await instance.dashDrive.container.details();
       const expectedEnv = [
-        `STORAGE_IPFS_MULTIADDR=/ip4/${instance.ipfs.apiHost}/tcp/${instance.ipfs.apiPort}`,
+        `STORAGE_IPFS_MULTIADDR=${instance.ipfs.getIpfsAddress()}`,
       ];
       const envs = Env.filter(variable => expectedEnv.indexOf(variable) !== -1);
       expect(envs.length).to.equal(expectedEnv.length);
     });
 
-    it('should be on the same network (DashCore, DashDrive and MongoDb)', async () => {
+    it('should be on the same network (DashCore, DashDrive, IPFS, and MongoDb)', async () => {
       const {
         NetworkSettings: dashCoreNetworkSettings,
       } = await instance.dashCore.container.details();
@@ -63,11 +68,15 @@ describe('startDashDriveInstance', function main() {
         NetworkSettings: dashDriveNetworkSettings,
       } = await instance.dashDrive.container.details();
       const {
+        NetworkSettings: ipfsNetworkSettings,
+      } = await instance.ipfs.container.details();
+      const {
         NetworkSettings: mongoDbNetworkSettings,
       } = await instance.mongoDb.container.details();
 
       expect(Object.keys(dashCoreNetworkSettings.Networks)).to.deep.equal(['dash_test_network']);
       expect(Object.keys(dashDriveNetworkSettings.Networks)).to.deep.equal(['dash_test_network']);
+      expect(Object.keys(ipfsNetworkSettings.Networks)).to.deep.equal(['dash_test_network']);
       expect(Object.keys(mongoDbNetworkSettings.Networks)).to.deep.equal(['dash_test_network']);
     });
   });
@@ -100,6 +109,13 @@ describe('startDashDriveInstance', function main() {
     it('should have DashDrive containers running', async () => {
       for (let i = 0; i < 3; i++) {
         const { State } = await instances[i].dashDrive.container.details();
+        expect(State.Status).to.equal('running');
+      }
+    });
+
+    it('should have IPFS containers running', async () => {
+      for (let i = 0; i < 3; i++) {
+        const { State } = await instances[i].ipfs.container.details();
         expect(State.Status).to.equal('running');
       }
     });

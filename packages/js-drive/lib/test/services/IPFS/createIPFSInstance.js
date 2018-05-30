@@ -1,17 +1,17 @@
-const MongoDbInstanceOptions = require('./MongoDbInstanceOptions');
+const IPFSInstanceOptions = require('./IPFSInstanceOptions');
 const Network = require('../docker/Network');
 const Image = require('../docker/Image');
+const IpfsApi = require('ipfs-api');
 const Container = require('../docker/Container');
-const { MongoClient } = require('mongodb');
-const MongoDbInstance = require('./MongoDbInstance');
+const IPFSInstance = require('./IPFSInstance');
 
 /**
- * Create MongoDb instance
+ * Create IPFS instance
  *
- * @returns {Promise<MongoDbInstance>}
+ * @returns {Promise<IPFSInstance>}
  */
-async function createMongoDbInstance() {
-  const options = new MongoDbInstanceOptions();
+async function createIPFSInstance() {
+  const options = new IPFSInstanceOptions();
 
   const { name: networkName, driver } = options.getContainerNetworkOptions();
   const network = new Network(networkName, driver);
@@ -22,7 +22,7 @@ async function createMongoDbInstance() {
   const containerOptions = options.getContainerOptions();
   const container = new Container(networkName, imageName, containerOptions);
 
-  return new MongoDbInstance(network, image, container, MongoClient, options);
+  return new IPFSInstance(network, image, container, IpfsApi, options);
 }
 
-module.exports = createMongoDbInstance;
+module.exports = createIPFSInstance;

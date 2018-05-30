@@ -6,7 +6,7 @@ async function wait(ms) {
 
 class MongoDbInstance extends DockerInstance {
   /**
-   * Create DashCore instance
+   * Create MongoDB instance
    *
    * @param {Network} network
    * @param {Image} image

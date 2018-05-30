@@ -1,15 +1,9 @@
-const util = require('util');
-
-const DaemonFactory = require('ipfsd-ctl');
-
-const df = DaemonFactory.create();
-
-const spawnIpfs = util.promisify(df.spawn).bind(df);
+const createIPFSInstance = require('./createIPFSInstance');
 
 /**
- * Start and stop IPFS instance for mocha tests
+ * Start IPFS instance
  *
- * @return {Promise<IpfsAPI>}
+ * @returns {Promise<IPFSInstance>}
  */
 async function startIPFSInstance() {
   const ipfsAPIs = await startIPFSInstance.many(1);
@@ -17,54 +11,26 @@ async function startIPFSInstance() {
   return ipfsAPIs[0];
 }
 
-async function spawnAndPromisifyIpfs() {
-  const ipfsd = await spawnIpfs();
-
-  ipfsd.stop = util.promisify(ipfsd.stop).bind(ipfsd);
-  ipfsd.cleanup = util.promisify(ipfsd.cleanup).bind(ipfsd);
-  ipfsd.api.clean = ipfsd.cleanup;
-  ipfsd.api.remove = ipfsd.stop;
-
-  return ipfsd;
-}
-
 /**
- * Start and stop specified number of IPFS instances for mocha tests
+ * Start specific number of IPFS instance
  *
- * @param number
- * @return {Promise<IpfsAPI[]>}
+ * @param {number} number
+ * @returns {Promise<IPFSInstance[]>}
  */
-startIPFSInstance.many = function many(number) {
-  const ipfsInstances = [];
-
+startIPFSInstance.many = async function many(number) {
   if (number < 1) {
     throw new Error('Invalid number of instances');
   }
 
-  return new Promise(async (resolve, reject) => {
-    try {
-      const firstInstance = await spawnAndPromisifyIpfs();
-      ipfsInstances.push(firstInstance);
+  const instances = [];
 
-      if (number > 1) {
-        const firstInstanceId = await firstInstance.api.id();
+  for (let i = 0; i < number; i++) {
+    const instance = await createIPFSInstance();
+    await instance.start();
+    instances.push(instance);
+  }
 
-        for (let i = 1; i < number; i++) {
-          const instance = await spawnAndPromisifyIpfs();
-
-          await instance.api.swarm.connect(firstInstanceId.addresses[0]);
-
-          ipfsInstances.push(instance);
-        }
-      }
-    } catch (e) {
-      reject(e);
-
-      throw e;
-    }
-
-    resolve(ipfsInstances.map(instance => instance.api));
-  });
+  return instances;
 };
 
 module.exports = startIPFSInstance;

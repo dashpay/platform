@@ -22,8 +22,8 @@ describe('StateTransitionHeader', () => {
   const header = getTransitionHeaderFixtures()[0].toJSON();
 
   let addSTPacket;
-  startIPFSInstance().then((ipfsApi) => {
-    addSTPacket = addSTPacketFactory(ipfsApi);
+  startIPFSInstance().then((instance) => {
+    addSTPacket = addSTPacketFactory(instance.getApi());
   });
 
   it('should StateTransitionHeader CID equal to IPFS CID', async () => {

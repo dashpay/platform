@@ -43,7 +43,6 @@ startDashDriveInstance.many = async function many(number) {
   for (let i = 0; i < number; i++) {
     const dashCoreInstance = dashCoreInstances[i];
     const ipfsAPI = ipfsAPIs[i];
-    const { apiHost, apiPort } = ipfsAPI;
     const mongoDbInstance = await createMongoDbInstance();
     await mongoDbInstance.start();
 
@@ -53,7 +52,7 @@ startDashDriveInstance.many = async function many(number) {
       `DASHCORE_JSON_RPC_PORT=${dashCoreInstance.options.getRpcPort()}`,
       `DASHCORE_JSON_RPC_USER=${dashCoreInstance.options.getRpcUser()}`,
       `DASHCORE_JSON_RPC_PASS=${dashCoreInstance.options.getRpcPassword()}`,
-      `STORAGE_IPFS_MULTIADDR=/ip4/${apiHost}/tcp/${apiPort}`,
+      `STORAGE_IPFS_MULTIADDR=${ipfsAPI.getIpfsAddress()}`,
       `STORAGE_MONGODB_URL=mongodb://${mongoDbInstance.getIp()}`,
     ];
     const dashDriveInstance = await createDashDriveInstance(envs);

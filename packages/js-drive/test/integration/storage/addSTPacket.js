@@ -9,7 +9,7 @@ describe('addSTPacket', () => {
   let addSTPacket;
 
   startIPFSInstance().then((_instance) => {
-    ipfsApi = _instance;
+    ipfsApi = _instance.getApi();
     addSTPacket = addSTPacketFactory(ipfsApi);
   });
 
