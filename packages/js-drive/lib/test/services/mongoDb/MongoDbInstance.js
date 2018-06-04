@@ -27,7 +27,7 @@ class MongoDbInstance extends DockerInstance {
    */
   async start() {
     await super.start();
-    await this.initialization();
+    await this.initialize();
   }
 
   /**
@@ -75,7 +75,7 @@ class MongoDbInstance extends DockerInstance {
    *
    * @return {Promise<void>}
    */
-  async initialization() {
+  async initialize() {
     let mongoStarting = true;
     while (mongoStarting) {
       try {

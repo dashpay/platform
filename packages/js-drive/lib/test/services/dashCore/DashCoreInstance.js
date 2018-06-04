@@ -27,7 +27,7 @@ class DashCoreInstance extends DockerInstance {
    */
   async start() {
     await super.start();
-    await this.initialization();
+    await this.initialize();
   }
 
   /**
@@ -91,7 +91,7 @@ class DashCoreInstance extends DockerInstance {
    *
    * @return {Promise<void>}
    */
-  async initialization() {
+  async initialize() {
     this.rpcClient = await this.createRpcClient();
 
     let nodeStarting = true;

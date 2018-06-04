@@ -27,7 +27,7 @@ class IPFSInstance extends DockerInstance {
    */
   async start() {
     await super.start();
-    await this.initialization();
+    await this.initialize();
   }
 
   /**
@@ -67,7 +67,7 @@ class IPFSInstance extends DockerInstance {
    *
    * @returns {Promise<void>}
    */
-  async initialization() {
+  async initialize() {
     const address = `/ip4/127.0.0.1/tcp/${this.options.getIpfsExposedPort()}`;
     this.ipfsClient = await this.IpfsApi(address);
 
