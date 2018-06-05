@@ -11,6 +11,7 @@ class Container {
    * @param {Array} options.envs
    * @param {Array} options.ports
    * @param {Array} options.volumes
+   * @param {Object} options.labels
    */
   constructor(network, image, options) {
     this.docker = new Docker();
@@ -20,6 +21,7 @@ class Container {
     this.envs = options.envs;
     this.ports = options.ports;
     this.volumes = options.volumes;
+    this.labels = options.labels;
     this.container = null;
     this.containerIp = null;
     this.initialized = false;
@@ -116,6 +118,7 @@ class Container {
     this.envs = options.envs;
     this.ports = options.ports;
     this.volumes = options.volumes;
+    this.labels = options.labels;
   }
 
   /**
@@ -155,6 +158,7 @@ class Container {
       NetworkingConfig: {
         EndpointsConfig,
       },
+      Labels: this.labels,
     };
     if (this.cmd) {
       params.Cmd = this.cmd;

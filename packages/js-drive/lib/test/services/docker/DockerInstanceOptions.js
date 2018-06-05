@@ -10,6 +10,9 @@ class DockerInstanceOptions {
       volumes: [],
       envs: [],
       ports: [],
+      labels: {
+        testHelperName: 'DashTestContainer',
+      },
     };
   }
 

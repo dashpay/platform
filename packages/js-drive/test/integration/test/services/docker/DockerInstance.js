@@ -1,5 +1,6 @@
 const Docker = require('dockerode');
 
+const removeContainers = require('../../../../../lib/test/services/docker/removeContainers');
 const DashCoreInstanceOptions = require('../../../../../lib/test/services/dashCore/DashCoreInstanceOptions');
 const Network = require('../../../../../lib/test/services/docker/Network');
 const getAwsEcrAuthorizationToken = require('../../../../../lib/test/services/docker/getAwsEcrAuthorizationToken');
@@ -20,6 +21,8 @@ async function createInstance(options) {
 
 describe('DockerInstance', function main() {
   this.timeout(40000);
+
+  before(removeContainers);
 
   const options = new DashCoreInstanceOptions();
 

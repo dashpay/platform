@@ -1,3 +1,10 @@
+const removeContainers = require('../docker/removeContainers');
+
+before(async function before() {
+  this.timeout(60000);
+  await removeContainers();
+});
+
 async function callInParallel(instances, method) {
   const promises = instances.map(instance => instance[method]());
   return Promise.all(promises);

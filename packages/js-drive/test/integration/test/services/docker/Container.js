@@ -1,10 +1,13 @@
 const Docker = require('dockerode');
 
+const removeContainers = require('../../../../../lib/test/services/docker/removeContainers');
 const DashCoreInstanceOptions = require('../../../../../lib/test/services/dashCore/DashCoreInstanceOptions');
 const Container = require('../../../../../lib/test/services/docker/Container');
 
 describe('Container', function main() {
   this.timeout(40000);
+
+  before(removeContainers);
 
   const options = new DashCoreInstanceOptions();
   const imageName = options.getContainerImageName();

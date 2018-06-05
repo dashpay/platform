@@ -1,7 +1,10 @@
+const removeContainers = require('../../../../../lib/test/services/docker/removeContainers');
 const startDashDriveInstance = require('../../../../../lib/test/services/dashDrive/startDashDriveInstance');
 
 describe('startDashDriveInstance', function main() {
   this.timeout(90000);
+
+  before(removeContainers);
 
   describe('One instance', () => {
     let instance;
