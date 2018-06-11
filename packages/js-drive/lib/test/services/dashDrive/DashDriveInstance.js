@@ -1,9 +1,6 @@
 const { promisify } = require('util');
 const DockerInstance = require('../docker/DockerInstance');
-
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+const wait = require('../../util/wait');
 
 class DashDriveInstance extends DockerInstance {
   /**

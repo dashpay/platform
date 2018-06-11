@@ -3,9 +3,7 @@ const Docker = require('dockerode');
 const removeContainers = require('../../../../../lib/test/services/docker/removeContainers');
 const createDashCoreInstance = require('../../../../../lib/test/services/dashCore/createDashCoreInstance');
 
-async function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+const wait = require('../../../../../lib/test/util/wait');
 
 describe('createDashCoreInstance', function main() {
   this.timeout(40000);

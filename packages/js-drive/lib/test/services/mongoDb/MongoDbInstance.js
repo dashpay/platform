@@ -1,8 +1,5 @@
 const DockerInstance = require('../docker/DockerInstance');
-
-async function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+const wait = require('../../util/wait');
 
 class MongoDbInstance extends DockerInstance {
   /**
