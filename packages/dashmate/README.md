@@ -56,7 +56,7 @@ $ ./dash-cli.sh regtest getinfo
 To shut down everything, use:
 
 ```bash
-$ ./mn-bootstrap regtest down
+$ ./mn-bootstrap.sh regtest down
 ```
 
 To delete all containers and node data, use:
