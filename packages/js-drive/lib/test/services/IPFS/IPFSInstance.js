@@ -34,11 +34,18 @@ class IPFSInstance extends DockerInstance {
    * @returns {Promise<void>}
    */
   async connect(ipfsInstance) {
-    const externalIpfs = ipfsInstance.getApi();
-    const externalIpfsId = await externalIpfs.id();
     const internalIpfs = this.getApi();
-    const addr = `/ip4/${ipfsInstance.getIp()}/tcp/${this.options.getIpfsExposedPort()}/ipfs/${externalIpfsId.id}`;
-    await internalIpfs.swarm.connect(addr);
+    const externalIpfs = ipfsInstance.getApi();
+
+    const internalIpfsId = await internalIpfs.id();
+    const internalAddress = `/ip4/${this.getIp()}/tcp/4001/ipfs/${internalIpfsId.id}`;
+    await internalIpfs.bootstrap.add(internalAddress);
+    await externalIpfs.bootstrap.add(internalAddress);
+
+    const externalIpfsId = await externalIpfs.id();
+    const externalAddress = `/ip4/${ipfsInstance.getIp()}/tcp/4001/ipfs/${externalIpfsId.id}`;
+    await internalIpfs.bootstrap.add(externalAddress);
+    await externalIpfs.bootstrap.add(externalAddress);
   }
 
   /**
@@ -71,7 +78,7 @@ class IPFSInstance extends DockerInstance {
     let starting = true;
     while (starting) {
       try {
-        await this.ipfsClient.swarm.peers();
+        await this.ipfsClient.id();
         starting = false;
       } catch (error) {
         if (error && !this.isDaemonLoading(error)) {

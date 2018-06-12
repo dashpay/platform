@@ -31,8 +31,15 @@ describe('createIPFSInstance', function main() {
       const { Args } = await instance.container.details();
       expect(Args).to.deep.equal([
         '--',
-        '/usr/local/bin/start_ipfs',
-        'daemon',
+        '/bin/sh', '-c',
+        [
+          'ipfs init',
+          'ipfs config --json Bootstrap []',
+          'ipfs config --json Discovery.MDNS.Enabled false',
+          `ipfs config Addresses.API /ip4/0.0.0.0/tcp/${instance.options.ipfs.internalPort}`,
+          'ipfs config Addresses.Gateway /ip4/0.0.0.0/tcp/8080',
+          'ipfs daemon',
+        ].join(' && '),
       ]);
     });
 
@@ -74,6 +81,8 @@ describe('createIPFSInstance', function main() {
     });
 
     it('should propagate data from one instance to the other', async () => {
+      await instanceOne.connect(instanceTwo);
+
       const clientOne = instanceOne.getApi();
       const cid = await clientOne.dag.put({ name: 'world' }, { format: 'dag-cbor', hashAlg: 'sha2-256' });
 

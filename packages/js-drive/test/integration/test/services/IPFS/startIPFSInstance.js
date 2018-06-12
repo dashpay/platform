@@ -41,5 +41,16 @@ describe('startIPFSInstance', function main() {
         expect(expectedTrueObject.data).to.be.deep.equal(actualTrueObject.data);
       }
     });
+
+    it('should propagate data between instances', async () => {
+      const clientOne = instances[0].getApi();
+      const cid = await clientOne.dag.put({ name: 'world' }, { format: 'dag-cbor', hashAlg: 'sha2-256' });
+
+      for (let i = 0; i < 3; i++) {
+        const ipfs = instances[i].getApi();
+        const data = await ipfs.dag.get(cid, 'name', { format: 'dag-cbor', hashAlg: 'sha2-256' });
+        expect(data.value).to.equal('world');
+      }
+    });
   });
 });

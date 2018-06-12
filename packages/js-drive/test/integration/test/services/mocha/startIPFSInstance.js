@@ -1,6 +1,8 @@
 const startIPFSInstance = require('../../../../../lib/test/services/mocha/startIPFSInstance');
 
-describe('startIPFSInstance', () => {
+describe('startIPFSInstance', function main() {
+  this.timeout(40000);
+
   describe('One instance', () => {
     let ipfsAPI;
     startIPFSInstance().then((_instance) => {

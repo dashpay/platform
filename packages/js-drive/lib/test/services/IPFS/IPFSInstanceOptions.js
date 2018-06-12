@@ -15,8 +15,17 @@ class IPFSInstanceOptions extends DockerInstanceOptions {
         name: 'dash_test_network',
         driver: 'bridge',
       },
-      cmd: [
-        'daemon',
+      entrypoint: [
+        '/sbin/tini', '--',
+        '/bin/sh', '-c',
+        [
+          'ipfs init',
+          'ipfs config --json Bootstrap []',
+          'ipfs config --json Discovery.MDNS.Enabled false',
+          `ipfs config Addresses.API /ip4/0.0.0.0/tcp/${this.ipfs.internalPort}`,
+          'ipfs config Addresses.Gateway /ip4/0.0.0.0/tcp/8080',
+          'ipfs daemon',
+        ].join(' && '),
       ],
       ports: [
         `${ipfsPort}:${this.ipfs.internalPort}`,

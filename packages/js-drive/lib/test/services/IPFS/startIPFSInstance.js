@@ -27,6 +27,9 @@ startIPFSInstance.many = async function many(number) {
   for (let i = 0; i < number; i++) {
     const instance = await createIPFSInstance();
     await instance.start();
+    if (instances.length > 0) {
+      await instances[i - 1].connect(instance);
+    }
     instances.push(instance);
   }
 

@@ -8,6 +8,7 @@ class Container {
    * @param {Image} image
    * @param {Object} options
    * @param {Array} options.cmd
+   * @param {Array} options.entrypoint
    * @param {Array} options.envs
    * @param {Array} options.ports
    * @param {Array} options.volumes
@@ -18,6 +19,7 @@ class Container {
     this.network = network;
     this.image = image;
     this.cmd = options.cmd;
+    this.entrypoint = options.entrypoint;
     this.envs = options.envs;
     this.ports = options.ports;
     this.volumes = options.volumes;
@@ -162,6 +164,9 @@ class Container {
     };
     if (this.cmd) {
       params.Cmd = this.cmd;
+    }
+    if (this.entrypoint) {
+      params.Entrypoint = this.entrypoint;
     }
 
     const container = await this.docker.createContainer(params);
