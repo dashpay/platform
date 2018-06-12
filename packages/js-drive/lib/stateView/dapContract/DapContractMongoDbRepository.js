@@ -15,7 +15,8 @@ class DapContractMongoDbRepository {
    * @returns {Promise<DapContract>}
    */
   async find(dapId) {
-    const dapContractData = await this.mongoClient.findOne({ _id: dapId });
+    const result = await this.mongoClient.findOne({ _id: dapId });
+    const dapContractData = result || {};
     return new DapContract(
       dapContractData.dapId,
       dapContractData.dapName,

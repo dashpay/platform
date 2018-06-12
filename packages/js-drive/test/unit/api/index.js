@@ -2,5 +2,6 @@
 describe('Api', () => {
   describe('Methods', () => {
     require('./methods/addSTPacketMethod');
+    require('./methods/fetchDapContractMethod');
   });
 });
