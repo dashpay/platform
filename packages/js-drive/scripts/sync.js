@@ -62,19 +62,22 @@ const errorHandler = require('../lib/util/errorHandler');
   zmqSocket.connect(process.env.DASHCORE_ZMQ_PUB_HASHBLOCK);
 
   let inSync = true;
-  zmqSocket.on('message', (async () => {
-    if (inSync) {
-      return;
+  zmqSocket.on('message', () => {
+    async function onHashBlock() {
+      if (inSync) {
+        return;
+      }
+
+      // Start sync from the last synced block + 1
+      blockIterator.setBlockHeight(blockIterator.getBlockHeight() + 1);
+      stHeaderIterator.reset(false);
+
+      await stHeaderReader.read();
+
+      inSync = false;
     }
-
-    // Start sync from the last synced block + 1
-    blockIterator.setBlockHeight(blockIterator.getBlockHeight() + 1);
-    stHeaderIterator.reset(false);
-
-    await stHeaderReader.read();
-
-    inSync = false;
-  }).catch(errorHandler));
+    onHashBlock().catch(errorHandler);
+  });
 
   zmqSocket.subscribe('hashblock');
 }()).catch(errorHandler);
