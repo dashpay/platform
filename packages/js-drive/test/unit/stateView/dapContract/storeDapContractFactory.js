@@ -42,7 +42,7 @@ describe('storeDapContractFactory', () => {
   it('should throw an error if DapContractRepository fails', async () => {
     dapContractRepository.store.throws(new Error('RepositoryFails'));
     const packet = getTransitionPacketFixtures()[0];
-    ipfsClient.dag.get.returns({ value: packet.toJSON() });
+    ipfsClient.dag.get.returns({ value: packet });
     const storeDapContract = storeDapContractFactory(dapContractRepository, ipfsClient);
 
     try {
@@ -55,7 +55,7 @@ describe('storeDapContractFactory', () => {
 
   it('should return to work successfully', async () => {
     const packet = getTransitionPacketFixtures()[0];
-    ipfsClient.dag.get.returns({ value: packet.toJSON() });
+    ipfsClient.dag.get.returns({ value: packet });
     const storeDapContract = storeDapContractFactory(dapContractRepository, ipfsClient);
 
     const cid = 'zdpuB1nHv2ewWb3k5dgm2FNuGsKohuujAg3uWJTopZsrxJiXG';

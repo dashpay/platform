@@ -16,7 +16,7 @@ function storeDapContractFactory(dapContractRepository, ipfs) {
    */
   return async function storeDapContract(cid) {
     const packetData = await ipfs.dag.get(cid);
-    const packet = new StateTransitionPacket(JSON.parse(packetData.value));
+    const packet = new StateTransitionPacket(packetData.value.data);
     const { dapid: dapId, objects: dapObjects, schema } = packet;
     const dapName = dapObjects[0].data.dapname;
     const dapContract = new DapContract(dapId, dapName, cid, schema);

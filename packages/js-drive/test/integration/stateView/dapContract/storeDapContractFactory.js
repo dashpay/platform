@@ -23,14 +23,14 @@ describe('storeDapContractFactory', function main() {
   it('should store DAP schema', async () => {
     const packet = getTransitionPacketFixtures()[0];
     const header = getTransitionHeaderFixtures()[0].toJSON();
-    header.hashDataMerkleRoot = await hashDataMerkleRoot(packet.toJSON());
+    header.hashDataMerkleRoot = await hashDataMerkleRoot(packet);
 
     const mongoClient = await mongoDbInstance.getMongoClient();
     const dapContractRepository = new DapContractMongoDbRepository(mongoClient);
     const storeDapContract = storeDapContractFactory(dapContractRepository, ipfsClient);
     const stHeader = new StateTransitionHeader(header);
 
-    await ipfsClient.dag.put(packet.toJSON(), {
+    await ipfsClient.dag.put(packet, {
       format: 'dag-cbor',
       hashAlg: 'sha2-256',
     });
