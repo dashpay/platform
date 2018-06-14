@@ -30,7 +30,7 @@ describe('StateTransitionHeaderIterator', () => {
       obtainedTransitionHeaders.push(header);
     }
 
-    expect(rpcClientMock.getTransitionHeader).has.callCount(rpcClientMock.transitionHeaders.length);
+    expect(rpcClientMock.getTransition).has.callCount(rpcClientMock.transitionHeaders.length);
     expect(blockIterator.next).has.callCount(rpcClientMock.blocks.length + 1);
 
     const obtainedHeaderHashes = obtainedTransitionHeaders.map(h => h.getHash());

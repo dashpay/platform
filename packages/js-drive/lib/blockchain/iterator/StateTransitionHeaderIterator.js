@@ -49,7 +49,7 @@ class StateTransitionHeaderIterator {
 
       if (transitionId) {
         const { result: transitionHeader } =
-          await this.rpcClient.getTransitionHeader(transitionId);
+          await this.rpcClient.getTransition(transitionId);
 
         this.currentTransitionIndex++;
 

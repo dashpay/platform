@@ -54,7 +54,7 @@ module.exports = class RpcClientMock {
   /**
    * @param {string} tsid
    */
-  getTransitionHeader(tsid) {
+  getTransition(tsid) {
     const header = this.transitionHeaders.find(h => h.getHash() === tsid);
 
     return Promise.resolve({ result: header });
