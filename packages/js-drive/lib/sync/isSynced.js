@@ -30,8 +30,12 @@ async function isDriveSynced(rpcClient, syncState) {
 async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState) {
   return new Promise((resolve, reject) => {
     const changeHandler = (updatedSyncState) => {
+      if (!updatedSyncState.getLastSyncAt()) {
+        return;
+      }
+
       if (syncState.getLastSyncAt() &&
-        (updatedSyncState.getLastSyncAt().getTime() === syncState.getLastSyncAt().getTime())) {
+          (updatedSyncState.getLastSyncAt().getTime() === syncState.getLastSyncAt().getTime())) {
         return;
       }
 
