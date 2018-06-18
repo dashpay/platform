@@ -1,15 +1,30 @@
 const wait = require('../../../../lib/test/util/wait');
 
 describe('wait', () => {
-  it('should delay execution of a flow for a specified amount of milliseconds', async () => {
-    const millisToWait = 1200;
+  let clock;
+  let executeWithWait;
 
-    const startTime = process.hrtime();
-    await wait(millisToWait);
-    const endTime = process.hrtime(startTime);
+  beforeEach(function beforeEach() {
+    clock = this.sinon.useFakeTimers();
 
-    const endTimeMillis = (endTime[0] * 1e3) + (endTime[1] / 1e6);
+    executeWithWait = async (f) => {
+      await wait(1200);
+      f();
+    };
+  });
 
-    expect(endTimeMillis).to.be.at.least(millisToWait);
+  it('should delay execution of a flow for a specified amount of milliseconds', function it(done) {
+    const callback = this.sinon.stub();
+
+    executeWithWait(callback).then(() => {
+      expect(callback).have.been.calledOnce();
+      done();
+    }).catch(done);
+
+    clock.tick(1199);
+
+    expect(callback).have.not.been.called();
+
+    clock.tick(1);
   });
 });
