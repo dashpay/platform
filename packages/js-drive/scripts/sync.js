@@ -55,7 +55,13 @@ const errorHandler = require('../lib/util/errorHandler');
   const storeDapContract = storeDapContractFactory(dapContractMongoDbRepository, ipfsAPI);
   attachStoreDapContractHandler(stHeaderReader, storeDapContract);
 
-  await stHeaderReader.read();
+  try {
+    await stHeaderReader.read();
+  } catch (error) {
+    if (error.message !== 'Block height out of range') {
+      throw error;
+    }
+  }
 
   // Sync arriving ST packets
   const zmqSocket = zmq.createSocket('sub');
