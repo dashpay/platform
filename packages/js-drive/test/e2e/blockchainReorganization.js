@@ -1,4 +1,4 @@
-describe('Blockchain reorganization', () => {
+xdescribe('Blockchain reorganization', () => {
   before('having started first Dash Drive node, generated STs and second Dash Drive node replicated data from the first one', () => {
     // TODO: start Dash Drive node #1 and #2
 

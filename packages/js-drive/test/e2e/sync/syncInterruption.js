@@ -1,4 +1,4 @@
-describe('Sync interruption and resume between Dash Drive and Dash Core', () => {
+xdescribe('Sync interruption and resume between Dash Drive and Dash Core', () => {
   before('having Dash Drive node #1 up and running', () => {
     // TODO: start Dash Drive node #1
   });

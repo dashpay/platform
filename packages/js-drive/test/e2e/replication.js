@@ -1,4 +1,4 @@
-describe('Replication between two Dash Drive nodes', () => {
+xdescribe('Replication between two Dash Drive nodes', () => {
   before('having two Dash Drive nodes started', () => {
     // TODO: start Dash Drive nodes here
   });
