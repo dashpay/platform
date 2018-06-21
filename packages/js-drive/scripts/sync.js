@@ -55,8 +55,11 @@ const errorHandler = require('../lib/util/errorHandler');
   const storeDapContract = storeDapContractFactory(dapContractMongoDbRepository, ipfsAPI);
   attachStoreDapContractHandler(stHeaderReader, storeDapContract);
 
+  let isFirstSyncCompleted = false;
   try {
     await stHeaderReader.read();
+
+    isFirstSyncCompleted = true;
   } catch (error) {
     if (error.message !== 'Block height out of range') {
       throw error;
@@ -67,22 +70,35 @@ const errorHandler = require('../lib/util/errorHandler');
   const zmqSocket = zmq.createSocket('sub');
   zmqSocket.connect(process.env.DASHCORE_ZMQ_PUB_HASHBLOCK);
 
-  let inSync = true;
-  zmqSocket.on('message', () => {
-    async function onHashBlock() {
-      if (inSync) {
-        return;
-      }
+  let isInSync = false;
 
-      // Start sync from the last synced block + 1
-      blockIterator.setBlockHeight(blockIterator.getBlockHeight() + 1);
-      stHeaderIterator.reset(false);
-
-      await stHeaderReader.read();
-
-      inSync = false;
+  async function onHashBlock() {
+    if (isInSync) {
+      return;
     }
-    onHashBlock().catch(errorHandler);
+
+    isInSync = true;
+
+    // Start sync from the last synced block + 1
+    let height = blockIterator.getBlockHeight();
+    if (isFirstSyncCompleted) {
+      height += 1;
+    }
+    blockIterator.setBlockHeight(height);
+    stHeaderIterator.reset(false);
+
+    await stHeaderReader.read();
+
+    isFirstSyncCompleted = true;
+
+    isInSync = false;
+  }
+
+  zmqSocket.on('message', () => {
+    onHashBlock().catch((error) => {
+      isInSync = false;
+      errorHandler(error);
+    });
   });
 
   zmqSocket.subscribe('hashblock');
