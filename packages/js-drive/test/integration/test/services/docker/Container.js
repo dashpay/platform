@@ -2,6 +2,7 @@ const Docker = require('dockerode');
 
 const removeContainers = require('../../../../../lib/test/services/docker/removeContainers');
 const DashCoreInstanceOptions = require('../../../../../lib/test/services/dashCore/DashCoreInstanceOptions');
+const MongoDbInstanceOptions = require('../../../../../lib/test/services/mongoDb/MongoDbInstanceOptions');
 const Container = require('../../../../../lib/test/services/docker/Container');
 
 describe('Container', function main() {
@@ -10,9 +11,13 @@ describe('Container', function main() {
   before(removeContainers);
 
   const options = new DashCoreInstanceOptions();
+  const mongoDbOptions = new MongoDbInstanceOptions();
   const imageName = options.getContainerImageName();
+  const mongoDbImageName = mongoDbOptions.getContainerImageName();
   const { name: networkName } = options.getContainerNetworkOptions();
+  const { name: mongoDbNetworkName } = mongoDbOptions.getContainerNetworkOptions();
   const containerOptions = options.getContainerOptions();
+  const mongoDbContainerOptions = mongoDbOptions.getContainerOptions();
 
   describe('before start', () => {
     const container = new Container(networkName, imageName, containerOptions);
@@ -147,6 +152,28 @@ describe('Container', function main() {
 
       expect(error.statusCode).to.equal(500);
       expect(removeContainerSpy.callCount).to.be.equal(1);
+    });
+
+    it('should remove its volumes upon calling remove method', async () => {
+      const docker = new Docker();
+
+      const container =
+        new Container(mongoDbNetworkName, mongoDbImageName, mongoDbContainerOptions);
+
+      await container.start();
+
+      const containerDetails = await container.details();
+      const containerVolumeNames = containerDetails.Mounts.map(mount => mount.Name);
+
+      await container.remove();
+
+      const listVolumesResponse = await docker.listVolumes();
+      const volumeList = listVolumesResponse.Volumes || [];
+      const currentVolumeNames = volumeList.map(volume => volume.Name);
+
+      containerVolumeNames.forEach((name) => {
+        expect(currentVolumeNames).to.not.include(name);
+      });
     });
   });
 });

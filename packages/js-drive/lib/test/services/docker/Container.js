@@ -74,7 +74,7 @@ class Container {
       return;
     }
     await this.container.stop();
-    await this.container.remove();
+    await this.container.remove({ v: 1 });
     this.container = null;
     this.initialized = false;
   }
