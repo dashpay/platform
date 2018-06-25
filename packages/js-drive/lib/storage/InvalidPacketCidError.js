@@ -1,4 +1,4 @@
-class InvalidParamsError extends Error {
+class InvalidPacketCidError extends Error {
   constructor(...params) {
     super(...params);
 
@@ -8,4 +8,4 @@ class InvalidParamsError extends Error {
   }
 }
 
-module.exports = InvalidParamsError;
+module.exports = InvalidPacketCidError;

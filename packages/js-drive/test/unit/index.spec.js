@@ -6,4 +6,5 @@ describe('Unit', () => {
   require('./storage');
   require('./sync');
   require('./test/util');
+  require('./util');
 });

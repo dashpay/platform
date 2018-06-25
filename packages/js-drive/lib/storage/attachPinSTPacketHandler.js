@@ -1,5 +1,9 @@
 const ArrayBlockIterator = require('../blockchain/iterator/ArrayBlockIterator');
 const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTransitionHeaderIterator');
+const rejectAfter = require('../util/rejectAfter');
+const InvalidPacketCidError = require('./InvalidPacketCidError');
+
+const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
 
 /**
  * Add State Transition Packet from blockchain when new ST header will appear.
@@ -7,11 +11,14 @@ const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTrans
  * @param {STHeadersReader} stHeadersReader
  * @param {IpfsAPI} ipfsAPI
  */
-module.exports = function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
+function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
   stHeadersReader.on('header', async (header) => {
-    await ipfsAPI.pin.add(header.getPacketCID(), { recursive: true });
+    const pinPromise = ipfsAPI.pin.add(header.getPacketCID(), { recursive: true });
+    const error = new InvalidPacketCidError();
+
+    await rejectAfter(pinPromise, error, PIN_REJECTION_TIMEOUT);
   });
 
   stHeadersReader.on('wrongSequence', async (block) => {
@@ -30,4 +37,10 @@ module.exports = function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
       await ipfsAPI.pin.rm(header.getPacketCID(), { recursive: true });
     }
   });
-};
+}
+
+Object.assign(attachPinSTPacketHandler, {
+  PIN_REJECTION_TIMEOUT,
+});
+
+module.exports = attachPinSTPacketHandler;
