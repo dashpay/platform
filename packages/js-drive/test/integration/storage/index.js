@@ -1,4 +1,5 @@
 /* eslint-disable global-require */
 describe('Storage', () => {
-  require('./addSTPacket');
+  require('./ipfs/addSTPacket');
+  require('./index');
 });

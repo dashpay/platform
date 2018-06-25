@@ -1,4 +1,4 @@
-const addSTPacketFactory = require('../../../lib/storage/addSTPacketFactory');
+const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
 const registerUser = require('../../../lib/test/registerUser');

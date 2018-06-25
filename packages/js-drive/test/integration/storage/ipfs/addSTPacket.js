@@ -1,8 +1,8 @@
-const addSTPacketFactory = require('../../../lib/storage/addSTPacketFactory');
+const addSTPacketFactory = require('../../../../lib/storage/ipfs/addSTPacketFactory');
 
-const startIPFSInstance = require('../../../lib/test/services/mocha/startIPFSInstance');
+const startIPFSInstance = require('../../../../lib/test/services/mocha/startIPFSInstance');
 
-const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
+const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
 
 describe('addSTPacket', () => {
   let ipfsApi;

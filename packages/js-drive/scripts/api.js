@@ -16,7 +16,7 @@ const errorHandler = require('../lib/util/errorHandler');
 
 const wrapToErrorHandler = require('../lib/api/jsonRpc/wrapToErrorHandler');
 
-const addSTPacketFactory = require('../lib/storage/addSTPacketFactory');
+const addSTPacketFactory = require('../lib/storage/ipfs/addSTPacketFactory');
 const addSTPacketMethodFactory = require('../lib/api/methods/addSTPacketMethodFactory');
 
 (async function main() {
