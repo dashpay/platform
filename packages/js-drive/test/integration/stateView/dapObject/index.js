@@ -1,5 +1,5 @@
 /* eslint-disable global-require */
-describe('dapObject', () => {
+describe('DapObject', () => {
   require('./createDapObjectMongoDbRepositoryFactory');
   require('./DapObjectMongoDbRepository');
 });

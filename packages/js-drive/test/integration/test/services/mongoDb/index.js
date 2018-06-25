@@ -1,4 +1,4 @@
 /* eslint-disable global-require */
-describe('mongoDb', () => {
+describe('MongoDb', () => {
   require('./createMongoDbInstance');
 });

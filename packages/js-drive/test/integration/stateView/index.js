@@ -1,5 +1,5 @@
 /* eslint-disable global-require */
-describe('stateView', () => {
+describe('StateView', () => {
   require('./dapContract');
   require('./dapObject');
 });

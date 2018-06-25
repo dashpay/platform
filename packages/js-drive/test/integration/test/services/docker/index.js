@@ -1,5 +1,5 @@
 /* eslint-disable global-require */
-describe('docker', () => {
+describe('Docker', () => {
   require('./Container');
   require('./DockerInstance');
   require('./getAwsEcrAuthorizationToken');

@@ -1,5 +1,5 @@
 /* eslint-disable global-require */
-describe('dapContract', () => {
+describe('DapContract', () => {
   require('./DapContractMongoDbRepository');
   require('./storeDapContractFactory');
 });
