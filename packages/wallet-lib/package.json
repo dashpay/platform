@@ -20,5 +20,8 @@
   "bugs": {
     "url": "https://github.com/dashevo/dash-wallet-lib/issues"
   },
-  "homepage": "https://github.com/dashevo/dash-wallet-lib#readme"
+  "homepage": "https://github.com/dashevo/dash-wallet-lib#readme",
+  "dependencies": {
+    "@dashevo/dashcore-lib": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop"
+  }
 }
