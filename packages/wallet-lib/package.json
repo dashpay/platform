@@ -1,0 +1,24 @@
+{
+  "name": "dash-wallet-lib",
+  "version": "0.0.0",
+  "description": "Light wallet library for Dash",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/dash-wallet-lib.git"
+  },
+  "keywords": [
+    "cryptocurrency",
+    "dash",
+    "wallet"
+  ],
+  "author": "Dash Core Team",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dashevo/dash-wallet-lib/issues"
+  },
+  "homepage": "https://github.com/dashevo/dash-wallet-lib#readme"
+}
