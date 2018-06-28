@@ -5,7 +5,7 @@ const getTransitionHeaderFixtures = require('../../../../lib/test/fixtures/getTr
 const StateTransitionHeader = require('../../../../lib/blockchain/StateTransitionHeader');
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');
 const storeDapContractFactory = require('../../../../lib/stateView/dapContract/storeDapContractFactory');
-const hashDataMerkleRoot = require('../../../../lib/test/consensus/hashDataMerkleRoot');
+const hashSTPacket = require('../../../../lib/test/consensus/hashSTPacket');
 
 describe('storeDapContractFactory', function main() {
   this.timeout(30000);
@@ -23,7 +23,7 @@ describe('storeDapContractFactory', function main() {
   it('should store DAP schema', async () => {
     const packet = getTransitionPacketFixtures()[0];
     const header = getTransitionHeaderFixtures()[0].toJSON();
-    header.hashDataMerkleRoot = await hashDataMerkleRoot(packet);
+    header.hashSTPacket = await hashSTPacket(packet);
 
     const mongoClient = await mongoDbInstance.getMongoClient();
     const dapContractRepository = new DapContractMongoDbRepository(mongoClient);

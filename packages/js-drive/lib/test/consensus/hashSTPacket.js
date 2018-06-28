@@ -11,11 +11,11 @@ const multihashing = util.promisify(multihashingAsync);
  * @param packet
  * @returns {Promise<String>}
  */
-async function hashDataMerkleRoot(packet) {
+async function hashSTPacket(packet) {
   const serializedPacket = cbor.encodeCanonical(packet);
   const multihash = await multihashing(serializedPacket, 'sha2-256');
   const decoded = multihashes.decode(multihash);
   return decoded.digest.toString('hex');
 }
 
-module.exports = hashDataMerkleRoot;
+module.exports = hashSTPacket;

@@ -3,7 +3,7 @@ const BitcoreLib = require('@dashevo/dashcore-lib');
 const { PrivateKey } = BitcoreLib;
 const { TransitionPacket, TransitionHeader } = BitcoreLib.StateTransition;
 
-const hashDataMerkleRoot = require('./consensus/hashDataMerkleRoot');
+const hashSTPacket = require('./consensus/hashSTPacket');
 
 /**
  * Create DAP contract state transaction packet and header
@@ -18,10 +18,10 @@ async function createDapContractST(userId, privateKeyString, tsp) {
   const transitionPacket = new TransitionPacket()
     .addObject(tsp);
 
-  const merkleRoot = await hashDataMerkleRoot(transitionPacket);
+  const STPacketHash = await hashSTPacket(transitionPacket);
 
   const transitionHeader = new TransitionHeader()
-    .setMerkleRoot(merkleRoot)
+    .setHashSTPacket(STPacketHash)
     .setRegTxHash(userId)
     .sign(privateKey)
     .serialize();

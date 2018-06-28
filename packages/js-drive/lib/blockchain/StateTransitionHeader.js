@@ -12,7 +12,7 @@ class StateTransitionHeader extends TransitionHeader {
      * @returns {string} CID
      */
     this.getPacketCID = function getPacketCID() {
-      const buffer = Buffer.from(this.hashDataMerkleRoot, 'hex');
+      const buffer = Buffer.from(this.hashSTPacket, 'hex');
       const multihash = multihashes.encode(buffer, 'sha2-256');
       const cid = new CID(1, 'dag-cbor', multihash);
       return cid.toBaseEncodedString();
