@@ -13,14 +13,14 @@ describe('dropMongoDatabasesWithPrefixFactory', () => {
     await mongoClient.db('drive_db').collection('dapObjects').insertOne({ name: 'DashPay' });
 
     const { databases: dbs } = await mongoClient.db().admin().listDatabases();
-    const filterDb = dbs.filter(byDbPrefix(process.env.STORAGE_MONGODB_DB_PREFIX));
+    const filterDb = dbs.filter(byDbPrefix(process.env.MONGODB_DB_PREFIX));
     expect(filterDb.length).to.equal(1);
 
     const dropMongoDatabasesWithPrefix = dropMongoDatabasesWithPrefixFactory(mongoClient);
-    await dropMongoDatabasesWithPrefix(process.env.STORAGE_MONGODB_DB_PREFIX);
+    await dropMongoDatabasesWithPrefix(process.env.MONGODB_DB_PREFIX);
 
     const { databases: dbsAfter } = await mongoClient.db().admin().listDatabases();
-    const filterDbAfter = dbsAfter.filter(byDbPrefix(process.env.STORAGE_MONGODB_DB_PREFIX));
+    const filterDbAfter = dbsAfter.filter(byDbPrefix(process.env.MONGODB_DB_PREFIX));
     expect(filterDbAfter.length).to.equal(0);
   });
 });

@@ -20,7 +20,7 @@ describe('createDapObjectMongoDbRepositoryFactory', () => {
     const dapId = '123456';
     createDapObjectMongoDbRepository(dapId);
 
-    expect(mongoClient.db).to.be.calledWith(`dap_${dapId}`);
+    expect(mongoClient.db).to.be.calledWith(`${process.env.MONGODB_DB_PREFIX}dap_${dapId}`);
   });
 
   it('should create DapObjectMongoDbRepository instance', async () => {

@@ -1,4 +1,4 @@
-const PREFIX = 'dap';
+const PREFIX = 'dap_';
 
 /**
  * @param {MongoClient} mongoClient
@@ -14,7 +14,7 @@ function createDapObjectMongoDbRepositoryFactory(mongoClient, DapObjectMongoDbRe
    * @returns {DapObjectMongoDbRepository}
    */
   function createDapObjectMongoDbRepository(dapId) {
-    const mongoDb = mongoClient.db(`${PREFIX}_${dapId}`);
+    const mongoDb = mongoClient.db(`${process.env.MONGODB_DB_PREFIX}${PREFIX}${dapId}`);
     return new DapObjectMongoDbRepository(mongoDb);
   }
 

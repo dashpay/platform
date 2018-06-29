@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv-expand')(require('dotenv').config());
 
 const zmq = require('zeromq');
 const IpfsAPI = require('ipfs-api');
@@ -67,7 +67,7 @@ const errorHandler = require('../lib/util/errorHandler');
   let isInSync = false;
 
   async function resetDashDrive() {
-    await cleanDashDrive();
+    await cleanDashDrive(process.env.MONGODB_DB_PREFIX);
     stHeadersReaderState.clear();
     stHeaderIterator.reset(false);
     blockIterator.setBlockHeight(1);

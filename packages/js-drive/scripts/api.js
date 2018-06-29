@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv-expand')(require('dotenv').config());
 
 const connect = require('connect');
 const jayson = require('jayson/promise');

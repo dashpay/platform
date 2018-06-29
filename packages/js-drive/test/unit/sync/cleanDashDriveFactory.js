@@ -13,7 +13,7 @@ describe('cleanDashDriveFactory', () => {
       unpinAllPacketsSpy,
       dropMongoDatabasesWithPrefixSpy,
     );
-    await cleanDashDrive();
+    await cleanDashDrive(process.env.MONGODB_DB_PREFIX);
 
     expect(unpinAllPacketsSpy).to.calledOnce();
     expect(dropMongoDatabasesWithPrefixSpy).to.calledOnce();
