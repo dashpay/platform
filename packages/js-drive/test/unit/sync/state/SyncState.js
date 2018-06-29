@@ -58,4 +58,22 @@ describe('SyncState', () => {
       lastSyncAt: state.getLastSyncAt(),
     });
   });
+
+  it('should be empty if empty blocks and date', () => {
+    const emptyState = new SyncState([], null);
+
+    expect(emptyState.isEmpty()).to.be.true();
+  });
+
+  it('should not be empty if contains blocks', () => {
+    const anotherState = new SyncState(blocks, null);
+
+    expect(anotherState.isEmpty()).to.be.false();
+  });
+
+  it('should not be empty if contains blocks and lastSyncAt', () => {
+    const anotherState = new SyncState(blocks, new Date());
+
+    expect(anotherState.isEmpty()).to.be.false();
+  });
 });

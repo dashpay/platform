@@ -64,6 +64,10 @@ class SyncState {
     return JSON.stringify(this.toJSON()) === JSON.stringify(state.toJSON());
   }
 
+  isEmpty() {
+    return !this.blocks.length && !this.lastSyncAt;
+  }
+
   /**
    * Get state's JSON representation
    *
