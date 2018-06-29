@@ -39,6 +39,12 @@ module.exports = class RpcClientMock {
   getBlockHash(height) {
     const block = this.blocks.find(b => b.height === height);
 
+    if (!block) {
+      const error = new Error('Block height out of range');
+      error.code = -8;
+      throw error;
+    }
+
     return Promise.resolve({ result: block ? block.hash : null });
   }
 

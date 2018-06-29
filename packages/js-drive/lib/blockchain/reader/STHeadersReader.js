@@ -1,5 +1,7 @@
 const Emittery = require('emittery');
 
+const WrongSequenceError = require('./WrongSequenceError');
+
 class STHeadersReader extends Emittery {
   /**
    * @param {StateTransitionHeaderIterator} stHeaderIterator
@@ -13,7 +15,6 @@ class STHeadersReader extends Emittery {
 
     const { blockIterator } = this.stHeaderIterator;
 
-    this.isHeightChangedInBlockHandler = false;
     this.initialBlockHeight = blockIterator.getBlockHeight();
 
     blockIterator.on('block', this.onBlockHandler.bind(this));
@@ -32,17 +33,18 @@ class STHeadersReader extends Emittery {
     await this.emitSerial('begin', this.stHeaderIterator.blockIterator.getBlockHeight());
 
     for (; ;) {
-      const { done, value: header } = await this.stHeaderIterator.next();
+      let done;
+      let header;
 
-      // when we get next block 'block' event is fired and we check
-      // sequence with previous block in 'onBlockHandler'
-      // if sequence is wrong we change current height to previous
-      // and start iteration again.
-      if (this.isHeightChangedInBlockHandler) {
-        this.isHeightChangedInBlockHandler = false;
+      try {
+        ({ done, value: header } = await this.stHeaderIterator.next());
+      } catch (e) {
+        if (e instanceof WrongSequenceError) {
+          // eslint-disable-next-line no-continue
+          continue;
+        }
 
-        // eslint-disable-next-line no-continue
-        continue;
+        throw e;
       }
 
       if (done) {
@@ -92,8 +94,19 @@ class STHeadersReader extends Emittery {
    * @return {boolean}
    */
   isNotAbleToVerifySequence(currentBlock, previousBlock) {
-    return !previousBlock &&
-      currentBlock.height !== this.initialBlockHeight;
+    if (!previousBlock) {
+      if (currentBlock.height !== this.initialBlockHeight) {
+        // The state doesn't contain synced blocks and
+        // current block's height is not initial blocks height
+        return true;
+      }
+    } else if (currentBlock.height < previousBlock.height &&
+      previousBlock.height - currentBlock.height - 2 > this.state.getBlocksLimit()) {
+      // The state doesn't contain previous block for current block
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -121,13 +134,13 @@ class STHeadersReader extends Emittery {
     this.stHeaderIterator.reset(true);
     this.stHeaderIterator.blockIterator.setBlockHeight(height);
 
-    this.isHeightChangedInBlockHandler = true;
-
     if (height === this.initialBlockHeight) {
       this.state.clear();
     } else {
       this.state.removeLastBlock();
     }
+
+    throw new WrongSequenceError();
   }
 }
 

@@ -78,6 +78,32 @@ class STHeadersReaderState {
   }
 
   /**
+   * Get blocks limit
+   *
+   * @return {number}
+   */
+  getBlocksLimit() {
+    return this.blocksLimit;
+  }
+
+  /**
+   * Set blocks limit
+   *
+   * @param {number} limit
+   */
+  setBlocksLimit(limit) {
+    const previousLimit = this.blocksLimit;
+
+    this.blocksLimit = limit;
+
+    if (limit < previousLimit) {
+      for (let i = previousLimit; i > limit; i--) {
+        this.trimToLimit();
+      }
+    }
+  }
+
+  /**
    * Clear state
    */
   clear() {

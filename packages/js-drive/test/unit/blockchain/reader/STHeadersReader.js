@@ -10,15 +10,14 @@ describe('STHeadersReader', () => {
   let stateTransitionHeaderIterator;
   let reader;
 
-  function setWrongBlockOnCall(s, callCount) {
-    const wrongBlock = Object.assign({}, rpcClientMock.blocks[3]);
-    wrongBlock.previousblockhash = 'wrong';
+  function createBlockInIterator(blockIndex, callIndex) {
+    const block = Object.assign({}, rpcClientMock.blocks[blockIndex]);
     const rpcMock = blockIterator.rpcClient;
-    rpcMock.getBlock.onCall(callCount)
-      .returns(Promise.resolve({ result: wrongBlock }))
+    rpcMock.getBlock.onCall(callIndex)
+      .returns(Promise.resolve({ result: block }))
       .callThrough();
 
-    return wrongBlock;
+    return block;
   }
 
   beforeEach(function beforeEach() {
@@ -72,9 +71,11 @@ describe('STHeadersReader', () => {
     expect(endHandlerStub).to.be.calledWith(blockIterator.getBlockHeight());
   });
 
-  it('should emit "wrongSequence" and read from initial block if not able to verity sequence', async function it() {
+  it('should emit "wrongSequence" and read from initial block' +
+    'if previous block is not present for sequence verifying', async function it() {
     // 3th block will be wrong on first iteration
-    const wrongBlock = setWrongBlockOnCall(this.sinon, 0);
+    const wrongBlock = createBlockInIterator(3, 0);
+    wrongBlock.previousblockhash = 'wrong';
 
     const blockHandlerStub = this.sinon.stub();
     const wrongSequenceStub = this.sinon.stub();
@@ -95,9 +96,46 @@ describe('STHeadersReader', () => {
     });
   });
 
+  it('should emit "wrongSequence" and read from initial block' +
+    'if synced blocks it too ahead of current block for sequence verifying', async function it() {
+    // Mark all blocks as synced
+    // eslint-disable-next-line arrow-body-style
+    reader.getState().setBlocks(rpcClientMock.blocks.map((block) => {
+      return Object.assign({}, block, { height: block.height + 100 });
+    }));
+
+    // Set current reader height to last synced block
+    blockIterator.setBlockHeight(reader.getState().getLastBlock().height);
+
+    // first block will be wrong on first iteration
+    const wrongBlock = createBlockInIterator(0, 0);
+    wrongBlock.height = 5;
+
+    rpcClientMock.getBlockHash.onCall(0)
+      .returns(Promise.resolve({ result: wrongBlock.hash }))
+      .callThrough();
+
+    const blockHandlerStub = this.sinon.stub();
+    const wrongSequenceStub = this.sinon.stub();
+
+    reader.on('block', blockHandlerStub);
+    reader.on('wrongSequence', wrongSequenceStub);
+
+    await reader.read();
+
+    expect(wrongSequenceStub).to.be.calledOnce();
+    expect(wrongSequenceStub).to.be.calledWith(wrongBlock);
+
+    expect(blockHandlerStub).to.have.callCount(rpcClientMock.blocks.length);
+    rpcClientMock.blocks.forEach((block, i) => {
+      expect(blockHandlerStub.getCall(i).args[0]).to.be.deep.equals(block);
+    });
+  });
+
   it('should emit "wrongSequence" read from previous block if blocks sequence is wrong', async function it() {
-    // 4th block will be wrong on first iteration
-    const wrongBlock = setWrongBlockOnCall(this.sinon, 1);
+    // 3th block will be wrong on the second iteration
+    const wrongBlock = createBlockInIterator(3, 1);
+    wrongBlock.previousblockhash = 'wrong';
 
     const blockHandlerStub = this.sinon.stub();
     const wrongSequenceStub = this.sinon.stub();

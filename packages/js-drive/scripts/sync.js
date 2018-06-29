@@ -77,7 +77,7 @@ const errorHandler = require('../lib/util/errorHandler');
     isInSync = false;
   }
 
-  async function onHashBlock() {
+  async function onBlockHash(blockHash) {
     if (isInSync) {
       return;
     }
@@ -89,6 +89,13 @@ const errorHandler = require('../lib/util/errorHandler');
     if (isFirstSyncCompleted) {
       height += 1;
     }
+
+    // Reset height to the current block's height
+    const { result: { height: blockHeight } } = await rpcClient.getBlock(blockHash.toString('hex'));
+    if (blockHeight < height) {
+      height = blockHeight;
+    }
+
     blockIterator.setBlockHeight(height);
     stHeaderIterator.reset(false);
 
@@ -97,7 +104,7 @@ const errorHandler = require('../lib/util/errorHandler');
     } catch (error) {
       if (!syncState.isEmpty() && error.message === 'Block height out of range') {
         await resetDashDrive();
-        await onHashBlock();
+        await onBlockHash();
         return;
       }
     }
@@ -114,7 +121,7 @@ const errorHandler = require('../lib/util/errorHandler');
   } catch (error) {
     if (!syncState.isEmpty() && error.message === 'Block height out of range') {
       await resetDashDrive();
-      await onHashBlock();
+      await onBlockHash();
     } else if (syncState.isEmpty() && error.message !== 'Block height out of range') {
       throw error;
     }
@@ -124,8 +131,8 @@ const errorHandler = require('../lib/util/errorHandler');
   const zmqSocket = zmq.createSocket('sub');
   zmqSocket.connect(process.env.DASHCORE_ZMQ_PUB_HASHBLOCK);
 
-  zmqSocket.on('message', () => {
-    onHashBlock().catch((error) => {
+  zmqSocket.on('message', (topic, blockHash) => {
+    onBlockHash(blockHash).catch((error) => {
       isInSync = false;
       errorHandler(error);
     });

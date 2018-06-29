@@ -59,10 +59,11 @@ class RpcBlockIterator extends Emittery {
 
     if (this.nextBlockHash) {
       const { result: block } = await this.rpcClient.getBlock(this.nextBlockHash);
-      this.currentBlock = block;
-      this.nextBlockHash = block.nextblockhash;
 
       await this.emitSerial('block', block);
+
+      this.currentBlock = block;
+      this.nextBlockHash = block.nextblockhash;
 
       return { done: false, value: block };
     }
