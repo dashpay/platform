@@ -1,18 +1,9 @@
-const DashCore = require('@dashevo/dashcore-lib');
+const Dashcore = require('@dashevo/dashcore-lib');
 
-class KeyChain {
-  constructor(HDKey, derivationPath = 'm/1') {
-    this.derivationPath = derivationPath;
-    this.HDKey = HDKey || new DashCore.HDPrivateKey();
-  }
+/**
+ * Return newly derived private key
+ * @return {string}
+ */
+const getNewPrivateKey = (HDKey = new Dashcore.HDPrivateKey(), derivationPath = 'm/1') => String(HDKey.derive(derivationPath));
 
-  /**
-   * Return newly derived private key
-   * @return {string}
-   */
-  getNewPrivateKey() {
-    return this.HDKey.derive(this.derivationPath).toString();
-  }
-}
-
-module.exports = KeyChain;
+module.exports = { getNewPrivateKey };

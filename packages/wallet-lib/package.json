@@ -4,7 +4,9 @@
   "description": "Light wallet library for Dash",
   "main": "index.js",
   "scripts": {
-    "test": "test"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "mocha test/*"
   },
   "repository": {
     "type": "git",
@@ -25,10 +27,13 @@
     "@dashevo/dashcore-lib": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop"
   },
   "devDependencies": {
+    "@dashevo/dapi-sdk": "git+ssh://git@github.com/dashevo/dapi-sdk#feature/move_examples_to_interface",
+    "chai": "^4.1.2",
     "eslint": "^4.19.1",
     "eslint-config-airbnb": "^17.0.0",
     "eslint-plugin-import": "^2.13.0",
     "eslint-plugin-jsx-a11y": "^6.0.3",
-    "eslint-plugin-react": "^7.10.0"
+    "eslint-plugin-react": "^7.10.0",
+    "mocha": "^5.2.0"
   }
 }
