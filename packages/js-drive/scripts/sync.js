@@ -73,66 +73,72 @@ const errorHandler = require('../lib/util/errorHandler');
     blockIterator.setBlockHeight(1);
     syncState.setBlocks([]);
     syncState.setLastSyncAt(null);
-    isFirstSyncCompleted = false;
-    isInSync = false;
   }
 
-  async function onBlockHash(blockHash) {
+  /**
+   * @param {Buffer} [sinceBlockHash]
+   * @returns {Promise<void>}
+   */
+  async function sync(sinceBlockHash = undefined) {
     if (isInSync) {
       return;
     }
 
     isInSync = true;
 
-    // Start sync from the last synced block + 1
-    let height = blockIterator.getBlockHeight();
-    if (isFirstSyncCompleted) {
-      height += 1;
-    }
-
-    // Reset height to the current block's height
-    const { result: { height: blockHeight } } = await rpcClient.getBlock(blockHash.toString('hex'));
-    if (blockHeight < height) {
-      height = blockHeight;
-    }
-
-    blockIterator.setBlockHeight(height);
-    stHeaderIterator.reset(false);
-
     try {
-      await stHeaderReader.read();
-    } catch (error) {
-      if (!syncState.isEmpty() && error.message === 'Block height out of range') {
-        await resetDashDrive();
-        await onBlockHash();
-        return;
+      // Start sync from the last synced block + 1
+      let height = blockIterator.getBlockHeight();
+      if (isFirstSyncCompleted) {
+        height += 1;
       }
+
+      // Reset height to the current block's height
+      if (sinceBlockHash) {
+        const { result: { height: blockHeight } } = await rpcClient.getBlock(sinceBlockHash.toString('hex'));
+        if (blockHeight < height) {
+          height = blockHeight;
+        }
+      }
+
+      blockIterator.setBlockHeight(height);
+      stHeaderIterator.reset(false);
+
+      try {
+        await stHeaderReader.read();
+      } catch (error) {
+        if (error.message !== 'Block height out of range') {
+          throw error;
+        }
+
+        if (!syncState.isEmpty()) {
+          await resetDashDrive();
+
+          isInSync = false;
+          isFirstSyncCompleted = false;
+
+          await sync();
+          return;
+        }
+      }
+
+      isFirstSyncCompleted = true;
+      isInSync = false;
+    } catch (e) {
+      isInSync = false;
+
+      throw e;
     }
-
-    isFirstSyncCompleted = true;
-
-    isInSync = false;
   }
 
-  try {
-    await stHeaderReader.read();
-
-    isFirstSyncCompleted = true;
-  } catch (error) {
-    if (!syncState.isEmpty() && error.message === 'Block height out of range') {
-      await resetDashDrive();
-      await onBlockHash();
-    } else if (syncState.isEmpty() && error.message !== 'Block height out of range') {
-      throw error;
-    }
-  }
+  await sync();
 
   // Sync arriving ST packets
   const zmqSocket = zmq.createSocket('sub');
   zmqSocket.connect(process.env.DASHCORE_ZMQ_PUB_HASHBLOCK);
 
   zmqSocket.on('message', (topic, blockHash) => {
-    onBlockHash(blockHash).catch((error) => {
+    sync(blockHash).catch((error) => {
       isInSync = false;
       errorHandler(error);
     });
