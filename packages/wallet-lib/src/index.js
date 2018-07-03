@@ -1,9 +1,10 @@
+const Mnemonic = require('@dashevo/dashcore-mnemonic');
 const Dashcore = require('@dashevo/dashcore-lib');
 const { EventEmitter } = require('events');
 const KeyChain = require('./KeyChain');
 
 const { Registration, TopUp } = Dashcore.Transaction.SubscriptionTransactions;
-const { Transaction, PrivateKey } = Dashcore;
+const { Transaction, PrivateKey, HDPrivateKey } = Dashcore;
 
 const EVENT_CONSTANTS = {
   SYNCED: 'SYNCED',
@@ -12,15 +13,23 @@ const EVENT_CONSTANTS = {
 /**
  * Returns a new wallet object.
  * @param {DAPIClient} DAPIClient
- * @param {string} [privateHDKey]
+ * @param {string|privateHDKey} seed
+ * @param {string} network
  * @return {Wallet} - new wallet object
  */
-const createWallet = (DAPIClient, privateHDKey) => ({
-  DAPIClient,
-  events: new EventEmitter(),
-  privateHDKey,
-  synced: false,
-});
+const createWallet = (DAPIClient, seed, network = 'livenet') => {
+  const privateHDKey = (seed.constructor.name === 'HDPrivateKey')
+    ? seed
+    : new HDPrivateKey.fromSeed(new Mnemonic(seed).toSeed(), network);
+
+  return {
+    DAPIClient,
+    events: new EventEmitter(),
+    privateHDKey,
+    synced: false,
+    network,
+  };
+};
 
 /**
  * Returns a new synchronized wallet object.
@@ -43,10 +52,26 @@ const getUTXO = async (wallet) => { throw new Error('Not Implemented'); };
 
 /**
  * @param {Wallet} wallet
+ * @param {object} options of the transaction
+ * @returns {string} - rawTx
+ */
+const createTransaction = (wallet, opts) => {
+  const transaction = new Transaction()
+    .from(opts.utxos)
+    .to(opts.to, opts.amount)
+    .feePerKb(opts.fee)
+    .change(opts.change);
+
+  return transaction.toString();
+};
+
+/**
+ * @param {Wallet} wallet
+ * @param {string} derivationPath
  * @return {string} - new change address
  */
-const getNewAddress = (wallet, derivationPath) => {
-  const newKey = KeyChain.getNewPrivateKey(wallet.privateHDKey, derivationPath);
+const getNewAddress = (wallet) => {
+  const newKey = KeyChain.getNewPrivateKey(wallet.privateHDKey);
   return String(newKey.toAddress());
 };
 
@@ -138,6 +163,7 @@ module.exports = {
   sendTransaction,
   signTransaction,
   createRegistration,
+  createTransaction,
   registerUser,
   topUpUserCredits,
   signStateTransitionHeader,
