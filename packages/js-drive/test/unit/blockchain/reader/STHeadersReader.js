@@ -71,24 +71,21 @@ describe('STHeadersReader', () => {
     expect(endHandlerStub).to.be.calledWith(blockIterator.getBlockHeight());
   });
 
-  it('should emit "wrongSequence" and read from initial block' +
+  it('should emit "reset" and read from initial block' +
     'if previous block is not present for sequence verifying', async function it() {
     // 3th block will be wrong on first iteration
     const wrongBlock = createBlockInIterator(3, 0);
     wrongBlock.previousblockhash = 'wrong';
 
     const blockHandlerStub = this.sinon.stub();
-    const wrongSequenceStub = this.sinon.stub();
+    const resetStub = this.sinon.stub();
 
     reader.on('block', blockHandlerStub);
-    reader.on('wrongSequence', wrongSequenceStub);
+    reader.on('reset', resetStub);
 
     await reader.read();
 
-    expect(wrongSequenceStub).to.be.calledTwice();
-    [wrongBlock, rpcClientMock.blocks[1]].forEach((block, i) => {
-      expect(wrongSequenceStub.getCall(i).args[0]).to.be.deep.equals(block);
-    });
+    expect(resetStub).to.be.calledOnce();
 
     expect(blockHandlerStub).has.callCount(rpcClientMock.blocks.length);
     rpcClientMock.blocks.forEach((block, i) => {
@@ -96,7 +93,7 @@ describe('STHeadersReader', () => {
     });
   });
 
-  it('should emit "wrongSequence" and read from initial block' +
+  it('should emit "reset" and read from initial block' +
     'if synced blocks it too ahead of current block for sequence verifying', async function it() {
     // Mark all blocks as synced
     // eslint-disable-next-line arrow-body-style
@@ -116,20 +113,15 @@ describe('STHeadersReader', () => {
       .callThrough();
 
     const blockHandlerStub = this.sinon.stub();
-    const wrongSequenceStub = this.sinon.stub();
+    const resetStub = this.sinon.stub();
 
     reader.on('block', blockHandlerStub);
-    reader.on('wrongSequence', wrongSequenceStub);
+    reader.on('reset', resetStub);
 
     await reader.read();
 
-    expect(wrongSequenceStub).to.be.calledOnce();
-    expect(wrongSequenceStub).to.be.calledWith(wrongBlock);
-
+    expect(resetStub).to.be.calledOnce();
     expect(blockHandlerStub).to.have.callCount(rpcClientMock.blocks.length);
-    rpcClientMock.blocks.forEach((block, i) => {
-      expect(blockHandlerStub.getCall(i).args[0]).to.be.deep.equals(block);
-    });
   });
 
   it('should emit "wrongSequence" read from previous block if blocks sequence is wrong', async function it() {

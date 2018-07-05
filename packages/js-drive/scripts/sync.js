@@ -17,9 +17,9 @@ const cleanDashDriveFactory = require('../lib/sync/cleanDashDriveFactory');
 const unpinAllIpfsPacketsFactory = require('../lib/storage/ipfs/unpinAllIpfsPacketsFactory');
 const dropMongoDatabasesWithPrefixFactory = require('../lib/mongoDb/dropMongoDatabasesWithPrefixFactory');
 
-const attachPinSTPacketHandler = require('../lib/storage/attachPinSTPacketHandler');
-const attachStoreSyncStateHandler = require('../lib/sync/state/attachStoreSyncStateHandler');
-const attachStoreDapContractHandler = require('../lib/stateView/dapContract/attachStoreDapContractHandler');
+const attachIpfsHandlers = require('../lib/storage/attachIpfsHandlers');
+const attachSyncHandlers = require('../lib/sync/state/attachSyncHandlers');
+const attachStateViewHandlers = require('../lib/stateView/dapContract/attachStateViewHandlers');
 const errorHandler = require('../lib/util/errorHandler');
 
 (async function main() {
@@ -57,11 +57,11 @@ const errorHandler = require('../lib/util/errorHandler');
   const dropMongoDatabasesWithPrefix = dropMongoDatabasesWithPrefixFactory(mongoClient);
   const cleanDashDrive = cleanDashDriveFactory(unpinAllIpfsPackets, dropMongoDatabasesWithPrefix);
 
-  attachPinSTPacketHandler(stHeaderReader, ipfsAPI);
-  attachStoreSyncStateHandler(stHeaderReader, syncState, syncStateRepository);
+  attachIpfsHandlers(stHeaderReader, ipfsAPI, unpinAllIpfsPackets);
+  attachSyncHandlers(stHeaderReader, syncState, syncStateRepository);
   const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb);
   const storeDapContract = storeDapContractFactory(dapContractMongoDbRepository, ipfsAPI);
-  attachStoreDapContractHandler(stHeaderReader, storeDapContract);
+  attachStateViewHandlers(stHeaderReader, storeDapContract, dropMongoDatabasesWithPrefix);
 
   let isFirstSyncCompleted = false;
   let isInSync = false;

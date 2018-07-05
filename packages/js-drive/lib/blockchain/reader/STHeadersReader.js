@@ -75,10 +75,12 @@ class STHeadersReader extends Emittery {
     const previousBlock = this.state.getLastBlock();
 
     if (this.isNotAbleToVerifySequence(currentBlock, previousBlock)) {
+      await this.emit('reset');
       return this.resetIterator(this.initialBlockHeight, currentBlock);
     }
 
     if (this.isWrongSequence(currentBlock, previousBlock)) {
+      await this.emitSerial('wrongSequence', currentBlock);
       return this.resetIterator(previousBlock.height, currentBlock);
     }
 
@@ -128,9 +130,7 @@ class STHeadersReader extends Emittery {
    * @param {Object} currentBlock
    * @return {Promise<void>}
    */
-  async resetIterator(height, currentBlock) {
-    await this.emitSerial('wrongSequence', currentBlock);
-
+  async resetIterator(height) {
     this.stHeaderIterator.reset(true);
     this.stHeaderIterator.blockIterator.setBlockHeight(height);
 

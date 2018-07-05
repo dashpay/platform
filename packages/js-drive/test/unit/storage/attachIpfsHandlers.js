@@ -3,12 +3,13 @@ const proxyquire = require('proxyquire');
 
 const RpcClientMock = require('../../../lib/test/mock/RpcClientMock');
 
-describe('attachPinSTPacketHandler', () => {
+describe('attachIpfsHandlers', () => {
   let rpcClientMock;
   let ipfsAPIMock;
   let stHeadersReaderMock;
   let rejectAfterMock;
-  let attachPinSTPacketHandler;
+  let attachIpfsHandlers;
+  let unpinAllIpfsPackets;
 
   beforeEach(function beforeEach() {
     rpcClientMock = new RpcClientMock(this.sinon);
@@ -38,13 +39,14 @@ describe('attachPinSTPacketHandler', () => {
     }
 
     stHeadersReaderMock = new STHeadersReader();
+    unpinAllIpfsPackets = this.sinon.stub();
 
     rejectAfterMock = this.sinon.stub();
-    attachPinSTPacketHandler = proxyquire('../../../lib/storage/attachPinSTPacketHandler', {
+    attachIpfsHandlers = proxyquire('../../../lib/storage/attachIpfsHandlers', {
       '../util/rejectAfter': rejectAfterMock,
     });
 
-    attachPinSTPacketHandler(stHeadersReaderMock, ipfsAPIMock);
+    attachIpfsHandlers(stHeadersReaderMock, ipfsAPIMock, unpinAllIpfsPackets);
   });
 
   it('should pin ST packets when new header appears', async () => {
@@ -64,7 +66,7 @@ describe('attachPinSTPacketHandler', () => {
 
     expect(calledWithArgs[0]).to.be.equal(pinPromise);
     expect(calledWithArgs[1].name).to.be.equal('InvalidPacketCidError');
-    expect(calledWithArgs[2]).to.be.equal(attachPinSTPacketHandler.PIN_REJECTION_TIMEOUT);
+    expect(calledWithArgs[2]).to.be.equal(attachIpfsHandlers.PIN_REJECTION_TIMEOUT);
   });
 
   it('should unpin ST packets in case of reorg', async () => {
@@ -77,5 +79,10 @@ describe('attachPinSTPacketHandler', () => {
     rpcClientMock.transitionHeaders.slice(0, block.ts.length).forEach((header) => {
       expect(ipfsAPIMock.pin.rm).to.be.calledWith(header.getPacketCID(), { recursive: true });
     });
+  });
+
+  it('should call unpinAllIpfsPackets on stHeadersReader reset event', async () => {
+    await stHeadersReaderMock.emit('reset');
+    expect(unpinAllIpfsPackets).to.be.calledOnce();
   });
 });

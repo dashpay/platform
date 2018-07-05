@@ -7,11 +7,14 @@ const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
 
 /**
  * Add State Transition Packet from blockchain when new ST header will appear.
+ * Remove State Transition Packet from blockchain when wrong sequence.
+ * Remove all State Transition Packets from blockchain when reset.
  *
  * @param {STHeadersReader} stHeadersReader
  * @param {IpfsAPI} ipfsAPI
+ * @param {unpinAllIpfsPackets} unpinAllIpfsPackets
  */
-function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
+function attachIpfsHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
   stHeadersReader.on('header', async (header) => {
@@ -37,10 +40,14 @@ function attachPinSTPacketHandler(stHeadersReader, ipfsAPI) {
       await ipfsAPI.pin.rm(header.getPacketCID(), { recursive: true });
     }
   });
+
+  stHeadersReader.on('reset', async () => {
+    await unpinAllIpfsPackets();
+  });
 }
 
-Object.assign(attachPinSTPacketHandler, {
+Object.assign(attachIpfsHandlers, {
   PIN_REJECTION_TIMEOUT,
 });
 
-module.exports = attachPinSTPacketHandler;
+module.exports = attachIpfsHandlers;

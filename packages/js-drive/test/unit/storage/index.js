@@ -1,4 +1,4 @@
 /* eslint-disable global-require */
 describe('Storage', () => {
-  require('./attachPinSTPacketHandler');
+  require('./attachIpfsHandlers');
 });

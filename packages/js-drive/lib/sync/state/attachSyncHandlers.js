@@ -5,7 +5,7 @@
  * @param {SyncState} syncState
  * @param {SyncStateRepository} syncStateRepository
  */
-function attachStoreSyncStateHandler(stHeadersReader, syncState, syncStateRepository) {
+function attachSyncHandlers(stHeadersReader, syncState, syncStateRepository) {
   const readerState = stHeadersReader.getState();
   stHeadersReader.on('block', async () => {
     syncState.setBlocks(readerState.getBlocks());
@@ -19,4 +19,4 @@ function attachStoreSyncStateHandler(stHeadersReader, syncState, syncStateReposi
   });
 }
 
-module.exports = attachStoreSyncStateHandler;
+module.exports = attachSyncHandlers;

@@ -1,6 +1,6 @@
 /* eslint-disable global-require */
 describe('State', () => {
-  require('./attachStoreSyncStateHandler');
+  require('./attachSyncHandlers');
   require('./SyncState');
   require('./repository');
 });

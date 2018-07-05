@@ -3,9 +3,9 @@ const Emitter = require('emittery');
 const SyncState = require('../../../../lib/sync/state/SyncState');
 
 const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
-const attachStoreSyncStateHandler = require('../../../../lib/sync/state/attachStoreSyncStateHandler');
+const attachSyncHandlers = require('../../../../lib/sync/state/attachSyncHandlers');
 
-describe('attachPinSTPacketHandler', () => {
+describe('attachSyncHandlers', () => {
   let blocks;
   let readerState;
   let syncState;
@@ -38,7 +38,7 @@ describe('attachPinSTPacketHandler', () => {
   });
 
   it('should store sync state when next block has processed', async () => {
-    attachStoreSyncStateHandler(stHeadersReaderMock, syncState, syncStateRepositoryMock);
+    attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
 
     await stHeadersReaderMock.emitSerial('block', blocks[0]);
 
@@ -50,7 +50,7 @@ describe('attachPinSTPacketHandler', () => {
   });
 
   it('should update lastSyncAt when sync has completed', async () => {
-    attachStoreSyncStateHandler(stHeadersReaderMock, syncState, syncStateRepositoryMock);
+    attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
 
     await stHeadersReaderMock.emitSerial('end', blocks[blocks.length - 1].height);
 

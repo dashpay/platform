@@ -2,5 +2,5 @@
 describe('DapContract', () => {
   require('./DapContract');
   require('./storeDapContractFactory');
-  require('./attachStoreDapContractHandler');
+  require('./attachStateViewHandlers');
 });
