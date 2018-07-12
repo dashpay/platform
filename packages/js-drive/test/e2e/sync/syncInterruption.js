@@ -145,13 +145,22 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
     dashDriveStandaloneInstance = await createDashDriveInstance(envs);
     await dashDriveStandaloneInstance.start();
 
-    // 7. Wait a couple of seconds for Dash Drive on 2nd node
-    //    to sync a few packets
+    // 7. Wait for IPFS on 2nd node to have 3 packets pinned
+    //    Wait maximum of 60 seconds in total
 
     // TODO: implement this bit in the future using
     //       getSyncStatus API method of Dash Drive
     //       possibly implemented in DD-196
-    await wait(3000);
+    for (let i = 0; i < 60; i++) {
+      lsResult = await ipfsInstance.getApi().pin.ls();
+      const pinnedHashes = lsResult
+        .filter(item => initialHashes.indexOf(item.hash) === -1)
+        .map(item => item.hash);
+      if (pinnedHashes.length >= 3) {
+        break;
+      }
+      await wait(1000);
+    }
 
     // 8. Stop Dash Drive on 2nd node
     await dashDriveStandaloneInstance.stop();
