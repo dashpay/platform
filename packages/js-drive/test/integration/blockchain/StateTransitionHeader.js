@@ -6,7 +6,7 @@ const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTrans
 const hashSTPacket = require('../../../lib/test/consensus/hashSTPacket');
 
 describe('StateTransitionHeader', () => {
-  const packet = getTransitionPacketFixtures()[0].toJSON();
+  const packet = getTransitionPacketFixtures()[0];
   const header = getTransitionHeaderFixtures()[0].toJSON();
 
   let addSTPacket;
@@ -15,7 +15,7 @@ describe('StateTransitionHeader', () => {
   });
 
   it('should StateTransitionHeader CID equal to IPFS CID', async () => {
-    header.hashSTPacket = await hashSTPacket(packet);
+    header.hashSTPacket = await hashSTPacket(packet.toJSON({ skipMeta: true }));
     const stHeader = new StateTransitionHeader(header);
 
     const stHeaderCid = stHeader.getPacketCID();

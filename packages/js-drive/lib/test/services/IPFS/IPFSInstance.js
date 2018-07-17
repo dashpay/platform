@@ -60,7 +60,7 @@ class IPFSInstance extends DockerInstance {
   /**
    * Get IPFS client
    *
-   * @returns {ipfsClient}
+   * @returns {IpfsAPI}
    */
   getApi() {
     return this.ipfsClient;

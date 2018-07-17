@@ -28,7 +28,10 @@ const addSTPacketMethodFactory = require('../lib/api/methods/addSTPacketMethodFa
     pass: process.env.DASHCORE_JSON_RPC_PASS,
   });
 
-  const mongoClient = await MongoClient.connect(process.env.STORAGE_MONGODB_URL);
+  const mongoClient = await MongoClient.connect(
+    process.env.STORAGE_MONGODB_URL,
+    { useNewUrlParser: true },
+  );
   const mongoDb = mongoClient.db(process.env.STORAGE_MONGODB_DB);
   const syncStateRepository = new SyncStateRepository(mongoDb);
   // TODO: Validate env variable (should be number > 0)

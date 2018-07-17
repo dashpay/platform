@@ -6,6 +6,7 @@ const StateTransitionHeader = require('../../../../lib/blockchain/StateTransitio
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');
 const storeDapContractFactory = require('../../../../lib/stateView/dapContract/storeDapContractFactory');
 const hashSTPacket = require('../../../../lib/test/consensus/hashSTPacket');
+const sanitizeData = require('../../../../lib/mongoDb/sanitizeData');
 
 describe('storeDapContractFactory', function main() {
   this.timeout(30000);
@@ -21,12 +22,12 @@ describe('storeDapContractFactory', function main() {
   });
 
   it('should store DAP schema', async () => {
-    const packet = getTransitionPacketFixtures()[0];
+    const packet = getTransitionPacketFixtures()[0].toJSON({ skipMeta: true });
     const header = getTransitionHeaderFixtures()[0].toJSON();
     header.hashSTPacket = await hashSTPacket(packet);
 
     const mongoClient = await mongoDbInstance.getMongoClient();
-    const dapContractRepository = new DapContractMongoDbRepository(mongoClient);
+    const dapContractRepository = new DapContractMongoDbRepository(mongoClient, sanitizeData);
     const storeDapContract = storeDapContractFactory(dapContractRepository, ipfsClient);
     const stHeader = new StateTransitionHeader(header);
 
@@ -38,11 +39,11 @@ describe('storeDapContractFactory', function main() {
     const cid = stHeader.getPacketCID();
     await storeDapContract(cid);
 
-    const dapId = packet.data.dapid;
+    const dapId = packet.dapid;
     const dapContract = await dapContractRepository.find(dapId);
 
     expect(dapContract.getDapId()).to.equal(dapId);
-    expect(dapContract.getDapName()).to.equal(packet.data.objects[0].data.dapname);
-    expect(dapContract.getSchema()).to.deep.equal(packet.schema);
+    expect(dapContract.getDapName()).to.equal(packet.dapcontract.dapname);
+    expect(dapContract.getSchema()).to.deep.equal(packet.dapcontract.dapschema);
   });
 });

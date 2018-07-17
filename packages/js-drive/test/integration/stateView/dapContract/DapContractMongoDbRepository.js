@@ -1,12 +1,13 @@
 const DapContract = require('../../../../lib/stateView/dapContract/DapContract');
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');
 const startMongoDbInstance = require('../../../../lib/test/services/mocha/startMongoDbInstance');
+const sanitizeData = require('../../../../lib/mongoDb/sanitizeData');
 
 describe('DapContractRepository', () => {
   let dapContractRepository;
   startMongoDbInstance().then(async (mongoDbInstance) => {
     const mongoClient = await mongoDbInstance.getMongoClient();
-    dapContractRepository = new DapContractMongoDbRepository(mongoClient);
+    dapContractRepository = new DapContractMongoDbRepository(mongoClient, sanitizeData);
   });
 
   it('should store DapContract entity', async () => {

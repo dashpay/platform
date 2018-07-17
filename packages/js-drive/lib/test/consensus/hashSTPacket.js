@@ -6,7 +6,7 @@ const util = require('util');
 const multihashing = util.promisify(multihashingAsync);
 
 /**
- * Encode State Transisition packet
+ * Encode State Transition Packet
  *
  * @param packet
  * @returns {Promise<String>}

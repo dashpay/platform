@@ -2,7 +2,7 @@ const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
 const registerUser = require('../../../lib/test/registerUser');
-const createDapContractST = require('../../../lib/test/createDapContractST');
+const createSTHeader = require('../../../lib/test/createSTHeader');
 
 const startDashDriveInstance = require('../../../lib/test/services/dashDrive/startDashDriveInstance');
 const startDashCoreInstance = require('../../../lib/test/services/dashCore/startDashCoreInstance');
@@ -40,7 +40,7 @@ async function dashCoreSyncToFinish(instance) {
  */
 async function dashDriveSyncToFinish(instance) {
   const packet = getStateTransitionPackets()[0];
-  const serializedPacket = cbor.encodeCanonical(packet);
+  const serializedPacket = cbor.encodeCanonical(packet.toJSON({ skipMeta: true }));
   const serializedPacketJson = {
     packet: serializedPacket.toString('hex'),
   };
@@ -87,16 +87,16 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     async function createAndSubmitST(username) {
       // 2.1 Get packet data with random object description
       const packetOne = packetsData[0];
-      packetOne.data.objects[0].description = `Valid registration for ${username}`;
+      packetOne.dapcontract.description = `Valid registration for ${username}`;
 
       // 2.2 Register user and create DAP Contract State Transition packet and header
       const { userId, privateKeyString } =
         await registerUser(username, fullDashDriveInstance.dashCore.rpcClient);
-      const [packet, header] = await createDapContractST(userId, privateKeyString, packetOne);
+      const header = await createSTHeader(userId, privateKeyString, packetOne);
 
       // 2.3 Add ST packet to IPFS
       const addSTPacket = addSTPacketFactory(fullDashDriveInstance.ipfs.getApi());
-      const packetCid = await addSTPacket(packet);
+      const packetCid = await addSTPacket(packetOne);
 
       // 2.4 Save CID of freshly added packet for future use
       packetsCids.push(packetCid);
@@ -135,7 +135,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       `DASHCORE_JSON_RPC_USER=${dashCoreInstance.options.getRpcUser()}`,
       `DASHCORE_JSON_RPC_PASS=${dashCoreInstance.options.getRpcPassword()}`,
       `STORAGE_IPFS_MULTIADDR=${ipfsInstance.getIpfsAddress()}`,
-      `STORAGE_MONGODB_URL=mongodb://${mongoDbInstance.getIp()}`,
+      `STORAGE_MONGODB_URL=mongodb://${mongoDbInstance.getIp()}:27017`,
     ];
 
     dashDriveStandaloneInstance = await createDashDriveInstance(envs);

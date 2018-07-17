@@ -29,6 +29,8 @@ describe('addSTPacket', () => {
     // 2. Packets should have the same data
     const packetFromIPFS = packetsFromIPFS.map(packet => packet.value);
 
-    expect(packets).to.deep.equal(packetFromIPFS);
+    const packetsData = packets.map(packet => packet.toJSON({ skipMeta: true }));
+
+    expect(packetsData).to.deep.equal(packetFromIPFS);
   });
 });

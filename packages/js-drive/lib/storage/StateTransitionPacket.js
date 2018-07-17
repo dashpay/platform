@@ -1,10 +1,26 @@
-const Schema = require('@dashevo/dash-schema');
+const PACKET_FIELDS = ['pver', 'dapid', 'dapobjectshash', 'dapcontract', 'dapobjects', 'meta'];
 
-class StateTransitionPacket extends Schema.TransitionPacket {
+class StateTransitionPacket {
   constructor(data) {
-    super(data);
-
     Object.assign(this, data);
+  }
+
+  /**
+   * @param [skipMeta]
+   */
+  toJSON({ skipMeta = false }) {
+    const result = {};
+    PACKET_FIELDS.forEach((field) => {
+      if (this[field] !== undefined) {
+        result[field] = this[field];
+      }
+    });
+
+    if (skipMeta) {
+      delete result.meta;
+    }
+
+    return result;
   }
 }
 

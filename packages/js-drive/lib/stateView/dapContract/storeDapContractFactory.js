@@ -16,10 +16,9 @@ function storeDapContractFactory(dapContractRepository, ipfs) {
    */
   return async function storeDapContract(cid) {
     const packetData = await ipfs.dag.get(cid);
-    const packet = new StateTransitionPacket(packetData.value.data);
-    const { dapid: dapId, objects: dapObjects, schema } = packet;
-    const dapName = dapObjects[0].data.dapname;
-    const dapContract = new DapContract(dapId, dapName, cid, schema);
+    const packet = new StateTransitionPacket(packetData.value);
+    const { dapname: name, dapschema: schema } = packet.dapcontract;
+    const dapContract = new DapContract(packet.dapid, name, cid, schema);
     return dapContractRepository.store(dapContract);
   };
 }

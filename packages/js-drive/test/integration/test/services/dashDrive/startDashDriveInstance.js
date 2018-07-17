@@ -36,7 +36,7 @@ describe('startDashDriveInstance', function main() {
 
     it('should DashDrive container has the right MongoDb address', async () => {
       const { Config: { Env } } = await instance.dashDrive.container.details();
-      const expectedEnv = `STORAGE_MONGODB_URL=mongodb://${instance.mongoDb.getIp()}`;
+      const expectedEnv = `STORAGE_MONGODB_URL=mongodb://${instance.mongoDb.getIp()}:27017`;
       const mongoAddressVariable = Env.filter(variable => variable === expectedEnv);
       expect(mongoAddressVariable.length).to.equal(1);
     });

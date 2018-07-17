@@ -13,7 +13,11 @@ module.exports = function addSTPacketFactory(ipfsApi) {
    * @return {string}
    */
   async function addSTPacket(packet) {
-    const cid = await ipfsApi.dag.put(packet, { format: 'dag-cbor', hashAlg: 'sha2-256' });
+    const cid = await ipfsApi.dag.put(
+      packet.toJSON({ skipMeta: true }),
+      { format: 'dag-cbor', hashAlg: 'sha2-256' },
+    );
+
     return cid.toBaseEncodedString();
   }
 

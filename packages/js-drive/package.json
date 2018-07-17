@@ -27,25 +27,23 @@
   },
   "homepage": "https://github.com/dashevo/dashdrive",
   "devDependencies": {
-    "aws-sdk": "^2.224.1",
+    "aws-sdk": "^2.272.1",
     "chai": "^4.1.2",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
     "dockerode": "^2.5.4",
     "eslint": "^4.16.0",
     "eslint-config-airbnb-base": "^12.1.0",
-    "eslint-plugin-import": "^2.8.0",
-    "go-ipfs-dep": "^0.4.13",
-    "ipfsd-ctl": "^0.32.1",
-    "mocha": "^5.1.0",
-    "mocha-sinon": "^2.0.0",
+    "eslint-plugin-import": "^2.13.0",
+    "mocha": "^5.2.0",
+    "mocha-sinon": "^2.1.0",
     "multihashing-async": "^0.4.7",
     "proxyquire": "^1.8.0",
     "sinon": "^4.3.0",
     "sinon-chai": "^2.14.0"
   },
   "dependencies": {
-    "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git",
+    "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git#3.0.0-alpha.1",
     "@dashevo/dashcore-lib": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop",
     "bitcoind-rpc-dash": "git+ssh://git@github.com/dashevo/bitcoind-rpc-dash-private.git#develop",
     "cbor": "^3.0.3",
@@ -55,9 +53,10 @@
     "dotenv-expand": "^4.2.0",
     "emittery": "^0.3.0",
     "ipfs-api": "^20.1",
-    "jayson": "^2.0.5",
-    "mongodb": "^3.0.3",
+    "jayson": "^2.0.6",
+    "mongodb": "^3.1.1",
     "multihashes": "^0.4.13",
+    "recursive-iterator": "^3.3.0",
     "zeromq": "^4.6.0"
   }
 }

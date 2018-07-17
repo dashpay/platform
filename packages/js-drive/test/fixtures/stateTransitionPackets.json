@@ -1,146 +1,100 @@
 [
   {
-    "description": "valid transition packet containing DAP schema reg for DashPay by Alice",
-    "data": {
-      "pver": 1,
-      "objtype": "TransitionPacket",
-      "dapid": "b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75",
-      "objects": [
-        {
-          "description": "valid registration of a new DAP on the chain",
-          "data": {
-            "pver": 1,
-            "objtype": "DapSchema",
-            "dapid": null,
-            "actn": 0,
-            "revn": 0,
-            "leafn": 0,
-            "dapname": "DashPay",
-            "minver": 0,
-            "majver": 1,
-            "status": 1,
-            "dapschema": {
-              "data": {
-                "title": "DashPay",
-                "DashPayUser": {
-                  "title": "DashPayUser",
-                  "type": "object",
-                  "extends": "DapUser",
-                  "properties": {
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "imgurl": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                },
-                "DashPayContact": {
-                  "title": "DashPayContact",
-                  "type": "object",
-                  "extends": "DapRelation",
-                  "properties": {
-                    "data": {
-                      "type": "object",
-                      "required": [
-                        "hdextpubkey"
-                      ],
-                      "properties": {
-                        "hdextpubkey": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
+    "pver": 1,
+    "dapcontract": {
+      "dapschemaid": 0,
+      "dapname": "DashPay",
+      "dapver": 1,
+      "dapschema": {
+        "$id": "http://dash.org/schemas/sys/dapschema",
+        "title": "Contacts",
+        "user": {
+          "$id": "http://dash.org/schemas/sys/dapobject",
+          "isprofile": true,
+          "allOf": [
+            {
+              "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
             }
-          },
-          "meta": {
-            "id": "b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75"
-          }
-        }
-      ]
-    },
-    "meta": {
-      "id": "7977e5d49080a9ab4441a22ccfa924156e212e2cc7718bb8478be36c968eca72"
-    }
-  },
-  {
-    "description": "valid transition packet containing Alice's DashPay DAPUser signup for L2 storage",
-    "data": {
-      "pver": 1,
-      "objtype": "TransitionPacket",
-      "dapid": "b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75",
-      "objects": [
-        {
-          "description": "valid dashpay user for alice",
-          "data": {
-            "pver": 1,
-            "objtype": "DashPayUser",
-            "dapid": "b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75",
-            "actn": 0,
-            "revn": 0,
-            "leafn": 0,
-            "agreetscs": 1
-          },
-          "meta": {
-            "id": "809jofm2309fj23ifj23oifwonfwiof32oif3if23ij3ijf3ij3dgyf32ijf23ij"
-          }
-        }
-      ]
-    },
-    "meta": {
-      "id": "fb8f298e65352c4bc94a68f5a962bff53efe67a536211d9fe185c9fc137fbab1"
-    }
-  },
-  {
-    "description": "valid transition packet containing Alice's Contact object referencing Bob",
-    "data": {
-      "pver": 1,
-      "objtype": "TransitionPacket",
-      "dapid": "b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75",
-      "objects": [
-        {
-          "description": "valid Contact object by Alice referencing Bob",
-          "data": {
-            "pver": 1,
-            "objtype": "DashPayContact",
-            "dapid": "b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75",
-            "actn": 0,
-            "revn": 0,
-            "leafn": 1,
-            "relation": "16aceee26f0f6cc8e43378e77c69849a60903bbf971866c880e29da9084cb3a2",
-            "hdextpubkey": "xpub6A9c92Lqxd2Y4bhq91YcWoE2BbUWSBKur1MjeMjkMkEKL7orgkD4k45a3rRq2o5cSk48wDb8SE7iAGbpjSCskrk6R7tSqEJ86nRfLr3Jifa",
-            "agreetscs": 1
-          },
-          "meta": {
-            "id": "8ij2nr89whf23f2983hfwonf2398f3298hf23f3308fj2308r208foijfowifwio"
+          ],
+          "properties": {
+            "aboutme": {
+              "type": "string"
+            },
+            "avatar": {
+              "type": "string"
+            }
           }
         },
-        {
-          "description": "valid Contact object by Alice referencing to someone else",
-          "data": {
-            "pver": 1,
-            "objtype": "DashPayContact",
-            "dapid": "b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75",
-            "actn": 0,
-            "revn": 0,
-            "leafn": 1,
-            "relation": "0komwdhinrj23nwdg2e37eiudn2398hrf983h893hrf23ij32jd23j32oijdio23",
-            "hdextpubkey": "xpub6A9c92Lqxd2Y4bhq91YcWoE2BbUWSBKur1MjeMjkMkEKL7orgkD4k45a3rRq2o5cSk48wDb8SE7iAGbpjSCskrk6R7tSqEJ86nRfLr3Jifa",
-            "agreetscs": 1
+        "contact": {
+          "$id": "http://dash.org/schemas/sys/dapobject",
+          "allOf": [
+            {
+              "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
+            }
+          ],
+          "properties": {
+            "hdextpubkey": {
+              "type": "string"
+            },
+            "user": {
+              "$ref": "http://dash.org/schemas/sys#/definitions/relation"
+            },
+            "pub": {
+              "type": "string"
+            }
           },
-          "meta": {
-            "id": "jn3oir328jiweonfoiwjfio23jfiownfoskdnf223df3830u902klkn34323iojf"
-          }
+          "required": [
+            "hdextpubkey",
+            "user"
+          ]
         }
-      ]
+      },
+      "meta": {
+        "id": "21af565312c6556c3a1bcda2d389b11ea400ec5c06cd0aea47e3302309377371"
+      }
     },
     "meta": {
-      "id": "8d57072c8cc483ace1913d69f8dd8136c7b80be2d07c5ccf8f233f351a54c2b1"
+      "id": "ac5784e7dd8fc9f1b638a353fb10015d3841bb9076c20e2ebefc3e97599e92b5"
+    }
+  },
+  {
+    "pver": 1,
+    "dapid": "ac5784e7dd8fc9f1b638a353fb10015d3841bb9076c20e2ebefc3e97599e92b5",
+    "dapobjectshash": "35dd1a700ecc2b78fb2dbd0f976486b63cf0f6d7052a0741dbc5d25d5cd37422",
+    "dapobjects": [
+      {
+        "objtype": "user",
+        "debug": "valid dashpay blockchainuser for alice",
+        "idx": 0,
+        "rev": 1,
+        "act": 1
+      }
+    ],
+    "meta": {
+      "id": "575a4ac20aec98db0ed734a23e43a8a7f82fa87fdf9df7dce0f380464c25c9c6"
+    }
+  },
+  {
+    "pver": 1,
+    "dapid": "ac5784e7dd8fc9f1b638a353fb10015d3841bb9076c20e2ebefc3e97599e92b5",
+    "dapobjectshash": "7a485fdb68cd4dc7075d063ee0e8a5f8e9b459089647e1c4c536cf4127a555b9",
+    "dapobjects": [
+      {
+        "objtype": "user",
+        "pver": 1,
+        "rev": 0,
+        "act": 1,
+        "idx": 2,
+        "user": {
+          "userId": "76b19e926e6ea960ce19a9ba7db205b3c5f05c178240348e4236abb821e9c261",
+          "type": 0
+        },
+        "hdextpubkey": "xpub6A9c92Lqxd2Y4bhq91YcWoE2BbUWSBKur1MjeMjkMkEKL7orgkD4k45a3rRq2o5cSk48wDb8SE7iAGbpjSCskrk6R7tSqEJ86nRfLr3Jifa",
+        "agreetscs": 1
+      }
+    ],
+    "meta": {
+      "id": "657131c70ce6b87b19e9d42d937ea769993985a1499dec0b4500827e1b2e19a8"
     }
   }
 ]

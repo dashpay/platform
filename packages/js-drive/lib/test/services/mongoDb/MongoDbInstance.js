@@ -77,7 +77,7 @@ class MongoDbInstance extends DockerInstance {
     while (mongoStarting) {
       try {
         const address = `mongodb://127.0.0.1:${this.options.mongo.port}`;
-        this.mongoClient = await this.MongoClient.connect(address);
+        this.mongoClient = await this.MongoClient.connect(address, { useNewUrlParser: true });
         mongoStarting = false;
       } catch (error) {
         if (error.name !== 'MongoNetworkError') {
