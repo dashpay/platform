@@ -54,7 +54,10 @@ class STHeadersReader extends Emittery {
       }
 
       // Iterated ST header
-      await this.emitSerial('header', header);
+      await this.emitSerial('header', {
+        header,
+        block: this.stHeaderIterator.blockIterator.currentBlock,
+      });
     }
   }
 

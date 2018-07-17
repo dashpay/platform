@@ -55,7 +55,7 @@ describe('attachIpfsHandlers', () => {
     const pinPromise = Promise.resolve();
     ipfsAPIMock.pin.add.returns(pinPromise);
 
-    await stHeadersReaderMock.emitSerial('header', header);
+    await stHeadersReaderMock.emitSerial('header', { header });
 
     expect(ipfsAPIMock.pin.add).to.be.calledOnce();
     expect(ipfsAPIMock.pin.add).to.be.calledWith(header.getPacketCID(), { recursive: true });

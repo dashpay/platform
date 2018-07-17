@@ -17,7 +17,7 @@ const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
 function attachIpfsHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
-  stHeadersReader.on('header', async (header) => {
+  stHeadersReader.on('header', async ({ header }) => {
     const pinPromise = ipfsAPI.pin.add(header.getPacketCID(), { recursive: true });
     const error = new InvalidPacketCidError();
 

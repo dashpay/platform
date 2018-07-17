@@ -64,7 +64,8 @@ describe('STHeadersReader', () => {
     expect(headerHandlerStub).has.callCount(notSyncedST.length);
     notSyncedST.forEach((header, i) => {
       // TODO: Should be equal objects
-      expect(headerHandlerStub.getCall(i).args[0].getHash()).to.be.equals(header.getHash());
+      const currentArg = headerHandlerStub.getCall(i).args[0].header;
+      expect(currentArg.getHash()).to.be.equals(header.getHash());
     });
 
     expect(endHandlerStub).to.be.calledOnce();

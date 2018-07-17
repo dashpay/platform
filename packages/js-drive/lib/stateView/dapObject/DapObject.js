@@ -1,19 +1,27 @@
 class DapObject {
   /**
-   * @param {string} id
+   * @param {object} data
+   * @param {Reference} reference
    */
-  constructor(id) {
-    this.id = id;
+  constructor(data, reference) {
+    this.id = data.id;
+    this.type = data.objtype;
+    this.object = data;
+    this.revision = data.rev;
+    this.reference = reference;
   }
 
-  /**
-   * Get DapObject JSON representation
-   *
-   * @returns {{id: string}}
-   */
+  isNew() {
+    return this.object && this.object.act === 0;
+  }
+
   toJSON() {
     return {
       id: this.id,
+      type: this.type,
+      object: this.object,
+      revision: this.revision,
+      reference: this.reference.toJSON(),
     };
   }
 }

@@ -2,17 +2,16 @@
  * Attach StateView handlers
  *
  * @param {STHeadersReader} stHeadersReader
- * @param {storeDapContract} storeDapContract
+ * @param {applyStateTransition} applyStateTransition
  * @param {dropMongoDatabasesWithPrefix} dropMongoDatabasesWithPrefix
  */
 function attachStateViewHandlers(
   stHeadersReader,
-  storeDapContract,
+  applyStateTransition,
   dropMongoDatabasesWithPrefix,
 ) {
-  stHeadersReader.on('header', async (header) => {
-    const cid = header.getPacketCID();
-    await storeDapContract(cid);
+  stHeadersReader.on('header', async ({ header, block }) => {
+    await applyStateTransition(header, block);
   });
 
   stHeadersReader.on('reset', async () => {

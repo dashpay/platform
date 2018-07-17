@@ -1,3 +1,5 @@
+const bs58 = require('bs58');
+
 const PREFIX = 'dap_';
 
 /**
@@ -14,7 +16,8 @@ function createDapObjectMongoDbRepositoryFactory(mongoClient, DapObjectMongoDbRe
    * @returns {DapObjectMongoDbRepository}
    */
   function createDapObjectMongoDbRepository(dapId) {
-    const mongoDb = mongoClient.db(`${process.env.MONGODB_DB_PREFIX}${PREFIX}${dapId}`);
+    const dapIdEncoded = bs58.encode(Buffer.from(dapId, 'hex'));
+    const mongoDb = mongoClient.db(`${process.env.MONGODB_DB_PREFIX}${PREFIX}${dapIdEncoded}`);
     return new DapObjectMongoDbRepository(mongoDb);
   }
 

@@ -1,4 +1,4 @@
-const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
+const StateTransitionPacket = require('../../storage/StateTransitionPacket');
 const DapContract = require('./DapContract');
 
 /**

@@ -46,6 +46,7 @@
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git#3.0.0-alpha.1",
     "@dashevo/dashcore-lib": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop",
     "bitcoind-rpc-dash": "git+ssh://git@github.com/dashevo/bitcoind-rpc-dash-private.git#develop",
+    "bs58": "^4.0.1",
     "cbor": "^3.0.3",
     "cids": "^0.5.2",
     "connect": "^3.6.6",

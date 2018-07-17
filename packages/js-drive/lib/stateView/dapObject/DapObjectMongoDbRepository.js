@@ -1,4 +1,5 @@
 const DapObject = require('./DapObject');
+const Reference = require('../Reference');
 
 class DapObjectMongoDbRepository {
   /**
@@ -17,7 +18,15 @@ class DapObjectMongoDbRepository {
   async find(id) {
     const result = await this.mongoClient.findOne({ _id: id });
     const dapObject = result || {};
-    return new DapObject(dapObject.id);
+    dapObject.object = dapObject.object || {};
+    const referenceData = dapObject.reference || {};
+    const reference = new Reference(
+      referenceData.blockHash,
+      referenceData.blockHeight,
+      referenceData.stHeaderHash,
+      referenceData.stPacketHash,
+    );
+    return new DapObject(dapObject.object, reference);
   }
 
   /**
