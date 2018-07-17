@@ -9,6 +9,7 @@ describe('updateDapObjectFactory', () => {
   beforeEach(function beforeEach() {
     dapObjectRepository = {
       store: this.sinon.stub(),
+      delete: this.sinon.stub(),
     };
     const createDapObjectRepository = () => dapObjectRepository;
     updateDapObject = updateDapObjectFactory(createDapObjectRepository);
@@ -49,7 +50,19 @@ describe('updateDapObjectFactory', () => {
     expect(dapObjectRepository.store).to.calledOnce();
   });
 
-  it('should not store DapContract if action is not 0 or 1', async () => {
+  it('should delete DapObject if action is 2', async () => {
+    const dapId = '1234';
+    const dapObject = {
+      objtype: 'user',
+      idx: 0,
+      rev: 1,
+      act: 2,
+    };
+    updateDapObject(dapId, reference, dapObject);
+    expect(dapObjectRepository.delete).to.calledOnce();
+  });
+
+  it('should not store DapContract if action is not 0 or 1 or 2', async () => {
     const dapId = '1234';
     const dapObject = {
       objtype: 'user',

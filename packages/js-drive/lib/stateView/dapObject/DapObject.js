@@ -11,12 +11,8 @@ class DapObject {
     this.reference = reference;
   }
 
-  isNew() {
-    return this.object && this.object.act === 0;
-  }
-
-  isUpdated() {
-    return this.object && this.object.act === 1;
+  getAction() {
+    return this.object.act;
   }
 
   toJSON() {
@@ -29,5 +25,9 @@ class DapObject {
     };
   }
 }
+
+DapObject.ACTION_CREATE = 0;
+DapObject.ACTION_UPDATE = 1;
+DapObject.ACTION_DELETE = 2;
 
 module.exports = DapObject;

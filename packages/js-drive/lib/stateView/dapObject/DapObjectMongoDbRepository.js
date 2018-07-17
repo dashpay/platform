@@ -42,6 +42,16 @@ class DapObjectMongoDbRepository {
       { upsert: true },
     );
   }
+
+  /**
+   * Delete DapObject entity
+   *
+   * @param dapObject
+   * @returns {Promise}
+   */
+  async delete(dapObject) {
+    return this.mongoClient.deleteOne({ _id: dapObject.toJSON().id });
+  }
 }
 
 module.exports = DapObjectMongoDbRepository;

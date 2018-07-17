@@ -32,7 +32,13 @@ describe('DapObject', () => {
     });
   });
 
-  it('should be new if DapObject action is 0', async () => {
+  it('should have DapObject action constants', async () => {
+    expect(DapObject.ACTION_CREATE).to.be.equal(0);
+    expect(DapObject.ACTION_UPDATE).to.be.equal(1);
+    expect(DapObject.ACTION_DELETE).to.be.equal(2);
+  });
+
+  it('should get DapObject action', async () => {
     const reference = new Reference();
     const dapObjectData = {
       id: '1234',
@@ -42,32 +48,6 @@ describe('DapObject', () => {
       act: 0,
     };
     const dapObject = new DapObject(dapObjectData, reference);
-    expect(dapObject.isNew()).to.be.true();
-  });
-
-  it('should not be new if DapObject action is not 0', async () => {
-    const reference = new Reference();
-    const dapObjectData = {
-      id: '1234',
-      objtype: 'user',
-      idx: 0,
-      rev: 1,
-      act: 1,
-    };
-    const dapObject = new DapObject(dapObjectData, reference);
-    expect(dapObject.isNew()).to.be.false();
-  });
-
-  it('should be updated if DapObject action is 1', async () => {
-    const reference = new Reference();
-    const dapObjectData = {
-      id: '1234',
-      objtype: 'user',
-      idx: 0,
-      rev: 1,
-      act: 1,
-    };
-    const dapObject = new DapObject(dapObjectData, reference);
-    expect(dapObject.isUpdated()).to.be.true();
+    expect(dapObject.getAction()).to.be.equal(0);
   });
 });

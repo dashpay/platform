@@ -13,8 +13,16 @@ function updateDapObjectFactory(createDapObjectRepository) {
   async function updateDapObject(dapId, reference, dapObjectData) {
     const dapObjectRepository = createDapObjectRepository(dapId);
     const dapObject = new DapObject(dapObjectData, reference);
-    if (dapObject.isNew() || dapObject.isUpdated()) {
-      await dapObjectRepository.store(dapObject);
+
+    switch (dapObject.getAction()) {
+      case DapObject.ACTION_CREATE:
+      case DapObject.ACTION_UPDATE:
+        await dapObjectRepository.store(dapObject);
+        break;
+      case DapObject.ACTION_DELETE:
+        await dapObjectRepository.delete(dapObject);
+        break;
+      default:
     }
   }
 
