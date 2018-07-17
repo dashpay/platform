@@ -13,7 +13,7 @@ function updateDapObjectFactory(createDapObjectRepository) {
   async function updateDapObject(dapId, reference, dapObjectData) {
     const dapObjectRepository = createDapObjectRepository(dapId);
     const dapObject = new DapObject(dapObjectData, reference);
-    if (dapObject.isNew()) {
+    if (dapObject.isNew() || dapObject.isUpdated()) {
       await dapObjectRepository.store(dapObject);
     }
   }

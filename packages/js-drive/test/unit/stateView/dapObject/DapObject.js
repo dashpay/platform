@@ -57,4 +57,17 @@ describe('DapObject', () => {
     const dapObject = new DapObject(dapObjectData, reference);
     expect(dapObject.isNew()).to.be.false();
   });
+
+  it('should be updated if DapObject action is 1', async () => {
+    const reference = new Reference();
+    const dapObjectData = {
+      id: '1234',
+      objtype: 'user',
+      idx: 0,
+      rev: 1,
+      act: 1,
+    };
+    const dapObject = new DapObject(dapObjectData, reference);
+    expect(dapObject.isUpdated()).to.be.true();
+  });
 });

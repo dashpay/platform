@@ -15,6 +15,10 @@ class DapObject {
     return this.object && this.object.act === 0;
   }
 
+  isUpdated() {
+    return this.object && this.object.act === 1;
+  }
+
   toJSON() {
     return {
       id: this.id,
