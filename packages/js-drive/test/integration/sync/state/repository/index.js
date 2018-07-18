@@ -1,8 +1,6 @@
 /* eslint-disable global-require */
-describe('Sync', () => {
-  describe('State', () => {
-    describe('Repository', () => {
-      require('./SyncStateRepository');
-    });
+describe('State', () => {
+  describe('Repository', () => {
+    require('./SyncStateRepository');
   });
 });

@@ -40,7 +40,7 @@ class DashCoreInstance extends DockerInstance {
   /**
    * Connect to another DashCore instance
    *
-   * @param {Object} DashCoreInstance
+   * @param {DashCoreInstance} dashCoreInstance
    * @return {Promise<void>}
    */
   async connect(dashCoreInstance) {
@@ -73,7 +73,7 @@ class DashCoreInstance extends DockerInstance {
   /**
    * Get RPC client
    *
-   * @return {Object}
+   * @return {RpcClient}
    */
   getApi() {
     if (!this.isInitialized()) {
