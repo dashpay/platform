@@ -1,3 +1,4 @@
+const STHeadersReader = require('../blockchain/reader/STHeadersReader');
 const ArrayBlockIterator = require('../blockchain/iterator/ArrayBlockIterator');
 const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTransitionHeaderIterator');
 const rejectAfter = require('../util/rejectAfter');
@@ -17,14 +18,14 @@ const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
 function attachIpfsHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
-  stHeadersReader.on('header', async ({ header }) => {
+  stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header }) => {
     const pinPromise = ipfsAPI.pin.add(header.getPacketCID(), { recursive: true });
     const error = new InvalidPacketCidError();
 
     await rejectAfter(pinPromise, error, PIN_REJECTION_TIMEOUT);
   });
 
-  stHeadersReader.on('wrongSequence', async (block) => {
+  stHeadersReader.on(STHeadersReader.EVENTS.STALE_BLOCK, async (block) => {
     const blockIterator = new ArrayBlockIterator([block]);
     const stHeadersIterator = new StateTransitionHeaderIterator(blockIterator, rpcClient);
 
@@ -41,7 +42,7 @@ function attachIpfsHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
     }
   });
 
-  stHeadersReader.on('reset', async () => {
+  stHeadersReader.on(STHeadersReader.EVENTS.RESET, async () => {
     await unpinAllIpfsPackets();
   });
 }

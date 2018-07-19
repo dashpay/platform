@@ -30,7 +30,10 @@ class STHeadersReader extends Emittery {
    * Read ST headers and emit events
    */
   async read() {
-    await this.emitSerial('begin', this.stHeaderIterator.blockIterator.getBlockHeight());
+    await this.emitSerial(
+      STHeadersReader.EVENTS.BEGIN,
+      this.stHeaderIterator.blockIterator.getBlockHeight(),
+    );
 
     for (; ;) {
       let done;
@@ -48,13 +51,16 @@ class STHeadersReader extends Emittery {
       }
 
       if (done) {
-        await this.emitSerial('end', this.stHeaderIterator.blockIterator.getBlockHeight());
+        await this.emitSerial(
+          STHeadersReader.EVENTS.END,
+          this.stHeaderIterator.blockIterator.getBlockHeight(),
+        );
 
         break;
       }
 
       // Iterated ST header
-      await this.emitSerial('header', {
+      await this.emitSerial(STHeadersReader.EVENTS.HEADER, {
         header,
         block: this.stHeaderIterator.blockIterator.currentBlock,
       });
@@ -78,18 +84,18 @@ class STHeadersReader extends Emittery {
     const previousBlock = this.state.getLastBlock();
 
     if (this.isNotAbleToVerifySequence(currentBlock, previousBlock)) {
-      await this.emit('reset');
+      await this.emit(STHeadersReader.EVENTS.RESET);
       return this.resetIterator(this.initialBlockHeight, currentBlock);
     }
 
     if (this.isWrongSequence(currentBlock, previousBlock)) {
-      await this.emitSerial('wrongSequence', currentBlock);
+      await this.emitSerial(STHeadersReader.EVENTS.STALE_BLOCK, previousBlock);
       return this.resetIterator(previousBlock.height, currentBlock);
     }
 
     this.state.addBlock(currentBlock);
 
-    return this.emitSerial('block', currentBlock);
+    return this.emitSerial(STHeadersReader.EVENTS.BLOCK, currentBlock);
   }
 
   /**
@@ -146,5 +152,14 @@ class STHeadersReader extends Emittery {
     throw new WrongSequenceError();
   }
 }
+
+STHeadersReader.EVENTS = {
+  BEGIN: 'begin',
+  HEADER: 'header',
+  BLOCK: 'block',
+  RESET: 'reset',
+  STALE_BLOCK: 'staleBlock',
+  END: 'end',
+};
 
 module.exports = STHeadersReader;
