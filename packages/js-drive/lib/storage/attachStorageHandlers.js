@@ -15,7 +15,7 @@ const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
  * @param {IpfsAPI} ipfsAPI
  * @param {unpinAllIpfsPackets} unpinAllIpfsPackets
  */
-function attachIpfsHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
+function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
   stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header }) => {
@@ -47,8 +47,8 @@ function attachIpfsHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
   });
 }
 
-Object.assign(attachIpfsHandlers, {
+Object.assign(attachStorageHandlers, {
   PIN_REJECTION_TIMEOUT,
 });
 
-module.exports = attachIpfsHandlers;
+module.exports = attachStorageHandlers;

@@ -22,7 +22,7 @@ const cleanDashDriveFactory = require('../lib/sync/cleanDashDriveFactory');
 const unpinAllIpfsPacketsFactory = require('../lib/storage/ipfs/unpinAllIpfsPacketsFactory');
 const dropMongoDatabasesWithPrefixFactory = require('../lib/mongoDb/dropMongoDatabasesWithPrefixFactory');
 
-const attachIpfsHandlers = require('../lib/storage/attachIpfsHandlers');
+const attachStorageHandlers = require('../lib/storage/attachStorageHandlers');
 const attachSyncHandlers = require('../lib/sync/state/attachSyncHandlers');
 const attachStateViewHandlers = require('../lib/stateView/attachStateViewHandlers');
 const errorHandler = require('../lib/util/errorHandler');
@@ -68,7 +68,7 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
   const dropMongoDatabasesWithPrefix = dropMongoDatabasesWithPrefixFactory(mongoClient);
   const cleanDashDrive = cleanDashDriveFactory(unpinAllIpfsPackets, dropMongoDatabasesWithPrefix);
 
-  attachIpfsHandlers(stHeaderReader, ipfsAPI, unpinAllIpfsPackets);
+  attachStorageHandlers(stHeaderReader, ipfsAPI, unpinAllIpfsPackets);
   attachSyncHandlers(stHeaderReader, syncState, syncStateRepository);
   const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
   const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(

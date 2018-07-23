@@ -4,12 +4,12 @@ const proxyquire = require('proxyquire');
 const { EVENTS: STHeadersReaderEvents } = require('../../../lib/blockchain/reader/STHeadersReader');
 const RpcClientMock = require('../../../lib/test/mock/RpcClientMock');
 
-describe('attachIpfsHandlers', () => {
+describe('attachStorageHandlers', () => {
   let rpcClientMock;
   let ipfsAPIMock;
   let stHeadersReaderMock;
   let rejectAfterMock;
-  let attachIpfsHandlers;
+  let attachStorageHandlers;
   let unpinAllIpfsPackets;
 
   beforeEach(function beforeEach() {
@@ -29,7 +29,7 @@ describe('attachIpfsHandlers', () => {
     ipfsAPIMock = new IpfsAPI();
 
     // Mock STHeadersReader
-    class STHeadersReader extends Emitter {
+    class STHeadersReaderMock extends Emitter {
       constructor() {
         super();
 
@@ -39,15 +39,15 @@ describe('attachIpfsHandlers', () => {
       }
     }
 
-    stHeadersReaderMock = new STHeadersReader();
+    stHeadersReaderMock = new STHeadersReaderMock();
     unpinAllIpfsPackets = this.sinon.stub();
 
     rejectAfterMock = this.sinon.stub();
-    attachIpfsHandlers = proxyquire('../../../lib/storage/attachIpfsHandlers', {
+    attachStorageHandlers = proxyquire('../../../lib/storage/attachStorageHandlers', {
       '../util/rejectAfter': rejectAfterMock,
     });
 
-    attachIpfsHandlers(stHeadersReaderMock, ipfsAPIMock, unpinAllIpfsPackets);
+    attachStorageHandlers(stHeadersReaderMock, ipfsAPIMock, unpinAllIpfsPackets);
   });
 
   it('should pin ST packets when new header appears', async () => {
@@ -67,7 +67,7 @@ describe('attachIpfsHandlers', () => {
 
     expect(calledWithArgs[0]).to.be.equal(pinPromise);
     expect(calledWithArgs[1].name).to.be.equal('InvalidPacketCidError');
-    expect(calledWithArgs[2]).to.be.equal(attachIpfsHandlers.PIN_REJECTION_TIMEOUT);
+    expect(calledWithArgs[2]).to.be.equal(attachStorageHandlers.PIN_REJECTION_TIMEOUT);
   });
 
   it('should unpin ST packets in case of reorg', async () => {
