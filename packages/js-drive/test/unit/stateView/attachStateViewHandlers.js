@@ -1,19 +1,20 @@
 const Emitter = require('emittery');
 const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
 const attachStateViewHandlers = require('../../../lib/stateView/attachStateViewHandlers');
+const STHeadersReader = require('../../../lib/blockchain/reader/STHeadersReader');
 
 describe('attachStateViewHandlers', () => {
-  let stHeadersReader;
+  let stHeadersReaderMock;
   let applyStateTransition;
   let dropMongoDatabasesWithPrefixStub;
 
   beforeEach(function beforeEach() {
-    class STHeadersReader extends Emitter {}
-    stHeadersReader = new STHeadersReader();
+    class STHeadersReaderMock extends Emitter {}
+    stHeadersReaderMock = new STHeadersReaderMock();
     applyStateTransition = this.sinon.stub();
     dropMongoDatabasesWithPrefixStub = this.sinon.stub();
     attachStateViewHandlers(
-      stHeadersReader,
+      stHeadersReaderMock,
       applyStateTransition,
       dropMongoDatabasesWithPrefixStub,
     );
@@ -21,12 +22,12 @@ describe('attachStateViewHandlers', () => {
 
   it('should call attachStateViewHandlers on new block header', async () => {
     const header = getTransitionHeaderFixtures()[0];
-    await stHeadersReader.emitSerial('header', { header });
+    await stHeadersReaderMock.emitSerial(STHeadersReader.EVENTS.HEADER, { header });
     expect(applyStateTransition).to.be.calledOnce();
   });
 
   it('should call dropMongoDatabasesWithPrefix on reset event', async () => {
-    await stHeadersReader.emit('reset');
+    await stHeadersReaderMock.emit(STHeadersReader.EVENTS.RESET);
     expect(dropMongoDatabasesWithPrefixStub).to.be.calledOnce();
   });
 });

@@ -1,4 +1,4 @@
-class WrongSequenceError extends Error {
+class ResetIteratorError extends Error {
   constructor(...params) {
     super(...params);
 
@@ -8,4 +8,4 @@ class WrongSequenceError extends Error {
   }
 }
 
-module.exports = WrongSequenceError;
+module.exports = ResetIteratorError;

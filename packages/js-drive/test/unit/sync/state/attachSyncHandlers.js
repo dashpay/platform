@@ -1,6 +1,7 @@
 const Emitter = require('emittery');
 
 const SyncState = require('../../../../lib/sync/state/SyncState');
+const STHeadersReader = require('../../../../lib/blockchain/reader/STHeadersReader');
 
 const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
 const attachSyncHandlers = require('../../../../lib/sync/state/attachSyncHandlers');
@@ -30,7 +31,9 @@ describe('attachSyncHandlers', () => {
     this.sinon.stub(syncState, 'setLastSyncAt');
 
     // Mock SyncStateRepository
-    class SyncStateRepository { }
+    class SyncStateRepository {
+    }
+
     syncStateRepositoryMock = new SyncStateRepository();
     syncStateRepositoryMock.store = this.sinon.stub();
 
@@ -40,7 +43,19 @@ describe('attachSyncHandlers', () => {
   it('should store sync state when next block has processed', async () => {
     attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
 
-    await stHeadersReaderMock.emitSerial('block', blocks[0]);
+    await stHeadersReaderMock.emitSerial(STHeadersReader.EVENTS.BLOCK, blocks[0]);
+
+    expect(syncState.setBlocks).to.be.calledOnce();
+    expect(syncState.setBlocks).to.be.calledWith(blocks);
+
+    expect(syncStateRepositoryMock.store).to.be.calledOnce();
+    expect(syncStateRepositoryMock.store).to.be.calledWith(syncState);
+  });
+
+  it('should store sync state when stale block has processed', async () => {
+    attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
+
+    await stHeadersReaderMock.emitSerial(STHeadersReader.EVENTS.STALE_BLOCK, blocks[0]);
 
     expect(syncState.setBlocks).to.be.calledOnce();
     expect(syncState.setBlocks).to.be.calledWith(blocks);
@@ -52,7 +67,10 @@ describe('attachSyncHandlers', () => {
   it('should update lastSyncAt when sync has completed', async () => {
     attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
 
-    await stHeadersReaderMock.emitSerial('end', blocks[blocks.length - 1].height);
+    await stHeadersReaderMock.emitSerial(
+      STHeadersReader.EVENTS.END,
+      blocks[blocks.length - 1].height,
+    );
 
     expect(syncState.setLastSyncAt).to.be.calledOnce();
     expect(syncState.setLastSyncAt).to.be.calledWith(new Date());

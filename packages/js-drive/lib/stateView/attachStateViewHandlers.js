@@ -1,7 +1,9 @@
+const STHeadersReader = require('../blockchain/reader/STHeadersReader');
+
 /**
  * Attach StateView handlers
  *
- * @param {STHeadersReader} stHeadersReader
+ * @param {STHeadersReader|STHeadersReaderMock} stHeadersReader
  * @param {applyStateTransition} applyStateTransition
  * @param {dropMongoDatabasesWithPrefix} dropMongoDatabasesWithPrefix
  */
@@ -10,11 +12,11 @@ function attachStateViewHandlers(
   applyStateTransition,
   dropMongoDatabasesWithPrefix,
 ) {
-  stHeadersReader.on('header', async ({ header, block }) => {
+  stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header, block }) => {
     await applyStateTransition(header, block);
   });
 
-  stHeadersReader.on('reset', async () => {
+  stHeadersReader.on(STHeadersReader.EVENTS.RESET, async () => {
     await dropMongoDatabasesWithPrefix(process.env.MONGODB_DB_PREFIX);
   });
 }

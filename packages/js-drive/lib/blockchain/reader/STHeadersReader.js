@@ -1,6 +1,6 @@
 const Emittery = require('emittery');
 
-const WrongSequenceError = require('./WrongSequenceError');
+const ResetIteratorError = require('./ResetIteratorError');
 
 class STHeadersReader extends Emittery {
   /**
@@ -42,7 +42,7 @@ class STHeadersReader extends Emittery {
       try {
         ({ done, value: header } = await this.stHeaderIterator.next());
       } catch (e) {
-        if (e instanceof WrongSequenceError) {
+        if (e instanceof ResetIteratorError) {
           // eslint-disable-next-line no-continue
           continue;
         }
@@ -84,13 +84,23 @@ class STHeadersReader extends Emittery {
     const previousBlock = this.state.getLastBlock();
 
     if (this.isNotAbleToVerifySequence(currentBlock, previousBlock)) {
+      this.state.clear();
+
       await this.emit(STHeadersReader.EVENTS.RESET);
-      return this.resetIterator(this.initialBlockHeight, currentBlock);
+
+      return this.restartIterator(this.initialBlockHeight);
     }
 
     if (this.isWrongSequence(currentBlock, previousBlock)) {
+      this.state.removeLastBlock();
+
       await this.emitSerial(STHeadersReader.EVENTS.STALE_BLOCK, previousBlock);
-      return this.resetIterator(previousBlock.height, currentBlock);
+
+      if (previousBlock.height >= currentBlock.height) {
+        return this.onBlockHandler(currentBlock);
+      }
+
+      return this.restartIterator(currentBlock.height - 1);
     }
 
     this.state.addBlock(currentBlock);
@@ -136,20 +146,14 @@ class STHeadersReader extends Emittery {
   /**
    * @private
    * @param {number} height
-   * @param {Object} currentBlock
+   * @throws ResetIteratorError
    * @return {Promise<void>}
    */
-  async resetIterator(height) {
+  async restartIterator(height) {
     this.stHeaderIterator.reset(true);
     this.stHeaderIterator.blockIterator.setBlockHeight(height);
 
-    if (height === this.initialBlockHeight) {
-      this.state.clear();
-    } else {
-      this.state.removeLastBlock();
-    }
-
-    throw new WrongSequenceError();
+    throw new ResetIteratorError();
   }
 }
 

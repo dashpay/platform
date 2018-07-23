@@ -1,3 +1,5 @@
+const STHeadersReader = require('../../blockchain/reader/STHeadersReader');
+
 /**
  * Persist sync state
  *
@@ -7,12 +9,17 @@
  */
 function attachSyncHandlers(stHeadersReader, syncState, syncStateRepository) {
   const readerState = stHeadersReader.getState();
-  stHeadersReader.on('block', async () => {
+
+  async function saveState() {
     syncState.setBlocks(readerState.getBlocks());
 
     await syncStateRepository.store(syncState);
-  });
-  stHeadersReader.on('end', async () => {
+  }
+
+  stHeadersReader.on(STHeadersReader.EVENTS.BLOCK, saveState);
+  stHeadersReader.on(STHeadersReader.EVENTS.STALE_BLOCK, saveState);
+
+  stHeadersReader.on(STHeadersReader.EVENTS.END, async () => {
     syncState.setLastSyncAt(new Date());
 
     await syncStateRepository.store(syncState);
