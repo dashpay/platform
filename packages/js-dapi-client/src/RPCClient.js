@@ -27,7 +27,7 @@ async function request(url, method, params) {
   }
   const { data } = res;
   if (data.error) {
-    throw new Error(`RPC error: ${method}: ${data.error.message}`);
+    throw new Error(`DAPI RPC error: ${method}: ${data.error.message}`);
   }
   return data.result;
 }

@@ -1,7 +1,7 @@
 const sinon = require('sinon');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
-const RPCClient = require('../../../src/utils/RPCClient');
+const RPCClient = require('../../src/RPCClient');
 const axios = require('axios');
 
 chai.use(chaiAsPromised);

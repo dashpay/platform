@@ -1,9 +1,9 @@
-const MNListProvider = require('../../../../src/services/MNDiscoveryService/MasternodeListProvider');
+const MNListProvider = require('../../../src/MNDiscovery/MasternodeListProvider');
 const sinon = require('sinon');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
-const RPCClient = require('../../../../src/utils/RPCClient');
-const config = require('../../../../src/config/index');
+const RPCClient = require('../../../src/RPCClient');
+const config = require('../../../src/config');
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -78,7 +78,12 @@ describe('MNListProvider', async () => {
       // Stub for request to seed, which is 127.0.0.1
       const RPCClientStub = sinon.stub(RPCClient, 'request');
       RPCClientStub
-        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', [])
+        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', {})
+        .returns(new Promise((resolve) => {
+          resolve(MockedMNList);
+        }));
+      RPCClientStub
+        .withArgs({ host: '127.0.0.1', port: config.Api.port +1 }, 'getMNList', {})
         .returns(new Promise((resolve) => {
           resolve(MockedMNList);
         }));
@@ -86,7 +91,7 @@ describe('MNListProvider', async () => {
       // Stubs for request to any MN from MNList, returned by seed. This call should return updated list
       for (let masternode of MockedMNList) {
         RPCClientStub
-          .withArgs({ host: masternode.ip, port: config.Api.port }, 'getMNList', [])
+          .withArgs({ host: masternode.ip, port: config.Api.port }, 'getMNList', {})
           .returns(new Promise((resolve) => {
             resolve(updatedMNList);
           }));
@@ -95,7 +100,7 @@ describe('MNListProvider', async () => {
       // Stubs for request to masternodes that should return empty list
       for (let masternode of masternodesThatReturnEmptyList) {
         RPCClientStub
-          .withArgs({ host: masternode.ip, port: config.Api.port }, 'getMNList', [])
+          .withArgs({ host: masternode.ip, port: config.Api.port }, 'getMNList', {})
           .returns(new Promise((resolve) => {
             resolve([]);
           }));
@@ -104,7 +109,7 @@ describe('MNListProvider', async () => {
       // Stubs for request to masternodes that should return null
       for (let masternode of masternodesThatReturnNull) {
         RPCClientStub
-          .withArgs({ host: masternode.ip, port: config.Api.port }, 'getMNList', [])
+          .withArgs({ host: masternode.ip, port: config.Api.port }, 'getMNList', {})
           .returns(new Promise((resolve) => {
             resolve(null);
           }));
@@ -129,11 +134,14 @@ describe('MNListProvider', async () => {
       expect(MNListItem.rank).to.be.a('number');
       expect(MNListItem.lastseen).to.be.a('number');
       expect(MNListItem.activeseconds).to.be.a('number');
+      expect(MNListItem.payee).to.be.a('string');
+      expect(MNListItem.protocol).to.be.a('number');
+      expect(MNListItem.rank).to.be.a('number');
+      expect(MNListItem.vin).to.be.a('string');
 
       expect(mnListProvider.lastUpdateDate).be.closeTo(Date.now(), 10000);
       expect(mnListProvider.masternodeList.length).to.equal(3);
     });
-
     it('Should update MNList if needed and return updated list', async () => {
       const mnListProvider = new MNListProvider();
       let MNList = await mnListProvider.getMNList();
@@ -178,18 +186,29 @@ describe('MNListProvider', async () => {
       // Override stub behaviour for next call
       RPCClient.request.resetHistory();
       RPCClient.request
-        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', [])
+        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', {})
         .onFirstCall()
         .returns(new Promise(resolve => resolve(null)));
 
       const mnListProvider = new MNListProvider();
       return expect(mnListProvider.getMNList()).to.be.rejectedWith('Failed to fetch masternodes list');
     });
+    it('Should throw error if can\'t connect to dns seeder, wrong port', async () => {
+        // Override stub behaviour for next call
+        RPCClient.request.resetHistory();
+        RPCClient.request
+          .withArgs({ host: '127.0.0.1', port: config.Api.port+1 }, 'getMNList', {})
+          .onFirstCall()
+          .returns(new Promise(resolve => resolve(null)));
+
+        const mnListProvider = new MNListProvider();
+        return expect(mnListProvider.getMNList()).to.be.rejectedWith('Failed to fetch masternodes list');
+      });
     it('Should throw error if can\'t update masternode list', async () => {
       // Override stub behaviour for next call
       RPCClient.request.resetHistory();
       RPCClient.request
-        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', [])
+        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', {})
         .onFirstCall()
         .returns(new Promise(resolve => resolve(masternodesThatReturnNull)));
 
@@ -207,7 +226,7 @@ describe('MNListProvider', async () => {
       // Override stub behaviour for next call
       RPCClient.request.resetHistory();
       RPCClient.request
-        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', [])
+        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getMNList', {})
         .onFirstCall()
         .returns(new Promise(resolve => resolve(masternodesThatReturnEmptyList)));
 

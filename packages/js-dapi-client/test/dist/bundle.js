@@ -1,13 +1,10 @@
 const expect = require('chai').expect;
 
-const bundle = require('../../dist/bundle.js');
-
-const expectedExports = ['Api', 'Core', 'Bitcore'];
+const DAPIClient = require('../../dist/bundle.js');
 
 describe('dist/bundle.js', () => {
-  it('Common.js exports should be the same as src/index', () => {
-    expectedExports.forEach((member) => {
-      expect(bundle).to.have.property(member);
-    });
+  it('Common.js exports should export DAPIClient class', () => {
+    const dapiClient = new DAPIClient();
+    expect(dapiClient).to.have.property('makeRequestToRandomDAPINode');
   });
 });

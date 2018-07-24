@@ -1,7 +1,7 @@
 const sinon = require('sinon');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
-const Storage = require('../../../src/storage');
+const Storage = require('../../src/storage');
 
 chai.use(chaiAsPromised);
 const { expect } = chai;

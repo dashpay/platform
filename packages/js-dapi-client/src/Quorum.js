@@ -1,5 +1,5 @@
-const MNDiscoveryService = require('../MNDiscoveryService');
-const { block: blockApi } = require('../../api');
+const MNDiscoveryService = require('./MNDiscovery/index');
+const { block: blockApi } = require('./index');
 const dashQuorums = require('quorums-dash');
 
 const QuorumService = {

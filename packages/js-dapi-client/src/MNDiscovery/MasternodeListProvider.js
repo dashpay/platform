@@ -1,14 +1,14 @@
 /**
  * This module provides list of masternode addresses.
- * No need to use this module manually - it's part of MNDiscoveryService.
+ * No need to use this module manually - it's part of MNDiscovery.
  * It is written as class for testability purposes - there is need to be a way to
  * reset internal state of object.
  * @module MasternodeListProvider
  */
 
-const RPCClient = require('../../utils/RPCClient');
+const RPCClient = require('../RPCClient');
 const sample = require('lodash/sample');
-const config = require('../../config/index');
+const config = require('../config');
 
 /**
  @typedef {object} Masternode
@@ -23,12 +23,18 @@ const config = require('../../config/index');
  */
 
 class MasternodeListProvider {
-  constructor() {
+  constructor(seeds, DAPIPort = config.Api.port) {
+    const seedsIsArray = Array.isArray(seeds);
+
+    if (seeds && !seedsIsArray) {
+      throw new Error('seed is not an array');
+    }
     /**
      * Masternode list. Initial masternode list is DNS seed from SDK config.
      * @type Array<Masternode>
      */
-    this.masternodeList = config.DAPIDNSSeeds.slice();
+    this.masternodeList = seedsIsArray ? seeds.slice() : config.DAPIDNSSeeds.slice();
+    this.DAPIPort = DAPIPort;
     this.lastUpdateDate = 0;
   }
   /**
@@ -40,8 +46,8 @@ class MasternodeListProvider {
     const randomMasternode = sample(this.masternodeList);
     const MNList = await RPCClient.request({
       host: randomMasternode.ip,
-      port: config.Api.port,
-    }, 'getMNList', []);
+      port: this.DAPIPort,
+    }, 'getMNList', {});
     if (!MNList) {
       throw new Error('Failed to fetch masternodes list');
     }

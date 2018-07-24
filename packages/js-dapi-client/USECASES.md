@@ -8,11 +8,11 @@ The purpose of this document is to provide some use-cases and exemple on how you
     let SDK = await DAPISDK();
     let height =  await SDK.Explorer.API.getLastBlockHeight();
     //This will fetch the last 25 blocks headers.
-    let blockHeaders = await SDK.Explorer.API.getBlockHeaders(height, 25, false);
+    let blockHeaders = await SDK.Explorer.API.getBlockHeaders(height, 25);
 
     let hash="0000041461694567a06dccb44caebcd99b5075cbb0b5e96fdd0f1400aba1b483";//Hash for block 25
     //This will fetch from block 25 to block 124.
-    let blockHeaders2 = await SDK.Explorer.API.getBlockHeaders(hash, 100, false);
+    let blockHeaders2 = await SDK.Explorer.API.getBlockHeaders(hash, 100);
 
     //This will fetch from block 0 to block 24 (height:0, nb:25, direction:1)
     let blockHeaders3 = await SDK.Explorer.API.getBlockHeaders();
