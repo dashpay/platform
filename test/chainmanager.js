@@ -205,6 +205,14 @@ const headers = [
     nonce: 352597,
     bits: '1e0ffff0',
   },
+  { // invalid header, copy ^ with last digit of merkleroot changed
+    version: 2,
+    previousblockhash: '00000df1e666a530efa28ac37c8cf8b80970c65aa69497fc4fbb3252d2e5f661',
+    merkleroot: '4050c8893b1d882da44d15e481b30e145ed6fe29ffa51ac99dc0e206696aa6dd',
+    time: 1405697678,
+    nonce: 352597,
+    bits: '1e0ffff0',
+  },
 ];
 
 const fetchHeaders = () => headers.map(h => utils.normalizeHeader(h));
