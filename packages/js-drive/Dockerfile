@@ -24,7 +24,7 @@ ENV PATH /node_modules/.bin:$PATH
 # Copy project files
 WORKDIR /usr/src/app
 COPY . /usr/src/app
-RUN mv .env.example .env
+RUN cp .env.example .env
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}

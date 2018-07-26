@@ -1,4 +1,4 @@
-require('dotenv-expand')(require('dotenv').config());
+require('dotenv-expand')(require('dotenv-safe').config());
 
 const zmq = require('zeromq');
 const IpfsAPI = require('ipfs-api');
