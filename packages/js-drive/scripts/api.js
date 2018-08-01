@@ -19,6 +19,11 @@ const wrapToErrorHandler = require('../lib/api/jsonRpc/wrapToErrorHandler');
 const addSTPacketFactory = require('../lib/storage/ipfs/addSTPacketFactory');
 const addSTPacketMethodFactory = require('../lib/api/methods/addSTPacketMethodFactory');
 
+const DapObjectMongoDbRepository = require('../lib/stateView/dapObject/DapObjectMongoDbRepository');
+const createDapObjectMongoDbRepositoryFactory = require('../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
+const fetchDapObjectsFactory = require('../lib/stateView/dapObject/fetchDapObjectsFactory');
+const fetchDapObjectsMethodFactory = require('../lib/api/methods/fetchDapObjectsMethodFactory');
+
 (async function main() {
   const rpcClient = new RpcClient({
     protocol: 'http',
@@ -51,9 +56,17 @@ const addSTPacketMethodFactory = require('../lib/api/methods/addSTPacketMethodFa
   const addSTPacket = addSTPacketFactory(ipfsAPI);
   const addSTPacketMethod = addSTPacketMethodFactory(addSTPacket);
 
+  const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
+    mongoClient,
+    DapObjectMongoDbRepository,
+  );
+  const fetchDapObjects = fetchDapObjectsFactory(createDapObjectMongoDbRepository);
+  const fetchDapObjectsMethod = fetchDapObjectsMethodFactory(fetchDapObjects);
+
   // Initialize API methods
   const rpcMethods = {
     [addSTPacketMethod.name]: wrapToErrorHandler(addSTPacketMethod),
+    [fetchDapObjectsMethod.name]: wrapToErrorHandler(fetchDapObjectsMethod),
   };
 
   const rpc = jayson.server(rpcMethods);
