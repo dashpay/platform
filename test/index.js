@@ -1,6 +1,9 @@
 const Blockchain = require('../lib/spvchain');
 const headers = require('./data/headers');
 const utils = require('../lib/utils');
+const merkleData = require('./data/merkleproofs');
+const merkleProofs = require('../lib/merkleproofs');
+const dashcore = require('bitcore-lib-dash');
 
 let chain = null;
 require('should');
@@ -109,13 +112,12 @@ describe('Difficulty Calculation', () => {
 });
 
 describe('MerkleProofs', () => {
-  it('should have difficulty of 1 when target is max', () => {
-    const testnetMaxTarget = 0x1e0ffff0;
-    utils.getDifficulty(testnetMaxTarget).should.equal(1);
-  });
+  it('should validate tx inclusion in merkleblock', () => {
+    const merkleBlock = new dashcore.MerkleBlock(merkleData.merkleBlock);
+    const validTx = '45afbfe270014d5593cb065562f1fed726f767fe334d8b3f4379025cfa5be8c5';
+    const invalidTx = `${validTx.substring(0, validTx.length - 1)}0`;
 
-  it('should have difficulty higher than 1 when target is lower than max', () => {
-    const testnetMaxTarget = 0x1e0fffef;
-    utils.getDifficulty(testnetMaxTarget).should.be.greaterThan(1);
+    merkleProofs.validateTxProofs(merkleBlock, [validTx]).should.equal(true);
+    merkleProofs.validateTxProofs(merkleBlock, [invalidTx]).should.equal(false);
   });
 });
