@@ -1,7 +1,5 @@
 /* eslint no-underscore-dangle: ["error", { "allow": ["_getHash"] }] */
-// const DashUtil = require('dash-util');
-// const bitcore = require('bitcore-lib-dash');
-const utils = require('../lib/utils');
+const utils = require('../../lib/utils');
 
 const headers = [
   {
@@ -215,6 +213,4 @@ const headers = [
   },
 ];
 
-const fetchHeaders = () => headers.map(h => utils.normalizeHeader(h));
-
-module.exports = { fetchHeaders };
+module.exports = headers.map(h => utils.normalizeHeader(h));
