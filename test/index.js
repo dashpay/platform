@@ -1,14 +1,12 @@
 const Blockchain = require('../lib/spvchain');
-const chainManager = require('./chainmanager');
+const headers = require('./data/headers');
 const utils = require('../lib/utils');
 
 let chain = null;
-let headers = [];
 require('should');
 
 describe('SPV-DASH (forks & re-orgs)', () => {
   before(() => {
-    headers = chainManager.fetchHeaders();
     chain = new Blockchain('testnet');
   });
 
@@ -66,7 +64,6 @@ describe('SPV-DASH (forks & re-orgs)', () => {
 let genesisHash = null;
 describe('Blockstore', () => {
   before(() => {
-    headers = chainManager.fetchHeaders();
     chain = new Blockchain('testnet', 10);
     genesisHash = chain.getTipHash();
   });
@@ -100,6 +97,18 @@ describe('Blockstore', () => {
 // Dash testnet headers which requires significant CPU power to create forked chains from
 
 describe('Difficulty Calculation', () => {
+  it('should have difficulty of 1 when target is max', () => {
+    const testnetMaxTarget = 0x1e0ffff0;
+    utils.getDifficulty(testnetMaxTarget).should.equal(1);
+  });
+
+  it('should have difficulty higher than 1 when target is lower than max', () => {
+    const testnetMaxTarget = 0x1e0fffef;
+    utils.getDifficulty(testnetMaxTarget).should.be.greaterThan(1);
+  });
+});
+
+describe('MerkleProofs', () => {
   it('should have difficulty of 1 when target is max', () => {
     const testnetMaxTarget = 0x1e0ffff0;
     utils.getDifficulty(testnetMaxTarget).should.equal(1);
