@@ -3,11 +3,10 @@
     "pver": 1,
     "dapcontract": {
       "dapschemaid": 0,
-      "dapname": "DashPay",
+      "dapname": "Contacts",
       "dapver": 1,
       "dapschema": {
         "$id": "http://dash.org/schemas/sys/dapschema",
-        "title": "Contacts",
         "user": {
           "$id": "http://dash.org/schemas/sys/dapobject",
           "isprofile": true,
@@ -64,7 +63,7 @@
     "dapobjects": [
       {
         "objtype": "user",
-        "debug": "valid dashpay blockchainuser for alice",
+        "pver": 1,
         "idx": 0,
         "rev": 1,
         "act": 1
@@ -80,7 +79,7 @@
     "dapobjectshash": "7a485fdb68cd4dc7075d063ee0e8a5f8e9b459089647e1c4c536cf4127a555b9",
     "dapobjects": [
       {
-        "objtype": "user",
+        "objtype": "contact",
         "pver": 1,
         "rev": 0,
         "act": 1,
@@ -89,8 +88,7 @@
           "userId": "76b19e926e6ea960ce19a9ba7db205b3c5f05c178240348e4236abb821e9c261",
           "type": 0
         },
-        "hdextpubkey": "xpub6A9c92Lqxd2Y4bhq91YcWoE2BbUWSBKur1MjeMjkMkEKL7orgkD4k45a3rRq2o5cSk48wDb8SE7iAGbpjSCskrk6R7tSqEJ86nRfLr3Jifa",
-        "agreetscs": 1
+        "hdextpubkey": "xpub6A9c92Lqxd2Y4bhq91YcWoE2BbUWSBKur1MjeMjkMkEKL7orgkD4k45a3rRq2o5cSk48wDb8SE7iAGbpjSCskrk6R7tSqEJ86nRfLr3Jifa"
       }
     ],
     "meta": {
