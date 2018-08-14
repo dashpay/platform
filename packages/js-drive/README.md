@@ -27,11 +27,85 @@ docker-compose up -d
 npm run sync
 ```
 
-### Start API
+### Start API process
 
 ```bash
 npm run api
 ```
+
+## DashDrive API
+
+DashDrive provides [JSON-RPC 2.0](https://www.jsonrpc.org/specification) API for interaction with data.
+
+### RPC methods
+
+#### addSTPacket
+
+Add State Transition Packet to DashDrive storage
+
+##### Params
+
+| name    | type   | description                            |
+|---------|--------|----------------------------------------|
+| packet  | string | ST Packet object serialized using CBOR |
+
+##### Response
+
+| name    | type   | description                                  |
+|---------|--------|----------------------------------------------|
+| result  | string | ST Packet [CID](https://github.com/ipld/cid) |
+
+#### fetchDapContact
+
+Fetch DAP Contract from DashDrive State View
+
+##### Params
+
+| name    | type   | description  |
+|---------|--------|--------------|
+| dapId   | string | DAP ID       |
+
+##### Response
+
+| name    | type   | description         |
+|---------|--------|---------------------|
+| result  | object | DAP Contact object  |
+
+#### fetchDapObjects
+
+Fetch DAP Objects from DashDrive State View
+
+##### Params
+
+| name    | type   | description          |
+|---------|--------|----------------------|
+| dapId   | string | DAP ID               |
+| type    | string | DAP Objects type     |
+| options | object | Options              |
+
+Fetch method options:
+
+| name       | type   | description                                                                             |
+|------------|--------|-----------------------------------------------------------------------------------------|
+| where      | object | [MongoDB query](https://docs.mongodb.com/manual/reference/operator/query/)              |
+| orderBy    | object | [MongoDB sort](https://docs.mongodb.com/manual/reference/method/cursor.sort/)           |
+| limit      | number | [MongoDB limit](https://docs.mongodb.com/manual/reference/method/cursor.limit/)         |
+| startAt    | number | [MongoDB skip](https://docs.mongodb.com/manual/reference/method/cursor.skip/)           |
+| startAfter | number | Exclusive [MongoDB skip](https://docs.mongodb.com/manual/reference/method/cursor.skip/) |
+
+##### Response
+
+| name    | type   | description  |
+|---------|--------|--------------|
+| result  | array  | DAP objects  |
+
+### Errors
+
+| code | message                   | meaning                                                                  |
+|------|---------------------------|--------------------------------------------------------------------------|
+| 100  | Initial sync in progress  | DashDrive responds with error until initial sync process is not complete |
+
+Standard errors listed in [JSON-RPC specification](https://www.jsonrpc.org/specification).
 
 ## Tests
 
