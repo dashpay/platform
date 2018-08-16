@@ -13,6 +13,14 @@ An [event-sourced](https://martinfowler.com/eaaDev/EventSourcing.html) metadata 
 3. [Install Docker compose](https://docs.docker.com/compose/install/)
 4. Copy `.env.example` to `.env` file
 
+## Configuration
+
+DashDrive uses environment variables for configuration.
+Variables are read from `.env` file and can be overwritten by variables
+defined in env or directly passed to the process.
+
+See all available settings in [.env.example](.env.example).
+
 ## Usage
 
 ### Start development environment
