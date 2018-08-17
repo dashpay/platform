@@ -26,7 +26,7 @@ services:
       - NETWORK=$DASH_NETWORK
 
   ipfs:
-    image: jbenet/go-ipfs:latest
+    image: ipfs/go-ipfs:v0.4.15
     ports:
       - 4001:4001
       - 4001:4002/udp
@@ -35,7 +35,12 @@ services:
       - 127.0.0.1:8081:8081
     volumes:
       - ./data/ipfs:/data/ipfs
-    command: daemon --migrate=true --enable-pubsub-experiment
+    command: daemon --migrate=true --enable-pubsub-experiment --offline
+
+  mongodb:
+    image: mongo:3.6
+    volumes:
+      - ./data/mongodb:/data/db
 
   insight:
     image: $REPO_URL/dashevo/evoinsight:latest
@@ -55,6 +60,7 @@ services:
     depends_on:
       - core
       - ipfs
+      - mongodb
     ports:
       - 127.0.0.1:6000:5001
 
