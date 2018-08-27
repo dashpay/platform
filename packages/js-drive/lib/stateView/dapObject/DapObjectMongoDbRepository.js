@@ -1,10 +1,11 @@
 const DapObject = require('./DapObject');
 const Reference = require('../Reference');
-const InvalidWhereError = require('./InvalidWhereError');
-const InvalidOrderByError = require('./InvalidOrderByError');
-const InvalidLimitError = require('./InvalidLimitError');
-const InvalidStartAtError = require('./InvalidStartAtError');
-const InvalidStartAfterError = require('./InvalidStartAfterError');
+const InvalidWhereError = require('./errors/InvalidWhereError');
+const InvalidOrderByError = require('./errors/InvalidOrderByError');
+const InvalidLimitError = require('./errors/InvalidLimitError');
+const InvalidStartAtError = require('./errors/InvalidStartAtError');
+const InvalidStartAfterError = require('./errors/InvalidStartAfterError');
+const AmbiguousStartError = require('./errors/AmbiguousStartError');
 
 class DapObjectMongoDbRepository {
   /**
@@ -30,6 +31,12 @@ class DapObjectMongoDbRepository {
    * Fetch DapObjects by type
    *
    * @param {string} type
+   * @param options
+   * @param options.where
+   * @param options.limit
+   * @param options.startAt
+   * @param options.startAfter
+   * @param options.orderBy
    * @returns {Promise<DapObject[]>}
    */
   async fetch(type, options = {}) {
@@ -46,6 +53,13 @@ class DapObjectMongoDbRepository {
       opts = Object.assign({}, opts, { limit: options.limit });
     } else if (typeof options.limit !== 'undefined') {
       throw new InvalidLimitError();
+    }
+
+    if (
+      typeof options.startAt !== 'undefined' &&
+      typeof options.startAfter !== 'undefined'
+    ) {
+      throw new AmbiguousStartError();
     }
 
     if (this.isNumber(options.startAt)) {

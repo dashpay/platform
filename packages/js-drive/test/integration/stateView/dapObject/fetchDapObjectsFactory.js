@@ -47,7 +47,7 @@ describe('fetchDapObjectsFactory', () => {
     expect(result).to.be.deep.equal([dapObject]);
   });
 
-  it('should fetch DapObjects for specific DAP id, object type and user', async () => {
+  it('should fetch DAP objects for specific DAP id, object type and user', async () => {
     const type = 'DashPayContact';
     const dapObjectRepository = createDapObjectMongoDbRepository(dapId);
     await dapObjectRepository.store(dapObject);
@@ -56,7 +56,7 @@ describe('fetchDapObjectsFactory', () => {
     expect(result).to.be.deep.equal([dapObject]);
   });
 
-  it('should return empty array for specific DAP id, object type and user not exist', async () => {
+  it('should return empty array for specific DAP ID, object type and user not exist', async () => {
     const type = 'DashPayContact';
     const dapObjectRepository = createDapObjectMongoDbRepository(dapId);
     await dapObjectRepository.store(dapObject);
@@ -65,7 +65,7 @@ describe('fetchDapObjectsFactory', () => {
     expect(result).to.be.deep.equal([]);
   });
 
-  it('should return empty array if DAP id does not exist', async () => {
+  it('should return empty array if DAP ID does not exist', async () => {
     const unknowDapId = 'Unknown';
     const type = 'DashPayContact';
     const dapObjectRepository = createDapObjectMongoDbRepository(dapId);

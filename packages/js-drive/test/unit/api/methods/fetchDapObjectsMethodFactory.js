@@ -2,11 +2,12 @@ const fetchDapObjectsMethodFactory = require('../../../../lib/api/methods/fetchD
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 const DapObject = require('../../../../lib/stateView/dapObject/DapObject');
 const Reference = require('../../../../lib/stateView/Reference');
-const InvalidWhereError = require('../../../../lib/stateView/dapObject/InvalidWhereError');
-const InvalidOrderByError = require('../../../../lib/stateView/dapObject/InvalidOrderByError');
-const InvalidLimitError = require('../../../../lib/stateView/dapObject/InvalidLimitError');
-const InvalidStartAtError = require('../../../../lib/stateView/dapObject/InvalidStartAtError');
-const InvalidStartAfterError = require('../../../../lib/stateView/dapObject/InvalidStartAfterError');
+const InvalidWhereError = require('../../../../lib/stateView/dapObject/errors/InvalidWhereError');
+const InvalidOrderByError = require('../../../../lib/stateView/dapObject/errors/InvalidOrderByError');
+const InvalidLimitError = require('../../../../lib/stateView/dapObject/errors/InvalidLimitError');
+const InvalidStartAtError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAtError');
+const InvalidStartAfterError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAfterError');
+const AmbiguousStartError = require('../../../../lib/stateView/dapObject/errors/AmbiguousStartError');
 
 describe('fetchDapObjectsMethod', () => {
   let fetchDapObjects;
@@ -58,6 +59,14 @@ describe('fetchDapObjectsMethod', () => {
     const type = 'DashPayContact';
     const options = {};
     fetchDapObjects.throws(new InvalidStartAfterError());
+    expect(fetchDapObjectsMethod({ dapId, type, options })).to.be.rejectedWith(InvalidParamsError);
+  });
+
+  it('should throw InvalidParamsError if AmbiguousStartError is thrown', () => {
+    const dapId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
+    const type = 'DashPayContact';
+    const options = {};
+    fetchDapObjects.throws(new AmbiguousStartError());
     expect(fetchDapObjectsMethod({ dapId, type, options })).to.be.rejectedWith(InvalidParamsError);
   });
 

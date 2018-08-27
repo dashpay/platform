@@ -1,11 +1,12 @@
 const DapObject = require('../../../../lib/stateView/dapObject/DapObject');
 const Reference = require('../../../../lib/stateView/Reference');
 const DapObjectMongoDbRepository = require('../../../../lib/stateView/dapObject/DapObjectMongoDbRepository');
-const InvalidWhereError = require('../../../../lib/stateView/dapObject/InvalidWhereError');
-const InvalidOrderBy = require('../../../../lib/stateView/dapObject/InvalidOrderByError');
-const InvalidLimitError = require('../../../../lib/stateView/dapObject/InvalidLimitError');
-const InvalidStartAtError = require('../../../../lib/stateView/dapObject/InvalidStartAtError');
-const InvalidStartAfterError = require('../../../../lib/stateView/dapObject/InvalidStartAfterError');
+const InvalidWhereError = require('../../../../lib/stateView/dapObject/errors/InvalidWhereError');
+const InvalidOrderBy = require('../../../../lib/stateView/dapObject/errors/InvalidOrderByError');
+const InvalidLimitError = require('../../../../lib/stateView/dapObject/errors/InvalidLimitError');
+const InvalidStartAtError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAtError');
+const InvalidStartAfterError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAfterError');
+const AmbiguousStartError = require('../../../../lib/stateView/dapObject/errors/AmbiguousStartError');
 const startMongoDbInstance = require('../../../../lib/test/services/mocha/startMongoDbInstance');
 
 function createDapObjectWithId(id) {
@@ -309,6 +310,16 @@ describe('DapObjectMongoDbRepository', () => {
       error = e;
     }
     expect(error).to.be.instanceOf(InvalidStartAfterError);
+  });
+
+  it('should throw AmbiguousStartError if the both startAt and startAfter are present', async () => {
+    let error;
+    try {
+      await dapObjectRepository.fetch('any', { startAt: 1, startAfter: 2 });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).to.be.instanceOf(AmbiguousStartError);
   });
 
   it('should return empty array if fetch does not find DapObjects', async () => {

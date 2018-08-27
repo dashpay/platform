@@ -1,9 +1,10 @@
 const InvalidParamsError = require('../InvalidParamsError');
-const InvalidWhereError = require('../../stateView/dapObject/InvalidWhereError');
-const InvalidOrderByError = require('../../stateView/dapObject/InvalidOrderByError');
-const InvalidLimitError = require('../../stateView/dapObject/InvalidLimitError');
-const InvalidStartAtError = require('../../stateView/dapObject/InvalidStartAtError');
-const InvalidStartAfterError = require('../../stateView/dapObject/InvalidStartAfterError');
+const InvalidWhereError = require('../../stateView/dapObject/errors/InvalidWhereError');
+const InvalidOrderByError = require('../../stateView/dapObject/errors/InvalidOrderByError');
+const InvalidLimitError = require('../../stateView/dapObject/errors/InvalidLimitError');
+const InvalidStartAtError = require('../../stateView/dapObject/errors/InvalidStartAtError');
+const InvalidStartAfterError = require('../../stateView/dapObject/errors/InvalidStartAfterError');
+const AmbiguousStartError = require('../../stateView/dapObject/errors/AmbiguousStartError');
 
 /**
  * @param fetchDapObjects
@@ -32,6 +33,7 @@ module.exports = function fetchDapObjectsMethodFactory(fetchDapObjects) {
         case InvalidLimitError:
         case InvalidStartAtError:
         case InvalidStartAfterError:
+        case AmbiguousStartError:
           throw new InvalidParamsError();
         default:
           throw error;
