@@ -8,7 +8,7 @@ const StateTransitionHeader = require('../../blockchain/StateTransitionHeader');
  */
 module.exports = function getTransitionHeaderFixtures() {
   const transitionHeadersJSON = fs.readFileSync(path.join(__dirname, '/../../../test/fixtures/stateTransitionHeaders.json'));
-  const transitionHeadersData = JSON.parse(transitionHeadersJSON);
+  const transitionHeadersData = JSON.parse(transitionHeadersJSON.toString());
 
   return transitionHeadersData.map(h => new StateTransitionHeader(h));
 };

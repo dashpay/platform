@@ -23,7 +23,7 @@ describe('startDashCoreInstance', function main() {
 
     it('should has RPC connected', async () => {
       const { result } = await instance.rpcClient.getInfo();
-      expect(result.version).to.equal(120300);
+      expect(result).to.have.property('version');
     });
   });
 
@@ -48,15 +48,15 @@ describe('startDashCoreInstance', function main() {
     it('should propagate blocks between instances', async () => {
       for (let i = 0; i < 3; i++) {
         const { result: blocks } = await instances[i].rpcClient.getBlockCount();
-        expect(blocks).to.equal(0);
+        expect(blocks).to.be.equal(1);
       }
 
       await instances[0].rpcClient.generate(2);
-      await wait(10000);
+      await wait(5000);
 
       for (let i = 0; i < 3; i++) {
         const { result: blocks } = await instances[i].rpcClient.getBlockCount();
-        expect(blocks).to.equal(2);
+        expect(blocks).to.be.equal(3);
       }
     });
   });

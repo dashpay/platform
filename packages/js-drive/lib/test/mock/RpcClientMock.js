@@ -58,10 +58,40 @@ module.exports = class RpcClientMock {
   }
 
   /**
+   * @param {string} hash
+   */
+  getTransaction(hash) {
+    const header = this.transitionHeaders.find(h => h.hash === hash);
+
+    if (!header) {
+      return Promise.reject(new Error(`Transaction ${hash} not found`));
+    }
+
+    return Promise.resolve({ result: header });
+  }
+
+  /**
+   * Get raw transaction
+   *
+   * @param {string} hash
+   * @param {number} [parsed]
+   * @return {Promise<{ result }>}
+   */
+  async getRawTransaction(hash, parsed = 0) {
+    const { result: transaction } = await this.getTransaction(hash);
+
+    if (parsed) {
+      return { result: transaction };
+    }
+
+    return { result: transaction.serialize() };
+  }
+
+  /**
    * @param {string} tsid
    */
   getTransition(tsid) {
-    const header = this.transitionHeaders.find(h => h.getHash() === tsid);
+    const header = this.transitionHeaders.find(h => h.hash === tsid);
 
     return Promise.resolve({ result: header });
   }

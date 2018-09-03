@@ -30,11 +30,11 @@ describe('StateTransitionHeaderIterator', () => {
       obtainedTransitionHeaders.push(header);
     }
 
-    expect(rpcClientMock.getTransition).has.callCount(rpcClientMock.transitionHeaders.length);
+    expect(rpcClientMock.getTransaction).has.callCount(rpcClientMock.transitionHeaders.length);
     expect(blockIterator.next).has.callCount(rpcClientMock.blocks.length + 1);
 
-    const obtainedHeaderHashes = obtainedTransitionHeaders.map(h => h.getHash());
-    const transitionHeaderHashes = rpcClientMock.transitionHeaders.map(h => h.getHash());
+    const obtainedHeaderHashes = obtainedTransitionHeaders.map(h => h.hash);
+    const transitionHeaderHashes = rpcClientMock.transitionHeaders.map(h => h.hash);
 
     expect(obtainedHeaderHashes).to.be.deep.equal(transitionHeaderHashes);
   });
@@ -46,6 +46,6 @@ describe('StateTransitionHeaderIterator', () => {
 
     const { value: secondHeader } = await stateTransitionHeaderIterator.next();
 
-    expect(firstHeader.getHash()).to.be.equal(secondHeader.getHash());
+    expect(firstHeader.hash).to.be.equal(secondHeader.hash);
   });
 });

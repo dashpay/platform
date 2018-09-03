@@ -105,6 +105,10 @@ describe('createDashCoreInstance', function main() {
     });
 
     it('should be connected each other', async () => {
+      // Workaround for develop branch
+      // We should generate genesis block before we connect instances
+      await instanceOne.getApi().generate(1);
+
       await instanceOne.connect(instanceTwo);
       await wait(2000);
 
@@ -122,16 +126,16 @@ describe('createDashCoreInstance', function main() {
     it('should propagate blocks from one instance to the other', async () => {
       const { result: blocksInstanceOne } = await instanceOne.rpcClient.getBlockCount();
       const { result: blocksInstanceTwo } = await instanceTwo.rpcClient.getBlockCount();
-      expect(blocksInstanceOne).to.equal(0);
-      expect(blocksInstanceTwo).to.equal(0);
+      expect(blocksInstanceOne).to.equal(1);
+      expect(blocksInstanceTwo).to.equal(1);
 
       await instanceOne.rpcClient.generate(2);
-      await wait(2000);
+      await wait(3000);
 
       const { result: blocksOne } = await instanceOne.rpcClient.getBlockCount();
       const { result: blocksTwo } = await instanceTwo.rpcClient.getBlockCount();
-      expect(blocksOne).to.equal(2);
-      expect(blocksTwo).to.equal(2);
+      expect(blocksOne).to.equal(3);
+      expect(blocksTwo).to.equal(3);
     });
   });
 
@@ -148,7 +152,7 @@ describe('createDashCoreInstance', function main() {
 
       const rpcClient = instance.getApi();
       const { result } = await rpcClient.getInfo();
-      expect(result.version).to.equal(120300);
+      expect(result).to.have.property('version');
     });
 
     it('should work after restarting the instance', async () => {
@@ -158,7 +162,7 @@ describe('createDashCoreInstance', function main() {
 
       const rpcClient = instance.getApi();
       const { result } = await rpcClient.getInfo();
-      expect(result.version).to.equal(120300);
+      expect(result).to.have.property('version');
     });
   });
 });

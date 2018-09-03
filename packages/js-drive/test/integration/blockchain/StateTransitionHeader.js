@@ -1,4 +1,3 @@
-const StateTransitionHeader = require('../../../lib/blockchain/StateTransitionHeader');
 const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
 const startIPFSInstance = require('../../../lib/test/services/mocha/startIPFSInstance');
 const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
@@ -7,7 +6,7 @@ const hashSTPacket = require('../../../lib/test/consensus/hashSTPacket');
 
 describe('StateTransitionHeader', () => {
   const packet = getTransitionPacketFixtures()[0];
-  const header = getTransitionHeaderFixtures()[0].toJSON();
+  const header = getTransitionHeaderFixtures()[0];
 
   let addSTPacket;
   startIPFSInstance().then((instance) => {
@@ -15,10 +14,11 @@ describe('StateTransitionHeader', () => {
   });
 
   it('should StateTransitionHeader CID equal to IPFS CID', async () => {
-    header.hashSTPacket = await hashSTPacket(packet.toJSON({ skipMeta: true }));
-    const stHeader = new StateTransitionHeader(header);
+    const packetHash = await hashSTPacket(packet.toJSON({ skipMeta: true }));
 
-    const stHeaderCid = stHeader.getPacketCID();
+    header.extraPayload.setHashSTPacket(packetHash);
+
+    const stHeaderCid = header.getPacketCID();
     const ipfsCid = await addSTPacket(packet);
 
     expect(stHeaderCid).to.equal(ipfsCid);

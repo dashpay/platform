@@ -24,7 +24,7 @@ class StateTransitionHeaderIterator {
     }
 
     this.currentBlock = null;
-    this.currentTransitionIndex = 0;
+    this.currentTransactionIndex = 0;
   }
 
   /**
@@ -42,18 +42,25 @@ class StateTransitionHeaderIterator {
         }
 
         this.currentBlock = block;
-        this.currentTransitionIndex = 0;
+        this.currentTransactionIndex = 0;
       }
 
-      const transitionId = this.currentBlock.ts[this.currentTransitionIndex];
+      const transactionId = this.currentBlock.tx[this.currentTransactionIndex];
 
-      if (transitionId) {
-        const { result: transitionHeader } =
-          await this.rpcClient.getTransition(transitionId);
+      if (transactionId) {
+        const { result: serializedTransactionHeader } =
+          await this.rpcClient.getRawTransaction(transactionId);
 
-        this.currentTransitionIndex++;
+        this.currentTransactionIndex++;
 
-        return { done: false, value: new StateTransitionHeader(transitionHeader) };
+        const transactionHeader = new StateTransitionHeader(serializedTransactionHeader);
+
+        if (transactionHeader.type !== StateTransitionHeader.TYPES.TRANSACTION_SUBTX_TRANSITION) {
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+
+        return { done: false, value: transactionHeader };
       }
 
       this.currentBlock = null;

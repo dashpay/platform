@@ -7,11 +7,8 @@
     "version": 536870913,
     "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
     "tx": [
-      "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b"
-    ],
-    "ts": [
-      "afe860766dc13de86992ffa8e21b242bcdcb66ff3b06146348d25481c8499c55",
-      "f4a61387c608b94b4bc1aa86a32d7f4f0eb68e4dcb7d97d61cdef6cf774ef849"
+      null,
+      null
     ],
     "time": 1507208925,
     "mediantime": 1507208645,
@@ -29,9 +26,6 @@
     "version": 536870913,
     "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
     "tx": [
-      "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b"
-    ],
-    "ts": [
 
     ],
     "time": 1507208925,
@@ -51,11 +45,8 @@
     "version": 536870913,
     "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
     "tx": [
-      "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b"
-    ],
-    "ts": [
-      "79fc539180fe09a20ea6df3d6e52416c574ed83f47ef25ab4c19377ad33a1f6e",
-      "e8f981c067c2a692d14ab27c7e6d65df555feda07de0dd76c09b1568721b8387"
+      null,
+      null
     ],
     "time": 1507208925,
     "mediantime": 1507208645,
@@ -74,9 +65,7 @@
     "version": 536870913,
     "merkleroot": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
     "tx": [
-    ],
-    "ts": [
-      "074c4e99c3e0c8e7395739244d0153d3565225a68d81c6f095e8acd6a0f6681a"
+      null
     ],
     "time": 1507208925,
     "mediantime": 1507208645,

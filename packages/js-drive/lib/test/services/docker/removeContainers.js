@@ -5,8 +5,9 @@ async function removeContainer() {
   const containers = await docker.listContainers();
   containers.forEach(async (containerInfo) => {
     if (containerInfo.Labels.testHelperName === 'DashTestContainer') {
-      await docker.getContainer(containerInfo.Id).stop();
-      await docker.getContainer(containerInfo.Id).remove();
+      const container = docker.getContainer(containerInfo.Id);
+      await container.stop();
+      await container.remove({ v: 1 });
     }
   });
 }

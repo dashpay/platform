@@ -45,12 +45,12 @@ describe('STHeadersReader', () => {
 
     expect(blockHandlerStub).has.callCount(rpcClientMock.blocks.length);
 
-    const stHeaders = rpcClientMock.blocks.reduce((result, block) => result.concat(block.ts), []);
+    const stHeaders = rpcClientMock.blocks.reduce((result, block) => result.concat(block.tx), []);
     expect(headerHandlerStub).has.callCount(stHeaders.length);
 
     rpcClientMock.transitionHeaders.forEach((header, i) => {
       const currentArg = headerHandlerStub.getCall(i).args[0].header;
-      expect(currentArg.getHash()).to.be.equal(header.getHash());
+      expect(currentArg.hash).to.be.equal(header.hash);
     });
 
     expect(endHandlerStub).to.be.calledOnce();

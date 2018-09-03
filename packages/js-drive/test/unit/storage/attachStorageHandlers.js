@@ -75,9 +75,9 @@ describe('attachStorageHandlers', () => {
 
     await stHeadersReaderMock.emitSerial(STHeadersReaderEvents.STALE_BLOCK, block);
 
-    expect(ipfsAPIMock.pin.rm).has.callCount(block.ts.length);
+    expect(ipfsAPIMock.pin.rm).has.callCount(block.tx.length);
 
-    rpcClientMock.transitionHeaders.slice(0, block.ts.length).forEach((header) => {
+    rpcClientMock.transitionHeaders.slice(0, block.tx.length).forEach((header) => {
       expect(ipfsAPIMock.pin.rm).to.be.calledWith(header.getPacketCID(), { recursive: true });
     });
   });

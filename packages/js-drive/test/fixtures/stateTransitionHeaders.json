@@ -1,62 +1,62 @@
 [
   {
-    "tsid": "afe860766dc13de86992ffa8e21b242bcdcb66ff3b06146348d25481c8499c55",
-    "size": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
+    "type": 12,
+    "version": 3,
     "fee": 0.01,
-    "hashRegTx": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
-    "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
-    "newPubKeyId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
-    "vchUserSig": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
-    "vvchQuorumSigs": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
-    "storageHash": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
-    "action": 1
+    "extraPayload": {
+      "version": 1,
+      "regTxId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b",
+      "hashPrevSubTx": "0000000000000000000000000000000000000000000000000000000000000000",
+      "creditFee": 1,
+      "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b"
+    }
   },
   {
-    "tsid": "f4a61387c608b94b4bc1aa86a32d7f4f0eb68e4dcb7d97d61cdef6cf774ef849",
-    "size": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
+    "type": 12,
+    "version": 3,
     "fee": 0.01,
-    "hashRegTx": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
-    "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
-    "newPubKeyId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
-    "vchUserSig": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
-    "vvchQuorumSigs": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
-    "storageHash": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
-    "action": 1
+    "extraPayload": {
+      "version": 1,
+      "regTxId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b",
+      "hashPrevSubTx": "f106d46288c73b0cd137566427a0d9ff3a7daf6b4642634a8904648cb6d172c4",
+      "creditFee": 1,
+      "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e5b"
+    }
   },
   {
-    "tsid": "79fc539180fe09a20ea6df3d6e52416c574ed83f47ef25ab4c19377ad33a1f6e",
-    "size": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
+    "type": 12,
+    "version": 3,
     "fee": 0.01,
-    "hashRegTx": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
-    "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
-    "newPubKeyId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
-    "vchUserSig": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
-    "vvchQuorumSigs": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
-    "storageHash": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
-    "action": 1
+    "extraPayload": {
+      "version": 1,
+      "regTxId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b",
+      "hashPrevSubTx": "1e117a2553888ded65ca9f110dd91ba889f6b6c7fdf403515ebaf773e0c7e17b",
+      "creditFee": 1,
+      "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e6b"
+    }
   },
   {
-    "tsid": "e8f981c067c2a692d14ab27c7e6d65df555feda07de0dd76c09b1568721b8387",
-    "size": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
+    "type": 12,
+    "version": 3,
     "fee": 0.01,
-    "hashRegTx": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
-    "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
-    "newPubKeyId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
-    "vchUserSig": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
-    "vvchQuorumSigs": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
-    "storageHash": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
-    "action": 1
+    "extraPayload": {
+      "version": 1,
+      "regTxId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b",
+      "hashPrevSubTx": "180bbf78cad1731a09762f4975ed489ff32adb9e96801ddf78c400a75339292d",
+      "creditFee": 1,
+      "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e7b"
+    }
   },
   {
-    "tsid": "074c4e99c3e0c8e7395739244d0153d3565225a68d81c6f095e8acd6a0f6681a",
-    "size": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
+    "type": 12,
+    "version": 3,
     "fee": 0.01,
-    "hashRegTx": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
-    "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
-    "newPubKeyId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
-    "vchUserSig": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
-    "vvchQuorumSigs": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
-    "storageHash": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
-    "action": 1
+    "extraPayload": {
+      "version": 1,
+      "regTxId": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b",
+      "hashPrevSubTx": "6e0772a700f57350bde782b1773dccb5ae91628222d50c4e8972fbd000929e9f",
+      "creditFee": 1,
+      "hashSTPacket": "c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e8b"
+    }
   }
 ]

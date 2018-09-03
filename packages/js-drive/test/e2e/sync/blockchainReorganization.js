@@ -18,8 +18,8 @@ async function createAndSubmitST(userId, privateKeyString, username, basePacketD
   const addSTPacket = addSTPacketFactory(instance.ipfs.getApi());
   const packetCid = await addSTPacket(packet);
 
-  const { result: tsid } = await instance.dashCore.rpcClient.sendRawTransition(header);
-  await instance.dashCore.rpcClient.generate(1);
+  const { result: tsid } = await instance.dashCore.getApi().sendRawTransition(header);
+  await instance.dashCore.getApi().generate(1);
 
   return { packetCid, tsid };
 }
@@ -31,8 +31,8 @@ async function blockCountEvenAndEqual(
   timeout = 90,
 ) {
   for (let i = 0; i < timeout; i++) {
-    const { result: blockCountOne } = await instanceOne.rpcClient.getBlockCount();
-    const { result: blockCountTwo } = await instanceTwo.rpcClient.getBlockCount();
+    const { result: blockCountOne } = await instanceOne.getApi().getBlockCount();
+    const { result: blockCountTwo } = await instanceTwo.getApi().getBlockCount();
 
     if (blockCountOne === blockCountTwo) {
       if (blockCountOne === desiredBlockCount) {
@@ -61,6 +61,8 @@ describe('Blockchain reorganization', function main() {
 
   const BLOCKS_PER_ST = 1;
   const BLOCKS_PER_REGISTRATION = 108;
+  const BLOCKS_PROPAGATION_ACTIVATION = 1;
+  const BLOCKS_ST_ACTIVATION = 1000;
 
   this.timeout(900000);
 
@@ -75,13 +77,16 @@ describe('Blockchain reorganization', function main() {
     // 1. Start two full Dash Drive instances
     [firstInstance, secondInstance] = await startDashDriveInstance.many(2);
 
+    // 1.1 Activate Special Transactions
+    await firstInstance.dashCore.getApi().generate(BLOCKS_ST_ACTIVATION);
+
     // Register a pool of users.
     // Do that here so major part of blocks are in the beginning
     for (let i = 0; i < 10; i++) {
       const instance = firstInstance;
       const username = `Alice_${i}`;
       const { userId, privateKeyString } =
-            await registerUser(username, instance.dashCore.rpcClient);
+            await registerUser(username, instance.dashCore.getApi());
       registeredUsers.push({ username, userId, privateKeyString });
     }
 
@@ -89,7 +94,8 @@ describe('Blockchain reorganization', function main() {
     await blockCountEvenAndEqual(
       firstInstance.dashCore,
       secondInstance.dashCore,
-      10 * BLOCKS_PER_REGISTRATION,
+      BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION +
+      (10 * BLOCKS_PER_REGISTRATION),
     );
 
     // 2. Populate instance of Dash Drive and Dash Core with data
@@ -111,6 +117,7 @@ describe('Blockchain reorganization', function main() {
     await blockCountEvenAndEqual(
       firstInstance.dashCore,
       secondInstance.dashCore,
+      BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION +
       (10 * BLOCKS_PER_REGISTRATION) + (2 * BLOCKS_PER_ST),
     );
 
@@ -135,8 +142,8 @@ describe('Blockchain reorganization', function main() {
     //    TODO: implement `disconnect` method for DashCoreInstance
     const ip = secondInstance.dashCore.getIp();
     const port = secondInstance.dashCore.options.getDashdPort();
-    await firstInstance.dashCore.rpcClient.disconnectNode(`${ip}:${port}`);
-    await firstInstance.dashCore.rpcClient.addNode(`${ip}:${port}`, 'remove');
+    await firstInstance.dashCore.getApi().disconnectNode(`${ip}:${port}`);
+    await firstInstance.dashCore.getApi().addNode(`${ip}:${port}`, 'remove');
 
     // 5. Generate two more ST on the first node
     //    Note: keep track of exact those CIDs as they should disappear after reorganization
@@ -158,14 +165,19 @@ describe('Blockchain reorganization', function main() {
     // Check tses are not in mempool
     for (let i = 0; i < tsesAfterDisconnect.length - 1; i++) {
       const tsid = tsesAfterDisconnect[i];
-      const { result: tsData } = await firstInstance.dashCore.rpcClient.getTransition(tsid);
+      const { result: tsData } = await firstInstance.dashCore.getApi().getTransition(tsid);
       expect(tsData.from_mempool).to.not.exist();
     }
 
     // 6. Check proper block count on the first node
     {
-      const { result: blockCount } = await firstInstance.dashCore.rpcClient.getBlockCount();
-      expect(blockCount).to.be.equal((10 * BLOCKS_PER_REGISTRATION) + (4 * BLOCKS_PER_ST));
+      const { result: blockCount } = await firstInstance.dashCore.getApi().getBlockCount();
+
+      const expectedBlockCount = BLOCKS_PROPAGATION_ACTIVATION +
+                                 BLOCKS_ST_ACTIVATION +
+                                 (10 * BLOCKS_PER_REGISTRATION) + (4 * BLOCKS_PER_ST);
+
+      expect(blockCount).to.be.equal(expectedBlockCount);
     }
 
     // 7. Generate slightly larger amount of STs on the second node
@@ -184,8 +196,13 @@ describe('Blockchain reorganization', function main() {
 
     // 8. Check proper block count on the second node
     {
-      const { result: blockCount } = await secondInstance.dashCore.rpcClient.getBlockCount();
-      expect(blockCount).to.be.equal((10 * BLOCKS_PER_REGISTRATION) + (5 * BLOCKS_PER_ST));
+      const { result: blockCount } = await secondInstance.dashCore.getApi().getBlockCount();
+
+      const expectedBlockCount = BLOCKS_PROPAGATION_ACTIVATION +
+                                 BLOCKS_ST_ACTIVATION +
+                                 (10 * BLOCKS_PER_REGISTRATION) + (5 * BLOCKS_PER_ST);
+
+      expect(blockCount).to.be.equal(expectedBlockCount);
     }
 
     // Remove CIDs on node #1 added before disconnect
@@ -202,13 +219,14 @@ describe('Blockchain reorganization', function main() {
     await blockCountEvenAndEqual(
       firstInstance.dashCore,
       secondInstance.dashCore,
+      BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION +
       (10 * BLOCKS_PER_REGISTRATION) + (5 * BLOCKS_PER_ST),
     );
 
     // Check tses are back to mempool
     for (let i = 0; i < tsesAfterDisconnect.length - 1; i++) {
       const tsid = tsesAfterDisconnect[i];
-      const { result: tsData } = await firstInstance.dashCore.rpcClient.getTransition(tsid);
+      const { result: tsData } = await firstInstance.dashCore.getApi().getTransition(tsid);
       expect(tsData.from_mempool).to.exist()
         .and.be.equal(true);
     }
@@ -242,7 +260,7 @@ describe('Blockchain reorganization', function main() {
     }
 
     // 13. Generate more blocks so TSes reappear on the blockchain
-    await firstInstance.dashCore.rpcClient.generate(10);
+    await firstInstance.dashCore.getApi().generate(10);
 
     // 14. Await Dash Drive to sync
     await wait(20000);
@@ -268,10 +286,12 @@ describe('Blockchain reorganization', function main() {
   });
 
   after('cleanup lone services', async () => {
-    const promises = Promise.all([
-      firstInstance.remove(),
-      secondInstance.remove(),
-    ]);
-    await promises;
+    const instances = [
+      firstInstance,
+      secondInstance,
+    ];
+
+    await Promise.all(instances.filter(i => i)
+      .map(i => i.remove()));
   });
 });

@@ -22,12 +22,12 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
     const packet = new StateTransitionPacket(packetData.value);
 
     if (packet.dapcontract) {
-      const dapId = header.tsid;
+      const dapId = header.txid;
       const reference = new Reference(
         block.hash,
         block.height,
-        header.tsid,
-        header.hashSTPacket,
+        header.hash,
+        header.extraPayload.hashSTPacket,
       );
       await updateDapContract(dapId, reference, packet.dapcontract);
       return;
@@ -38,8 +38,8 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
       const reference = new Reference(
         block.hash,
         block.height,
-        header.tsid,
-        header.hashSTPacket,
+        header.hash,
+        header.extraPayload.hashSTPacket,
       );
       await updateDapObject(packet.dapid, reference, objectData);
     }

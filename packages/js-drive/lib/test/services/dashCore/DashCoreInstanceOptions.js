@@ -21,7 +21,7 @@ class DashCoreInstanceOptions extends DockerInstanceOptions {
       `${rpcPort}:${rpcPort}`,
     ];
     const container = {
-      image: '103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/dashcore:develop',
+      image: '103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/dashcore:v13.0.0-evo.2',
       network: {
         name: 'dash_test_network',
         driver: 'bridge',
