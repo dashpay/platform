@@ -41,7 +41,7 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
         header.hash,
         header.extraPayload.hashSTPacket,
       );
-      await updateDapObject(packet.dapid, reference, objectData);
+      await updateDapObject(packet.dapid, header.extraPayload.regTxId, reference, objectData);
     }
   }
 

@@ -23,8 +23,8 @@ class DapObjectMongoDbRepository {
    */
   async find(id) {
     const result = await this.mongoClient.findOne({ _id: id });
-    const { object: objectState, reference: referenceState } = result || {};
-    return this.toDapObject(objectState, referenceState);
+    const { blockchainUserId, object: objectState, reference: referenceState } = result || {};
+    return this.toDapObject(blockchainUserId, objectState, referenceState);
   }
 
   /**
@@ -83,8 +83,8 @@ class DapObjectMongoDbRepository {
     query = Object.assign({}, query, { type });
     const results = await this.mongoClient.find(query, opts).toArray();
     return results.map((result) => {
-      const { object: objectState, reference: referenceState } = result || {};
-      return this.toDapObject(objectState, referenceState);
+      const { blockchainUserId, object: objectState, reference: referenceState } = result || {};
+      return this.toDapObject(blockchainUserId, objectState, referenceState);
     });
   }
 
@@ -96,7 +96,7 @@ class DapObjectMongoDbRepository {
    */
   store(dapObject) {
     return this.mongoClient.updateOne(
-      { _id: dapObject.toJSON().id },
+      { _id: dapObject.getId() },
       { $set: dapObject.toJSON() },
       { upsert: true },
     );
@@ -109,7 +109,7 @@ class DapObjectMongoDbRepository {
    * @returns {Promise}
    */
   async delete(dapObject) {
-    return this.mongoClient.deleteOne({ _id: dapObject.toJSON().id });
+    return this.mongoClient.deleteOne({ _id: dapObject.getId() });
   }
 
   /**
@@ -117,14 +117,14 @@ class DapObjectMongoDbRepository {
    * @return {DapObject}
    */
   // eslint-disable-next-line class-methods-use-this
-  toDapObject(objectState = {}, referenceState = {}) {
+  toDapObject(blockchainUserId, objectState = {}, referenceState = {}) {
     const reference = new Reference(
       referenceState.blockHash,
       referenceState.blockHeight,
       referenceState.stHeaderHash,
       referenceState.stPacketHash,
     );
-    return new DapObject(objectState, reference);
+    return new DapObject(blockchainUserId, objectState, reference);
   }
 
   /**

@@ -1,14 +1,21 @@
+const generateDapObjectId = require('./generateDapObjectId');
+
 class DapObject {
   /**
+   * @param {string} blockchainUserId
    * @param {object} data
    * @param {Reference} reference
    */
-  constructor(data, reference) {
-    this.id = data.id;
+  constructor(blockchainUserId, data, reference) {
+    this.blockchainUserId = blockchainUserId;
     this.type = data.objtype;
     this.object = data;
     this.revision = data.rev;
     this.reference = reference;
+  }
+
+  getId() {
+    return generateDapObjectId(this.blockchainUserId, this.object.idx);
   }
 
   getAction() {
@@ -17,7 +24,7 @@ class DapObject {
 
   toJSON() {
     return {
-      id: this.id,
+      blockchainUserId: this.blockchainUserId,
       type: this.type,
       object: this.object,
       revision: this.revision,

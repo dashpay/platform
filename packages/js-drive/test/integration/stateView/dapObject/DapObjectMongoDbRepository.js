@@ -9,13 +9,16 @@ const InvalidStartAfterError = require('../../../../lib/stateView/dapObject/erro
 const AmbiguousStartError = require('../../../../lib/stateView/dapObject/errors/AmbiguousStartError');
 const startMongoDbInstance = require('../../../../lib/test/services/mocha/startMongoDbInstance');
 
-function createDapObjectWithId(id) {
+let id = 1;
+function createDapObjectWithAge(age) {
+  const blockchainUserId = id++;
   const objectData = {
-    id,
     act: 0,
     objtype: 'DashPayContact',
     user: 'dashy',
     rev: 0,
+    idx: 0,
+    age,
   };
   const blockHash = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
   const blockHeight = 1;
@@ -28,7 +31,7 @@ function createDapObjectWithId(id) {
     hashSTPacket,
   );
 
-  return new DapObject(objectData, reference);
+  return new DapObject(blockchainUserId, objectData, reference);
 }
 
 describe('DapObjectMongoDbRepository', () => {
@@ -39,12 +42,11 @@ describe('DapObjectMongoDbRepository', () => {
     dapObjectRepository = new DapObjectMongoDbRepository(mongoDb);
   });
 
-  const dapId = '90';
-  const dapObject = createDapObjectWithId(dapId);
+  const dapObject = createDapObjectWithAge(90);
 
   it('should store DapObject entity', async () => {
     await dapObjectRepository.store(dapObject);
-    const object = await dapObjectRepository.find(dapId);
+    const object = await dapObjectRepository.find(dapObject.getId());
     expect(object.toJSON()).to.deep.equal(dapObject.toJSON());
   });
 
@@ -118,8 +120,8 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should limit return to 1 DapObject if limit', async () => {
-    const id = '80';
-    const dapObj = createDapObjectWithId(id);
+    const age = 80;
+    const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
     const type = 'DashPayContact';
@@ -161,33 +163,33 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should order desc by DapObject id', async () => {
-    const id = '99';
-    const dapObj = createDapObjectWithId(id);
+    const age = 99;
+    const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        id: -1,
+        'object.age': -1,
       },
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().id).to.be.equal(id);
+    expect(result[0].toJSON().object.age).to.be.equal(age);
   });
 
   it('should order asc by DapObject id', async () => {
-    const id = '50';
-    const dapObj = createDapObjectWithId(id);
+    const age = 50;
+    const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        id: 1,
+        'object.age': 1,
       },
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().id).to.be.equal(id);
+    expect(result[0].toJSON().object.age).to.be.equal(age);
   });
 
   it('should throw InvalidOrderBy if orderBy is not an object', async () => {
@@ -221,19 +223,19 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should start at 1 DapObject', async () => {
-    const id = '1';
-    const dapObj = createDapObjectWithId(id);
+    const age = 1;
+    const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        id: 1,
+        'object.age': 1,
       },
       startAt: 1,
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().id).to.be.equal(id);
+    expect(result[0].toJSON().object.age).to.be.equal(age);
   });
 
   it('should throw InvalidStartAtError if startAt is not a number', async () => {
@@ -267,19 +269,19 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should start after 1 DapObject', async () => {
-    const id = '2';
-    const dapObj = createDapObjectWithId(id);
+    const age = 2;
+    const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        id: 1,
+        'object.age': 1,
       },
       startAfter: 1,
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().id).to.be.equal(id);
+    expect(result[0].toJSON().object.age).to.be.equal(age);
   });
 
   it('should throw InvalidStartAfterError if startAfter is not a number', async () => {
@@ -329,22 +331,22 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should delete DapObject entity', async () => {
-    const id = '5';
-    const dapObj = createDapObjectWithId(id);
+    const age = 5;
+    const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
-    const object = await dapObjectRepository.find(id);
+    const object = await dapObjectRepository.find(dapObj.getId());
     expect(object.toJSON()).to.deep.equal(dapObj.toJSON());
 
     await dapObjectRepository.delete(dapObj);
-    const objectTwo = await dapObjectRepository.find(id);
+    const objectTwo = await dapObjectRepository.find(dapObj.getId());
     const serializeObject = objectTwo.toJSON();
-    expect(serializeObject.id).to.not.exist();
+    expect(serializeObject.object.age).to.not.exist();
   });
 
   it('should return empty DapObject if not found', async () => {
     const object = await dapObjectRepository.find();
 
     const serializeObject = object.toJSON();
-    expect(serializeObject.id).to.not.exist();
+    expect(serializeObject.blockchainUserId).to.not.exist();
   });
 });
