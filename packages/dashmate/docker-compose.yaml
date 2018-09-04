@@ -34,13 +34,8 @@ services:
       - 127.0.0.1:8080:8080
       - 127.0.0.1:8081:8081
     volumes:
-      - ./data/ipfs:/data/ipfs
+      - ipfs:/data/ipfs
     command: daemon --migrate=true --enable-pubsub-experiment --offline
-
-  mongodb:
-    image: mongo:3.6
-    volumes:
-      - ./data/mongodb:/data/db
 
   insight:
     image: $REPO_URL/dashevo/evoinsight:latest
@@ -54,15 +49,38 @@ services:
     volumes:
       - ./data/bitcore-node-dash.json:/insight/bitcore-node-dash.json
 
-  drive:
+  drive_mongodb:
+    image: mongo:3.6
+    volumes:
+      - drive_mongodb:/data/db
+
+  drive_sync:
     image: $REPO_URL/dashevo/dashdrive:latest
+    command: npm run sync
     restart: always
     depends_on:
       - core
       - ipfs
-      - mongodb
+      - drive_mongodb
+    environment:
+      - DASHCORE_JSON_RPC_HOST=core
+      - DASHCORE_JSON_RPC_PORT=20002
+      - STORAGE_MONGODB_URL=mongodb://drive_mongodb:27017
+
+  drive_api:
+    image: $REPO_URL/dashevo/dashdrive:latest
+    command: npm run api
+    restart: always
+    depends_on:
+      - core
+      - ipfs
+      - drive_mongodb
     ports:
       - 127.0.0.1:6000:5001
+    environment:
+      - DASHCORE_JSON_RPC_HOST=core
+      - DASHCORE_JSON_RPC_PORT=20002
+      - STORAGE_MONGODB_URL=mongodb://drive_mongodb:27017
 
   dapi:
     image: $REPO_URL/dashevo/dapi:latest
@@ -83,3 +101,7 @@ services:
       - DASHCORE_ZMQ_HOST=core
       - DASHCORE_ZMQ_PORT=29998
       - NETWORK=$DASH_NETWORK
+
+volumes:
+  drive_mongodb:
+  ipfs:
