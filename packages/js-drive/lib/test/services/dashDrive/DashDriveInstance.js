@@ -1,6 +1,6 @@
 const { promisify } = require('util');
 const DockerInstance = require('../docker/DockerInstance');
-const wait = require('../../util/wait');
+const wait = require('../../../util/wait');
 
 class DashDriveInstance extends DockerInstance {
   /**

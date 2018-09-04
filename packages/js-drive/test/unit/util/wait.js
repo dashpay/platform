@@ -1,4 +1,4 @@
-const wait = require('../../../../lib/test/util/wait');
+const wait = require('../../../lib/util/wait');
 
 describe('wait', () => {
   let clock;

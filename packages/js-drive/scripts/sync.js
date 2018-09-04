@@ -154,7 +154,10 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
     }
   }
 
-  const isRunning = await isDashCoreRunning();
+  const isRunning = await isDashCoreRunning(
+    process.env.DASHCORE_RUNNING_CHECK_MAX_RETRIES,
+    process.env.DASHCORE_RUNNING_CHECK_INTERVAL,
+  );
   if (!isRunning) {
     throw new DashCoreIsNotRunningError();
   }

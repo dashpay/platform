@@ -1,3 +1,5 @@
+const wait = require('../util/wait');
+
 /**
  * Build isDashCoreRunning function
  *
@@ -9,16 +11,26 @@ module.exports = function isDashCoreRunningFactory(rpcClient) {
    * Check is Dash Core running
    *
    * @typedef isDashCoreRunning
-   * @return {Promise<boolean>}
+   * @param {Object} [params]
+   * @param {number} params.retries
+   * @param {number} params.retryDelay
+   * @returns {Promise<boolean>}
    */
-  async function isDashCoreRunning() {
-    try {
-      await rpcClient.ping();
-
-      return true;
-    } catch (e) {
-      return false;
+  async function isDashCoreRunning(retries = 1, retryDelay = 5) {
+    let attempts = 1;
+    let isRunning = false;
+    while (!isRunning && attempts <= retries) {
+      try {
+        await rpcClient.ping();
+        isRunning = true;
+      } catch (e) {
+        attempts += 1;
+        if (attempts !== retries) {
+          await wait(retryDelay * 1000);
+        }
+      }
     }
+    return isRunning;
   }
 
   return isDashCoreRunning;

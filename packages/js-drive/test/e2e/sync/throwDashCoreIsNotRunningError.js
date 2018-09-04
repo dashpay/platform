@@ -1,6 +1,6 @@
 const createDashDriveInstance = require('../../../lib/test/services/dashDrive/createDashDriveInstance');
 const createMongoDbInstance = require('../../../lib/test/services/mongoDb/createMongoDbInstance');
-const wait = require('../../../lib/test/util/wait');
+const wait = require('../../../lib/util/wait');
 const { PassThrough } = require('stream');
 
 async function containerLogs(container) {

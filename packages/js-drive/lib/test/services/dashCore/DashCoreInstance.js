@@ -1,5 +1,5 @@
 const DockerInstance = require('../docker/DockerInstance');
-const wait = require('../../util/wait');
+const wait = require('../../../util/wait');
 
 class DashCoreInstance extends DockerInstance {
   /**

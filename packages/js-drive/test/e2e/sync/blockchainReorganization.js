@@ -7,7 +7,7 @@ const createSTHeader = require('../../../lib/test/createSTHeader');
 
 const startDashDriveInstance = require('../../../lib/test/services/dashDrive/startDashDriveInstance');
 
-const wait = require('../../../lib/test/util/wait');
+const wait = require('../../../lib/util/wait');
 
 async function createAndSubmitST(userId, privateKeyString, username, basePacketData, instance) {
   const packet = new StateTransitionPacket(basePacketData);

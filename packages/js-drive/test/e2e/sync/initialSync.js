@@ -11,7 +11,7 @@ const startIPFSInstance = require('../../../lib/test/services/IPFS/startIPFSInst
 
 const createDashDriveInstance = require('../../../lib/test/services/dashDrive/createDashDriveInstance');
 
-const wait = require('../../../lib/test/util/wait');
+const wait = require('../../../lib/util/wait');
 const cbor = require('cbor');
 
 /**

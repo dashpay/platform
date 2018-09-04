@@ -1,5 +1,5 @@
 const createDashCoreInstance = require('./createDashCoreInstance');
-const wait = require('../../util/wait');
+const wait = require('../../../util/wait');
 
 /**
  * Start and stop Dashcore instance for mocha tests

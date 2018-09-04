@@ -24,6 +24,9 @@ const createDapObjectMongoDbRepositoryFactory = require('../lib/stateView/dapObj
 const fetchDapObjectsFactory = require('../lib/stateView/dapObject/fetchDapObjectsFactory');
 const fetchDapObjectsMethodFactory = require('../lib/api/methods/fetchDapObjectsMethodFactory');
 
+const isDashCoreRunningFactory = require('../lib/sync/isDashCoreRunningFactory');
+const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError');
+
 
 (async function main() {
   const rpcClient = new RpcClient({
@@ -33,6 +36,15 @@ const fetchDapObjectsMethodFactory = require('../lib/api/methods/fetchDapObjects
     user: process.env.DASHCORE_JSON_RPC_USER,
     pass: process.env.DASHCORE_JSON_RPC_PASS,
   });
+
+  const isDashCoreRunning = isDashCoreRunningFactory(rpcClient);
+  const isRunning = await isDashCoreRunning(
+    process.env.DASHCORE_RUNNING_CHECK_MAX_RETRIES,
+    process.env.DASHCORE_RUNNING_CHECK_INTERVAL,
+  );
+  if (!isRunning) {
+    throw new DashCoreIsNotRunningError();
+  }
 
   const mongoClient = await MongoClient.connect(
     process.env.STORAGE_MONGODB_URL,

@@ -2,6 +2,7 @@ const Docker = require('dockerode');
 
 const removeContainers = require('../../../../../lib/test/services/docker/removeContainers');
 const startMongoDbInstance = require('../../../../../lib/test/services/mongoDb/startMongoDbInstance');
+const startDashCoreInstance = require('../../../../../lib/test/services/dashCore/startDashCoreInstance');
 const createDashDriveInstance = require('../../../../../lib/test/services/dashDrive/createDashDriveInstance');
 
 describe('createDashDriveInstance', function main() {
@@ -11,16 +12,26 @@ describe('createDashDriveInstance', function main() {
 
   describe('usage', () => {
     let mongoInstance;
+    let dashCoreInstance;
     let envs;
     let instance;
     before(async () => {
       mongoInstance = await startMongoDbInstance();
-      envs = [`STORAGE_MONGODB_URL=mongodb://${mongoInstance.getIp()}:27017`];
+      dashCoreInstance = await startDashCoreInstance();
+      envs = [
+        `DASHCORE_ZMQ_PUB_HASHBLOCK=${dashCoreInstance.getZmqSockets().hashblock}`,
+        `DASHCORE_JSON_RPC_HOST=${dashCoreInstance.getIp()}`,
+        `DASHCORE_JSON_RPC_PORT=${dashCoreInstance.options.getRpcPort()}`,
+        `DASHCORE_JSON_RPC_USER=${dashCoreInstance.options.getRpcUser()}`,
+        `DASHCORE_JSON_RPC_PASS=${dashCoreInstance.options.getRpcPassword()}`,
+        `STORAGE_MONGODB_URL=mongodb://${mongoInstance.getIp()}:27017`,
+      ];
       instance = await createDashDriveInstance(envs);
     });
     after(async () => {
       await Promise.all([
         mongoInstance.remove(),
+        dashCoreInstance.remove(),
         instance.remove(),
       ]);
     });
@@ -58,15 +69,25 @@ describe('createDashDriveInstance', function main() {
 
   describe('RPC', () => {
     let mongoInstance;
+    let dashCoreInstance;
     let instance;
     before(async () => {
       mongoInstance = await startMongoDbInstance();
-      const envs = [`STORAGE_MONGODB_URL=mongodb://${mongoInstance.getIp()}:27017`];
+      dashCoreInstance = await startDashCoreInstance();
+      const envs = [
+        `DASHCORE_ZMQ_PUB_HASHBLOCK=${dashCoreInstance.getZmqSockets().hashblock}`,
+        `DASHCORE_JSON_RPC_HOST=${dashCoreInstance.getIp()}`,
+        `DASHCORE_JSON_RPC_PORT=${dashCoreInstance.options.getRpcPort()}`,
+        `DASHCORE_JSON_RPC_USER=${dashCoreInstance.options.getRpcUser()}`,
+        `DASHCORE_JSON_RPC_PASS=${dashCoreInstance.options.getRpcPassword()}`,
+        `STORAGE_MONGODB_URL=mongodb://${mongoInstance.getIp()}:27017`,
+      ];
       instance = await createDashDriveInstance(envs);
     });
     after(async () => {
       await Promise.all([
         mongoInstance.remove(),
+        dashCoreInstance.remove(),
         instance.remove(),
       ]);
     });
