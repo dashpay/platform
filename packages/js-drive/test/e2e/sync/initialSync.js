@@ -4,12 +4,13 @@ const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransit
 const registerUser = require('../../../lib/test/registerUser');
 const createSTHeader = require('../../../lib/test/createSTHeader');
 
-const startDashDriveInstance = require('../../../lib/test/services/dashDrive/startDashDriveInstance');
-const startDashCoreInstance = require('../../../lib/test/services/dashCore/startDashCoreInstance');
-const startMongoDbInstance = require('../../../lib/test/services/mongoDb/startMongoDbInstance');
-const startIPFSInstance = require('../../../lib/test/services/IPFS/startIPFSInstance');
-
-const createDashDriveInstance = require('../../../lib/test/services/dashDrive/createDashDriveInstance');
+const {
+  startDashDrive,
+  startDashCore,
+  startMongoDb,
+  startIPFS,
+  createDashDrive,
+} = require('js-evo-services-ctl');
 
 const wait = require('../../../lib/util/wait');
 const cbor = require('cbor');
@@ -81,7 +82,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     packetsData = getStateTransitionPackets();
 
     // 1. Start first Dash Drive node
-    fullDashDriveInstance = await startDashDriveInstance();
+    fullDashDriveInstance = await startDashDrive();
 
     // 1.1 Activate Special Transactions
     await fullDashDriveInstance.dashCore.getApi().generate(1000);
@@ -119,13 +120,13 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
   it('Dash Drive should sync the data with Dash Core upon startup', async () => {
     // 3. Start services of the 2nd node (Core, Mongo, IPFS),
     //    but without Drive as we have to be sure Core is synced first
-    dashCoreInstance = await startDashCoreInstance();
+    dashCoreInstance = await startDashCore();
 
     await dashCoreInstance.connect(fullDashDriveInstance.dashCore);
 
-    mongoDbInstance = await startMongoDbInstance();
+    mongoDbInstance = await startMongoDb();
 
-    ipfsInstance = await startIPFSInstance();
+    ipfsInstance = await startIPFS();
     await ipfsInstance.connect(fullDashDriveInstance.ipfs);
 
     // 4. Await Dash Core to finish syncing
@@ -141,8 +142,8 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       `STORAGE_IPFS_MULTIADDR=${ipfsInstance.getIpfsAddress()}`,
       `STORAGE_MONGODB_URL=mongodb://${mongoDbInstance.getIp()}:27017`,
     ];
-
-    dashDriveStandaloneInstance = await createDashDriveInstance(envs);
+    const opts = { container: { envs } };
+    dashDriveStandaloneInstance = await createDashDrive(opts);
     await dashDriveStandaloneInstance.start();
 
     // 6. Await Dash Drive on the 2nd node to finish syncing

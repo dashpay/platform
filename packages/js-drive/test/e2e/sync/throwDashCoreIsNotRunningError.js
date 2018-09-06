@@ -1,5 +1,7 @@
-const createDashDriveInstance = require('../../../lib/test/services/dashDrive/createDashDriveInstance');
-const createMongoDbInstance = require('../../../lib/test/services/mongoDb/createMongoDbInstance');
+const {
+  createDashDrive,
+  createMongoDb,
+} = require('js-evo-services-ctl');
 const wait = require('../../../lib/util/wait');
 const { PassThrough } = require('stream');
 
@@ -28,7 +30,7 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
   let dashDriveInstance;
   let mongoDbInstance;
   beforeEach(async () => {
-    mongoDbInstance = await createMongoDbInstance();
+    mongoDbInstance = await createMongoDb();
     await mongoDbInstance.start();
   });
 
@@ -37,7 +39,8 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
     const envs = [
       `STORAGE_MONGODB_URL=mongodb://${mongoDbInstance.getIp()}:27017`,
     ];
-    dashDriveInstance = await createDashDriveInstance(envs);
+    const opts = { container: { envs } };
+    dashDriveInstance = await createDashDrive(opts);
     dashDriveInstance.initialize = () => {};
 
     await dashDriveInstance.start();

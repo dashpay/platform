@@ -1,4 +1,4 @@
-const startIpfsInstance = require('../../../../lib/test/services/mocha/startIPFSInstance');
+const { mocha: { startIPFS } } = require('js-evo-services-ctl');
 const unpinAllIpfsPacketsFactory = require('../../../../lib/storage/ipfs/unpinAllIpfsPacketsFactory');
 
 async function addPinPacket(ipfsApi) {
@@ -12,7 +12,7 @@ const byCid = cid => object => object.hash === cid;
 
 describe('unpinAllIpfsPacketsFactory', () => {
   let ipfsInstance;
-  startIpfsInstance().then((instance) => {
+  startIPFS().then((instance) => {
     ipfsInstance = instance;
   });
 

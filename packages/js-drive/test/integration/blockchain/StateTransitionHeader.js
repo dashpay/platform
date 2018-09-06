@@ -1,5 +1,5 @@
 const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
-const startIPFSInstance = require('../../../lib/test/services/mocha/startIPFSInstance');
+const { mocha: { startIPFS } } = require('js-evo-services-ctl');
 const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
 const hashSTPacket = require('../../../lib/test/consensus/hashSTPacket');
@@ -9,7 +9,7 @@ describe('StateTransitionHeader', () => {
   const header = getTransitionHeaderFixtures()[0];
 
   let addSTPacket;
-  startIPFSInstance().then((instance) => {
+  startIPFS().then((instance) => {
     addSTPacket = addSTPacketFactory(instance.getApi());
   });
 

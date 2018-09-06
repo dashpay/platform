@@ -11,7 +11,7 @@ function dropMongoDatabasesWithPrefixFactory(mongoClient) {
    * @returns {Promise<void>}
    */
   async function dropMongoDatabasesWithPrefix(prefix) {
-    const { databases: dbs } = await mongoClient.db().admin().listDatabases();
+    const { databases: dbs } = await mongoClient.db('test').admin().listDatabases();
     const driveDatabases = dbs.filter(db => db.name.includes(prefix));
 
     for (let index = 0; index < driveDatabases.length; index++) {

@@ -55,6 +55,7 @@
     "emittery": "^0.3.0",
     "ipfs-api": "^20.1",
     "jayson": "^2.0.6",
+    "js-evo-services-ctl": "git+ssh://git@github.com/dashevo/js-evo-services-ctl.git",
     "mongodb": "^3.1.1",
     "multihashes": "^0.4.13",
     "recursive-iterator": "^3.3.0",

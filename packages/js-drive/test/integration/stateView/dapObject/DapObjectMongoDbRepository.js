@@ -7,7 +7,7 @@ const InvalidLimitError = require('../../../../lib/stateView/dapObject/errors/In
 const InvalidStartAtError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAtError');
 const InvalidStartAfterError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAfterError');
 const AmbiguousStartError = require('../../../../lib/stateView/dapObject/errors/AmbiguousStartError');
-const startMongoDbInstance = require('../../../../lib/test/services/mocha/startMongoDbInstance');
+const { mocha: { startMongoDb } } = require('js-evo-services-ctl');
 
 let id = 1;
 function createDapObjectWithAge(age) {
@@ -36,7 +36,7 @@ function createDapObjectWithAge(age) {
 
 describe('DapObjectMongoDbRepository', () => {
   let dapObjectRepository;
-  startMongoDbInstance().then(async (mongoDbInstance) => {
+  startMongoDb().then(async (mongoDbInstance) => {
     const mongoClient = await mongoDbInstance.mongoClient;
     const mongoDb = mongoClient.db('test_dap');
     dapObjectRepository = new DapObjectMongoDbRepository(mongoDb);
