@@ -27,11 +27,9 @@
   },
   "homepage": "https://github.com/dashevo/dashdrive",
   "devDependencies": {
-    "aws-sdk": "^2.272.1",
     "chai": "^4.1.2",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
-    "dockerode": "^2.5.4",
     "eslint": "^4.16.0",
     "eslint-config-airbnb-base": "^12.1.0",
     "eslint-plugin-import": "^2.13.0",
@@ -40,7 +38,8 @@
     "multihashing-async": "^0.4.7",
     "proxyquire": "^1.8.0",
     "sinon": "^4.3.0",
-    "sinon-chai": "^2.14.0"
+    "sinon-chai": "^2.14.0",
+    "js-evo-services-ctl": "git+ssh://git@github.com/dashevo/js-evo-services-ctl.git#1.0.0-alpha.2"
   },
   "dependencies": {
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git#3.0.0-alpha.1",
@@ -55,7 +54,6 @@
     "emittery": "^0.3.0",
     "ipfs-api": "^20.1",
     "jayson": "^2.0.6",
-    "js-evo-services-ctl": "git+ssh://git@github.com/dashevo/js-evo-services-ctl.git#1.0.0-alpha.1",
     "mongodb": "^3.1.1",
     "multihashes": "^0.4.13",
     "recursive-iterator": "^3.3.0",

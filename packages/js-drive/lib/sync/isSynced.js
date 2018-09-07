@@ -17,14 +17,12 @@ async function isDriveSynced(rpcClient, syncState) {
   const { result: blockCount } = await rpcClient.getBlockCount();
 
   let lastBlockHash;
+
   if (blockCount > 0) {
     ({ result: lastBlockHash } = await rpcClient.getBlockHash(blockCount));
   }
-  if (lastSyncedBlock && lastSyncedBlock.hash === lastBlockHash) {
-    return true;
-  }
 
-  return false;
+  return lastSyncedBlock && lastSyncedBlock.hash === lastBlockHash;
 }
 
 async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState) {
@@ -57,6 +55,7 @@ async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState) 
  *
  * @param {RpcClient} rpcClient
  * @param {SyncStateRepositoryChangeListener} stateRepositoryChangeListener
+ * @param {number} checkInterval
  * @return {Promise<SyncState>}
  */
 module.exports = async function isSynced(

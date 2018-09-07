@@ -8,6 +8,7 @@ const createError = require('../api/jsonRpc/createError');
  * @param {Function} inSynced
  * @param {RpcClient} rpcClient
  * @param {SyncStateRepositoryChangeListener} stateRepositoryChangeListener
+ * @param {number} checkInterval
  */
 function getCheckSyncHttpMiddleware(
   inSynced,

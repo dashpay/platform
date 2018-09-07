@@ -6,7 +6,7 @@ const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
-const DashDriveOptions = require('js-evo-services-ctl/lib/dashDrive/DashDriveOptions');
+const DashDriveOptions = require('js-evo-services-ctl/lib/services/dashDrive/DashDriveOptions');
 
 use(sinonChai);
 use(chaiAsPromised);

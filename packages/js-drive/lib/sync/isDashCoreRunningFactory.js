@@ -11,9 +11,8 @@ module.exports = function isDashCoreRunningFactory(rpcClient) {
    * Check is Dash Core running
    *
    * @typedef isDashCoreRunning
-   * @param {Object} [params]
-   * @param {number} params.retries
-   * @param {number} params.retryDelay
+   * @param {number} [retries]
+   * @param {number} [retryDelay]
    * @returns {Promise<boolean>}
    */
   async function isDashCoreRunning(retries = 1, retryDelay = 5) {
