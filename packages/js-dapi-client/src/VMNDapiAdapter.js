@@ -76,7 +76,7 @@ class VMNDAPIAdapter {
   }
 
   async GetDap(dapid) {
-    return this.DAPI.getDapContract(dapid);
+    return this.DAPI.fetchDapContract(dapid);
   }
 
   async SearchDaps(pattern) {

@@ -98,12 +98,24 @@ class DAPIClient {
    */
   generate(amount) { return this.makeRequestToRandomDAPINode('generate', { amount }); }
 
+  fetchDapContract(dapId) { return this.makeRequestToRandomDAPINode('fetchDapContract', { dapId }); }
+
+  /**
+   * Fetch DAP Objects from DashDrive State View
+   * @param {string} dapId
+   * @param {string} type - Dap objects type to fetch
+   * @param options
+   * @param {Object} options.where - Mongo-like query
+   * @param {Object} options.orderBy - Mongo-like sort field
+   * @param {number} options.limit - how many objects to fetch
+   * @param {number} options.startAt - number of objects to skip
+   * @param {number} options.startAfter - exclusive skip
+   * @return {Promise<Object[]>}
+   */
+  fetchDapObjects(dapId, type, options) { return this.makeRequestToRandomDAPINode('fetchDapObjects', { dapId, type, options }); }
+
   // Here go methods that used in VMN. Most of this methods will work only in regtest mode
   searchUsers(pattern, limit = 10, offset = 0) { return this.makeRequestToRandomDAPINode('searchUsers', { pattern, limit, offset }); }
-  getDapContract(dapId) { return this.makeRequestToRandomDAPINode('getDapContract', { dapId }); }
-  searchDapContracts(pattern, limit = 10, offset = 0) { return this.makeRequestToRandomDAPINode('searchDapContracts', { pattern, limit, offset }); }
-  getUserDapSpace(dapId, userId) { return this.makeRequestToRandomDAPINode('getUserDapSpace', { userId, dapId }); }
-  getUserDapContext(dapId, userId) { return this.makeRequestToRandomDAPINode('getUserDapContext', { userId, dapId }); }
 
   // Temp methods for SPV testing/POC
   // In future SPV will choose a specific node and stick with
