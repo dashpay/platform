@@ -15,16 +15,17 @@ module.exports = function isDashCoreRunningFactory(rpcClient) {
    * @param {number} [retryDelay]
    * @returns {Promise<boolean>}
    */
-  async function isDashCoreRunning(retries = 1, retryDelay = 5) {
-    let attempts = 1;
+  async function isDashCoreRunning(retries = 0, retryDelay = 5) {
+    const tries = retries + 1;
+    let attempts = 0;
     let isRunning = false;
-    while (!isRunning && attempts <= retries) {
+    while (!isRunning && attempts < tries) {
       try {
         await rpcClient.ping();
         isRunning = true;
       } catch (e) {
         attempts += 1;
-        if (attempts !== retries) {
+        if (attempts !== tries) {
           await wait(retryDelay * 1000);
         }
       }

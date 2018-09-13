@@ -39,7 +39,7 @@
     "proxyquire": "^1.8.0",
     "sinon": "^4.3.0",
     "sinon-chai": "^2.14.0",
-    "js-evo-services-ctl": "git+ssh://git@github.com/dashevo/js-evo-services-ctl.git#1.0.0-alpha.2"
+    "js-evo-services-ctl": "git+ssh://git@github.com/dashevo/js-evo-services-ctl.git#1.0.0-alpha.3"
   },
   "dependencies": {
     "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git#3.0.0-alpha.1",

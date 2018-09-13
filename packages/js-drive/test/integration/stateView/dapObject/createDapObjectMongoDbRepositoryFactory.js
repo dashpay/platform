@@ -7,7 +7,7 @@ const { mocha: { startMongoDb } } = require('js-evo-services-ctl');
 describe('createDapObjectMongoDbRepositoryFactory', () => {
   let createDapObjectMongoDbRepository;
   startMongoDb().then(async (mongoDbInstance) => {
-    const mongoClient = await mongoDbInstance.mongoClient;
+    const mongoClient = await mongoDbInstance.getClient();
     createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
       mongoClient,
       DapObjectMongoDbRepository,

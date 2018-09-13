@@ -49,13 +49,13 @@ async function blockCountEvenAndEqual(
 }
 
 describe('Blockchain reorganization', function main() {
-  let firstInstance;
-  let secondInstance;
+  let firstDashDrive;
+  let secondDashDrive;
 
   let packetsCids;
   let packetsAddedAfterDisconnect;
   let stPackets;
-  let tsesAfterDisconnect;
+  let transitionsAfterDisconnect;
 
   let registeredUsers;
 
@@ -69,21 +69,21 @@ describe('Blockchain reorganization', function main() {
   before('having started Dash Drive node and generated some STs', async () => {
     packetsCids = [];
     packetsAddedAfterDisconnect = [];
-    tsesAfterDisconnect = [];
+    transitionsAfterDisconnect = [];
     registeredUsers = [];
 
     stPackets = getStateTransitionPackets();
 
     // 1. Start two full Dash Drive instances
-    [firstInstance, secondInstance] = await startDashDrive.many(2);
+    [firstDashDrive, secondDashDrive] = await startDashDrive.many(2);
 
     // 1.1 Activate Special Transactions
-    await firstInstance.dashCore.getApi().generate(BLOCKS_ST_ACTIVATION);
+    await firstDashDrive.dashCore.getApi().generate(BLOCKS_ST_ACTIVATION);
 
     // Register a pool of users.
     // Do that here so major part of blocks are in the beginning
     for (let i = 0; i < 10; i++) {
-      const instance = firstInstance;
+      const instance = firstDashDrive;
       const username = `Alice_${i}`;
       const { userId, privateKeyString } =
             await registerUser(username, instance.dashCore.getApi());
@@ -92,8 +92,8 @@ describe('Blockchain reorganization', function main() {
 
     // Await number of blocks even on both nodes
     await blockCountEvenAndEqual(
-      firstInstance.dashCore,
-      secondInstance.dashCore,
+      firstDashDrive.dashCore,
+      secondDashDrive.dashCore,
       BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION +
       (10 * BLOCKS_PER_REGISTRATION),
     );
@@ -107,7 +107,7 @@ describe('Blockchain reorganization', function main() {
         user.privateKeyString,
         user.username,
         stPackets[0],
-        firstInstance,
+        firstDashDrive,
       );
       packetsCids.push(packetCid);
     }
@@ -115,15 +115,15 @@ describe('Blockchain reorganization', function main() {
     // 3. Await block count to be equal on both nodes
     //    Should be equal number of generated STs times number of blocks per ST
     await blockCountEvenAndEqual(
-      firstInstance.dashCore,
-      secondInstance.dashCore,
+      firstDashDrive.dashCore,
+      secondDashDrive.dashCore,
       BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION +
       (10 * BLOCKS_PER_REGISTRATION) + (2 * BLOCKS_PER_ST),
     );
 
     // Await first Dash Drive sync
     for (let i = 0; i < 120; i++) {
-      const lsResult = await firstInstance.ipfs.getApi().pin.ls();
+      const lsResult = await firstDashDrive.ipfs.getApi().pin.ls();
       const lsHashes = lsResult.map(item => item.hash);
 
       if (lsHashes.indexOf(packetsCids[0]) !== -1 && lsHashes.indexOf(packetsCids[1]) !== -1) {
@@ -139,11 +139,7 @@ describe('Blockchain reorganization', function main() {
     const packetsBeforeDisconnect = packetsCids.slice();
 
     // 4. Disconnecting nodes to start introducing difference in blocks
-    //    TODO: implement `disconnect` method for DashCoreInstance
-    const ip = secondInstance.dashCore.getIp();
-    const port = secondInstance.dashCore.options.getDashdPort();
-    await firstInstance.dashCore.getApi().disconnectNode(`${ip}:${port}`);
-    await firstInstance.dashCore.getApi().addNode(`${ip}:${port}`, 'remove');
+    firstDashDrive.dashCore.disconnect(secondDashDrive.dashCore);
 
     // 5. Generate two more ST on the first node
     //    Note: keep track of exact those CIDs as they should disappear after reorganization
@@ -155,23 +151,23 @@ describe('Blockchain reorganization', function main() {
         user.privateKeyString,
         user.username,
         stPackets[0],
-        firstInstance,
+        firstDashDrive,
       );
       packetsCids.push(packetCid);
       packetsAddedAfterDisconnect.push(packetCid);
-      tsesAfterDisconnect.push(tsid);
+      transitionsAfterDisconnect.push(tsid);
     }
 
     // Check tses are not in mempool
-    for (let i = 0; i < tsesAfterDisconnect.length - 1; i++) {
-      const tsid = tsesAfterDisconnect[i];
-      const { result: tsData } = await firstInstance.dashCore.getApi().getTransition(tsid);
+    for (let i = 0; i < transitionsAfterDisconnect.length - 1; i++) {
+      const tsid = transitionsAfterDisconnect[i];
+      const { result: tsData } = await firstDashDrive.dashCore.getApi().getTransition(tsid);
       expect(tsData.from_mempool).to.not.exist();
     }
 
     // 6. Check proper block count on the first node
     {
-      const { result: blockCount } = await firstInstance.dashCore.getApi().getBlockCount();
+      const { result: blockCount } = await firstDashDrive.dashCore.getApi().getBlockCount();
 
       const expectedBlockCount = BLOCKS_PROPAGATION_ACTIVATION +
                                  BLOCKS_ST_ACTIVATION +
@@ -189,14 +185,14 @@ describe('Blockchain reorganization', function main() {
         user.privateKeyString,
         user.username,
         stPackets[0],
-        secondInstance,
+        secondDashDrive,
       );
       packetsCids.push(packetCid);
     }
 
     // 8. Check proper block count on the second node
     {
-      const { result: blockCount } = await secondInstance.dashCore.getApi().getBlockCount();
+      const { result: blockCount } = await secondDashDrive.dashCore.getApi().getBlockCount();
 
       const expectedBlockCount = BLOCKS_PROPAGATION_ACTIVATION +
                                  BLOCKS_ST_ACTIVATION +
@@ -206,27 +202,27 @@ describe('Blockchain reorganization', function main() {
     }
 
     // Remove CIDs on node #1 added before disconnect
-    const rmPormises = packetsBeforeDisconnect.map(cid => firstInstance.ipfs.getApi().pin.rm(cid));
+    const rmPormises = packetsBeforeDisconnect.map(cid => firstDashDrive.ipfs.getApi().pin.rm(cid));
     await Promise.all(rmPormises);
 
     await wait(30000);
 
     // 9. Reconnect nodes
-    await firstInstance.dashCore.connect(secondInstance.dashCore);
+    await firstDashDrive.dashCore.connect(secondDashDrive.dashCore);
 
     // 10. Await equal block count on both nodes
     //     Notes: should be equal to largest chain
     await blockCountEvenAndEqual(
-      firstInstance.dashCore,
-      secondInstance.dashCore,
+      firstDashDrive.dashCore,
+      secondDashDrive.dashCore,
       BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION +
       (10 * BLOCKS_PER_REGISTRATION) + (5 * BLOCKS_PER_ST),
     );
 
     // Check tses are back to mempool
-    for (let i = 0; i < tsesAfterDisconnect.length - 1; i++) {
-      const tsid = tsesAfterDisconnect[i];
-      const { result: tsData } = await firstInstance.dashCore.getApi().getTransition(tsid);
+    for (let i = 0; i < transitionsAfterDisconnect.length - 1; i++) {
+      const tsid = transitionsAfterDisconnect[i];
+      const { result: tsData } = await firstDashDrive.dashCore.getApi().getTransition(tsid);
       expect(tsData.from_mempool).to.exist()
         .and.be.equal(true);
     }
@@ -236,7 +232,7 @@ describe('Blockchain reorganization', function main() {
 
     // 12. Check packet CIDs added after disconnect does not appear in Dash Drive
     {
-      const lsResult = await secondInstance.ipfs.getApi().pin.ls();
+      const lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
       const lsHashes = lsResult.map(item => item.hash);
 
       packetsAddedAfterDisconnect.forEach((cid) => {
@@ -245,7 +241,7 @@ describe('Blockchain reorganization', function main() {
     }
 
     {
-      const lsResult = await firstInstance.ipfs.getApi().pin.ls();
+      const lsResult = await firstDashDrive.ipfs.getApi().pin.ls();
       const lsHashes = lsResult.map(item => item.hash);
 
       packetsAddedAfterDisconnect.forEach((cid) => {
@@ -260,14 +256,14 @@ describe('Blockchain reorganization', function main() {
     }
 
     // 13. Generate more blocks so TSes reappear on the blockchain
-    await firstInstance.dashCore.getApi().generate(10);
+    await firstDashDrive.dashCore.getApi().generate(10);
 
     // 14. Await Dash Drive to sync
     await wait(20000);
 
     // 15. Check CIDs reappear in Dash Drive
     {
-      const lsResult = await secondInstance.ipfs.getApi().pin.ls();
+      const lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
       const lsHashes = lsResult.map(item => item.hash);
 
       packetsCids.forEach((cid) => {
@@ -276,7 +272,7 @@ describe('Blockchain reorganization', function main() {
     }
 
     {
-      const lsResult = await firstInstance.ipfs.getApi().pin.ls();
+      const lsResult = await firstDashDrive.ipfs.getApi().pin.ls();
       const lsHashes = lsResult.map(item => item.hash);
 
       packetsAddedAfterDisconnect.forEach((cid) => {
@@ -287,8 +283,8 @@ describe('Blockchain reorganization', function main() {
 
   after('cleanup lone services', async () => {
     const instances = [
-      firstInstance,
-      secondInstance,
+      firstDashDrive,
+      secondDashDrive,
     ];
 
     await Promise.all(instances.filter(i => i)

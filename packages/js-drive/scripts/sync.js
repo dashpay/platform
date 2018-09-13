@@ -39,6 +39,16 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
     pass: process.env.DASHCORE_JSON_RPC_PASS,
   });
 
+  const isDashCoreRunning = isDashCoreRunningFactory(rpcClient);
+
+  const isRunning = await isDashCoreRunning(
+    parseInt(process.env.DASHCORE_RUNNING_CHECK_MAX_RETRIES, 10),
+    parseInt(process.env.DASHCORE_RUNNING_CHECK_INTERVAL, 10),
+  );
+  if (!isRunning) {
+    throw new DashCoreIsNotRunningError();
+  }
+
   const blockIterator = new RpcBlockIterator(
     rpcClient,
     parseInt(process.env.SYNC_EVO_START_BLOCK_HEIGHT, 10),
@@ -83,8 +93,6 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
     updateDapObject,
   );
   attachStateViewHandlers(stHeaderReader, applyStateTransition, dropMongoDatabasesWithPrefix);
-
-  const isDashCoreRunning = isDashCoreRunningFactory(rpcClient);
 
   let isFirstSyncCompleted = false;
   let isInSync = false;
@@ -152,14 +160,6 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
 
       throw e;
     }
-  }
-
-  const isRunning = await isDashCoreRunning(
-    process.env.DASHCORE_RUNNING_CHECK_MAX_RETRIES,
-    process.env.DASHCORE_RUNNING_CHECK_INTERVAL,
-  );
-  if (!isRunning) {
-    throw new DashCoreIsNotRunningError();
   }
 
   await sync();

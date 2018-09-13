@@ -6,7 +6,9 @@ const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
-const DashDriveOptions = require('js-evo-services-ctl/lib/services/dashDrive/DashDriveOptions');
+const DashApiOptions = require('js-evo-services-ctl/lib/services/driveApi/DriveApiOptions');
+const DashSyncOptions = require('js-evo-services-ctl/lib/services/driveSync/DriveSyncOptions');
+
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -25,6 +27,8 @@ const options = {
     volumes: [
       `${rootPath}/lib:/usr/src/app/lib`,
       `${rootPath}/scripts:/usr/src/app/scripts`,
+      `${rootPath}/.env:/usr/src/app/.env`,
+      `${rootPath}/.env.example:/usr/src/app/.env.example`,
       `${rootPath}/package.json:/usr/src/app/package.json`,
       `${rootPath}/package-lock.json:/usr/src/app/package-lock.json`,
       `${rootPath}/package.json:/package.json`,
@@ -32,7 +36,8 @@ const options = {
     ],
   },
 };
-DashDriveOptions.setDefaultCustomOptions(options);
+DashApiOptions.setDefaultCustomOptions(options);
+DashSyncOptions.setDefaultCustomOptions(options);
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {

@@ -30,8 +30,8 @@ describe('storeDapContractFactory', function main() {
 
     header.extraPayload.setHashSTPacket(await hashSTPacket(packet));
 
-    const mongoClient = await mongoDbInstance.getMongoClient();
-    const dapContractRepository = new DapContractMongoDbRepository(mongoClient, sanitizeData);
+    const mongoDb = await mongoDbInstance.getDb();
+    const dapContractRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
     const storeDapContract = storeDapContractFactory(dapContractRepository, ipfsClient);
 
     await ipfsClient.dag.put(packet, {

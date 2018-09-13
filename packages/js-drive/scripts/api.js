@@ -39,8 +39,8 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
 
   const isDashCoreRunning = isDashCoreRunningFactory(rpcClient);
   const isRunning = await isDashCoreRunning(
-    process.env.DASHCORE_RUNNING_CHECK_MAX_RETRIES,
-    process.env.DASHCORE_RUNNING_CHECK_INTERVAL,
+    parseInt(process.env.DASHCORE_RUNNING_CHECK_MAX_RETRIES, 10),
+    parseInt(process.env.DASHCORE_RUNNING_CHECK_INTERVAL, 10),
   );
   if (!isRunning) {
     throw new DashCoreIsNotRunningError();

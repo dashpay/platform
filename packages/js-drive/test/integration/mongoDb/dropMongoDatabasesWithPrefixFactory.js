@@ -5,8 +5,8 @@ const byDbPrefix = prefix => db => db.name.includes(prefix);
 
 describe('dropMongoDatabasesWithPrefixFactory', () => {
   let mongoClient;
-  startMongoDb().then((instance) => {
-    ({ mongoClient } = instance);
+  startMongoDb().then((_instance) => {
+    mongoClient = _instance.getClient();
   });
 
   it('should drop all Drive Mongo databases', async () => {

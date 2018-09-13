@@ -17,7 +17,7 @@ describe('SyncStateRepository', function main() {
   });
 
   beforeEach(async () => {
-    mongoDb = await instance.getMongoClient();
+    mongoDb = await instance.getDb();
     mongoCollection = mongoDb.collection('syncState');
     const blocks = getBlockFixtures();
     syncState = new SyncState(blocks, new Date());

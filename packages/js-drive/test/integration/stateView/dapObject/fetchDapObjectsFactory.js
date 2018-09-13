@@ -31,7 +31,7 @@ describe('fetchDapObjectsFactory', () => {
   let createDapObjectMongoDbRepository;
   let fetchDapObjects;
   startMongoDb().then(async (mongoDbInstance) => {
-    const mongoClient = await mongoDbInstance.mongoClient;
+    const mongoClient = await mongoDbInstance.getClient();
     createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
       mongoClient,
       DapObjectMongoDbRepository,

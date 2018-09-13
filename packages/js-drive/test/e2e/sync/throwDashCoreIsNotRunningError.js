@@ -1,61 +1,69 @@
 const {
-  createDashDrive,
-  createMongoDb,
+  createDriveApi,
+  createDriveSync,
 } = require('js-evo-services-ctl');
+
 const wait = require('../../../lib/util/wait');
-const { PassThrough } = require('stream');
-
-async function containerLogs(container) {
-  const logStream = await container.logs({
-    follow: true,
-    stdout: true,
-    stderr: true,
-  });
-  let log = '';
-  logStream.on('data', (chunk) => {
-    log += chunk.toString('utf8');
-  });
-  const stream = new PassThrough();
-  container.modem.demuxStream(logStream, stream, stream);
-
-  await wait(20000);
-  logStream.destroy();
-
-  return log;
-}
 
 describe('DashDrive throws DashCoreIsNotRunningError', function main() {
   this.timeout(90000);
 
-  let dashDriveInstance;
-  let mongoDbInstance;
-  beforeEach(async () => {
-    mongoDbInstance = await createMongoDb();
-    await mongoDbInstance.start();
-  });
+  let driveApi;
+  let driveSync;
 
-  // TODO Skip since DD-315 and DD-327 are not implemented
-  it.skip('should throw DashCoreIsNotRunningError if DashCore is not running', async () => {
+  it('API should throw DashCoreIsNotRunningError if DashCore is not running', async () => {
     const envs = [
-      `STORAGE_MONGODB_URL=mongodb://${mongoDbInstance.getIp()}:27017`,
+      'DASHCORE_RUNNING_CHECK_MAX_RETRIES=0',
+      'DASHCORE_RUNNING_CHECK_INTERVAL=0',
     ];
     const opts = { container: { envs } };
-    dashDriveInstance = await createDashDrive(opts);
-    dashDriveInstance.initialize = () => {};
+    driveApi = await createDriveApi(opts);
+    driveApi.initialize = () => {};
 
-    await dashDriveInstance.start();
+    await driveApi.start();
 
-    const log = await containerLogs(dashDriveInstance.container.container);
+    // Waiting for `npm i`
+    await wait(60000);
+
+    const log = await driveApi.container.container.logs({ stderr: true });
     expect(log.includes('DashCoreIsNotRunningError')).to.be.true();
+
+    const inspection = await driveApi.container.inspect();
+    expect(inspection.State.Running).to.be.false();
+  });
+
+  it('Sync should throw DashCoreIsNotRunningError if DashCore is not running', async () => {
+    const envs = [
+      'DASHCORE_RUNNING_CHECK_MAX_RETRIES=0',
+      'DASHCORE_RUNNING_CHECK_INTERVAL=0',
+    ];
+    const opts = { container: { envs } };
+    driveSync = await createDriveSync(opts);
+    driveSync.initialize = () => {};
+
+    await driveSync.start();
+
+    // Waiting for `npm i`
+    await wait(60000);
+
+    const log = await driveSync.container.container.logs({ stderr: true });
+    expect(log.includes('DashCoreIsNotRunningError')).to.be.true();
+
+    const inspection = await driveSync.container.inspect();
+    expect(inspection.State.Running).to.be.false();
   });
 
   after('Clean instances', async () => {
     const instances = [
-      mongoDbInstance,
-      dashDriveInstance,
+      driveApi,
+      driveSync,
     ];
 
+    // Workaround for "container already stopped"
     await Promise.all(instances.filter(i => i)
-      .map(i => i.remove()));
+      .map((i) => {
+        const container = i.container.docker.getContainer(i.container.container.id);
+        return container.remove({ v: 1 });
+      }));
   });
 });

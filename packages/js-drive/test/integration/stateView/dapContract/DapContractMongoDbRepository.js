@@ -6,8 +6,8 @@ const sanitizeData = require('../../../../lib/mongoDb/sanitizeData');
 describe('DapContractRepository', () => {
   let dapContractRepository;
   startMongoDb().then(async (mongoDbInstance) => {
-    const mongoClient = await mongoDbInstance.getMongoClient();
-    dapContractRepository = new DapContractMongoDbRepository(mongoClient, sanitizeData);
+    const mongoDb = await mongoDbInstance.getDb();
+    dapContractRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
   });
 
   it('should store DapContract entity', async () => {

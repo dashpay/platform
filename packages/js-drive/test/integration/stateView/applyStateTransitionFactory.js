@@ -25,8 +25,8 @@ describe('applyStateTransitionFactory', () => {
   let ipfsClient;
 
   startMongoDb().then(async (mongoDbInstance) => {
-    ({ mongoClient } = mongoDbInstance);
-    mongoDb = await mongoDbInstance.getMongoClient();
+    mongoClient = mongoDbInstance.getClient();
+    mongoDb = mongoDbInstance.getDb();
   });
   startIPFS().then(async (ipfsInstance) => {
     ipfsClient = await ipfsInstance.getApi();

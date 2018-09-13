@@ -37,7 +37,7 @@ function createDapObjectWithAge(age) {
 describe('DapObjectMongoDbRepository', () => {
   let dapObjectRepository;
   startMongoDb().then(async (mongoDbInstance) => {
-    const mongoClient = await mongoDbInstance.mongoClient;
+    const mongoClient = await mongoDbInstance.getClient();
     const mongoDb = mongoClient.db('test_dap');
     dapObjectRepository = new DapObjectMongoDbRepository(mongoDb);
   });
