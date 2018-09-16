@@ -3,7 +3,7 @@
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
-!.vscode/launch.json
+.vscode/launch.json
 !.vscode/extensions.json
 ### Node template
 # Logs
@@ -89,3 +89,5 @@ out/
 
 # JIRA plugin
 atlassian-ide-plugin.xml
+
+.DS_Store

@@ -1,13 +1,14 @@
-sudo: required
-dist: trusty
+os: linux
 language: node_js
-
 node_js:
-- 'node'
+  - '8'
 
 before_install:
-- echo -e "machine github.com\n  login ${GH_TOKEN}" >> ~/.netrc
-- echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
+  - echo -e "machine github.com\n  login ${GH_TOKEN}" >> ~/.netrc
+  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 install:
-- npm install
+  - npm install
+
+before_script:
+  - npm run lint

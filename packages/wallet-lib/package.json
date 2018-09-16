@@ -1,16 +1,16 @@
 {
-  "name": "dash-wallet-lib",
-  "version": "0.0.0",
+  "name": "@dashevo/wallet-lib",
+  "version": "1.0.0",
   "description": "Light wallet library for Dash",
   "main": "index.js",
   "scripts": {
-    "lint": "eslint .",
+    "lint": "eslint src/*",
     "lint:fix": "eslint . --fix",
-    "test": "mocha test/*"
+    "test": "nyc --check-coverage --reporter=html --reporter=text mocha test/ --recursive"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/dash-wallet-lib.git"
+    "url": "git+https://github.com/dashevo/wallet-lib.git"
   },
   "keywords": [
     "cryptocurrency",
@@ -20,21 +20,26 @@
   "author": "Dash Core Team",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dashevo/dash-wallet-lib/issues"
+    "url": "https://github.com/dashevo/wallet-lib/issues"
   },
-  "homepage": "https://github.com/dashevo/dash-wallet-lib#readme",
+  "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
-    "@dashevo/dashcore-lib": "git+ssh://git@github.com/dashevo/bitcore-lib-dash-private.git#develop",
-    "@dashevo/dashcore-mnemonic": "^1.5.0"
+    "@dashevo/dapi-sdk": "git+https://github.com/dashevo/dapi-client.git",
+    "@dashevo/dashcore-lib": "git+ssh://git@github.com/dashevo/dashcore-lib.git#evo",
+    "@dashevo/dashcore-mnemonic": "^1.5.0",
+    "axios": "^0.18.0",
+    "localforage": "^1.7.2",
+    "lodash": "^4.17.10",
+    "socket.io-client": "^2.1.1"
   },
   "devDependencies": {
-    "@dashevo/dapi-sdk": "git+ssh://git@github.com/dashevo/dapi-sdk#feature/move_examples_to_interface",
     "chai": "^4.1.2",
     "eslint": "^4.19.1",
     "eslint-config-airbnb": "^17.0.0",
     "eslint-plugin-import": "^2.13.0",
     "eslint-plugin-jsx-a11y": "^6.0.3",
     "eslint-plugin-react": "^7.10.0",
+    "nyc": "^11.9.0",
     "mocha": "^5.2.0"
   }
 }
