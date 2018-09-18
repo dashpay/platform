@@ -1,4 +1,4 @@
 /* eslint-disable global-require */
-describe('Api', () => {
+describe('API', () => {
   require('./methods');
 });

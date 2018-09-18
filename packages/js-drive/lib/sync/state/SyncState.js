@@ -48,10 +48,19 @@ class SyncState {
   /**
    * Get last block
    *
-   * @return {Object|null}
+   * @return {Object}
    */
   getLastBlock() {
-    return this.blocks[this.blocks.length - 1];
+    return this.blocks[this.blocks.length - 1] || {};
+  }
+
+  /**
+   * Get last block hash
+   *
+   * @return {string}
+   */
+  getLastBlockHash() {
+    return this.blocks[this.blocks.length - 1].hash;
   }
 
   /**

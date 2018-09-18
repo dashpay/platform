@@ -71,9 +71,8 @@ describe('fetchDapObjectsMethod', () => {
   });
 
   it('should return DAP object', async () => {
-    const id = '123456';
+    const blockchainUserId = '3557b9a8dfcc1ef9674b50d8d232e0e3e9020f49fa44f89cace622a01f43d03e';
     const objectData = {
-      id,
       act: 0,
       objtype: 'DashPayContact',
       user: 'dashy',
@@ -89,7 +88,7 @@ describe('fetchDapObjectsMethod', () => {
       headerHash,
       hashSTPacket,
     );
-    const dapObject = new DapObject(objectData, reference);
+    const dapObject = new DapObject(blockchainUserId, objectData, reference);
     fetchDapObjects.returns([dapObject]);
 
     const dapId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';

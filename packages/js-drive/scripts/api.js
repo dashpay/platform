@@ -24,6 +24,10 @@ const createDapObjectMongoDbRepositoryFactory = require('../lib/stateView/dapObj
 const fetchDapObjectsFactory = require('../lib/stateView/dapObject/fetchDapObjectsFactory');
 const fetchDapObjectsMethodFactory = require('../lib/api/methods/fetchDapObjectsMethodFactory');
 
+const getChainInfoFactory = require('../lib/sync/info/chain/getChainInfoFactory');
+const getSyncInfoFactory = require('../lib/sync/info/getSyncInfoFactory');
+const getSyncInfoMethodFactory = require('../lib/api/methods/getSyncInfoMethodFactory');
+
 const isDashCoreRunningFactory = require('../lib/sync/isDashCoreRunningFactory');
 const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError');
 
@@ -76,6 +80,10 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
   const fetchDapObjects = fetchDapObjectsFactory(createDapObjectMongoDbRepository);
   const fetchDapObjectsMethod = fetchDapObjectsMethodFactory(fetchDapObjects);
 
+  const getChainInfo = getChainInfoFactory(rpcClient);
+  const getSyncInfo = getSyncInfoFactory(syncStateRepository, getChainInfo);
+  const getSyncInfoMethod = getSyncInfoMethodFactory(getSyncInfo);
+
 
   /**
    * Remove 'Method' Postfix
@@ -95,6 +103,7 @@ const DashCoreIsNotRunningError = require('../lib/sync/DashCoreIsNotRunningError
   const rpcMethods = {
     [rmPostfix(addSTPacketMethod)]: wrapToErrorHandler(addSTPacketMethod),
     [rmPostfix(fetchDapObjectsMethod)]: wrapToErrorHandler(fetchDapObjectsMethod),
+    [rmPostfix(getSyncInfoMethod)]: wrapToErrorHandler(getSyncInfoMethod),
   };
 
   const rpc = jayson.server(rpcMethods);

@@ -24,6 +24,17 @@ module.exports = class RpcClientMock {
     }
   }
 
+  getBlockchainInfo() {
+    const lastBlock = this.blocks[this.blocks.length - 1];
+    return Promise.resolve({
+      result: {
+        blocks: lastBlock ? lastBlock.height : null,
+        headers: lastBlock ? lastBlock.height : null,
+        bestblockhash: lastBlock ? lastBlock.hash : null,
+      },
+    });
+  }
+
   /**
    *
    */
@@ -31,6 +42,12 @@ module.exports = class RpcClientMock {
     const lastBlock = this.blocks[this.blocks.length - 1];
 
     return Promise.resolve({ result: lastBlock ? lastBlock.height : 0 });
+  }
+
+  getBestBlockHash() {
+    const lastBlock = this.blocks[this.blocks.length - 1];
+
+    return Promise.resolve({ result: lastBlock ? lastBlock.hash : null });
   }
 
   /**
