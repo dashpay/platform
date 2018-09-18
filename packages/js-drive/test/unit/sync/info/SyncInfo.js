@@ -8,11 +8,13 @@ describe('SyncInfo', () => {
     const lastSyncedBlock = blocks[0];
     const lastChainBlock = blocks[3];
     const lastSyncAt = new Date();
+    const lastInitialSyncAt = new Date();
     const isBlockChainSynced = false;
     const syncInfo = new SyncInfo(
       lastSyncedBlock.height,
       lastSyncedBlock.hash,
       lastSyncAt,
+      lastInitialSyncAt,
       lastChainBlock.height,
       lastChainBlock.hash,
       isBlockChainSynced,
@@ -21,6 +23,7 @@ describe('SyncInfo', () => {
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
+      lastInitialSyncAt,
       lastChainBlockHeight: lastChainBlock.height,
       lastChainBlockHash: lastChainBlock.hash,
       status: SyncInfo.STATUSES.SYNCING,
@@ -32,12 +35,14 @@ describe('SyncInfo', () => {
       const lastSyncedBlock = blocks[0];
       const lastChainBlock = blocks[3];
       const lastSyncAt = null;
+      const lastInitialSyncAt = null;
       const isBlockChainSynced = false;
 
       const syncInfo = new SyncInfo(
         lastSyncedBlock.height,
         lastSyncedBlock.hash,
         lastSyncAt,
+        lastInitialSyncAt,
         lastChainBlock.height,
         lastChainBlock.hash,
         isBlockChainSynced,
@@ -49,12 +54,14 @@ describe('SyncInfo', () => {
       const lastSyncedBlock = blocks[0];
       const lastChainBlock = blocks[3];
       const lastSyncAt = new Date();
+      const lastInitialSyncAt = new Date();
       const isBlockChainSynced = false;
 
       const syncInfo = new SyncInfo(
         lastSyncedBlock.height,
         lastSyncedBlock.hash,
         lastSyncAt,
+        lastInitialSyncAt,
         lastChainBlock.height,
         lastChainBlock.hash,
         isBlockChainSynced,
@@ -66,12 +73,14 @@ describe('SyncInfo', () => {
       const lastSyncedBlock = blocks[0];
       const lastChainBlock = blocks[3];
       const lastSyncAt = new Date();
+      const lastInitialSyncAt = new Date();
       const isBlockChainSynced = true;
 
       const syncInfo = new SyncInfo(
         lastSyncedBlock.height,
         lastSyncedBlock.hash,
         lastSyncAt,
+        lastInitialSyncAt,
         lastChainBlock.height,
         lastChainBlock.hash,
         isBlockChainSynced,
@@ -83,12 +92,14 @@ describe('SyncInfo', () => {
       const lastSyncedBlock = blocks[3];
       const lastChainBlock = blocks[3];
       const lastSyncAt = new Date();
+      const lastInitialSyncAt = new Date();
       const isBlockChainSynced = true;
 
       const syncInfo = new SyncInfo(
         lastSyncedBlock.height,
         lastSyncedBlock.hash,
         lastSyncAt,
+        lastInitialSyncAt,
         lastChainBlock.height,
         lastChainBlock.hash,
         isBlockChainSynced,

@@ -27,12 +27,34 @@ class SyncState {
   }
 
   /**
+   * Set lastInitialSyncAt
+   *
+   * @param {Date} date
+   */
+  setLastInitialSyncAt(date) {
+    this.lastInitialSyncAt = date;
+  }
+
+  /**
+   * Set lastInitialSyncAt
+   *
+   * @return {Date}
+   */
+  getLastInitialSyncAt() {
+    return this.lastInitialSyncAt;
+  }
+
+  /**
    * Set last sync date
    *
    * @param {Date} date
    * @return {number}
    */
   setLastSyncAt(date) {
+    if (!this.lastSyncAt) {
+      this.setLastInitialSyncAt(date);
+    }
+
     this.lastSyncAt = date;
   }
 
@@ -80,12 +102,13 @@ class SyncState {
   /**
    * Get state's JSON representation
    *
-   * @return {{blocks: Object[], lastSyncAt: Date}}
+   * @return {{blocks: Object[], lastSyncAt: Date, lastInitialSyncAt: Date}}
    */
   toJSON() {
     return {
       blocks: this.getBlocks(),
       lastSyncAt: this.getLastSyncAt(),
+      lastInitialSyncAt: this.getLastInitialSyncAt(),
     };
   }
 }

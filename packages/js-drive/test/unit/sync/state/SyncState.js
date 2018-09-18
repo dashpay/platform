@@ -56,6 +56,7 @@ describe('SyncState', () => {
     expect(state.toJSON()).to.be.deep.equals({
       blocks: state.getBlocks(),
       lastSyncAt: state.getLastSyncAt(),
+      lastInitialSyncAt: state.getLastInitialSyncAt(),
     });
   });
 
@@ -75,5 +76,29 @@ describe('SyncState', () => {
     const anotherState = new SyncState(blocks, new Date());
 
     expect(anotherState.isEmpty()).to.be.false();
+  });
+
+  it('should set lastInitialSyncAt if lastSyncAt does not exist yet', () => {
+    const lastSyncAt = null;
+    const syncState = new SyncState(blocks, lastSyncAt);
+
+    const firstLastSyncAt = new Date();
+    syncState.setLastSyncAt(firstLastSyncAt);
+
+    expect(syncState.getLastSyncAt()).to.be.equal(firstLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.be.equal(firstLastSyncAt);
+  });
+
+  it('should only update lastSyncAt if setLastSyncAt is called several times', () => {
+    const firstLastSyncAt = new Date();
+    const syncState = new SyncState(blocks, firstLastSyncAt);
+
+    const secondLastSyncAt = new Date();
+    syncState.setLastSyncAt(secondLastSyncAt);
+    const thirdLastSyncAt = new Date();
+    syncState.setLastSyncAt(thirdLastSyncAt);
+
+    expect(syncState.getLastSyncAt()).to.be.equal(thirdLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.be.equal(firstLastSyncAt);
   });
 });

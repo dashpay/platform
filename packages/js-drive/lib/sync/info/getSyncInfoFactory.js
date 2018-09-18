@@ -19,6 +19,7 @@ function getSyncInfoFactory(syncStateRepository, getChainInfo) {
       lastDriveBlock.height,
       lastDriveBlock.hash,
       syncState.getLastSyncAt(),
+      syncState.getLastInitialSyncAt(),
       chainInfo.getLastBlockHeight(),
       chainInfo.getLastBlockHash(),
       chainInfo.getIsBlockchainSynced(),

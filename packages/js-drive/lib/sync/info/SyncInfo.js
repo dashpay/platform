@@ -3,6 +3,7 @@ class SyncInfo {
    * @param {string} lastSyncedBlockHeight
    * @param {string} lastSyncedBlockHash
    * @param {Date} lastSyncAt
+   * @param {Date} lastInitialSyncAt
    * @param {string} lastChainBlockHeight
    * @param {string} lastChainBlockHash
    * @param {boolean} isBlockchainSynced
@@ -11,6 +12,7 @@ class SyncInfo {
     lastSyncedBlockHeight,
     lastSyncedBlockHash,
     lastSyncAt,
+    lastInitialSyncAt,
     lastChainBlockHeight,
     lastChainBlockHash,
     isBlockchainSynced,
@@ -18,6 +20,7 @@ class SyncInfo {
     this.lastSyncedBlockHeight = lastSyncedBlockHeight;
     this.lastSyncedBlockHash = lastSyncedBlockHash;
     this.lastSyncAt = lastSyncAt;
+    this.lastInitialSyncAt = lastInitialSyncAt;
     this.lastChainBlockHeight = lastChainBlockHeight;
     this.lastChainBlockHash = lastChainBlockHash;
     this.isBlockchainSynced = isBlockchainSynced;
@@ -48,6 +51,15 @@ class SyncInfo {
    */
   getLastSyncAt() {
     return this.lastSyncAt;
+  }
+
+  /**
+   * Get Last initial sync date
+   *
+   * @returns {Date}
+   */
+  getLastInitialSyncAt() {
+    return this.lastInitialSyncAt;
   }
 
   /**
@@ -93,13 +105,15 @@ class SyncInfo {
    * Returns SyncInfo JSON representation
    *
    * @returns {{lastSyncedBlockHeight: string, lastSyncedBlockHash: string, lastSyncAt: Date,
-   *                lastChainBlockHeight: string, lastChainBlockHash: string, status: string}}
+   *                lastInitialSyncAt: Date, lastChainBlockHeight: string,
+   *                lastChainBlockHash: string, status: string}}
    */
   toJSON() {
     return {
       lastSyncedBlockHeight: this.lastSyncedBlockHeight,
       lastSyncedBlockHash: this.lastSyncedBlockHash,
       lastSyncAt: this.lastSyncAt,
+      lastInitialSyncAt: this.lastInitialSyncAt,
       lastChainBlockHeight: this.lastChainBlockHeight,
       lastChainBlockHash: this.lastChainBlockHash,
       status: this.getStatus(),

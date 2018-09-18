@@ -54,6 +54,7 @@ describe('SyncStateRepository', function main() {
     expect(stateFromMongo.toJSON()).to.be.deep.equals({
       blocks: [],
       lastSyncAt: null,
+      lastInitialSyncAt: null,
     });
   });
 });

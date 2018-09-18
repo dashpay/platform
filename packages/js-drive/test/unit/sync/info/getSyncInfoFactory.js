@@ -42,6 +42,24 @@ describe('getSyncInfoFactory', () => {
     });
   });
 
+  describe('lastInitialSyncAt', () => {
+    it('should be null if SyncState does not have lastSyncAt', async () => {
+      const syncStateLastSyncAt = null;
+      const syncState = new SyncState(blocks, syncStateLastSyncAt);
+      syncStateRepository.fetch.returns(syncState);
+      const syncInfo = await getSyncInfo();
+      expect(syncInfo.getLastInitialSyncAt()).to.be.deep.equal(syncStateLastSyncAt);
+    });
+
+    it('should be equal to SyncState lastSyncAt', async () => {
+      const syncStateLastSyncAt = new Date();
+      const syncState = new SyncState(blocks, syncStateLastSyncAt);
+      syncStateRepository.fetch.returns(syncState);
+      const syncInfo = await getSyncInfo();
+      expect(syncInfo.getLastInitialSyncAt()).to.be.deep.equal(syncStateLastSyncAt);
+    });
+  });
+
   describe('status', () => {
     it('should be initialSync if SyncState hash not lastSyncAt', async () => {
       const syncStateLastSyncAt = null;
