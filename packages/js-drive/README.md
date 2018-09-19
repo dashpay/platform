@@ -107,6 +107,20 @@ Fetch method options:
 |---------|--------|--------------|
 | result  | array  | DAP objects  |
 
+#### getSyncInfo
+
+Get Sync information
+
+##### Params
+
+None
+
+##### Response
+
+| name    | type   | description     |
+|---------|--------|-----------------|
+| result  | object | SyncInfo object |
+
 ### Errors
 
 | code | message                   | meaning                                                                  |
