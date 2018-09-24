@@ -68,6 +68,17 @@ class STHeadersReader extends Emittery {
   }
 
   /**
+   * Reset to block height
+   *
+   * @param {number} blockHeight
+   */
+  resetToBlockHeight(blockHeight) {
+    this.state.clear();
+    this.stHeaderIterator.reset(false);
+    this.stHeaderIterator.blockIterator.setBlockHeight(blockHeight);
+  }
+
+  /**
    * Get state
    *
    * @return {STHeadersReaderState}

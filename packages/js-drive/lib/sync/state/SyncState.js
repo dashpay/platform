@@ -100,6 +100,15 @@ class SyncState {
   }
 
   /**
+   * Clean SyncState
+   */
+  clean() {
+    this.setBlocks([]);
+    this.setLastSyncAt(null);
+    this.setLastInitialSyncAt(null);
+  }
+
+  /**
    * Get state's JSON representation
    *
    * @return {{blocks: Object[], lastSyncAt: Date, lastInitialSyncAt: Date}}
