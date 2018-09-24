@@ -8,22 +8,25 @@ const hashSTPacket = require('./consensus/hashSTPacket');
  * @param {string} regTxId Registration transaction ID (User ID)
  * @param {string} privateKeyString
  * @param {StateTransitionPacket} tsp
+ * @param {string} hashPrevSubTx
  * @returns {Promise<Transaction>}
  */
-async function createSTHeader(regTxId, privateKeyString, tsp) {
+async function createSTHeader(regTxId, privateKeyString, tsp, hashPrevSubTx = undefined) {
   const privateKey = new PrivateKey(privateKeyString);
 
   const stPacketHash = await hashSTPacket(tsp.toJSON({ skipMeta: true }));
 
+  const extraPayload = {
+    version: 1,
+    hashSTPacket: stPacketHash,
+    regTxId,
+    creditFee: 1001,
+    hashPrevSubTx: (hashPrevSubTx || regTxId),
+  };
+
   const transaction = new Transaction({
     type: Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION,
-    extraPayload: {
-      version: 1,
-      hashSTPacket: stPacketHash,
-      regTxId,
-      creditFee: 1001,
-      hashPrevSubTx: regTxId,
-    },
+    extraPayload,
   });
 
   transaction.extraPayload.sign(privateKey);

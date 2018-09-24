@@ -1,6 +1,8 @@
 const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
+const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
+
 const registerUser = require('../../../lib/test/registerUser');
 const createSTHeader = require('../../../lib/test/createSTHeader');
 
@@ -38,6 +40,27 @@ async function dashDriveSyncToFinish(instance) {
   }
 }
 
+async function createAndSubmitST(
+  userId,
+  privateKeyString,
+  username,
+  basePacketData,
+  instance,
+  previousTransitionHash = undefined,
+) {
+  const packet = new StateTransitionPacket(basePacketData);
+
+  const header = await createSTHeader(userId, privateKeyString, packet, previousTransitionHash);
+
+  const addSTPacket = addSTPacketFactory(instance.ipfs.getApi());
+  const packetCid = await addSTPacket(packet);
+
+  const { result: tsId } = await instance.dashCore.getApi().sendRawTransition(header);
+  await instance.dashCore.getApi().generate(1);
+
+  return { packetCid, tsId };
+}
+
 describe('Initial sync of Dash Drive and Dash Core', function main() {
   let firstDashDrive;
   let secondDashDrive;
@@ -45,11 +68,16 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
   let packetsCids;
   let packetsData;
 
+  let users;
+
+  let dapId;
+
   this.timeout(900000);
 
   before('having Dash Drive node #1 up and ready, some amount of STs generated and Dash Drive on node #1 fully synced', async () => {
     packetsCids = [];
     packetsData = getStateTransitionPackets();
+    users = [];
 
     // 1. Start first Dash Drive node
     firstDashDrive = await startDashDrive();
@@ -57,33 +85,72 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     // 1.1 Activate Special Transactions
     await firstDashDrive.dashCore.getApi().generate(1000);
 
-    // 2. Populate Dash Drive and Dash Core With data
-    async function createAndSubmitST(username) {
-      // 2.1 Get packet data with random object description
-      const packetOne = packetsData[0];
-      packetOne.dapcontract.description = `Valid registration for ${username}`;
+    // 2. Register a bunch of users on a blockchain
+    for (let i = 0; i < 4; i++) {
+      const user = {
+        username: `BC_USER_${i}`,
+        aboutMe: `Something about BC_USER_${i}`,
+      };
 
-      // 2.2 Register user and create DAP Contract State Transition packet and header
-      const { userId, privateKeyString } =
-        await registerUser(username, firstDashDrive.dashCore.getApi());
-      const header = await createSTHeader(userId, privateKeyString, packetOne);
+      ({ userId: user.userId, privateKeyString: user.privateKeyString } =
+       await registerUser(user.username, firstDashDrive.dashCore.getApi()));
 
-      // 2.3 Add ST packet to IPFS
-      const addSTPacket = addSTPacketFactory(firstDashDrive.ipfs.getApi());
-      const packetCid = await addSTPacket(packetOne);
-
-      // 2.4 Save CID of freshly added packet for future use
-      packetsCids.push(packetCid);
-
-      // 2.5 Send ST header to Dash Core and generate a block with it
-      await firstDashDrive.dashCore.getApi().sendRawTransition(header.serialize());
-      await firstDashDrive.dashCore.getApi().generate(1);
+      users.push(user);
     }
 
-    // Note: I can't use Promise.all here due to errors with PrivateKey
-    //       I guess some of the actions can't be executed in parallel
-    for (let i = 0; i < 4; i++) {
-      await createAndSubmitST(`Alice_${i}`);
+    // 3. Create DAP Contract
+    let packetCid;
+    ({ packetCid, tsId: dapId } = await createAndSubmitST(
+      users[0].userId,
+      users[0].privateKeyString,
+      users[0].username,
+      packetsData[0],
+      firstDashDrive,
+    ));
+
+    packetsCids.push(packetCid);
+
+    // 4. Register a bunch of `user` DAP Objects (for every blockchain user)
+    let prevTransitionId;
+
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i];
+
+      // if it's the user used to register dapId, use it
+      // use nothing if else
+      if (i === 0) {
+        prevTransitionId = dapId;
+      } else {
+        prevTransitionId = undefined;
+      }
+
+      const userData = Object.assign({}, packetsData[1], {
+        dapid: dapId,
+        dapobjects: [
+          {
+            id: i + 1,
+            objtype: 'user',
+            aboutme: user.aboutMe,
+            pver: 1,
+            idx: 0,
+            rev: 1,
+            act: 1,
+          },
+        ],
+      });
+
+      user.userData = userData;
+
+      ({ packetCid, tsId: user.prevTransitionId } = await createAndSubmitST(
+        user.userId,
+        user.privateKeyString,
+        user.username,
+        userData,
+        firstDashDrive,
+        prevTransitionId,
+      ));
+
+      packetsCids.push(packetCid);
     }
   });
 
@@ -96,13 +163,19 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     // 4. Await Dash Drive on the 2nd node to finish syncing
     await dashDriveSyncToFinish(secondDashDrive.driveApi);
 
-    // 5. Get all pinned CIDs on the 2nd node and assert
-    //    they contain CIDs saved from the 1st node
-    const lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
+    // 5. Ensure second Dash Drive have a proper data
+    {
+      const { result: objects } = await secondDashDrive.driveApi.getApi()
+        .request('fetchDapObjects', { dapId, type: 'user' });
 
-    const hashes = lsResult.map(item => item.hash);
+      expect(objects.length).to.be.equal(users.length);
 
-    expect(hashes).to.contain.members(packetsCids);
+      const aboutMes = objects.map(o => o.object.aboutme);
+
+      for (let i = 0; i < users.length; i++) {
+        expect(aboutMes).to.include(users[i].aboutMe);
+      }
+    }
   });
 
   after('cleanup lone services', async () => {
