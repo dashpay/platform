@@ -13,6 +13,10 @@ const wrapToErrorHandler = require('../../lib/api/jsonRpc/wrapToErrorHandler');
 const addSTPacketFactory = require('../../lib/storage/ipfs/addSTPacketFactory');
 const addSTPacketMethodFactory = require('../../lib/api/methods/addSTPacketMethodFactory');
 
+const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
+const sanitizeData = require('../mongoDb/sanitizeData');
+const fetchDapContractMethodFactory = require('../api/methods/fetchDapContractMethodFactory');
+
 const DapObjectMongoDbRepository = require('../../lib/stateView/dapObject/DapObjectMongoDbRepository');
 const createDapObjectMongoDbRepositoryFactory = require('../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
 const fetchDapObjectsFactory = require('../../lib/stateView/dapObject/fetchDapObjectsFactory');
@@ -121,6 +125,7 @@ class ApiApp {
   createRpcMethods() {
     return [
       this.createAddSTPacketMethod(),
+      this.createFetchDapContractMethod(),
       this.createFetchDapObjectsMethod(),
       this.createGetSyncInfoMethod(),
     ];
@@ -134,6 +139,16 @@ class ApiApp {
   createAddSTPacketMethod() {
     const addSTPacket = addSTPacketFactory(this.ipfsAPI);
     return addSTPacketMethodFactory(addSTPacket);
+  }
+
+  /**
+   * @private
+   * @returns {fetchDapContractMethod}
+   */
+  createFetchDapContractMethod() {
+    const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
+    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    return fetchDapContractMethodFactory(dapContractMongoDbRepository);
   }
 
   /**
