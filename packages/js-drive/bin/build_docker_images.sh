@@ -6,6 +6,7 @@ REPO_URL="103738324493.dkr.ecr.us-west-2.amazonaws.com"
 IMAGE_NAME="dashevo/dashdrive"
 
 docker build --build-arg NODE_ENV=development \
+             --build-arg npm_token=$NPM_TOKEN \
              -t "${REPO_URL}/${IMAGE_NAME}" \
              .
 
