@@ -1,4 +1,4 @@
-const { mocha: { startMongoDb, startDashCore } } = require('js-evo-services-ctl');
+const { mocha: { startMongoDb, startDashCore } } = require('@dashevo/js-evo-services-ctl');
 const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
 
 const SyncState = require('../../../../lib/sync/state/SyncState');

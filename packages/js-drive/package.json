@@ -27,6 +27,7 @@
   },
   "homepage": "https://github.com/dashevo/dashdrive",
   "devDependencies": {
+    "@dashevo/js-evo-services-ctl": "0.0.1",
     "chai": "^4.1.2",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
@@ -38,13 +39,11 @@
     "multihashing-async": "^0.4.7",
     "proxyquire": "^1.8.0",
     "sinon": "^4.3.0",
-    "sinon-chai": "^2.14.0",
-    "js-evo-services-ctl": "git+ssh://git@github.com/dashevo/js-evo-services-ctl.git#1.0.0-alpha.3"
+    "sinon-chai": "^2.14.0"
   },
   "dependencies": {
-    "@dashevo/dash-schema": "git+ssh://git@github.com/dashevo/dash-schema.git#3.0.0-alpha.1",
     "@dashevo/dashcore-lib": "1.0.0-alpha.10",
-    "bitcoind-rpc-dash": "git+ssh://git@github.com/dashevo/bitcoind-rpc-dash-private.git#develop",
+    "@dashevo/dashd-rpc": "^1.2.0",
     "bs58": "^4.0.1",
     "cbor": "^3.0.3",
     "cids": "^0.5.2",

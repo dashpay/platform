@@ -1,7 +1,7 @@
 const SyncState = require('../../../../../lib/sync/state/SyncState');
 const SyncStateRepository = require('../../../../../lib/sync/state/repository/SyncStateRepository');
 const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlockFixtures');
-const { mocha: { startMongoDb } } = require('js-evo-services-ctl');
+const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
 
 describe('SyncStateRepository', function main() {
   this.timeout(90000);

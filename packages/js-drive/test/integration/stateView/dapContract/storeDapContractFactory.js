@@ -3,7 +3,7 @@ const {
     startMongoDb,
     startIPFS,
   },
-} = require('js-evo-services-ctl');
+} = require('@dashevo/js-evo-services-ctl');
 const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
 const getTransitionHeaderFixtures = require('../../../../lib/test/fixtures/getTransitionHeaderFixtures');
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');

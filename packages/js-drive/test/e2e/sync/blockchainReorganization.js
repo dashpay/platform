@@ -5,7 +5,7 @@ const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacke
 const registerUser = require('../../../lib/test/registerUser');
 const createSTHeader = require('../../../lib/test/createSTHeader');
 
-const { startDashDrive } = require('js-evo-services-ctl');
+const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 
 const wait = require('../../../lib/util/wait');
 

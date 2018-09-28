@@ -1,5 +1,5 @@
 const IpfsAPI = require('ipfs-api');
-const RpcClient = require('bitcoind-rpc-dash/promise');
+const RpcClient = require('@dashevo/dashd-rpc/promise');
 const { MongoClient } = require('mongodb');
 
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');

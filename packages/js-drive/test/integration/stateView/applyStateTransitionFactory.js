@@ -6,7 +6,7 @@ const {
     startMongoDb,
     startIPFS,
   },
-} = require('js-evo-services-ctl');
+} = require('@dashevo/js-evo-services-ctl');
 const hashSTPacket = require('../../../lib/test/consensus/hashSTPacket');
 const updateDapContractFactory = require('../../../lib/stateView/dapContract/updateDapContractFactory');
 const updateDapObjectFactory = require('../../../lib/stateView/dapObject/updateDapObjectFactory');
