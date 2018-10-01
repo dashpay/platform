@@ -18,7 +18,7 @@ async function createAndSubmitST(userId, privateKeyString, username, basePacketD
   const addSTPacket = addSTPacketFactory(instance.ipfs.getApi());
   const packetCid = await addSTPacket(packet);
 
-  const { result: tsid } = await instance.dashCore.getApi().sendRawTransition(header);
+  const { result: tsid } = await instance.dashCore.getApi().sendRawTransaction(header);
   await instance.dashCore.getApi().generate(1);
 
   return { packetCid, tsid };
@@ -159,10 +159,10 @@ describe('Blockchain reorganization', function main() {
     }
 
     // Check tses are not in mempool
+    const { result: tsIdsAfterDisconnect } = await firstDashDrive.dashCore.getApi().getRawMemPool();
     for (let i = 0; i < transitionsAfterDisconnect.length - 1; i++) {
       const tsid = transitionsAfterDisconnect[i];
-      const { result: tsData } = await firstDashDrive.dashCore.getApi().getTransition(tsid);
-      expect(tsData.from_mempool).to.not.exist();
+      expect(tsIdsAfterDisconnect).to.not.include(tsid);
     }
 
     // 6. Check proper block count on the first node
@@ -220,11 +220,10 @@ describe('Blockchain reorganization', function main() {
     );
 
     // Check tses are back to mempool
+    const { result: tsIdsAfterConnect } = await firstDashDrive.dashCore.getApi().getRawMemPool();
     for (let i = 0; i < transitionsAfterDisconnect.length - 1; i++) {
       const tsid = transitionsAfterDisconnect[i];
-      const { result: tsData } = await firstDashDrive.dashCore.getApi().getTransition(tsid);
-      expect(tsData.from_mempool).to.exist()
-        .and.be.equal(true);
+      expect(tsIdsAfterConnect).to.include(tsid);
     }
 
     // 11. Await Dash Drive to sync

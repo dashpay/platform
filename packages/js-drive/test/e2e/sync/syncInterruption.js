@@ -76,7 +76,7 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
       packetsCids.push(packetCid);
 
       // 2.5 Send ST header to Dash Core and generate a block with it
-      await firstDashDrive.dashCore.getApi().sendRawTransition(header.serialize());
+      await firstDashDrive.dashCore.getApi().sendRawTransaction(header.serialize());
       await firstDashDrive.dashCore.getApi().generate(1);
     }
 

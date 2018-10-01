@@ -104,15 +104,6 @@ module.exports = class RpcClientMock {
     return { result: transaction.serialize() };
   }
 
-  /**
-   * @param {string} tsid
-   */
-  getTransition(tsid) {
-    const header = this.transitionHeaders.find(h => h.hash === tsid);
-
-    return Promise.resolve({ result: header });
-  }
-
   // eslint-disable-next-line class-methods-use-this
   mnsync(mode) {
     if (mode !== 'status') {

@@ -55,7 +55,7 @@ async function createAndSubmitST(
   const addSTPacket = addSTPacketFactory(instance.ipfs.getApi());
   const packetCid = await addSTPacket(packet);
 
-  const { result: tsId } = await instance.dashCore.getApi().sendRawTransition(header);
+  const { result: tsId } = await instance.dashCore.getApi().sendRawTransaction(header);
   await instance.dashCore.getApi().generate(1);
 
   return { packetCid, tsId };
