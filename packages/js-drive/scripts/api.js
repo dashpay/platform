@@ -6,6 +6,9 @@ const jayson = require('jayson/promise');
 const ApiApp = require('../lib/app/ApiApp');
 const ApiAppOptions = require('../lib/app/ApiAppOptions');
 
+const parseBodyFactory = require('../lib/api/middlewares/parseBodyFactory');
+const bypassFactory = require('../lib/api/middlewares/bypassFactory');
+
 const errorHandler = require('../lib/util/errorHandler');
 
 (async function main() {
@@ -17,7 +20,11 @@ const errorHandler = require('../lib/util/errorHandler');
   const rpc = jayson.server(apiApp.createRpcMethodsWithNames());
   const server = connect();
 
-  server.use(apiApp.createCheckSyncStateHttpMiddleware());
+  server.use(parseBodyFactory());
+  server.use(bypassFactory(apiApp.createCheckSyncStateHttpMiddleware(), [
+    'getSyncInfo',
+    'addSTPacket',
+  ]));
   server.use(rpc.middleware());
 
   server.listen(

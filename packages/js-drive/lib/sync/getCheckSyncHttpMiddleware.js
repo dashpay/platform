@@ -31,26 +31,18 @@ function getCheckSyncHttpMiddleware(
     if (error) {
       throw error;
     }
-    utils.parseBody(req, null, (err, request) => {
-      if (err) {
-        next(err);
-        return;
-      }
+    if (syncState || !utils.Request.isValidRequest(req.body) || !req.body.id) {
+      next();
+      return;
+    }
 
-      if (syncState || !utils.Request.isValidRequest(request) || !request.id) {
-        req.body = request;
-        next();
-        return;
-      }
+    const requests = utils.Request.isBatch(req.body) ? req.body : [req.body];
+    const errorResponse = createError(100, 'Initial sync in progress');
+    const responses = requests.map(r => utils.response(errorResponse, null, r.id));
 
-      const requests = utils.Request.isBatch(request) ? request : [request];
-      const errorResponse = createError(100, 'Initial sync in progress');
-      const responses = requests.map(r => utils.response(errorResponse, null, r.id));
-
-      const requestsStringify = JSON.stringify(requests);
-      const responsesStringify = JSON.stringify(responses[0]);
-      res.end(utils.Request.isBatch(request) ? requestsStringify : responsesStringify);
-    });
+    const requestsStringify = JSON.stringify(requests);
+    const responsesStringify = JSON.stringify(responses[0]);
+    res.end(utils.Request.isBatch(req.body) ? requestsStringify : responsesStringify);
   };
 }
 

@@ -11,7 +11,7 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
   let driveApi;
   let driveSync;
 
-  it('API should throw DashCoreIsNotRunningError if DashCore is not running', async () => {
+  before(async () => {
     const envs = [
       'DASHCORE_RUNNING_CHECK_MAX_RETRIES=0',
       'DASHCORE_RUNNING_CHECK_INTERVAL=0',
@@ -19,12 +19,17 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
     const opts = { container: { envs } };
     driveApi = await createDriveApi(opts);
     driveApi.initialize = () => {};
+    driveSync = await createDriveSync(opts);
+    driveSync.initialize = () => {};
 
-    await driveApi.start();
+    await Promise.all([
+      driveApi.start(),
+      driveSync.start(),
+      wait(12000), // Waiting for `npm i`
+    ]);
+  });
 
-    // Waiting for `npm i`
-    await wait(60000);
-
+  it('API should throw DashCoreIsNotRunningError if DashCore is not running', async () => {
     const log = await driveApi.container.container.logs({ stderr: true });
     expect(log.includes('DashCoreIsNotRunningError')).to.be.true();
 
@@ -33,19 +38,6 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
   });
 
   it('Sync should throw DashCoreIsNotRunningError if DashCore is not running', async () => {
-    const envs = [
-      'DASHCORE_RUNNING_CHECK_MAX_RETRIES=0',
-      'DASHCORE_RUNNING_CHECK_INTERVAL=0',
-    ];
-    const opts = { container: { envs } };
-    driveSync = await createDriveSync(opts);
-    driveSync.initialize = () => {};
-
-    await driveSync.start();
-
-    // Waiting for `npm i`
-    await wait(60000);
-
     const log = await driveSync.container.container.logs({ stderr: true });
     expect(log.includes('DashCoreIsNotRunningError')).to.be.true();
 
