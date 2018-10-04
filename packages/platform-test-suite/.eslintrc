@@ -1,0 +1,34 @@
+{
+  "extends": "airbnb-base",
+  "env": {
+    "node": true,
+    "mocha": true
+  },
+  "rules": {
+    "no-plusplus": 0,
+    "eol-last": [
+      "error",
+      "always"
+    ],
+    "no-await-in-loop": "off",
+    "import/no-extraneous-dependencies": "off",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "LabeledStatement",
+        "message": "Labels are a form of GOTO; using them makes code confusing and hard to maintain and understand."
+      },
+      {
+        "selector": "WithStatement",
+        "message": "`with` is disallowed in strict mode because it makes code impossible to predict and optimize."
+      }
+    ],
+    "curly": [
+      "error",
+      "all"
+    ]
+  },
+  "globals": {
+    "expect": true
+  }
+}

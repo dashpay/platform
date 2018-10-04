@@ -1,0 +1,28 @@
+{
+  "name": "@dashevo/dash-network-e2e-tests",
+  "version": "1.0.0",
+  "description": "Dash Network end-to-end tests",
+  "scripts": {
+    "test": "mocha './test/**/*.spec.js'",
+    "lint": "eslint ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/dashevo/dash-network-e2e-tests.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dashevo/dash-network-e2e-tests/issues"
+  },
+  "homepage": "https://github.com/dashevo/dash-network-e2e-tests#readme",
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "chai-as-promised": "^7.1.1",
+    "dirty-chai": "^2.0.1",
+    "dotenv-safe": "^6.0.0",
+    "eslint": "^5.6.1",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-plugin-import": "^2.14.0",
+    "mocha": "^5.2.0"
+  }
+}
