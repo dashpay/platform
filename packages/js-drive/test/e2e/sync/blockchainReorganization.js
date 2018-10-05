@@ -1,4 +1,3 @@
-const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
 
@@ -8,6 +7,7 @@ const createSTHeader = require('../../../lib/test/createSTHeader');
 const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 
 const wait = require('../../../lib/util/wait');
+const cbor = require('cbor');
 
 async function createAndSubmitST(userId, privateKeyString, username, basePacketData, instance) {
   const packet = new StateTransitionPacket(basePacketData);
@@ -15,8 +15,12 @@ async function createAndSubmitST(userId, privateKeyString, username, basePacketD
 
   const header = await createSTHeader(userId, privateKeyString, packet);
 
-  const addSTPacket = addSTPacketFactory(instance.ipfs.getApi());
-  const packetCid = await addSTPacket(packet);
+  const serializedPacket = cbor.encodeCanonical(packet.toJSON({ skipMeta: true }));
+  const serializedPacketJson = {
+    packet: serializedPacket.toString('hex'),
+  };
+  const { result: packetCid } = await instance.driveApi.getApi()
+    .request('addSTPacket', serializedPacketJson);
 
   const { result: tsid } = await instance.dashCore.getApi().sendRawTransaction(header);
   await instance.dashCore.getApi().generate(1);

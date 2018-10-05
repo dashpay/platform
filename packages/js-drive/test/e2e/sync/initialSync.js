@@ -1,4 +1,3 @@
-const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
 const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
@@ -52,20 +51,23 @@ async function createAndSubmitST(
 
   const header = await createSTHeader(userId, privateKeyString, packet, previousTransitionHash);
 
-  const addSTPacket = addSTPacketFactory(instance.ipfs.getApi());
-  const packetCid = await addSTPacket(packet);
+  const serializedPacket = cbor.encodeCanonical(packet.toJSON({ skipMeta: true }));
+  const serializedPacketJson = {
+    packet: serializedPacket.toString('hex'),
+  };
+  await instance.driveApi.getApi()
+    .request('addSTPacket', serializedPacketJson);
 
   const { result: tsId } = await instance.dashCore.getApi().sendRawTransaction(header);
   await instance.dashCore.getApi().generate(1);
 
-  return { packetCid, tsId };
+  return { tsId };
 }
 
 describe('Initial sync of Dash Drive and Dash Core', function main() {
   let firstDashDrive;
   let secondDashDrive;
 
-  let packetsCids;
   let packetsData;
 
   let users;
@@ -75,7 +77,6 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
   this.timeout(900000);
 
   before('having Dash Drive node #1 up and ready, some amount of STs generated and Dash Drive on node #1 fully synced', async () => {
-    packetsCids = [];
     packetsData = getStateTransitionPackets();
     users = [];
 
@@ -99,16 +100,13 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     }
 
     // 3. Create DAP Contract
-    let packetCid;
-    ({ packetCid, tsId: dapId } = await createAndSubmitST(
+    ({ tsId: dapId } = await createAndSubmitST(
       users[0].userId,
       users[0].privateKeyString,
       users[0].username,
       packetsData[0],
       firstDashDrive,
     ));
-
-    packetsCids.push(packetCid);
 
     // 4. Register a bunch of `user` DAP Objects (for every blockchain user)
     let prevTransitionId;
@@ -141,7 +139,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
 
       user.userData = userData;
 
-      ({ packetCid, tsId: user.prevTransitionId } = await createAndSubmitST(
+      ({ tsId: user.prevTransitionId } = await createAndSubmitST(
         user.userId,
         user.privateKeyString,
         user.username,
@@ -149,8 +147,6 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
         firstDashDrive,
         prevTransitionId,
       ));
-
-      packetsCids.push(packetCid);
     }
   });
 
