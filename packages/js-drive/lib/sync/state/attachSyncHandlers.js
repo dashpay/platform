@@ -20,6 +20,7 @@ function attachSyncHandlers(stHeadersReader, syncState, syncStateRepository) {
   stHeadersReader.on(STHeadersReader.EVENTS.STALE_BLOCK, saveState);
 
   stHeadersReader.on(STHeadersReader.EVENTS.END, async () => {
+    syncState.setBlocks(readerState.getBlocks());
     syncState.setLastSyncAt(new Date());
 
     await syncStateRepository.store(syncState);
