@@ -18,9 +18,10 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
    */
   async function applyStateTransition(header, block) {
     const stHeader = new StateTransitionHeader(header);
-    const cid = stHeader.getPacketCID();
-    const packetData = await ipfs.dag.get(cid);
-    const packet = new StateTransitionPacket(packetData.value);
+
+    const { value: packetData } = await ipfs.dag.get(stHeader.getPacketCID());
+
+    const packet = new StateTransitionPacket(packetData);
 
     if (packet.dapcontract) {
       const dapId = doubleSha256(packet.dapcontract);

@@ -1,4 +1,4 @@
-const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
+const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
 const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
 
@@ -77,7 +77,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
   this.timeout(900000);
 
   before('having Dash Drive node #1 up and ready, some amount of STs generated and Dash Drive on node #1 fully synced', async () => {
-    packetsData = getStateTransitionPackets();
+    packetsData = getTransitionPacketFixtures();
     users = [];
 
     // 1. Start first Dash Drive node
@@ -157,7 +157,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     await secondDashDrive.dashCore.connect(firstDashDrive.dashCore);
 
     // 4. Add ST packet to Drive
-    const packet = getStateTransitionPackets()[0];
+    const packet = getTransitionPacketFixtures()[0];
     const serializedPacket = cbor.encodeCanonical(packet.toJSON({ skipMeta: true }));
     const serializedPacketJson = {
       packet: serializedPacket.toString('hex'),

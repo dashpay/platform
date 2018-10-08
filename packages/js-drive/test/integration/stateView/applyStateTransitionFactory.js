@@ -7,7 +7,6 @@ const {
     startIPFS,
   },
 } = require('@dashevo/js-evo-services-ctl');
-const hashSTPacket = require('../../../lib/test/consensus/hashSTPacket');
 const updateDapContractFactory = require('../../../lib/stateView/dapContract/updateDapContractFactory');
 const updateDapObjectFactory = require('../../../lib/stateView/dapObject/updateDapObjectFactory');
 const applyStateTransitionFactory = require('../../../lib/stateView/applyStateTransitionFactory');
@@ -16,7 +15,7 @@ const sanitizeData = require('../../../lib/mongoDb/sanitizeData');
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
 const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
-
+const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
 const generateDapObjectId = require('../../../lib/stateView/dapObject/generateDapObjectId');
 
 const doubleSha256 = require('../../../lib/util/doubleSha256');
@@ -25,6 +24,7 @@ describe('applyStateTransitionFactory', () => {
   let mongoClient;
   let mongoDb;
   let ipfsClient;
+  let addSTPacket;
 
   startMongoDb().then(async (mongoDbInstance) => {
     mongoClient = await mongoDbInstance.getClient();
@@ -34,16 +34,17 @@ describe('applyStateTransitionFactory', () => {
     ipfsClient = await ipfsInstance.getApi();
   });
 
+  beforeEach(() => {
+    addSTPacket = addSTPacketFactory(ipfsClient);
+  });
+
   it('should compute DapContract state view', async () => {
     const block = getBlockFixtures()[0];
     const packet = getTransitionPacketFixtures()[0];
     const header = getTransitionHeaderFixtures()[0];
-    header.extraPayload.hashSTPacket = await hashSTPacket(packet);
+    header.extraPayload.hashSTPacket = packet.getHash();
 
-    await ipfsClient.dag.put(packet, {
-      format: 'dag-cbor',
-      hashAlg: 'sha2-256',
-    });
+    await addSTPacket(packet);
 
     const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
     const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
@@ -72,12 +73,9 @@ describe('applyStateTransitionFactory', () => {
     const block = getBlockFixtures()[1];
     const packet = getTransitionPacketFixtures()[1];
     const header = getTransitionHeaderFixtures()[1];
-    header.extraPayload.hashSTPacket = await hashSTPacket(packet);
+    header.extraPayload.hashSTPacket = packet.getHash();
 
-    await ipfsClient.dag.put(packet, {
-      format: 'dag-cbor',
-      hashAlg: 'sha2-256',
-    });
+    await addSTPacket(packet);
 
     const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
     const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(

@@ -2,11 +2,11 @@ const DapContract = require('./DapContract');
 
 class DapContractMongoDbRepository {
   /**
-   * @param {Db} mongoClient
+   * @param {Db} mongoDb
    * @param {sanitizeData} sanitizeData
    */
-  constructor(mongoClient, { sanitize, unsanitize }) {
-    this.mongoClient = mongoClient.collection('dapContracts');
+  constructor(mongoDb, { sanitize, unsanitize }) {
+    this.collection = mongoDb.collection('dapContracts');
     this.sanitize = sanitize;
     this.unsanitize = unsanitize;
   }
@@ -18,7 +18,7 @@ class DapContractMongoDbRepository {
    * @returns {Promise<DapContract>}
    */
   async find(dapId) {
-    const result = await this.mongoClient.findOne({ _id: dapId });
+    const result = await this.collection.findOne({ _id: dapId });
     const dapContractData = this.unsanitize(result || {});
     return new DapContract(
       dapContractData.dapId,
@@ -37,7 +37,7 @@ class DapContractMongoDbRepository {
   async store(dapContract) {
     const dapContractData = dapContract.toJSON();
 
-    return this.mongoClient.updateOne(
+    return this.collection.updateOne(
       { _id: dapContractData.dapId },
       { $set: this.sanitize(dapContractData) },
       { upsert: true },

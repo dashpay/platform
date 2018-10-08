@@ -10,15 +10,12 @@ module.exports = function addSTPacketFactory(ipfsApi) {
    *
    * @typedef addSTPacket
    * @param {StateTransitionPacket} packet State Transition packet
-   * @return {string}
+   * @return {Promise<CID>}
    */
   async function addSTPacket(packet) {
-    const cid = await ipfsApi.dag.put(
-      packet.toJSON({ skipMeta: true }),
-      { format: 'dag-cbor', hashAlg: 'sha2-256' },
-    );
+    const packetData = packet.toJSON({ skipMeta: true });
 
-    return cid.toBaseEncodedString();
+    return ipfsApi.dag.put(packetData, { cid: packet.getCID() });
   }
 
   return addSTPacket;

@@ -1,15 +1,21 @@
-const addSTPacketMethodFactory = require('../../../../lib/api/methods/addSTPacketMethodFactory');
-const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 const cbor = require('cbor');
 const fs = require('fs');
 const path = require('path');
 
+const addSTPacketMethodFactory = require('../../../../lib/api/methods/addSTPacketMethodFactory');
+const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
+
+const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
+
 describe('addSTPacketMethod', () => {
   let addSTPacket;
   let addSTPacketMethod;
+  let cid;
+  const packet = getTransitionPacketFixtures()[0];
 
   beforeEach(function beforeEach() {
-    addSTPacket = this.sinon.stub();
+    cid = packet.getCID();
+    addSTPacket = this.sinon.stub().returns(cid);
     addSTPacketMethod = addSTPacketMethodFactory(addSTPacket);
   });
 
@@ -28,8 +34,9 @@ describe('addSTPacketMethod', () => {
 
     const serializedPacket = cbor.encodeCanonical(packetsData[0]);
 
-    await addSTPacketMethod({ packet: serializedPacket.toString('hex') });
+    const cidString = await addSTPacketMethod({ packet: serializedPacket.toString('hex') });
 
     expect(addSTPacket).to.be.calledOnce();
+    expect(cidString).to.be.equal(cid.toBaseEncodedString());
   });
 });

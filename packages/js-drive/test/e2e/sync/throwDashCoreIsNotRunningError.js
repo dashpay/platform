@@ -6,7 +6,7 @@ const {
 const wait = require('../../../lib/util/wait');
 
 describe('DashDrive throws DashCoreIsNotRunningError', function main() {
-  this.timeout(90000);
+  this.timeout(120000);
 
   let driveApi;
   let driveSync;
@@ -25,7 +25,7 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
     await Promise.all([
       driveApi.start(),
       driveSync.start(),
-      wait(12000), // Waiting for `npm i`
+      wait(20000), // Waiting for `npm i`
     ]);
   });
 

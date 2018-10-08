@@ -28,7 +28,9 @@ module.exports = function addSTPacketMethodFactory(addSTPacket) {
       throw new InvalidParamsError(`Invalid "packet" param: ${e.message}`);
     }
 
-    return addSTPacket(packet);
+    const cid = await addSTPacket(packet);
+
+    return cid.toBaseEncodedString();
   }
 
   return addSTPacketMethod;

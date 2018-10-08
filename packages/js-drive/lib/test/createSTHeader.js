@@ -1,7 +1,5 @@
 const { PrivateKey, Transaction } = require('@dashevo/dashcore-lib');
 
-const hashSTPacket = require('./consensus/hashSTPacket');
-
 /**
  * Create DAP contract state transaction packet and header
  *
@@ -11,14 +9,12 @@ const hashSTPacket = require('./consensus/hashSTPacket');
  * @param {string} hashPrevSubTx
  * @returns {Promise<Transaction>}
  */
-async function createSTHeader(regTxId, privateKeyString, tsp, hashPrevSubTx = undefined) {
+function createSTHeader(regTxId, privateKeyString, tsp, hashPrevSubTx = undefined) {
   const privateKey = new PrivateKey(privateKeyString);
-
-  const stPacketHash = await hashSTPacket(tsp.toJSON({ skipMeta: true }));
 
   const extraPayload = {
     version: 1,
-    hashSTPacket: stPacketHash,
+    hashSTPacket: tsp.getHash(),
     regTxId,
     creditFee: 1001,
     hashPrevSubTx: (hashPrevSubTx || regTxId),

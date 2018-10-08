@@ -19,7 +19,9 @@ function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
   stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header }) => {
-    const pinPromise = ipfsAPI.pin.add(header.getPacketCID(), { recursive: true });
+    const packetPath = header.getPacketCID().toBaseEncodedString();
+
+    const pinPromise = ipfsAPI.pin.add(packetPath, { recursive: true });
     const error = new InvalidPacketCidError();
 
     await rejectAfter(pinPromise, error, PIN_REJECTION_TIMEOUT);
@@ -38,7 +40,8 @@ function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
         break;
       }
 
-      await ipfsAPI.pin.rm(header.getPacketCID(), { recursive: true });
+      const packetPath = header.getPacketCID().toBaseEncodedString();
+      await ipfsAPI.pin.rm(packetPath, { recursive: true });
     }
   });
 

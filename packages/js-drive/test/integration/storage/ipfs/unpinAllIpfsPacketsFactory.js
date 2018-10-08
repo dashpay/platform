@@ -1,24 +1,29 @@
 const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
 const unpinAllIpfsPacketsFactory = require('../../../../lib/storage/ipfs/unpinAllIpfsPacketsFactory');
+const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
+const addSTPacketFactory = require('../../../../lib/storage/ipfs/addSTPacketFactory');
 
-async function addPinPacket(ipfsApi) {
-  const packet = {};
-  const cid = await ipfsApi.dag.put(packet, { format: 'dag-cbor', hashAlg: 'sha2-256' });
-  await ipfsApi.pin.add(cid.toBaseEncodedString(), { recursive: true });
-  return cid.toBaseEncodedString();
-}
-
-const byCid = cid => object => object.hash === cid;
+const byCid = cid => object => object.hash === cid.toBaseEncodedString();
 
 describe('unpinAllIpfsPacketsFactory', () => {
   let ipfsInstance;
+  let addSTPacket;
+
   startIPFS().then((instance) => {
     ipfsInstance = instance;
   });
 
+  beforeEach(() => {
+    addSTPacket = addSTPacketFactory(ipfsInstance.getApi());
+  });
+
   it('should unpin all blocks in IPFS', async () => {
+    const packet = getTransitionPacketFixtures()[0];
+
     const ipfsApi = ipfsInstance.getApi();
-    const cid = await addPinPacket(ipfsApi);
+
+    const cid = await addSTPacket(packet);
+    await ipfsApi.pin.add(cid.toBaseEncodedString(), { recursive: true });
 
     const pinsetBefore = await ipfsApi.pin.ls();
     const filterBefore = pinsetBefore.filter(byCid(cid));

@@ -2,4 +2,5 @@
 describe('DapObject', () => {
   require('./createDapObjectMongoDbRepositoryFactory');
   require('./DapObjectMongoDbRepository');
+  require('./fetchDapObjectsFactory');
 });
