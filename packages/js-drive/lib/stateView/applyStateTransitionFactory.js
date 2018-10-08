@@ -1,6 +1,7 @@
 const StateTransitionHeader = require('../blockchain/StateTransitionHeader');
 const StateTransitionPacket = require('../storage/StateTransitionPacket');
 const Reference = require('./Reference');
+const doubleSha256 = require('../util/doubleSha256');
 
 /**
  * @param {IpfsAPI} ipfs
@@ -22,7 +23,7 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
     const packet = new StateTransitionPacket(packetData.value);
 
     if (packet.dapcontract) {
-      const dapId = header.txid;
+      const dapId = doubleSha256(packet.dapcontract);
       const reference = new Reference(
         block.hash,
         block.height,

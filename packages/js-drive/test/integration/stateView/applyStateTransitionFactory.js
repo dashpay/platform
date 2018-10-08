@@ -19,14 +19,16 @@ const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTrans
 
 const generateDapObjectId = require('../../../lib/stateView/dapObject/generateDapObjectId');
 
+const doubleSha256 = require('../../../lib/util/doubleSha256');
+
 describe('applyStateTransitionFactory', () => {
   let mongoClient;
   let mongoDb;
   let ipfsClient;
 
   startMongoDb().then(async (mongoDbInstance) => {
-    mongoClient = mongoDbInstance.getClient();
-    mongoDb = mongoDbInstance.getDb();
+    mongoClient = await mongoDbInstance.getClient();
+    mongoDb = await mongoDbInstance.getDb();
   });
   startIPFS().then(async (ipfsInstance) => {
     ipfsClient = await ipfsInstance.getApi();
@@ -56,6 +58,14 @@ describe('applyStateTransitionFactory', () => {
       updateDapObject,
     );
     await applyStateTransition(header, block);
+
+    const dapId = doubleSha256(packet.dapcontract);
+
+    const dapContract = await dapContractMongoDbRepository.find(dapId);
+
+    expect(dapContract.getDapId()).to.be.equal(dapId);
+    expect(dapContract.getDapName()).to.be.equal(packet.dapcontract.dapname);
+    expect(dapContract.getSchema()).to.be.deep.equal(packet.dapcontract.schema);
   });
 
   it('should compute DapObject state view', async () => {
