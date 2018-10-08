@@ -25,7 +25,7 @@ describe('fetchDapContractMehotd', () => {
     const contract = new DapContract(dapId, dapName, packetHash, schema);
     dapContractMongoDbRepository.find.returns(contract);
 
-    const dapContract = await fetchDapContractMethod(dapId);
+    const dapContract = await fetchDapContractMethod({ dapId });
 
     expect(dapContract).to.be.deep.equal({
       dapId,

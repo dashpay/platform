@@ -10,12 +10,12 @@ module.exports = function fetchDapContractMethodFactory(dapContractRepository) {
    * @param {string} dapId
    * @returns {Promise<object>}
    */
-  async function fetchDapContractMethod(dapId) {
+  async function fetchDapContractMethod({ dapId }) {
     if (!dapId) {
       throw new InvalidParamsError();
     }
 
-    const dapContract = dapContractRepository.find(dapId);
+    const dapContract = await dapContractRepository.find(dapId);
     return dapContract.toJSON();
   }
 

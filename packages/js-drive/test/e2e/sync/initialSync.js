@@ -10,6 +10,8 @@ const createSTHeader = require('../../../lib/test/createSTHeader');
 const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 
 const wait = require('../../../lib/util/wait');
+const doubleSha256 = require('../../../lib/util/doubleSha256');
+
 const cbor = require('cbor');
 
 const apiAppOptions = new ApiAppOptions(process.env);
@@ -107,6 +109,17 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       packetsData[0],
       firstDashDrive,
     ));
+
+    // 3.1 Await Drive to sync
+    await dashDriveSyncToFinish(firstDashDrive.driveApi);
+
+    // 3.2 Check DAP Contract is in Drive and ok
+    const otherDapId = doubleSha256(packetsData[0].dapcontract);
+    const { result: dapContract } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: otherDapId });
+
+    expect(dapContract.dapId).to.be.equal(otherDapId);
+    expect(dapContract.dapName).to.be.equal(packetsData[0].dapcontract.dapname);
 
     // 4. Register a bunch of `user` DAP Objects (for every blockchain user)
     let prevTransitionId;
