@@ -43,20 +43,22 @@ describe('getSyncInfoFactory', () => {
   });
 
   describe('lastInitialSyncAt', () => {
-    it('should be null if SyncState does not have lastSyncAt', async () => {
+    it('should be null if SyncState does not have lastInitialSyncAt', async () => {
       const syncStateLastSyncAt = null;
-      const syncState = new SyncState(blocks, syncStateLastSyncAt);
+      const syncStateLastInitialSyncAt = null;
+      const syncState = new SyncState(blocks, syncStateLastSyncAt, syncStateLastInitialSyncAt);
       syncStateRepository.fetch.returns(syncState);
       const syncInfo = await getSyncInfo();
       expect(syncInfo.getLastInitialSyncAt()).to.be.deep.equal(syncStateLastSyncAt);
     });
 
-    it('should be equal to SyncState lastSyncAt', async () => {
+    it('should be equal to SyncState lastInitialSyncAt', async () => {
       const syncStateLastSyncAt = new Date();
-      const syncState = new SyncState(blocks, syncStateLastSyncAt);
+      const syncStateLastInitialSyncAt = new Date();
+      const syncState = new SyncState(blocks, syncStateLastSyncAt, syncStateLastInitialSyncAt);
       syncStateRepository.fetch.returns(syncState);
       const syncInfo = await getSyncInfo();
-      expect(syncInfo.getLastInitialSyncAt()).to.be.deep.equal(syncStateLastSyncAt);
+      expect(syncInfo.getLastInitialSyncAt()).to.be.deep.equal(syncStateLastInitialSyncAt);
     });
   });
 
@@ -77,9 +79,10 @@ describe('getSyncInfoFactory', () => {
       expect(syncInfo.getStatus()).to.be.deep.equal(SyncInfo.STATUSES.INITIAL_SYNC);
     });
 
-    it('should be syncing if SyncState has lastSyncAt and isBlochainSynced is false', async () => {
+    it('should be syncing if SyncState has lastSyncAt, lastInitialSyncAt and isBlochainSynced is false', async () => {
       const syncStateLastSyncAt = new Date();
-      const syncState = new SyncState(blocks, syncStateLastSyncAt);
+      const syncLastInitialSyncAt = new Date();
+      const syncState = new SyncState(blocks, syncStateLastSyncAt, syncLastInitialSyncAt);
       syncStateRepository.fetch.returns(syncState);
       const chainLastBlock = blocks[3];
       const isBlockchainSynced = false;
@@ -95,7 +98,8 @@ describe('getSyncInfoFactory', () => {
 
     it('should be synced if SyncState last block hash is equal to ChainInfo last block hash', async () => {
       const syncStateLastSyncAt = new Date();
-      const syncState = new SyncState(blocks, syncStateLastSyncAt);
+      const syncStateLastInitialSyncAt = new Date();
+      const syncState = new SyncState(blocks, syncStateLastSyncAt, syncStateLastInitialSyncAt);
       syncStateRepository.fetch.returns(syncState);
       const chainLastBlock = blocks[blocks.length - 1];
       const isBlockchainSynced = true;

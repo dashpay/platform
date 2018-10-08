@@ -42,10 +42,11 @@ describe('getSyncInfoMethodFactory', () => {
     });
   });
 
-  it('should be syncing if SyncState already exists', async () => {
+  it('should be initialSync if SyncState lastInitialSyncAt does not exist', async () => {
     const lastSyncedBlock = blocks[1];
     const lastSyncAt = new Date();
-    const syncState = new SyncState([lastSyncedBlock], lastSyncAt);
+    const lastInitialSyncAt = null;
+    const syncState = new SyncState([lastSyncedBlock], lastSyncAt, lastInitialSyncAt);
     await syncStateRepository.store(syncState);
 
     const syncInfo = await getSyncInfoMethod();
@@ -53,7 +54,26 @@ describe('getSyncInfoMethodFactory', () => {
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
-      lastInitialSyncAt: lastSyncAt,
+      lastInitialSyncAt,
+      lastChainBlockHeight: 0,
+      lastChainBlockHash: '000008ca1832a4baf228eb1553c03d3a2c8e02399550dd6ea8d65cec3ef23d2e',
+      status: 'initialSync',
+    });
+  });
+
+  it('should be syncing if SyncState lastInitialSyncAt already exists', async () => {
+    const lastSyncedBlock = blocks[1];
+    const lastSyncAt = new Date();
+    const lastInitialSyncAt = new Date();
+    const syncState = new SyncState([lastSyncedBlock], lastSyncAt, lastInitialSyncAt);
+    await syncStateRepository.store(syncState);
+
+    const syncInfo = await getSyncInfoMethod();
+    expect(syncInfo).to.be.deep.equal({
+      lastSyncedBlockHeight: lastSyncedBlock.height,
+      lastSyncedBlockHash: lastSyncedBlock.hash,
+      lastSyncAt,
+      lastInitialSyncAt,
       lastChainBlockHeight: 0,
       lastChainBlockHash: '000008ca1832a4baf228eb1553c03d3a2c8e02399550dd6ea8d65cec3ef23d2e',
       status: 'syncing',
@@ -63,7 +83,8 @@ describe('getSyncInfoMethodFactory', () => {
   it('should have lastChainBlock info if new blocks are generated', async () => {
     const lastSyncedBlock = blocks[1];
     const lastSyncAt = new Date();
-    const syncState = new SyncState([lastSyncedBlock], lastSyncAt);
+    const lastInitialSyncAt = new Date();
+    const syncState = new SyncState([lastSyncedBlock], lastSyncAt, lastInitialSyncAt);
     await syncStateRepository.store(syncState);
 
     const { result: chainBlocksHashes } = await rpcClient.generate(20);
@@ -74,7 +95,7 @@ describe('getSyncInfoMethodFactory', () => {
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
-      lastInitialSyncAt: lastSyncAt,
+      lastInitialSyncAt,
       lastChainBlockHeight: chainBlocksHashes.length,
       lastChainBlockHash,
       status: 'syncing',

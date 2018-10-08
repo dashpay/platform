@@ -28,7 +28,7 @@ describe('attachSyncHandlers', () => {
     // Mock SyncState
     syncState = new SyncState([], new Date());
     this.sinon.stub(syncState, 'setBlocks');
-    this.sinon.stub(syncState, 'setLastSyncAt');
+    this.sinon.stub(syncState, 'updateLastSyncAt');
 
     // Mock SyncStateRepository
     class SyncStateRepository {
@@ -72,8 +72,8 @@ describe('attachSyncHandlers', () => {
       blocks[blocks.length - 1].height,
     );
 
-    expect(syncState.setLastSyncAt).to.be.calledOnce();
-    expect(syncState.setLastSyncAt).to.be.calledWith(new Date());
+    expect(syncState.updateLastSyncAt).to.be.calledOnce();
+    expect(syncState.updateLastSyncAt).to.be.calledWith(new Date());
 
     expect(syncStateRepositoryMock.store).to.be.calledOnce();
     expect(syncStateRepositoryMock.store).to.be.calledWith(syncState);

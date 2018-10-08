@@ -2,10 +2,12 @@ class SyncState {
   /**
    * @param {Object[]} blocks
    * @param {Date} lastSyncAt
+   * @param {Date} [lastInitialSyncAt]
    */
-  constructor(blocks, lastSyncAt) {
+  constructor(blocks, lastSyncAt, lastInitialSyncAt) {
     this.setBlocks(blocks);
     this.setLastSyncAt(lastSyncAt);
+    this.setLastInitialSyncAt(lastInitialSyncAt);
   }
 
   /**
@@ -51,10 +53,18 @@ class SyncState {
    * @return {number}
    */
   setLastSyncAt(date) {
-    if (!this.lastSyncAt) {
-      this.setLastInitialSyncAt(date);
-    }
+    this.lastSyncAt = date;
+  }
 
+  /**
+   * Update last sync date
+   *
+   * @param {Date} date
+   */
+  updateLastSyncAt(date) {
+    if (!this.getLastInitialSyncAt()) {
+      this.lastInitialSyncAt = date;
+    }
     this.lastSyncAt = date;
   }
 

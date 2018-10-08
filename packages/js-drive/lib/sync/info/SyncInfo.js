@@ -86,7 +86,7 @@ class SyncInfo {
    * @returns {string}
    */
   getStatus() {
-    if (!this.lastSyncAt) {
+    if (!this.lastSyncAt || !this.lastInitialSyncAt) {
       return SyncInfo.STATUSES.INITIAL_SYNC;
     }
 

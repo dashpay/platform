@@ -50,6 +50,25 @@ describe('SyncInfo', () => {
       expect(syncInfo.getStatus()).to.be.equal(SyncInfo.STATUSES.INITIAL_SYNC);
     });
 
+    it('should be INITIAL_SYNC if has not lastInitialSyncAt', async () => {
+      const lastSyncedBlock = blocks[0];
+      const lastChainBlock = blocks[3];
+      const lastSyncAt = null;
+      const lastInitialSyncAt = null;
+      const isBlockChainSynced = false;
+
+      const syncInfo = new SyncInfo(
+        lastSyncedBlock.height,
+        lastSyncedBlock.hash,
+        lastSyncAt,
+        lastInitialSyncAt,
+        lastChainBlock.height,
+        lastChainBlock.hash,
+        isBlockChainSynced,
+      );
+      expect(syncInfo.getStatus()).to.be.equal(SyncInfo.STATUSES.INITIAL_SYNC);
+    });
+
     it('should be SYNCING if has lastSyncAt and isBlockchainSynced is false', async () => {
       const lastSyncedBlock = blocks[0];
       const lastChainBlock = blocks[3];

@@ -78,27 +78,46 @@ describe('SyncState', () => {
     expect(anotherState.isEmpty()).to.be.false();
   });
 
-  it('should set lastInitialSyncAt if lastSyncAt does not exist yet', () => {
-    const lastSyncAt = null;
-    const syncState = new SyncState(blocks, lastSyncAt);
-
-    const firstLastSyncAt = new Date();
-    syncState.setLastSyncAt(firstLastSyncAt);
-
-    expect(syncState.getLastSyncAt()).to.be.equal(firstLastSyncAt);
-    expect(syncState.getLastInitialSyncAt()).to.be.equal(firstLastSyncAt);
-  });
-
-  it('should only update lastSyncAt if setLastSyncAt is called several times', () => {
+  it('should only update lastInitialSyncAt one time if updateLastSync is called several times', () => {
     const firstLastSyncAt = new Date();
     const syncState = new SyncState(blocks, firstLastSyncAt);
 
     const secondLastSyncAt = new Date();
-    syncState.setLastSyncAt(secondLastSyncAt);
+    syncState.updateLastSyncAt(secondLastSyncAt);
     const thirdLastSyncAt = new Date();
-    syncState.setLastSyncAt(thirdLastSyncAt);
+    syncState.updateLastSyncAt(thirdLastSyncAt);
 
     expect(syncState.getLastSyncAt()).to.be.equal(thirdLastSyncAt);
-    expect(syncState.getLastInitialSyncAt()).to.be.equal(firstLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.be.equal(secondLastSyncAt);
+  });
+
+  it('should have lastInitialSyncAt equal to null if lastInitialSyncAt not provided', () => {
+    const firstLastSyncAt = new Date();
+    const lastInitialSyncAt = null;
+    const syncState = new SyncState(blocks, firstLastSyncAt, lastInitialSyncAt);
+
+    expect(syncState.getLastSyncAt()).to.be.equal(firstLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.be.equal(null);
+  });
+
+  it('should have equal differents lastInitialSyncAt and lastSyncAt if lastInitialSyncAt is provided', () => {
+    const firstLastSyncAt = new Date();
+    const lastInitialSyncAt = new Date();
+    const syncState = new SyncState(blocks, firstLastSyncAt, lastInitialSyncAt);
+
+    expect(syncState.getLastSyncAt()).to.be.equal(firstLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.be.equal(lastInitialSyncAt);
+  });
+
+  it('should not update lastInitialSyncAt provided when setLastSyncAt', () => {
+    const firstLastSyncAt = new Date();
+    const lastInitialSyncAt = new Date();
+    const syncState = new SyncState(blocks, firstLastSyncAt, lastInitialSyncAt);
+
+    const secondLastSyncAt = new Date();
+    syncState.setLastSyncAt(secondLastSyncAt);
+
+    expect(syncState.getLastSyncAt()).to.be.equal(secondLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.be.equal(lastInitialSyncAt);
   });
 });

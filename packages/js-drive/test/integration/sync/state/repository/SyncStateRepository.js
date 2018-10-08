@@ -20,7 +20,7 @@ describe('SyncStateRepository', function main() {
     mongoDb = await instance.getDb();
     mongoCollection = mongoDb.collection('syncState');
     const blocks = getBlockFixtures();
-    syncState = new SyncState(blocks, new Date());
+    syncState = new SyncState(blocks, new Date(), new Date());
     syncStateRepository = new SyncStateRepository(mongoDb);
   });
 
@@ -36,7 +36,8 @@ describe('SyncStateRepository', function main() {
     expect(dataFromMongoDb).to.be.deep.equals(syncState.toJSON());
   });
 
-  it('should fetch state', async () => {
+  it('should fetch updated state', async () => {
+    syncState.setLastInitialSyncAt(new Date('2018-01-01'));
     await mongoCollection.updateOne(
       SyncStateRepository.mongoDbCondition,
       { $set: syncState.toJSON() },

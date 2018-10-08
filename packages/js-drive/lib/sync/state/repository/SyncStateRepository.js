@@ -32,11 +32,12 @@ class SyncStateRepository {
 
     let blocks = [];
     let lastSyncAt = null;
+    let lastInitialSyncAt = null;
     if (stateData) {
-      ({ blocks, lastSyncAt } = stateData);
+      ({ blocks, lastSyncAt, lastInitialSyncAt } = stateData);
     }
 
-    return new SyncState(blocks, lastSyncAt);
+    return new SyncState(blocks, lastSyncAt, lastInitialSyncAt);
   }
 
   /**
