@@ -1,6 +1,8 @@
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
 
+const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
+
 const registerUser = require('../../../lib/test/registerUser');
 const createSTHeader = require('../../../lib/test/createSTHeader');
 
@@ -8,6 +10,8 @@ const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 
 const wait = require('../../../lib/util/wait');
 const cbor = require('cbor');
+
+const apiAppOptions = new ApiAppOptions(process.env);
 
 async function createAndSubmitST(userId, privateKeyString, username, basePacketData, instance) {
   const packet = new StateTransitionPacket(basePacketData);
@@ -52,6 +56,31 @@ async function blockCountEvenAndEqual(
   }
 }
 
+/**
+ * Await Dash Drive instance to finish syncing
+ *
+ * @param {DriveApi} instance
+ * @returns {Promise<void>}
+ */
+async function dashDriveSyncToFinish(instance) {
+  let finished = false;
+  while (!finished) {
+    try {
+      const { result: syncInfo } = await instance.getApi()
+        .request('getSyncInfo', []);
+
+      if (syncInfo.status === 'synced') {
+        finished = true;
+        await wait(apiAppOptions.getSyncStateCheckInterval() * 1000);
+      } else {
+        await wait(1000);
+      }
+    } catch (e) {
+      await wait(1000);
+    }
+  }
+}
+
 describe('Blockchain reorganization', function main() {
   let firstDashDrive;
   let secondDashDrive;
@@ -62,6 +91,8 @@ describe('Blockchain reorganization', function main() {
   let transitionsAfterDisconnect;
 
   let registeredUsers;
+
+  let initialSyncBeforeReconnectAt;
 
   const BLOCKS_PER_ST = 1;
   const BLOCKS_PER_REGISTRATION = 108;
@@ -126,22 +157,10 @@ describe('Blockchain reorganization', function main() {
     );
 
     // Await first Dash Drive sync
-    for (let i = 0; i < 120; i++) {
-      const lsResult = await firstDashDrive.ipfs.getApi().pin.ls();
-      const lsHashes = lsResult.map(item => item.hash);
-
-      if (lsHashes.indexOf(packetsCids[0]) !== -1 && lsHashes.indexOf(packetsCids[1]) !== -1) {
-        break;
-      }
-
-      await wait(1000);
-    }
+    await dashDriveSyncToFinish(firstDashDrive.driveApi);
   });
 
   it('Dash Drive should sync data after blockchain reorganization, removing missing STs. Adding them back after they reappear in the blockchain.', async () => {
-    // Store current CIDs to test initial sync later
-    const packetsBeforeDisconnect = packetsCids.slice();
-
     // 4. Disconnecting nodes to start introducing difference in blocks
     firstDashDrive.dashCore.disconnect(secondDashDrive.dashCore);
 
@@ -205,11 +224,14 @@ describe('Blockchain reorganization', function main() {
       expect(blockCount).to.be.equal(expectedBlockCount);
     }
 
-    // Remove CIDs on node #1 added before disconnect
-    const rmPormises = packetsBeforeDisconnect.map(cid => firstDashDrive.ipfs.getApi().pin.rm(cid));
-    await Promise.all(rmPormises);
+    // Await for Drive to sync
+    await dashDriveSyncToFinish(firstDashDrive.driveApi);
 
-    await wait(30000);
+    // Store `lastInitialSyncAt` to check later that no
+    // initial sync happened after reconnect
+    ({ result: { lastInitialSyncAt: initialSyncBeforeReconnectAt } } = await firstDashDrive
+      .driveApi.getApi()
+      .request('getSyncInfo', []));
 
     // 9. Reconnect nodes
     await firstDashDrive.dashCore.connect(secondDashDrive.dashCore);
@@ -231,7 +253,7 @@ describe('Blockchain reorganization', function main() {
     }
 
     // 11. Await Dash Drive to sync
-    await wait(20000);
+    await dashDriveSyncToFinish(secondDashDrive.driveApi);
 
     // 12. Check packet CIDs added after disconnect does not appear in Dash Drive
     {
@@ -251,18 +273,19 @@ describe('Blockchain reorganization', function main() {
         expect(lsHashes).to.not.include(cid);
       });
 
-      // Also check removed packets are not present on node #1
-      // This will indicated no initial sync has happened
-      packetsBeforeDisconnect.forEach((cid) => {
-        expect(lsHashes).to.not.include(cid);
-      });
+      // Check `lastInitialSyncAt is not changed
+      // This will indicate no initial sync happened after reconnect
+      const { result: { lastInitialSyncAt } } = await firstDashDrive.driveApi.getApi()
+        .request('getSyncInfo', []);
+
+      expect(lastInitialSyncAt).to.be.equal(initialSyncBeforeReconnectAt);
     }
 
     // 13. Generate more blocks so TSes reappear on the blockchain
     await firstDashDrive.dashCore.getApi().generate(10);
 
     // 14. Await Dash Drive to sync
-    await wait(20000);
+    await dashDriveSyncToFinish(secondDashDrive.driveApi);
 
     // 15. Check CIDs reappear in Dash Drive
     {

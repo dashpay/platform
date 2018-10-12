@@ -30,7 +30,6 @@ const errorHandler = require('../lib/util/errorHandler');
   attachStateViewHandlers(stHeaderReader, applyStateTransition, dropMongoDatabasesWithPrefix);
 
   const readChain = readChainFactory(stHeaderReader, rpcClient, syncState, cleanDashDrive);
-  await readChain();
 
   // Sync arriving ST packets
   const zmqSocket = zmq.createSocket('sub');
@@ -42,4 +41,6 @@ const errorHandler = require('../lib/util/errorHandler');
   });
 
   zmqSocket.subscribe('hashblock');
+
+  await readChain();
 }()).catch(errorHandler);

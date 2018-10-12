@@ -31,6 +31,7 @@ async function setMostCurrentBlockHeight(stHeadersReader, rpcClient, syncState, 
  */
 function readChainFactory(stHeadersReader, rpcClient, syncState, cleanDashDrive) {
   let isInSync = false;
+  let wasCalledDuringSync = false;
 
   /**
    * @typedef {Promise} readChain
@@ -40,6 +41,9 @@ function readChainFactory(stHeadersReader, rpcClient, syncState, cleanDashDrive)
   async function readChain(sinceBlockHash) {
     try {
       if (isInSync) {
+        if (sinceBlockHash) {
+          wasCalledDuringSync = true;
+        }
         return;
       }
       isInSync = true;
@@ -48,6 +52,11 @@ function readChainFactory(stHeadersReader, rpcClient, syncState, cleanDashDrive)
 
       await stHeadersReader.read();
       isInSync = false;
+
+      if (wasCalledDuringSync) {
+        wasCalledDuringSync = false;
+        await readChain();
+      }
     } catch (error) {
       if (error.message === 'Block height out of range' && !syncState.isEmpty()) {
         await cleanDashDrive();

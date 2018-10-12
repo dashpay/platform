@@ -1,5 +1,7 @@
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
+const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
+
 const registerUser = require('../../../lib/test/registerUser');
 const createSTHeader = require('../../../lib/test/createSTHeader');
 
@@ -8,6 +10,8 @@ const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 const wait = require('../../../lib/util/wait');
 const cbor = require('cbor');
 
+const apiAppOptions = new ApiAppOptions(process.env);
+
 /**
  * Await Dash Drive instance to finish syncing
  *
@@ -15,19 +19,15 @@ const cbor = require('cbor');
  * @returns {Promise<void>}
  */
 async function dashDriveSyncToFinish(instance) {
-  const packet = getStateTransitionPackets()[0];
-  const serializedPacket = cbor.encodeCanonical(packet);
-  const serializedPacketJson = {
-    packet: serializedPacket.toString('hex'),
-  };
-
   let finished = false;
   while (!finished) {
     try {
-      const response = await instance.getApi()
-        .request('addSTPacket', serializedPacketJson);
-      if (response.result) {
+      const { result: syncInfo } = await instance.getApi()
+        .request('getSyncInfo', []);
+
+      if (syncInfo.status === 'synced') {
         finished = true;
+        await wait(apiAppOptions.getSyncStateCheckInterval() * 1000);
       } else {
         await wait(1000);
       }
