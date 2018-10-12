@@ -132,8 +132,8 @@ class STHeadersReader extends Emittery {
         // current block's height is not initial blocks height
         return true;
       }
-    } else if (currentBlock.height < previousBlock.height &&
-      previousBlock.height - currentBlock.height - 2 > this.state.getBlocksLimit()) {
+    } else if (currentBlock.height < previousBlock.height
+      && previousBlock.height - currentBlock.height - 2 > this.state.getBlocksLimit()) {
       // The state doesn't contain previous block for current block
       return true;
     }
@@ -149,9 +149,9 @@ class STHeadersReader extends Emittery {
    */
   // eslint-disable-next-line class-methods-use-this
   isWrongSequence(currentBlock, previousBlock) {
-    return previousBlock &&
-      currentBlock.previousblockhash &&
-      currentBlock.previousblockhash !== previousBlock.hash;
+    return previousBlock
+      && currentBlock.previousblockhash
+      && currentBlock.previousblockhash !== previousBlock.hash;
   }
 
   /**

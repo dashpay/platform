@@ -18,8 +18,8 @@ describe('fetchDapObjectsMethod', () => {
     fetchDapObjectsMethod = fetchDapObjectsMethodFactory(fetchDapObjects);
   });
 
-  it('should throw InvalidParamsError if DAP id is not provided', () => {
-    expect(fetchDapObjectsMethod()).to.be.rejectedWith(InvalidParamsError);
+  it('should throw InvalidParamsError if DAP ID is not provided', () => {
+    expect(fetchDapObjectsMethod({})).to.be.rejectedWith(InvalidParamsError);
   });
 
   it('should throw InvalidParamsError if InvalidWhereError is thrown', () => {

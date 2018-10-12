@@ -1,7 +1,7 @@
+const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
 const SyncState = require('../../../../../lib/sync/state/SyncState');
 const SyncStateRepository = require('../../../../../lib/sync/state/repository/SyncStateRepository');
 const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlockFixtures');
-const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
 
 describe('SyncStateRepository', function main() {
   this.timeout(90000);
@@ -27,8 +27,7 @@ describe('SyncStateRepository', function main() {
   it('should store state', async () => {
     await syncStateRepository.store(syncState);
 
-    const dataFromMongoDb =
-      await mongoCollection.findOne(SyncStateRepository.mongoDbCondition);
+    const dataFromMongoDb = await mongoCollection.findOne(SyncStateRepository.mongoDbCondition);
 
     // eslint-disable-next-line no-underscore-dangle
     delete dataFromMongoDb._id;
@@ -59,4 +58,3 @@ describe('SyncStateRepository', function main() {
     });
   });
 });
-

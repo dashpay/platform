@@ -7,15 +7,15 @@ const InvalidParamsError = require('../InvalidParamsError');
 module.exports = function fetchDapContractMethodFactory(dapContractRepository) {
   /**
    * @typedef fetchDapContractMethod
-   * @param {string} dapId
+   * @param {{ dapId: string }} params
    * @returns {Promise<object>}
    */
-  async function fetchDapContractMethod({ dapId }) {
-    if (!dapId) {
+  async function fetchDapContractMethod(params) {
+    if (!params.dapId) {
       throw new InvalidParamsError();
     }
 
-    const dapContract = await dapContractRepository.find(dapId);
+    const dapContract = await dapContractRepository.find(params.dapId);
     return dapContract.toJSON();
   }
 

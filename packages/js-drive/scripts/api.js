@@ -32,4 +32,3 @@ const errorHandler = require('../lib/util/errorHandler');
     apiAppOptions.getApiRpcHost,
   );
 }()).catch(errorHandler);
-

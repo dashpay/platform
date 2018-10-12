@@ -1,12 +1,13 @@
-const createDapObjectMongoDbRepositoryFactory = require('../../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
-const DapObjectMongoDbRepository = require('../../../lib/stateView/dapObject/DapObjectMongoDbRepository');
-const DapContractMongoDbRepository = require('../../../lib/stateView/dapContract/DapContractMongoDbRepository');
 const {
   mocha: {
     startMongoDb,
     startIPFS,
   },
 } = require('@dashevo/js-evo-services-ctl');
+
+const createDapObjectMongoDbRepositoryFactory = require('../../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
+const DapObjectMongoDbRepository = require('../../../lib/stateView/dapObject/DapObjectMongoDbRepository');
+const DapContractMongoDbRepository = require('../../../lib/stateView/dapContract/DapContractMongoDbRepository');
 const updateDapContractFactory = require('../../../lib/stateView/dapContract/updateDapContractFactory');
 const updateDapObjectFactory = require('../../../lib/stateView/dapObject/updateDapObjectFactory');
 const applyStateTransitionFactory = require('../../../lib/stateView/applyStateTransitionFactory');

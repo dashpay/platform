@@ -3,8 +3,8 @@ xdescribe('Replication between two Dash Drive nodes', () => {
     // TODO: start Dash Drive nodes here
   });
 
-  it('Dash Drive should receive data from Dash Core once submitted, save it and update status. ' +
-     'Dash Drive on another node should replicate data from the first node.', () => {
+  it('Dash Drive should receive data from Dash Core once submitted, save it and update status. '
+     + 'Dash Drive on another node should replicate data from the first node.', () => {
     // TODO: get latest status
 
     // TODO: create data using Dash Core interface

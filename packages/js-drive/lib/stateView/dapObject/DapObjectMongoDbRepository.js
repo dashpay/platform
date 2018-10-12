@@ -56,8 +56,8 @@ class DapObjectMongoDbRepository {
     }
 
     if (
-      typeof options.startAt !== 'undefined' &&
-      typeof options.startAfter !== 'undefined'
+      typeof options.startAt !== 'undefined'
+      && typeof options.startAfter !== 'undefined'
     ) {
       throw new AmbiguousStartError();
     }

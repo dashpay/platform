@@ -1,5 +1,5 @@
 async function waitUntilBlockchainIsSynced(rpcClient, checkInterval) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     async function checkStatus() {
       const { result: { IsBlockchainSynced: isSynced } } = await rpcClient.mnsync('status');
       if (isSynced) {
@@ -7,7 +7,7 @@ async function waitUntilBlockchainIsSynced(rpcClient, checkInterval) {
       }
       return setTimeout(checkStatus, checkInterval * 1000);
     }
-    checkStatus();
+    checkStatus().catch(reject);
   });
 }
 
@@ -32,8 +32,8 @@ async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState) 
         return;
       }
 
-      if (syncState.getLastSyncAt() &&
-          (updatedSyncState.getLastSyncAt().getTime() === syncState.getLastSyncAt().getTime())) {
+      if (syncState.getLastSyncAt()
+          && (updatedSyncState.getLastSyncAt().getTime() === syncState.getLastSyncAt().getTime())) {
         return;
       }
 

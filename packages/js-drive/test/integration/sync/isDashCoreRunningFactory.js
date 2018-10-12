@@ -1,5 +1,5 @@
-const isDashCoreRunningFactory = require('../../../lib/sync/isDashCoreRunningFactory');
 const { mocha: { startDashCore } } = require('@dashevo/js-evo-services-ctl');
+const isDashCoreRunningFactory = require('../../../lib/sync/isDashCoreRunningFactory');
 
 describe('IsDashCoreRunning', () => {
   let dashCoreInstance;

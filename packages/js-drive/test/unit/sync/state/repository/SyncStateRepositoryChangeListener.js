@@ -1,6 +1,5 @@
 const SyncState = require('../../../../../lib/sync/state/SyncState');
-const SyncStateRepositoryChangeListener =
-  require('../../../../../lib/sync/state/repository/SyncStateRepositoryChangeListener');
+const SyncStateRepositoryChangeListener = require('../../../../../lib/sync/state/repository/SyncStateRepositoryChangeListener');
 
 const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlockFixtures');
 

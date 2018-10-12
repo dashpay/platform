@@ -13,18 +13,16 @@ const AmbiguousStartError = require('../../stateView/dapObject/errors/AmbiguousS
 module.exports = function fetchDapObjectsMethodFactory(fetchDapObjects) {
   /**
    * @typedef {Promise} fetchDapObjectsMethod
-   * @param {string} dapId
-   * @param {string} type
-   * @param {object} options
+   * @param {{ dapId: string, type: string, options: object }} params
    * @returns {Promise<object[]>}
    */
-  async function fetchDapObjectsMethod({ dapId, type, options } = {}) {
-    if (!dapId || !type) {
+  async function fetchDapObjectsMethod(params) {
+    if (!params.dapId || !params.type) {
       throw new InvalidParamsError();
     }
 
     try {
-      const dapObjects = await fetchDapObjects(dapId, type, options);
+      const dapObjects = await fetchDapObjects(params.dapId, params.type, params.options);
       return dapObjects.map(dapObject => dapObject.toJSON());
     } catch (error) {
       switch (error.constructor) {

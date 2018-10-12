@@ -79,7 +79,10 @@ describe('isSynced', () => {
       expect(changeListenerMock.removeListener).not.to.be.called();
 
       // State changed and sync is completed
-      const changedState = new SyncState(rpcClientMock.blocks, new Date());
+      const changeTime = new Date();
+      changeTime.setSeconds(changeTime.getSeconds() + 1);
+
+      const changedState = new SyncState(rpcClientMock.blocks, changeTime);
       changeListenerMock.emit('change', changedState);
 
       expect(changeListenerMock.removeListener).to.be.calledOnce();

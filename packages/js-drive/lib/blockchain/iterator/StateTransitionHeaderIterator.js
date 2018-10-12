@@ -33,7 +33,7 @@ class StateTransitionHeaderIterator {
    * @return {Promise<Object>}
    */
   async next() {
-    for (;;) {
+    for (; ;) {
       if (!this.currentBlock) {
         const { done, value: block } = await this.blockIterator.next();
 
@@ -48,8 +48,9 @@ class StateTransitionHeaderIterator {
       const transactionId = this.currentBlock.tx[this.currentTransactionIndex];
 
       if (transactionId) {
-        const { result: serializedTransactionHeader } =
-          await this.rpcClient.getRawTransaction(transactionId);
+        const {
+          result: serializedTransactionHeader,
+        } = await this.rpcClient.getRawTransaction(transactionId);
 
         this.currentTransactionIndex++;
 

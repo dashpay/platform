@@ -1,6 +1,6 @@
+const cbor = require('cbor');
 const StateTransitionPacket = require('../../storage/StateTransitionPacket');
 const InvalidParamsError = require('../InvalidParamsError');
-const cbor = require('cbor');
 
 /**
  * @param {addSTPacket} addSTPacket

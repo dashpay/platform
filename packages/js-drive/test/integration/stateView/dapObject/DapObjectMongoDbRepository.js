@@ -1,3 +1,4 @@
+const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
 const DapObject = require('../../../../lib/stateView/dapObject/DapObject');
 const Reference = require('../../../../lib/stateView/Reference');
 const DapObjectMongoDbRepository = require('../../../../lib/stateView/dapObject/DapObjectMongoDbRepository');
@@ -7,7 +8,6 @@ const InvalidLimitError = require('../../../../lib/stateView/dapObject/errors/In
 const InvalidStartAtError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAtError');
 const InvalidStartAfterError = require('../../../../lib/stateView/dapObject/errors/InvalidStartAfterError');
 const AmbiguousStartError = require('../../../../lib/stateView/dapObject/errors/AmbiguousStartError');
-const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
 
 let id = 1;
 function createDapObjectWithAge(age) {

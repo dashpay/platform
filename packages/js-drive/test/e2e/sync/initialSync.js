@@ -1,18 +1,18 @@
-const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
-
-const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
-
-const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
-
-const registerUser = require('../../../lib/test/registerUser');
-const createSTHeader = require('../../../lib/test/createSTHeader');
+const cbor = require('cbor');
 
 const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 
-const wait = require('../../../lib/util/wait');
-const doubleSha256 = require('../../../lib/util/doubleSha256');
+const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
-const cbor = require('cbor');
+const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
+const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
+
+const registerUser = require('../../../lib/test/registerUser');
+
+const createSTHeader = require('../../../lib/test/createSTHeader');
+const wait = require('../../../lib/util/wait');
+
+const doubleSha256 = require('../../../lib/util/doubleSha256');
 
 const apiAppOptions = new ApiAppOptions(process.env);
 
@@ -95,8 +95,13 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
         aboutMe: `Something about BC_USER_${i}`,
       };
 
-      ({ userId: user.userId, privateKeyString: user.privateKeyString } =
-       await registerUser(user.username, firstDashDrive.dashCore.getApi()));
+      ({
+        userId: user.userId,
+        privateKeyString: user.privateKeyString,
+      } = await registerUser(
+        user.username,
+        firstDashDrive.dashCore.getApi(),
+      ));
 
       users.push(user);
     }

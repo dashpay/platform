@@ -2,7 +2,7 @@ const fetchDapContractMethodFactory = require('../../../../lib/api/methods/fetch
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 const DapContract = require('../../../../lib/stateView/dapContract/DapContract');
 
-describe('fetchDapContractMehotd', () => {
+describe('fetchDapContractMethod', () => {
   let fetchDapContractMethod;
   let dapContractMongoDbRepository;
 
@@ -14,7 +14,7 @@ describe('fetchDapContractMehotd', () => {
   });
 
   it('should throw InvalidParamsError if DAP id is not provided', () => {
-    expect(fetchDapContractMethod()).to.be.rejectedWith(InvalidParamsError);
+    expect(fetchDapContractMethod({})).to.be.rejectedWith(InvalidParamsError);
   });
 
   it('should return DAP contract', async () => {

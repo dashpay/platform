@@ -57,9 +57,9 @@ describe('STHeadersReader', () => {
     expect(endHandlerStub).to.be.calledWith(blockIterator.getBlockHeight());
   });
 
-  it('should emit "reset" and read from initial block ' +
-    'if previous synced block is not present for sequence verifying and ' +
-    'current block height is different from initial block height', async function it() {
+  it('should emit "reset" and read from initial block '
+    + 'if previous synced block is not present for sequence verifying and '
+    + 'current block height is different from initial block height', async function it() {
     const syncedBlocks = [];
     const readerState = new STHeadersReaderState(syncedBlocks);
     const reader = new STHeadersReader(stateTransitionHeaderIterator, readerState);
@@ -87,8 +87,8 @@ describe('STHeadersReader', () => {
     });
   });
 
-  it('should emit "reset" and read from initial block ' +
-    'if synced blocks are behind current block for sequence verifying', async function it() {
+  it('should emit "reset" and read from initial block '
+    + 'if synced blocks are behind current block for sequence verifying', async function it() {
     const syncedBlockIndex = 1;
     const syncedBlock = rpcClientMock.blocks[syncedBlockIndex];
     const readerState = new STHeadersReaderState([syncedBlock]);

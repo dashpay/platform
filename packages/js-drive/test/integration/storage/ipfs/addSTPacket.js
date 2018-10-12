@@ -1,7 +1,6 @@
-const addSTPacketFactory = require('../../../../lib/storage/ipfs/addSTPacketFactory');
-
 const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
 
+const addSTPacketFactory = require('../../../../lib/storage/ipfs/addSTPacketFactory');
 const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
 
 describe('addSTPacket', () => {
