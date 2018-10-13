@@ -34,4 +34,11 @@ describe('fetchDapContractMethod', () => {
       schema,
     });
   });
+  it('should throw error if DAP Contract not found', async () => {
+    const dapId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
+
+    dapContractMongoDbRepository.find.returns(null);
+
+    expect(fetchDapContractMethod({ dapId })).to.be.rejectedWith(InvalidParamsError);
+  });
 });

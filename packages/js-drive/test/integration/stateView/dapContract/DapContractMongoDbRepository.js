@@ -22,13 +22,9 @@ describe('DapContractRepository', () => {
     expect(contract.toJSON()).to.deep.equal(dapContract.toJSON());
   });
 
-  it('should return empty DAP contract if not found', async () => {
-    const contract = await dapContractRepository.find();
+  it('should return null if not found', async () => {
+    const contract = await dapContractRepository.find('unknown');
 
-    const serializeContract = contract.toJSON();
-    expect(serializeContract.dapId).to.not.exist();
-    expect(serializeContract.dapName).to.not.exist();
-    expect(serializeContract.packetHash).to.not.exist();
-    expect(serializeContract.schema).to.not.exist();
+    expect(contract).to.be.null();
   });
 });

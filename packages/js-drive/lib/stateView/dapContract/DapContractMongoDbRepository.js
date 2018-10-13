@@ -15,17 +15,23 @@ class DapContractMongoDbRepository {
    * Find DapContract by dapId
    *
    * @param {string} dapId
-   * @returns {Promise<DapContract>}
+   * @returns {Promise<DapContract|null>}
    */
   async find(dapId) {
     const result = await this.collection.findOne({ _id: dapId });
-    const dapContractData = this.unsanitize(result || {});
-    return new DapContract(
-      dapContractData.dapId,
-      dapContractData.dapName,
-      dapContractData.packetHash,
-      dapContractData.schema,
-    );
+
+    if (!result) {
+      return null;
+    }
+
+    const {
+      dapId: id,
+      dapName,
+      packetHash,
+      schema,
+    } = this.unsanitize(result);
+
+    return new DapContract(id, dapName, packetHash, schema);
   }
 
   /**
