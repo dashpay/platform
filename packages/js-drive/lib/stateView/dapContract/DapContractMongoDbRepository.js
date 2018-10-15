@@ -1,3 +1,4 @@
+const Reference = require('../Reference');
 const DapContract = require('./DapContract');
 
 class DapContractMongoDbRepository {
@@ -24,14 +25,10 @@ class DapContractMongoDbRepository {
       return null;
     }
 
-    const {
-      dapId: id,
-      dapName,
-      packetHash,
-      schema,
-    } = this.unsanitize(result);
+    const dapContractData = this.unsanitize(result);
 
-    return new DapContract(id, dapName, packetHash, schema);
+    const previousVersions = this.toPreviousVersions(dapContractData.previousVersions);
+    return this.toDapContract(dapContractData, dapContractData.reference, previousVersions);
   }
 
   /**
@@ -48,6 +45,65 @@ class DapContractMongoDbRepository {
       { $set: this.sanitize(dapContractData) },
       { upsert: true },
     );
+  }
+
+  /**
+   * Delete DapContract entity
+   *
+   * @param {DapContract} dapContract
+   * @returns {Promise}
+   */
+  async delete(dapContract) {
+    return this.collection.deleteOne({ _id: dapContract.dapId });
+  }
+
+  /**
+   * @private
+   * @param {object} dapContractData
+   * @param {object} referenceData
+   * @param {array} previousVersions
+   * @returns {DapContract}
+   */
+  // eslint-disable-next-line class-methods-use-this
+  toDapContract(dapContractData = {}, referenceData = {}, previousVersions = []) {
+    const reference = new Reference(
+      referenceData.blockHash,
+      referenceData.blockHeight,
+      referenceData.stHeaderHash,
+      referenceData.stPacketHash,
+      referenceData.objectHash,
+    );
+    return new DapContract(
+      dapContractData.dapId,
+      dapContractData.dapName,
+      reference,
+      dapContractData.schema,
+      dapContractData.version,
+      previousVersions,
+    );
+  }
+
+  /**
+   * @private
+   * @param {array} previousVersionsData
+   * @returns {{version: number, reference: Reference}[]}
+   */
+  // eslint-disable-next-line class-methods-use-this
+  toPreviousVersions(previousVersionsData = []) {
+    return previousVersionsData.map((previousRevision) => {
+      const previousVersion = previousRevision.version;
+      const previousReferenceData = previousRevision.reference;
+      return {
+        version: previousVersion,
+        reference: new Reference(
+          previousReferenceData.blockHash,
+          previousReferenceData.blockHeight,
+          previousReferenceData.stHeaderHash,
+          previousReferenceData.stPacketHash,
+          previousReferenceData.objectHash,
+        ),
+      };
+    });
   }
 }
 

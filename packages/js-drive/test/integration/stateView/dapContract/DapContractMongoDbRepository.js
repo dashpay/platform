@@ -1,4 +1,6 @@
 const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
+
+const Reference = require('../../../../lib/stateView/Reference');
 const DapContract = require('../../../../lib/stateView/dapContract/DapContract');
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');
 const sanitizeData = require('../../../../lib/mongoDb/sanitizeData');
@@ -13,9 +15,21 @@ describe('DapContractRepository', () => {
   it('should store DapContract entity', async () => {
     const dapId = '123456';
     const dapName = 'DashPay';
-    const packetHash = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
+    const reference = new Reference();
     const schema = {};
-    const dapContract = new DapContract(dapId, dapName, packetHash, schema);
+    const version = 2;
+    const previousVersions = [{
+      version: 1,
+      reference: new Reference(),
+    }];
+    const dapContract = new DapContract(
+      dapId,
+      dapName,
+      reference,
+      schema,
+      version,
+      previousVersions,
+    );
 
     await dapContractRepository.store(dapContract);
     const contract = await dapContractRepository.find(dapId);

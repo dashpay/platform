@@ -24,7 +24,7 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
     const packet = new StateTransitionPacket(packetData);
 
     if (packet.dapcontract) {
-      const dapId = doubleSha256(packet.dapcontract);
+      const dapId = packet.dapcontract.upgradedapid || doubleSha256(packet.dapcontract);
       const reference = new Reference(
         block.hash,
         block.height,

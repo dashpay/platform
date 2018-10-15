@@ -5,6 +5,8 @@ const {
   },
 } = require('@dashevo/js-evo-services-ctl');
 
+const Reference = require('../../../lib/stateView/Reference');
+const DapContract = require('../../../lib/stateView/dapContract/DapContract');
 const createDapObjectMongoDbRepositoryFactory = require('../../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
 const DapObjectMongoDbRepository = require('../../../lib/stateView/dapObject/DapObjectMongoDbRepository');
 const DapContractMongoDbRepository = require('../../../lib/stateView/dapContract/DapContractMongoDbRepository');
@@ -25,7 +27,6 @@ describe('applyStateTransitionFactory', () => {
   let mongoClient;
   let mongoDb;
   let ipfsClient;
-  let addSTPacket;
 
   startMongoDb().then(async (mongoDbInstance) => {
     mongoClient = await mongoDbInstance.getClient();
@@ -35,8 +36,24 @@ describe('applyStateTransitionFactory', () => {
     ipfsClient = await ipfsInstance.getApi();
   });
 
+  let addSTPacket;
+  let dapContractMongoDbRepository;
+  let createDapObjectMongoDbRepository;
+  let applyStateTransition;
   beforeEach(() => {
     addSTPacket = addSTPacketFactory(ipfsClient);
+    dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
+      mongoClient,
+      DapObjectMongoDbRepository,
+    );
+    const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
+    const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
+    applyStateTransition = applyStateTransitionFactory(
+      ipfsClient,
+      updateDapContract,
+      updateDapObject,
+    );
   });
 
   it('should compute DapContract state view', async () => {
@@ -46,28 +63,55 @@ describe('applyStateTransitionFactory', () => {
     header.extraPayload.hashSTPacket = packet.getHash();
 
     await addSTPacket(packet);
-
-    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
-    const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
-      mongoClient,
-      DapObjectMongoDbRepository,
-    );
-    const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
-    const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
-    const applyStateTransition = applyStateTransitionFactory(
-      ipfsClient,
-      updateDapContract,
-      updateDapObject,
-    );
     await applyStateTransition(header, block);
 
     const dapId = doubleSha256(packet.dapcontract);
+    const dapContract = await dapContractMongoDbRepository.find(dapId);
+
+    expect(dapContract.getDapId()).to.be.equal(dapId);
+    expect(dapContract.getDapName()).to.be.equal(packet.dapcontract.dapname);
+    expect(dapContract.getSchema()).to.be.deep.equal(packet.dapcontract.dapschema);
+    expect(dapContract.getVersion()).to.be.deep.equal(packet.dapcontract.dapver);
+    expect(dapContract.getPreviousVersions()).to.be.deep.equal([]);
+  });
+
+  it('should update with revisions DapContract state view', async () => {
+    const dapId = '1234';
+    const dapName = 'DashPay';
+
+    const firstReference = new Reference();
+    const firstSchema = {};
+    const firstVersion = 1;
+    const firstPreviousVersions = [];
+    const firstDapContractVersion = new DapContract(
+      dapId,
+      dapName,
+      firstReference,
+      firstSchema,
+      firstVersion,
+      firstPreviousVersions,
+    );
+    await dapContractMongoDbRepository.store(firstDapContractVersion);
+
+    const block = getBlockFixtures()[0];
+    const packet = getTransitionPacketFixtures()[0];
+    packet.dapcontract.dapver = 2;
+    packet.dapcontract.upgradedapid = dapId;
+    const header = getTransitionHeaderFixtures()[0];
+    header.extraPayload.hashSTPacket = packet.getHash();
+
+    await addSTPacket(packet);
+    await applyStateTransition(header, block);
 
     const dapContract = await dapContractMongoDbRepository.find(dapId);
 
     expect(dapContract.getDapId()).to.be.equal(dapId);
     expect(dapContract.getDapName()).to.be.equal(packet.dapcontract.dapname);
-    expect(dapContract.getSchema()).to.be.deep.equal(packet.dapcontract.schema);
+    expect(dapContract.getSchema()).to.be.deep.equal(packet.dapcontract.dapschema);
+    expect(dapContract.getVersion()).to.be.deep.equal(packet.dapcontract.dapver);
+    expect(dapContract.getPreviousVersions()).to.be.deep.equal([
+      firstDapContractVersion.currentRevision(),
+    ]);
   });
 
   it('should compute DapObject state view', async () => {
@@ -77,19 +121,6 @@ describe('applyStateTransitionFactory', () => {
     header.extraPayload.hashSTPacket = packet.getHash();
 
     await addSTPacket(packet);
-
-    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
-    const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
-      mongoClient,
-      DapObjectMongoDbRepository,
-    );
-    const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
-    const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
-    const applyStateTransition = applyStateTransitionFactory(
-      ipfsClient,
-      updateDapContract,
-      updateDapObject,
-    );
     await applyStateTransition(header, block);
 
     const dapId = packet.dapid;

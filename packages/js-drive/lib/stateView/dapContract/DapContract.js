@@ -2,14 +2,18 @@ class DapContract {
   /**
    * @param {string} dapId
    * @param {string} dapName
-   * @param {string} packetHash
+   * @param {Reference} reference
    * @param {object} schema
+   * @param {number} version
+   * @param {array} previousVersions
    */
-  constructor(dapId, dapName, packetHash, schema) {
+  constructor(dapId, dapName, reference, schema, version, previousVersions = []) {
     this.dapId = dapId;
     this.dapName = dapName;
-    this.packetHash = packetHash;
+    this.reference = reference;
     this.schema = schema;
+    this.version = version;
+    this.previousVersions = previousVersions;
   }
 
   getDapId() {
@@ -24,18 +28,54 @@ class DapContract {
     return this.schema;
   }
 
+  getVersion() {
+    return this.version;
+  }
+
+  getPreviousVersions() {
+    return this.previousVersions;
+  }
+
+  currentRevision() {
+    return {
+      version: this.version,
+      reference: this.reference,
+    };
+  }
+
+  addRevision(previousDapContract) {
+    this.previousVersions = this.previousVersions
+      .concat(previousDapContract.getPreviousVersions())
+      .concat([previousDapContract.currentRevision()]);
+  }
+
   /**
    * Get DapContract JSON representation
    *
-   * @returns {{dapId: string, dapName: string, packetHash: string, schema: Object}}
+   * @returns {{dapId: string, dapName: string, reference: Object,
+   *              schema: Object, version: number, previousVersions: array}}
    */
   toJSON() {
     return {
       dapId: this.dapId,
       dapName: this.dapName,
-      packetHash: this.packetHash,
+      reference: this.reference.toJSON(),
       schema: this.schema,
+      version: this.version,
+      previousVersions: this.previousVersionsToJSON(),
     };
+  }
+
+  /**
+   * @private
+   * @returns {{version: number,
+   *            reference: {blockHash, blockHeight, stHeaderHash, stPacketHash, objectHash}}[]}
+   */
+  previousVersionsToJSON() {
+    return this.previousVersions.map(previousRevision => ({
+      version: previousRevision.version,
+      reference: previousRevision.reference.toJSON(),
+    }));
   }
 }
 

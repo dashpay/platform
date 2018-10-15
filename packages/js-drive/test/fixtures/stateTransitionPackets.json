@@ -2,7 +2,6 @@
   {
     "pver": 1,
     "dapcontract": {
-      "dapschemaid": 0,
       "dapname": "Contacts",
       "dapver": 1,
       "dapschema": {
@@ -47,9 +46,6 @@
             "user"
           ]
         }
-      },
-      "meta": {
-        "id": "21af565312c6556c3a1bcda2d389b11ea400ec5c06cd0aea47e3302309377371"
       }
     },
     "meta": {

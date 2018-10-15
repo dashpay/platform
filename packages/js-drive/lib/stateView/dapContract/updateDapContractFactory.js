@@ -15,9 +15,35 @@ function updateDapContractFactory(dapContractRepository) {
    * @returns {Promise<void>}
    */
   async function updateDapContract(dapId, reference, dapContractData) {
-    const { dapname, schema } = dapContractData;
-    const dapContract = new DapContract(dapId, dapname, reference, schema);
-    await dapContractRepository.store(dapContract);
+    const {
+      dapname,
+      upgradedapid,
+      dapver,
+      dapschema,
+    } = dapContractData;
+
+    const currentDapContract = new DapContract(
+      dapId,
+      dapname,
+      reference,
+      dapschema,
+      dapver,
+    );
+
+    if (!upgradedapid) {
+      await dapContractRepository.store(currentDapContract);
+
+      return;
+    }
+
+    const previousDapContract = await dapContractRepository.find(dapId);
+
+    if (!previousDapContract) {
+      return;
+    }
+
+    currentDapContract.addRevision(previousDapContract);
+    await dapContractRepository.store(currentDapContract);
   }
 
   return updateDapContract;
