@@ -71,7 +71,7 @@ function readChainFactory(stHeadersReader, rpcClient, syncState, cleanDashDrive)
         return;
       }
       isInSync = false;
-      throw error;
+      console.error(new Date(), 'READCHAIN ERROR', error);
     }
   }
 

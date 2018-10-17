@@ -2,6 +2,10 @@ const StateTransitionHeader = require('../blockchain/StateTransitionHeader');
 const StateTransitionPacket = require('../storage/StateTransitionPacket');
 const Reference = require('./Reference');
 const doubleSha256 = require('../util/doubleSha256');
+const PacketNotFoundError = require('../storage/PacketNotFoundError');
+const rejectAfter = require('../util/rejectAfter');
+
+const GET_REJECTION_TIMEOUT = 1000 * 60 * 3;
 
 /**
  * @param {IpfsAPI} ipfs
@@ -17,33 +21,45 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
    * @returns {Promise<void>}
    */
   async function applyStateTransition(header, block) {
-    const stHeader = new StateTransitionHeader(header);
+    try {
+      const stHeader = new StateTransitionHeader(header);
 
-    const { value: packetData } = await ipfs.dag.get(stHeader.getPacketCID());
+      const getPromise = await ipfs.dag.get(stHeader.getPacketCID());
+      const error = new PacketNotFoundError();
+      const { value: packetData } = await rejectAfter(getPromise, error, GET_REJECTION_TIMEOUT);
 
-    const packet = new StateTransitionPacket(packetData);
+      const packet = new StateTransitionPacket(packetData);
 
-    if (packet.dapcontract) {
-      const dapId = packet.dapcontract.upgradedapid || doubleSha256(packet.dapcontract);
-      const reference = new Reference(
-        block.hash,
-        block.height,
-        header.hash,
-        header.extraPayload.hashSTPacket,
-      );
-      await updateDapContract(dapId, reference, packet.dapcontract);
-      return;
-    }
+      if (packet.dapcontract) {
+        const dapId = packet.dapcontract.upgradedapid || doubleSha256(packet.dapcontract);
+        const reference = new Reference(
+          block.hash,
+          block.height,
+          header.hash,
+          header.extraPayload.hashSTPacket,
+        );
+        await updateDapContract(dapId, reference, packet.dapcontract);
+        return;
+      }
 
-    for (let i = 0; i < packet.dapobjects.length; i++) {
-      const objectData = packet.dapobjects[i];
-      const reference = new Reference(
-        block.hash,
-        block.height,
-        header.hash,
-        header.extraPayload.hashSTPacket,
-      );
-      await updateDapObject(packet.dapid, header.extraPayload.regTxId, reference, objectData);
+      for (let i = 0; i < packet.dapobjects.length; i++) {
+        const objectData = packet.dapobjects[i];
+        const reference = new Reference(
+          block.hash,
+          block.height,
+          header.hash,
+          header.extraPayload.hashSTPacket,
+        );
+        await updateDapObject(packet.dapid, header.extraPayload.regTxId, reference, objectData);
+      }
+    } catch (e) {
+      const errorContext = {
+        blockHeight: block.height,
+        blockHash: block.hash,
+        packetHash: header.extraPayload.hashSTPacket,
+        packetCid: header.getPacketCID().toBaseEncodedString(),
+      };
+      console.error(new Date(), e, errorContext);
     }
   }
 

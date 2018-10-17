@@ -18,13 +18,23 @@ const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
 function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
-  stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header }) => {
+  stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header, block }) => {
     const packetPath = header.getPacketCID().toBaseEncodedString();
 
     const pinPromise = ipfsAPI.pin.add(packetPath, { recursive: true });
     const error = new InvalidPacketCidError();
 
-    await rejectAfter(pinPromise, error, PIN_REJECTION_TIMEOUT);
+    try {
+      await rejectAfter(pinPromise, error, PIN_REJECTION_TIMEOUT);
+    } catch (e) {
+      const errorContext = {
+        blockHeight: block.height,
+        blockHash: block.hash,
+        packetHash: header.extraPayload.hashSTPacket,
+        packetCid: packetPath,
+      };
+      console.error(new Date(), e, errorContext);
+    }
   });
 
   stHeadersReader.on(STHeadersReader.EVENTS.STALE_BLOCK, async (block) => {
