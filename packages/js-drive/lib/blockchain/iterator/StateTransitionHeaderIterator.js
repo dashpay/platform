@@ -54,7 +54,22 @@ class StateTransitionHeaderIterator {
 
         this.currentTransactionIndex++;
 
-        const transactionHeader = new StateTransitionHeader(serializedTransactionHeader);
+        let transactionHeader;
+        try {
+          transactionHeader = new StateTransitionHeader(serializedTransactionHeader);
+        } catch (error) {
+          const errorContext = {
+            currentBlockHeight: this.currentBlock.height,
+            currentBlockHash: this.currentBlock.hash,
+            serializedTransactionHeader,
+          };
+
+          console.log(new Date(), 'FAILED TO DESERIALIZE HEADER', error, errorContext);
+
+          // Move over to next header in this block if any
+          // eslint-disable-next-line no-continue
+          continue;
+        }
 
         if (transactionHeader.type !== StateTransitionHeader.TYPES.TRANSACTION_SUBTX_TRANSITION) {
           // eslint-disable-next-line no-continue

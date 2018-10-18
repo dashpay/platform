@@ -24,7 +24,7 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
     try {
       const stHeader = new StateTransitionHeader(header);
 
-      const getPromise = await ipfs.dag.get(stHeader.getPacketCID());
+      const getPromise = ipfs.dag.get(stHeader.getPacketCID());
       const error = new PacketNotFoundError();
       const { value: packetData } = await rejectAfter(getPromise, error, GET_REJECTION_TIMEOUT);
 
