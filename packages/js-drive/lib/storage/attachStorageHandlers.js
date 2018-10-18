@@ -2,9 +2,7 @@ const STHeadersReader = require('../blockchain/reader/STHeadersReader');
 const ArrayBlockIterator = require('../blockchain/iterator/ArrayBlockIterator');
 const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTransitionHeaderIterator');
 const rejectAfter = require('../util/rejectAfter');
-const InvalidPacketCidError = require('./InvalidPacketCidError');
-
-const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
+const InvalidPacketCidError = require('./errors/InvalidPacketCidError');
 
 /**
  * Add State Transition Packet from blockchain when new ST header will appear.
@@ -14,8 +12,9 @@ const PIN_REJECTION_TIMEOUT = 1000 * 60 * 3;
  * @param {STHeadersReader} stHeadersReader
  * @param {IpfsAPI} ipfsAPI
  * @param {unpinAllIpfsPackets} unpinAllIpfsPackets
+ * @param {number} ipfsPinTimeout
  */
-function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
+function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets, ipfsPinTimeout) {
   const { stHeaderIterator: { rpcClient } } = stHeadersReader;
 
   stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header, block }) => {
@@ -25,7 +24,7 @@ function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
     const error = new InvalidPacketCidError();
 
     try {
-      await rejectAfter(pinPromise, error, PIN_REJECTION_TIMEOUT);
+      await rejectAfter(pinPromise, error, ipfsPinTimeout);
     } catch (e) {
       const errorContext = {
         blockHeight: block.height,
@@ -59,9 +58,5 @@ function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets) {
     await unpinAllIpfsPackets();
   });
 }
-
-Object.assign(attachStorageHandlers, {
-  PIN_REJECTION_TIMEOUT,
-});
 
 module.exports = attachStorageHandlers;

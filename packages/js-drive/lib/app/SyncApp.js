@@ -182,6 +182,7 @@ class SyncApp {
       this.getIpfsApi(),
       updateDapContract,
       updateDapObject,
+      this.options.getStorageIpfsTimeout() * 1000,
     );
   }
 }

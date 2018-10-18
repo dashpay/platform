@@ -2,18 +2,17 @@ const StateTransitionHeader = require('../blockchain/StateTransitionHeader');
 const StateTransitionPacket = require('../storage/StateTransitionPacket');
 const Reference = require('./Reference');
 const doubleSha256 = require('../util/doubleSha256');
-const PacketNotFoundError = require('../storage/PacketNotFoundError');
+const PacketNotFoundError = require('../storage/errors/PacketNotFoundError');
 const rejectAfter = require('../util/rejectAfter');
-
-const GET_REJECTION_TIMEOUT = 1000 * 60 * 3;
 
 /**
  * @param {IpfsAPI} ipfs
  * @param {updateDapContract} updateDapContract
  * @param {updateDapObject} updateDapObject
+ * @param {number} ipfsGetTimeout
  * @returns {applyStateTransition}
  */
-function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
+function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject, ipfsGetTimeout) {
   /**
    * @typedef {Promise} applyStateTransition
    * @param {object} header
@@ -26,7 +25,7 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject) {
 
       const getPromise = ipfs.dag.get(stHeader.getPacketCID());
       const error = new PacketNotFoundError();
-      const { value: packetData } = await rejectAfter(getPromise, error, GET_REJECTION_TIMEOUT);
+      const { value: packetData } = await rejectAfter(getPromise, error, ipfsGetTimeout);
 
       const packet = new StateTransitionPacket(packetData);
 

@@ -53,6 +53,7 @@ describe('applyStateTransitionFactory', () => {
       ipfsClient,
       updateDapContract,
       updateDapObject,
+      1000,
     );
   });
 

@@ -11,6 +11,7 @@ describe('attachStorageHandlers', () => {
   let rejectAfterMock;
   let attachStorageHandlers;
   let unpinAllIpfsPackets;
+  let ipfsTimeout = 1;
 
   beforeEach(function beforeEach() {
     rpcClientMock = new RpcClientMock(this.sinon);
@@ -47,7 +48,14 @@ describe('attachStorageHandlers', () => {
       '../util/rejectAfter': rejectAfterMock,
     });
 
-    attachStorageHandlers(stHeadersReaderMock, ipfsAPIMock, unpinAllIpfsPackets);
+    ipfsTimeout = 1;
+
+    attachStorageHandlers(
+      stHeadersReaderMock,
+      ipfsAPIMock,
+      unpinAllIpfsPackets,
+      ipfsTimeout,
+    );
   });
 
   it('should pin ST packets when new header appears', async () => {
@@ -68,7 +76,7 @@ describe('attachStorageHandlers', () => {
 
     expect(calledWithArgs[0]).to.be.equal(pinPromise);
     expect(calledWithArgs[1].name).to.be.equal('InvalidPacketCidError');
-    expect(calledWithArgs[2]).to.be.equal(attachStorageHandlers.PIN_REJECTION_TIMEOUT);
+    expect(calledWithArgs[2]).to.be.equal(ipfsTimeout);
   });
 
   it('should unpin ST packets in case of reorg', async () => {
