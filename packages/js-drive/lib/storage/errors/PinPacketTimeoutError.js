@@ -1,4 +1,4 @@
-class InvalidPacketCidError extends Error {
+class PinPacketTimeoutError extends Error {
   constructor(...params) {
     super(...params);
 
@@ -8,4 +8,4 @@ class InvalidPacketCidError extends Error {
   }
 }
 
-module.exports = InvalidPacketCidError;
+module.exports = PinPacketTimeoutError;

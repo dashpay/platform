@@ -1,8 +1,10 @@
 const STHeadersReader = require('../blockchain/reader/STHeadersReader');
 const ArrayBlockIterator = require('../blockchain/iterator/ArrayBlockIterator');
 const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTransitionHeaderIterator');
+
+const PinPacketTimeoutError = require('./errors/PinPacketTimeoutError');
+
 const rejectAfter = require('../util/rejectAfter');
-const InvalidPacketCidError = require('./errors/InvalidPacketCidError');
 
 /**
  * Add State Transition Packet from blockchain when new ST header will appear.
@@ -21,7 +23,7 @@ function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets, ip
     const packetPath = header.getPacketCID().toBaseEncodedString();
 
     const pinPromise = ipfsAPI.pin.add(packetPath, { recursive: true });
-    const error = new InvalidPacketCidError();
+    const error = new PinPacketTimeoutError();
 
     try {
       await rejectAfter(pinPromise, error, ipfsPinTimeout);

@@ -64,7 +64,7 @@ class StateTransitionHeaderIterator {
             serializedTransactionHeader,
           };
 
-          console.log(new Date(), 'FAILED TO DESERIALIZE HEADER', error, errorContext);
+          console.error(new Date(), 'FAILED TO DESERIALIZE HEADER', error, errorContext);
 
           // Move over to next header in this block if any
           // eslint-disable-next-line no-continue

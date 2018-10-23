@@ -1,4 +1,4 @@
-class PacketNotFoundError extends Error {
+class GetPacketTimeoutError extends Error {
   constructor(...params) {
     super(...params);
 
@@ -8,4 +8,4 @@ class PacketNotFoundError extends Error {
   }
 }
 
-module.exports = PacketNotFoundError;
+module.exports = GetPacketTimeoutError;

@@ -75,7 +75,7 @@ describe('attachStorageHandlers', () => {
     const calledWithArgs = rejectAfterMock.firstCall.args;
 
     expect(calledWithArgs[0]).to.be.equal(pinPromise);
-    expect(calledWithArgs[1].name).to.be.equal('InvalidPacketCidError');
+    expect(calledWithArgs[1].name).to.be.equal('PinPacketTimeoutError');
     expect(calledWithArgs[2]).to.be.equal(ipfsTimeout);
   });
 

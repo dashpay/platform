@@ -190,7 +190,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     {
       const { result: objects } = await secondDashDrive.driveApi.getApi()
         .request('fetchDapObjects', { dapId, type: 'user' });
-      expect(objects.length).to.be.equal(users.length);
+      expect(objects).to.have.lengthOf(users.length);
 
       const aboutMes = objects.map(o => o.object.aboutme);
 
