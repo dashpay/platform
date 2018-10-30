@@ -1,4 +1,4 @@
-FROM 103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/v13-node-base:latest
+FROM node:10-alpine
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DashDrive Node.JS"
@@ -22,7 +22,7 @@ RUN echo "//registry.npmjs.org/:_authToken=$npm_token" >> .npmrc
 # Install packages
 COPY package.json package-lock.json ./
 ENV npm_config_zmq_external=true
-RUN npm install
+RUN npm install --production
 ENV PATH /node_modules/.bin:$PATH
 
 # Copy project files

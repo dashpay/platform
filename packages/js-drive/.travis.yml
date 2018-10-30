@@ -1,6 +1,8 @@
 sudo: required
 dist: trusty
 language: node_js
+node_js:
+ - '10'
 
 services:
   - docker
@@ -10,18 +12,7 @@ addons:
     packages:
       - docker-ce
 
-env:
-  - DOCKER_COMPOSE_VERSION: 1.18.0
-
-node_js:
-  - 'node'
-
 before_install:
-  # Install Node.js
-  - nvm install 8
-  - nvm use 8
-  - node --version
-
   # Add token for @dashevo private npm registry
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 

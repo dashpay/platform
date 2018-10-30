@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/dashevo/dashdrive",
   "devDependencies": {
-    "@dashevo/js-evo-services-ctl": "^1.0.0-alpha.6",
+    "@dashevo/js-evo-services-ctl": "^1.0.0-alpha.8",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
