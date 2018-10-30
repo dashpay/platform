@@ -1,29 +1,22 @@
-const Emitter = require('emittery');
+const BlockchainReaderMediatorMock = require('../../../../lib/test/mock/BlockchainReaderMediatorMock');
 
 const SyncState = require('../../../../lib/sync/state/SyncState');
-const STHeadersReader = require('../../../../lib/blockchain/reader/STHeadersReader');
+const ReaderMediator = require('../../../../lib/blockchain/reader/BlockchainReaderMediator');
 
 const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
 const attachSyncHandlers = require('../../../../lib/sync/state/attachSyncHandlers');
 
 describe('attachSyncHandlers', () => {
   let blocks;
-  let readerState;
   let syncState;
   let syncStateRepositoryMock;
-  let stHeadersReaderMock;
+  let readerMediatorMock;
 
   beforeEach(function beforeEach() {
     blocks = getBlockFixtures();
 
-    // Mock STHeadersReader
-    readerState = {
-      getBlocks() {
-        return blocks;
-      },
-    };
-    stHeadersReaderMock = new Emitter();
-    stHeadersReaderMock.getState = () => readerState;
+    readerMediatorMock = new BlockchainReaderMediatorMock(this.sinon);
+    readerMediatorMock.getState().getBlocks.returns(blocks);
 
     // Mock SyncState
     syncState = new SyncState([], new Date());
@@ -41,9 +34,9 @@ describe('attachSyncHandlers', () => {
   });
 
   it('should store sync state when next block has processed', async () => {
-    attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
+    attachSyncHandlers(readerMediatorMock, syncState, syncStateRepositoryMock);
 
-    await stHeadersReaderMock.emitSerial(STHeadersReader.EVENTS.BLOCK, blocks[0]);
+    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.BLOCK_END, blocks[0]);
 
     expect(syncState.setBlocks).to.be.calledOnce();
     expect(syncState.setBlocks).to.be.calledWith(blocks);
@@ -53,9 +46,9 @@ describe('attachSyncHandlers', () => {
   });
 
   it('should store sync state when stale block has processed', async () => {
-    attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
+    attachSyncHandlers(readerMediatorMock, syncState, syncStateRepositoryMock);
 
-    await stHeadersReaderMock.emitSerial(STHeadersReader.EVENTS.STALE_BLOCK, blocks[0]);
+    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.BLOCK_STALE, blocks[0]);
 
     expect(syncState.setBlocks).to.be.calledOnce();
     expect(syncState.setBlocks).to.be.calledWith(blocks);
@@ -65,10 +58,10 @@ describe('attachSyncHandlers', () => {
   });
 
   it('should update lastSyncAt when sync has completed', async () => {
-    attachSyncHandlers(stHeadersReaderMock, syncState, syncStateRepositoryMock);
+    attachSyncHandlers(readerMediatorMock, syncState, syncStateRepositoryMock);
 
-    await stHeadersReaderMock.emitSerial(
-      STHeadersReader.EVENTS.END,
+    await readerMediatorMock.originalEmitSerial(
+      ReaderMediator.EVENTS.END,
       blocks[blocks.length - 1].height,
     );
 

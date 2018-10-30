@@ -1,5 +1,6 @@
 /* eslint-disable global-require */
 describe('Blockchain', () => {
-  require('./iterator');
+  require('./blockIterator');
   require('./reader');
+  require('./createStateTransitionsFromBlockFactory');
 });

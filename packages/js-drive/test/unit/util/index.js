@@ -2,4 +2,5 @@
 describe('Util', () => {
   require('./rejectAfter');
   require('./wait');
+  require('./throttleFactory');
 });

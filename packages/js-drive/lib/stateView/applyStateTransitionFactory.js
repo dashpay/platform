@@ -22,45 +22,35 @@ function applyStateTransitionFactory(ipfs, updateDapContract, updateDapObject, i
    * @returns {Promise<void>}
    */
   async function applyStateTransition(header, block) {
-    try {
-      const stHeader = new StateTransitionHeader(header);
+    const stHeader = new StateTransitionHeader(header);
 
-      const getPromise = ipfs.dag.get(stHeader.getPacketCID());
-      const error = new GetPacketTimeoutError();
-      const { value: packetData } = await rejectAfter(getPromise, error, ipfsGetTimeout);
+    const getPromise = ipfs.dag.get(stHeader.getPacketCID());
+    const error = new GetPacketTimeoutError();
+    const { value: packetData } = await rejectAfter(getPromise, error, ipfsGetTimeout);
 
-      const packet = new StateTransitionPacket(packetData);
+    const packet = new StateTransitionPacket(packetData);
 
-      if (packet.dapcontract) {
-        const dapId = packet.dapcontract.upgradedapid || doubleSha256(packet.dapcontract);
-        const reference = new Reference(
-          block.hash,
-          block.height,
-          header.hash,
-          header.extraPayload.hashSTPacket,
-        );
-        await updateDapContract(dapId, reference, packet.dapcontract);
-        return;
-      }
+    if (packet.dapcontract) {
+      const dapId = packet.dapcontract.upgradedapid || doubleSha256(packet.dapcontract);
+      const reference = new Reference(
+        block.hash,
+        block.height,
+        header.hash,
+        header.extraPayload.hashSTPacket,
+      );
+      await updateDapContract(dapId, reference, packet.dapcontract);
+      return;
+    }
 
-      for (let i = 0; i < packet.dapobjects.length; i++) {
-        const objectData = packet.dapobjects[i];
-        const reference = new Reference(
-          block.hash,
-          block.height,
-          header.hash,
-          header.extraPayload.hashSTPacket,
-        );
-        await updateDapObject(packet.dapid, header.extraPayload.regTxId, reference, objectData);
-      }
-    } catch (e) {
-      const errorContext = {
-        blockHeight: block.height,
-        blockHash: block.hash,
-        packetHash: header.extraPayload.hashSTPacket,
-        packetCid: header.getPacketCID().toBaseEncodedString(),
-      };
-      console.error(new Date(), e, errorContext);
+    for (let i = 0; i < packet.dapobjects.length; i++) {
+      const objectData = packet.dapobjects[i];
+      const reference = new Reference(
+        block.hash,
+        block.height,
+        header.hash,
+        header.extraPayload.hashSTPacket,
+      );
+      await updateDapObject(packet.dapid, header.extraPayload.regTxId, reference, objectData);
     }
   }
 

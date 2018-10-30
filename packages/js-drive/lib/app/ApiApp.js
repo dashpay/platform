@@ -99,7 +99,7 @@ class ApiApp {
       isSynced,
       this.rpcClient,
       repositoryChangeListener,
-      this.options.syncChainSheckInterval,
+      this.options.getSyncChainCheckInterval(),
     );
   }
 

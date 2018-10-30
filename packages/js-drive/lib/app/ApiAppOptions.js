@@ -10,7 +10,7 @@ class ApiAppOptions {
     this.storageMongoDbUrl = options.STORAGE_MONGODB_URL;
     this.storageMongoDbDatabase = options.STORAGE_MONGODB_DB;
     this.syncStateCheckInterval = parseInt(options.SYNC_STATE_CHECK_INTERVAL, 10);
-    this.syncChainSheckInterval = parseInt(options.SYNC_CHAIN_CHECK_INTERVAL, 10);
+    this.syncChainCheckInterval = parseInt(options.SYNC_CHAIN_CHECK_INTERVAL, 10);
     this.apiRpcPort = options.API_RPC_PORT;
     this.apiRpcHost = options.API_RPC_HOST;
   }
@@ -55,8 +55,8 @@ class ApiAppOptions {
     return this.syncStateCheckInterval;
   }
 
-  getSyncChainSheckInterval() {
-    return this.syncChainSheckInterval;
+  getSyncChainCheckInterval() {
+    return this.syncChainCheckInterval;
   }
 
   getApiRpcHost() {

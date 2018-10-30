@@ -1,25 +1,23 @@
-const STHeadersReader = require('../../blockchain/reader/STHeadersReader');
+const ReaderMediator = require('../../blockchain/reader/BlockchainReaderMediator');
 
 /**
  * Persist sync state
  *
- * @param {STHeadersReader} stHeadersReader
+ * @param {BlockchainReaderMediator} readerMediator
  * @param {SyncState} syncState
  * @param {SyncStateRepository} syncStateRepository
  */
-function attachSyncHandlers(stHeadersReader, syncState, syncStateRepository) {
-  const readerState = stHeadersReader.getState();
-
+function attachSyncHandlers(readerMediator, syncState, syncStateRepository) {
   async function saveState() {
-    syncState.setBlocks(readerState.getBlocks());
+    syncState.setBlocks(readerMediator.getState().getBlocks());
 
     await syncStateRepository.store(syncState);
   }
 
-  stHeadersReader.on(STHeadersReader.EVENTS.BLOCK, saveState);
-  stHeadersReader.on(STHeadersReader.EVENTS.STALE_BLOCK, saveState);
+  readerMediator.on(ReaderMediator.EVENTS.BLOCK_END, saveState);
+  readerMediator.on(ReaderMediator.EVENTS.BLOCK_STALE, saveState);
 
-  stHeadersReader.on(STHeadersReader.EVENTS.END, async () => {
+  readerMediator.on(ReaderMediator.EVENTS.END, async () => {
     syncState.updateLastSyncAt(new Date());
 
     await syncStateRepository.store(syncState);

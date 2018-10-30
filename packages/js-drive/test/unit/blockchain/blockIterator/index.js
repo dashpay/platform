@@ -1,6 +1,5 @@
 /* eslint-disable global-require */
-describe('Iterator', () => {
+describe('blockIterator', () => {
   require('./RpcBlockIterator');
   require('./ArrayBlockIterator');
-  require('./StateTransitionHeaderIterator');
 });

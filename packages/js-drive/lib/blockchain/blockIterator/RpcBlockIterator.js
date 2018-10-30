@@ -1,15 +1,11 @@
-const Emittery = require('emittery');
+const InvalidBlockHeightError = require('./InvalidBlockHeightError');
 
-// TODO: It might be part of SDK in the future
-
-class RpcBlockIterator extends Emittery {
+class RpcBlockIterator {
   /**
    * @param {RpcClient} rpcClient
    * @param {number} fromBlockHeight
    */
   constructor(rpcClient, fromBlockHeight = 1) {
-    super();
-
     this.rpcClient = rpcClient;
 
     this.setBlockHeight(fromBlockHeight);
@@ -52,15 +48,13 @@ class RpcBlockIterator extends Emittery {
   /**
    * Get next block
    *
-   * @return {Promise<Object>}
+   * @return {Promise<object>}
    */
   async next() {
     await this.initializeNextBlockHash();
 
     if (this.nextBlockHash) {
       const { result: block } = await this.rpcClient.getBlock(this.nextBlockHash);
-
-      await this.emitSerial('block', block);
 
       this.currentBlock = block;
       this.nextBlockHash = block.nextblockhash;
@@ -72,6 +66,15 @@ class RpcBlockIterator extends Emittery {
   }
 
   /**
+   * @return {{next: RpcBlockIterator.next}}
+   */
+  [Symbol.asyncIterator]() {
+    return {
+      next: this.next.bind(this),
+    };
+  }
+
+  /**
    * @private
    * @return {Promise<void>}
    */
@@ -80,8 +83,18 @@ class RpcBlockIterator extends Emittery {
       return;
     }
 
-    const response = await this.rpcClient.getBlockHash(this.fromBlockHeight);
-    this.nextBlockHash = response.result;
+    let blockHash;
+    try {
+      ({ result: blockHash } = await this.rpcClient.getBlockHash(this.fromBlockHeight));
+    } catch (e) {
+      if (e.message === 'Block height out of range') {
+        throw new InvalidBlockHeightError(this.fromBlockHeight);
+      }
+
+      throw e;
+    }
+
+    this.nextBlockHash = blockHash;
     this.firstIteration = false;
   }
 }

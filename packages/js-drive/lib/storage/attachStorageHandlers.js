@@ -1,6 +1,4 @@
-const STHeadersReader = require('../blockchain/reader/STHeadersReader');
-const ArrayBlockIterator = require('../blockchain/iterator/ArrayBlockIterator');
-const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTransitionHeaderIterator');
+const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 
 const PinPacketTimeoutError = require('./errors/PinPacketTimeoutError');
 
@@ -11,52 +9,34 @@ const rejectAfter = require('../util/rejectAfter');
  * Remove State Transition Packet from blockchain when wrong sequence.
  * Remove all State Transition Packets from blockchain when reset.
  *
- * @param {STHeadersReader} stHeadersReader
+ * @param {BlockchainReaderMediator} readerMediator
  * @param {IpfsAPI} ipfsAPI
+ * @param {RpcClient} rpcClient
  * @param {unpinAllIpfsPackets} unpinAllIpfsPackets
  * @param {number} ipfsPinTimeout
  */
-function attachStorageHandlers(stHeadersReader, ipfsAPI, unpinAllIpfsPackets, ipfsPinTimeout) {
-  const { stHeaderIterator: { rpcClient } } = stHeadersReader;
-
-  stHeadersReader.on(STHeadersReader.EVENTS.HEADER, async ({ header, block }) => {
-    const packetPath = header.getPacketCID().toBaseEncodedString();
+function attachStorageHandlers(
+  readerMediator,
+  ipfsAPI,
+  rpcClient,
+  unpinAllIpfsPackets,
+  ipfsPinTimeout,
+) {
+  readerMediator.on(ReaderMediator.EVENTS.STATE_TRANSITION, async ({ stateTransition }) => {
+    const packetPath = stateTransition.getPacketCID().toBaseEncodedString();
 
     const pinPromise = ipfsAPI.pin.add(packetPath, { recursive: true });
     const error = new PinPacketTimeoutError();
 
-    try {
-      await rejectAfter(pinPromise, error, ipfsPinTimeout);
-    } catch (e) {
-      const errorContext = {
-        blockHeight: block.height,
-        blockHash: block.hash,
-        packetHash: header.extraPayload.hashSTPacket,
-        packetCid: packetPath,
-      };
-      console.error(new Date(), e, errorContext);
-    }
+    await rejectAfter(pinPromise, error, ipfsPinTimeout);
   });
 
-  stHeadersReader.on(STHeadersReader.EVENTS.STALE_BLOCK, async (block) => {
-    const blockIterator = new ArrayBlockIterator([block]);
-    const stHeadersIterator = new StateTransitionHeaderIterator(blockIterator, rpcClient);
-
-    let done;
-    let header;
-
-    // eslint-disable-next-line no-cond-assign
-    while ({ done, value: header } = await stHeadersIterator.next()) {
-      if (done) {
-        break;
-      }
-
-      const packetPath = header.getPacketCID().toBaseEncodedString();
-      await ipfsAPI.pin.rm(packetPath, { recursive: true });
-    }
+  readerMediator.on(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, async ({ stateTransition }) => {
+    const packetPath = stateTransition.getPacketCID().toBaseEncodedString();
+    await ipfsAPI.pin.rm(packetPath, { recursive: true });
   });
 
-  stHeadersReader.on(STHeadersReader.EVENTS.RESET, async () => {
+  readerMediator.on(ReaderMediator.EVENTS.RESET, async () => {
     await unpinAllIpfsPackets();
   });
 }

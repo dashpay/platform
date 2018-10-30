@@ -1,4 +1,4 @@
-class STHeadersReaderState {
+class BlockchainReaderState {
   /**
    * @param {Array} blocks
    * @param {number} blocksLimit
@@ -45,7 +45,7 @@ class STHeadersReaderState {
   /**
    * Get last block
    *
-   * @return {Object}
+   * @return {object}
    */
   getLastBlock() {
     return this.blocks[this.currentHeight];
@@ -104,6 +104,15 @@ class STHeadersReaderState {
   }
 
   /**
+   * Return first synced block height
+   *
+   * @returns {*|number}
+   */
+  getFirstBlockHeight() {
+    return this.firstBlockHeight;
+  }
+
+  /**
    * Clear state
    */
   clear() {
@@ -129,4 +138,4 @@ class STHeadersReaderState {
   }
 }
 
-module.exports = STHeadersReaderState;
+module.exports = BlockchainReaderState;

@@ -13,7 +13,7 @@ module.exports = function isDashCoreRunningFactory(rpcClient) {
    * @typedef isDashCoreRunning
    * @param {number} [retries]
    * @param {number} [retryDelay]
-   * @returns {Promise<boolean>}
+   * @returns {boolean}
    */
   async function isDashCoreRunning(retries = 0, retryDelay = 5) {
     const tries = retries + 1;

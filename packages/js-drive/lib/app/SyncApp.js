@@ -3,10 +3,6 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
 const { MongoClient } = require('mongodb');
 
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
-const RpcBlockIterator = require('../blockchain/iterator/RpcBlockIterator');
-const StateTransitionHeaderIterator = require('../blockchain/iterator/StateTransitionHeaderIterator');
-const STHeadersReaderState = require('../blockchain/reader/STHeadersReaderState');
-const STHeadersReader = require('../blockchain/reader/STHeadersReader');
 const sanitizeData = require('../mongoDb/sanitizeData');
 const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
 const DapObjectMongoDbRepository = require('../stateView/dapObject/DapObjectMongoDbRepository');
@@ -14,8 +10,13 @@ const createDapObjectMongoDbRepositoryFactory = require('../stateView/dapObject/
 const updateDapContractFactory = require('../stateView/dapContract/updateDapContractFactory');
 const updateDapObjectFactory = require('../stateView/dapObject/updateDapObjectFactory');
 const applyStateTransitionFactory = require('../stateView/applyStateTransitionFactory');
+const BlockchainReader = require('../blockchain/reader/BlockchainReader');
+const RpcBlockIterator = require('../blockchain/blockIterator/RpcBlockIterator');
+const BlockchainReaderState = require('../blockchain/reader/BlockchainReaderState');
+const BlockchainReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
+const createStateTransitionsFromBlockFactory = require('../blockchain/createStateTransitionsFromBlockFactory');
+const readBlockchainFactory = require('../blockchain/reader/readBlockchainFactory');
 
-const cleanDashDriveFactory = require('../sync/cleanDashDriveFactory');
 const unpinAllIpfsPacketsFactory = require('../storage/ipfs/unpinAllIpfsPacketsFactory');
 const dropMongoDatabasesWithPrefixFactory = require('../mongoDb/dropMongoDatabasesWithPrefixFactory');
 
@@ -39,6 +40,9 @@ class SyncApp {
     this.mongoClient = null;
     this.syncStateRepository = null;
     this.syncState = null;
+    this.blockchainReaderMediator = null;
+    this.blockchainReaderState = null;
+    this.stateTransitionsFromBlock = null;
   }
 
   /**
@@ -113,24 +117,65 @@ class SyncApp {
   }
 
   /**
-   * Create STHeadersReader
-   *
-   * @returns {STHeadersReader}
+   * @return {BlockchainReaderState}
    */
-  createSTHeadersReader() {
-    const blockIterator = new RpcBlockIterator(
-      this.getRpcClient(),
-      this.options.getSyncEvoStartBlockHeight(),
-    );
-    const stHeaderIterator = new StateTransitionHeaderIterator(
+  createBlockchainReaderState() {
+    if (!this.blockchainReaderState) {
+      this.blockchainReaderState = new BlockchainReaderState(
+        this.getSyncState().getBlocks(),
+        this.options.getSyncStateBlocksLimit(),
+      );
+    }
+
+    return this.blockchainReaderState;
+  }
+
+  /**
+   * @return {BlockchainReaderMediator}
+   */
+  createBlockchainReaderMediator() {
+    if (!this.blockchainReaderMediator) {
+      this.blockchainReaderMediator = new BlockchainReaderMediator(
+        this.createBlockchainReaderState(),
+        this.options.getSyncEvoStartBlockHeight(),
+      );
+    }
+
+    return this.blockchainReaderMediator;
+  }
+
+  /**
+   * @return {createStateTransitionsFromBlock}
+   */
+  createStateTransitionsFromBlock() {
+    if (!this.stateTransitionsFromBlock) {
+      this.stateTransitionsFromBlock = createStateTransitionsFromBlockFactory(
+        this.getRpcClient(),
+      );
+    }
+
+    return this.stateTransitionsFromBlock;
+  }
+
+  /**
+   * @return {readBlockchain}
+   */
+  createReadBlockchain() {
+    const blockIterator = new RpcBlockIterator(this.getRpcClient());
+
+    const readerMediator = this.createBlockchainReaderMediator();
+
+    const blockchainReader = new BlockchainReader(
       blockIterator,
+      readerMediator,
+      this.createStateTransitionsFromBlock(),
+    );
+
+    return readBlockchainFactory(
+      blockchainReader,
+      readerMediator,
       this.getRpcClient(),
     );
-    const stHeadersReaderState = new STHeadersReaderState(
-      this.getSyncState().getBlocks(),
-      this.options.getSyncStateBlocksLimit(),
-    );
-    return new STHeadersReader(stHeaderIterator, stHeadersReaderState);
   }
 
   /**
@@ -149,19 +194,6 @@ class SyncApp {
    */
   createDropMongoDatabasesWithPrefix() {
     return dropMongoDatabasesWithPrefixFactory(this.getMongoClient());
-  }
-
-  /**
-   * Create cleanDashDrive
-   *
-   * @returns {cleanDashDrive}
-   */
-  createCleanDashDrive() {
-    return cleanDashDriveFactory(
-      this.createUnpinAllIpfsPackets(),
-      this.createDropMongoDatabasesWithPrefix(),
-      this.options.getMongoDbPrefix(),
-    );
   }
 
   /**

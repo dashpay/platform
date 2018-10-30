@@ -1,13 +1,13 @@
-const STHeadersReaderState = require('../../../../lib/blockchain/reader/STHeadersReaderState');
+const BlockchainReaderState = require('../../../../lib/blockchain/reader/BlockchainReaderState');
 const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
 
-describe('STHeadersReaderState', () => {
+describe('BlockchainReaderState', () => {
   let blocks;
   let state;
 
   beforeEach(() => {
     blocks = getBlockFixtures();
-    state = new STHeadersReaderState();
+    state = new BlockchainReaderState();
   });
 
   it('should add block and return last of them', () => {
@@ -36,14 +36,14 @@ describe('STHeadersReaderState', () => {
 
   it('should trim blocks to limit', () => {
     const limit = 2;
-    const stateWithBlocks = new STHeadersReaderState(blocks, limit);
+    const stateWithBlocks = new BlockchainReaderState(blocks, limit);
 
     expect(stateWithBlocks.getBlocks()).to.be.deep.equal(blocks.slice(blocks.length - limit));
   });
 
   it('should change blocks limit', () => {
     const limit = 4;
-    const stateWithBlocks = new STHeadersReaderState(blocks, limit);
+    const stateWithBlocks = new BlockchainReaderState(blocks, limit);
     expect(stateWithBlocks.getBlocks()).to.have.lengthOf(limit);
 
     const newLimit = 2;
@@ -54,7 +54,7 @@ describe('STHeadersReaderState', () => {
 
   it('should return blocks limit', () => {
     const limit = 2;
-    const stateWithLimit = new STHeadersReaderState([], limit);
+    const stateWithLimit = new BlockchainReaderState([], limit);
 
     expect(stateWithLimit.getBlocksLimit()).to.be.equal(limit);
   });

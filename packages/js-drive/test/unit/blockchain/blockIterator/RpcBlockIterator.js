@@ -1,5 +1,5 @@
 const RpcClientMock = require('../../../../lib/test/mock/RpcClientMock');
-const RpcBlockIterator = require('../../../../lib/blockchain/iterator/RpcBlockIterator');
+const RpcBlockIterator = require('../../../../lib/blockchain/blockIterator/RpcBlockIterator');
 
 describe('RpcBlockIterator', () => {
   let rpcClientMock;
@@ -15,15 +15,7 @@ describe('RpcBlockIterator', () => {
   it('should iterate over blocks from blockchain', async () => {
     const obtainedBlocks = [];
 
-    let done;
-    let block;
-
-    // eslint-disable-next-line no-cond-assign
-    while ({ done, value: block } = await blockIterator.next()) {
-      if (done) {
-        break;
-      }
-
+    for await (const block of blockIterator) {
       obtainedBlocks.push(block);
     }
 
@@ -58,21 +50,5 @@ describe('RpcBlockIterator', () => {
     expect(firstBlock).to.be.equal(secondBlock);
 
     expect(blockIterator.getBlockHeight()).to.be.equal(thirdBlock.height);
-  });
-
-  it("should emit 'block' event", async function it() {
-    const blockHandlerStub = this.sinon.stub();
-
-    blockIterator.on('block', blockHandlerStub);
-
-    const { value: firstBlock } = await blockIterator.next();
-
-    expect(blockHandlerStub).to.be.calledOnce();
-    expect(blockHandlerStub).to.be.calledWith(firstBlock);
-
-    const { value: secondBlock } = await blockIterator.next();
-
-    expect(blockHandlerStub).to.be.calledTwice();
-    expect(blockHandlerStub).to.be.calledWith(secondBlock);
   });
 });
