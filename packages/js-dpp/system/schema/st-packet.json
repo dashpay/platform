@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
+  "$id": "https://schema.dash.org/platform-4-0-0/system/st-packet",
+  "properties": {
+    "contractId": {
+      "type": "string"
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "$ref": "dap-object"
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "$ref": "dap-contract"
+      }
+    }
+  },
+  "required": [
+    "contractId",
+    "objects",
+    "contracts"
+  ],
+  "additionalItems": false
+}

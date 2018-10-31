@@ -1,0 +1,9 @@
+{
+    "contractId": "123",
+    "objects": [
+        {
+            "$$type": "example",
+            "message": "test"
+        }
+    ]
+}

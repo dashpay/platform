@@ -1,0 +1,12 @@
+{
+    "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
+    "$id": "https://schema.dash.org/platform-4-0-0/system/dap-object",
+    "properties": {
+        "$$type": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "$$type"
+    ]
+}

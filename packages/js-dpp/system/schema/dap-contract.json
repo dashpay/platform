@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
+  "$id": "https://schema.dash.org/platform-4-0-0/system-contract/app-contract",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "https://schema.dash.org/schema-1-0-0/schema"
+    }
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "objects": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "name",
+    "objects"
+  ],
+  "additionalItems": false
+}

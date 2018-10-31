@@ -1,0 +1,24 @@
+{
+    "$schema": "https://schema.dash.org/platform-4-0-0/system-contract/app-contract",
+    "name": "Example Dap",
+    "definitions": {
+        "message": {
+            "type": "string"
+        }
+    },
+    "objects": {
+        "example": {
+            "allOf": [
+                {
+                    "$ref": "https://schema.dash.org/platform-4-0-0/system-contract/dap-object"
+                }
+            ],
+            "properties": {
+                "message": {
+                    "$ref": "#/definitions/message"
+                }
+            },
+            "required": ["message"]
+        }
+    }
+}
