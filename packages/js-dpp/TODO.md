@@ -1,0 +1,1 @@
+- [] system/schema/dap-contract: define maximum number of properties in nested objects
