@@ -15,6 +15,7 @@ class SyncAppOptions {
     this.syncEvoStartBlockHeight = parseInt(options.SYNC_EVO_START_BLOCK_HEIGHT, 10);
     this.syncStateBlocksLimit = options.SYNC_STATE_BLOCKS_LIMIT;
     this.syncBlockSkipWithErrors = (options.SYNC_BLOCK_SKIP_WITH_ERRORS === 'true');
+    this.syncStateTransitionSkipWithErrors = (options.SYNC_STATE_TRANSITION_SKIP_WITH_ERRORS === 'true');
     this.mongoDbPrefix = options.MONGODB_DB_PREFIX;
   }
 
@@ -77,6 +78,13 @@ class SyncAppOptions {
    */
   getSyncBlockSkipWithErrors() {
     return this.syncBlockSkipWithErrors;
+  }
+
+  /**
+   * @return {boolean}
+   */
+  getSyncStateTransitionSkipWithErrors() {
+    return this.syncStateTransitionSkipWithErrors;
   }
 
   /**

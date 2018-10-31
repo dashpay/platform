@@ -1,5 +1,6 @@
 const ReaderMediator = require('./BlockchainReaderMediator');
-const RestartBlockchainReaderError = require('./RestartBlockchainReaderError');
+const RestartBlockchainReaderError = require('./errors/RestartBlockchainReaderError');
+const IgnoreStateTransitionError = require('./errors/IgnoreStateTransitionError');
 
 class BlockchainReader {
   /**
@@ -29,10 +30,31 @@ class BlockchainReader {
         await this.readerMediator.emitSerial(ReaderMediator.EVENTS.BLOCK_BEGIN, block);
 
         for (stateTransition of await this.createStateTransitionsFromBlock(block)) {
-          await this.readerMediator.emitSerial(ReaderMediator.EVENTS.STATE_TRANSITION, {
-            stateTransition,
-            block,
-          });
+          try {
+            await this.readerMediator.emitSerial(ReaderMediator.EVENTS.STATE_TRANSITION, {
+              stateTransition,
+              block,
+            });
+          } catch (error) {
+            let lastError = error;
+
+            try {
+              await this.readerMediator.emitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_ERROR, {
+                error,
+                block,
+                stateTransition,
+              });
+            } catch (e) {
+              if (e instanceof IgnoreStateTransitionError) {
+                // eslint-disable-next-line no-continue
+                continue;
+              }
+
+              lastError = e;
+            }
+
+            throw lastError;
+          }
         }
 
         this.readerMediator.getState().addBlock(block);

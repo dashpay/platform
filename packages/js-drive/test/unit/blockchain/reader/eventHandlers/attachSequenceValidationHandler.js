@@ -1,7 +1,7 @@
 const BlockchainReaderMediatorMock = require('../../../../../lib/test/mock/BlockchainReaderMediatorMock');
 
 const ReaderMediator = require('../../../../../lib/blockchain/reader/BlockchainReaderMediator');
-const RestartBlockchainReaderError = require('../../../../../lib/blockchain/reader/RestartBlockchainReaderError');
+const RestartBlockchainReaderError = require('../../../../../lib/blockchain/reader/errors/RestartBlockchainReaderError');
 
 const WrongSequenceError = require('../../../../../lib/blockchain/reader/eventHandlers/errors/WrongSequenceError');
 const NotAbleToValidateSequenceError = require('../../../../../lib/blockchain/reader/eventHandlers/errors/NotAbleToValidateSequenceError');

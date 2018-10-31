@@ -44,6 +44,8 @@ BlockchainReaderMediator.EVENTS = {
   BEGIN: 'begin',
   STATE_TRANSITION: 'stateTransition',
   STATE_TRANSITION_STALE: 'stateTransitionStale',
+  STATE_TRANSITION_SKIP: 'stateTransitionSkip',
+  STATE_TRANSITION_ERROR: 'stateTransitionError',
   BLOCK_BEGIN: 'blockBegin',
   BLOCK_SKIP: 'blockSkip',
   BLOCK_STALE: 'blockStale',

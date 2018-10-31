@@ -13,7 +13,8 @@ describe('getSyncInfoFactory', () => {
 
   beforeEach(function beforeEach() {
     blocks = getBlockFixtures();
-    [, , lastChainBlock] = blocks;
+    // eslint-disable-next-line prefer-destructuring
+    lastChainBlock = blocks[2];
     syncStateRepository = {
       fetch: this.sinon.stub(),
     };

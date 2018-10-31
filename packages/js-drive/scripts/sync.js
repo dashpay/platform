@@ -6,7 +6,7 @@ const SyncAppOptions = require('../lib/app/SyncAppOptions');
 const SyncApp = require('../lib/app/SyncApp');
 
 const attachSequenceValidationHandler = require('../lib/blockchain/reader/eventHandlers/attachSequenceValidationHandler');
-const attachBlockErrorHandler = require('../lib/blockchain/reader/eventHandlers/attachBlockErrorHandler');
+const attachBlockErrorHandler = require('../lib/blockchain/reader/eventHandlers/attachErrorHandler');
 const attachStorageHandlers = require('../lib/storage/attachStorageHandlers');
 const attachSyncHandlers = require('../lib/sync/state/attachSyncHandlers');
 const attachStateViewHandlers = require('../lib/stateView/attachStateViewHandlers');
@@ -50,7 +50,10 @@ const errorHandler = require('../lib/util/errorHandler');
 
   attachBlockErrorHandler(
     readerMediator,
-    { skipBlockWithErrors: syncAppOptions.getSyncBlockSkipWithErrors() },
+    {
+      skipBlockWithErrors: syncAppOptions.getSyncBlockSkipWithErrors(),
+      skipStateTransitionWithErrors: syncAppOptions.getSyncStateTransitionSkipWithErrors(),
+    },
   );
 
   const readBlockchainWithThrottling = throttleFactory(syncApp.createReadBlockchain());

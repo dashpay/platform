@@ -15,14 +15,6 @@ class RestartBlockchainReaderError extends Error {
   getHeight() {
     return this.height;
   }
-
-  /**
-   * @return {boolean}
-   */
-  // eslint-disable-next-line class-methods-use-this
-  isFlowControl() {
-    return true;
-  }
 }
 
 module.exports = RestartBlockchainReaderError;

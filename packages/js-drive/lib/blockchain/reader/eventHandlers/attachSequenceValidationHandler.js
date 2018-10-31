@@ -1,6 +1,6 @@
 const ReaderMediator = require('../BlockchainReaderMediator');
 
-const RestartBlockchainReaderError = require('../RestartBlockchainReaderError');
+const RestartBlockchainReaderError = require('../errors/RestartBlockchainReaderError');
 
 const WrongSequenceError = require('./errors/WrongSequenceError');
 const NotAbleToValidateSequenceError = require('./errors/NotAbleToValidateSequenceError');

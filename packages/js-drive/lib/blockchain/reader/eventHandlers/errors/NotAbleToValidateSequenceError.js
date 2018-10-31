@@ -4,14 +4,6 @@ class NotAbleToValidateSequenceError extends Error {
 
     this.name = this.constructor.name;
   }
-
-  /**
-   * @return {boolean}
-   */
-  // eslint-disable-next-line class-methods-use-this
-  isFlowControl() {
-    return true;
-  }
 }
 
 module.exports = NotAbleToValidateSequenceError;
