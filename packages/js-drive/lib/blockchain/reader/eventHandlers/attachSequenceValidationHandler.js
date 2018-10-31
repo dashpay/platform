@@ -68,8 +68,17 @@ module.exports = function attachSequenceValidationHandler(readerMediator, create
    */
   async function restartReaderIfSequenceIsWrong({ error, block }) {
     const lastSyncedBlock = readerMediator.getState().getLastBlock();
+    const firstSyncedBlockHeight = readerMediator.getState().getFirstBlockHeight();
 
     if (error instanceof NotAbleToValidateSequenceError) {
+      await readerMediator.emitSerial(
+        ReaderMediator.EVENTS.BLOCK_SEQUENCE_VALIDATION_IMPOSSIBLE,
+        {
+          height: block.height,
+          firstSyncedBlockHeight,
+        },
+      );
+
       await readerMediator.reset();
 
       throw new RestartBlockchainReaderError(readerMediator.getInitialBlockHeight());

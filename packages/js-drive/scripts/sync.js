@@ -5,6 +5,7 @@ const zmq = require('zeromq');
 const SyncAppOptions = require('../lib/app/SyncAppOptions');
 const SyncApp = require('../lib/app/SyncApp');
 
+const attachSyncLogger = require('../lib/sync/attachSyncLogger');
 const attachSequenceValidationHandler = require('../lib/blockchain/reader/eventHandlers/attachSequenceValidationHandler');
 const attachBlockErrorHandler = require('../lib/blockchain/reader/eventHandlers/attachErrorHandler');
 const attachStorageHandlers = require('../lib/storage/attachStorageHandlers');
@@ -20,6 +21,11 @@ const errorHandler = require('../lib/util/errorHandler');
   await syncApp.init();
 
   const readerMediator = syncApp.createBlockchainReaderMediator();
+
+  attachSyncLogger(
+    readerMediator,
+    syncApp.createLogger(),
+  );
 
   // Attach listeners to SyncEventBus
   attachSequenceValidationHandler(

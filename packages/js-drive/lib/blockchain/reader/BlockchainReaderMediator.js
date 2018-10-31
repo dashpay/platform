@@ -51,6 +51,7 @@ BlockchainReaderMediator.EVENTS = {
   BLOCK_STALE: 'blockStale',
   BLOCK_END: 'blockEnd',
   BLOCK_ERROR: 'blockError',
+  BLOCK_SEQUENCE_VALIDATION_IMPOSSIBLE: 'blockSequenceValidationImpossible',
   RESET: 'reset',
   END: 'end',
 };

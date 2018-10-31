@@ -139,15 +139,16 @@ describe('readBlockchainFactory', () => {
     );
   });
 
-  it('should reset the state if in case of reorg and there is no previous block to rely onto', async () => {
+  it('should reset the state if there is no previous block to rely onto', async () => {
     const [lastSyncedBlock] = blocks;
+    const firstSycedBlock = 4;
 
     lastSyncedBlock.height = 7;
 
     readerMock.read.returns(currentBlockCount);
 
     readerMediatorMock.getInitialBlockHeight.returns(initialBlockHeight);
-    readerMediatorMock.getState().getFirstBlockHeight.returns(4);
+    readerMediatorMock.getState().getFirstBlockHeight.returns(firstSycedBlock);
     readerMediatorMock.getState().getLastBlock.returns(lastSyncedBlock);
 
     await readBlockchain();
@@ -156,18 +157,26 @@ describe('readBlockchainFactory', () => {
 
     expect(readerMock.read).to.be.calledOnceWith(initialBlockHeight);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledTwice();
+    expect(readerMediatorMock.emitSerial).to.have.callCount(3);
 
     expect(readerMediatorMock.emitSerial).to.be.calledWith(
       ReaderMediator.EVENTS.BEGIN,
       initialBlockHeight,
     );
+
+    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+      ReaderMediator.EVENTS.BLOCK_SEQUENCE_VALIDATION_IMPOSSIBLE,
+      {
+        height: currentBlockCount,
+        firstSyncedBlockHeight: firstSycedBlock,
+      },
+    );
+
     expect(readerMediatorMock.emitSerial).to.be.calledWith(
       ReaderMediator.EVENTS.END,
       currentBlockCount,
     );
   });
-
 
   it('should continue from the current blockchain height if it is less then'
     + ' last synced block height but higher then first synced block', async () => {

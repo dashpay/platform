@@ -22,15 +22,15 @@ module.exports = function readBlockchainFactory(reader, readerMediator, rpcClien
 
     // Skip syncing if current height less than initial block height
     if (height > currentBlockCount) {
-      // Clean state if we have synced blocks
-      if (lastSyncedBlock) {
-        await readerMediator.reset();
-      }
-
       await readerMediator.emitSerial(ReaderMediator.EVENTS.OUT_OF_BOUNDS, {
         initialBlockHeight: height,
         currentBlockCount,
       });
+
+      // Clean state if we have synced blocks
+      if (lastSyncedBlock) {
+        await readerMediator.reset();
+      }
 
       return;
     }
@@ -58,6 +58,14 @@ module.exports = function readBlockchainFactory(reader, readerMediator, rpcClien
         const firstSyncedBlockHeight = readerMediator.getState().getFirstBlockHeight();
 
         if (height <= firstSyncedBlockHeight) {
+          await readerMediator.emitSerial(
+            ReaderMediator.EVENTS.BLOCK_SEQUENCE_VALIDATION_IMPOSSIBLE,
+            {
+              height,
+              firstSyncedBlockHeight,
+            },
+          );
+
           // The state does not have previous block to rely onto
           await readerMediator.reset();
 

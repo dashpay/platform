@@ -2,6 +2,8 @@ const IpfsAPI = require('ipfs-api');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 const { MongoClient } = require('mongodb');
 
+const Logger = require('../util/Logger');
+
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
 const sanitizeData = require('../mongoDb/sanitizeData');
 const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
@@ -114,6 +116,14 @@ class SyncApp {
    */
   getIpfsApi() {
     return this.ipfsAPI;
+  }
+
+  /**
+   * @return {Logger}
+   */
+  // eslint-disable-next-line class-methods-use-this
+  createLogger() {
+    return new Logger(console);
   }
 
   /**

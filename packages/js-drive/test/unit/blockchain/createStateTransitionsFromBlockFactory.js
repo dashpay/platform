@@ -48,5 +48,5 @@ describe('createStateTransitionsFromBlockFactory', () => {
     expect(stateTransitionHashes).to.deep.equal([transitionOne.hash, transitionTwo.hash]);
   });
 
-  xit('should return state transition in a sorted order');
+  it('should return state transition in a sorted order');
 });

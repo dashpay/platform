@@ -193,7 +193,10 @@ describe('attachSequenceValidationHandler', () => {
 
         await readerMediatorMock.originalEmitSerial(
           ReaderMediator.EVENTS.BLOCK_ERROR,
-          { error },
+          {
+            error,
+            block: blocks[0],
+          },
         );
       } catch (e) {
         if (e instanceof RestartBlockchainReaderError) {
