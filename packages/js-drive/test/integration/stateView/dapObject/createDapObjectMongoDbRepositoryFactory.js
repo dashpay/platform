@@ -23,7 +23,8 @@ describe('createDapObjectMongoDbRepositoryFactory', () => {
       idx: 0,
     };
     const reference = new Reference();
-    const dapObject = new DapObject(blockchainUserId, objectData, reference);
+    const isDeleted = false;
+    const dapObject = new DapObject(blockchainUserId, isDeleted, objectData, reference);
     await dapObjectRepository.store(dapObject);
 
     const result = await dapObjectRepository.find(dapObject.getId());

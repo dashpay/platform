@@ -149,8 +149,8 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
             aboutme: user.aboutMe,
             pver: 1,
             idx: 0,
-            rev: 1,
-            act: 1,
+            rev: 0,
+            act: 0,
           },
         ],
       });

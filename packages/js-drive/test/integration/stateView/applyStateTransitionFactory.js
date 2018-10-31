@@ -118,6 +118,7 @@ describe('applyStateTransitionFactory', () => {
   it('should compute DapObject state view', async () => {
     const block = getBlockFixtures()[1];
     const packet = getTransitionPacketFixtures()[1];
+    packet.dapobjects[0].act = 0;
     const header = getTransitionHeaderFixtures()[1];
     header.extraPayload.hashSTPacket = packet.getHash();
 

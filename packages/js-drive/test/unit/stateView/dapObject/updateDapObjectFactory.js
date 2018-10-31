@@ -1,4 +1,5 @@
 const Reference = require('../../../../lib/stateView/Reference');
+const DapObject = require('../../../../lib/stateView/dapObject/DapObject');
 const updateDapObjectFactory = require('../../../../lib/stateView/dapObject/updateDapObjectFactory');
 
 describe('updateDapObjectFactory', () => {
@@ -11,8 +12,8 @@ describe('updateDapObjectFactory', () => {
 
   beforeEach(function beforeEach() {
     dapObjectRepository = {
+      find: this.sinon.stub(),
       store: this.sinon.stub(),
-      delete: this.sinon.stub(),
     };
     const createDapObjectRepository = () => dapObjectRepository;
     updateDapObject = updateDapObjectFactory(createDapObjectRepository);
@@ -36,18 +37,36 @@ describe('updateDapObjectFactory', () => {
       rev: 1,
       act: 0,
     };
-    updateDapObject(dapId, blockchainUserId, reference, dapObject);
+    await updateDapObject(dapId, blockchainUserId, reference, dapObject);
     expect(dapObjectRepository.store).to.calledOnce();
   });
 
-  it('should store DapObject if action is 1', async () => {
+  it('should store DapObject if action is 1 and has previous version', async () => {
+    const isDeleted = false;
+    const firstDapObjectData = {
+      id: '1234',
+      objtype: 'user',
+      idx: 0,
+      rev: 0,
+      act: 0,
+    };
+    const firstReference = new Reference();
+    const firstPreviousRevisions = [];
+    const firstDapObject = new DapObject(
+      blockchainUserId,
+      isDeleted,
+      firstDapObjectData,
+      firstReference,
+      firstPreviousRevisions,
+    );
+    dapObjectRepository.find.returns(firstDapObject);
     const dapObject = {
       objtype: 'user',
       idx: 0,
       rev: 1,
       act: 1,
     };
-    updateDapObject(dapId, blockchainUserId, reference, dapObject);
+    await updateDapObject(dapId, blockchainUserId, reference, dapObject);
     expect(dapObjectRepository.store).to.calledOnce();
   });
 
@@ -58,8 +77,8 @@ describe('updateDapObjectFactory', () => {
       rev: 1,
       act: 2,
     };
-    updateDapObject(dapId, blockchainUserId, reference, dapObject);
-    expect(dapObjectRepository.delete).to.calledOnce();
+    await updateDapObject(dapId, blockchainUserId, reference, dapObject);
+    expect(dapObjectRepository.store).to.calledOnce();
   });
 
   it('should not store DapContract if action is not 0 or 1 or 2', async () => {
@@ -69,7 +88,7 @@ describe('updateDapObjectFactory', () => {
       rev: 1,
       act: 5,
     };
-    updateDapObject(dapId, blockchainUserId, reference, dapObject);
+    await updateDapObject(dapId, blockchainUserId, reference, dapObject);
     expect(dapObjectRepository.store).to.not.calledOnce();
   });
 });

@@ -6,6 +6,7 @@ const generateDapObjectId = require('../../../../lib/stateView/dapObject/generat
 describe('DapObject', () => {
   it('should get DapObject ID', async () => {
     const blockchainUserId = '3557b9a8dfcc1ef9674b50d8d232e0e3e9020f49fa44f89cace622a01f43d03e';
+    const isDeleted = false;
     const slotNumber = 0;
     const dapObjectData = {
       objtype: 'user',
@@ -14,13 +15,14 @@ describe('DapObject', () => {
       act: 0,
     };
     const reference = new Reference();
-    const dapObject = new DapObject(blockchainUserId, dapObjectData, reference);
+    const dapObject = new DapObject(blockchainUserId, isDeleted, dapObjectData, reference);
     const dapObjectId = generateDapObjectId(blockchainUserId, slotNumber);
     expect(dapObject.getId()).to.be.equal(dapObjectId);
   });
 
   it('should serialize DapObject', () => {
     const blockchainUserId = '3557b9a8dfcc1ef9674b50d8d232e0e3e9020f49fa44f89cace622a01f43d03e';
+    const isDeleted = false;
     const dapObjectData = {
       objtype: 'user',
       idx: 0,
@@ -37,15 +39,24 @@ describe('DapObject', () => {
       headerHash,
       hashSTPacket,
     );
-    const dapObject = new DapObject(blockchainUserId, dapObjectData, reference);
+    const previousRevisions = [];
+    const dapObject = new DapObject(
+      blockchainUserId,
+      isDeleted,
+      dapObjectData,
+      reference,
+      previousRevisions,
+    );
 
     const dapObjectSerialized = dapObject.toJSON();
     expect(dapObjectSerialized).to.deep.equal({
       blockchainUserId,
+      markAsDeleted: isDeleted,
       type: dapObjectData.objtype,
       object: dapObjectData,
       revision: dapObjectData.rev,
       reference: reference.toJSON(),
+      previousRevisions,
     });
   });
 
@@ -57,6 +68,7 @@ describe('DapObject', () => {
 
   it('should get DapObject action', async () => {
     const blockchainUserId = '3557b9a8dfcc1ef9674b50d8d232e0e3e9020f49fa44f89cace622a01f43d03e';
+    const isDeleted = false;
     const dapObjectData = {
       id: '1234',
       objtype: 'user',
@@ -65,7 +77,69 @@ describe('DapObject', () => {
       act: 0,
     };
     const reference = new Reference();
-    const dapObject = new DapObject(blockchainUserId, dapObjectData, reference);
+    const dapObject = new DapObject(blockchainUserId, isDeleted, dapObjectData, reference);
     expect(dapObject.getAction()).to.be.equal(0);
+  });
+
+  it('should add revision to DapObject', () => {
+    const blockchainUserId = '3557b9a8dfcc1ef9674b50d8d232e0e3e9020f49fa44f89cace622a01f43d03e';
+    const isDeleted = false;
+
+    const firstDapObjectData = {
+      id: '1234',
+      objtype: 'user',
+      idx: 0,
+      rev: 1,
+      act: 0,
+    };
+    const firstReference = new Reference();
+    const firstPreviousRevisions = [];
+    const firstDapObject = new DapObject(
+      blockchainUserId,
+      isDeleted,
+      firstDapObjectData,
+      firstReference,
+      firstPreviousRevisions,
+    );
+
+    const secondDapObjectData = {
+      id: '1234',
+      objtype: 'user',
+      idx: 0,
+      rev: 2,
+      act: 0,
+    };
+    const secondReference = new Reference();
+    const secondPreviousVersions = [firstDapObject.currentRevision()];
+    const secondDapObject = new DapObject(
+      blockchainUserId,
+      isDeleted,
+      secondDapObjectData,
+      secondReference,
+      secondPreviousVersions,
+    );
+
+    const thirdDapObjectData = {
+      id: '1234',
+      objtype: 'user',
+      idx: 0,
+      rev: 3,
+      act: 0,
+    };
+    const thirdReference = new Reference();
+    const thirdPreviousVersions = [];
+    const thirdDapObject = new DapObject(
+      blockchainUserId,
+      isDeleted,
+      thirdDapObjectData,
+      thirdReference,
+      thirdPreviousVersions,
+    );
+    thirdDapObject.addRevision(secondDapObject);
+
+    expect(thirdDapObject.getPreviousRevisions()).to.be.deep.equal([
+      firstDapObject.currentRevision(),
+      secondDapObject.currentRevision(),
+    ]);
   });
 });

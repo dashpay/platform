@@ -13,16 +13,28 @@ function updateDapObjectFactory(createDapObjectRepository) {
    */
   async function updateDapObject(dapId, blockchainUserId, reference, dapObjectData) {
     const dapObjectRepository = createDapObjectRepository(dapId);
-    const dapObject = new DapObject(blockchainUserId, dapObjectData, reference);
+    const markAsDeleted = false;
+    const dapObject = new DapObject(blockchainUserId, markAsDeleted, dapObjectData, reference);
 
     switch (dapObject.getAction()) {
-      case DapObject.ACTION_CREATE:
-      case DapObject.ACTION_UPDATE:
+      case DapObject.ACTION_CREATE: {
         await dapObjectRepository.store(dapObject);
         break;
-      case DapObject.ACTION_DELETE:
-        await dapObjectRepository.delete(dapObject);
+      }
+      case DapObject.ACTION_UPDATE: {
+        const previousDapObject = await dapObjectRepository.find(dapObject.getId());
+        if (!previousDapObject) {
+          return;
+        }
+        dapObject.addRevision(previousDapObject);
+        await dapObjectRepository.store(dapObject);
         break;
+      }
+      case DapObject.ACTION_DELETE: {
+        dapObject.markAsDeleted();
+        await dapObjectRepository.store(dapObject);
+        break;
+      }
       default:
     }
   }

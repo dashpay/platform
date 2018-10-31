@@ -12,6 +12,7 @@ const AmbiguousStartError = require('../../../../lib/stateView/dapObject/errors/
 let id = 1;
 function createDapObjectWithAge(age) {
   const blockchainUserId = id++;
+  const isDeleted = false;
   const objectData = {
     act: 0,
     objtype: 'DashPayContact',
@@ -24,14 +25,21 @@ function createDapObjectWithAge(age) {
   const blockHeight = 1;
   const headerHash = '17jasdjk129uasd8asd023098SD09023jll123jlasd90823jklD';
   const hashSTPacket = 'ad877138as8012309asdkl123l123lka908013';
+  const objectHash = 'd2123a23cks3912jasd21931234j9v8adnqwe89912331';
   const reference = new Reference(
     blockHash,
     blockHeight,
     headerHash,
     hashSTPacket,
+    objectHash,
   );
-
-  return new DapObject(blockchainUserId, objectData, reference);
+  const previousRevisions = [
+    {
+      revision: 1,
+      reference,
+    },
+  ];
+  return new DapObject(blockchainUserId, isDeleted, objectData, reference, previousRevisions);
 }
 
 describe('DapObjectMongoDbRepository', () => {
@@ -339,14 +347,12 @@ describe('DapObjectMongoDbRepository', () => {
 
     await dapObjectRepository.delete(dapObj);
     const objectTwo = await dapObjectRepository.find(dapObj.getId());
-    const serializeObject = objectTwo.toJSON();
-    expect(serializeObject.object.age).to.not.exist();
+    expect(objectTwo).to.be.null();
   });
 
   it('should return empty DapObject if not found', async () => {
     const object = await dapObjectRepository.find();
 
-    const serializeObject = object.toJSON();
-    expect(serializeObject.blockchainUserId).to.not.exist();
+    expect(object).to.be.null();
   });
 });

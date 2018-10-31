@@ -23,8 +23,25 @@ class DapObjectMongoDbRepository {
    */
   async find(id) {
     const result = await this.mongoClient.findOne({ _id: id });
-    const { blockchainUserId, object: objectState, reference: referenceState } = result || {};
-    return this.toDapObject(blockchainUserId, objectState, referenceState);
+
+    if (!result) {
+      return null;
+    }
+
+    const {
+      blockchainUserId,
+      markAsDeleted,
+      object: objectState,
+      reference: referenceState,
+    } = result || {};
+    const previousRevisions = this.toPreviousRevisions(result.previousRevisions);
+    return this.toDapObject(
+      blockchainUserId,
+      markAsDeleted,
+      objectState,
+      referenceState,
+      previousRevisions,
+    );
   }
 
   /**
@@ -83,8 +100,20 @@ class DapObjectMongoDbRepository {
     query = Object.assign({}, query, { type });
     const results = await this.mongoClient.find(query, opts).toArray();
     return results.map((result) => {
-      const { blockchainUserId, object: objectState, reference: referenceState } = result || {};
-      return this.toDapObject(blockchainUserId, objectState, referenceState);
+      const {
+        blockchainUserId,
+        markAsDeleted,
+        object: objectState,
+        reference: referenceState,
+      } = result || {};
+      const previousRevisions = this.toPreviousRevisions(result.previousRevisions);
+      return this.toDapObject(
+        blockchainUserId,
+        markAsDeleted,
+        objectState,
+        referenceState,
+        previousRevisions,
+      );
     });
   }
 
@@ -117,14 +146,50 @@ class DapObjectMongoDbRepository {
    * @return {DapObject}
    */
   // eslint-disable-next-line class-methods-use-this
-  toDapObject(blockchainUserId, objectState = {}, referenceState = {}) {
+  toDapObject(
+    blockchainUserId,
+    markAsDeleted,
+    objectState = {},
+    referenceState = {},
+    previousRevisions = [],
+  ) {
     const reference = new Reference(
       referenceState.blockHash,
       referenceState.blockHeight,
       referenceState.stHeaderHash,
       referenceState.stPacketHash,
+      referenceState.objectHash,
     );
-    return new DapObject(blockchainUserId, objectState, reference);
+    return new DapObject(
+      blockchainUserId,
+      markAsDeleted,
+      objectState,
+      reference,
+      previousRevisions,
+    );
+  }
+
+  /**
+   * @private
+   * @param {array} previousRevisionsData
+   * @returns {{revision: number, reference: Reference}[]}
+   */
+  // eslint-disable-next-line class-methods-use-this
+  toPreviousRevisions(previousRevisionsData = []) {
+    return previousRevisionsData.map((revisionItem) => {
+      const previousRevision = revisionItem.revision;
+      const previousReferenceData = revisionItem.reference;
+      return {
+        revision: previousRevision,
+        reference: new Reference(
+          previousReferenceData.blockHash,
+          previousReferenceData.blockHeight,
+          previousReferenceData.stHeaderHash,
+          previousReferenceData.stPacketHash,
+          previousReferenceData.objectHash,
+        ),
+      };
+    });
   }
 
   /**
