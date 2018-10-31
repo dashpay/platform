@@ -92,7 +92,7 @@ class ApiApp {
   createCheckSyncStateHttpMiddleware() {
     const repositoryChangeListener = new SyncStateRepositoryChangeListener(
       this.syncStateRepository,
-      this.options.syncStateCheckInterval * 1000,
+      this.options.getSyncStateCheckInterval(),
     );
 
     return getCheckSyncStateHttpMiddleware(

@@ -5,7 +5,7 @@ async function waitUntilBlockchainIsSynced(rpcClient, checkInterval) {
       if (isSynced) {
         return resolve();
       }
-      return setTimeout(checkStatus, checkInterval * 1000);
+      return setTimeout(checkStatus, checkInterval);
     }
     checkStatus().catch(reject);
   });

@@ -5,10 +5,11 @@ class SyncAppOptions {
     this.dashCoreJsonRpcUser = options.DASHCORE_JSON_RPC_USER;
     this.dashCoreJsonRpcPass = options.DASHCORE_JSON_RPC_PASS;
     this.dashCoreRunningCheckMaxRetries = parseInt(options.DASHCORE_RUNNING_CHECK_MAX_RETRIES, 10);
-    this.dashCoreRunningCheckInterval = parseInt(options.DASHCORE_RUNNING_CHECK_INTERVAL, 10);
+    this.dashCoreRunningCheckInterval = parseInt(options.DASHCORE_RUNNING_CHECK_INTERVAL, 10)
+      * 1000;
     this.dashCoreZmqPubHashblock = options.DASHCORE_ZMQ_PUB_HASHBLOCK;
     this.storageIpfsMultiAddr = options.STORAGE_IPFS_MULTIADDR;
-    this.storageIpfsTimeout = parseInt(options.STORAGE_IPFS_TIMEOUT, 10);
+    this.storageIpfsTimeout = parseInt(options.STORAGE_IPFS_TIMEOUT, 10) * 1000;
     this.storageMongoDbUrl = options.STORAGE_MONGODB_URL;
     this.storageMongoDbDatabase = options.STORAGE_MONGODB_DB;
     this.syncEvoStartBlockHeight = parseInt(options.SYNC_EVO_START_BLOCK_HEIGHT, 10);

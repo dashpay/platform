@@ -5,12 +5,13 @@ class ApiAppOptions {
     this.dashCoreJsonRpcUser = options.DASHCORE_JSON_RPC_USER;
     this.dashCoreJsonRpcPass = options.DASHCORE_JSON_RPC_PASS;
     this.dashCoreRunningCheckMaxRetries = parseInt(options.DASHCORE_RUNNING_CHECK_MAX_RETRIES, 10);
-    this.dashCoreRunningCheckInterval = parseInt(options.DASHCORE_RUNNING_CHECK_INTERVAL, 10);
+    this.dashCoreRunningCheckInterval = parseInt(options.DASHCORE_RUNNING_CHECK_INTERVAL, 10)
+      * 1000;
     this.storageIpfsMultiAddr = options.STORAGE_IPFS_MULTIADDR;
     this.storageMongoDbUrl = options.STORAGE_MONGODB_URL;
     this.storageMongoDbDatabase = options.STORAGE_MONGODB_DB;
-    this.syncStateCheckInterval = parseInt(options.SYNC_STATE_CHECK_INTERVAL, 10);
-    this.syncChainCheckInterval = parseInt(options.SYNC_CHAIN_CHECK_INTERVAL, 10);
+    this.syncStateCheckInterval = parseInt(options.SYNC_STATE_CHECK_INTERVAL, 10) * 1000;
+    this.syncChainCheckInterval = parseInt(options.SYNC_CHAIN_CHECK_INTERVAL, 10) * 1000;
     this.apiRpcPort = options.API_RPC_PORT;
     this.apiRpcHost = options.API_RPC_HOST;
   }

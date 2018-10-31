@@ -71,7 +71,7 @@ async function dashDriveSyncToFinish(instance) {
 
       if (syncInfo.status === 'synced') {
         finished = true;
-        await wait(apiAppOptions.getSyncStateCheckInterval() * 1000);
+        await wait(apiAppOptions.getSyncStateCheckInterval());
       } else {
         await wait(1000);
       }
