@@ -3,25 +3,61 @@
   "$id": "https://schema.dash.org/platform-4-0-0/system/st-packet",
   "properties": {
     "contractId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64
     },
     "objects": {
       "type": "array",
       "items": {
-        "$ref": "dap-object"
-      }
+        "$ref": "https://schema.dash.org/platform-4-0-0/system/dap-object"
+      },
+      "maxItems": 1000
     },
     "contracts": {
       "type": "array",
       "items": {
-        "$ref": "dap-contract"
-      }
+        "$ref": "https://schema.dash.org/platform-4-0-0/system/dap-contract"
+      },
+      "maxItems": 1
     }
   },
+  "allOf": [
+    {
+      "not": {
+        "properties": {
+          "objects": {
+            "maxItems": 0
+          },
+          "contracts": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "objects": {
+          "type": "array",
+          "items": {
+            "$ref": "https://schema.dash.org/platform-4-0-0/system/dap-object"
+          },
+          "maxItems": 1000
+        },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "$ref": "https://schema.dash.org/platform-4-0-0/system/dap-contract"
+          },
+          "maxItems": 1
+        }
+      }
+    }
+  ],
   "required": [
     "contractId",
     "objects",
     "contracts"
   ],
-  "additionalItems": false
+  "additionalProperties": false
 }

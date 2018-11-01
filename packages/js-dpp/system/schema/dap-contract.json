@@ -1,17 +1,18 @@
 {
   "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
-  "$id": "https://schema.dash.org/platform-4-0-0/system-contract/app-contract",
+  "$id": "https://schema.dash.org/platform-4-0-0/system/dap-contract",
   "type": "object",
   "allOf": [
     {
-      "$ref": "https://schema.dash.org/schema-1-0-0/schema"
+      "$ref": "https://schema.dash.org/platform-4-0-0/dash-schema/schema"
     }
   ],
   "properties": {
     "name": {
       "type": "string",
       "minLength": 3,
-      "maxLength": 24
+      "maxLength": 24,
+      "pattern": "^[a-zA-Z0-9-_]{1,255}$"
     },
     "version": {
       "type": "number",
@@ -30,7 +31,9 @@
             },
             "properties": {
               "type": "object",
-              "propertyName": "^[a-zA-Z0-9-_]{1,255}$",
+              "propertyNames": {
+                "pattern": "^[a-zA-Z0-9-_]{1,255}$"
+              },
               "minProperties": 1,
               "maxProperties": 100
             },
@@ -38,7 +41,11 @@
               "type": "boolean",
               "const": false
             }
-          }
+          },
+          "required": [
+            "properties",
+            "additionalProperties"
+          ]
         }
       }
     }
