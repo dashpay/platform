@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
-  "$id": "https://schema.dash.org/platform-4-0-0/system/dap-contract",
+  "$id": "https://schema.dash.org/platform-4-0-0/system/meta/dap-contract",
   "type": "object",
   "allOf": [
     {
@@ -47,7 +47,8 @@
             "additionalProperties"
           ]
         }
-      }
+      },
+      "additionalProperties": false
     }
   },
   "required": [
@@ -55,5 +56,5 @@
     "version",
     "objects"
   ],
-  "additionalItems": false
+  "additionalProperties": false
 }
