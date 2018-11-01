@@ -14,7 +14,7 @@ describe('getSyncInfoFactory', () => {
   beforeEach(function beforeEach() {
     blocks = getBlockFixtures();
     // eslint-disable-next-line prefer-destructuring
-    lastChainBlock = blocks[2];
+    lastChainBlock = blocks[3];
     syncStateRepository = {
       fetch: this.sinon.stub(),
     };
@@ -68,11 +68,10 @@ describe('getSyncInfoFactory', () => {
       const syncStateLastSyncAt = null;
       const syncState = new SyncState(blocks, syncStateLastSyncAt);
       syncStateRepository.fetch.returns(syncState);
-      const chainLastBlock = blocks[3];
       const isBlockchainSynced = false;
       const chainInfo = new ChainInfo(
-        chainLastBlock.height,
-        chainLastBlock.hash,
+        lastChainBlock.height,
+        lastChainBlock.hash,
         isBlockchainSynced,
       );
       getChainInfo.returns(chainInfo);
@@ -80,16 +79,15 @@ describe('getSyncInfoFactory', () => {
       expect(syncInfo.getStatus()).to.be.deep.equal(SyncInfo.STATUSES.INITIAL_SYNC);
     });
 
-    it('should be syncing if SyncState has lastSyncAt, lastInitialSyncAt and isBlochainSynced is false', async () => {
+    it('should be syncing if SyncState has lastSyncAt, lastInitialSyncAt and isBlockchainSynced is false', async () => {
       const syncStateLastSyncAt = new Date();
       const syncLastInitialSyncAt = new Date();
       const syncState = new SyncState(blocks, syncStateLastSyncAt, syncLastInitialSyncAt);
       syncStateRepository.fetch.returns(syncState);
-      const chainLastBlock = blocks[3];
       const isBlockchainSynced = false;
       const chainInfo = new ChainInfo(
-        chainLastBlock.height,
-        chainLastBlock.hash,
+        lastChainBlock.height,
+        lastChainBlock.hash,
         isBlockchainSynced,
       );
       getChainInfo.returns(chainInfo);
@@ -102,11 +100,10 @@ describe('getSyncInfoFactory', () => {
       const syncStateLastInitialSyncAt = new Date();
       const syncState = new SyncState(blocks, syncStateLastSyncAt, syncStateLastInitialSyncAt);
       syncStateRepository.fetch.returns(syncState);
-      const chainLastBlock = blocks[blocks.length - 1];
       const isBlockchainSynced = true;
       const chainInfo = new ChainInfo(
-        chainLastBlock.height,
-        chainLastBlock.hash,
+        lastChainBlock.height,
+        lastChainBlock.hash,
         isBlockchainSynced,
       );
       getChainInfo.returns(chainInfo);
@@ -118,22 +115,20 @@ describe('getSyncInfoFactory', () => {
   describe('lastSyncedBlockHeight', () => {
     it('should be the same block height as in SyncState', async () => {
       const syncStateLastSyncAt = new Date();
-      const lastSyncedBlock = blocks[blocks.length - 1];
       const syncState = new SyncState(blocks, syncStateLastSyncAt);
       syncStateRepository.fetch.returns(syncState);
       const syncInfo = await getSyncInfo();
-      expect(syncInfo.getLastSyncedBlockHeight()).to.be.deep.equal(lastSyncedBlock.height);
+      expect(syncInfo.getLastSyncedBlockHeight()).to.be.deep.equal(lastChainBlock.height);
     });
   });
 
   describe('lastSyncedBlockHash', () => {
     it('should be the same block hash as in SyncState', async () => {
       const syncStateLastSyncAt = new Date();
-      const lastSyncedBlock = blocks[blocks.length - 1];
       const syncState = new SyncState(blocks, syncStateLastSyncAt);
       syncStateRepository.fetch.returns(syncState);
       const syncInfo = await getSyncInfo();
-      expect(syncInfo.getLastSyncedBlockHash()).to.be.deep.equal(lastSyncedBlock.hash);
+      expect(syncInfo.getLastSyncedBlockHash()).to.be.deep.equal(lastChainBlock.hash);
     });
   });
 
@@ -142,15 +137,14 @@ describe('getSyncInfoFactory', () => {
       const syncStateLastSyncAt = new Date();
       const syncState = new SyncState(blocks, syncStateLastSyncAt);
       syncStateRepository.fetch.returns(syncState);
-      const chainLastBlock = blocks[blocks.length - 1];
       const isBlockchainSynced = true;
       getChainInfo.returns(new ChainInfo(
-        chainLastBlock.height,
-        chainLastBlock.hash,
+        lastChainBlock.height,
+        lastChainBlock.hash,
         isBlockchainSynced,
       ));
       const syncInfo = await getSyncInfo();
-      expect(syncInfo.getLastChainBlockHeight()).to.be.deep.equal(chainLastBlock.height);
+      expect(syncInfo.getLastChainBlockHeight()).to.be.deep.equal(lastChainBlock.height);
     });
   });
 
@@ -159,15 +153,14 @@ describe('getSyncInfoFactory', () => {
       const syncStateLastSyncAt = new Date();
       const syncState = new SyncState(blocks, syncStateLastSyncAt);
       syncStateRepository.fetch.returns(syncState);
-      const chainLastBlock = blocks[blocks.length - 1];
       const isBlockchainSynced = true;
       getChainInfo.returns(new ChainInfo(
-        chainLastBlock.height,
-        chainLastBlock.hash,
+        lastChainBlock.height,
+        lastChainBlock.hash,
         isBlockchainSynced,
       ));
       const syncInfo = await getSyncInfo();
-      expect(syncInfo.getLastChainBlockHash()).to.be.deep.equal(chainLastBlock.hash);
+      expect(syncInfo.getLastChainBlockHash()).to.be.deep.equal(lastChainBlock.hash);
     });
   });
 });
