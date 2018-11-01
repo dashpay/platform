@@ -103,14 +103,6 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.BLOCK_SKIP, (block) => {
-    logger.info(`Skipping processing block ${block.height}`, {
-      hash: block.hash,
-      height: block.height,
-      event: ReaderMediator.EVENTS.BLOCK_SKIP,
-    });
-  });
-
   readerMediator.on(ReaderMediator.EVENTS.STATE_TRANSITION, (params) => {
     const { block, stateTransition } = params;
     logger.info(
