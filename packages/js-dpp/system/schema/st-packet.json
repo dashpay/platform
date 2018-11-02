@@ -13,9 +13,6 @@
     },
     "dapContracts": {
       "type": "array",
-      "items": {
-        "$ref": "https://schema.dash.org/platform-4-0-0/system/meta/dap-contract"
-      },
       "maxItems": 1
     }
   },

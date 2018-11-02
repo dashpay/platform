@@ -1,4 +1,4 @@
-const validateDapContract = require('../../../lib/validation/validateDapContract');
+const { validateDapContract, DapContract } = require('../../../lib');
 
 const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
 
@@ -6,7 +6,7 @@ describe('validateDapContract', () => {
   let dapContract;
 
   beforeEach(() => {
-    dapContract = getLovelyDapContract();
+    dapContract = DapContract.fromObject(getLovelyDapContract());
   });
 
   it('should return error if $schema is not present', () => {
@@ -178,13 +178,13 @@ describe('validateDapContract', () => {
 
       const errors = validateDapContract(dapContract);
 
-      expect(errors).to.be.null();
+      expect(errors).to.be.empty();
     });
   });
 
   it('should return null if contract is valid', () => {
     const errors = validateDapContract(dapContract);
 
-    expect(errors).to.be.null();
+    expect(errors).to.be.empty();
   });
 });

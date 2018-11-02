@@ -1,8 +1,11 @@
 class InvalidDapObjectTypeError extends Error {
-  constructor(contract, type) {
+  constructor(dapContract, type) {
     super();
 
-    this.message = `Dap contract ${contract.name} doesn't contain type ${type}`;
+    this.name = this.constructor.name;
+    this.message = `Dap contract ${dapContract.name} doesn't contain type ${type}`;
+    this.dapContract = dapContract;
+    this.type = type;
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
