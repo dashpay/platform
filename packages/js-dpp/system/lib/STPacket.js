@@ -1,3 +1,5 @@
+const ContractIdIsNotDefinedError = require('./errors/ContractIdIsNotDefinedError');
+
 /**
  * @class STPacket
  * @property {string} contractId
@@ -32,6 +34,9 @@ class STPacket {
    * @param {Array<TDapObject>} dapObjects
    */
   addDapObject(dapObjects) {
+    if (!this.contractId) {
+      throw new ContractIdIsNotDefinedError();
+    }
     this.dapObjects.push(...dapObjects);
   }
 

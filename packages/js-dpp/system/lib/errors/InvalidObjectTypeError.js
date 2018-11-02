@@ -1,4 +1,4 @@
-class InvalidObjectType extends Error {
+class InvalidObjectTypeError extends Error {
   constructor(contract, type) {
     super();
 
@@ -10,6 +10,4 @@ class InvalidObjectType extends Error {
   }
 }
 
-module.exports = {
-  InvalidObjectType,
-};
+module.exports = InvalidObjectTypeError;

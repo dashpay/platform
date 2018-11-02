@@ -1,4 +1,4 @@
-const { InvalidObjectType } = require('./errors');
+const InvalidObjectTypeError = require('./errors/InvalidObjectTypeError');
 
 /**
  * @class DapObject
@@ -11,7 +11,7 @@ class DapObject {
    */
   constructor(type, dapContract) {
     if (!dapContract.isObjectTypeDefined(type)) {
-      throw new InvalidObjectType();
+      throw new InvalidObjectTypeError(type, dapContract);
     }
     this.$$type = type;
   }
