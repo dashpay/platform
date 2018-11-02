@@ -1,4 +1,4 @@
-module.exports = function getLovelyObjects() {
+module.exports = function getLovelyDapObjects() {
   return [
     {
       $$type: 'niceObject',

@@ -2,7 +2,7 @@ const Ajv = require('ajv');
 
 const dashSchema = require('../../../dash-schema/schema/schema');
 const dapObjectBaseSchema = require('../../schema/base/dap-object');
-const appContractMetaSchema = require('../../schema/meta/dap-contract');
+const dapContractMetaSchema = require('../../schema/meta/dap-contract');
 
 module.exports = function validateDapContract(dapContract) {
   const ajv = new Ajv();
@@ -13,7 +13,7 @@ module.exports = function validateDapContract(dapContract) {
 
   // TODO: Use validateSchema?
 
-  ajv.validate(appContractMetaSchema, dapContract);
+  ajv.validate(dapContractMetaSchema, dapContract);
 
   if (ajv.errors) {
     return ajv.errors;

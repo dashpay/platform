@@ -23,7 +23,7 @@
       "multipleOf": 1.0,
       "minimum": 1
     },
-    "objectsDefinition": {
+    "dapObjectsDefinition": {
       "type": "object",
       "patternProperties": {
         "^[a-zA-Z0-9-_]{1,255}$": {
@@ -71,7 +71,7 @@
     "$schema",
     "name",
     "version",
-    "objectsDefinition"
+    "dapObjectsDefinition"
   ],
   "additionalProperties": false
 }

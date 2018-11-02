@@ -1,21 +1,21 @@
 const validateDapObject = require('../../../lib/validation/validateDapObject');
 
-const getLovelyContract = require('../../../lib/test/fixtures/getLovelyContract');
-const getLovelyObjects = require('../../../lib/test/fixtures/getLovelyObjects');
+const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
+const getLovelyDapObjects = require('../../../lib/test/fixtures/getLovelyDapObjects');
 
 describe('validateDapObject', () => {
-  let object;
-  let contract;
+  let dapObject;
+  let dapContract;
 
   beforeEach(() => {
-    contract = getLovelyContract();
-    [object] = getLovelyObjects();
+    dapContract = getLovelyDapContract();
+    [dapObject] = getLovelyDapObjects();
   });
 
   it('should return error if $$type is not present in object', () => {
-    delete object.$$type;
+    delete dapObject.$$type;
 
-    const errors = validateDapObject(object, contract);
+    const errors = validateDapObject(dapObject, dapContract);
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('');
     expect(errors[0].keyword).to.be.equal('required');
@@ -23,17 +23,17 @@ describe('validateDapObject', () => {
   });
 
   it('should return error if $$type is not defined in contract', () => {
-    object.$$type = 'undefinedObject';
+    dapObject.$$type = 'undefinedObject';
 
-    const errors = validateDapObject(object, contract);
+    const errors = validateDapObject(dapObject, dapContract);
     expect(errors).to.be.an('array').and.lengthOf(1);
-    expect(errors[0].missingRef).to.be.equal('dap-contract#/objectsDefinition/undefinedObject');
+    expect(errors[0].missingRef).to.be.equal('dap-contract#/dapObjectsDefinition/undefinedObject');
   });
 
   it('should return error if object is not valid against schema', () => {
-    object.name = 1;
+    dapObject.name = 1;
 
-    const errors = validateDapObject(object, contract);
+    const errors = validateDapObject(dapObject, dapContract);
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('.name');
     expect(errors[0].keyword).to.be.equal('type');

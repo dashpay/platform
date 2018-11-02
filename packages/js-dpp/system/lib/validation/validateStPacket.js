@@ -7,7 +7,7 @@ const dapContractMetaSchema = require('../../schema/meta/dap-contract');
 
 const validateDapObject = require('./validateDapObject');
 
-module.exports = function validateStPacket(packet, dapContract) {
+module.exports = function validateStPacket(stPacket, dapContract) {
   const ajv = new Ajv();
 
   ajv.addMetaSchema(dashSchema);
@@ -22,7 +22,7 @@ module.exports = function validateStPacket(packet, dapContract) {
 
   ajv.validate(
     'https://schema.dash.org/platform-4-0-0/system/st-packet',
-    packet,
+    stPacket,
   );
 
   if (ajv.errors) {
@@ -31,8 +31,8 @@ module.exports = function validateStPacket(packet, dapContract) {
 
   // TODO Validate by schema
   let allErrors = [];
-  for (const object of packet.objects) {
-    const errors = validateDapObject(object, dapContract);
+  for (const dapObject of stPacket.dapObjects) {
+    const errors = validateDapObject(dapObject, dapContract);
 
     if (errors) {
       allErrors = allErrors.concat(errors);

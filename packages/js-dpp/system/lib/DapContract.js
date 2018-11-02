@@ -2,7 +2,7 @@
  * @class DapContract
  * @property {string} name
  * @property {number} version
- * @property {Object} objectsDefinition
+ * @property {Object} dapObjectsDefinition
  */
 class DapContract {
   /**
@@ -10,8 +10,8 @@ class DapContract {
    * @param {string} type
    * @return {boolean}
    */
-  isObjectTypeDefined(type) {
-    return Object.prototype.hasOwnProperty.call(this.objectsDefinition, type);
+  isDapObjectTypeDefined(type) {
+    return Object.prototype.hasOwnProperty.call(this.dapObjectsDefinition, type);
   }
 }
 

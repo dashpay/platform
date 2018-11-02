@@ -1,13 +1,12 @@
-const ContractIdIsNotDefinedError = require('./errors/ContractIdIsNotDefinedError');
-
 /**
  * @class STPacket
- * @property {string} contractId
+ * @property {string} dapContractId
  * @property Array<Object> dapContracts
  * @property Array<Object> dapObjects
  */
 class STPacket {
   constructor() {
+    this.dapContractId = '';
     this.dapObjects = [];
     this.dapContracts = [];
   }
@@ -18,7 +17,7 @@ class STPacket {
   setDapContract(dapContract) {
     this.dapContracts = [dapContract];
     // TODO: set contract id
-    // this.contractId = toHash(dapContract);
+    // this.dapContractId = toHash(dapContract);
   }
 
   /**
@@ -34,25 +33,22 @@ class STPacket {
    * @param {Array<TDapObject>} dapObjects
    */
   addDapObject(dapObjects) {
-    if (!this.contractId) {
-      throw new ContractIdIsNotDefinedError();
-    }
     this.dapObjects.push(...dapObjects);
   }
 
   /**
-   * @param {string} contractId
+   * @param {string} dapContractId
    */
-  setContractId(contractId) {
-    this.contractId = contractId;
+  setDapContractId(dapContractId) {
+    this.dapContractId = dapContractId;
   }
 
   /**
-   * @return {{contractId: string, dapContracts: Array<Object>, dapObjects: Array<Object>}}
+   * @return {{dapContractId: string, dapContracts: Array<Object>, dapObjects: Array<Object>}}
    */
   toJson() {
     return {
-      contractId: this.contractId,
+      dapContractId: this.dapContractId,
       dapContracts: this.dapContracts,
       dapObjects: this.dapObjects,
     };

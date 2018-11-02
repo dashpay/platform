@@ -1,99 +1,99 @@
 const validateStPacket = require('../../../lib/validation/validateStPacket');
-const getLovelyContract = require('../../../lib/test/fixtures/getLovelyContract');
-const getLovelyObjects = require('../../../lib/test/fixtures/getLovelyObjects');
+const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
+const getLovelyDapObjects = require('../../../lib/test/fixtures/getLovelyDapObjects');
 
 describe('validateStPacket', () => {
-  let packet;
-  let contract;
+  let stPacket;
+  let dapContract;
 
   beforeEach(() => {
-    contract = getLovelyContract();
-    packet = {
-      contractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
-      contracts: [
-        contract,
+    dapContract = getLovelyDapContract();
+    stPacket = {
+      dapContractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
+      dapContracts: [
+        dapContract,
       ],
-      objects: getLovelyObjects(),
+      dapObjects: getLovelyDapObjects(),
     };
   });
 
-  describe('contractId', () => {
-    it('should return error if packet doesn\'t contain `contractId`', () => {
-      delete packet.contractId;
+  describe('dapContractId', () => {
+    it('should return error if packet doesn\'t contain `dapContractId`', () => {
+      delete stPacket.dapContractId;
 
-      const errors = validateStPacket(packet, contract);
+      const errors = validateStPacket(stPacket, dapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('');
       expect(errors[0].keyword).to.be.equal('required');
-      expect(errors[0].params.missingProperty).to.be.equal('contractId');
+      expect(errors[0].params.missingProperty).to.be.equal('dapContractId');
     });
 
-    it('should return error if `contractId` length is lesser 64', () => {
-      packet.contractId = '86b273ff';
+    it('should return error if `dapContractId` length is lesser 64', () => {
+      stPacket.dapContractId = '86b273ff';
 
-      const errors = validateStPacket(packet, contract);
+      const errors = validateStPacket(stPacket, dapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
-      expect(errors[0].schemaPath).to.be.equal('#/properties/contractId/minLength');
+      expect(errors[0].schemaPath).to.be.equal('#/properties/dapContractId/minLength');
     });
 
-    it('should return error if `contractId` length is bigger 64', () => {
-      packet.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+    it('should return error if `dapContractId` length is bigger 64', () => {
+      stPacket.dapContractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const errors = validateStPacket(packet, contract);
+      const errors = validateStPacket(stPacket, dapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
-      expect(errors[0].schemaPath).to.be.equal('#/properties/contractId/maxLength');
+      expect(errors[0].schemaPath).to.be.equal('#/properties/dapContractId/maxLength');
     });
   });
 
   it('should return error if packet contains 0 objects and 0 contracts', () => {
-    packet.contracts = [];
-    packet.objects = [];
+    stPacket.dapContracts = [];
+    stPacket.dapObjects = [];
 
-    const errors = validateStPacket(packet, contract);
+    const errors = validateStPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].schemaPath).to.be.equal('#/allOf/0/not');
   });
 
 
-  it('should return error if packet doesn\'t contain `objects`', () => {
-    delete packet.objects;
+  it('should return error if packet doesn\'t contain `dapObjects`', () => {
+    delete stPacket.dapObjects;
 
-    const errors = validateStPacket(packet, contract);
+    const errors = validateStPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('');
     expect(errors[0].keyword).to.be.equal('required');
-    expect(errors[0].params.missingProperty).to.be.equal('objects');
+    expect(errors[0].params.missingProperty).to.be.equal('dapObjects');
   });
 
-  it('should return error if packet doesn\'t contain `contracts`', () => {
-    delete packet.contracts;
+  it('should return error if packet doesn\'t contain `dapContracts`', () => {
+    delete stPacket.dapContracts;
 
-    const errors = validateStPacket(packet, contract);
+    const errors = validateStPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('');
     expect(errors[0].keyword).to.be.equal('required');
-    expect(errors[0].params.missingProperty).to.be.equal('contracts');
+    expect(errors[0].params.missingProperty).to.be.equal('dapContracts');
   });
 
   it('should return error if packet contains more than one contract', () => {
-    packet.contracts.push(packet.contracts[0]);
+    stPacket.dapContracts.push(stPacket.dapContracts[0]);
 
-    const errors = validateStPacket(packet, contract);
+    const errors = validateStPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].message).to.be.equal('should NOT have more than 1 items');
   });
 
   it('should return error if there are additional properties in the packet', () => {
-    packet.additionalStuff = {};
+    stPacket.additionalStuff = {};
 
-    const errors = validateStPacket(packet, contract);
+    const errors = validateStPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].message).to.be.equal('should NOT have additional properties');
@@ -104,19 +104,19 @@ describe('validateStPacket', () => {
   it('should validate dap objects');
 
   it('should return error if object type is undefined in contract', () => {
-    packet.objects.push({
+    stPacket.dapObjects.push({
       $$type: 'undefinedObject',
       name: 'Anonymous',
     });
 
-    const errors = validateStPacket(packet, contract);
+    const errors = validateStPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
-    expect(errors[0].missingRef).to.be.equal('dap-contract#/objectsDefinition/undefinedObject');
+    expect(errors[0].missingRef).to.be.equal('dap-contract#/dapObjectsDefinition/undefinedObject');
   });
 
   it('should return null if packet structure is correct', () => {
-    const errors = validateStPacket(packet, contract);
+    const errors = validateStPacket(stPacket, dapContract);
 
     expect(errors).to.be.null();
   });

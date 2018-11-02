@@ -4,7 +4,7 @@ const dashSchema = require('../../../dash-schema/schema/schema');
 const dapObjectBaseSchema = require('../../schema/base/dap-object');
 const dapContractMetaSchema = require('../../schema/meta/dap-contract');
 
-module.exports = function validateDapObject(object, dapContract) {
+module.exports = function validateDapObject(dapObject, dapContract) {
   const ajv = new Ajv();
 
   ajv.addMetaSchema(dashSchema);
@@ -15,7 +15,7 @@ module.exports = function validateDapObject(object, dapContract) {
 
   ajv.addSchema(dapContract, 'dap-contract');
 
-  ajv.validate('https://schema.dash.org/platform-4-0-0/system/base/dap-object', object);
+  ajv.validate('https://schema.dash.org/platform-4-0-0/system/base/dap-object', dapObject);
 
   if (ajv.errors) {
     return ajv.errors;
@@ -23,8 +23,8 @@ module.exports = function validateDapObject(object, dapContract) {
 
   try {
     ajv.validate({
-      $ref: `dap-contract#/objectsDefinition/${object.$$type}`,
-    }, object);
+      $ref: `dap-contract#/dapObjectsDefinition/${dapObject.$$type}`,
+    }, dapObject);
   } catch (e) {
     if (e.missingSchema === 'dap-contract') {
       return [e];

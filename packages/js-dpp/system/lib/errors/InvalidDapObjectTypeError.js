@@ -1,4 +1,4 @@
-class InvalidObjectTypeError extends Error {
+class InvalidDapObjectTypeError extends Error {
   constructor(contract, type) {
     super();
 
@@ -10,4 +10,4 @@ class InvalidObjectTypeError extends Error {
   }
 }
 
-module.exports = InvalidObjectTypeError;
+module.exports = InvalidDapObjectTypeError;
