@@ -11,7 +11,7 @@ class DapContract {
    * @return {boolean}
    */
   isObjectTypeDefined(type) {
-    return Boolean(this.objectsDefinition[type]);
+    return Object.prototype.hasOwnProperty.call(this.objectsDefinition, type);
   }
 }
 
