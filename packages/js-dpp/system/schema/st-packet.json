@@ -9,9 +9,6 @@
     },
     "objects": {
       "type": "array",
-      "items": {
-        "$ref": "https://schema.dash.org/platform-4-0-0/system/dap-object"
-      },
       "maxItems": 1000
     },
     "contracts": {
@@ -32,24 +29,6 @@
           "contracts": {
             "maxItems": 0
           }
-        }
-      }
-    },
-    {
-      "properties": {
-        "objects": {
-          "type": "array",
-          "items": {
-            "$ref": "https://schema.dash.org/platform-4-0-0/system/dap-object"
-          },
-          "maxItems": 1000
-        },
-        "contracts": {
-          "type": "array",
-          "items": {
-            "$ref": "https://schema.dash.org/platform-4-0-0/system/meta/dap-contract"
-          },
-          "maxItems": 1
         }
       }
     }

@@ -2,19 +2,23 @@ const Ajv = require('ajv');
 
 const dashSchema = require('../../../dash-schema/schema/schema');
 const stPacketSchema = require('../../schema/st-packet');
-const dapObjectSchema = require('../../schema/dap-object');
-const appContractMetaSchema = require('../../schema/meta/dap-contract');
+const dapObjectBaseSchema = require('../../schema/base/dap-object');
+const dapContractMetaSchema = require('../../schema/meta/dap-contract');
 
-module.exports = function validateStPacket(packet, appContract) {
+const validateDapObject = require('./validateDapObject');
+
+module.exports = function validateStPacket(packet, dapContract) {
   const ajv = new Ajv();
 
   ajv.addMetaSchema(dashSchema);
 
   ajv.addSchema(stPacketSchema);
-  ajv.addSchema(dapObjectSchema);
-  ajv.addMetaSchema(appContractMetaSchema);
+  ajv.addSchema(dapObjectBaseSchema);
+  ajv.addMetaSchema(dapContractMetaSchema);
 
-  ajv.addSchema(appContract, 'dap-contract');
+  ajv.addSchema(dapContract, 'dap-contract');
+
+  // TODO If contract contains wrong $schema?
 
   ajv.validate(
     'https://schema.dash.org/platform-4-0-0/system/st-packet',
@@ -25,31 +29,18 @@ module.exports = function validateStPacket(packet, appContract) {
     return ajv.errors;
   }
 
-  const errors = [];
+  // TODO Validate by schema
+  let allErrors = [];
   for (const object of packet.objects) {
-    try {
-      ajv.validate({
-        // eslint-disable-next-line no-underscore-dangle
-        $ref: `dap-contract#/objects/${object._type}`,
-      }, object);
-    } catch (e) {
-      if (e.missingSchema === 'dap-contract') {
-        errors.push(e);
+    const errors = validateDapObject(object, dapContract);
 
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
-      throw e;
-    }
-
-    if (ajv.errors) {
-      errors.push(ajv.errors);
+    if (errors) {
+      allErrors = allErrors.concat(errors);
     }
   }
 
-  if (errors.length) {
-    return errors;
+  if (allErrors.length) {
+    return allErrors;
   }
 
   return null;

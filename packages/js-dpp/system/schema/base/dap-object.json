@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
-  "$id": "https://schema.dash.org/platform-4-0-0/system/dap-object",
+  "$id": "https://schema.dash.org/platform-4-0-0/system/base/dap-object",
   "type": "object",
   "properties": {
-    "_type": {
+    "$$type": {
       "type": "string"
     }
   },
   "required": [
-    "_type"
+    "$$type"
   ]
 }
