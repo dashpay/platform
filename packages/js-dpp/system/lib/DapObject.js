@@ -2,7 +2,7 @@ const { InvalidObjectType } = require('./errors');
 
 /**
  * @class DapObject
- * @property _type
+ * @property $$type
  */
 class DapObject {
   /**
