@@ -13,7 +13,7 @@ class DapObject {
     if (!dapContract.isObjectTypeDefined(type)) {
       throw new InvalidObjectType();
     }
-    this._type = type;
+    this.$$type = type;
   }
 }
 
