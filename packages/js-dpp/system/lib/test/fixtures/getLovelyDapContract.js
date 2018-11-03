@@ -20,10 +20,15 @@ module.exports = function getLovelyDapContract() {
         ],
         properties: {
           lastName: {
-            type: 'string',
+            $ref: '#/definitions/lastName',
           },
         },
         required: ['lastName'],
+      },
+    },
+    definitions: {
+      lastName: {
+        type: 'string',
       },
     },
   };

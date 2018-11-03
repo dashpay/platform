@@ -12,7 +12,7 @@ module.exports = function validateStPacketStructureFactory(validator) {
    */
   function validateSTPacketStructure(rawStPacket) {
     return validator.validate(
-      SchemaValidator.SHEMAS.ST_PACKET,
+      SchemaValidator.SCHEMAS.ST_PACKET,
       rawStPacket,
     );
   }

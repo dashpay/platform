@@ -12,7 +12,7 @@ module.exports = function validateDapObjectStructureFactory(validator) {
    */
   function validateDapObjectStructure(rawDapObject) {
     return validator.validate(
-      SchemaValidator.SHEMAS.BASE.DAP_OBJECT,
+      SchemaValidator.SCHEMAS.BASE.DAP_OBJECT,
       rawDapObject,
     );
   }

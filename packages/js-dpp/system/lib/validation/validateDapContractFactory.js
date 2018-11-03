@@ -13,7 +13,7 @@ module.exports = function validateDapContractFactory(validator) {
   function validateDapContract(dapContract) {
     // TODO: Use validateSchema?
 
-    return validator.validate(SchemaValidator.SHEMAS.META.DAP_CONTRACT, dapContract.toJSON());
+    return validator.validate(SchemaValidator.SCHEMAS.META.DAP_CONTRACT, dapContract.toJSON());
   }
 
   return validateDapContract;

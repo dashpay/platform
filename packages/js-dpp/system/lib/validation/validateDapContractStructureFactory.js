@@ -14,7 +14,7 @@ module.exports = function validateDapContractStructureFactory(validator) {
     // TODO: Use validateSchema?
 
     return validator.validate(
-      SchemaValidator.SHEMAS.META.DAP_CONTRACT,
+      SchemaValidator.SCHEMAS.META.DAP_CONTRACT,
       rawDapContract,
     );
   }

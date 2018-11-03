@@ -5,10 +5,6 @@ module.exports = function getLovelyDapObjects() {
       name: 'Cutie',
     },
     {
-      $$type: 'niceObject',
-      name: 'Cutie',
-    },
-    {
       $$type: 'prettyObject',
       lastName: 'Shiny',
     },

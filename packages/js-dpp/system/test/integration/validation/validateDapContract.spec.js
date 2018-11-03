@@ -83,6 +83,11 @@ describe('validateDapContract', () => {
     expect(errors[0].params.missingProperty).to.be.equal('dapObjectsDefinition');
   });
 
+  describe('definitions', () => {
+    it('should allow definitions in the contract');
+    it('definitions name should be valid');
+  });
+
   describe('objects', () => {
     it('should return error if object definition missing property `properties`', () => {
       delete dapContract.dapObjectsDefinition.niceObject.properties;

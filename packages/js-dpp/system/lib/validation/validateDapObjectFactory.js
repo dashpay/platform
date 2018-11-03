@@ -15,11 +15,9 @@ module.exports = function validateDapObjectFactory(validator) {
   function validateDapObject(dapObject, dapContract) {
     let errors;
 
-    validator.setDapContract(dapContract);
-
     // TODO validate once
     errors = validator.validate(
-      SchemaValidator.SHEMAS.BASE.DAP_OBJECT,
+      SchemaValidator.SCHEMAS.BASE.DAP_OBJECT,
       dapObject.toJSON(),
     );
 
@@ -27,12 +25,15 @@ module.exports = function validateDapObjectFactory(validator) {
       return errors;
     }
 
+    validator.ajv.addSchema(dapContract.toJSON(), 'dap-contract');
+
     try {
       errors = validator.validate(
-        dapContract.getDapObjectSchema(dapObject.getType()),
+        dapContract.getDapObjectSchemaRef(dapObject.getType()),
         dapObject.toJSON(),
       );
     } catch (e) {
+      validator.ajv.removeSchema('dap-contract');
       if (e instanceof InvalidDapObjectTypeError) {
         return [e];
       }
@@ -40,6 +41,7 @@ module.exports = function validateDapObjectFactory(validator) {
       throw e;
     }
 
+    validator.ajv.removeSchema('dap-contract');
     return errors;
   }
 

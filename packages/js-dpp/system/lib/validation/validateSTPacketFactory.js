@@ -26,7 +26,7 @@ module.exports = function validateSTPacketFactory(
     let errors;
 
     errors = validator.validate(
-      SchemaValidator.SHEMAS.ST_PACKET,
+      SchemaValidator.SCHEMAS.ST_PACKET,
       stPacket.toJSON(),
     );
 

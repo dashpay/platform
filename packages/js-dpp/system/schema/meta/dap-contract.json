@@ -65,6 +65,13 @@
         }
       },
       "additionalProperties": false
+    },
+    "definitions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9-_]{1,255}$"
+      },
+      "maxProperties": 100
     }
   },
   "required": [

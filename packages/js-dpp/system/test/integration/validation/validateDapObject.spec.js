@@ -9,37 +9,45 @@ describe('validateDapObject', () => {
 
   beforeEach(() => {
     dapContract = DapContract.fromObject(getLovelyDapContract());
-    dapObject = DapObject.fromObject(getLovelyDapObjects()[0]);
   });
 
-  it('should return error if $$type is not present in object', () => {
-    delete dapObject.$$type;
 
-    const errors = validateDapObject(dapObject, dapContract);
-    expect(errors).to.be.an('array').and.lengthOf(1);
-    expect(errors[0].dataPath).to.be.equal('');
-    expect(errors[0].keyword).to.be.equal('required');
-    expect(errors[0].params.missingProperty).to.be.equal('$$type');
-  });
+  for (const rawDapObject of getLovelyDapObjects()) {
+    describe(`${rawDapObject.$$type}`, () => {
+      beforeEach(() => {
+        dapObject = DapObject.fromObject(rawDapObject);
+      });
 
-  it('should return error if $$type is not defined in contract', () => {
-    dapObject.setType('undefinedObject');
+      it('should return error if $$type is not present in object', () => {
+        delete dapObject.$$type;
 
-    const errors = validateDapObject(dapObject, dapContract);
-    expect(errors).to.be.an('array').and.lengthOf(1);
-    expect(errors[0].name).to.be.equal('InvalidDapObjectTypeError');
-    expect(errors[0].type).to.be.equal('undefinedObject');
-  });
+        const errors = validateDapObject(dapObject, dapContract);
+        expect(errors).to.be.an('array').and.lengthOf(1);
+        expect(errors[0].dataPath).to.be.equal('');
+        expect(errors[0].keyword).to.be.equal('required');
+        expect(errors[0].params.missingProperty).to.be.equal('$$type');
+      });
 
-  it('should return error if $$action is not present');
-  it('should return error if $$action is not valid');
+      it('should return error if $$type is not defined in contract', () => {
+        dapObject.setType('undefinedObject');
 
-  it('should return error if object is not valid against schema', () => {
-    dapObject.name = 1;
+        const errors = validateDapObject(dapObject, dapContract);
+        expect(errors).to.be.an('array').and.lengthOf(1);
+        expect(errors[0].name).to.be.equal('InvalidDapObjectTypeError');
+        expect(errors[0].type).to.be.equal('undefinedObject');
+      });
 
-    const errors = validateDapObject(dapObject, dapContract);
-    expect(errors).to.be.an('array').and.lengthOf(1);
-    expect(errors[0].dataPath).to.be.equal('.name');
-    expect(errors[0].keyword).to.be.equal('type');
-  });
+      it('should return error if $$action is not present');
+      it('should return error if $$action is not valid');
+
+      it('should return error if object is not valid against schema', () => {
+        dapObject.name = 1;
+
+        const errors = validateDapObject(dapObject, dapContract);
+        expect(errors).to.be.an('array').and.lengthOf(1);
+        expect(errors[0].dataPath).to.be.equal('.name');
+        expect(errors[0].keyword).to.be.equal('type');
+      });
+    });
+  }
 });

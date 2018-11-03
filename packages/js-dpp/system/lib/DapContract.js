@@ -88,6 +88,21 @@ class DapContract {
   }
 
   /**
+   * @template TDefinitions {Object}
+   * @param {TDefinitions} definitions
+   */
+  setDefinitions(definitions) {
+    this.definitions = definitions;
+  }
+
+  /**
+   * @return {Object}
+   */
+  getDefinitions() {
+    return this.definitions;
+  }
+
+  /**
    * Returns true if object type is defined in this dap contract
    *
    * @param {string} type
@@ -140,12 +155,13 @@ class DapContract {
   }
 
   toJSON() {
-    return {
-      $schema: this.getSchema(),
-      name: this.getName(),
-      version: this.getVersion(),
-      dapObjectsDefinition: this.getDapObjectsDefinition(),
-    };
+    const json = {};
+
+    for (const name of Object.getOwnPropertyNames(this)) {
+      json[name] = this[name];
+    }
+
+    return json;
   }
 
   static fromObject(object) {
@@ -156,8 +172,13 @@ class DapContract {
     }
 
     const dapContract = new DapContract(object.name, object.dapObjectsDefinition);
-    dapContract.setVersion(object.version);
+
     dapContract.setSchema(object.$schema);
+    dapContract.setVersion(object.version);
+
+    if (object.definitions) {
+      dapContract.setDefinitions(object.definitions);
+    }
 
     return dapContract;
   }
@@ -189,5 +210,6 @@ DapContract.DEFAULTS = {
   VERSION: 1,
   SCHEMA: 'https://schema.dash.org/platform-4-0-0/system/meta/dap-contract',
 };
+DapContract;
 
 module.exports = DapContract;
