@@ -22,16 +22,17 @@ class SchemaValidator {
    * @return {array}
    */
   validate(schema, object, additionalSchemas = {}) {
-    for (const schemaId of Object.keys(additionalSchemas)) {
-      this.ajv.addSchema(additionalSchemas[schemaId], schemaId);
-    }
+    // TODO Keep cached/compiled additional schemas
 
-    // TODO: Use { schemas: additionalSchemas }
+    Object.keys(additionalSchemas).forEach((schemaId) => {
+      this.ajv.addSchema(additionalSchemas[schemaId], schemaId);
+    });
+
     this.ajv.validate(schema, object);
 
-    for (const schemaId of Object.keys(additionalSchemas)) {
+    Object.keys(additionalSchemas).forEach((schemaId) => {
       this.ajv.removeSchema(schemaId);
-    }
+    });
 
     if (this.ajv.errors) {
       return this.ajv.errors;
