@@ -1,9 +1,18 @@
 describe('DapObject', () => {
+  describe('constructor', () => {
+    it('should create new Dap Object');
+  });
   describe('#setType', () => {
     it('should set $$type');
   });
   describe('#getType', () => {
     it('should return $$type');
+  });
+  describe('#setRevision', () => {
+    it('should set $$revision');
+  });
+  describe('#getRevision', () => {
+    it('should return $$revision');
   });
   describe('#setAction', () => {
     it('should set $$action');

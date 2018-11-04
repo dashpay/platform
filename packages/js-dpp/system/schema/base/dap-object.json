@@ -5,9 +5,24 @@
   "properties": {
     "$$type": {
       "type": "string"
+    },
+    "$$action": {
+      "type": "number",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "$$revision": {
+      "type": "number",
+      "multipleOf": 1.0,
+      "minimum": 0
     }
   },
   "required": [
-    "$$type"
+    "$$type",
+    "$$revision",
+    "$$action"
   ]
 }

@@ -8,8 +8,9 @@ class DapObject {
    * @param {object} [data]
    */
   constructor(type, data = {}) {
-    this.setAction(DapObject.ACTIONS.CREATE);
     this.setType(type);
+    this.setAction(DapObject.ACTIONS.CREATE);
+    this.setRevision(DapObject.DEFAULTS.REVISION);
 
     Object.assign(this, data);
   }
@@ -57,6 +58,27 @@ class DapObject {
   }
 
   /**
+   * Set revision
+   *
+   * @param {number} revision
+   * @return DapObject
+   */
+  setRevision(revision) {
+    this.$$revision = revision;
+
+    return this.$$revision;
+  }
+
+  /**
+   * Get revision
+   *
+   * @return {number}
+   */
+  getRevision() {
+    return this.$$revision;
+  }
+
+  /**
    * Return Dap Object as plain object
    *
    * @return {Object}
@@ -64,9 +86,9 @@ class DapObject {
   toJSON() {
     const json = {};
 
-    for (const name of Object.getOwnPropertyNames(this)) {
+    Object.getOwnPropertyNames(this).forEach((name) => {
       json[name] = this[name];
-    }
+    });
 
     return json;
   }
@@ -130,6 +152,10 @@ DapObject.ACTIONS = {
   CREATE: 0,
   UPDATE: 1,
   DELETE: 2,
+};
+
+DapObject.DEFAULTS = {
+  REVISION: 0,
 };
 
 module.exports = DapObject;

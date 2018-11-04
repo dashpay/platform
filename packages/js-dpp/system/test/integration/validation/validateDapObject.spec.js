@@ -31,6 +31,9 @@ describe('validateDapObject', () => {
     expect(errors[0].type).to.be.equal('undefinedObject');
   });
 
+  it('should return error if $$revision is not present');
+  it('should return error if $$revision is not valid');
+
   it('should return error if $$action is not present');
   it('should return error if $$action is not valid');
 

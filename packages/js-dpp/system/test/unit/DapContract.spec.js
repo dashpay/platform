@@ -1,4 +1,7 @@
 describe('DapContract', () => {
+  describe('constructor', () => {
+    it('should create new Dap Contract');
+  });
   describe('#getId', () => {
     it('should calculate Dap Contract ID');
   });
