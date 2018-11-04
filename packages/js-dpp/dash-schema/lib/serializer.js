@@ -1,5 +1,9 @@
 const cbor = require('cbor');
 
+/**
+ * @typedef serializer
+ * @type {{encode(*): Buffer, decode((Buffer|string)): *}}
+ */
 module.exports = {
   /**
    *

@@ -164,6 +164,15 @@ class DapContract {
     return json;
   }
 
+  /**
+   * Serialize Dap Contract
+   *
+   * @return {Buffer}
+   */
+  serialize() {
+    return DapContract.serializer.encode(this.toJSON());
+  }
+
   static fromObject(object) {
     const errors = DapContract.validateStructure(object);
 
@@ -193,11 +202,17 @@ class DapContract {
     return DapContract.fromObject(object);
   }
 
+  /**
+   * Set serializer
+   *
+   * @param {serializer} serializer
+   */
   static setSerializer(serializer) {
     DapContract.serializer = serializer;
   }
 
   /**
+   * Set structure validator
    *
    * @param {Function} validator
    */
@@ -210,6 +225,5 @@ DapContract.DEFAULTS = {
   VERSION: 1,
   SCHEMA: 'https://schema.dash.org/platform-4-0-0/system/meta/dap-contract',
 };
-DapContract;
 
 module.exports = DapContract;

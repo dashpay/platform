@@ -86,6 +86,15 @@ class STPacket {
   }
 
   /**
+   * Serialize ST Packet
+   *
+   * @return {Buffer}
+   */
+  serialize() {
+    return STPacket.serializer.encode(this.toJSON());
+  }
+
+  /**
    *
    * @param {Object} object
    * @return {STPacket}
@@ -123,10 +132,20 @@ class STPacket {
     return STPacket.fromObject(object);
   }
 
+  /**
+   * Set serializer
+   *
+   * @param {serializer} serializer
+   */
   static setSerializer(serializer) {
     STPacket.serializer = serializer;
   }
 
+  /**
+   * Set structure validator
+   *
+   * @param {Function} validator
+   */
   static setStructureValidator(validator) {
     STPacket.structureValidator = validator;
   }

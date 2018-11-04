@@ -44,6 +44,15 @@ class DapObject {
     return json;
   }
 
+  /**
+   * Serialize Dap Object
+   *
+   * @return {Buffer}
+   */
+  serialize() {
+    return DapObject.serializer.encode(this.toJSON());
+  }
+
   static fromObject(object) {
     const errors = DapObject.validateStructure(object);
 
@@ -64,11 +73,17 @@ class DapObject {
     return DapObject.fromObject(object);
   }
 
+  /**
+   * Set serializer
+   *
+   * @param {serializer} serializer
+   */
   static setSerializer(serializer) {
     DapObject.serializer = serializer;
   }
 
   /**
+   * Set structure validator
    *
    * @param {Function} validator
    */
