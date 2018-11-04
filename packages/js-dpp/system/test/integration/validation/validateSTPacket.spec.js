@@ -1,4 +1,9 @@
-const { validateSTPacket, DapContract, STPacket } = require('../../../lib');
+const {
+  validateSTPacket,
+  DapContract,
+  STPacket,
+  DapObject,
+} = require('../../../lib');
 
 const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
 const getLovelyDapObjects = require('../../../lib/test/fixtures/getLovelyDapObjects');
@@ -20,6 +25,7 @@ describe('validateSTPacket', () => {
 
   describe('dapContractId', () => {
     it('should return error if packet doesn\'t contain `dapContractId`', () => {
+      // TODO That should be structure validation in fromObject
       delete stPacket.dapContractId;
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -31,7 +37,7 @@ describe('validateSTPacket', () => {
     });
 
     it('should return error if `dapContractId` length is lesser 64', () => {
-      stPacket.dapContractId = '86b273ff';
+      stPacket.setDapContractId('86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
 
@@ -40,7 +46,7 @@ describe('validateSTPacket', () => {
     });
 
     it('should return error if `dapContractId` length is bigger 64', () => {
-      stPacket.dapContractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+      stPacket.setDapContractId('86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
 
@@ -50,8 +56,9 @@ describe('validateSTPacket', () => {
   });
 
   it('should return error if packet contains 0 objects and 0 contracts', () => {
+    // TODO How to remove contract from ST Packet?
     stPacket.dapContracts = [];
-    stPacket.dapObjects = [];
+    stPacket.setDapObjects([]);
 
     const errors = validateSTPacket(stPacket, dapContract);
 
@@ -62,6 +69,8 @@ describe('validateSTPacket', () => {
   it('should return error if packet contains the both objects and contracts');
 
   it('should return error if packet doesn\'t contain `dapObjects`', () => {
+    // TODO That should be structure validation in fromObject
+
     delete stPacket.dapObjects;
 
     const errors = validateSTPacket(stPacket, dapContract);
@@ -73,6 +82,8 @@ describe('validateSTPacket', () => {
   });
 
   it('should return error if packet doesn\'t contain `dapContracts`', () => {
+    // TODO That should be structure validation in fromObject
+
     delete stPacket.dapContracts;
 
     const errors = validateSTPacket(stPacket, dapContract);
@@ -84,6 +95,8 @@ describe('validateSTPacket', () => {
   });
 
   it('should return error if packet contains more than one contract', () => {
+    // TODO That should be structure validation in fromObject
+
     stPacket.dapContracts.push(stPacket.dapContracts[0]);
 
     const errors = validateSTPacket(stPacket, dapContract);
@@ -93,6 +106,7 @@ describe('validateSTPacket', () => {
   });
 
   it('should return error if there are additional properties in the packet', () => {
+    // TODO That should be structure validation in fromObject
     stPacket.additionalStuff = {};
 
     const errors = validateSTPacket(stPacket, dapContract);
@@ -106,20 +120,19 @@ describe('validateSTPacket', () => {
   it('should validate dap objects if present');
 
   it('should return error if object type is undefined in contract', () => {
-    stPacket.dapObjects.push({
-      $$type: 'undefinedObject',
-      name: 'Anonymous',
-    });
+    stPacket.addDapObject(
+      new DapObject('undefinedObject', { name: 'Anonymous' }),
+    );
 
     const errors = validateSTPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
-    expect(errors[0].missingRef).to.be.equal('dap-contract#/dapObjectsDefinition/undefinedObject');
+    expect(errors[0].missingRef).to.be.equal(`${dapContract.getSchemaId()}#/dapObjectsDefinition/undefinedObject`);
   });
 
   it('should return null if packet structure is correct', () => {
     const errors = validateSTPacket(stPacket, dapContract);
 
-    expect(errors).to.be.null();
+    expect(errors).to.be.empty();
   });
 });

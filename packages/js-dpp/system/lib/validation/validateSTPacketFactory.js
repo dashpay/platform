@@ -18,10 +18,6 @@ module.exports = function validateSTPacketFactory(
    * @return {array}
    */
   function validateSTPacket(stPacket, dapContract) {
-    validator.setDapContract(dapContract);
-
-    // TODO If contract contains wrong $schema?
-
     // TODO Validate objects and contract once using schema
     let errors;
 

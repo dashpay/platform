@@ -14,26 +14,53 @@ class DapObject {
     Object.assign(this, data);
   }
 
+  /**
+   * Set type
+   *
+   * @param {string }type
+   * @return {DapObject}
+   */
   setType(type) {
     this.$$type = type;
 
     return this;
   }
 
+  /**
+   * Get type
+   *
+   * @return {string}
+   */
   getType() {
     return this.$$type;
   }
 
-  getAction() {
-    return this.$$action;
-  }
-
+  /**
+   * Set action
+   *
+   * @param {number} action
+   * @return {DapObject}
+   */
   setAction(action) {
     this.$$action = action;
 
     return this;
   }
 
+  /**
+   * Get action
+   *
+   * @return {number}
+   */
+  getAction() {
+    return this.$$action;
+  }
+
+  /**
+   * Return Dap Object as plain object
+   *
+   * @return {Object}
+   */
   toJSON() {
     const json = {};
 
@@ -45,7 +72,7 @@ class DapObject {
   }
 
   /**
-   * Serialize Dap Object
+   * Return serialized Dap Object
    *
    * @return {Buffer}
    */
@@ -53,6 +80,12 @@ class DapObject {
     return DapObject.serializer.encode(this.toJSON());
   }
 
+  /**
+   * Create Dap Object from plain object
+   *
+   * @param object
+   * @return {DapObject}
+   */
   static fromObject(object) {
     const errors = DapObject.validateStructure(object);
 
@@ -64,6 +97,7 @@ class DapObject {
   }
 
   /**
+   * Create Dap Object from string/buffer
    *
    * @param {Buffer|string} payload
    * @return {DapObject}

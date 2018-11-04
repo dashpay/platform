@@ -29,7 +29,7 @@ module.exports = function validateDapObjectFactory(validator) {
       errors = validator.validate(
         dapContract.getDapObjectSchemaRef(dapObject.getType()),
         dapObject.toJSON(),
-        { 'dap-contract': dapContract.toJSON() },
+        { [dapContract.getSchemaId()]: dapContract.toJSON() },
       );
     } catch (e) {
       if (e instanceof InvalidDapObjectTypeError) {

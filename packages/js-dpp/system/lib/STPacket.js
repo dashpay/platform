@@ -1,21 +1,20 @@
 const DapContract = require('./DapContract');
 const DapObject = require('./DapObject');
 
-/**
- * @class STPacket
- * @property {string} dapContractId
- * @property Array<Object> dapContracts
- * @property Array<Object> dapObjects
- */
 class STPacket {
-  constructor(contractId) {
-    this.setDapContractId(contractId);
+  /**
+   * @param {string} dapContractId
+   */
+  constructor(dapContractId) {
+    this.setDapContractId(dapContractId);
 
     this.dapObjects = [];
     this.dapContracts = [];
   }
 
   /**
+   * Set Dap Contract ID
+   *
    * @param {string} dapContractId
    */
   setDapContractId(dapContractId) {
@@ -23,6 +22,7 @@ class STPacket {
   }
 
   /**
+   * Get Dap Contract ID
    *
    * @return {string}
    */
@@ -31,6 +31,8 @@ class STPacket {
   }
 
   /**
+   * Set Dap Contract
+   *
    * @param {DapContract} dapContract
    */
   setDapContract(dapContract) {
@@ -40,6 +42,7 @@ class STPacket {
   }
 
   /**
+   * Get Dap Contract
    *
    * @return {DapContract|null}
    */
@@ -52,6 +55,8 @@ class STPacket {
   }
 
   /**
+   * Set Dap Objects
+   *
    * @param {DapObject[]} dapObjects
    */
   setDapObjects(dapObjects) {
@@ -59,6 +64,7 @@ class STPacket {
   }
 
   /**
+   * Get Dap Objects
    *
    * @return {DapObject[]}
    */
@@ -67,26 +73,37 @@ class STPacket {
   }
 
   /**
-   * @template TDapObject {Object}
-   * @param {Array<TDapObject>} dapObjects
+   * Add Dap Object
+   *
+   * @param {DapObject...} dapObjects
    */
-  addDapObject(dapObjects) {
+  addDapObject(...dapObjects) {
     this.dapObjects.push(...dapObjects);
   }
 
   /**
-   * @return {{dapContractId: string, dapContracts: Object[], dapObjects: Object[]}}
+   * Return ST Packet as plain object
+   *
+   * @return {{dapContractId: string, [dapContracts]: Object[], [dapObjects]: Object[]}}
    */
   toJSON() {
-    return {
-      dapContractId: this.dapContractId,
-      dapContracts: this.dapContracts.map(dapContract => dapContract.toJSON()),
-      dapObjects: this.dapObjects.map(dapObject => dapObject.toJSON()),
+    const json = {
+      dapContractId: this.getDapContractId(),
     };
+
+    if (this.dapContracts) {
+      json.dapContracts = this.dapContracts.map(dapContract => dapContract.toJSON());
+    }
+
+    if (this.dapObjects) {
+      json.dapObjects = this.dapObjects.map(dapObject => dapObject.toJSON());
+    }
+
+    return json;
   }
 
   /**
-   * Serialize ST Packet
+   * Return serialized ST Packet
    *
    * @return {Buffer}
    */

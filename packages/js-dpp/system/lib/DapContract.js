@@ -15,6 +15,25 @@ class DapContract {
   }
 
   /**
+   * Calculate Dap Contract ID
+   *
+   * @return {string}
+   */
+  getId() {
+    const serializedDapContract = DapContract.serializer.encode(this.toJSON());
+    return hash(serializedDapContract);
+  }
+
+  /**
+   * Get Schema ID
+   *
+   * @return {string}
+   */
+  getSchemaId() {
+    return 'dap-contract';
+  }
+
+  /**
    *
    * @param {string} name
    * @return {DapContract}
@@ -103,16 +122,6 @@ class DapContract {
   }
 
   /**
-   * Returns true if object type is defined in this dap contract
-   *
-   * @param {string} type
-   * @return {boolean}
-   */
-  isDapObjectDefined(type) {
-    return Object.prototype.hasOwnProperty.call(this.dapObjectsDefinition, type);
-  }
-
-  /**
    *
    * @param {string} type
    * @param {object} schema
@@ -122,6 +131,16 @@ class DapContract {
     this.dapObjectsDefinition[type] = schema;
 
     return this;
+  }
+
+  /**
+   * Returns true if object type is defined in this dap contract
+   *
+   * @param {string} type
+   * @return {boolean}
+   */
+  isDapObjectDefined(type) {
+    return Object.prototype.hasOwnProperty.call(this.dapObjectsDefinition, type);
   }
 
   /**
@@ -146,14 +165,16 @@ class DapContract {
       throw new InvalidDapObjectTypeError(this, type);
     }
 
-    return { $ref: `dap-contract#/dapObjectsDefinition/${type}` };
+    return { $ref: `${this.getSchemaId()}#/dapObjectsDefinition/${type}` };
   }
 
-  getId() {
-    const serializedDapContract = DapContract.serializer.encode(this.toJSON());
-    return hash(serializedDapContract);
-  }
-
+  /**
+   * Return Dap Contract as plain object
+   *
+   * @return {{$schema: string, name: string,
+   *           version: string, [definitions]: Object,
+   *           dapObjectsDefinition: Object}}
+   */
   toJSON() {
     const json = {};
 
@@ -165,7 +186,7 @@ class DapContract {
   }
 
   /**
-   * Serialize Dap Contract
+   * Return serialized Dap Contract
    *
    * @return {Buffer}
    */
@@ -173,6 +194,12 @@ class DapContract {
     return DapContract.serializer.encode(this.toJSON());
   }
 
+  /**
+   * Create Dap Contract from plain object
+   *
+   * @param object
+   * @return {DapContract}
+   */
   static fromObject(object) {
     const errors = DapContract.validateStructure(object);
 
@@ -193,6 +220,7 @@ class DapContract {
   }
 
   /**
+   * Create Dap Contract from string/buffer
    *
    * @param {Buffer|string} payload
    * @return {DapContract}
@@ -225,5 +253,7 @@ DapContract.DEFAULTS = {
   VERSION: 1,
   SCHEMA: 'https://schema.dash.org/platform-4-0-0/system/meta/dap-contract',
 };
+
+DapContract.SCHEMA_ID = 'dap-contract';
 
 module.exports = DapContract;
