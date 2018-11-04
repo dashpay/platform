@@ -1,3 +1,6 @@
+/**
+ * @return {Object[]}
+ */
 module.exports = function getLovelyDapObjects() {
   return [
     {
