@@ -1,5 +1,5 @@
-const DapContract = require('./DapContract');
-const DapObject = require('./DapObject');
+const DapContract = require('../dapContract/DapContract');
+const DapObject = require('../dapObject/DapObject');
 const STPacketHeader = require('./STPacketHeader');
 
 const InvalidSTPacketStructureError = require('./errors/InvalidSTPacketStructureError');

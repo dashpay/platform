@@ -2,7 +2,7 @@ const Ajv = require('ajv');
 
 const SchemaValidator = require('../../../lib/validation/SchemaValidator');
 
-const validateDapObjectStructureFactory = require('../../../lib/validation/validateDapObjectStructureFactory');
+const validateDapObjectStructureFactory = require('../../../lib/dapObject/validateDapObjectStructureFactory');
 
 const getLovelyDapObjects = require('../../../lib/test/fixtures/getLovelyDapObjects');
 

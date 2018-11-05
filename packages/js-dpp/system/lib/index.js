@@ -1,17 +1,17 @@
 const Ajv = require('ajv');
 
-const DapObject = require('./DapObject');
-const DapContract = require('./DapContract');
-const STPacket = require('./STPacket');
+const DapObject = require('./dapObject/DapObject');
+const DapContract = require('./dapContract/DapContract');
+const STPacket = require('./stPacket/STPacket');
 
 const SchemaValidator = require('./validation/SchemaValidator');
 
-const validateDapObjectFactory = require('./validation/validateDapObjectFactory');
-const validateStPacketFactory = require('./validation/validateSTPacketFactory');
+const validateDapObjectFactory = require('./dapObject/validateDapObjectFactory');
+const validateStPacketFactory = require('./stPacket/validation/validateSTPacketFactory');
 
-const validateDapObjectStructureFactory = require('./validation/validateDapObjectStructureFactory');
-const validateDapContractStructureFactory = require('./validation/validateDapContractStructureFactory');
-const validateStPacketStructureFactory = require('./validation/validateSTPacketStructureFactory');
+const validateDapObjectStructureFactory = require('./dapObject/validateDapObjectStructureFactory');
+const validateDapContractStructureFactory = require('./dapContract/validateDapContractStructureFactory');
+const validateStPacketStructureFactory = require('./stPacket/validation/validateSTPacketStructureFactory');
 
 const serializer = require('../../dash-schema/lib/serializer');
 

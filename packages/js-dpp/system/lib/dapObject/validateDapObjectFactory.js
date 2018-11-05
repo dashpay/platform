@@ -1,5 +1,5 @@
-const SchemaValidator = require('./SchemaValidator');
-const InvalidDapObjectTypeError = require('../errors/InvalidDapObjectTypeError');
+const SchemaValidator = require('../validation/SchemaValidator');
+const InvalidDapObjectTypeError = require('../dapContract/errors/InvalidDapObjectTypeError');
 
 /**
  * @param {SchemaValidator} validator

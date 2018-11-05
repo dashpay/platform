@@ -3,12 +3,12 @@ const {
   DapContract,
   STPacket,
   DapObject,
-} = require('../../../lib');
+} = require('../../../../lib/index');
 
-const InvalidDapObjectTypeError = require('../../../lib/errors/InvalidDapObjectTypeError');
+const InvalidDapObjectTypeError = require('../../../../lib/dapContract/errors/InvalidDapObjectTypeError');
 
-const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
-const getLovelyDapObjects = require('../../../lib/test/fixtures/getLovelyDapObjects');
+const getLovelyDapContract = require('../../../../lib/test/fixtures/getLovelyDapContract');
+const getLovelyDapObjects = require('../../../../lib/test/fixtures/getLovelyDapObjects');
 
 describe('validateSTPacket', () => {
   let stPacket;
