@@ -1,6 +1,7 @@
 const hash = require('../../dash-schema/lib/hash');
 
 const InvalidDapObjectTypeError = require('./errors/InvalidDapObjectTypeError');
+const InvalidDapContractStructureError = require('./errors/InvalidDapContractStructureError');
 
 class DapContract {
   /**
@@ -211,7 +212,7 @@ class DapContract {
     const errors = DapContract.validateStructure(object);
 
     if (errors.length) {
-      throw new Error(errors);
+      throw new InvalidDapContractStructureError(errors, object);
     }
 
     const dapContract = new DapContract(object.name, object.dapObjectsDefinition);

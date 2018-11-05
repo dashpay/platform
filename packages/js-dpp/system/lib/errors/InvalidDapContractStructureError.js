@@ -1,16 +1,16 @@
-class InvalidSTPacketStructureError extends Error {
+class InvalidDapContractStructureError extends Error {
   /**
    * @param {Object[]} errors
-   * @param {Object} rawSTPacket
+   * @param {Object} rawDapContract
    */
-  constructor(errors, rawSTPacket) {
+  constructor(errors, rawDapContract) {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid ST Packet structure';
+    this.message = 'Invalid Dap Contract structure';
 
     this.errors = errors;
-    this.rawSTPacket = rawSTPacket;
+    this.rawDapContract = rawDapContract;
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
@@ -27,13 +27,13 @@ class InvalidSTPacketStructureError extends Error {
   }
 
   /**
-   * Get raw ST Packet
+   * Get raw Dap Contract
    *
    * @return {Object}
    */
-  getRawSTPacket() {
-    return this.rawSTPacket;
+  getRawDapContract() {
+    return this.rawDapContract;
   }
 }
 
-module.exports = InvalidSTPacketStructureError;
+module.exports = InvalidDapContractStructureError;

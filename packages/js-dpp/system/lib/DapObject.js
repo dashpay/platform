@@ -1,7 +1,5 @@
-/**
- * @class DapObject
- * @property $$type
- */
+const InvalidDapObjectStructureError = require('./errors/InvalidDapObjectStructureError');
+
 class DapObject {
   /**
    * @param {string} type
@@ -112,7 +110,7 @@ class DapObject {
     const errors = DapObject.validateStructure(object);
 
     if (errors.length) {
-      throw new Error(errors);
+      throw new InvalidDapObjectStructureError(errors, object);
     }
 
     return new DapObject(object.$$type, object);

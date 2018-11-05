@@ -117,7 +117,7 @@ class STPacket {
     const errors = STPacket.structureValidator(object);
 
     if (errors.length) {
-      throw new InvalidSTPacketStructureError(errors);
+      throw new InvalidSTPacketStructureError(errors, object);
     }
 
     const stPacket = new STPacket(object.dapContractId);
