@@ -7,7 +7,6 @@ const STPacket = require('./STPacket');
 const SchemaValidator = require('./validation/SchemaValidator');
 
 const validateDapObjectFactory = require('./validation/validateDapObjectFactory');
-const validateDapContractFactory = require('./validation/validateDapContractFactory');
 const validateStPacketFactory = require('./validation/validateSTPacketFactory');
 
 const validateDapObjectStructureFactory = require('./validation/validateDapObjectStructureFactory');
@@ -18,14 +17,16 @@ const serializer = require('../../dash-schema/lib/serializer');
 
 const validator = new SchemaValidator(new Ajv());
 
-const validateDapObject = validateDapObjectFactory(validator);
-const validateDapContract = validateDapContractFactory(validator);
-const validateSTPacket = validateStPacketFactory(validator, validateDapObject, validateDapContract);
-
 const validateDapObjectStructure = validateDapObjectStructureFactory(validator);
 const validateDapContractStructure = validateDapContractStructureFactory(validator);
 const validateSTPacketStructure = validateStPacketStructureFactory(validator);
 
+const validateDapObject = validateDapObjectFactory(validator);
+const validateSTPacket = validateStPacketFactory(
+  validator,
+  validateDapObject,
+  validateDapContractStructure,
+);
 
 DapObject.setSerializer(serializer);
 DapObject.setStructureValidator(validateDapObjectStructure);
@@ -41,6 +42,5 @@ module.exports = {
   DapContract,
   STPacket,
   validateDapObject,
-  validateDapContract,
   validateSTPacket,
 };

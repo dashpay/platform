@@ -1,18 +1,28 @@
-const { validateDapContract, DapContract } = require('../../../lib');
+const Ajv = require('ajv');
+
+const SchemaValidator = require('../../../lib/validation/SchemaValidator');
+
+const validateDapContractStructureFactory = require('../../../lib/validation/validateDapContractStructureFactory');
 
 const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
 
-describe('validateDapContract', () => {
-  let dapContract;
+describe('validateDapContractStructure', () => {
+  let rawDapContract;
+  let validateDapContractStructure;
 
   beforeEach(() => {
-    dapContract = DapContract.fromObject(getLovelyDapContract());
+    rawDapContract = getLovelyDapContract();
+
+    const ajv = new Ajv();
+    const validator = new SchemaValidator(ajv);
+
+    validateDapContractStructure = validateDapContractStructureFactory(validator);
   });
 
   it('should return error if $schema is not present', () => {
-    delete dapContract.$schema;
+    delete rawDapContract.$schema;
 
-    const errors = validateDapContract(dapContract);
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('');
@@ -21,9 +31,9 @@ describe('validateDapContract', () => {
   });
 
   it('should return error if $schema is not valid', () => {
-    dapContract.$schema = 'wrong';
+    rawDapContract.$schema = 'wrong';
 
-    const errors = validateDapContract(dapContract);
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].keyword).to.be.equal('const');
@@ -31,9 +41,9 @@ describe('validateDapContract', () => {
   });
 
   it('should return error if contract name is not present', () => {
-    delete dapContract.name;
+    delete rawDapContract.name;
 
-    const errors = validateDapContract(dapContract);
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('');
@@ -44,9 +54,9 @@ describe('validateDapContract', () => {
   it('should not have empty definitions');
 
   it('should return error if contract name is not alphanumeric', () => {
-    dapContract.setName('*(*&^');
+    rawDapContract.name = '*(*&^';
 
-    const errors = validateDapContract(dapContract);
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('.name');
@@ -54,9 +64,9 @@ describe('validateDapContract', () => {
   });
 
   it('should return error if contract version is not present', () => {
-    delete dapContract.version;
+    delete rawDapContract.version;
 
-    const errors = validateDapContract(dapContract);
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('');
@@ -65,9 +75,9 @@ describe('validateDapContract', () => {
   });
 
   it('should return error if contract version is not a number', () => {
-    dapContract.version = 'wrong';
+    rawDapContract.version = 'wrong';
 
-    const errors = validateDapContract(dapContract);
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('.version');
@@ -75,9 +85,9 @@ describe('validateDapContract', () => {
   });
 
   it('should return error if contract has no `dapObjectsDefinition` property', () => {
-    delete dapContract.dapObjectsDefinition;
+    delete rawDapContract.dapObjectsDefinition;
 
-    const errors = validateDapContract(dapContract);
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].dataPath).to.be.equal('');
@@ -86,15 +96,16 @@ describe('validateDapContract', () => {
   });
 
   describe('definitions', () => {
-    it('should allow definitions in the contract');
-    it('definitions name should be valid');
+    it('should return empty array if definitions property is not present');
+    it('should return error if definition name is not valid');
+    it('should return error if is is empty');
   });
 
   describe('objects', () => {
     it('should return error if object definition missing property `properties`', () => {
-      delete dapContract.dapObjectsDefinition.niceObject.properties;
+      delete rawDapContract.dapObjectsDefinition.niceObject.properties;
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\']');
@@ -103,9 +114,9 @@ describe('validateDapContract', () => {
     });
 
     it('should return error if object definition has no properties defined', () => {
-      dapContract.dapObjectsDefinition.niceObject.properties = {};
+      rawDapContract.dapObjectsDefinition.niceObject.properties = {};
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].properties');
@@ -113,9 +124,9 @@ describe('validateDapContract', () => {
     });
 
     it('should return error if object definition has a non-alphanumeric name', () => {
-      dapContract.dapObjectsDefinition['(*&^'] = dapContract.dapObjectsDefinition.niceObject;
+      rawDapContract.dapObjectsDefinition['(*&^'] = rawDapContract.dapObjectsDefinition.niceObject;
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition');
@@ -123,9 +134,9 @@ describe('validateDapContract', () => {
     });
 
     it('should return error if object definition has a non-alphanumeric property name', () => {
-      dapContract.dapObjectsDefinition.niceObject.properties['(*&^'] = {};
+      rawDapContract.dapObjectsDefinition.niceObject.properties['(*&^'] = {};
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(2);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].properties');
@@ -137,9 +148,9 @@ describe('validateDapContract', () => {
     it('should return error if object definition overwrite base object properties');
 
     it.skip('should return error if object definition has no \'additionalProperties\' property', () => {
-      delete dapContract.dapObjectsDefinition.niceObject.additionalProperties;
+      delete rawDapContract.dapObjectsDefinition.niceObject.additionalProperties;
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\']');
@@ -148,9 +159,9 @@ describe('validateDapContract', () => {
     });
 
     it.skip('should return error if object definition allows to create additional properties', () => {
-      dapContract.dapObjectsDefinition.niceObject.additionalProperties = true;
+      rawDapContract.dapObjectsDefinition.niceObject.additionalProperties = true;
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].additionalProperties');
@@ -158,9 +169,9 @@ describe('validateDapContract', () => {
     });
 
     it('should return error if object allOf directive is missing', () => {
-      delete dapContract.dapObjectsDefinition.niceObject.allOf;
+      delete rawDapContract.dapObjectsDefinition.niceObject.allOf;
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\']');
@@ -169,9 +180,9 @@ describe('validateDapContract', () => {
     });
 
     it('should return error if object ref to base object is missing', () => {
-      dapContract.dapObjectsDefinition.niceObject.allOf = [];
+      rawDapContract.dapObjectsDefinition.niceObject.allOf = [];
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
       expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].allOf');
@@ -179,18 +190,18 @@ describe('validateDapContract', () => {
     });
 
     it('should pass if object inherits base object and something else', () => {
-      dapContract.dapObjectsDefinition.niceObject.allOf.push({
+      rawDapContract.dapObjectsDefinition.niceObject.allOf.push({
         $ref: 'something else',
       });
 
-      const errors = validateDapContract(dapContract);
+      const errors = validateDapContractStructure(rawDapContract);
 
       expect(errors).to.be.empty();
     });
   });
 
-  it('should return null if contract is valid', () => {
-    const errors = validateDapContract(dapContract);
+  it('should return empty array if contract is valid', () => {
+    const errors = validateDapContractStructure(rawDapContract);
 
     expect(errors).to.be.empty();
   });

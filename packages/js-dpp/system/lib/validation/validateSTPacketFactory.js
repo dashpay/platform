@@ -3,13 +3,13 @@ const SchemaValidator = require('./SchemaValidator');
 /**
  * @param {SchemaValidator} validator
  * @param {validateDapObject} validateDapObject
- * @param {validateDapContract} validateDapContract
+ * @param {validateDapContractStructure} validateDapContractStructure
  * @return {validateSTPacket}
  */
 module.exports = function validateSTPacketFactory(
   validator,
   validateDapObject,
-  validateDapContract,
+  validateDapContractStructure,
 ) {
   /**
    * @typedef validateSTPacket
@@ -41,7 +41,12 @@ module.exports = function validateSTPacketFactory(
     const dapContractInsidePacket = stPacket.getDapContract();
 
     if (dapContractInsidePacket) {
-      errors = errors.concat(validateDapContract(dapContractInsidePacket));
+      // TODO is structure already validated
+      const dapContractErrors = validateDapContractStructure(dapContractInsidePacket.toJSON());
+
+      if (dapContractErrors.length) {
+        errors = errors.concat(dapContractErrors);
+      }
     }
 
     return errors;
