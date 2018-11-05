@@ -1,5 +1,6 @@
 const DapContract = require('./DapContract');
 const DapObject = require('./DapObject');
+const InvalidSTPacketStructureError = require('./errors/InvalidSTPacketStructureError');
 
 class STPacket {
   /**
@@ -29,6 +30,8 @@ class STPacket {
   getDapContractId() {
     return this.dapContractId;
   }
+
+  // TODO How to remove dap contract?
 
   /**
    * Set Dap Contract
@@ -87,19 +90,12 @@ class STPacket {
    * @return {{dapContractId: string, [dapContracts]: Object[], [dapObjects]: Object[]}}
    */
   toJSON() {
-    const json = {
+    // TODO: Validate before to JSON ?
+    return {
       dapContractId: this.getDapContractId(),
+      dapContracts: this.dapContracts.map(dapContract => dapContract.toJSON()),
+      dapObjects: this.dapObjects.map(dapObject => dapObject.toJSON()),
     };
-
-    if (this.dapContracts) {
-      json.dapContracts = this.dapContracts.map(dapContract => dapContract.toJSON());
-    }
-
-    if (this.dapObjects) {
-      json.dapObjects = this.dapObjects.map(dapObject => dapObject.toJSON());
-    }
-
-    return json;
   }
 
   /**
@@ -108,6 +104,7 @@ class STPacket {
    * @return {Buffer}
    */
   serialize() {
+    // TODO: Validate before serialization ?
     return STPacket.serializer.encode(this.toJSON());
   }
 
@@ -120,7 +117,7 @@ class STPacket {
     const errors = STPacket.structureValidator(object);
 
     if (errors.length) {
-      throw new Error(errors);
+      throw new InvalidSTPacketStructureError(errors);
     }
 
     const stPacket = new STPacket(object.dapContractId);

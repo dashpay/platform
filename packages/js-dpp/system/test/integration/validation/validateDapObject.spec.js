@@ -28,7 +28,7 @@ describe('validateDapObject', () => {
     const errors = validateDapObject(dapObjects[0], dapContract);
     expect(errors).to.be.an('array').and.lengthOf(1);
     expect(errors[0].name).to.be.equal('InvalidDapObjectTypeError');
-    expect(errors[0].type).to.be.equal('undefinedObject');
+    expect(errors[0].getType()).to.be.equal('undefinedObject');
   });
 
   it('should return error if $$revision is not present');

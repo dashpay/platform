@@ -12,6 +12,7 @@ class DapContract {
     this.setVersion(DapContract.DEFAULTS.VERSION);
     this.setSchema(DapContract.DEFAULTS.SCHEMA);
     this.setDapObjectsDefinition(dapObjectsDefinition);
+    this.setDefinitions({});
   }
 
   /**
@@ -107,15 +108,14 @@ class DapContract {
   }
 
   /**
-   * @template TDefinitions {Object}
-   * @param {TDefinitions} definitions
+   * @param {Object<string, Object>} definitions
    */
   setDefinitions(definitions) {
     this.definitions = definitions;
   }
 
   /**
-   * @return {Object}
+   * @return {Object<string, Object>}
    */
   getDefinitions() {
     return this.definitions;
@@ -150,7 +150,7 @@ class DapContract {
    */
   getDapObjectSchema(type) {
     if (!this.isDapObjectDefined(type)) {
-      throw new InvalidDapObjectTypeError(this, type);
+      throw new InvalidDapObjectTypeError(type, this);
     }
 
     return this.dapObjectsDefinition[type];
@@ -162,7 +162,7 @@ class DapContract {
    */
   getDapObjectSchemaRef(type) {
     if (!this.isDapObjectDefined(type)) {
-      throw new InvalidDapObjectTypeError(this, type);
+      throw new InvalidDapObjectTypeError(type, this);
     }
 
     return { $ref: `${this.getSchemaId()}#/dapObjectsDefinition/${type}` };
@@ -172,14 +172,21 @@ class DapContract {
    * Return Dap Contract as plain object
    *
    * @return {{$schema: string, name: string,
-   *           version: string, [definitions]: Object,
-   *           dapObjectsDefinition: Object}}
+   *           version: number, dapObjectsDefinition: Object<string, Object>,
+   *           [definitions]: Object<string, Object>}}
    */
   toJSON() {
-    const json = {};
+    const json = {
+      $schema: this.getSchema(),
+      name: this.getName(),
+      version: this.getVersion(),
+      dapObjectsDefinition: this.getDapObjectsDefinition(),
+    };
 
-    for (const name of Object.getOwnPropertyNames(this)) {
-      json[name] = this[name];
+    const definitions = this.getDefinitions();
+
+    if (Object.getOwnPropertyNames(definitions).length) {
+      json.definitions = definitions;
     }
 
     return json;

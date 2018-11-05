@@ -41,8 +41,10 @@ describe('validateDapContract', () => {
     expect(errors[0].params.missingProperty).to.be.equal('name');
   });
 
+  it('should not have empty definitions');
+
   it('should return error if contract name is not alphanumeric', () => {
-    dapContract.name = '*(*&^';
+    dapContract.setName('*(*&^');
 
     const errors = validateDapContract(dapContract);
 

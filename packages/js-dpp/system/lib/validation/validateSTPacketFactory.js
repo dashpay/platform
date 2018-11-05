@@ -30,13 +30,13 @@ module.exports = function validateSTPacketFactory(
       return errors;
     }
 
-    for (const dapObject of stPacket.getDapObjects()) {
-      errors = validateDapObject(dapObject, dapContract);
+    stPacket.getDapObjects().forEach((dapObject) => {
+      const dapObjectErrors = validateDapObject(dapObject, dapContract);
 
-      if (errors.length) {
-        errors = errors.concat(errors);
+      if (dapObjectErrors.length) {
+        errors = errors.concat(dapObjectErrors);
       }
-    }
+    });
 
     const dapContractInsidePacket = stPacket.getDapContract();
 
