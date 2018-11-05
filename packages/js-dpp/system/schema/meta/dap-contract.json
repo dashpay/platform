@@ -29,22 +29,6 @@
         "^[a-zA-Z0-9-_]{1,255}$": {
           "type": "object",
           "properties": {
-            "allOf": {
-              "type": "array",
-              "items": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "$ref": {
-                      "type": "string",
-                      "const": "https://schema.dash.org/platform-4-0-0/system/base/dap-object"
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              ],
-              "minItems": 1
-            },
             "type": {
               "type": "string",
               "const": "object"
@@ -56,11 +40,15 @@
               },
               "minProperties": 1,
               "maxProperties": 100
+            },
+            "additionalProperties": {
+              "type": "boolean",
+              "const": false
             }
           },
           "required": [
-            "allOf",
-            "properties"
+            "properties",
+            "additionalProperties"
           ]
         }
       },

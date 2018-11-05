@@ -21,7 +21,9 @@ const validateDapObjectStructure = validateDapObjectStructureFactory(validator);
 const validateDapContractStructure = validateDapContractStructureFactory(validator);
 const validateSTPacketStructure = validateStPacketStructureFactory(validator);
 
-const validateDapObject = validateDapObjectFactory(validator);
+const enrichDapContractWithBaseDapObject = require('./dapObject/enrichDapContractWithBaseDapObject');
+
+const validateDapObject = validateDapObjectFactory(validator, enrichDapContractWithBaseDapObject);
 const validateSTPacket = validateStPacketFactory(
   validator,
   validateDapObject,

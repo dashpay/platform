@@ -28,7 +28,7 @@ describe('validateSTPacket', () => {
   it('should validate structure too');
 
   describe('dapContractId', () => {
-    it('should return error if it is not a string', () => {
+    it('should be a string', () => {
       stPacket.setDapContractId(1);
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -41,7 +41,7 @@ describe('validateSTPacket', () => {
       expect(error.keyword).to.be.equal('type');
     });
 
-    it('should return error if its length is lesser 64', () => {
+    it('should not be less than 64', () => {
       stPacket.setDapContractId('86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -54,7 +54,7 @@ describe('validateSTPacket', () => {
       expect(error.keyword).to.be.equal('minLength');
     });
 
-    it('should return error if its length is bigger 64', () => {
+    it('should not be bigger than 64', () => {
       stPacket.setDapContractId('86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -69,7 +69,7 @@ describe('validateSTPacket', () => {
   });
 
   describe('itemsMerkleRoot', () => {
-    it('should return error if it is not a string', () => {
+    it('should be a string', () => {
       stPacket.setItemsMerkleRoot(1);
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -82,7 +82,7 @@ describe('validateSTPacket', () => {
       expect(error.keyword).to.be.equal('type');
     });
 
-    it('should return error if its length is lesser 64', () => {
+    it('should not be less than 64', () => {
       stPacket.setItemsMerkleRoot('86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -95,7 +95,7 @@ describe('validateSTPacket', () => {
       expect(error.keyword).to.be.equal('minLength');
     });
 
-    it('should return error if its length is bigger 64', () => {
+    it('should not be bigger than 64', () => {
       stPacket.setItemsMerkleRoot('86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -112,7 +112,7 @@ describe('validateSTPacket', () => {
   });
 
   describe('itemsHash', () => {
-    it('should return error if it is not a string', () => {
+    it('should be a string', () => {
       stPacket.setItemsHash(1);
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -125,7 +125,7 @@ describe('validateSTPacket', () => {
       expect(error.keyword).to.be.equal('type');
     });
 
-    it('should return error if its length is lesser 64', () => {
+    it('should not be less than 64', () => {
       stPacket.setItemsHash('86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -138,7 +138,7 @@ describe('validateSTPacket', () => {
       expect(error.keyword).to.be.equal('minLength');
     });
 
-    it('should return error if its length is bigger 64', () => {
+    it('should not be bigger than 64', () => {
       stPacket.setItemsHash('86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
@@ -188,13 +188,13 @@ describe('validateSTPacket', () => {
     expect(error.getType()).to.be.equal(wrongType);
   });
 
-  it('should return empty array if packet with Dap Objects is correct', () => {
+  it('should return empty array if ST Packet with Dap Objects is correct', () => {
     const errors = validateSTPacket(stPacket, dapContract);
 
     expect(errors).to.be.empty();
   });
 
-  it('should return empty array if packet with Dap Contract is correct', () => {
+  it('should return empty array if ST Packet with Dap Contract is correct', () => {
     stPacket.setDapObjects([]);
     stPacket.setDapContract(dapContract);
 

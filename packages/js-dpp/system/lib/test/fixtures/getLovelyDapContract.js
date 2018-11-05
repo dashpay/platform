@@ -5,25 +5,21 @@ module.exports = function getLovelyDapContract() {
     version: 1,
     dapObjectsDefinition: {
       niceObject: {
-        allOf: [
-          { $ref: 'https://schema.dash.org/platform-4-0-0/system/base/dap-object' },
-        ],
         properties: {
           name: {
             type: 'string',
           },
         },
+        additionalProperties: false,
       },
       prettyObject: {
-        allOf: [
-          { $ref: 'https://schema.dash.org/platform-4-0-0/system/base/dap-object' },
-        ],
         properties: {
           lastName: {
             $ref: '#/definitions/lastName',
           },
         },
         required: ['lastName'],
+        additionalProperties: false,
       },
     },
     definitions: {

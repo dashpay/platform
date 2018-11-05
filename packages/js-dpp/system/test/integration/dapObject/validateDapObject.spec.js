@@ -16,28 +16,30 @@ describe('validateDapObject', () => {
     [dapObject] = dapObjects;
   });
 
-  it('should return error if $$type is not defined in contract', () => {
-    dapObject.setType('undefinedObject');
+  describe('$$type', () => {
+    it('should be defined in Dap Contract', () => {
+      dapObject.setType('undefinedObject');
 
-    const errors = validateDapObject(dapObjects[0], dapContract);
+      const errors = validateDapObject(dapObjects[0], dapContract);
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+      expect(errors).to.be.an('array').and.lengthOf(1);
 
-    const [error] = errors;
+      const [error] = errors;
 
-    expect(error).to.be.instanceOf(InvalidDapObjectTypeError);
-    expect(error.getType()).to.be.equal('undefinedObject');
+      expect(error).to.be.instanceOf(InvalidDapObjectTypeError);
+      expect(error.getType()).to.be.equal('undefinedObject');
+    });
   });
 
   describe('$$revision', () => {
-    it('should return error if it is less than 0');
-    it('should return error if it is not a number');
-    it('should return error if it is not an integer');
+    it('should be less than 0');
+    it('should be a number');
+    it('should be an integer');
   });
 
   describe('$$action', () => {
-    it('should return error if it is not a number');
-    it('should return error if it is not valid');
+    it('should be a number');
+    it('should have predefined value');
   });
 
   it('should return error if the first object is not valid against schema', () => {
@@ -53,7 +55,18 @@ describe('validateDapObject', () => {
     expect(error.keyword).to.be.equal('type');
   });
 
-  it('should return error if object has undefined properties');
+  it('should return error if object has undefined properties', () => {
+    dapObject.undefined = 1;
+
+    const errors = validateDapObject(dapObjects[0], dapContract);
+
+    expect(errors).to.be.an('array').and.lengthOf(1);
+
+    const [error] = errors;
+
+    expect(error.dataPath).to.be.equal('');
+    expect(error.keyword).to.be.equal('additionalProperties');
+  });
 
   it('should return error if the second object is not valid against schema', () => {
     dapObjects[1].lastName = 1;

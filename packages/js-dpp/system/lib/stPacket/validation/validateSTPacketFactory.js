@@ -18,7 +18,6 @@ module.exports = function validateSTPacketFactory(
    * @return {Object[]}
    */
   function validateSTPacket(stPacket, dapContract) {
-    // TODO Validate objects and contract once using schema
     let errors;
 
     errors = validator.validate(
@@ -41,7 +40,6 @@ module.exports = function validateSTPacketFactory(
     const dapContractInsidePacket = stPacket.getDapContract();
 
     if (dapContractInsidePacket) {
-      // TODO is structure already validated
       const dapContractErrors = validateDapContractStructure(dapContractInsidePacket.toJSON());
 
       if (dapContractErrors.length) {
