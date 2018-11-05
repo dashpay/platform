@@ -1,5 +1,7 @@
 const DapContract = require('./DapContract');
 const DapObject = require('./DapObject');
+const STPacketHeader = require('./STPacketHeader');
+
 const InvalidSTPacketStructureError = require('./errors/InvalidSTPacketStructureError');
 
 class STPacket {
@@ -8,10 +10,14 @@ class STPacket {
    */
   constructor(dapContractId) {
     this.setDapContractId(dapContractId);
+    this.setItemsMerkleRoot('');
+    this.setItemsHash('');
 
-    this.dapObjects = [];
-    this.dapContracts = [];
+    this.setDapObjects([]);
+    this.setDapContract(null);
   }
+
+  // TODO Reuse code from STPacketHeader ?
 
   /**
    * Set Dap Contract ID
@@ -31,7 +37,41 @@ class STPacket {
     return this.dapContractId;
   }
 
-  // TODO How to remove dap contract?
+  /**
+   * Set items merkle root
+   *
+   * @param {string} itemsMerkleRoot
+   */
+  setItemsMerkleRoot(itemsMerkleRoot) {
+    this.itemsMerkleRoot = itemsMerkleRoot;
+  }
+
+  /**
+   * Get items merkle root
+   *
+   * @return {string}
+   */
+  getItemsMerkleRoot() {
+    return this.itemsMerkleRoot;
+  }
+
+  /**
+   * Set items hash
+   *
+   * @param {string} itemsHash
+   */
+  setItemsHash(itemsHash) {
+    this.itemsHash = itemsHash;
+  }
+
+  /**
+   * Get items hash
+   *
+   * @return {string}
+   */
+  getItemsHash() {
+    return this.itemsHash;
+  }
 
   /**
    * Set Dap Contract
@@ -39,9 +79,12 @@ class STPacket {
    * @param {DapContract} dapContract
    */
   setDapContract(dapContract) {
-    this.dapContracts = [dapContract];
+    this.dapContracts = !dapContract ? [] : [dapContract];
+
     // TODO: set contract id
     // this.dapContractId = toHash(dapContract);
+
+    return this;
   }
 
   /**
@@ -85,14 +128,29 @@ class STPacket {
   }
 
   /**
+   * Create STPacketHeader with STPacket data
+   *
+   * @return STPacketHeader
+   */
+  extractHeader() {
+    return STPacketHeader(
+      this.getDapContractId(),
+      this.getItemsMerkleRoot(),
+      this.getItemsHash(),
+    );
+  }
+
+  /**
    * Return ST Packet as plain object
    *
-   * @return {{dapContractId: string, [dapContracts]: Object[], [dapObjects]: Object[]}}
+   * @return {{dapContractId: string, dapContracts: Object[], dapObjects: Object[]}}
    */
   toJSON() {
     // TODO: Validate before to JSON ?
     return {
       dapContractId: this.getDapContractId(),
+      itemsMerkleRoot: this.getItemsMerkleRoot(),
+      itemsHash: this.getItemsHash(),
       dapContracts: this.dapContracts.map(dapContract => dapContract.toJSON()),
       dapObjects: this.dapObjects.map(dapObject => dapObject.toJSON()),
     };
@@ -121,6 +179,9 @@ class STPacket {
     }
 
     const stPacket = new STPacket(object.dapContractId);
+
+    stPacket.setItemsMerkleRoot(object.itemsMerkleRoot);
+    stPacket.setItemsHash(object.itemsHash);
 
     if (object.dapContracts.length) {
       const dapContract = DapContract.fromObject(object.dapContracts[0]);

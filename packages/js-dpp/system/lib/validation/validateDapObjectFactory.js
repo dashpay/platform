@@ -10,7 +10,7 @@ module.exports = function validateDapObjectFactory(validator) {
    * @typedef validateDapObject
    * @param {DapObject} dapObject
    * @param {DapContract} dapContract
-   * @return {array}
+   * @return {Object[]}
    */
   function validateDapObject(dapObject, dapContract) {
     let errors;

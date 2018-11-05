@@ -18,6 +18,8 @@ describe('validateSTPacket', () => {
     dapContract = DapContract.fromObject(getLovelyDapContract());
     stPacket = STPacket.fromObject({
       dapContractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
+      itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
+      itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       dapContracts: [
         getLovelyDapContract(),
       ],
@@ -68,9 +70,94 @@ describe('validateSTPacket', () => {
     });
   });
 
+  describe('itemsMerkleRoot', () => {
+    it('should return error if it is not a string', () => {
+      stPacket.setItemsMerkleRoot(1);
+
+      const errors = validateSTPacket(stPacket, dapContract);
+
+      expect(errors).to.be.an('array').and.lengthOf(1);
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.itemsMerkleRoot');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should return error if its length is lesser 64', () => {
+      stPacket.setItemsMerkleRoot('86b273ff');
+
+      const errors = validateSTPacket(stPacket, dapContract);
+
+      expect(errors).to.be.an('array').and.lengthOf(1);
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.itemsMerkleRoot');
+      expect(error.keyword).to.be.equal('minLength');
+    });
+
+    it('should return error if its length is bigger 64', () => {
+      stPacket.setItemsMerkleRoot('86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff');
+
+      const errors = validateSTPacket(stPacket, dapContract);
+
+      expect(errors).to.be.an('array').and.lengthOf(1);
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.itemsMerkleRoot');
+      expect(error.keyword).to.be.equal('maxLength');
+    });
+
+    it('should be merkle root of packet\'s items');
+  });
+
+  describe('itemsHash', () => {
+    it('should return error if it is not a string', () => {
+      stPacket.setItemsHash(1);
+
+      const errors = validateSTPacket(stPacket, dapContract);
+
+      expect(errors).to.be.an('array').and.lengthOf(1);
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.itemsHash');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should return error if its length is lesser 64', () => {
+      stPacket.setItemsHash('86b273ff');
+
+      const errors = validateSTPacket(stPacket, dapContract);
+
+      expect(errors).to.be.an('array').and.lengthOf(1);
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.itemsHash');
+      expect(error.keyword).to.be.equal('minLength');
+    });
+
+    it('should return error if its length is bigger 64', () => {
+      stPacket.setItemsHash('86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff');
+
+      const errors = validateSTPacket(stPacket, dapContract);
+
+      expect(errors).to.be.an('array').and.lengthOf(1);
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.itemsHash');
+      expect(error.keyword).to.be.equal('maxLength');
+    });
+
+    it('should be hash of packet\'s items');
+  });
+
   it('should return error if packet is empty', () => {
-    // TODO How to remove contract from ST Packet?
-    stPacket.dapContracts = [];
+    stPacket.setDapContract(null);
     stPacket.setDapObjects([]);
 
     const errors = validateSTPacket(stPacket, dapContract);

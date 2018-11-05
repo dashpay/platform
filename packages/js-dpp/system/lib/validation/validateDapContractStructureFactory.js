@@ -8,7 +8,7 @@ module.exports = function validateDapContractStructureFactory(validator) {
   /**
    * @typedef validateDapContractStructure
    * @param {Object} rawDapContract
-   * @return {array}
+   * @return {Object[]}
    */
   function validateDapContractStructure(rawDapContract) {
     // TODO: Use validateSchema?

@@ -15,7 +15,7 @@ module.exports = function validateSTPacketFactory(
    * @typedef validateSTPacket
    * @param {STPacket} stPacket
    * @param {DapContract} dapContract
-   * @return {array}
+   * @return {Object[]}
    */
   function validateSTPacket(stPacket, dapContract) {
     // TODO Validate objects and contract once using schema

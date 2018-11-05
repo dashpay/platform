@@ -8,7 +8,7 @@ module.exports = function validateDapObjectStructureFactory(validator) {
   /**
    * @typedef validateDapObjectStructure
    * @param {Object} rawDapObject
-   * @return {array}
+   * @return {Object[]}
    */
   function validateDapObjectStructure(rawDapObject) {
     return validator.validate(

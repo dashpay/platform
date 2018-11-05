@@ -1,4 +1,4 @@
-describe('STPacket', () => {
+describe('STPacketHeader', () => {
   describe('#setDapContractId', () => {
     it('should set Dap Contract ID');
   });
@@ -16,28 +16,6 @@ describe('STPacket', () => {
   });
   describe('#getItemsHash', () => {
     it('should get items hash');
-  });
-  describe('#setDapContract', () => {
-    it('should set Dap Contract');
-    it('should throw error if Dap Objects are present');
-  });
-  describe('#getDapContract', () => {
-    it('should return Dap Contract');
-    it('should return null of Dap Contract is not present');
-  });
-  describe('#setDapObjects', () => {
-    it('should set Dap Objects and replace previous');
-    it('should throw error if Dap Contract is present');
-  });
-  describe('#getDapObjects', () => {
-    it('should return Dap Objects');
-  });
-  describe('#addDapObject', () => {
-    it('should add Dap Object');
-    it('should add many Dap Objects');
-  });
-  describe('#extractHeader', () => {
-    it('should return STPacketHeader with ST Packet data');
   });
   describe('#toJSON', () => {
     it('should return ST Packet as plain object');

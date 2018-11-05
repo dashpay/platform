@@ -21,6 +21,8 @@ describe('validateSTPacketStructure', () => {
     rawDapContract = getLovelyDapContract();
     rawStPacket = {
       dapContractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
+      itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
+      itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       dapContracts: [
       ],
       dapObjects: getLovelyDapObjects(),
@@ -39,6 +41,34 @@ describe('validateSTPacketStructure', () => {
     expect(error.dataPath).to.be.equal('');
     expect(error.keyword).to.be.equal('required');
     expect(error.params.missingProperty).to.be.equal('dapContractId');
+  });
+
+  it('should return error if packet doesn\'t contain `itemsMerkleRoot`', () => {
+    delete rawStPacket.itemsMerkleRoot;
+
+    const errors = validateSTPacketStructure(rawStPacket);
+
+    expect(errors).to.be.an('array').and.lengthOf(1);
+
+    const [error] = errors;
+
+    expect(error.dataPath).to.be.equal('');
+    expect(error.keyword).to.be.equal('required');
+    expect(error.params.missingProperty).to.be.equal('itemsMerkleRoot');
+  });
+
+  it('should return error if packet doesn\'t contain `itemsHash`', () => {
+    delete rawStPacket.itemsHash;
+
+    const errors = validateSTPacketStructure(rawStPacket);
+
+    expect(errors).to.be.an('array').and.lengthOf(1);
+
+    const [error] = errors;
+
+    expect(error.dataPath).to.be.equal('');
+    expect(error.keyword).to.be.equal('required');
+    expect(error.params.missingProperty).to.be.equal('itemsHash');
   });
 
   it('should return error if packet contains 0 objects and 0 contracts', () => {

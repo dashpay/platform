@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
-  "$id": "https://schema.dash.org/platform-4-0-0/system/st-packet",
+  "$id": "https://schema.dash.org/platform-4-0-0/system/st-packet-header",
   "properties": {
     "dapContractId": {
       "type": "string",
@@ -16,36 +16,12 @@
       "type": "string",
       "minLength": 64,
       "maxLength": 64
-    },
-    "dapObjects": {
-      "type": "array",
-      "maxItems": 1000
-    },
-    "dapContracts": {
-      "type": "array",
-      "maxItems": 1
     }
   },
-  "allOf": [
-    {
-      "not": {
-        "properties": {
-          "dapObjects": {
-            "maxItems": 0
-          },
-          "dapContracts": {
-            "maxItems": 0
-          }
-        }
-      }
-    }
-  ],
   "required": [
     "dapContractId",
     "itemsMerkleRoot",
-    "itemsHash",
-    "dapObjects",
-    "dapContracts"
+    "itemsHash"
   ],
   "additionalProperties": false
 }
