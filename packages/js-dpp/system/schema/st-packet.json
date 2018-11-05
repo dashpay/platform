@@ -18,24 +18,30 @@
       "maxLength": 64
     },
     "dapObjects": {
-      "type": "array",
-      "maxItems": 1000
+      "type": "array"
     },
     "dapContracts": {
-      "type": "array",
-      "maxItems": 1
+      "type": "array"
     }
   },
-  "allOf": [
+  "oneOf": [
     {
-      "not": {
-        "properties": {
-          "dapObjects": {
-            "maxItems": 0
-          },
-          "dapContracts": {
-            "maxItems": 0
-          }
+      "properties": {
+        "dapObjects": {
+          "maxItems": 0
+        },
+        "dapContracts": {
+          "maxItems": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "dapObjects": {
+          "maxItems": 1000
+        },
+        "dapContracts": {
+          "maxItems": 0
         }
       }
     }

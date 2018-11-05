@@ -10,6 +10,7 @@ const validateSTPacketStructureFactory = require('../../../../lib/stPacket/valid
 describe('validateSTPacketStructure', () => {
   let rawStPacket;
   let rawDapContract;
+  let rawDapObjects;
   let validateSTPacketStructure;
 
   beforeEach(() => {
@@ -19,13 +20,14 @@ describe('validateSTPacketStructure', () => {
     validateSTPacketStructure = validateSTPacketStructureFactory(validator);
 
     rawDapContract = getLovelyDapContract();
+    rawDapObjects = getLovelyDapObjects();
     rawStPacket = {
       dapContractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       dapContracts: [
       ],
-      dapObjects: getLovelyDapObjects(),
+      dapObjects: rawDapObjects,
     };
   });
 
@@ -81,7 +83,8 @@ describe('validateSTPacketStructure', () => {
 
     const [error] = errors;
 
-    expect(error.schemaPath).to.be.equal('#/allOf/0/not');
+    expect(error.keyword).to.be.equal('oneOf');
+    expect(error.params.passingSchemas).to.be.deep.equal([0, 1]);
   });
 
   it('should return error if packet contains the both objects and contracts', () => {
@@ -89,16 +92,20 @@ describe('validateSTPacketStructure', () => {
 
     const errors = validateSTPacketStructure(rawStPacket);
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+    expect(errors).to.be.an('array').and.lengthOf(3);
 
-    const [error] = errors;
+    expect(errors[0].dataPath).to.be.equal('.dapObjects');
+    expect(errors[0].keyword).to.be.equal('maxItems');
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('dapObjects');
+    expect(errors[1].dataPath).to.be.equal('.dapContracts');
+    expect(errors[1].keyword).to.be.equal('maxItems');
+
+    expect(errors[2].dataPath).to.be.equal('');
+    expect(errors[2].keyword).to.be.equal('oneOf');
+    expect(errors[2].params.passingSchemas).to.be.null();
   });
 
-  it('should return error if packet doesn\'t contain `dapObjects`', () => {
+  it('should return error if packet `dapObjects` is not present', () => {
     delete rawStPacket.dapObjects;
 
     const errors = validateSTPacketStructure(rawStPacket);
@@ -112,8 +119,27 @@ describe('validateSTPacketStructure', () => {
     expect(error.params.missingProperty).to.be.equal('dapObjects');
   });
 
-  it('should return error if packet doesn\'t contain `dapContracts`', () => {
-    delete rawStPacket.dapContracts;
+  it('should return error if `dapObjects` contains more than 1000 items', () => {
+    const thousandDapObjects = (new Array(1001)).fill(rawDapObjects[0]);
+    rawStPacket.dapObjects.push(...thousandDapObjects);
+
+    const errors = validateSTPacketStructure(rawStPacket);
+
+    expect(errors).to.be.an('array').and.lengthOf(3);
+
+    expect(errors[0].dataPath).to.be.equal('.dapObjects');
+    expect(errors[0].keyword).to.be.equal('maxItems');
+
+    expect(errors[1].dataPath).to.be.equal('.dapObjects');
+    expect(errors[1].keyword).to.be.equal('maxItems');
+
+    expect(errors[2].dataPath).to.be.equal('');
+    expect(errors[2].keyword).to.be.equal('oneOf');
+    expect(errors[2].params.passingSchemas).to.be.null();
+  });
+
+  it('should return error if `dapObjects` is not array', () => {
+    rawStPacket.dapObjects = 1;
 
     const errors = validateSTPacketStructure(rawStPacket);
 
@@ -121,13 +147,12 @@ describe('validateSTPacketStructure', () => {
 
     const [error] = errors;
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('dapContracts');
+    expect(error.dataPath).to.be.equal('.dapObjects');
+    expect(error.keyword).to.be.equal('type');
   });
 
-  it('should return error if packet contains more than one contract', () => {
-    rawStPacket.dapContracts.push(rawDapContract, rawDapContract);
+  it('should return error if `dapContracts` is not array', () => {
+    rawStPacket.dapContracts = 1;
 
     const errors = validateSTPacketStructure(rawStPacket);
 
@@ -136,7 +161,25 @@ describe('validateSTPacketStructure', () => {
     const [error] = errors;
 
     expect(error.dataPath).to.be.equal('.dapContracts');
-    expect(error.keyword).to.be.equal('maxItems');
+    expect(error.keyword).to.be.equal('type');
+  });
+
+  it('should return error if packet contains more than one contract', () => {
+    rawStPacket.dapContracts.push(rawDapContract, rawDapContract);
+
+    const errors = validateSTPacketStructure(rawStPacket);
+
+    expect(errors).to.be.an('array').and.lengthOf(3);
+
+    expect(errors[0].dataPath).to.be.equal('.dapObjects');
+    expect(errors[0].keyword).to.be.equal('maxItems');
+
+    expect(errors[1].dataPath).to.be.equal('.dapContracts');
+    expect(errors[1].keyword).to.be.equal('maxItems');
+
+    expect(errors[2].dataPath).to.be.equal('');
+    expect(errors[2].keyword).to.be.equal('oneOf');
+    expect(errors[2].params.passingSchemas).to.be.null();
   });
 
   it('should return error if there are additional properties in the packet', () => {

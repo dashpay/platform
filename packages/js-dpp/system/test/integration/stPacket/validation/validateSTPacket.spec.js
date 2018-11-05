@@ -20,9 +20,7 @@ describe('validateSTPacket', () => {
       dapContractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
-      dapContracts: [
-        getLovelyDapContract(),
-      ],
+      dapContracts: [],
       dapObjects: getLovelyDapObjects(),
     });
   });
@@ -157,8 +155,8 @@ describe('validateSTPacket', () => {
   });
 
   it('should return error if packet is empty', () => {
-    stPacket.setDapContract(null);
     stPacket.setDapObjects([]);
+    stPacket.setDapContract(null);
 
     const errors = validateSTPacket(stPacket, dapContract);
 
@@ -166,7 +164,7 @@ describe('validateSTPacket', () => {
 
     const [error] = errors;
 
-    expect(error.schemaPath).to.be.equal('#/allOf/0/not');
+    expect(error.schemaPath).to.be.equal('#/oneOf');
   });
 
   it('should validate dap contract if present');
@@ -190,7 +188,16 @@ describe('validateSTPacket', () => {
     expect(error.getType()).to.be.equal(wrongType);
   });
 
-  it('should return empty array if packet data is correct', () => {
+  it('should return empty array if packet with Dap Objects is correct', () => {
+    const errors = validateSTPacket(stPacket, dapContract);
+
+    expect(errors).to.be.empty();
+  });
+
+  it('should return empty array if packet with Dap Contract is correct', () => {
+    stPacket.setDapObjects([]);
+    stPacket.setDapContract(dapContract);
+
     const errors = validateSTPacket(stPacket, dapContract);
 
     expect(errors).to.be.empty();

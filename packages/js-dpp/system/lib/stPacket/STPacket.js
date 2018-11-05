@@ -3,6 +3,7 @@ const DapObject = require('../dapObject/DapObject');
 const STPacketHeader = require('./STPacketHeader');
 
 const InvalidSTPacketStructureError = require('./errors/InvalidSTPacketStructureError');
+const EitherDapContractOrDapObjectsAllowedError = require('./errors/EitherDapContractOrDapObjectsAllowedError');
 
 class STPacket {
   /**
@@ -10,11 +11,12 @@ class STPacket {
    */
   constructor(dapContractId) {
     this.setDapContractId(dapContractId);
-    this.setItemsMerkleRoot('');
-    this.setItemsHash('');
 
-    this.setDapObjects([]);
-    this.setDapContract(null);
+    this.itemsMerkleRoot = null;
+    this.itemsHash = null;
+
+    this.dapObjects = [];
+    this.dapContracts = [];
   }
 
   // TODO Reuse code from STPacketHeader ?
@@ -79,6 +81,10 @@ class STPacket {
    * @param {DapContract} dapContract
    */
   setDapContract(dapContract) {
+    if (this.dapObjects.length) {
+      throw new EitherDapContractOrDapObjectsAllowedError(this);
+    }
+
     this.dapContracts = !dapContract ? [] : [dapContract];
 
     // TODO: set contract id
@@ -106,6 +112,10 @@ class STPacket {
    * @param {DapObject[]} dapObjects
    */
   setDapObjects(dapObjects) {
+    if (this.dapContracts.length) {
+      throw new EitherDapContractOrDapObjectsAllowedError(this);
+    }
+
     this.dapObjects = dapObjects;
   }
 
