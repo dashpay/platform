@@ -28,22 +28,43 @@ describe('validateSTPacket', () => {
   it('should validate structure too');
 
   describe('dapContractId', () => {
-    it('should return error if `dapContractId` length is lesser 64', () => {
+    it('should return error if it is not a string', () => {
+      stPacket.setDapContractId(1);
+
+      const errors = validateSTPacket(stPacket, dapContract);
+
+      expect(errors).to.be.an('array').and.lengthOf(1);
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.dapContractId');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should return error if its length is lesser 64', () => {
       stPacket.setDapContractId('86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
-      expect(errors[0].schemaPath).to.be.equal('#/properties/dapContractId/minLength');
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.dapContractId');
+      expect(error.keyword).to.be.equal('minLength');
     });
 
-    it('should return error if `dapContractId` length is bigger 64', () => {
+    it('should return error if its length is bigger 64', () => {
       stPacket.setDapContractId('86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff');
 
       const errors = validateSTPacket(stPacket, dapContract);
 
       expect(errors).to.be.an('array').and.lengthOf(1);
-      expect(errors[0].schemaPath).to.be.equal('#/properties/dapContractId/maxLength');
+
+      const [error] = errors;
+
+      expect(error.dataPath).to.be.equal('.dapContractId');
+      expect(error.keyword).to.be.equal('maxLength');
     });
   });
 
@@ -55,7 +76,10 @@ describe('validateSTPacket', () => {
     const errors = validateSTPacket(stPacket, dapContract);
 
     expect(errors).to.be.an('array').and.lengthOf(1);
-    expect(errors[0].schemaPath).to.be.equal('#/allOf/0/not');
+
+    const [error] = errors;
+
+    expect(error.schemaPath).to.be.equal('#/allOf/0/not');
   });
 
   it('should validate dap contract if present');
