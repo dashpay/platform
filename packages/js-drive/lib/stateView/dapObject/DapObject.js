@@ -3,18 +3,18 @@ const generateDapObjectId = require('./generateDapObjectId');
 class DapObject {
   /**
    * @param {string} blockchainUserId
-   * @param {boolean} isDeleted
    * @param {object} data
    * @param {Reference} reference
+   * @param {boolean} isDeleted
    * @param {array} previousRevisions
    */
-  constructor(blockchainUserId, isDeleted, data, reference, previousRevisions = []) {
+  constructor(blockchainUserId, data, reference, isDeleted, previousRevisions = []) {
     this.blockchainUserId = blockchainUserId;
-    this.isDeleted = isDeleted;
     this.type = data.objtype;
     this.object = data;
     this.revision = data.rev;
     this.reference = reference;
+    this.deleted = isDeleted;
     this.previousRevisions = previousRevisions;
   }
 
@@ -34,12 +34,12 @@ class DapObject {
     return this.previousRevisions;
   }
 
-  isMarkAsDeleted() {
-    return this.isDeleted;
+  isDeleted() {
+    return this.deleted;
   }
 
   markAsDeleted() {
-    this.isDeleted = true;
+    this.deleted = true;
   }
 
   currentRevision() {
@@ -58,7 +58,7 @@ class DapObject {
   toJSON() {
     return {
       blockchainUserId: this.blockchainUserId,
-      markAsDeleted: this.isDeleted,
+      isDeleted: this.deleted,
       type: this.type,
       object: this.object,
       revision: this.revision,

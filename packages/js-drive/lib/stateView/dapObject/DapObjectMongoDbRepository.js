@@ -30,18 +30,47 @@ class DapObjectMongoDbRepository {
 
     const {
       blockchainUserId,
-      markAsDeleted,
+      isDeleted,
       object: objectState,
       reference: referenceState,
     } = result || {};
     const previousRevisions = this.toPreviousRevisions(result.previousRevisions);
     return this.toDapObject(
       blockchainUserId,
-      markAsDeleted,
+      isDeleted,
       objectState,
       referenceState,
       previousRevisions,
     );
+  }
+
+  /**
+   * Find all dap objects by `reference.stHeaderHash`
+   *
+   * @param {string} stHeaderHash
+   * @returns {Promise<DapObject[]>}
+   */
+  async findAllBySTHeaderHash(stHeaderHash) {
+    const result = await this.mongoClient
+      .find({ 'reference.stHeaderHash': stHeaderHash })
+      .toArray();
+
+    return result.map((dapObject) => {
+      const {
+        blockchainUserId,
+        isDeleted,
+        object: objectState,
+        reference: referenceState,
+      } = dapObject || {};
+      const previousRevisions = this.toPreviousRevisions(dapObject.previousRevisions);
+      return this.toDapObject(
+        blockchainUserId,
+        isDeleted,
+        objectState,
+        referenceState,
+        previousRevisions,
+      );
+    });
   }
 
   /**
@@ -97,19 +126,19 @@ class DapObjectMongoDbRepository {
       throw new InvalidOrderByError();
     }
 
-    query = Object.assign({}, query, { type });
+    query = Object.assign({ isDeleted: false }, query, { type });
     const results = await this.mongoClient.find(query, opts).toArray();
     return results.map((result) => {
       const {
         blockchainUserId,
-        markAsDeleted,
+        isDeleted,
         object: objectState,
         reference: referenceState,
       } = result || {};
       const previousRevisions = this.toPreviousRevisions(result.previousRevisions);
       return this.toDapObject(
         blockchainUserId,
-        markAsDeleted,
+        isDeleted,
         objectState,
         referenceState,
         previousRevisions,
@@ -148,7 +177,7 @@ class DapObjectMongoDbRepository {
   // eslint-disable-next-line class-methods-use-this
   toDapObject(
     blockchainUserId,
-    markAsDeleted,
+    isDeleted,
     objectState = {},
     referenceState = {},
     previousRevisions = [],
@@ -162,9 +191,9 @@ class DapObjectMongoDbRepository {
     );
     return new DapObject(
       blockchainUserId,
-      markAsDeleted,
       objectState,
       reference,
+      isDeleted,
       previousRevisions,
     );
   }

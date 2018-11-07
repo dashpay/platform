@@ -89,7 +89,7 @@ describe('fetchDapObjectsMethod', () => {
       headerHash,
       hashSTPacket,
     );
-    const dapObject = new DapObject(blockchainUserId, isDeleted, objectData, reference);
+    const dapObject = new DapObject(blockchainUserId, objectData, reference, isDeleted);
     fetchDapObjects.returns([dapObject]);
 
     const dapId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';

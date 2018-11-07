@@ -4,4 +4,5 @@ describe('DapObject', () => {
   require('./DapObjectMongoDbRepository');
   require('./fetchDapObjectsFactory');
   require('./updateDapObjectFactory');
+  require('./revertDapObjectsForStateTransitionFactory');
 });

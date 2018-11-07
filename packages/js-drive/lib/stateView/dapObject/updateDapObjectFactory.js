@@ -13,8 +13,7 @@ function updateDapObjectFactory(createDapObjectRepository) {
    */
   async function updateDapObject(dapId, blockchainUserId, reference, dapObjectData) {
     const dapObjectRepository = createDapObjectRepository(dapId);
-    const markAsDeleted = false;
-    const dapObject = new DapObject(blockchainUserId, markAsDeleted, dapObjectData, reference);
+    const dapObject = new DapObject(blockchainUserId, dapObjectData, reference, false);
 
     switch (dapObject.getAction()) {
       case DapObject.ACTION_CREATE: {

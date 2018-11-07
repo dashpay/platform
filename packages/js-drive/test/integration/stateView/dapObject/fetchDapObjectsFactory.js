@@ -30,7 +30,7 @@ describe('fetchDapObjectsFactory', () => {
     hashSTPacket,
     objectHash,
   );
-  const dapObject = new DapObject(blockchainUserId, isDeleted, objectData, reference);
+  const dapObject = new DapObject(blockchainUserId, objectData, reference, isDeleted);
 
   let createDapObjectMongoDbRepository;
   let fetchDapObjects;

@@ -95,6 +95,6 @@ describe('updateDapObjectFactory', () => {
     const dapObjectMongoDbRepository = createDapObjectMongoDbRepository(dapId);
     const id = generateDapObjectId(blockchainUserId, dapObjectData.idx);
     const dapObject = await dapObjectMongoDbRepository.find(id);
-    expect(dapObject.isMarkAsDeleted()).to.be.true();
+    expect(dapObject.isDeleted()).to.be.true();
   });
 });

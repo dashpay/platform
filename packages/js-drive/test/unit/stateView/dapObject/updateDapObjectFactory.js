@@ -54,9 +54,9 @@ describe('updateDapObjectFactory', () => {
     const firstPreviousRevisions = [];
     const firstDapObject = new DapObject(
       blockchainUserId,
-      isDeleted,
       firstDapObjectData,
       firstReference,
+      isDeleted,
       firstPreviousRevisions,
     );
     dapObjectRepository.find.returns(firstDapObject);

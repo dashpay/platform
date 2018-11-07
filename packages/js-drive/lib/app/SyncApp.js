@@ -11,7 +11,9 @@ const DapObjectMongoDbRepository = require('../stateView/dapObject/DapObjectMong
 const createDapObjectMongoDbRepositoryFactory = require('../stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
 const updateDapContractFactory = require('../stateView/dapContract/updateDapContractFactory');
 const updateDapObjectFactory = require('../stateView/dapObject/updateDapObjectFactory');
+const revertDapObjectsForStateTransitionFactory = require('../stateView/dapObject/revertDapObjectsForStateTransitionFactory');
 const applyStateTransitionFactory = require('../stateView/applyStateTransitionFactory');
+const applyStateTransitionFromReferenceFactory = require('../stateView/applyStateTransitionFromReferenceFactory');
 const BlockchainReader = require('../blockchain/reader/BlockchainReader');
 const RpcBlockIterator = require('../blockchain/blockIterator/RpcBlockIterator');
 const BlockchainReaderState = require('../blockchain/reader/BlockchainReaderState');
@@ -225,6 +227,44 @@ class SyncApp {
       updateDapContract,
       updateDapObject,
       this.options.getStorageIpfsTimeout(),
+    );
+  }
+
+  /**
+   * Create revertDapObjectsForStateTransition
+   *
+   * @param {applyStateTransition} applyStateTransition
+   * @param {applyStateTransitionFromReference} applyStateTransitionFromReference
+   * @returns {revertDapObjectsForStateTransition}
+   */
+  createRevertDapObjectsForStateTransition(
+    applyStateTransition,
+    applyStateTransitionFromReference,
+  ) {
+    const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
+      this.getMongoClient(),
+      DapObjectMongoDbRepository,
+    );
+    return revertDapObjectsForStateTransitionFactory(
+      this.getIpfsApi(),
+      this.getRpcClient(),
+      createDapObjectMongoDbRepository,
+      applyStateTransition,
+      applyStateTransitionFromReference,
+      this.options.getStorageIpfsTimeout(),
+    );
+  }
+
+  /**
+   * Create applyStateTransitionFromReference
+   *
+   * @param {applyStateTransition} applyStateTransition
+   * @returns {applyStateTransitionFromReference}
+   */
+  createApplyStateTransitionFromReference(applyStateTransition) {
+    return applyStateTransitionFromReferenceFactory(
+      applyStateTransition,
+      this.getRpcClient(),
     );
   }
 }

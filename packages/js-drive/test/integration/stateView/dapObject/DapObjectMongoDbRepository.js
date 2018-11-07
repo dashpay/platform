@@ -39,7 +39,7 @@ function createDapObjectWithAge(age) {
       reference,
     },
   ];
-  return new DapObject(blockchainUserId, isDeleted, objectData, reference, previousRevisions);
+  return new DapObject(blockchainUserId, objectData, reference, isDeleted, previousRevisions);
 }
 
 describe('DapObjectMongoDbRepository', () => {
@@ -70,6 +70,12 @@ describe('DapObjectMongoDbRepository', () => {
       where: { 'object.user': 'dashy' },
     };
     const result = await dapObjectRepository.fetch(type, options);
+    expect(result).to.be.deep.equal([dapObject]);
+  });
+
+  it('should find all dap objects by stHeaderHash', async () => {
+    const { reference: { stHeaderHash } } = dapObject;
+    const result = await dapObjectRepository.findAllBySTHeaderHash(stHeaderHash);
     expect(result).to.be.deep.equal([dapObject]);
   });
 

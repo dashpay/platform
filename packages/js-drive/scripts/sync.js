@@ -41,9 +41,17 @@ const errorHandler = require('../lib/util/errorHandler');
     syncAppOptions.getStorageIpfsTimeout(),
   );
 
+  const applyStateTransition = syncApp.createApplyStateTransition();
+  const applyStateTransitionFromReference = syncApp.createApplyStateTransitionFromReference(
+    applyStateTransition,
+  );
   attachStateViewHandlers(
     readerMediator,
-    syncApp.createApplyStateTransition(),
+    applyStateTransition,
+    syncApp.createRevertDapObjectsForStateTransition(
+      applyStateTransition,
+      applyStateTransitionFromReference,
+    ),
     syncApp.createDropMongoDatabasesWithPrefix(),
     syncAppOptions.getMongoDbPrefix(),
   );

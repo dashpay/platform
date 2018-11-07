@@ -4,4 +4,5 @@ describe('stateView', () => {
   require('./dapObject');
   require('./attachStateViewHandlers');
   require('./Reference');
+  require('./applyStateTransitionFromReference');
 });
