@@ -47,7 +47,6 @@ module.exports = function revertDapObjectsForStateTransitionFactory(
         dapObject.markAsDeleted();
         await dapObjectMongoDbRepository.store(dapObject);
 
-        // eslint-disable-next-line no-continue
         continue;
       }
 

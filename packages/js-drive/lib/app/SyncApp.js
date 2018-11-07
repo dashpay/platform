@@ -124,7 +124,6 @@ class SyncApp {
   /**
    * @return {Logger}
    */
-  // eslint-disable-next-line class-methods-use-this
   createLogger() {
     return new Logger(console);
   }

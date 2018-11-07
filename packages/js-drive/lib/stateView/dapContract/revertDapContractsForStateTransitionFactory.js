@@ -28,7 +28,6 @@ function revertDapContractsForStateTransitionFactory(
         dapContract.markAsDeleted();
         await dapContractMongoDbRepository.store(dapContract);
 
-        // eslint-disable-next-line no-continue
         continue;
       }
 
