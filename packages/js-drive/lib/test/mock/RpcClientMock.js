@@ -12,7 +12,6 @@ module.exports = class RpcClientMock {
     const { __proto__: proto } = this;
     for (const method of Object.getOwnPropertyNames(proto)) {
       if (method === 'constructor') {
-        // eslint-disable-next-line no-continue
         continue;
       }
 
@@ -104,7 +103,6 @@ module.exports = class RpcClientMock {
     return { result: transaction.serialize() };
   }
 
-  // eslint-disable-next-line class-methods-use-this
   mnsync(mode) {
     if (mode !== 'status') {
       throw new Error('Not implemented yet!');

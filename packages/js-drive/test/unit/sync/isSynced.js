@@ -17,15 +17,12 @@ describe('isSynced', () => {
     };
 
     class SyncStateRepositoryChangeListener extends EventEmitter {
-      // eslint-disable-next-line class-methods-use-this
       getRepository() {
         return syncStateRepositoryMock;
       }
 
-      // eslint-disable-next-line class-methods-use-this
       listen() { }
 
-      // eslint-disable-next-line class-methods-use-this
       stop() { }
     }
 

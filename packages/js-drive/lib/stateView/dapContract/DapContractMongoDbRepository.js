@@ -64,7 +64,6 @@ class DapContractMongoDbRepository {
    * @param {array} previousVersions
    * @returns {DapContract}
    */
-  // eslint-disable-next-line class-methods-use-this
   toDapContract(dapContractData = {}, referenceData = {}, previousVersions = []) {
     const reference = new Reference(
       referenceData.blockHash,
@@ -88,7 +87,6 @@ class DapContractMongoDbRepository {
    * @param {array} previousVersionsData
    * @returns {{version: number, reference: Reference}[]}
    */
-  // eslint-disable-next-line class-methods-use-this
   toPreviousVersions(previousVersionsData = []) {
     return previousVersionsData.map((previousRevision) => {
       const previousVersion = previousRevision.version;

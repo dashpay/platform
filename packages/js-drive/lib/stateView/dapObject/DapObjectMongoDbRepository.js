@@ -174,7 +174,6 @@ class DapObjectMongoDbRepository {
    * @private
    * @return {DapObject}
    */
-  // eslint-disable-next-line class-methods-use-this
   toDapObject(
     blockchainUserId,
     isDeleted,
@@ -203,7 +202,6 @@ class DapObjectMongoDbRepository {
    * @param {array} previousRevisionsData
    * @returns {{revision: number, reference: Reference}[]}
    */
-  // eslint-disable-next-line class-methods-use-this
   toPreviousRevisions(previousRevisionsData = []) {
     return previousRevisionsData.map((revisionItem) => {
       const previousRevision = revisionItem.revision;
@@ -226,7 +224,6 @@ class DapObjectMongoDbRepository {
    * @param {object} obj
    * @returns {boolean}
    */
-  // eslint-disable-next-line class-methods-use-this
   isObject(obj) {
     return obj === Object(obj);
   }
@@ -236,7 +233,6 @@ class DapObjectMongoDbRepository {
    * @param {number} num
    * @returns {boolean}
    */
-  // eslint-disable-next-line class-methods-use-this
   isNumber(num) {
     return typeof num === 'number';
   }

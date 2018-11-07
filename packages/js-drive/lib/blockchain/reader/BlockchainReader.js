@@ -46,7 +46,6 @@ class BlockchainReader {
               });
             } catch (e) {
               if (e instanceof IgnoreStateTransitionError) {
-                // eslint-disable-next-line no-continue
                 continue;
               }
 
