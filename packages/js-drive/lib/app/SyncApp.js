@@ -12,6 +12,7 @@ const createDapObjectMongoDbRepositoryFactory = require('../stateView/dapObject/
 const updateDapContractFactory = require('../stateView/dapContract/updateDapContractFactory');
 const updateDapObjectFactory = require('../stateView/dapObject/updateDapObjectFactory');
 const revertDapObjectsForStateTransitionFactory = require('../stateView/dapObject/revertDapObjectsForStateTransitionFactory');
+const revertDapContractsForStateTransitionFactory = require('../stateView/dapContract/revertDapContractsForStateTransitionFactory');
 const applyStateTransitionFactory = require('../stateView/applyStateTransitionFactory');
 const applyStateTransitionFromReferenceFactory = require('../stateView/applyStateTransitionFromReferenceFactory');
 const BlockchainReader = require('../blockchain/reader/BlockchainReader');
@@ -214,6 +215,10 @@ class SyncApp {
    * @returns {applyStateTransition}
    */
   createApplyStateTransition() {
+    if (this.applyStateTransition) {
+      return this.applyStateTransition;
+    }
+
     const mongoDb = this.getMongoClient().db(this.options.getStorageMongoDbDatabase());
     const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
     const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
@@ -222,25 +227,36 @@ class SyncApp {
     );
     const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
     const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
-    return applyStateTransitionFactory(
+    this.applyStateTransition = applyStateTransitionFactory(
       this.getIpfsApi(),
       updateDapContract,
       updateDapObject,
       this.options.getStorageIpfsTimeout(),
     );
+    return this.applyStateTransition;
+  }
+
+  /**
+   * Create applyStateTransitionFromReference
+   *
+   * @returns {applyStateTransitionFromReference}
+   */
+  createApplyStateTransitionFromReference() {
+    if (!this.applyStateTransitionFromReference) {
+      this.applyStateTransitionFromReference = applyStateTransitionFromReferenceFactory(
+        this.createApplyStateTransition(),
+        this.getRpcClient(),
+      );
+    }
+    return this.applyStateTransitionFromReference;
   }
 
   /**
    * Create revertDapObjectsForStateTransition
    *
-   * @param {applyStateTransition} applyStateTransition
-   * @param {applyStateTransitionFromReference} applyStateTransitionFromReference
    * @returns {revertDapObjectsForStateTransition}
    */
-  createRevertDapObjectsForStateTransition(
-    applyStateTransition,
-    applyStateTransitionFromReference,
-  ) {
+  createRevertDapObjectsForStateTransition() {
     const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
       this.getMongoClient(),
       DapObjectMongoDbRepository,
@@ -249,22 +265,25 @@ class SyncApp {
       this.getIpfsApi(),
       this.getRpcClient(),
       createDapObjectMongoDbRepository,
-      applyStateTransition,
-      applyStateTransitionFromReference,
+      this.createApplyStateTransition(),
+      this.createApplyStateTransitionFromReference(),
       this.options.getStorageIpfsTimeout(),
     );
   }
 
   /**
-   * Create applyStateTransitionFromReference
+   * Create revertDapContractsForStateTransition
    *
-   * @param {applyStateTransition} applyStateTransition
-   * @returns {applyStateTransitionFromReference}
+   * @returns {revertDapContractsForStateTransition}
    */
-  createApplyStateTransitionFromReference(applyStateTransition) {
-    return applyStateTransitionFromReferenceFactory(
-      applyStateTransition,
+  createRevertDapContractsForStateTransition() {
+    const mongoDb = this.getMongoClient().db(this.options.getStorageMongoDbDatabase());
+    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    return revertDapContractsForStateTransitionFactory(
+      dapContractMongoDbRepository,
       this.getRpcClient(),
+      this.createApplyStateTransition(),
+      this.createApplyStateTransitionFromReference(),
     );
   }
 }

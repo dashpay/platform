@@ -8,6 +8,7 @@ describe('DapContract', () => {
     const reference = new Reference();
     const schema = {};
     const version = 2;
+    const isDeleted = false;
     const previousVersions = [];
     const dapContract = new DapContract(
       dapId,
@@ -15,6 +16,7 @@ describe('DapContract', () => {
       reference,
       schema,
       version,
+      isDeleted,
       previousVersions,
     );
 
@@ -25,6 +27,7 @@ describe('DapContract', () => {
       reference,
       schema,
       version,
+      isDeleted,
       previousVersions,
     });
   });
@@ -35,6 +38,7 @@ describe('DapContract', () => {
     const firstReference = new Reference();
     const firstSchema = {};
     const firstVersion = 1;
+    const firstVersionDeleted = false;
     const firstPreviousVersions = [];
     const firstDapContract = new DapContract(
       firstDapId,
@@ -42,6 +46,7 @@ describe('DapContract', () => {
       firstReference,
       firstSchema,
       firstVersion,
+      firstVersionDeleted,
       firstPreviousVersions,
     );
 
@@ -50,6 +55,7 @@ describe('DapContract', () => {
     const secondReference = new Reference();
     const secondSchema = {};
     const secondVersion = 2;
+    const secondVersionDeleted = false;
     const secondPreviousVersions = [firstDapContract.currentRevision()];
     const secondDapContract = new DapContract(
       secondDapId,
@@ -57,6 +63,7 @@ describe('DapContract', () => {
       secondReference,
       secondSchema,
       secondVersion,
+      secondVersionDeleted,
       secondPreviousVersions,
     );
 
@@ -65,6 +72,7 @@ describe('DapContract', () => {
     const thirdReference = new Reference();
     const thirdSchema = {};
     const thirdVersion = 2;
+    const thirdVersionDeleted = false;
     const thirdPreviousVersions = [];
     const thirdDapContract = new DapContract(
       thirdDapId,
@@ -72,6 +80,7 @@ describe('DapContract', () => {
       thirdReference,
       thirdSchema,
       thirdVersion,
+      thirdVersionDeleted,
       thirdPreviousVersions,
     );
 

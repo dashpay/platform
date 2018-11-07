@@ -19,16 +19,30 @@ class DapContractMongoDbRepository {
    * @returns {Promise<DapContract|null>}
    */
   async find(dapId) {
-    const result = await this.collection.findOne({ _id: dapId });
-
+    const result = await this.collection.findOne({ _id: dapId, isDeleted: false });
     if (!result) {
       return null;
     }
-
     const dapContractData = this.unsanitize(result);
-
     const previousVersions = this.toPreviousVersions(dapContractData.previousVersions);
     return this.toDapContract(dapContractData, dapContractData.reference, previousVersions);
+  }
+
+  /**
+   * Find list of DapContract by `reference.stHeaderHash`
+   *
+   * @param {string} hash
+   * @returns {Promise<[DapContract]|null>}
+   */
+  async findAllByReferenceSTHeaderHash(hash) {
+    const result = await this.collection.find({ 'reference.stHeaderHash': hash })
+      .toArray();
+
+    return result.map((dbItem) => {
+      const dapContractData = this.unsanitize(dbItem);
+      const previousVersions = this.toPreviousVersions(dapContractData.previousVersions);
+      return this.toDapContract(dapContractData, dapContractData.reference, previousVersions);
+    });
   }
 
   /**
@@ -78,6 +92,7 @@ class DapContractMongoDbRepository {
       reference,
       dapContractData.schema,
       dapContractData.version,
+      dapContractData.isDeleted,
       previousVersions,
     );
   }

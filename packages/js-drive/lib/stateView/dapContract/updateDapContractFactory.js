@@ -28,16 +28,15 @@ function updateDapContractFactory(dapContractRepository) {
       reference,
       dapschema,
       dapver,
+      false,
     );
 
     if (!upgradedapid) {
       await dapContractRepository.store(currentDapContract);
-
       return;
     }
 
     const previousDapContract = await dapContractRepository.find(dapId);
-
     if (!previousDapContract) {
       return;
     }

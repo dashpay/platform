@@ -4,7 +4,6 @@ const {
     startIPFS,
   },
 } = require('@dashevo/js-evo-services-ctl');
-
 const Reference = require('../../../lib/stateView/Reference');
 const DapContract = require('../../../lib/stateView/dapContract/DapContract');
 const createDapObjectMongoDbRepositoryFactory = require('../../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
@@ -83,6 +82,7 @@ describe('applyStateTransitionFactory', () => {
     const firstReference = new Reference();
     const firstSchema = {};
     const firstVersion = 1;
+    const firstVersionDeleted = false;
     const firstPreviousVersions = [];
     const firstDapContractVersion = new DapContract(
       dapId,
@@ -90,6 +90,7 @@ describe('applyStateTransitionFactory', () => {
       firstReference,
       firstSchema,
       firstVersion,
+      firstVersionDeleted,
       firstPreviousVersions,
     );
     await dapContractMongoDbRepository.store(firstDapContractVersion);

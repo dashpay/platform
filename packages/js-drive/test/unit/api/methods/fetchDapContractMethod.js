@@ -24,6 +24,7 @@ describe('fetchDapContractMethod', () => {
     const reference = new Reference();
     const schema = {};
     const version = 2;
+    const isDeleted = false;
     const previousVersions = [];
     const contract = new DapContract(
       dapId,
@@ -31,6 +32,7 @@ describe('fetchDapContractMethod', () => {
       reference,
       schema,
       version,
+      isDeleted,
       previousVersions,
     );
     dapContractMongoDbRepository.find.returns(contract);
@@ -43,6 +45,7 @@ describe('fetchDapContractMethod', () => {
       reference,
       schema,
       version,
+      isDeleted,
       previousVersions,
     });
   });

@@ -5,14 +5,16 @@ class DapContract {
    * @param {Reference} reference
    * @param {object} schema
    * @param {number} version
+   * @param {boolean} isDeleted
    * @param {array} previousVersions
    */
-  constructor(dapId, dapName, reference, schema, version, previousVersions = []) {
+  constructor(dapId, dapName, reference, schema, version, isDeleted, previousVersions = []) {
     this.dapId = dapId;
     this.dapName = dapName;
     this.reference = reference;
     this.schema = schema;
     this.version = version;
+    this.deleted = isDeleted;
     this.previousVersions = previousVersions;
   }
 
@@ -30,6 +32,14 @@ class DapContract {
 
   getVersion() {
     return this.version;
+  }
+
+  isDeleted() {
+    return this.deleted;
+  }
+
+  markAsDeleted() {
+    this.deleted = true;
   }
 
   getPreviousVersions() {
@@ -53,7 +63,9 @@ class DapContract {
    * Get DapContract JSON representation
    *
    * @returns {{dapId: string, dapName: string, reference: Object,
-   *              schema: Object, version: number, previousVersions: array}}
+   *              schema: Object, version: number,
+   *              isDeleted: boolean,
+   *              previousVersions: array}}
    */
   toJSON() {
     return {
@@ -62,6 +74,7 @@ class DapContract {
       reference: this.reference.toJSON(),
       schema: this.schema,
       version: this.version,
+      isDeleted: this.deleted,
       previousVersions: this.previousVersionsToJSON(),
     };
   }

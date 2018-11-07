@@ -2,4 +2,5 @@
 describe('DapContract', () => {
   require('./DapContractMongoDbRepository');
   require('./updateDapContractFactory');
+  require('./revertDapContractsForStateTransitionFactory');
 });
