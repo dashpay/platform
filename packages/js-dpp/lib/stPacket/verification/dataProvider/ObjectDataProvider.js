@@ -10,12 +10,12 @@ class ObjectDataProvider extends AbstractDataProvider {
 
     this.dapContracts = {};
     dapContracts.forEach((dapContract) => {
-      this.dapContracts[dapContract.getId()] = dapContract;
+      this.contracts[dapContract.getId()] = dapContract;
     });
 
     this.dapObjects = {};
     dapObjects.forEach((dapObject) => {
-      this.dapObjects[`${dapObject.getType()}:${dapObject.getPrimaryKey()}`] = dapObject;
+      this.objects[`${dapObject.getType()}:${dapObject.getPrimaryKey()}`] = dapObject;
     });
   }
 
@@ -26,7 +26,7 @@ class ObjectDataProvider extends AbstractDataProvider {
    * @return {DapContract|null}
    */
   fetchDapContract(id) {
-    return this.dapContracts[id] || null;
+    return this.contracts[id] || null;
   }
 
   /**
@@ -43,8 +43,8 @@ class ObjectDataProvider extends AbstractDataProvider {
 
       const id = `${type}:${primaryKey}`;
 
-      if (this.dapObjects[id]) {
-        dapObjects.push(this.dapObjects[id]);
+      if (this.objects[id]) {
+        dapObjects.push(this.objects[id]);
       }
     });
 

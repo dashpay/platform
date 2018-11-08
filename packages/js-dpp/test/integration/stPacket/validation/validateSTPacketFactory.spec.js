@@ -17,17 +17,17 @@ describe('validateSTPacket', () => {
   beforeEach(() => {
     dapContract = DapContract.fromObject(getLovelyDapContract());
     stPacket = STPacket.fromObject({
-      dapContractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
+      contractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
-      dapContracts: [],
-      dapObjects: getLovelyDapObjects(),
+      contracts: [],
+      objects: getLovelyDapObjects(),
     });
   });
 
   it('should validate structure too');
 
-  describe('dapContractId', () => {
+  describe('contractId', () => {
     it('should be a string', () => {
       stPacket.setDapContractId(1);
 
@@ -37,7 +37,7 @@ describe('validateSTPacket', () => {
 
       const [error] = errors;
 
-      expect(error.dataPath).to.be.equal('.dapContractId');
+      expect(error.dataPath).to.be.equal('.contractId');
       expect(error.keyword).to.be.equal('type');
     });
 
@@ -50,7 +50,7 @@ describe('validateSTPacket', () => {
 
       const [error] = errors;
 
-      expect(error.dataPath).to.be.equal('.dapContractId');
+      expect(error.dataPath).to.be.equal('.contractId');
       expect(error.keyword).to.be.equal('minLength');
     });
 
@@ -63,11 +63,11 @@ describe('validateSTPacket', () => {
 
       const [error] = errors;
 
-      expect(error.dataPath).to.be.equal('.dapContractId');
+      expect(error.dataPath).to.be.equal('.contractId');
       expect(error.keyword).to.be.equal('maxLength');
     });
 
-    it('should be equal to Dap Contract hash');
+    it('should be equal to Dap Contract ID');
   });
 
   describe('itemsMerkleRoot', () => {
@@ -197,6 +197,7 @@ describe('validateSTPacket', () => {
   });
 
   it('should return empty array if ST Packet with Dap Contract is correct', () => {
+    stPacket.setDapContractId(dapContract.getId());
     stPacket.setDapObjects([]);
     stPacket.setDapContract(dapContract);
 

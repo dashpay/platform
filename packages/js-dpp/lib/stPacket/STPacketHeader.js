@@ -15,10 +15,10 @@ class STPacketHeader {
   /**
    * Set Dap Contract ID
    *
-   * @param {string} dapContractId
+   * @param {string} contractId
    */
-  setDapContractId(dapContractId) {
-    this.dapContractId = dapContractId;
+  setDapContractId(contractId) {
+    this.contractId = contractId;
   }
 
   /**
@@ -27,7 +27,7 @@ class STPacketHeader {
    * @return {string}
    */
   getDapContractId() {
-    return this.dapContractId;
+    return this.contractId;
   }
 
   /**
@@ -69,12 +69,12 @@ class STPacketHeader {
   /**
    * Return ST Packet Header as plain object
    *
-   * @return {{dapContractId: string, itemsMerkleRoot: string, itemsHash: string}}
+   * @return {{contractId: string, itemsMerkleRoot: string, itemsHash: string}}
    */
   toJSON() {
     // TODO: Validate before to JSON ?
     return {
-      dapContractId: this.getDapContractId(),
+      contractId: this.getDapContractId(),
       itemsMerkleRoot: this.getItemsMerkleRoot(),
       itemsHash: this.getItemsHash(),
     };
@@ -102,7 +102,7 @@ class STPacketHeader {
       throw new InvalidSTPacketHeaderStructureError(errors, object);
     }
 
-    return new STPacketHeader(object.dapContractId, object.itemsMerkleRoot, object.itemsHash);
+    return new STPacketHeader(object.contractId, object.itemsMerkleRoot, object.itemsHash);
   }
 
   /**

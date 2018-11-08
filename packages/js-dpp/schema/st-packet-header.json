@@ -2,7 +2,7 @@
   "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
   "$id": "https://schema.dash.org/platform-4-0-0/system/st-packet-header",
   "properties": {
-    "dapContractId": {
+    "contractId": {
       "type": "string",
       "minLength": 64,
       "maxLength": 64
@@ -19,7 +19,7 @@
     }
   },
   "required": [
-    "dapContractId",
+    "contractId",
     "itemsMerkleRoot",
     "itemsHash"
   ],

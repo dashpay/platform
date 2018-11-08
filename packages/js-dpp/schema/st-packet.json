@@ -2,7 +2,7 @@
   "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
   "$id": "https://schema.dash.org/platform-4-0-0/system/st-packet",
   "properties": {
-    "dapContractId": {
+    "contractId": {
       "type": "string",
       "minLength": 64,
       "maxLength": 64
@@ -17,41 +17,41 @@
       "minLength": 64,
       "maxLength": 64
     },
-    "dapObjects": {
+    "objects": {
       "type": "array"
     },
-    "dapContracts": {
+    "contracts": {
       "type": "array"
     }
   },
   "oneOf": [
     {
       "properties": {
-        "dapObjects": {
+        "objects": {
           "maxItems": 0
         },
-        "dapContracts": {
+        "contracts": {
           "maxItems": 1
         }
       }
     },
     {
       "properties": {
-        "dapObjects": {
+        "objects": {
           "maxItems": 1000
         },
-        "dapContracts": {
+        "contracts": {
           "maxItems": 0
         }
       }
     }
   ],
   "required": [
-    "dapContractId",
+    "contractId",
     "itemsMerkleRoot",
     "itemsHash",
-    "dapObjects",
-    "dapContracts"
+    "objects",
+    "contracts"
   ],
   "additionalProperties": false
 }

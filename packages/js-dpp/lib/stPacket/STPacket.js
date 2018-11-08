@@ -7,16 +7,16 @@ const EitherDapContractOrDapObjectsAllowedError = require('./errors/EitherDapCon
 
 class STPacket {
   /**
-   * @param {string} dapContractId
+   * @param {string} contractId
    */
-  constructor(dapContractId) {
-    this.setDapContractId(dapContractId);
+  constructor(contractId) {
+    this.setDapContractId(contractId);
 
     this.itemsMerkleRoot = null;
     this.itemsHash = null;
 
-    this.dapObjects = [];
-    this.dapContracts = [];
+    this.objects = [];
+    this.contracts = [];
   }
 
   // TODO Reuse code from STPacketHeader ?
@@ -24,10 +24,10 @@ class STPacket {
   /**
    * Set Dap Contract ID
    *
-   * @param {string} dapContractId
+   * @param {string} contractId
    */
-  setDapContractId(dapContractId) {
-    this.dapContractId = dapContractId;
+  setDapContractId(contractId) {
+    this.contractId = contractId;
   }
 
   /**
@@ -36,7 +36,7 @@ class STPacket {
    * @return {string}
    */
   getDapContractId() {
-    return this.dapContractId;
+    return this.contractId;
   }
 
   /**
@@ -81,14 +81,14 @@ class STPacket {
    * @param {DapContract} dapContract
    */
   setDapContract(dapContract) {
-    if (this.dapObjects.length) {
+    if (this.objects.length) {
       throw new EitherDapContractOrDapObjectsAllowedError(this);
     }
 
-    this.dapContracts = !dapContract ? [] : [dapContract];
+    this.contracts = !dapContract ? [] : [dapContract];
 
     // TODO: set contract id
-    // this.dapContractId = toHash(dapContract);
+    // this.contractId = toHash(dapContract);
 
     return this;
   }
@@ -99,8 +99,8 @@ class STPacket {
    * @return {DapContract|null}
    */
   getDapContract() {
-    if (this.dapContracts.length) {
-      return this.dapContracts[0];
+    if (this.contracts.length) {
+      return this.contracts[0];
     }
 
     return null;
@@ -112,11 +112,11 @@ class STPacket {
    * @param {DapObject[]} dapObjects
    */
   setDapObjects(dapObjects) {
-    if (this.dapContracts.length) {
+    if (this.contracts.length) {
       throw new EitherDapContractOrDapObjectsAllowedError(this);
     }
 
-    this.dapObjects = dapObjects;
+    this.objects = dapObjects;
   }
 
   /**
@@ -125,7 +125,7 @@ class STPacket {
    * @return {DapObject[]}
    */
   getDapObjects() {
-    return this.dapObjects;
+    return this.objects;
   }
 
   /**
@@ -134,7 +134,7 @@ class STPacket {
    * @param {DapObject...} dapObjects
    */
   addDapObject(...dapObjects) {
-    this.dapObjects.push(...dapObjects);
+    this.objects.push(...dapObjects);
   }
 
   /**
@@ -153,16 +153,16 @@ class STPacket {
   /**
    * Return ST Packet as plain object
    *
-   * @return {{dapContractId: string, dapContracts: Object[], dapObjects: Object[]}}
+   * @return {{contractId: string, contracts: Object[], objects: Object[]}}
    */
   toJSON() {
     // TODO: Validate before to JSON ?
     return {
-      dapContractId: this.getDapContractId(),
+      contractId: this.getDapContractId(),
       itemsMerkleRoot: this.getItemsMerkleRoot(),
       itemsHash: this.getItemsHash(),
-      dapContracts: this.dapContracts.map(dapContract => dapContract.toJSON()),
-      dapObjects: this.dapObjects.map(dapObject => dapObject.toJSON()),
+      contracts: this.contracts.map(dapContract => dapContract.toJSON()),
+      objects: this.objects.map(dapObject => dapObject.toJSON()),
     };
   }
 
@@ -188,19 +188,19 @@ class STPacket {
       throw new InvalidSTPacketStructureError(errors, object);
     }
 
-    const stPacket = new STPacket(object.dapContractId);
+    const stPacket = new STPacket(object.contractId);
 
     stPacket.setItemsMerkleRoot(object.itemsMerkleRoot);
     stPacket.setItemsHash(object.itemsHash);
 
-    if (object.dapContracts.length) {
-      const dapContract = DapContract.fromObject(object.dapContracts[0]);
+    if (object.contracts.length) {
+      const dapContract = DapContract.fromObject(object.contracts[0]);
 
       stPacket.setDapContract(dapContract);
     }
 
-    if (object.dapObjects.length) {
-      const dapObjects = object.dapObjects.map(dapObject => DapObject.fromObject(dapObject));
+    if (object.objects.length) {
+      const dapObjects = object.objects.map(dapObject => DapObject.fromObject(dapObject));
       stPacket.setDapObjects(dapObjects);
     }
 

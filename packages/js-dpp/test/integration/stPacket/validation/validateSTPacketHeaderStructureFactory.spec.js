@@ -15,14 +15,14 @@ describe('validateSTPacketHeaderStructure', () => {
     validateSTPacketHeaderStructure = validateSTPacketHeaderStructureFactory(validator);
 
     rawStPacket = {
-      dapContractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
+      contractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
     };
   });
 
-  it('should return error if packet doesn\'t contain `dapContractId`', () => {
-    delete rawStPacket.dapContractId;
+  it('should return error if packet doesn\'t contain `contractId`', () => {
+    delete rawStPacket.contractId;
 
     const errors = validateSTPacketHeaderStructure(rawStPacket);
 
@@ -32,7 +32,7 @@ describe('validateSTPacketHeaderStructure', () => {
 
     expect(error.dataPath).to.be.equal('');
     expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('dapContractId');
+    expect(error.params.missingProperty).to.be.equal('contractId');
   });
 
   it('should return error if packet doesn\'t contain `itemsMerkleRoot`', () => {
