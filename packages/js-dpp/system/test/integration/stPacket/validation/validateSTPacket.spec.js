@@ -66,6 +66,8 @@ describe('validateSTPacket', () => {
       expect(error.dataPath).to.be.equal('.dapContractId');
       expect(error.keyword).to.be.equal('maxLength');
     });
+
+    it('should be equal to Dap Contract hash');
   });
 
   describe('itemsMerkleRoot', () => {

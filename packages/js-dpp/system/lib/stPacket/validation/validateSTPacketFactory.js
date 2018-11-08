@@ -40,6 +40,12 @@ module.exports = function validateSTPacketFactory(
     const dapContractInsidePacket = stPacket.getDapContract();
 
     if (dapContractInsidePacket) {
+      if (stPacket.getDapContractId() !== dapContractInsidePacket.getId()) {
+        return [{
+          type: 'InvalidDapContractId',
+        }];
+      }
+
       const dapContractErrors = validateDapContractStructure(dapContractInsidePacket.toJSON());
 
       if (dapContractErrors.length) {
