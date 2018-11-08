@@ -177,6 +177,15 @@ class STPacket {
   }
 
   /**
+   * Returns hex string with ST packet hash
+   *
+   * @return {string}
+   */
+  hash() {
+    return STPacket.hashingFunction(this.serialize());
+  }
+
+  /**
    *
    * @param {Object} object
    * @return {STPacket}
@@ -233,6 +242,15 @@ class STPacket {
    */
   static setStructureValidator(validator) {
     STPacket.structureValidator = validator;
+  }
+
+  /**
+   * Set hashing function
+   *
+   * @param {function(Buffer):string}  hashingFunction
+   */
+  static setHashingFunction(hashingFunction) {
+    DapObject.hashingFunction = hashingFunction;
   }
 }
 

@@ -101,6 +101,15 @@ class DapObject {
   }
 
   /**
+   * Returns hex string with object hash
+   *
+   * @return {string}
+   */
+  hash() {
+    return DapObject.hashingFunction(this.serialize());
+  }
+
+  /**
    * Create Dap Object from plain object
    *
    * @param object
@@ -143,6 +152,15 @@ class DapObject {
    */
   static setStructureValidator(validator) {
     DapObject.validateStructure = validator;
+  }
+
+  /**
+   * Set hashing function
+   *
+   * @param {function(Buffer):string}  hashingFunction
+   */
+  static setHashingFunction(hashingFunction) {
+    DapObject.hashingFunction = hashingFunction;
   }
 }
 

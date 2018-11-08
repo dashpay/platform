@@ -57,6 +57,9 @@ describe('DapContract', () => {
   describe('#serialize', () => {
     it('should return serialized Dap Contract');
   });
+  describe('#hash', () => {
+    it('should return Dap Contract hash');
+  });
   describe('.fromObject', () => {
     it('should create Dap Contract from plain object');
     it('should throw error if data is not valid');

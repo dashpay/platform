@@ -91,6 +91,15 @@ class STPacketHeader {
   }
 
   /**
+   * Returns hex string with ST packet header hash
+   *
+   * @return {string}
+   */
+  hash() {
+    return STPacketHeader.hashingFunction(this.serialize());
+  }
+
+  /**
    *
    * @param {Object} object
    * @return {STPacketHeader}
@@ -131,6 +140,15 @@ class STPacketHeader {
    */
   static setStructureValidator(validator) {
     STPacketHeader.structureValidator = validator;
+  }
+
+  /**
+   * Set hashing function
+   *
+   * @param {function(Buffer):string}  hashingFunction
+   */
+  static setHashingFunction(hashingFunction) {
+    STPacketHeader.hashingFunction = hashingFunction;
   }
 }
 

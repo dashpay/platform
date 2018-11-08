@@ -203,6 +203,15 @@ class DapContract {
   }
 
   /**
+   * Returns hex string with contract hash
+   *
+   * @return {string}
+   */
+  hash() {
+    return DapContract.hashingFunction(this.serialize());
+  }
+
+  /**
    * Create Dap Contract from plain object
    *
    * @param object
@@ -254,6 +263,15 @@ class DapContract {
    */
   static setStructureValidator(validator) {
     DapContract.validateStructure = validator;
+  }
+
+  /**
+   * Set hashing function
+   *
+   * @param {function(Buffer):string}  hashingFunction
+   */
+  static setHashingFunction(hashingFunction) {
+    DapContract.hashingFunction = hashingFunction;
   }
 }
 

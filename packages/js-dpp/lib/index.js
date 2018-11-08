@@ -15,6 +15,8 @@ const validateStPacketStructureFactory = require('./stPacket/validation/validate
 
 const serializer = require('./serializer');
 
+const hashingFunction = require('./hash');
+
 const validator = new SchemaValidator(new Ajv());
 
 const validateDapObjectStructure = validateDapObjectStructureFactory(validator);
@@ -32,12 +34,15 @@ const validateSTPacket = validateStPacketFactory(
 
 DapObject.setSerializer(serializer);
 DapObject.setStructureValidator(validateDapObjectStructure);
+DapObject.setHashingFunction(hashingFunction);
 
 DapContract.setSerializer(serializer);
 DapContract.setStructureValidator(validateDapContractStructure);
+DapContract.setHashingFunction(hashingFunction);
 
 STPacket.setSerializer(serializer);
 STPacket.setStructureValidator(validateSTPacketStructure);
+STPacket.setHashingFunction(hashingFunction);
 
 module.exports = {
   DapObject,

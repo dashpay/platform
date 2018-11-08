@@ -26,6 +26,9 @@ describe('DapObject', () => {
   describe('#serialize', () => {
     it('should return serialized Dap Object');
   });
+  describe('#hash', () => {
+    it('should return Dap Object hash');
+  });
   describe('.fromObject', () => {
     it('should create Dap Object from plain object');
     it('should throw error if data is not valid');

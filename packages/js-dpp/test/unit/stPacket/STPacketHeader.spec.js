@@ -23,6 +23,9 @@ describe('STPacketHeader', () => {
   describe('#serialize', () => {
     it('should return serialized ST Packet');
   });
+  describe('#hash', () => {
+    it('should return ST Packet Header hash');
+  });
   describe('.fromObject', () => {
     it('should create ST Packet from plain object');
     it('should throw error if data is not valid');
