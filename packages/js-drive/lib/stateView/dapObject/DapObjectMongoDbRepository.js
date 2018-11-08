@@ -28,20 +28,7 @@ class DapObjectMongoDbRepository {
       return null;
     }
 
-    const {
-      blockchainUserId,
-      isDeleted,
-      object: objectState,
-      reference: referenceState,
-    } = result || {};
-    const previousRevisions = this.toPreviousRevisions(result.previousRevisions);
-    return this.toDapObject(
-      blockchainUserId,
-      isDeleted,
-      objectState,
-      referenceState,
-      previousRevisions,
-    );
+    return this.toDapObject(result);
   }
 
   /**
@@ -55,22 +42,7 @@ class DapObjectMongoDbRepository {
       .find({ 'reference.stHeaderHash': stHeaderHash })
       .toArray();
 
-    return result.map((dapObject) => {
-      const {
-        blockchainUserId,
-        isDeleted,
-        object: objectState,
-        reference: referenceState,
-      } = dapObject || {};
-      const previousRevisions = this.toPreviousRevisions(dapObject.previousRevisions);
-      return this.toDapObject(
-        blockchainUserId,
-        isDeleted,
-        objectState,
-        referenceState,
-        previousRevisions,
-      );
-    });
+    return result.map(document => this.toDapObject(document));
   }
 
   /**
@@ -128,22 +100,7 @@ class DapObjectMongoDbRepository {
 
     query = Object.assign({ isDeleted: false }, query, { type });
     const results = await this.mongoClient.find(query, opts).toArray();
-    return results.map((result) => {
-      const {
-        blockchainUserId,
-        isDeleted,
-        object: objectState,
-        reference: referenceState,
-      } = result || {};
-      const previousRevisions = this.toPreviousRevisions(result.previousRevisions);
-      return this.toDapObject(
-        blockchainUserId,
-        isDeleted,
-        objectState,
-        referenceState,
-        previousRevisions,
-      );
-    });
+    return results.map(document => this.toDapObject(document));
   }
 
   /**
@@ -174,26 +131,39 @@ class DapObjectMongoDbRepository {
    * @private
    * @return {DapObject}
    */
-  toDapObject(
-    blockchainUserId,
-    isDeleted,
-    objectState = {},
-    referenceState = {},
-    previousRevisions = [],
-  ) {
+  toDapObject(objectFromDb) {
+    const data = {
+      ...objectFromDb.data,
+      objtype: objectFromDb.type,
+      pver: objectFromDb.protocolVersion,
+      idx: objectFromDb.idx,
+      rev: objectFromDb.revision,
+      act: objectFromDb.action,
+    };
+
+    const {
+      blockchainUserId,
+      isDeleted,
+      reference: referenceData,
+      previousRevisions: previousRevisionsData,
+    } = objectFromDb;
+
     const reference = new Reference(
-      referenceState.blockHash,
-      referenceState.blockHeight,
-      referenceState.stHeaderHash,
-      referenceState.stPacketHash,
-      referenceState.objectHash,
+      referenceData.blockHash,
+      referenceData.blockHeight,
+      referenceData.stHeaderHash,
+      referenceData.stPacketHash,
+      referenceData.objectHash,
     );
+
     return new DapObject(
       blockchainUserId,
-      objectState,
+      data,
       reference,
       isDeleted,
-      previousRevisions,
+      this.toPreviousRevisions(
+        previousRevisionsData,
+      ),
     );
   }
 

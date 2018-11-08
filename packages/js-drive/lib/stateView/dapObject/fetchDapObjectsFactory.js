@@ -4,7 +4,7 @@
  */
 function fetchDapObjectsFactory(createDapObjectRepository) {
   /**
-   * Fetch Dap Objects by DAP id and type
+   * Fetch original Dap Objects by DAP id and type
    *
    * @typedef {Promise} fetchDapObjects
    * @param {string} dapId
@@ -14,7 +14,8 @@ function fetchDapObjectsFactory(createDapObjectRepository) {
    */
   async function fetchDapObjects(dapId, type, options) {
     const dapObjectRepository = createDapObjectRepository(dapId);
-    return dapObjectRepository.fetch(type, options);
+    const dapObjects = await dapObjectRepository.fetch(type, options);
+    return dapObjects.map(dapObject => dapObject.getOriginalData());
   }
 
   return fetchDapObjects;

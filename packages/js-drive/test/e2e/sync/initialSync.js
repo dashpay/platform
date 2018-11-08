@@ -144,7 +144,6 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
         dapid: dapId,
         dapobjects: [
           {
-            id: i + 1,
             objtype: 'user',
             aboutme: user.aboutMe,
             pver: 1,
@@ -192,7 +191,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
         .request('fetchDapObjects', { dapId, type: 'user' });
       expect(objects).to.have.lengthOf(users.length);
 
-      const aboutMes = objects.map(o => o.object.aboutme);
+      const aboutMes = objects.map(o => o.aboutme);
 
       for (let i = 0; i < users.length; i++) {
         expect(aboutMes).to.include(users[i].aboutMe);

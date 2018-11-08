@@ -43,6 +43,7 @@ describe('updateDapObjectFactory', () => {
   it('should store DapObject if action is 0', async () => {
     const dapObjectData = {
       objtype: 'user',
+      pver: 1,
       idx: 0,
       rev: 1,
       act: 0,
@@ -52,12 +53,13 @@ describe('updateDapObjectFactory', () => {
     const dapObjectMongoDbRepository = createDapObjectMongoDbRepository(dapId);
     const id = generateDapObjectId(blockchainUserId, dapObjectData.idx);
     const dapObject = await dapObjectMongoDbRepository.find(id);
-    expect(dapObject.toJSON().object).to.be.deep.equal(dapObjectData);
+    expect(dapObject.getOriginalData()).to.be.deep.equal(dapObjectData);
   });
 
   it('should store DapObject with revisions if action is 1', async () => {
     const revisionOneDapObjectData = {
       objtype: 'user',
+      pver: 1,
       idx: 0,
       rev: 0,
       act: 0,
@@ -65,6 +67,7 @@ describe('updateDapObjectFactory', () => {
     await updateDapObject(dapId, blockchainUserId, reference, revisionOneDapObjectData);
     const revisionTwoDapObjectData = {
       objtype: 'user',
+      pver: 1,
       idx: 0,
       rev: 1,
       act: 1,
@@ -86,6 +89,7 @@ describe('updateDapObjectFactory', () => {
   it('should mark DapObject as deleted if action is 2', async () => {
     const dapObjectData = {
       objtype: 'user',
+      pver: 1,
       idx: 0,
       rev: 0,
       act: 2,

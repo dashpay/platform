@@ -9,21 +9,28 @@ class DapObject {
    * @param {array} previousRevisions
    */
   constructor(blockchainUserId, data, reference, isDeleted, previousRevisions = []) {
+    const instance = this;
+    ({
+      objtype: instance.type,
+      pver: instance.protocolVersion,
+      idx: instance.idx,
+      rev: instance.revision,
+      act: instance.action,
+      ...instance.data
+    } = data);
+
     this.blockchainUserId = blockchainUserId;
-    this.type = data.objtype;
-    this.object = data;
-    this.revision = data.rev;
     this.reference = reference;
     this.deleted = isDeleted;
     this.previousRevisions = previousRevisions;
   }
 
   getId() {
-    return generateDapObjectId(this.blockchainUserId, this.object.idx);
+    return generateDapObjectId(this.blockchainUserId, this.idx);
   }
 
   getAction() {
-    return this.object.act;
+    return this.action;
   }
 
   getRevision() {
@@ -40,6 +47,17 @@ class DapObject {
 
   markAsDeleted() {
     this.deleted = true;
+  }
+
+  getOriginalData() {
+    return {
+      ...this.data,
+      objtype: this.type,
+      pver: this.protocolVersion,
+      idx: this.idx,
+      rev: this.revision,
+      act: this.action,
+    };
   }
 
   currentRevision() {
@@ -60,8 +78,11 @@ class DapObject {
       blockchainUserId: this.blockchainUserId,
       isDeleted: this.deleted,
       type: this.type,
-      object: this.object,
+      protocolVersion: this.protocolVersion,
+      idx: this.idx,
+      action: this.action,
       revision: this.revision,
+      data: this.data,
       reference: this.reference.toJSON(),
       previousRevisions: this.previousRevisionsToJSON(),
     };

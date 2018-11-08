@@ -16,6 +16,7 @@ function createDapObjectWithAge(age) {
   const objectData = {
     act: 0,
     objtype: 'DashPayContact',
+    pver: 1,
     user: 'dashy',
     rev: 0,
     idx: 0,
@@ -67,7 +68,7 @@ describe('DapObjectMongoDbRepository', () => {
   it('should fetch DapObject by type with where condition', async () => {
     const type = 'DashPayContact';
     const options = {
-      where: { 'object.user': 'dashy' },
+      where: { 'data.user': 'dashy' },
     };
     const result = await dapObjectRepository.fetch(type, options);
     expect(result).to.be.deep.equal([dapObject]);
@@ -184,11 +185,11 @@ describe('DapObjectMongoDbRepository', () => {
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        'object.age': -1,
+        'data.age': -1,
       },
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().object.age).to.be.equal(age);
+    expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
   it('should order asc by DapObject id', async () => {
@@ -199,11 +200,11 @@ describe('DapObjectMongoDbRepository', () => {
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        'object.age': 1,
+        'data.age': 1,
       },
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().object.age).to.be.equal(age);
+    expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
   it('should throw InvalidOrderBy if orderBy is not an object', async () => {
@@ -244,12 +245,12 @@ describe('DapObjectMongoDbRepository', () => {
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        'object.age': 1,
+        'data.age': 1,
       },
       startAt: 1,
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().object.age).to.be.equal(age);
+    expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
   it('should throw InvalidStartAtError if startAt is not a number', async () => {
@@ -290,12 +291,12 @@ describe('DapObjectMongoDbRepository', () => {
     const type = 'DashPayContact';
     const options = {
       orderBy: {
-        'object.age': 1,
+        'data.age': 1,
       },
       startAfter: 1,
     };
     const result = await dapObjectRepository.fetch(type, options);
-    expect(result[0].toJSON().object.age).to.be.equal(age);
+    expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
   it('should throw InvalidStartAfterError if startAfter is not a number', async () => {

@@ -22,8 +22,7 @@ module.exports = function fetchDapObjectsMethodFactory(fetchDapObjects) {
     }
 
     try {
-      const dapObjects = await fetchDapObjects(params.dapId, params.type, params.options);
-      return dapObjects.map(dapObject => dapObject.toJSON());
+      return fetchDapObjects(params.dapId, params.type, params.options);
     } catch (error) {
       switch (error.constructor) {
         case InvalidWhereError:
