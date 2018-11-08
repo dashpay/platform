@@ -1,6 +1,6 @@
 const Ajv = require('ajv');
 
-const SchemaValidator = require('../../../../lib/validation/SchemaValidator');
+const SchemaValidator = require('../../../../lib/SchemaValidator');
 
 const getLovelyDapContract = require('../../../../lib/test/fixtures/getLovelyDapContract');
 const getLovelyDapObjects = require('../../../../lib/test/fixtures/getLovelyDapObjects');

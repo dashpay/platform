@@ -4,7 +4,7 @@ const DapObject = require('./dapObject/DapObject');
 const DapContract = require('./dapContract/DapContract');
 const STPacket = require('./stPacket/STPacket');
 
-const SchemaValidator = require('./validation/SchemaValidator');
+const SchemaValidator = require('./SchemaValidator');
 
 const validateDapObjectFactory = require('./dapObject/validateDapObjectFactory');
 const validateStPacketFactory = require('./stPacket/validation/validateSTPacketFactory');
@@ -13,7 +13,7 @@ const validateDapObjectStructureFactory = require('./dapObject/validateDapObject
 const validateDapContractStructureFactory = require('./dapContract/validateDapContractStructureFactory');
 const validateStPacketStructureFactory = require('./stPacket/validation/validateSTPacketStructureFactory');
 
-const serializer = require('../../dash-schema/lib/serializer');
+const serializer = require('./serializer');
 
 const validator = new SchemaValidator(new Ajv());
 

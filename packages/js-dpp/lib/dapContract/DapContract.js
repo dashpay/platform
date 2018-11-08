@@ -1,4 +1,4 @@
-const hash = require('../../../dash-schema/lib/hash');
+const hash = require('../hash');
 
 const InvalidDapObjectTypeError = require('./errors/InvalidDapObjectTypeError');
 const InvalidDapContractStructureError = require('./errors/InvalidDapContractStructureError');

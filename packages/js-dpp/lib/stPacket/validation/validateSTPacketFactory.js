@@ -1,4 +1,4 @@
-const SchemaValidator = require('../../validation/SchemaValidator');
+const SchemaValidator = require('../../SchemaValidator');
 
 /**
  * @param {SchemaValidator} validator

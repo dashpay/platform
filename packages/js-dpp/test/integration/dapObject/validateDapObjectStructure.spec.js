@@ -1,6 +1,6 @@
 const Ajv = require('ajv');
 
-const SchemaValidator = require('../../../lib/validation/SchemaValidator');
+const SchemaValidator = require('../../../lib/SchemaValidator');
 
 const validateDapObjectStructureFactory = require('../../../lib/dapObject/validateDapObjectStructureFactory');
 
