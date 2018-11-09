@@ -1,28 +1,28 @@
 const InvalidParamsError = require('../InvalidParamsError');
 
 /**
- * @param {DapContractMongoDbRepository} dapContractRepository
+ * @param {fetchDapContract} fetchDapContract
  * @returns {fetchDapContractMethod}
  */
-module.exports = function fetchDapContractMethodFactory(dapContractRepository) {
+module.exports = function fetchDapContractMethodFactory(fetchDapContract) {
   /**
    * @typedef fetchDapContractMethod
    * @param {{ dapId: string }} params
    * @throws InvalidParamsError
-   * @returns {Promise<object>}
+   * @returns {Promise<Object>}
    */
   async function fetchDapContractMethod(params) {
     if (!params.dapId) {
       throw new InvalidParamsError("'dapId' param is not present");
     }
 
-    const dapContract = await dapContractRepository.find(params.dapId);
+    const dapContract = await fetchDapContract(params.dapId);
 
     if (!dapContract) {
       throw new InvalidParamsError('Dap Contract not found');
     }
 
-    return dapContract.toJSON();
+    return dapContract;
   }
 
   return fetchDapContractMethod;

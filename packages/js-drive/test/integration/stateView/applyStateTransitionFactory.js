@@ -12,7 +12,7 @@ const DapContractMongoDbRepository = require('../../../lib/stateView/dapContract
 const updateDapContractFactory = require('../../../lib/stateView/dapContract/updateDapContractFactory');
 const updateDapObjectFactory = require('../../../lib/stateView/dapObject/updateDapObjectFactory');
 const applyStateTransitionFactory = require('../../../lib/stateView/applyStateTransitionFactory');
-const sanitizeData = require('../../../lib/mongoDb/sanitizeData');
+const serializer = require('../../../lib/util/serializer');
 
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
 const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
@@ -41,7 +41,7 @@ describe('applyStateTransitionFactory', () => {
   let applyStateTransition;
   beforeEach(() => {
     addSTPacket = addSTPacketFactory(ipfsClient);
-    dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
       mongoClient,
       DapObjectMongoDbRepository,
@@ -70,7 +70,7 @@ describe('applyStateTransitionFactory', () => {
 
     expect(dapContract.getDapId()).to.be.equal(dapId);
     expect(dapContract.getDapName()).to.be.equal(packet.dapcontract.dapname);
-    expect(dapContract.getSchema()).to.be.deep.equal(packet.dapcontract.dapschema);
+    expect(dapContract.getOriginalData()).to.be.deep.equal(packet.dapcontract);
     expect(dapContract.getVersion()).to.be.deep.equal(packet.dapcontract.dapver);
     expect(dapContract.getPreviousVersions()).to.be.deep.equal([]);
   });
@@ -79,17 +79,17 @@ describe('applyStateTransitionFactory', () => {
     const dapId = '1234';
     const dapName = 'DashPay';
 
-    const firstReference = new Reference();
-    const firstSchema = {};
-    const firstVersion = 1;
+    const firstReference = new Reference(null, null, null, null, null);
+    const firstData = {
+      dapname: dapName,
+      dapver: 1,
+    };
     const firstVersionDeleted = false;
     const firstPreviousVersions = [];
     const firstDapContractVersion = new DapContract(
       dapId,
-      dapName,
+      firstData,
       firstReference,
-      firstSchema,
-      firstVersion,
       firstVersionDeleted,
       firstPreviousVersions,
     );
@@ -109,7 +109,7 @@ describe('applyStateTransitionFactory', () => {
 
     expect(dapContract.getDapId()).to.be.equal(dapId);
     expect(dapContract.getDapName()).to.be.equal(packet.dapcontract.dapname);
-    expect(dapContract.getSchema()).to.be.deep.equal(packet.dapcontract.dapschema);
+    expect(dapContract.getOriginalData()).to.be.deep.equal(packet.dapcontract);
     expect(dapContract.getVersion()).to.be.deep.equal(packet.dapcontract.dapver);
     expect(dapContract.getPreviousVersions()).to.be.deep.equal([
       firstDapContractVersion.currentRevision(),

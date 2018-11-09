@@ -5,4 +5,5 @@ describe('Integration', () => {
   require('./stateView');
   require('./storage');
   require('./sync');
+  require('./util');
 });

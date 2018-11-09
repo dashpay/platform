@@ -5,7 +5,7 @@ const { MongoClient } = require('mongodb');
 const Logger = require('../util/Logger');
 
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
-const sanitizeData = require('../mongoDb/sanitizeData');
+const serializer = require('../util/serializer');
 const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
 const DapObjectMongoDbRepository = require('../stateView/dapObject/DapObjectMongoDbRepository');
 const createDapObjectMongoDbRepositoryFactory = require('../stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
@@ -219,7 +219,7 @@ class SyncApp {
     }
 
     const mongoDb = this.getMongoClient().db(this.options.getStorageMongoDbDatabase());
-    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
       this.getMongoClient(),
       DapObjectMongoDbRepository,
@@ -277,7 +277,7 @@ class SyncApp {
    */
   createRevertDapContractsForStateTransition() {
     const mongoDb = this.getMongoClient().db(this.options.getStorageMongoDbDatabase());
-    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     return revertDapContractsForStateTransitionFactory(
       dapContractMongoDbRepository,
       this.getRpcClient(),

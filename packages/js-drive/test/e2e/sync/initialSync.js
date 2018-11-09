@@ -123,8 +123,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     const { result: dapContract } = await firstDashDrive.driveApi.getApi()
       .request('fetchDapContract', { dapId: otherDapId });
 
-    expect(dapContract.dapId).to.be.equal(otherDapId);
-    expect(dapContract.dapName).to.be.equal(packetsData[0].dapcontract.dapname);
+    expect(dapContract).to.be.deep.equal(packetsData[0].dapcontract);
 
     // 4. Register a bunch of `user` DAP Objects (for every blockchain user)
     let prevTransitionId;

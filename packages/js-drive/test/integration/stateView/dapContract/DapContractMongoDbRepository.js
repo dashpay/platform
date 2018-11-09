@@ -2,13 +2,13 @@ const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
 const Reference = require('../../../../lib/stateView/Reference');
 const DapContract = require('../../../../lib/stateView/dapContract/DapContract');
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');
-const sanitizeData = require('../../../../lib/mongoDb/sanitizeData');
+const serializer = require('../../../../lib/util/serializer');
 
 describe('DapContractRepository', () => {
   let dapContractRepository;
   startMongoDb().then(async (mongoDbInstance) => {
     const mongoDb = await mongoDbInstance.getDb();
-    dapContractRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    dapContractRepository = new DapContractMongoDbRepository(mongoDb, serializer);
   });
 
   let dapContract;
@@ -19,19 +19,27 @@ describe('DapContractRepository', () => {
     const reference = new Reference(
       null, null, 'someSTHeaderHash', null, null,
     );
-    const schema = {};
     const version = 2;
+    const data = {
+      dapname: dapName,
+      dapver: version,
+      dapschema: {
+        $a: 1,
+        $b: {
+          value: 'some',
+        },
+      },
+      upgradedapid: '123',
+    };
     const deleted = false;
     const previousVersions = [{
       version: 1,
-      reference: new Reference(),
+      reference: new Reference(null, null, null, null, null),
     }];
     dapContract = new DapContract(
       dapId,
-      dapName,
+      data,
       reference,
-      schema,
-      version,
       deleted,
       previousVersions,
     );

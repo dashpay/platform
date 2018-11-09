@@ -3,7 +3,7 @@ const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTr
 const doubleSha256 = require('../../../../lib/util/doubleSha256');
 const Reference = require('../../../../lib/stateView/Reference');
 const DapContract = require('../../../../lib/stateView/dapContract/DapContract');
-const sanitizeData = require('../../../../lib/mongoDb/sanitizeData');
+const serializer = require('../../../../lib/util/serializer');
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');
 const updateDapContractFactory = require('../../../../lib/stateView/dapContract/updateDapContractFactory');
 
@@ -22,7 +22,7 @@ describe('updateDapContractFactory', () => {
   let dapContractRepository;
   let updateDapContract;
   beforeEach(() => {
-    dapContractRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    dapContractRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     updateDapContract = updateDapContractFactory(dapContractRepository);
   });
 
@@ -41,42 +41,34 @@ describe('updateDapContractFactory', () => {
     await updateDapContract(dapId, reference, dapContractData);
 
     const dapContract = await dapContractRepository.find(dapId);
-    expect(dapContract.getSchema()).to.deep.equal(dapContractData.dapschema);
+    expect(dapContract.getOriginalData()).to.deep.equal(dapContractData);
     expect(dapContract.getVersion()).to.deep.equal(dapContractData.dapver);
   });
 
   it('should maintain DapContract previous revisions and add new one', async () => {
     const dapId = '1234';
-    const dapName = 'DashPay';
 
-    const firstReference = new Reference();
-    const firstSchema = {};
-    const firstVersion = 1;
-    const firstVersionDeleted = false;
-    const firstPreviousVersions = [];
+    const firstReference = new Reference(null, null, null, null, null);
+    const firstData = {
+      dapver: 1,
+    };
     const firstDapContractVersion = new DapContract(
       dapId,
-      dapName,
+      firstData,
       firstReference,
-      firstSchema,
-      firstVersion,
-      firstVersionDeleted,
-      firstPreviousVersions,
+      false,
     );
 
-    const secondReference = new Reference();
-    const secondSchema = {};
-    const secondVersion = 2;
-    const secondVersionDeleted = false;
-    const secondPreviousVersions = [firstDapContractVersion.currentRevision()];
+    const secondReference = new Reference(null, null, null, null, null);
+    const secondData = {
+      dapver: 2,
+    };
     const secondDapContractVersion = new DapContract(
       dapId,
-      dapName,
+      secondData,
       secondReference,
-      secondSchema,
-      secondVersion,
-      secondVersionDeleted,
-      secondPreviousVersions,
+      false,
+      [firstDapContractVersion.currentRevision()],
     );
     await dapContractRepository.store(secondDapContractVersion);
 
@@ -90,7 +82,7 @@ describe('updateDapContractFactory', () => {
     await updateDapContract(dapId, thirdReference, thirdDapContractData);
     const thirdDapContractEntity = await dapContractRepository.find(dapId);
 
-    expect(thirdDapContractEntity.getSchema()).to.deep.equal(thirdDapContractData.dapschema);
+    expect(thirdDapContractEntity.getOriginalData()).to.deep.equal(thirdDapContractData);
     expect(thirdDapContractEntity.getVersion()).to.deep.equal(thirdDapContractData.dapver);
     expect(thirdDapContractEntity.getPreviousVersions()).to.deep.equal([
       firstDapContractVersion.currentRevision(),

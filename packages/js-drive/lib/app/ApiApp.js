@@ -14,7 +14,9 @@ const addSTPacketFactory = require('../../lib/storage/ipfs/addSTPacketFactory');
 const addSTPacketMethodFactory = require('../../lib/api/methods/addSTPacketMethodFactory');
 
 const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
-const sanitizeData = require('../mongoDb/sanitizeData');
+const serializer = require('../util/serializer');
+
+const fetchDapContractFactory = require('../../lib/stateView/dapContract/fetchDapContractFactory');
 const fetchDapContractMethodFactory = require('../api/methods/fetchDapContractMethodFactory');
 
 const DapObjectMongoDbRepository = require('../../lib/stateView/dapObject/DapObjectMongoDbRepository');
@@ -147,8 +149,9 @@ class ApiApp {
    */
   createFetchDapContractMethod() {
     const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
-    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
-    return fetchDapContractMethodFactory(dapContractMongoDbRepository);
+    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
+    const fetchDapContract = fetchDapContractFactory(dapContractMongoDbRepository);
+    return fetchDapContractMethodFactory(fetchDapContract);
   }
 
   /**

@@ -6,16 +6,18 @@ describe('DapContract', () => {
     const dapId = '123456';
     const dapName = 'DashPay';
     const reference = new Reference();
-    const schema = {};
     const version = 2;
+    const data = {
+      dapname: dapName,
+      dapver: version,
+      schema: {},
+    };
     const isDeleted = false;
     const previousVersions = [];
     const dapContract = new DapContract(
       dapId,
-      dapName,
+      data,
       reference,
-      schema,
-      version,
       isDeleted,
       previousVersions,
     );
@@ -25,7 +27,9 @@ describe('DapContract', () => {
       dapId,
       dapName,
       reference,
-      schema,
+      data: {
+        schema: data.schema,
+      },
       version,
       isDeleted,
       previousVersions,
@@ -33,55 +37,39 @@ describe('DapContract', () => {
   });
 
   it('should add revision to DapContract', () => {
-    const firstDapId = '1234';
-    const firstDapName = 'DashPay';
     const firstReference = new Reference();
-    const firstSchema = {};
-    const firstVersion = 1;
-    const firstVersionDeleted = false;
-    const firstPreviousVersions = [];
+    const firstData = {
+      dapver: 1,
+    };
     const firstDapContract = new DapContract(
-      firstDapId,
-      firstDapName,
+      null,
+      firstData,
       firstReference,
-      firstSchema,
-      firstVersion,
-      firstVersionDeleted,
-      firstPreviousVersions,
+      false,
     );
 
-    const secondDapId = '5678';
-    const secondDapName = 'DashPay';
     const secondReference = new Reference();
-    const secondSchema = {};
-    const secondVersion = 2;
-    const secondVersionDeleted = false;
-    const secondPreviousVersions = [firstDapContract.currentRevision()];
+    const secondData = {
+      dapver: 2,
+    };
     const secondDapContract = new DapContract(
-      secondDapId,
-      secondDapName,
+      null,
+      secondData,
       secondReference,
-      secondSchema,
-      secondVersion,
-      secondVersionDeleted,
-      secondPreviousVersions,
+      false,
     );
 
-    const thirdDapId = '9999';
-    const thirdDapName = 'DashPay';
+    secondDapContract.addRevision(firstDapContract);
+
     const thirdReference = new Reference();
-    const thirdSchema = {};
-    const thirdVersion = 2;
-    const thirdVersionDeleted = false;
-    const thirdPreviousVersions = [];
+    const thirdData = {
+      dapver: 3,
+    };
     const thirdDapContract = new DapContract(
-      thirdDapId,
-      thirdDapName,
+      null,
+      thirdData,
       thirdReference,
-      thirdSchema,
-      thirdVersion,
-      thirdVersionDeleted,
-      thirdPreviousVersions,
+      false,
     );
 
     thirdDapContract.addRevision(secondDapContract);

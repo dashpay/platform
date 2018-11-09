@@ -1,15 +1,16 @@
+const mongo = require('mongodb');
 const Reference = require('../Reference');
 const DapContract = require('./DapContract');
 
 class DapContractMongoDbRepository {
   /**
    * @param {Db} mongoDb
-   * @param {sanitizeData} sanitizeData
+   * @param {serializer} serializer
    */
-  constructor(mongoDb, { sanitize, unsanitize }) {
+  constructor(mongoDb, { encode, decode }) {
     this.collection = mongoDb.collection('dapContracts');
-    this.sanitize = sanitize;
-    this.unsanitize = unsanitize;
+    this.encode = encode;
+    this.decode = decode;
   }
 
   /**
@@ -23,9 +24,7 @@ class DapContractMongoDbRepository {
     if (!result) {
       return null;
     }
-    const dapContractData = this.unsanitize(result);
-    const previousVersions = this.toPreviousVersions(dapContractData.previousVersions);
-    return this.toDapContract(dapContractData, dapContractData.reference, previousVersions);
+    return this.toDapContract(result);
   }
 
   /**
@@ -38,11 +37,7 @@ class DapContractMongoDbRepository {
     const result = await this.collection.find({ 'reference.stHeaderHash': hash })
       .toArray();
 
-    return result.map((dbItem) => {
-      const dapContractData = this.unsanitize(dbItem);
-      const previousVersions = this.toPreviousVersions(dapContractData.previousVersions);
-      return this.toDapContract(dapContractData, dapContractData.reference, previousVersions);
-    });
+    return result.map(document => this.toDapContract(document));
   }
 
   /**
@@ -54,9 +49,13 @@ class DapContractMongoDbRepository {
   async store(dapContract) {
     const dapContractData = dapContract.toJSON();
 
+    dapContractData.data = mongo.Binary(
+      this.encode(dapContractData.data),
+    );
+
     return this.collection.updateOne(
       { _id: dapContractData.dapId },
-      { $set: this.sanitize(dapContractData) },
+      { $set: dapContractData },
       { upsert: true },
     );
   }
@@ -73,12 +72,27 @@ class DapContractMongoDbRepository {
 
   /**
    * @private
-   * @param {object} dapContractData
-   * @param {object} referenceData
-   * @param {array} previousVersions
+   * @param {object} contractFromDb
    * @returns {DapContract}
    */
-  toDapContract(dapContractData = {}, referenceData = {}, previousVersions = []) {
+  toDapContract(contractFromDb) {
+    const contractData = Object.assign({}, contractFromDb, {
+      data: this.decode(contractFromDb.data.buffer),
+    });
+
+    const data = {
+      dapname: contractData.dapName,
+      dapver: contractData.version,
+      ...contractData.data,
+    };
+
+    const {
+      dapId,
+      isDeleted,
+      reference: referenceData,
+      previousVersions: previousVersionsData,
+    } = contractData;
+
     const reference = new Reference(
       referenceData.blockHash,
       referenceData.blockHeight,
@@ -86,14 +100,15 @@ class DapContractMongoDbRepository {
       referenceData.stPacketHash,
       referenceData.objectHash,
     );
+
     return new DapContract(
-      dapContractData.dapId,
-      dapContractData.dapName,
+      dapId,
+      data,
       reference,
-      dapContractData.schema,
-      dapContractData.version,
-      dapContractData.isDeleted,
-      previousVersions,
+      isDeleted,
+      this.toPreviousVersions(
+        previousVersionsData,
+      ),
     );
   }
 

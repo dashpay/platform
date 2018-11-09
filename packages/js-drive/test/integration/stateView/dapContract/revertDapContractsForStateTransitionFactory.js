@@ -13,7 +13,7 @@ const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures
 const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
 const getTransitionHeaderFixtures = require('../../../../lib/test/fixtures/getTransitionHeaderFixtures');
 
-const sanitizeData = require('../../../../lib/mongoDb/sanitizeData');
+const serializer = require('../../../../lib/util/serializer');
 
 const RpcClientMock = require('../../../../lib/test/mock/RpcClientMock');
 
@@ -43,7 +43,7 @@ describe('revertDapContractsForStateTransitionFactory', () => {
   let revertDapContractsForStateTransition;
   beforeEach(function beforeEach() {
     addSTPacket = addSTPacketFactory(ipfsClient);
-    dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, sanitizeData);
+    dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
     applyStateTransition = applyStateTransitionFactory(
       ipfsClient,
@@ -88,6 +88,7 @@ describe('revertDapContractsForStateTransitionFactory', () => {
         block.height,
         header.hash,
         packet.getHash(),
+        null,
       );
 
       dapContractVersions.push({
@@ -117,10 +118,11 @@ describe('revertDapContractsForStateTransitionFactory', () => {
 
     const dapContract = new DapContract(
       dapId,
-      dapName,
+      {
+        dapname: dapName,
+        dapver: dapContractVersions.length,
+      },
       dapContractVersions[dapContractVersions.length - 1].reference,
-      {},
-      dapContractVersions.length,
       false,
       previousVersions,
     );
@@ -161,16 +163,18 @@ describe('revertDapContractsForStateTransitionFactory', () => {
       stPacketHash,
       objectHash,
     );
-    const schema = {};
+
     const version = 1;
+    const data = {
+      dapname: dapName,
+      dapver: version,
+    };
     const deleted = false;
     const previousVersions = [];
     const dapContract = new DapContract(
       dapId,
-      dapName,
+      data,
       reference,
-      schema,
-      version,
       deleted,
       previousVersions,
     );

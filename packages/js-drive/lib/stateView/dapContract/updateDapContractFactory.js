@@ -15,19 +15,12 @@ function updateDapContractFactory(dapContractRepository) {
    * @returns {Promise<void>}
    */
   async function updateDapContract(dapId, reference, dapContractData) {
-    const {
-      dapname,
-      upgradedapid,
-      dapver,
-      dapschema,
-    } = dapContractData;
+    const { upgradedapid } = dapContractData;
 
     const currentDapContract = new DapContract(
       dapId,
-      dapname,
+      dapContractData,
       reference,
-      dapschema,
-      dapver,
       false,
     );
 

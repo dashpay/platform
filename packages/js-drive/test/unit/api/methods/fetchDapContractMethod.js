@@ -5,13 +5,11 @@ const DapContract = require('../../../../lib/stateView/dapContract/DapContract')
 
 describe('fetchDapContractMethod', () => {
   let fetchDapContractMethod;
-  let dapContractMongoDbRepository;
+  let fetchDapContract;
 
   beforeEach(function beforeEach() {
-    dapContractMongoDbRepository = {
-      find: this.sinon.stub(),
-    };
-    fetchDapContractMethod = fetchDapContractMethodFactory(dapContractMongoDbRepository);
+    fetchDapContract = this.sinon.stub();
+    fetchDapContractMethod = fetchDapContractMethodFactory(fetchDapContract);
   });
 
   it('should throw InvalidParamsError if DAP id is not provided', () => {
@@ -22,37 +20,34 @@ describe('fetchDapContractMethod', () => {
     const dapId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
     const dapName = 'DashPay';
     const reference = new Reference();
-    const schema = {};
     const version = 2;
+    const data = {
+      dapname: dapName,
+      dapver: version,
+      dapschema: {
+        $a: 42,
+      },
+    };
     const isDeleted = false;
     const previousVersions = [];
     const contract = new DapContract(
       dapId,
-      dapName,
+      data,
       reference,
-      schema,
-      version,
       isDeleted,
       previousVersions,
     );
-    dapContractMongoDbRepository.find.returns(contract);
+    fetchDapContract.returns(contract.getOriginalData());
 
     const dapContract = await fetchDapContractMethod({ dapId });
 
-    expect(dapContract).to.be.deep.equal({
-      dapId,
-      dapName,
-      reference,
-      schema,
-      version,
-      isDeleted,
-      previousVersions,
-    });
+    expect(dapContract).to.be.deep.equal(data);
   });
+
   it('should throw error if DAP Contract not found', async () => {
     const dapId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
 
-    dapContractMongoDbRepository.find.returns(null);
+    fetchDapContract.returns(null);
 
     expect(fetchDapContractMethod({ dapId })).to.be.rejectedWith(InvalidParamsError);
   });

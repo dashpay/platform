@@ -1,19 +1,21 @@
 class DapContract {
   /**
    * @param {string} dapId
-   * @param {string} dapName
+   * @param {object} data
    * @param {Reference} reference
-   * @param {object} schema
-   * @param {number} version
    * @param {boolean} isDeleted
    * @param {array} previousVersions
    */
-  constructor(dapId, dapName, reference, schema, version, isDeleted, previousVersions = []) {
+  constructor(dapId, data, reference, isDeleted, previousVersions = []) {
+    const instance = this;
+    ({
+      dapname: instance.dapName,
+      dapver: instance.version,
+      ...instance.data
+    } = data);
+
     this.dapId = dapId;
-    this.dapName = dapName;
     this.reference = reference;
-    this.schema = schema;
-    this.version = version;
     this.deleted = isDeleted;
     this.previousVersions = previousVersions;
   }
@@ -26,8 +28,12 @@ class DapContract {
     return this.dapName;
   }
 
-  getSchema() {
-    return this.schema;
+  getOriginalData() {
+    return {
+      dapname: this.dapName,
+      dapver: this.version,
+      ...this.data,
+    };
   }
 
   getVersion() {
@@ -63,7 +69,7 @@ class DapContract {
    * Get DapContract JSON representation
    *
    * @returns {{dapId: string, dapName: string, reference: Object,
-   *              schema: Object, version: number,
+   *              data: Object, version: number,
    *              isDeleted: boolean,
    *              previousVersions: array}}
    */
@@ -72,7 +78,7 @@ class DapContract {
       dapId: this.dapId,
       dapName: this.dapName,
       reference: this.reference.toJSON(),
-      schema: this.schema,
+      data: this.data,
       version: this.version,
       isDeleted: this.deleted,
       previousVersions: this.previousVersionsToJSON(),
