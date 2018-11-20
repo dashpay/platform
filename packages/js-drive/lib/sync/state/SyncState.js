@@ -57,18 +57,6 @@ class SyncState {
   }
 
   /**
-   * Update last sync date
-   *
-   * @param {Date} date
-   */
-  updateLastSyncAt(date) {
-    if (!this.getLastInitialSyncAt()) {
-      this.lastInitialSyncAt = date;
-    }
-    this.lastSyncAt = date;
-  }
-
-  /**
    * Get last sync date
    *
    * @return {Date}

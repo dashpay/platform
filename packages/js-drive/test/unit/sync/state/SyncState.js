@@ -78,19 +78,6 @@ describe('SyncState', () => {
     expect(anotherState.isEmpty()).to.be.false();
   });
 
-  it('should only update lastInitialSyncAt one time if updateLastSync is called several times', () => {
-    const firstLastSyncAt = new Date();
-    const syncState = new SyncState(blocks, firstLastSyncAt);
-
-    const secondLastSyncAt = new Date();
-    syncState.updateLastSyncAt(secondLastSyncAt);
-    const thirdLastSyncAt = new Date();
-    syncState.updateLastSyncAt(thirdLastSyncAt);
-
-    expect(syncState.getLastSyncAt()).to.be.equal(thirdLastSyncAt);
-    expect(syncState.getLastInitialSyncAt()).to.be.equal(secondLastSyncAt);
-  });
-
   it('should have lastInitialSyncAt equal to null if lastInitialSyncAt not provided', () => {
     const firstLastSyncAt = new Date();
     const lastInitialSyncAt = null;
