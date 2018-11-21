@@ -38,3 +38,5 @@ class STPacketHeaderFactory {
     return this.createFromObject(object);
   }
 }
+
+module.exports = STPacketHeaderFactory;
