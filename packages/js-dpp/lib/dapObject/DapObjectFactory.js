@@ -37,16 +37,13 @@ class DapObjectFactory {
    * Create Dap Object from plain object
    *
    * @param {Object} object
-   * @param {boolean} skipValidation
    * @return {DapObject}
    */
-  createFromObject(object, skipValidation = false) {
-    if (!skipValidation) {
-      const errors = this.validateDapObject(object, this.dapContract.getId());
+  createFromObject(object) {
+    const errors = this.validateDapObject(object, this.dapContract.getId());
 
-      if (errors.length) {
-        throw new InvalidDapObjectStructureError(errors, object);
-      }
+    if (errors.length) {
+      throw new InvalidDapObjectStructureError(errors, object);
     }
 
     return this.create(object.$type, object);
