@@ -1,8 +1,8 @@
-const DapContract = require('../dapContract/DapContract');
-const DapObject = require('../dapObject/DapObject');
+const hash = require('../util/hash');
+const serializer = require('../util/serializer');
+
 const STPacketHeader = require('./STPacketHeader');
 
-const InvalidSTPacketStructureError = require('./errors/InvalidSTPacketStructureError');
 const EitherDapContractOrDapObjectsAllowedError = require('./errors/EitherDapContractOrDapObjectsAllowedError');
 
 class STPacket {
@@ -173,7 +173,7 @@ class STPacket {
    */
   serialize() {
     // TODO: Validate before serialization ?
-    return STPacket.serializer.encode(this.toJSON());
+    return serializer.encode(this.toJSON());
   }
 
   /**
@@ -182,75 +182,7 @@ class STPacket {
    * @return {string}
    */
   hash() {
-    return STPacket.hashingFunction(this.serialize());
-  }
-
-  /**
-   *
-   * @param {Object} object
-   * @return {STPacket}
-   */
-  static fromObject(object) {
-    const errors = STPacket.structureValidator(object);
-
-    if (errors.length) {
-      throw new InvalidSTPacketStructureError(errors, object);
-    }
-
-    const stPacket = new STPacket(object.contractId);
-
-    stPacket.setItemsMerkleRoot(object.itemsMerkleRoot);
-    stPacket.setItemsHash(object.itemsHash);
-
-    if (object.contracts.length) {
-      const dapContract = DapContract.fromObject(object.contracts[0]);
-
-      stPacket.setDapContract(dapContract);
-    }
-
-    if (object.objects.length) {
-      const dapObjects = object.objects.map(dapObject => DapObject.fromObject(dapObject));
-      stPacket.setDapObjects(dapObjects);
-    }
-
-    return stPacket;
-  }
-
-  /**
-   *
-   * @param {Buffer|string} payload
-   * @return {STPacket}
-   */
-  static fromSerialized(payload) {
-    const object = STPacket.serializer.decode(payload);
-    return STPacket.fromObject(object);
-  }
-
-  /**
-   * Set serializer
-   *
-   * @param {serializer} serializer
-   */
-  static setSerializer(serializer) {
-    STPacket.serializer = serializer;
-  }
-
-  /**
-   * Set structure validator
-   *
-   * @param {Function} validator
-   */
-  static setStructureValidator(validator) {
-    STPacket.structureValidator = validator;
-  }
-
-  /**
-   * Set hashing function
-   *
-   * @param {function(Buffer):string}  hashingFunction
-   */
-  static setHashingFunction(hashingFunction) {
-    DapObject.hashingFunction = hashingFunction;
+    return hash(this.serialize());
   }
 }
 

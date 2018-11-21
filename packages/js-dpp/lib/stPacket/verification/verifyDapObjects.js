@@ -27,9 +27,12 @@ function verifyDapObjectsFactory(findDuplicatedPrimaryKeyAndType) {
       return result;
     }
 
-    // eslint-disable-next-line arrow-body-style
     const primaryKeysAndTypes = stPacket.getDapObjects().map((dapObject) => {
-      return { type: dapObject.getType(), primaryKey: dapObject.getPrimaryKey() };
+      return {
+        dapContractId: stPacket.getDapContractId(),
+        type: dapObject.getType(),
+        primaryKey: dapObject.getPrimaryKey(),
+      };
     });
 
     const fetchedDapObjects = await dataProvider.fetchDapObjects(primaryKeysAndTypes);
@@ -40,6 +43,11 @@ function verifyDapObjectsFactory(findDuplicatedPrimaryKeyAndType) {
         return dapObject.getType() === object.getType()
           && dapObject.getPrimaryKey() === object.getPrimaryKey();
       });
+
+      const dapObjectSchema = stPacket.getDapContract().getDapObjectSchema(dapObject.getType());
+      if (dapObjectSchema.primaryKey && dapObjectSchema.primaryKey.composite) {
+        // TODO: Recreate ID and compare
+      }
 
       switch (dapObject.getAction()) {
         case DapObject.ACTIONS.CREATE:
@@ -54,6 +62,8 @@ function verifyDapObjectsFactory(findDuplicatedPrimaryKeyAndType) {
 
             break;
           }
+
+          // TODO: Verify owner
 
           if (dapObject.getRevision() !== fetchedDapObject.getRevision() + 1) {
             result.addError(new ConsensusError('Invalid Dap Object revision'));

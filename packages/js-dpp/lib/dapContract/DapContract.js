@@ -1,7 +1,7 @@
-const hash = require('../hash');
+const hash = require('../util/hash');
+const serializer = require('../util/serializer');
 
 const InvalidDapObjectTypeError = require('./errors/InvalidDapObjectTypeError');
-const InvalidDapContractStructureError = require('./errors/InvalidDapContractStructureError');
 
 class DapContract {
   /**
@@ -199,7 +199,7 @@ class DapContract {
    * @return {Buffer}
    */
   serialize() {
-    return DapContract.serializer.encode(this.toJSON());
+    return serializer.encode(this.toJSON());
   }
 
   /**
@@ -208,70 +208,7 @@ class DapContract {
    * @return {string}
    */
   hash() {
-    return DapContract.hashingFunction(this.serialize());
-  }
-
-  /**
-   * Create Dap Contract from plain object
-   *
-   * @param object
-   * @return {DapContract}
-   */
-  static fromObject(object) {
-    const errors = DapContract.validateStructure(object);
-
-    if (errors.length) {
-      throw new InvalidDapContractStructureError(errors, object);
-    }
-
-    const dapContract = new DapContract(object.name, object.dapObjectsDefinition);
-
-    dapContract.setSchema(object.$schema);
-    dapContract.setVersion(object.version);
-
-    if (object.definitions) {
-      dapContract.setDefinitions(object.definitions);
-    }
-
-    return dapContract;
-  }
-
-  /**
-   * Create Dap Contract from string/buffer
-   *
-   * @param {Buffer|string} payload
-   * @return {DapContract}
-   */
-  static fromSerialized(payload) {
-    const object = DapContract.serializer.encode(payload);
-    return DapContract.fromObject(object);
-  }
-
-  /**
-   * Set serializer
-   *
-   * @param {serializer} serializer
-   */
-  static setSerializer(serializer) {
-    DapContract.serializer = serializer;
-  }
-
-  /**
-   * Set structure validator
-   *
-   * @param {Function} validator
-   */
-  static setStructureValidator(validator) {
-    DapContract.validateStructure = validator;
-  }
-
-  /**
-   * Set hashing function
-   *
-   * @param {function(Buffer):string}  hashingFunction
-   */
-  static setHashingFunction(hashingFunction) {
-    DapContract.hashingFunction = hashingFunction;
+    return hash(this.serialize());
   }
 }
 

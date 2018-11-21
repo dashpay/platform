@@ -1,4 +1,5 @@
-const InvalidSTPacketHeaderStructureError = require('./errors/InvalidSTPacketHeaderStructureError');
+const hash = require('../util/hash');
+const serializer = require('../util/serializer');
 
 class STPacketHeader {
   /**
@@ -87,7 +88,7 @@ class STPacketHeader {
    */
   serialize() {
     // TODO: Validate before serialization ?
-    return STPacketHeader.serializer.encode(this.toJSON());
+    return serializer.encode(this.toJSON());
   }
 
   /**
@@ -96,59 +97,7 @@ class STPacketHeader {
    * @return {string}
    */
   hash() {
-    return STPacketHeader.hashingFunction(this.serialize());
-  }
-
-  /**
-   *
-   * @param {Object} object
-   * @return {STPacketHeader}
-   */
-  static fromObject(object) {
-    const errors = STPacketHeader.structureValidator(object);
-
-    if (errors.length) {
-      throw new InvalidSTPacketHeaderStructureError(errors, object);
-    }
-
-    return new STPacketHeader(object.contractId, object.itemsMerkleRoot, object.itemsHash);
-  }
-
-  /**
-   *
-   * @param {Buffer|string} payload
-   * @return {STPacketHeader}
-   */
-  static fromSerialized(payload) {
-    const object = STPacketHeader.serializer.decode(payload);
-    return STPacketHeader.fromObject(object);
-  }
-
-  /**
-   * Set serializer
-   *
-   * @param {serializer} serializer
-   */
-  static setSerializer(serializer) {
-    STPacketHeader.serializer = serializer;
-  }
-
-  /**
-   * Set structure validator
-   *
-   * @param {Function} validator
-   */
-  static setStructureValidator(validator) {
-    STPacketHeader.structureValidator = validator;
-  }
-
-  /**
-   * Set hashing function
-   *
-   * @param {function(Buffer):string}  hashingFunction
-   */
-  static setHashingFunction(hashingFunction) {
-    STPacketHeader.hashingFunction = hashingFunction;
+    return hash(this.serialize());
   }
 }
 

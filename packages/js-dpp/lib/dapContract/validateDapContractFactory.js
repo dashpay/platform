@@ -1,16 +1,16 @@
-const SchemaValidator = require('../SchemaValidator');
+const SchemaValidator = require('../validation/SchemaValidator');
 
 /**
  * @param validator
  * @return {validateDapContractStructure}
  */
-module.exports = function validateDapContractStructureFactory(validator) {
+module.exports = function validateDapContractFactory(validator) {
   /**
-   * @typedef validateDapContractStructure
+   * @typedef validateDapContract
    * @param {Object} rawDapContract
    * @return {Object[]}
    */
-  function validateDapContractStructure(rawDapContract) {
+  function validateDapContract(rawDapContract) {
     // TODO: Use validateSchema?
 
     return validator.validate(
@@ -19,5 +19,5 @@ module.exports = function validateDapContractStructureFactory(validator) {
     );
   }
 
-  return validateDapContractStructure;
+  return validateDapContract;
 };

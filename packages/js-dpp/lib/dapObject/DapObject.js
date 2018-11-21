@@ -1,28 +1,58 @@
-const InvalidDapObjectStructureError = require('./errors/InvalidDapObjectStructureError');
+const hash = require('../util/hash');
+const serializer = require('../util/serializer');
+const entropy = require('../util/entropy');
 
 class DapObject {
   /**
+   * @param {DapContract} dapContract
+   * @param {string} blockchainUserId
    * @param {string} type
    * @param {object} [data]
    */
-  constructor(type, data = {}) {
-    this.setType(type);
-    this.setAction(DapObject.ACTIONS.CREATE);
-    this.setRevision(DapObject.DEFAULTS.REVISION);
+  constructor(dapContract, blockchainUserId, type, data = {}) {
+    this.type = type;
 
-    Object.assign(this, data);
+    // TODO Strange to pass system fields as data, but then prevent to use setData for them
+
+    const userData = Object.assign({}, data);
+
+    if (userData.$scopeId) {
+      this.scopeId = userData.$scopeId;
+      delete userData.$scopeId;
+    } else {
+      this.scopeId = entropy.generate();
+    }
+
+    if (userData.$scope) {
+      this.scope = userData.$scope;
+      delete userData.$scope;
+    } else {
+      this.scope = hash(dapContract.getId() + blockchainUserId);
+    }
+
+    if (userData.$action) {
+      this.action = userData.$action;
+      delete userData.$action;
+    } else {
+      this.action = DapObject.ACTIONS.CREATE;
+    }
+
+    if (userData.$rev) {
+      this.action = userData.$rev;
+      delete userData.$rev;
+    } else {
+      this.revision = DapObject.DEFAULTS.REVISION;
+    }
+
+    this.setData(userData);
   }
 
-  /**
-   * Set type
-   *
-   * @param {string }type
-   * @return {DapObject}
-   */
-  setType(type) {
-    this.$$type = type;
+  getId() {
+    if (!this.id) {
+      this.id = hash(this.scope + this.scopeId);
+    }
 
-    return this;
+    return this.id;
   }
 
   /**
@@ -31,7 +61,7 @@ class DapObject {
    * @return {string}
    */
   getType() {
-    return this.$$type;
+    return this.type;
   }
 
   /**
@@ -41,7 +71,7 @@ class DapObject {
    * @return {DapObject}
    */
   setAction(action) {
-    this.$$action = action;
+    this.action = action;
 
     return this;
   }
@@ -52,7 +82,7 @@ class DapObject {
    * @return {number}
    */
   getAction() {
-    return this.$$action;
+    return this.action;
   }
 
   /**
@@ -62,9 +92,9 @@ class DapObject {
    * @return DapObject
    */
   setRevision(revision) {
-    this.$$revision = revision;
+    this.revision = revision;
 
-    return this.$$revision;
+    return this;
   }
 
   /**
@@ -73,7 +103,59 @@ class DapObject {
    * @return {number}
    */
   getRevision() {
-    return this.$$revision;
+    return this.revision;
+  }
+
+  /**
+   * Set data
+   *
+   * @param {Object} data
+   * @return {DapObject}
+   */
+  setData(data) {
+    this.data = {};
+
+    Object.entries(data).forEach(([name, value]) => this.set(name, value));
+
+    return this;
+  }
+
+  /**
+   * Get data
+   *
+   * @return {Object}
+   */
+  getData() {
+    return this.data;
+  }
+
+  /**
+   * Retrieves the field specified by {path}
+   *
+   * @param {string} path
+   * @return {*}
+   */
+  get(path) {
+    // TODO implement path
+    return this.data[path];
+  }
+
+  /**
+   * Set the field specified by {path}
+   *
+   * @param path
+   * @param value
+   * @return {DapObject}
+   */
+  set(path, value) {
+    if (path[0] === '$') {
+      throw new Error();
+    }
+
+    // TODO implement path
+    this.data[path] = value;
+
+    return this;
   }
 
   /**
@@ -82,13 +164,14 @@ class DapObject {
    * @return {Object}
    */
   toJSON() {
-    const json = {};
-
-    Object.getOwnPropertyNames(this).forEach((name) => {
-      json[name] = this[name];
-    });
-
-    return json;
+    return {
+      $scope: this.scope,
+      $scopeId: this.scopeId,
+      $type: this.getType(),
+      $rev: this.getRevision(),
+      $action: this.getAction(),
+      ...this.getData(),
+    };
   }
 
   /**
@@ -97,7 +180,7 @@ class DapObject {
    * @return {Buffer}
    */
   serialize() {
-    return DapObject.serializer.encode(this.toJSON());
+    return serializer.encode(this.toJSON());
   }
 
   /**
@@ -106,61 +189,7 @@ class DapObject {
    * @return {string}
    */
   hash() {
-    return DapObject.hashingFunction(this.serialize());
-  }
-
-  /**
-   * Create Dap Object from plain object
-   *
-   * @param object
-   * @return {DapObject}
-   */
-  static fromObject(object) {
-    const errors = DapObject.validateStructure(object);
-
-    if (errors.length) {
-      throw new InvalidDapObjectStructureError(errors, object);
-    }
-
-    return new DapObject(object.$$type, object);
-  }
-
-  /**
-   * Create Dap Object from string/buffer
-   *
-   * @param {Buffer|string} payload
-   * @return {DapObject}
-   */
-  static fromSerialized(payload) {
-    const object = DapObject.serializer.decode(payload);
-    return DapObject.fromObject(object);
-  }
-
-  /**
-   * Set serializer
-   *
-   * @param {serializer} serializer
-   */
-  static setSerializer(serializer) {
-    DapObject.serializer = serializer;
-  }
-
-  /**
-   * Set structure validator
-   *
-   * @param {Function} validator
-   */
-  static setStructureValidator(validator) {
-    DapObject.validateStructure = validator;
-  }
-
-  /**
-   * Set hashing function
-   *
-   * @param {function(Buffer):string}  hashingFunction
-   */
-  static setHashingFunction(hashingFunction) {
-    DapObject.hashingFunction = hashingFunction;
+    return hash(this.serialize());
   }
 }
 

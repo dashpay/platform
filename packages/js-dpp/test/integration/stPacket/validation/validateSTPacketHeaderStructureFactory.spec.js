@@ -1,8 +1,8 @@
 const Ajv = require('ajv');
 
-const SchemaValidator = require('../../../../lib/SchemaValidator');
+const SchemaValidator = require('../../../../lib/validation/SchemaValidator');
 
-const validateSTPacketHeaderStructureFactory = require('../../../../lib/stPacket/validation/validateSTPacketHeaderStructureFactory');
+const validateSTPacketHeaderStructureFactory = require('../../../../lib/stPacket/validation/validateSTPacketHeaderFactory');
 
 describe('validateSTPacketHeaderStructure', () => {
   let rawStPacket;

@@ -20,6 +20,17 @@ class AbstractDataProvider {
   fetchDapObjects(primaryKeysAndTypes) {
     throw new Error('Not implemented');
   }
+
+  /**
+   * Get transaction by ID
+   *
+   * @param {string} id
+   * @return {{ confirmations: number }}
+   */
+  // eslint-disable-next-line no-unused-vars
+  getTransaction(id) {
+    throw new Error('Not implemented');
+  }
 }
 
 module.exports = AbstractDataProvider;

@@ -1,8 +1,8 @@
 const Ajv = require('ajv');
 
-const SchemaValidator = require('../../../lib/SchemaValidator');
+const SchemaValidator = require('../../../lib/validation/SchemaValidator');
 
-const validateDapContractStructureFactory = require('../../../lib/dapContract/validateDapContractStructureFactory');
+const validateDapContractStructureFactory = require('../../../lib/dapContract/validateDapContractFactory');
 
 const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
 
@@ -184,6 +184,24 @@ describe('validateDapContractStructure', () => {
         expect(errors).to.be.an('array').and.lengthOf(1);
         expect(errors[0].dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].additionalProperties');
         expect(errors[0].keyword).to.be.equal('const');
+      });
+
+      describe('primaryKey', () => {
+        it('can be omitted');
+        it('should have "composite" property if defined');
+        it('should have "includes" if "composite" property is true');
+        it('should not have "includes if "composite" property is false');
+
+        describe('includes', () => {
+          it('should be array');
+          it('should have string items');
+          it('should have alphanumeric items');
+          it('should have at least one item');
+          it('should have unique items');
+          it('can have many items');
+          it('should have only allowed items: "buid" and properties');
+          it('should contains only "string" and "number" typed properties');
+        });
       });
     });
   });

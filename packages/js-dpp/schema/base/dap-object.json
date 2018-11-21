@@ -3,10 +3,10 @@
   "$id": "https://schema.dash.org/platform-4-0-0/system/base/dap-object",
   "type": "object",
   "properties": {
-    "$$type": {
+    "$type": {
       "type": "string"
     },
-    "$$action": {
+    "$action": {
       "type": "number",
       "enum": [
         0,
@@ -14,15 +14,15 @@
         2
       ]
     },
-    "$$revision": {
+    "$rev": {
       "type": "number",
       "multipleOf": 1.0,
       "minimum": 0
     }
   },
   "required": [
-    "$$type",
-    "$$revision",
-    "$$action"
+    "$type",
+    "$rev",
+    "$action"
   ]
 }

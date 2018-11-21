@@ -1,8 +1,8 @@
-const dashSchema = require('../schema/meta/dash-schema');
-const dapObjectBaseSchema = require('../schema/base/dap-object');
-const dapContractMetaSchema = require('../schema/meta/dap-contract');
-const stPacketSchema = require('../schema/st-packet');
-const stPacketHeaderSchema = require('../schema/st-packet-header');
+const dashSchema = require('../../schema/meta/dash-schema');
+const dapObjectBaseSchema = require('../../schema/base/dap-object');
+const dapContractMetaSchema = require('../../schema/meta/dap-contract');
+const stPacketSchema = require('../../schema/st-packet');
+const stPacketHeaderSchema = require('../../schema/st-packet-header');
 
 class SchemaValidator {
   constructor(ajv) {
