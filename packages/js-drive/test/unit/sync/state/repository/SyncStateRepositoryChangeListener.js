@@ -27,6 +27,8 @@ describe('SyncStateRepositoryChangeListener', () => {
     changeListener.stop();
   });
 
+  it('should create a proper instance using constructor');
+
   it('should return repository', () => {
     expect(changeListener.getRepository()).to.be.equals(repositoryMock);
   });

@@ -70,6 +70,8 @@ describe('fetchDapObjectsMethod', () => {
     expect(fetchDapObjectsMethod({ dapId, type, options })).to.be.rejectedWith(InvalidParamsError);
   });
 
+  it('should escalate and error if error type is unknown');
+
   it('should return DAP object', async () => {
     const blockchainUserId = '3557b9a8dfcc1ef9674b50d8d232e0e3e9020f49fa44f89cace622a01f43d03e';
     const isDeleted = false;

@@ -70,4 +70,6 @@ describe('DapContractRepository', () => {
     const contract = await dapContractRepository.find(dapContract.getDapId());
     expect(contract).to.be.null();
   });
+
+  it('should successfuly delete a contract');
 });

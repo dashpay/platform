@@ -24,6 +24,8 @@ describe('SyncState', () => {
     expect(state.getLastSyncAt()).to.be.equals(date);
   });
 
+  it('should return last block hash');
+
   it('should accept block and last sync date in constructor', () => {
     const passedBlocks = [blocks[0]];
     const passedDate = new Date();
@@ -107,4 +109,6 @@ describe('SyncState', () => {
     expect(syncState.getLastSyncAt()).to.be.equal(secondLastSyncAt);
     expect(syncState.getLastInitialSyncAt()).to.be.equal(lastInitialSyncAt);
   });
+
+  it('should clean state');
 });

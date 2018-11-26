@@ -81,7 +81,9 @@ describe('updateDapObjectFactory', () => {
     expect(dapObjectRepository.store).to.calledOnce();
   });
 
-  it('should not store DapContract if action is not 0 or 1 or 2', async () => {
+  it('should not store DapObject if action is 1 and there is no previous version');
+
+  it('should not store DapObject if action is not 0 or 1 or 2', async () => {
     const dapObject = {
       objtype: 'user',
       idx: 0,

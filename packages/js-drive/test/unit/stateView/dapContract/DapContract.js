@@ -79,4 +79,6 @@ describe('DapContract', () => {
       secondDapContract.currentRevision(),
     ]);
   });
+
+  it('should be able to check `deleted` flag by calling isDeleted');
 });

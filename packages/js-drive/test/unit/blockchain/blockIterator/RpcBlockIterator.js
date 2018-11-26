@@ -51,4 +51,8 @@ describe('RpcBlockIterator', () => {
 
     expect(blockIterator.getBlockHeight()).to.be.equal(thirdBlock.height);
   });
+
+  it('should return fromBlockHeight if there is no current block');
+  it('should throw InvalidBlockHeightError if block height is out of range');
+  it('should escalate an unknown error while getting next block hash');
 });

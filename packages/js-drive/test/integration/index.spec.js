@@ -1,9 +1,9 @@
 /* eslint-disable global-require */
 describe('Integration', () => {
-  require('./api');
   require('./blockchain');
   require('./stateView');
   require('./storage');
-  require('./sync');
+  require('./sync/index.js');
+  require('./sync.js');
   require('./util');
 });

@@ -104,4 +104,6 @@ describe('getCheckSyncHttpMiddleware', () => {
       });
     });
   });
+
+  it('should process batch requests');
 });

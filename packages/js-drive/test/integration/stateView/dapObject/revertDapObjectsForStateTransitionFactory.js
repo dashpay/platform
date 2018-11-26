@@ -171,4 +171,6 @@ describe('revertDapObjectsForStateTransitionFactory', () => {
     expect(previousRevision.revision).to.be.equal(1);
     expect(previousRevision.reference).to.be.deep.equal(references[0]);
   });
+
+  it('should not do anything if packet have no Dap ID');
 });

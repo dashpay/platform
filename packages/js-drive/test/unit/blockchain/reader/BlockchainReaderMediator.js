@@ -24,4 +24,6 @@ describe('BlockchainReaderMediator', () => {
   it('should return reader state', () => {
     expect(readerMediator.getState()).to.be.equal(stateMock);
   });
+
+  it('should reset the state and emit an event');
 });

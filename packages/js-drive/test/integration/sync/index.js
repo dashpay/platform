@@ -2,4 +2,5 @@
 describe('Sync', () => {
   require('./isDashCoreRunningFactory');
   require('./state/repository');
+  require('./info');
 });

@@ -3,11 +3,10 @@ const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures
 
 const SyncState = require('../../../../lib/sync/state/SyncState');
 const getSyncInfoFactory = require('../../../../lib/sync/info/getSyncInfoFactory');
-const getSyncInfoMethodFactory = require('../../../../lib/api/methods/getSyncInfoMethodFactory');
 const SyncStateRepository = require('../../../../lib/sync/state/repository/SyncStateRepository');
 const getChainInfoFactory = require('../../../../lib/sync/info/chain/getChainInfoFactory');
 
-describe('getSyncInfoMethodFactory', () => {
+describe('getSyncInfoFactory', () => {
   let mongoDb;
   startMongoDb().then(async (mongoInstance) => {
     mongoDb = await mongoInstance.getDb();
@@ -20,18 +19,17 @@ describe('getSyncInfoMethodFactory', () => {
 
   let blocks;
   let syncStateRepository;
-  let getSyncInfoMethod;
+  let getSyncInfo;
   beforeEach(() => {
     blocks = getBlockFixtures();
     syncStateRepository = new SyncStateRepository(mongoDb);
     const getChainInfo = getChainInfoFactory(rpcClient);
-    const getSyncInfo = getSyncInfoFactory(syncStateRepository, getChainInfo);
-    getSyncInfoMethod = getSyncInfoMethodFactory(getSyncInfo);
+    getSyncInfo = getSyncInfoFactory(syncStateRepository, getChainInfo);
   });
 
   it('should be initialSync if there is no SyncState yet', async () => {
-    const syncInfo = await getSyncInfoMethod();
-    expect(syncInfo).to.be.deep.equal({
+    const syncInfo = await getSyncInfo();
+    expect(syncInfo.toJSON()).to.be.deep.equal({
       lastSyncedBlockHeight: undefined,
       lastSyncedBlockHash: undefined,
       lastSyncAt: null,
@@ -49,8 +47,8 @@ describe('getSyncInfoMethodFactory', () => {
     const syncState = new SyncState([lastSyncedBlock], lastSyncAt, lastInitialSyncAt);
     await syncStateRepository.store(syncState);
 
-    const syncInfo = await getSyncInfoMethod();
-    expect(syncInfo).to.be.deep.equal({
+    const syncInfo = await getSyncInfo();
+    expect(syncInfo.toJSON()).to.be.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
@@ -68,8 +66,8 @@ describe('getSyncInfoMethodFactory', () => {
     const syncState = new SyncState([lastSyncedBlock], lastSyncAt, lastInitialSyncAt);
     await syncStateRepository.store(syncState);
 
-    const syncInfo = await getSyncInfoMethod();
-    expect(syncInfo).to.be.deep.equal({
+    const syncInfo = await getSyncInfo();
+    expect(syncInfo.toJSON()).to.be.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
@@ -90,8 +88,8 @@ describe('getSyncInfoMethodFactory', () => {
     const { result: chainBlocksHashes } = await rpcClient.generate(20);
     const lastChainBlockHash = chainBlocksHashes[chainBlocksHashes.length - 1];
 
-    const syncInfo = await getSyncInfoMethod();
-    expect(syncInfo).to.be.deep.equal({
+    const syncInfo = await getSyncInfo();
+    expect(syncInfo.toJSON()).to.be.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,

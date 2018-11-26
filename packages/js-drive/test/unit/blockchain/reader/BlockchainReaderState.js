@@ -59,6 +59,8 @@ describe('BlockchainReaderState', () => {
     expect(stateWithLimit.getBlocksLimit()).to.be.equal(limit);
   });
 
+  it('should return first synced block height');
+
   it('should clear state', () => {
     state.addBlock(blocks[0]);
 
@@ -68,4 +70,6 @@ describe('BlockchainReaderState', () => {
 
     expect(state.getLastBlock()).to.be.undefined();
   });
+
+  it('should clear its state upon removing last block');
 });
