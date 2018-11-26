@@ -11,31 +11,39 @@ const registerUser = require('../../../lib/test/registerUser');
 const createSTHeader = require('../../../lib/test/createSTHeader');
 const wait = require('../../../lib/util/wait');
 
+const doubleSha256 = require('../../../lib/util/doubleSha256');
+
 const apiAppOptions = new ApiAppOptions(process.env);
 
-async function createAndSubmitST(userId, privateKeyString, username, basePacketData, instance) {
+async function createAndSubmitST(
+  userId,
+  privateKeyString,
+  basePacketData,
+  instance,
+  previousTransitionHash = undefined,
+) {
   const packet = new StateTransitionPacket(basePacketData);
-  packet.dapcontract.description = `Valid registration for ${username}`;
 
-  const header = await createSTHeader(userId, privateKeyString, packet);
+  const header = await createSTHeader(
+    userId, privateKeyString, packet, previousTransitionHash,
+  );
 
   const serializedPacket = cbor.encodeCanonical(packet.toJSON({ skipMeta: true }));
   const serializedPacketJson = {
     packet: serializedPacket.toString('hex'),
   };
-  const { result: packetCid } = await instance.driveApi.getApi()
+  await instance.driveApi.getApi()
     .request('addSTPacket', serializedPacketJson);
 
-  const { result: tsid } = await instance.dashCore.getApi().sendRawTransaction(header);
+  const { result: txId } = await instance.dashCore.getApi().sendRawTransaction(header);
   await instance.dashCore.getApi().generate(1);
 
-  return { packetCid, tsid };
+  return txId;
 }
 
 async function blockCountEvenAndEqual(
   instanceOne,
   instanceTwo,
-  desiredBlockCount = -1,
   timeout = 90,
 ) {
   for (let i = 0; i < timeout; i++) {
@@ -43,11 +51,7 @@ async function blockCountEvenAndEqual(
     const { result: blockCountTwo } = await instanceTwo.getApi().getBlockCount();
 
     if (blockCountOne === blockCountTwo) {
-      if (blockCountOne === desiredBlockCount) {
-        break;
-      } else {
-        throw new Error(`Block count of ${blockCountOne} is not desirable ${desiredBlockCount}`);
-      }
+      break;
     } else if (i === timeout - 1) {
       throw new Error('Timeout waiting for block count to be equal on both nodes');
     }
@@ -85,225 +89,330 @@ describe('Blockchain reorganization', function main() {
   let firstDashDrive;
   let secondDashDrive;
 
-  let packetsCids;
-  let packetsAddedAfterDisconnect;
-  let stPackets;
-  let transitionsAfterDisconnect;
+  let firstUser;
+  let secondUser;
+  let thirdUser;
 
-  let registeredUsers;
+  let firstContractPacket;
+  let secondContractPacket;
+  let thirdContractPacket;
 
-  let initialSyncBeforeReconnectAt;
+  let firstObjectPacket;
+  let secondObjectPacket;
+  let thirdObjectPacket;
 
-  const BLOCKS_PER_ST = 1;
-  const BLOCKS_PER_REGISTRATION = 108;
-  const BLOCKS_PROPAGATION_ACTIVATION = 1;
+  let firstDapId;
+  let secondDapId;
+  let thirdDapId;
+
   const BLOCKS_ST_ACTIVATION = 1000;
 
   this.timeout(900000);
 
   before('having started Dash Drive node and generated some STs', async () => {
-    packetsCids = [];
-    packetsAddedAfterDisconnect = [];
-    transitionsAfterDisconnect = [];
-    registeredUsers = [];
+    const [baseContractPacket, baseObjectPacket] = getStateTransitionPackets();
 
-    stPackets = getStateTransitionPackets();
+    const contractPackets = [];
+    for (let i = 1; i <= 3; i++) {
+      const contract = Object.assign({}, baseContractPacket, {
+        dapcontract: {
+          ...baseContractPacket.dapcontract,
+          dapname: `Contract #${i}`,
+        },
+      });
+      contractPackets.push(contract);
+    }
+    [firstContractPacket, secondContractPacket, thirdContractPacket] = contractPackets;
+    [firstDapId, secondDapId, thirdDapId] = contractPackets
+      .map(packet => doubleSha256(packet.dapcontract));
 
-    // 1. Start two full Dash Drive instances
+    // Start two full Dash Drive instances
     [firstDashDrive, secondDashDrive] = await startDashDrive.many(2);
 
-    // 1.1 Activate Special Transactions
+    // Activate Special Transactions
     await firstDashDrive.dashCore.getApi().generate(BLOCKS_ST_ACTIVATION);
 
     // Register a pool of users.
     // Do that here so major part of blocks are in the beginning
-    for (let i = 0; i < 10; i++) {
+    const registeredUsers = [];
+    for (let i = 1; i <= 3; i++) {
       const instance = firstDashDrive;
-      const username = `Alice_${i}`;
+      const username = `User #${i}`;
       const { userId, privateKeyString } = await registerUser(username, instance.dashCore.getApi());
       registeredUsers.push({ username, userId, privateKeyString });
     }
+    [firstUser, secondUser, thirdUser] = registeredUsers;
 
     // Await number of blocks even on both nodes
     await blockCountEvenAndEqual(
       firstDashDrive.dashCore,
       secondDashDrive.dashCore,
-      BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION
-      + (10 * BLOCKS_PER_REGISTRATION),
     );
 
-    // 2. Populate instance of Dash Drive and Dash Core with data
-    //    First two STs, should be equal on both nodes
-    for (let i = 0; i < 2; i++) {
-      const user = registeredUsers.pop();
-      const { packetCid } = await createAndSubmitST(
-        user.userId,
-        user.privateKeyString,
-        user.username,
-        stPackets[0],
-        firstDashDrive,
-      );
-      packetsCids.push(packetCid);
-    }
+    // Register first contract
+    const firstContractTxId = await createAndSubmitST(
+      firstUser.userId,
+      firstUser.privateKeyString,
+      firstContractPacket,
+      firstDashDrive,
+    );
 
-    // 3. Await block count to be equal on both nodes
-    //    Should be equal number of generated STs times number of blocks per ST
+    firstObjectPacket = Object.assign({}, baseObjectPacket, {
+      dapid: firstDapId,
+    });
+
+    // Register first object
+    await createAndSubmitST(
+      firstUser.userId,
+      firstUser.privateKeyString,
+      firstObjectPacket,
+      firstDashDrive,
+      firstContractTxId,
+    );
+
+    // Await block count to be equal on both nodes
     await blockCountEvenAndEqual(
       firstDashDrive.dashCore,
       secondDashDrive.dashCore,
-      BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION
-      + (10 * BLOCKS_PER_REGISTRATION) + (2 * BLOCKS_PER_ST),
     );
 
-    // Await first Dash Drive sync
+    // Await Drive nodes to be in sync with Core
     await dashDriveSyncToFinish(firstDashDrive.driveApi);
+    await dashDriveSyncToFinish(secondDashDrive.driveApi);
+
+    // Check data is on both Drive nodes
+    // Check data on first node
+    const { result: firstDriveFirstContract } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: firstDapId });
+
+    const { result: [firstDriveFirstObject] } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: firstDapId, type: 'user' });
+
+    expect(firstDriveFirstContract).to.be.deep.equal(firstContractPacket.dapcontract);
+    expect(firstDriveFirstObject).to.be.deep.equal(firstObjectPacket.dapobjects[0]);
+
+    // Check data on the second node
+    const { result: secondDriveFirstContract } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: firstDapId });
+
+    const { result: [secondDriveFirstObject] } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: firstDapId, type: 'user' });
+
+    expect(secondDriveFirstContract).to.be.deep.equal(firstContractPacket.dapcontract);
+    expect(secondDriveFirstObject).to.be.deep.equal(firstObjectPacket.dapobjects[0]);
+
+    // Disconnect Core nodes
+    await firstDashDrive.dashCore.disconnect(secondDashDrive.dashCore);
+
+    // Generate 2nd contract and object on the first Drive node
+    const secondContractTxId = await createAndSubmitST(
+      secondUser.userId,
+      secondUser.privateKeyString,
+      secondContractPacket,
+      firstDashDrive,
+    );
+
+    secondObjectPacket = Object.assign({}, baseObjectPacket, {
+      dapid: secondDapId,
+    });
+
+    // Register an object
+    await createAndSubmitST(
+      secondUser.userId,
+      secondUser.privateKeyString,
+      secondObjectPacket,
+      firstDashDrive,
+      secondContractTxId,
+    );
+
+    await dashDriveSyncToFinish(firstDashDrive.driveApi);
+
+    // Check second contract and object is created on the first node
+    const { result: firstDriveSecondContract } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: secondDapId });
+
+    const { result: [firstDriveSecondObject] } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: secondDapId, type: 'user' });
+
+    expect(firstDriveSecondContract).to.be.deep.equal(secondContractPacket.dapcontract);
+    expect(firstDriveSecondObject).to.be.deep.equal(secondObjectPacket.dapobjects[0]);
+
+    // Generate 2 more blocks, 3rd contract and object on the second Drive node
+    // To introduce a slightly bigger fork
+    await secondDashDrive.dashCore.getApi().generate(2);
+
+    const thirdContractTxId = await createAndSubmitST(
+      thirdUser.userId,
+      thirdUser.privateKeyString,
+      thirdContractPacket,
+      secondDashDrive,
+    );
+
+    thirdObjectPacket = Object.assign({}, baseObjectPacket, {
+      dapid: thirdDapId,
+    });
+
+    // Register an object
+    await createAndSubmitST(
+      thirdUser.userId,
+      thirdUser.privateKeyString,
+      thirdObjectPacket,
+      secondDashDrive,
+      thirdContractTxId,
+    );
+
+    await dashDriveSyncToFinish(secondDashDrive.driveApi);
+
+    // Check third contract and object are created on the second node
+    const { result: secondDriveThirdContract } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: thirdDapId });
+
+    const { result: [secondDriveThirdObject] } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: thirdDapId, type: 'user' });
+
+    expect(secondDriveThirdContract).to.be.deep.equal(thirdContractPacket.dapcontract);
+    expect(secondDriveThirdObject).to.be.deep.equal(thirdObjectPacket.dapobjects[0]);
   });
 
   it('Dash Drive should sync data after blockchain reorganization, removing missing STs. Adding them back after they reappear in the blockchain.', async () => {
-    // 4. Disconnecting nodes to start introducing difference in blocks
-    firstDashDrive.dashCore.disconnect(secondDashDrive.dashCore);
+    // Save initialSyncAt to test it later and make sure
+    // There was no intial sync
+    const {
+      result: {
+        lastInitialSyncAt: lastInitialSyncAtBefore,
+      },
+    } = await firstDashDrive.driveApi.getApi().request('getSyncInfo', []);
 
-    // 5. Generate two more ST on the first node
-    //    Note: keep track of exact those CIDs as they should disappear after reorganization
-    //    Note: keep track of tsid as well to check if it's moved in mempool later on
-    for (let i = 0; i < 2; i++) {
-      const user = registeredUsers.pop();
-      const { packetCid, tsid } = await createAndSubmitST(
-        user.userId,
-        user.privateKeyString,
-        user.username,
-        stPackets[0],
-        firstDashDrive,
-      );
-      packetsCids.push(packetCid);
-      packetsAddedAfterDisconnect.push(packetCid);
-      transitionsAfterDisconnect.push(tsid);
-    }
-
-    // Check tses are not in mempool
-    const { result: tsIdsAfterDisconnect } = await firstDashDrive.dashCore.getApi().getRawMemPool();
-    for (let i = 0; i < transitionsAfterDisconnect.length - 1; i++) {
-      const tsid = transitionsAfterDisconnect[i];
-      expect(tsIdsAfterDisconnect).to.not.include(tsid);
-    }
-
-    // 6. Check proper block count on the first node
-    {
-      const { result: blockCount } = await firstDashDrive.dashCore.getApi().getBlockCount();
-
-      const expectedBlockCount = BLOCKS_PROPAGATION_ACTIVATION
-                                 + BLOCKS_ST_ACTIVATION
-                                 + (10 * BLOCKS_PER_REGISTRATION) + (4 * BLOCKS_PER_ST);
-
-      expect(blockCount).to.be.equal(expectedBlockCount);
-    }
-
-    // 7. Generate slightly larger amount of STs on the second node
-    //    to introduce reorganization
-    for (let i = 0; i < 3; i++) {
-      const user = registeredUsers.pop();
-      const { packetCid } = await createAndSubmitST(
-        user.userId,
-        user.privateKeyString,
-        user.username,
-        stPackets[0],
-        secondDashDrive,
-      );
-      packetsCids.push(packetCid);
-    }
-
-    // 8. Check proper block count on the second node
-    {
-      const { result: blockCount } = await secondDashDrive.dashCore.getApi().getBlockCount();
-
-      const expectedBlockCount = BLOCKS_PROPAGATION_ACTIVATION
-                                 + BLOCKS_ST_ACTIVATION
-                                 + (10 * BLOCKS_PER_REGISTRATION) + (5 * BLOCKS_PER_ST);
-
-      expect(blockCount).to.be.equal(expectedBlockCount);
-    }
-
-    // Await for Drive to sync
-    await dashDriveSyncToFinish(firstDashDrive.driveApi);
-
-    // Store `lastInitialSyncAt` to check later that no
-    // initial sync happened after reconnect
-    ({ result: { lastInitialSyncAt: initialSyncBeforeReconnectAt } } = await firstDashDrive
-      .driveApi.getApi()
-      .request('getSyncInfo', []));
-
-    // 9. Reconnect nodes
+    // Reconnect both Core nodes
     await firstDashDrive.dashCore.connect(secondDashDrive.dashCore);
 
-    // 10. Await equal block count on both nodes
-    //     Notes: should be equal to largest chain
+    // Await block count to be equal on both nodes
     await blockCountEvenAndEqual(
       firstDashDrive.dashCore,
       secondDashDrive.dashCore,
-      BLOCKS_PROPAGATION_ACTIVATION + BLOCKS_ST_ACTIVATION
-      + (10 * BLOCKS_PER_REGISTRATION) + (5 * BLOCKS_PER_ST),
     );
 
-    // Check tses are back to mempool
-    const { result: tsIdsAfterConnect } = await firstDashDrive.dashCore.getApi().getRawMemPool();
-    for (let i = 0; i < transitionsAfterDisconnect.length - 1; i++) {
-      const tsid = transitionsAfterDisconnect[i];
-      expect(tsIdsAfterConnect).to.include(tsid);
-    }
-
-    // 11. Await Dash Drive to sync
+    // Await Drive nodes to be in sync with Core
+    await dashDriveSyncToFinish(firstDashDrive.driveApi);
     await dashDriveSyncToFinish(secondDashDrive.driveApi);
 
-    // 12. Check packet CIDs added after disconnect does not appear in Dash Drive
-    {
-      const lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
-      const lsHashes = lsResult.map(item => item.hash);
+    //
+    // Check first contract and object are in place on both nodes
+    //
+    // Check the first node
+    const { result: firstDriveFirstContract } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: firstDapId });
 
-      packetsAddedAfterDisconnect.forEach((cid) => {
-        expect(lsHashes).to.not.include(cid);
-      });
-    }
+    const { result: [firstDriveFirstObject] } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: firstDapId, type: 'user' });
 
-    {
-      const lsResult = await firstDashDrive.ipfs.getApi().pin.ls();
-      const lsHashes = lsResult.map(item => item.hash);
+    expect(firstDriveFirstContract).to.be.deep.equal(firstContractPacket.dapcontract);
+    expect(firstDriveFirstObject).to.be.deep.equal(firstObjectPacket.dapobjects[0]);
 
-      packetsAddedAfterDisconnect.forEach((cid) => {
-        expect(lsHashes).to.not.include(cid);
-      });
+    // Check the second node
+    const { result: secondDriveFirstContract } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: firstDapId });
 
-      // Check `lastInitialSyncAt is not changed
-      // This will indicate no initial sync happened after reconnect
-      const { result: { lastInitialSyncAt } } = await firstDashDrive.driveApi.getApi()
-        .request('getSyncInfo', []);
+    const { result: [secondDriveFirstObject] } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: firstDapId, type: 'user' });
 
-      expect(lastInitialSyncAt).to.be.equal(initialSyncBeforeReconnectAt);
-    }
+    expect(secondDriveFirstContract).to.be.deep.equal(firstContractPacket.dapcontract);
+    expect(secondDriveFirstObject).to.be.deep.equal(firstObjectPacket.dapobjects[0]);
 
-    // 13. Generate more blocks so TSes reappear on the blockchain
-    await firstDashDrive.dashCore.getApi().generate(10);
+    //
+    // Check third contract is on the both nodes now
+    //
+    // Check the first node
+    const { result: firstDriveThirdContract } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: thirdDapId });
 
-    // 14. Await Dash Drive to sync
+    const { result: [firstDriveThirdObject] } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: thirdDapId, type: 'user' });
+
+    expect(firstDriveThirdContract).to.be.deep.equal(thirdContractPacket.dapcontract);
+    expect(firstDriveThirdObject).to.be.deep.equal(thirdObjectPacket.dapobjects[0]);
+
+    // Check the second node
+    const { result: secondDriveThirdContract } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: thirdDapId });
+
+    const { result: [secondDriveThirdObject] } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: thirdDapId, type: 'user' });
+
+    expect(secondDriveThirdContract).to.be.deep.equal(thirdContractPacket.dapcontract);
+    expect(secondDriveThirdObject).to.be.deep.equal(thirdObjectPacket.dapobjects[0]);
+
+    //
+    // Check second contract and object are gone from the first Drive node
+    // and they are not on the second node as well
+    //
+    // Check the first node
+    const { result: firstDriveSecondContract } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: secondDapId });
+
+    const { result: [firstDriveSecondObject] } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: secondDapId, type: 'user' });
+
+    expect(firstDriveSecondContract).to.be.undefined();
+    expect(firstDriveSecondObject).to.be.undefined();
+
+    // Check the second node
+    const { result: secondDriveSecondContract } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: secondDapId });
+
+    const { result: [secondDriveSecondObject] } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: secondDapId, type: 'user' });
+
+    expect(secondDriveSecondContract).to.be.undefined();
+    expect(secondDriveSecondObject).to.be.undefined();
+
+    // Generate more blocks so transitions are back from mempool
+    await firstDashDrive.dashCore.getApi().generate(5);
+
+    // Await block count to be equal on both nodes
+    await blockCountEvenAndEqual(
+      firstDashDrive.dashCore,
+      secondDashDrive.dashCore,
+    );
+
+    // Await Drive nodes to be in sync with Core
+    await dashDriveSyncToFinish(firstDashDrive.driveApi);
     await dashDriveSyncToFinish(secondDashDrive.driveApi);
 
-    // 15. Check CIDs reappear in Dash Drive
-    {
-      const lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
-      const lsHashes = lsResult.map(item => item.hash);
+    //
+    // Check data is back from the mempool after generating more blocks
+    // On both nodes
+    //
+    // Check the first node
+    const { result: firstDriveSecondContractAfter } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: secondDapId });
 
-      packetsCids.forEach((cid) => {
-        expect(lsHashes).to.include(cid);
-      });
-    }
+    const { result: [firstDriveSecondObjectAfter] } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: secondDapId, type: 'user' });
 
-    {
-      const lsResult = await firstDashDrive.ipfs.getApi().pin.ls();
-      const lsHashes = lsResult.map(item => item.hash);
+    expect(firstDriveSecondContractAfter).to.be.deep.equal(secondContractPacket.dapcontract);
+    expect(firstDriveSecondObjectAfter).to.be.deep.equal(secondObjectPacket.dapobjects[0]);
 
-      packetsAddedAfterDisconnect.forEach((cid) => {
-        expect(lsHashes).to.include(cid);
-      });
-    }
+    // Check the second node
+    const { result: secondDriveSecondContractAfter } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapContract', { dapId: secondDapId });
+
+    const { result: [secondDriveSecondObjectAfter] } = await secondDashDrive.driveApi.getApi()
+      .request('fetchDapObjects', { dapId: secondDapId, type: 'user' });
+
+    expect(secondDriveSecondContractAfter).to.be.deep.equal(secondContractPacket.dapcontract);
+    expect(secondDriveSecondObjectAfter).to.be.deep.equal(secondObjectPacket.dapobjects[0]);
+
+    //
+    // Check there was no initial sync
+    //
+    const {
+      result: {
+        lastInitialSyncAt: lastInitialSyncAtAfter,
+      },
+    } = await firstDashDrive.driveApi.getApi().request('getSyncInfo', []);
+
+    expect(lastInitialSyncAtBefore).to.be.equal(lastInitialSyncAtAfter);
   });
 
   after('cleanup lone services', async () => {
