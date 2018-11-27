@@ -1,85 +1,86 @@
-/**
- * @typedef {Object} Config
- * @property {string} name
- * @property {string} insightUri
- * @property {Object} server
- * @property {boolean} server.enable
- * @property {number} server.port
- * @property {Object} node
- * @property {string} node.pubKey
- * @property {number} node.rep.port
- * @property {number} node.pub.port
- */
-
-const configs = {
-  regtest: {
-    name: 'regtest',
-    insightUri: 'http://127.0.0.1:3001/insight-api-dash',
-    livenet: false,
-    server: {
-      enable: true,
-      port: 3000,
-    },
-    node: {
-      pubKey: 'XkifrWK9yHVzXLgeAaqjhjDJuFad6b',
-      rep: {
-        port: 40000,
-      },
-      pub: {
-        port: 50000,
-      },
-    },
-  },
-  testnet: {
-    name: 'testnet',
-    insightUri: 'http://dev-test.insight.dashevo.org/insight-api-dash',
-    livenet: false,
-    server: {
-      enable: true,
-      port: 3000,
-    },
-    node: {
-      pubKey: 'XkifrWK9yHVzXLgeAaqjhjDJuFad6b',
-      rep: {
-        port: 40000,
-      },
-      pub: {
-        port: 50000,
-      },
-    },
-  },
-  livenet: {
-    name: 'livenet',
-    insightUri: 'http://insight.dashevo.org/insight-api-dash',
-    livenet: false,
-    server: {
-      enable: true,
-      port: 3000,
-    },
-    node: {
-      pubKey: 'XkifrWK9yHVzXLgeAaqjhjDJuFad6b',
-      rep: {
-        port: 40000,
-      },
-      pub: {
-        port: 50000,
-      },
-    },
-  },
+const OPTIONS = {
+  INSIGHT_URI: 'INSIGHT_URI',
+  LIVENET: 'LIVENET',
+  RPC_SERVER_PORT: 'RPC_SERVER_PORT',
+  DASHCORE_RPC_PROTOCOL: 'DASHCORE_RPC_PROTOCOL',
+  DASHCORE_RPC_USER: 'DASHCORE_RPC_USER',
+  DASHCORE_RPC_PASS: 'DASHCORE_RPC_PASS',
+  DASHCORE_RPC_HOST: 'DASHCORE_RPC_HOST',
+  DASHCORE_RPC_PORT: 'DASHCORE_RPC_PORT',
+  DASHCORE_ZMQ_HOST: 'DASHCORE_ZMQ_HOST',
+  DASHCORE_ZMQ_PORT: 'DASHCORE_ZMQ_PORT',
+  DASHCORE_P2P_HOST: 'DASHCORE_P2P_HOST',
+  DASHCORE_P2P_PORT: 'DASHCORE_P2P_PORT',
+  DASHCORE_P2P_NETWORK: 'DASHCORE_P2P_NETWORK',
+  DASHDRIVE_RPC_HOST: 'DASHDRIVE_RPC_HOST',
+  DASHDRIVE_RPC_PORT: 'DASHDRIVE_RPC_PORT',
+  NETWORK: 'NETWORK',
+  BLOOM_FILTER_PERSISTENCE_TIMEOUT: 'BLOOM_FILTER_PERSISTENCE_TIMEOUT',
 };
 
-/**
- * @returns {Config}
- */
-function getConfig() {
-  const env = process.env.NODE_ENV;
-  if (Object.keys(configs).indexOf(env) > -1) {
-    return configs[env];
-  }
-  return configs.testnet;
-}
+const DEFAULT_CONFIG = {};
 
-/**
- * @type {Config}
- */
-module.exports = getConfig();
+DEFAULT_CONFIG[OPTIONS.INSIGHT_URI] = 'http://127.0.0.1:3001/insight-api-dash';
+DEFAULT_CONFIG[OPTIONS.LIVENET] = false;
+DEFAULT_CONFIG[OPTIONS.RPC_SERVER_PORT] = 3000;
+DEFAULT_CONFIG[OPTIONS.DASHCORE_RPC_PROTOCOL] = 'http';
+DEFAULT_CONFIG[OPTIONS.DASHCORE_RPC_USER] = 'dashrpc';
+DEFAULT_CONFIG[OPTIONS.DASHCORE_RPC_PASS] = 'password';
+DEFAULT_CONFIG[OPTIONS.DASHCORE_RPC_HOST] = '127.0.0.1';
+DEFAULT_CONFIG[OPTIONS.DASHCORE_RPC_PORT] = 30002;
+DEFAULT_CONFIG[OPTIONS.DASHCORE_ZMQ_HOST] = '127.0.0.1';
+DEFAULT_CONFIG[OPTIONS.DASHCORE_ZMQ_PORT] = 30003;
+DEFAULT_CONFIG[OPTIONS.DASHCORE_P2P_HOST] = '127.0.0.1';
+DEFAULT_CONFIG[OPTIONS.DASHCORE_P2P_PORT] = 30001;
+DEFAULT_CONFIG[OPTIONS.DASHCORE_P2P_NETWORK] = 'testnet';
+DEFAULT_CONFIG[OPTIONS.DASHDRIVE_RPC_HOST] = '127.0.0.1';
+DEFAULT_CONFIG[OPTIONS.DASHDRIVE_RPC_PORT] = 6000;
+DEFAULT_CONFIG[OPTIONS.NETWORK] = 'testnet';
+DEFAULT_CONFIG[OPTIONS.BLOOM_FILTER_PERSISTENCE_TIMEOUT] = 1000 * 60;
+
+const envConfig = {};
+Object
+  .keys(OPTIONS)
+  .forEach((optionName) => {
+    if (process.env[optionName]) {
+      envConfig[optionName] = process.env[optionName];
+    }
+  });
+
+const config = Object.assign({}, DEFAULT_CONFIG, envConfig);
+
+module.exports = {
+  insightUri: config[OPTIONS.INSIGHT_URI],
+  livenet: Boolean(config[OPTIONS.LIVENET]),
+  server: {
+    port: config[OPTIONS.RPC_SERVER_PORT],
+  },
+  dashcore: {
+    rpc: {
+      protocol: config[OPTIONS.DASHCORE_RPC_PROTOCOL],
+      user: config[OPTIONS.DASHCORE_RPC_USER],
+      pass: config[OPTIONS.DASHCORE_RPC_PASS],
+      host: config[OPTIONS.DASHCORE_RPC_HOST],
+      port: config[OPTIONS.DASHCORE_RPC_PORT],
+    },
+    zmq: {
+      host: config[OPTIONS.DASHCORE_ZMQ_HOST],
+      port: config[OPTIONS.DASHCORE_ZMQ_PORT],
+    },
+    p2p: {
+      host: config[OPTIONS.DASHCORE_P2P_HOST],
+      port: config[OPTIONS.DASHCORE_P2P_PORT],
+      network: config[OPTIONS.DASHCORE_P2P_NETWORK],
+    },
+  },
+  network: config[OPTIONS.NETWORK].toLowerCase(),
+  bloomFilterPersistenceTimeout: config[OPTIONS.BLOOM_FILTER_PERSISTENCE_TIMEOUT],
+  dashDrive: {
+    host: config[OPTIONS.DASHDRIVE_RPC_HOST],
+    port: config[OPTIONS.DASHDRIVE_RPC_PORT],
+  },
+  isRegtestNetwork() {
+    return config[OPTIONS.NETWORK].toLowerCase() === 'regtest' ||
+      config[OPTIONS.NETWORK].toLowerCase() === 'devnet';
+  },
+};

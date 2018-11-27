@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "dapId": {
+      "type": "string"
+    },
+    "userId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "dapId",
+    "userId"
+  ]
+}

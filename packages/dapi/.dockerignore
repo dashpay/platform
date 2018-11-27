@@ -7,3 +7,5 @@ Dockerfile
 build_docker_image.sh
 npm-debug.log
 node_modules
+/vmn/stack.log
+/vmn/stack-db.json

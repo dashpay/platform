@@ -1,62 +1,23 @@
-'use strict'
-const should = require('should');
-const {Logger}=require('../lib/utils');
+const chai = require('chai');
+const chaiAsPromised = require('chai-as-promised');
 
-describe('Utils - Utils', function () {
-	let logger = new Logger();
-	let logger2 = new Logger('test.log');
-	it('should be able to start a logger', function () {
-		//test logger
-		//test logger2 by checking file exist.
-	});
-	//How to test stdout ?
-	it('should do stuff...',function () {
-		function log(){
-			logger.log("Test d'un log");
+chai.use(chaiAsPromised);
+const { expect } = chai;
 
-			logger.log('fatal','This is a specified fatal thing!');
-			logger.fatal('This is a fatal thing!');
+const assert = require('assert');
+const Logger = require('../lib/log/Logger');
 
-			logger.log('error','This is an error (log/err)');
-			logger.error('This is also an error');
+// TODO: Write unit tests
+describe('Utils - Utils', () => {
+  const logger = new Logger();
+  const logger2 = new Logger('test.log');
+  it('should be able to start a logger', () => {
+    // TODO: test logger2 by checking file exist.
+    assert.equal(typeof logger, 'object'); // bogus placeholder
+    assert.equal(typeof logger2, 'object'); // bogus placeholder
+  });
 
-			logger.log('warn','This is a warning');
-			logger.warn('This is also a warning');
-
-			logger.log('notice','This is a important simple information');
-			logger.notice('This is also a important simple information');
-
-			logger.log('info','This is a simple information');
-			logger.info('This is also a simple information');
-
-			logger.log('debug','This is a debug thing');
-			logger.debug('This is also a debug thing');
-
-			logger.log('verbose','This is a verbose useless thing');
-			logger.verbose('This is also a verbose useless thing');
-		}
-		console.log('---- DEFAULT');
-		log();
-		console.log('---- 0 FATAL');
-		logger.level = logger.FATAL;
-		log()//By default it will do that as 'standard' level.
-		console.log('---- 1 ERROR');
-		logger.level = logger.ERROR;
-		log()
-		console.log('---- 2 WARN');
-		logger.level = logger.WARN;
-		log()
-		console.log('---- 3 NOTICE');
-		logger.level = logger.NOTICE;
-		log()
-		console.log('---- 4 INFO');
-		logger.level = logger.INFO;
-		log()
-		console.log('---- 5 DEBUG');
-		logger.level = logger.DEBUG;
-		log();
-		console.log('---- 6 VERBOSE');
-		logger.level = logger.VERBOSE;
-		log()
-	})
-}); 
+  it('should not be able to start a logger with invalid level', () => {
+    expect(() => new Logger({ level: 'FAKE' })).to.throw('Logger: No log level matches FAKE');
+  });
+});

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "filter": {
+      "type": "object"
+    },
+    "blockHash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "filter",
+    "blockHash"
+  ]
+}

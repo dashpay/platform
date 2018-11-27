@@ -1,0 +1,15 @@
+{
+  "type": "object",
+    "properties": {
+      "baseBlockHash": {
+        "type": "string"
+      },
+      "blockHash": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "baseBlockHash",
+      "blockHash"
+    ]
+}

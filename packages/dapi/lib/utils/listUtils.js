@@ -1,3 +1,5 @@
+// TODO: Address ESLint issues the next time this file is edited
+/* eslint-disable */
 const find = require('lodash/find');
 
 const utils = {

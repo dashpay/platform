@@ -3,3 +3,10 @@
 node_modules
 *.db
 dapinet.orbitdb
+lib/config/config.json
+test/rpc
+/vmn/stack.log
+/vmn/stack-db.json
+/.nyc_output
+coverage/
+dapidb/

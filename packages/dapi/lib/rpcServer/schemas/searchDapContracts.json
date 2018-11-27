@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "pattern": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "pattern"
+  ]
+}

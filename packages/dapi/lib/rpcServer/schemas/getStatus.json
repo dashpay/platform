@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "enum": [
+        "getInfo",
+        "getDifficulty",
+        "getBestBlockHash",
+        "getLastBlockHash"
+      ]
+    }
+  },
+  "required": [
+    "query"
+  ]
+}

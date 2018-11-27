@@ -1,70 +1,67 @@
-const cache = require('../caching/cachecontroller')
-const listUtils = require('../utils/listUtils')
-const qDash = require('quorums-dash')
+// TODO: Address ESLint issues the next time this file is edited
+/* eslint-disable */
+const cache = require('../services/caching');
+const listUtils = require('../utils/listUtils');
+const qDash = require('@dashevo/quorums');
 
 class DynamicMnList {
-    constructor() {
-        this.cache = new cache()
-        this.lastHrMinCached = 0
-    }
+  constructor() {
+    this.cache = new cache();
+    this.lastHrMinCached = 0;
+  }
 
-    cacheNewMnList() {
-        let self = this
-        return new Promise(function(resolve, reject) {
-            let list = require('quorums-dash').getMockMnList()
-            self.lastHrMinCached = `${new Date().getHours()} ${new Date().getMinutes()}`
+  cacheNewMnList() {
+    const self = this;
+    return new Promise(((resolve, reject) => {
+      const list = require('@dashevo/quorums').getDynamicMnList();
+      self.lastHrMinCached = `${new Date().getHours()} ${new Date().getMinutes()}`;
 
-            let cachableList = listUtils.getCacheableList(list)
-            self.cache.setMnList(qDash.getHash(cachableList), cachableList)
-            resolve(true)
-        })
-    }
+      const cachableList = listUtils.getCacheableList(list);
+      self.cache.setMnList(qDash.getHash(cachableList), cachableList);
+      resolve(true);
+    }));
+  }
 
-    getMockMnList() {
-        let self = this;
-        return new Promise(function(resolve, reject) {
-
-            if (self.lastHrMinCached != `${new Date().getHours()} ${new Date().getMinutes()}`) {
-                self.cacheNewMnList()
-                    .then(success => {
-                        if (success) {
-                            resolve(self.cache.getLastMnList())
-                        }
-                    })
+  getMockMnList() {
+    const self = this;
+    return new Promise(((resolve, reject) => {
+      if (self.lastHrMinCached != `${new Date().getHours()} ${new Date().getMinutes()}`) {
+        self.cacheNewMnList()
+          .then((success) => {
+            if (success) {
+              resolve(self.cache.getLastMnList());
             }
-            else {
-                self.cache.getLastMnList()
-                    .then(l => {
-                        resolve(l)
-                    })
-            }
-        })
-    }
+          });
+      } else {
+        self.cache.getLastMnList()
+          .then((l) => {
+            resolve(l);
+          });
+      }
+    }));
+  }
 
-    getMockMnUpdateList(hash) {
-
-        let self = this
-        return new Promise(function(resolve, reject) {
-            self.getMockMnList()
-                .then(list => {
-                    if (self.cache.getLastMnListKey() == hash) {
-                        resolve({ type: 'none' })
-                    }
-                    else if (self.cache.isDiffCached(hash)) {
-                        resolve({
-                            type: 'update',
-                            list: self.cache.getDiffCache(hash)
-                        })
-                    }
-                    else {
-                        resolve({
-                            type: 'full',
-                            list: list
-                        })
-                    }
-                })
-        })
-    }
+  getMockMnUpdateList(hash) {
+    const self = this;
+    return new Promise(((resolve, reject) => {
+      self.getMockMnList()
+        .then((list) => {
+          if (self.cache.getLastMnListKey() == hash) {
+            resolve({ type: 'none' });
+          } else if (self.cache.isDiffCached(hash)) {
+            resolve({
+              type: 'update',
+              list: self.cache.getDiffCache(hash),
+            });
+          } else {
+            resolve({
+              type: 'full',
+              list,
+            });
+          }
+        });
+    }));
+  }
 }
 
-module.exports = DynamicMnList
+module.exports = DynamicMnList;

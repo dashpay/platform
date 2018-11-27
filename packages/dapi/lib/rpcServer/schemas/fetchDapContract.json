@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "dapId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "dapId"
+  ]
+}

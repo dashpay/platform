@@ -1,5 +1,1 @@
-const verbs = require('./verbs');
-
-module.exports = {
-  verbs,
-};
+module.exports = {};

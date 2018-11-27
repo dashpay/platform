@@ -1,11 +1,8 @@
 const { expect } = require('chai');
-
 const listUtils = require('../../lib/utils/listUtils');
 
-// Disable no-undef rule for mocha
-/* eslint-disable no-undef */
 describe('listUtils', () => {
-  describe('.getDiff', () => {
+  describe('#getDiff(oldList, newList)', () => {
     it('should return correct diffs', () => {
       const oldList = [{ vin: '1' }, { vin: '2' }];
       const newList = [{ vin: '1' }, { vin: '3' }];
@@ -20,4 +17,3 @@ describe('listUtils', () => {
     });
   });
 });
-

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "originalFilter": {
+      "type": "object"
+    },
+    "element": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "originalFilter",
+    "element"
+  ]
+}

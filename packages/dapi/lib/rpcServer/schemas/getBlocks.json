@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "limit": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "blockDate": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "limit",
+    "blockDate"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "txid": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "txid"
+  ]
+}
