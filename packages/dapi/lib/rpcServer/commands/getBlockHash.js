@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getBlockHashFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns block hash for the given height
    * @typedef getBlockHash
    * @param args

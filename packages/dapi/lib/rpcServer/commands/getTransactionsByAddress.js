@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getTransactionsByAddressFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns all transaction related to the given address
    * @typedef getTransactionsByAddress
    * @param args

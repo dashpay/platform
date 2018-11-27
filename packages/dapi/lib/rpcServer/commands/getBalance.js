@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getBalanceFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns calculated balance for the address
    * @typedef getBalance
    * @param args - command arguments

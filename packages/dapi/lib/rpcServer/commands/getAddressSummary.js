@@ -9,6 +9,8 @@ const validator = new Validator(argsSchema);
  */
 const getAddressSummaryFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
+   * get summary for address
    * @typedef getAddressSummary
    * @param args
    * @param {string} args.address

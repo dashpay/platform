@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getTransactionByIdFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns transaction for the given hash
    * @typedef getTransactionById
    * @param args

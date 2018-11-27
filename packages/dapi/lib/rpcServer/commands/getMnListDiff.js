@@ -3,12 +3,13 @@ const argsSchema = require('../schemas/getMnListDiff');
 
 const validator = new Validator(argsSchema);
 /**
- * Returns getAddressTotalReceived function
+ * Returns getMnListDiff function
  * @param coreAPI
  * @return {getMnListDiff}
  */
 const getMnListDiffFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns calculated balance for the address
    * @typedef getMnListDiff
    * @param args - command arguments

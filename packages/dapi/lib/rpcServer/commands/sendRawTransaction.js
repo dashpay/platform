@@ -9,7 +9,8 @@ const validator = new Validator(argsSchema);
  */
 const sendRawTransactionFactory = (coreAPI) => {
   /**
-   *
+   * Layer 1 endpoint
+   * sends raw transaction
    * @typedef sendRawTransaction
    * @param args - command arguments
    * @param {string} args.rawTransaction - transaction to send

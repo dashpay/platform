@@ -8,6 +8,7 @@ const validator = new Validator(argsSchema);
  */
 const getStatusFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns calculated balance for the address
    * @typedef getStatus
    * @param args - command arguments

@@ -8,6 +8,7 @@ const validator = new Validator(argsSchema);
  */
 const generateFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * WORKS ONLY IN REGTEST MODE.
    * Generates blocks on demand for regression tests.
    * @typedef generate

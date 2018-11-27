@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getSpvDataFactory = (spvService) => {
   /**
+   * Layer 1 endpoint
    * Returns block headers
    * @typedef getSpvData
    * @param args - command arguments

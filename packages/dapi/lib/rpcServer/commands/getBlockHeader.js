@@ -8,6 +8,7 @@ const validator = new Validator(argsSchema);
  */
 const getBlockHeaderFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns block headers
    * @typedef getBlockHeader
    * @param args - command arguments

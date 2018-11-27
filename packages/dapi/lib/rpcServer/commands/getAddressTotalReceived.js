@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getAddressTotalReceivedFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns total amount of duffs received by address
    * @typedef getAddressTotalReceived
    * @param args - command arguments

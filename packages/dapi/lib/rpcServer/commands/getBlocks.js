@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getBlocksFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns info for blocks
    * @typedef getBlocks
    * @param args - command arguments

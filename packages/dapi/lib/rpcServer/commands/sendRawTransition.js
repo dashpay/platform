@@ -59,6 +59,8 @@ const createStateTransition =
  */
 function sendRawTransitionFactory(coreAPI, dashDriveAPI) {
   /**
+   * Layer 2 endpoint
+   * sends raw transition to quorum relay node
    * @typedef sendRawTransition
    * @param args
    * @param args.rawTransitionHeader

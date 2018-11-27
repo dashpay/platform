@@ -8,6 +8,7 @@ const validator = new Validator(argsSchema);
  */
 const fetchDapContractFactory = (dashDriveAPI) => {
   /**
+   * Layer 2 endpoint
    * Returns user dap space
    * @typedef fetchDapContract
    * @param args - command arguments

@@ -4,44 +4,51 @@
 
 ### Table of Contents
 
-- [addToBloomFilter](#addtobloomfilter)
-- [clearBloomFilter](#clearbloomfilter)
-- [estimateFee](#estimatefee)
-- [findDataForBlock](#finddataforblock)
-- [generate](#generate)
-- [getAddressSummary](#getaddresssummary)
-- [getAddressTotalReceived](#getaddresstotalreceived)
-- [getAddressTotalSent](#getaddresstotalsent)
-- [getAddressUnconfirmedBalance](#getaddressunconfirmedbalance)
-- [getAuthChallenge](#getauthchallenge)
-- [getBalance](#getbalance)
-- [getBestBlockHeight](#getbestblockheight)
-- [getBlockHash](#getblockhash)
-- [getBlockHeaders](#getblockheaders)
-- [getBlocks](#getblocks)
-- [getCurrency](#getcurrency)
-- [fetchDapContract](#fetchdapcontract)
-- [getHistoricBlockchainDataSyncStatus](#gethistoricblockchaindatasyncstatus)
-- [getMNList](#getmnlist)
-- [getMnListDiff](#getmnlistdiff)
-- [getMNUpdateList](#getmnupdatelist)
-- [getPeerDataSyncStatus](#getpeerdatasyncstatus)
-- [getRawBlock](#getrawblock)
-- [getSpvData](#getspvdata)
-- [getStatus](#getstatus)
-- [getTransactionById](#gettransactionbyid)
-- [getTransactionsByAddress](#gettransactionsbyaddress)
-- [getUser](#getuser)
-- [getUserDapContext](#getuserdapcontext)
-- [getUserDapSpace](#getuserdapspace)
-- [getUTXO](#getutxo)
-- [getVersion](#getversion)
-- [loadBloomFilter](#loadbloomfilter)
-- [searchDapContracts](#searchdapcontracts)
-- [searchUsers](#searchusers)
-- [sendRawTransaction](#sendrawtransaction)
-- [sendRawTransition](#sendrawtransition)
+- [Layer 1 endpoints](#layer-1-endpoints)
 
+    - [addToBloomFilter](#addtobloomfilter)
+    - [clearBloomFilter](#clearbloomfilter)
+    - [estimateFee](#estimatefee)
+    - [findDataForBlock](#finddataforblock)
+    - [generate](#generate)
+    - [getAddressSummary](#getaddresssummary)
+    - [getAddressTotalReceived](#getaddresstotalreceived)
+    - [getAddressTotalSent](#getaddresstotalsent)
+    - [getAddressUnconfirmedBalance](#getaddressunconfirmedbalance)
+    - [getAuthChallenge](#getauthchallenge)
+    - [getBalance](#getbalance)
+    - [getBestBlockHeight](#getbestblockheight)
+    - [getBlockHash](#getblockhash)
+    - [getBlockHeaders](#getblockheaders)
+    - [getBlocks](#getblocks)
+    - [getCurrency](#getcurrency)
+    - [getHistoricBlockchainDataSyncStatus](#gethistoricblockchaindatasyncstatus)
+    - [getMNList](#getmnlist)
+    - [getMnListDiff](#getmnlistdiff)
+    - [getMNUpdateList](#getmnupdatelist)
+    - [getPeerDataSyncStatus](#getpeerdatasyncstatus)
+    - [getRawBlock](#getrawblock)
+    - [getSpvData](#getspvdata)
+    - [getStatus](#getstatus)
+    - [getTransactionById](#gettransactionbyid)
+    - [getTransactionsByAddress](#gettransactionsbyaddress)
+    - [getUTXO](#getutxo)
+    - [getVersion](#getversion)
+    - [loadBloomFilter](#loadbloomfilter)
+    - [sendRawTransaction](#sendrawtransaction)
+
+ - [Layer 2 endpoints](#Layer-2-endpoints)
+
+    - [fetchDapContract](#fetchdapcontract)
+    - [getUser](#getuser)
+    - [getUserDapContext](#getuserdapcontext)
+    - [getUserDapSpace](#getuserdapspace)
+    - [searchDapContracts](#searchdapcontracts)
+    - [searchUsers](#searchusers)
+    - [sendRawTransition](#sendrawtransition)
+    
+    
+## Layer 1 endpoints
 ### addToBloomFilter
 
 Adds something to bloom filter
@@ -293,24 +300,6 @@ Returns info for blocks.
 
 ---
 
-### fetchDapContract
-
-Returns user's Dap space.
-
-##### Params
-
-| name       | type   | description                            |
-|------------|--------|----------------------------------------|
-| args.dapId | string | User's dap Id                          |
-
-##### Response
-
-| name     | type          | description                            |
-|----------|---------------|----------------------------------------|
-| dapSpace | promise (obj) | User's dap space                       |
-
----
-
 ### getHistoricBlockchainDataSyncStatus
 
 Returns historic blockchain data sync status.
@@ -443,6 +432,96 @@ Returns all transactions for a given address.
 
 ---
 
+### getUTXO
+
+Returns unspent transaction outputs for a given address.
+
+##### Params
+
+| name         | type   | description                            |
+|--------------|--------|----------------------------------------|
+| args.address | string | address                                |
+
+##### Response
+
+| name    | type                | description                                               |
+|---------|---------------------|----------------------------------------------|
+| utxo    | promise (obj array) | an array containing unspent transaction objs |
+
+---
+
+### loadBloomFilter
+
+Loads bloom filter.
+
+##### Params
+
+| name        | type   | description                            |
+|-------------|--------|----------------------------------------|
+| args.filter | string | bloom filter                           |
+
+##### Response
+
+| name          | type              | description                            |
+|---------------|-------------------|----------------------------------------|
+| filterLoaded? | promise (boolean) | returns boolean depending on load status |
+
+---
+
+### sendRawIxTransaction
+
+Sends raw instant send transaction and returns the transaction id.
+
+##### Params
+
+| name                  | type   | description                            |
+|-----------------------|--------|----------------------------------------|
+| args.rawIxTransaction | string | raw instant send transaction           |
+
+##### Response
+
+| name          | type             | description                                  |
+|---------------|------------------|----------------------------------------------|
+| transactionId | promise (string) | instant send transaction id                  |
+
+---
+
+### sendRawTransaction
+
+Sends raw transaction to the network.
+
+##### Params
+
+| name                | type   | description                            |
+|---------------------|--------|----------------------------------------|
+| args.rawTransaction | string | raw transaction to be sent             |
+
+##### Response
+
+| name  | type             | description                            |
+|-------|------------------|----------------------------------------|
+| txId  | promise (string) | string of transaction id               |
+
+## Layer 2 endpoints
+
+### fetchDapContract
+
+Returns user's Dap space.
+
+##### Params
+
+| name       | type   | description                            |
+|------------|--------|----------------------------------------|
+| args.dapId | string | User's dap Id                          |
+
+##### Response
+
+| name     | type          | description                            |
+|----------|---------------|----------------------------------------|
+| dapSpace | promise (obj) | User's dap space                       |
+
+---
+
 ### getUser
 
 Returns blockchain user
@@ -499,42 +578,6 @@ Returns user dap space.
 
 ---
 
-### getUTXO
-
-Returns unspent transaction outputs for a given address.
-
-##### Params
-
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| args.address | string | address                                |
-
-##### Response
-
-| name    | type                | description                                               |
-|---------|---------------------|----------------------------------------------|
-| utxo    | promise (obj array) | an array containing unspent transaction objs |
-
----
-
-### loadBloomFilter
-
-Loads bloom filter.
-
-##### Params
-
-| name        | type   | description                            |
-|-------------|--------|----------------------------------------|
-| args.filter | string | bloom filter                           |
-
-##### Response
-
-| name          | type              | description                            |
-|---------------|-------------------|----------------------------------------|
-| filterLoaded? | promise (boolean) | returns boolean depending on load status |
-
----
-
 ### searchDapContracts
 
 Returns dap dds given a search pattern.
@@ -573,42 +616,6 @@ Returns list of users after matching search criteria.
 
 ---
 
-### sendRawIxTransaction
-
-Sends raw instant send transaction and returns the transaction id.
-
-##### Params
-
-| name                  | type   | description                            |
-|-----------------------|--------|----------------------------------------|
-| args.rawIxTransaction | string | raw instant send transaction           |
-
-##### Response
-
-| name          | type             | description                                  |
-|---------------|------------------|----------------------------------------------|
-| transactionId | promise (string) | instant send transaction id                  |
-
----
-
-### sendRawTransaction
-
-Sends raw transaction to the network.
-
-##### Params
-
-| name                | type   | description                            |
-|---------------------|--------|----------------------------------------|
-| args.rawTransaction | string | raw transaction to be sent             |
-
-##### Response
-
-| name  | type             | description                            |
-|-------|------------------|----------------------------------------|
-| txId  | promise (string) | string of transaction id               |
-
----
-
 ### sendRawTransition
 
 Sends raw state transition to the network.
@@ -625,4 +632,3 @@ Sends raw state transition to the network.
 | name  | type             | description                                      |
 |-------|------------------|--------------------------------------------------|
 | tsId  | promise (string) | string of confirmed state transition transaction |
-

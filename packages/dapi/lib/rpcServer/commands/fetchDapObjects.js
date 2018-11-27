@@ -8,6 +8,7 @@ const validator = new Validator(argsSchema);
  */
 const fetchDapObjectsFactory = (dashDriveAPI) => {
   /**
+   * Layer 2 endpoint
    * Fetches user objects for a given condition
    * @typedef fetchDapObjects
    * @param args - command arguments

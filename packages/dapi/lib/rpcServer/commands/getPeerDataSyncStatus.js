@@ -4,6 +4,7 @@
  */
 const getPeerDataSyncStatusFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * @typedef getPeerDataSyncStatus;
    * @return {Promise<object>}
    */

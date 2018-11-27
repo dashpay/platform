@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getUserFactory = (coreAPI) => {
   /**
+   * Layer 2 endpoint
    * Returns blockchain user
    * @typedef getUser
    * @param args

@@ -4,6 +4,7 @@
  */
 const getHistoricBlockchainDataSyncStatusFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns sync status of the node
    * @typedef getHistoricBlockchainDataSyncStatus
    * @return {Promise<object>}

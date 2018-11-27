@@ -8,6 +8,7 @@ const validator = new Validator(argsSchema);
  */
 const getUserDapSpaceFactory = (dashDrive) => {
   /**
+   * Layer 2 endpoint
    * Returns user dap space
    * @typedef getUserDapSpace
    * @param args - command arguments

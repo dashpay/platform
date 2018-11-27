@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const sendRawIxTransactionFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Sends raw instant send tx and returns the txid
    * @typedef sendRawIxTransaction
    * @param args - command arguments

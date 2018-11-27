@@ -9,7 +9,8 @@ const validator = new Validator(argsSchema);
  */
 const findDataForBlockFactory = (spvService) => {
   /**
-   * Returns block headers
+   * Layer 1 endpoint
+   * finds relevant data for addresses encoded in a bloom filter in a specific block
    * @typedef findDataForBlock
    * @param args - command arguments
    * @param {string} args.filter

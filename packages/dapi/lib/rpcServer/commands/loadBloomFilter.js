@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const loadBloomFilterFactory = (spvService) => {
   /**
+   * Layer 1 endpoint
    * Returns boolean
    * @typedef loadBloomFilter
    * @param args - command arguments

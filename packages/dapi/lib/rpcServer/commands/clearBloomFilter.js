@@ -9,7 +9,8 @@ const validator = new Validator(argsSchema);
  */
 const clearBloomFilterFactory = (spvService) => {
   /**
-   * Returns block headers
+   * Layer 1 endpoint
+   * clears bloom filter
    * @typedef clearBloomFilter
    * @param args - command arguments
    * @param {string} args.filter

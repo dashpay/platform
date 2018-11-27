@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getUTXOFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns unspent outputs for the given address
    * @typedef getUTXO
    * @param args

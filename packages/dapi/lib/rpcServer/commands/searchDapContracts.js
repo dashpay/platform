@@ -10,6 +10,7 @@ const validator = new Validator(argsSchema);
  */
 const searchDapContractsFactory = (dashDrive) => {
   /**
+   * Layer 2 endpoint
    * Returns array of dap ids
    * @param args
    * @param {string} args.pattern

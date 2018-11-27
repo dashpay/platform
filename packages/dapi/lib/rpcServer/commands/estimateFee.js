@@ -9,6 +9,8 @@ const validator = new Validator(argsSchema);
  */
 const estimateFeeFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
+   * estimates fee
    * @typedef estimateFee
    * @param {object} args
    * @param {number} args.nbBlocks - target

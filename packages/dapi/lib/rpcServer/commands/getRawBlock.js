@@ -10,6 +10,7 @@ const validator = new Validator(argsSchema);
 const getRawBlockFactory = (coreAPI) => {
   // Todo: document summary format
   /**
+   * Layer 1 endpoint
    * Returns raw block for the given block hash
    * @typedef getRawBlock
    * @param args

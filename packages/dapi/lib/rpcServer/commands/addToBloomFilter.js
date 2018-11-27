@@ -9,8 +9,9 @@ const validator = new Validator(argsSchema);
  */
 const addToBloomFilterFactory = (spvService) => {
   /**
-   * Returns block headers
-   * @typedef addToBloomFilterFactory
+   * Layer 1 endpoint
+   * adds an element to an existing bloom filter
+   * @typedef addToBloomFilter
    * @param args - command arguments
    * @param {string} args.originalFilter
    * @param {string} args.element

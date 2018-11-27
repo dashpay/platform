@@ -4,6 +4,7 @@
  */
 const getMNListFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns masternode list
    * @typedef getMNList
    * @return {Promise<object[]>}

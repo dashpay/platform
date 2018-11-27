@@ -8,6 +8,7 @@ const validator = new Validator(argsSchema);
  */
 const getQuorumFactory = (coreApi) => {
   /**
+   * Layer 1 endpoint
    * Returns user quorum (llmq)
    * @typedef getQuorum
    * @param args - command arguments

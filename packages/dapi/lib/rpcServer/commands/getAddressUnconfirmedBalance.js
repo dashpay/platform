@@ -9,6 +9,7 @@ const validator = new Validator(argsSchema);
  */
 const getAddressUnconfirmedBalanceFactory = (coreAPI) => {
   /**
+   * Layer 1 endpoint
    * Returns total unconfirmed balance for the address
    * @typedef getAddressUnconfirmedBalance
    * @param args - command arguments

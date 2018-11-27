@@ -10,6 +10,7 @@ const validator = new Validator(argsSchema);
  */
 const searchDapContractsFactory = (userIndex) => {
   /**
+   * Layer 2 endpoint
    * @param args
    * @param {string} args.pattern
    * @param {number} args.limit
