@@ -1,9 +1,9 @@
-async function waitUntilBlockchainIsSynced(rpcClient, checkInterval) {
+async function waitUntilBlockchainIsSynced(getSyncInfo, checkInterval) {
   return new Promise((resolve, reject) => {
     async function checkStatus() {
-      const { result: { IsBlockchainSynced: isSynced } } = await rpcClient.mnsync('status');
-      if (isSynced) {
-        return resolve();
+      const lastSyncInfo = await getSyncInfo();
+      if (lastSyncInfo.getIsBlockchainSynced()) {
+        return resolve(lastSyncInfo);
       }
       return setTimeout(checkStatus, checkInterval);
     }
@@ -11,29 +11,27 @@ async function waitUntilBlockchainIsSynced(rpcClient, checkInterval) {
   });
 }
 
-async function isDriveSynced(rpcClient, syncState) {
-  const lastSyncedBlock = syncState.getLastBlock();
-
-  const { result: blockCount } = await rpcClient.getBlockCount();
-
-  let lastBlockHash;
-
-  if (blockCount > 0) {
-    ({ result: lastBlockHash } = await rpcClient.getBlockHash(blockCount));
+async function isDriveFullySynced(syncInfo) {
+  if (syncInfo.getLastChainBlockHeight() === 0) {
+    return true;
   }
 
-  return lastSyncedBlock && lastSyncedBlock.hash === lastBlockHash;
+  if (!syncInfo.getLastSyncedBlockHash()) {
+    return false;
+  }
+
+  return syncInfo.getLastSyncedBlockHash() === syncInfo.getLastChainBlockHash();
 }
 
-async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState) {
+async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncInfo) {
   return new Promise((resolve, reject) => {
     const changeHandler = (updatedSyncState) => {
       if (!updatedSyncState.getLastSyncAt()) {
         return;
       }
 
-      if (syncState.getLastSyncAt()
-          && (updatedSyncState.getLastSyncAt().getTime() === syncState.getLastSyncAt().getTime())) {
+      if (syncInfo.getLastSyncAt()
+          && (updatedSyncState.getLastSyncAt().getTime() === syncInfo.getLastSyncAt().getTime())) {
         return;
       }
 
@@ -53,25 +51,22 @@ async function waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState) 
 /**
  * Check is sync process complete
  *
- * @param {RpcClient} rpcClient
+ * @param {getSyncInfo} getSyncInfo
  * @param {SyncStateRepositoryChangeListener} stateRepositoryChangeListener
  * @param {number} checkInterval
  * @return {Promise<SyncState>}
  */
 module.exports = async function isSynced(
-  rpcClient,
+  getSyncInfo,
   stateRepositoryChangeListener,
   checkInterval,
 ) {
-  await waitUntilBlockchainIsSynced(rpcClient, checkInterval);
+  const lastSyncInfo = await waitUntilBlockchainIsSynced(getSyncInfo, checkInterval);
 
-  // Compare last block in chain and last synced block
-  const stateRepository = stateRepositoryChangeListener.getRepository();
-  const syncState = await stateRepository.fetch();
-  const driveSynced = await isDriveSynced(rpcClient, syncState);
+  const driveSynced = await isDriveFullySynced(lastSyncInfo);
   if (driveSynced) {
-    return syncState;
+    return lastSyncInfo;
   }
 
-  return waitUntilDriveIsSynced(stateRepositoryChangeListener, syncState);
+  return waitUntilDriveIsSynced(stateRepositoryChangeListener, lastSyncInfo);
 };

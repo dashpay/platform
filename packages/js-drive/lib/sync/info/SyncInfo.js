@@ -81,6 +81,15 @@ class SyncInfo {
   }
 
   /**
+   * Get is blockchain synced
+   *
+   * @return {boolean}
+   */
+  getIsBlockchainSynced() {
+    return this.isBlockchainSynced;
+  }
+
+  /**
    * Get Drive sync status
    *
    * @returns {string}

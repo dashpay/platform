@@ -99,7 +99,7 @@ class ApiApp {
 
     return getCheckSyncStateHttpMiddleware(
       isSynced,
-      this.rpcClient,
+      this.createGetSyncInfo(),
       repositoryChangeListener,
       this.options.getSyncChainCheckInterval(),
     );
@@ -169,12 +169,22 @@ class ApiApp {
 
   /**
    * @private
+   * @return {getSyncInfo}
+   */
+  createGetSyncInfo() {
+    if (!this.getSyncInfo) {
+      const getChainInfo = getChainInfoFactory(this.rpcClient);
+      this.getSyncInfo = getSyncInfoFactory(this.syncStateRepository, getChainInfo);
+    }
+    return this.getSyncInfo;
+  }
+
+  /**
+   * @private
    * @return {getSyncInfoMethod}
    */
   createGetSyncInfoMethod() {
-    const getChainInfo = getChainInfoFactory(this.rpcClient);
-    const getSyncInfo = getSyncInfoFactory(this.syncStateRepository, getChainInfo);
-    return getSyncInfoMethodFactory(getSyncInfo);
+    return getSyncInfoMethodFactory(this.createGetSyncInfo());
   }
 }
 

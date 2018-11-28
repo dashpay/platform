@@ -12,16 +12,16 @@ const createError = require('../api/jsonRpc/createError');
  */
 function getCheckSyncHttpMiddleware(
   inSynced,
-  rpcClient,
+  getSyncInfo,
   stateRepositoryChangeListener,
   checkInterval,
 ) {
   // Get sync state
-  let syncState;
+  let syncInfo;
   let error;
 
-  inSynced(rpcClient, stateRepositoryChangeListener, checkInterval).then((state) => {
-    syncState = state;
+  inSynced(getSyncInfo, stateRepositoryChangeListener, checkInterval).then((info) => {
+    syncInfo = info;
   }).catch((e) => {
     error = e;
   });
@@ -31,7 +31,7 @@ function getCheckSyncHttpMiddleware(
     if (error) {
       throw error;
     }
-    if (syncState || !utils.Request.isValidRequest(req.body) || !req.body.id) {
+    if (syncInfo || !utils.Request.isValidRequest(req.body) || !req.body.id) {
       next();
       return;
     }
