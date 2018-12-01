@@ -5,20 +5,29 @@ const STPacket = require('./STPacket');
 const InvalidSTPacketStructureError = require('./errors/InvalidSTPacketStructureError');
 
 const DapObjectFactory = require('../dapObject/DapObjectFactory');
-const DapContractFactory = require('../dapContract/DapContractFactory');
+
+const DapContract = require('../dapContract/DapContract');
 
 class STPacketFactory {
   /**
-   * @param {string} blockchainUserId
+   * @param {string} userId
    * @param {AbstractDataProvider} dataProvider
    * @param {validateSTPacketStructure} validateSTPacketStructure
+   * @param {DapContractFactory} dapContractFactory
+   * @param {validateDapObject} validateDapObject
    */
-  constructor(blockchainUserId, dataProvider, validateSTPacketStructure, validateDapContract, validateDapObject) {
-    this.blockchainUserId = blockchainUserId;
+  constructor(
+    userId,
+    dataProvider,
+    validateSTPacketStructure,
+    dapContractFactory,
+    validateDapObject,
+  ) {
+    this.userId = userId;
     this.dataProvider = dataProvider;
     this.validateSTPacketStructure = validateSTPacketStructure;
 
-    this.dapContractFactory = new DapContractFactory(validateDapContract);
+    this.dapContractFactory = dapContractFactory;
     this.validateDapObject = validateDapObject;
   }
 
@@ -26,10 +35,21 @@ class STPacketFactory {
    * Create ST Packet
    *
    * @param {string} contractId
+   * @param {DapContract|Array} items
    * @return {STPacket}
    */
-  create(contractId) {
-    return new STPacket(contractId);
+  create(contractId, items) {
+    const stPacket = new STPacket(contractId);
+
+    if (items instanceof DapContract) {
+      stPacket.addDapObject(items);
+    }
+
+    if (Array.isArray(items)) {
+      stPacket.setDapObjects(items);
+    }
+
+    return stPacket;
   }
 
   /**
@@ -44,7 +64,7 @@ class STPacketFactory {
       throw new InvalidSTPacketStructureError(errors, object);
     }
 
-    const stPacket = new STPacket(object.contractId);
+    const stPacket = this.create(object.contractId);
 
     stPacket.setItemsMerkleRoot(object.itemsMerkleRoot);
     stPacket.setItemsHash(object.itemsHash);
@@ -59,8 +79,8 @@ class STPacketFactory {
       const dapContract = this.dataProvider.fetchDapContract(object.contractId);
 
       const dapObjectFactory = new DapObjectFactory(
+        this.userId,
         dapContract,
-        this.blockchainUserId,
         this.validateDapObject,
       );
 
@@ -85,6 +105,48 @@ class STPacketFactory {
     const object = serializer.decode(payload);
 
     return this.createFromObject(object);
+  }
+
+  /**
+   * Set User ID
+   *
+   * @param {string} userId
+   * @return {STPacketFactory}
+   */
+  setUserId(userId) {
+    this.userId = userId;
+
+    return this;
+  }
+
+  /**
+   * Get User ID
+   *
+   * @return {string}
+   */
+  getUserId() {
+    return this.userId;
+  }
+
+  /**
+   * Set Data Provider
+   *
+   * @param {AbstractDataProvider} dataProvider
+   * @return {STPacketFactory}
+   */
+  setDataProvider(dataProvider) {
+    this.dataProvider = dataProvider;
+
+    return this;
+  }
+
+  /**
+   * Get Data Provider
+   *
+   * @return {AbstractDataProvider}
+   */
+  getDataProvider() {
+    return this.dataProvider;
   }
 }
 

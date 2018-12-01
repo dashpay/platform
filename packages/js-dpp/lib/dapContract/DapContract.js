@@ -22,7 +22,9 @@ class DapContract {
    * @return {string}
    */
   getId() {
-    const serializedDapContract = DapContract.serializer.encode(this.toJSON());
+    // TODO: Id should be unique for whole network
+    //  so we need something like BUID for DapContracts or use ST hash what is not so flexible
+    const serializedDapContract = serializer.encode(this.toJSON());
     return hash(serializedDapContract);
   }
 

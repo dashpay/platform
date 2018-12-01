@@ -1,15 +1,17 @@
 const SchemaValidator = require('../../validation/SchemaValidator');
 
+const STPacket = require('../STPacket');
+
 /**
  * @param {SchemaValidator} validator
  * @param {validateDapObject} validateDapObject
- * @param {validateDapContractStructure} validateDapContractStructure
- * @return {validateSTPacket}
+ * @param {validateDapContract} validateDapContract
+ * @return {validateSTPacketHeader}
  */
 module.exports = function validateSTPacketFactory(
   validator,
   validateDapObject,
-  validateDapContractStructure,
+  validateDapContract,
 ) {
   /**
    * @typedef validateSTPacket
@@ -18,18 +20,22 @@ module.exports = function validateSTPacketFactory(
    * @return {Object[]}
    */
   function validateSTPacket(stPacket, dapContract) {
+    const rawStPacket = (dapContract instanceof STPacket)
+      ? stPacket.toJSON()
+      : stPacket;
+
     let errors;
 
     errors = validator.validate(
       SchemaValidator.SCHEMAS.ST_PACKET,
-      stPacket.toJSON(),
+      rawStPacket,
     );
 
     if (errors.length) {
       return errors;
     }
 
-    stPacket.getDapObjects().forEach((dapObject) => {
+    rawStPacket.objects.forEach((dapObject) => {
       const dapObjectErrors = validateDapObject(dapObject, dapContract);
 
       if (dapObjectErrors.length) {
@@ -37,7 +43,7 @@ module.exports = function validateSTPacketFactory(
       }
     });
 
-    const dapContractInsidePacket = stPacket.getDapContract();
+    const [dapContractInsidePacket] = rawStPacket.contracts;
 
     if (dapContractInsidePacket) {
       if (stPacket.getDapContractId() !== dapContractInsidePacket.getId()) {
@@ -46,7 +52,7 @@ module.exports = function validateSTPacketFactory(
         }];
       }
 
-      const dapContractErrors = validateDapContractStructure(dapContractInsidePacket.toJSON());
+      const dapContractErrors = validateDapContract(dapContractInsidePacket.toJSON());
 
       if (dapContractErrors.length) {
         errors = errors.concat(dapContractErrors);

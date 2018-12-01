@@ -10,7 +10,7 @@ const InvalidDapObjectTypeError = require('../../../../lib/dapContract/errors/In
 const getLovelyDapContract = require('../../../../lib/test/fixtures/getLovelyDapContract');
 const getLovelyDapObjects = require('../../../../lib/test/fixtures/getLovelyDapObjects');
 
-describe('validateSTPacket', () => {
+describe('validateSTPacketHeader', () => {
   let stPacket;
   let dapContract;
 

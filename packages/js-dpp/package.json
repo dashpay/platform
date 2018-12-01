@@ -1,10 +1,11 @@
 {
-  "name": "dap",
-  "version": "4.0.0",
+  "name": "js-dap",
+  "version": "0.4.0",
   "description": "",
   "scripts": {
     "test": "mocha system/test/**/*.spec.js"
   },
+  "main": "./lib/DashApplicationProtocol.js",
   "author": "",
   "license": "ISC",
   "devDependencies": {

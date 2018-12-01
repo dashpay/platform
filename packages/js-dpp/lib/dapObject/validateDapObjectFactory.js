@@ -1,5 +1,7 @@
 const InvalidDapObjectTypeError = require('../dapContract/errors/InvalidDapObjectTypeError');
 
+const DapObject = require('./DapObject');
+
 /**
  * @param {SchemaValidator} validator
  * @param {Function} enrichDapContractWithBaseDapObject
@@ -8,12 +10,14 @@ const InvalidDapObjectTypeError = require('../dapContract/errors/InvalidDapObjec
 module.exports = function validateDapObjectFactory(validator, enrichDapContractWithBaseDapObject) {
   /**
    * @typedef validateDapObject
-   * @param {Object} rawDapObject
+   * @param {Object|DapObject} dapObject
    * @param {DapContract} dapContract
    * @return {Object[]}
    */
-  function validateDapObject(rawDapObject, dapContract) {
+  function validateDapObject(dapObject, dapContract) {
     let errors;
+
+    const rawDapObject = (dapObject instanceof DapObject) ? dapObject.toJSON() : dapObject;
 
     // TODO consensus error + test
     if (Object.prototype.hasOwnProperty.call(rawDapObject, '$type')) {

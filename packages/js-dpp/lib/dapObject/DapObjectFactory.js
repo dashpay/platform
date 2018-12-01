@@ -1,6 +1,5 @@
-
-
 const DapObject = require('./DapObject');
+
 const InvalidDapObjectStructureError = require('./errors/InvalidDapObjectStructureError');
 
 const serializer = require('../util/serializer');
@@ -8,12 +7,12 @@ const serializer = require('../util/serializer');
 class DapObjectFactory {
   /**
    * @param {DapContract} dapContract
-   * @param {string} blockchainUserId
+   * @param {string} userId
    * @param {validateDapObject} validateDapObject
    */
-  constructor(dapContract, blockchainUserId, validateDapObject) {
+  constructor(userId, dapContract, validateDapObject) {
+    this.userId = userId;
     this.dapContract = dapContract;
-    this.blockchainUserId = blockchainUserId;
     this.validateDapObject = validateDapObject;
   }
 
@@ -29,7 +28,7 @@ class DapObjectFactory {
       throw Error();
     }
 
-    return new DapObject(this.dapContract, this.blockchainUserId, type, data);
+    return new DapObject(this.dapContract, this.userId, type, data);
   }
 
 
@@ -59,6 +58,48 @@ class DapObjectFactory {
     const object = serializer.decode(payload);
 
     return this.createFromObject(object);
+  }
+
+  /**
+   * Set User ID
+   *
+   * @param userId
+   * @return {DapObjectFactory}
+   */
+  setUserId(userId) {
+    this.userId = userId;
+
+    return this;
+  }
+
+  /**
+   * Get User ID
+   *
+   * @return {string}
+   */
+  getUserId() {
+    return this.userId;
+  }
+
+  /**
+   * Set Dap Contract
+   *
+   * @param dapContract
+   * @return {DapObjectFactory}
+   */
+  setDapContract(dapContract) {
+    this.dapContract = dapContract;
+
+    return this;
+  }
+
+  /**
+   * Get Dap Contract
+   *
+   * @return {DapContract}
+   */
+  getDapContract() {
+    return this.dapContract;
   }
 }
 

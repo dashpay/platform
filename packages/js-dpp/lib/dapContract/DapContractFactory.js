@@ -5,10 +5,10 @@ const serializer = require('../util/serializer');
 
 class DapContractFactory {
   /**
-   * @param {validateDapContractStructure} validateStructure
+   * @param {validateDapContract} validateDapContract
    */
-  constructor(validateStructure) {
-    this.validateStructure = validateStructure;
+  constructor(validateDapContract) {
+    this.validateDapContract = validateDapContract;
   }
 
   /**
@@ -29,7 +29,7 @@ class DapContractFactory {
    * @return {DapContract}
    */
   createFromObject(object) {
-    const errors = this.validateStructure(object);
+    const errors = this.validateDapContract(object);
 
     if (errors.length) {
       throw new InvalidDapContractStructureError(errors, object);

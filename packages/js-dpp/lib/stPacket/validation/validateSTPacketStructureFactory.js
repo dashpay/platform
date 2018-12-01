@@ -4,7 +4,7 @@ const SchemaValidator = require('../../validation/SchemaValidator');
  * @param {SchemaValidator} validator
  * @return {validateSTPacketStructure}
  */
-module.exports = function validateStPacketStructureFactory(validator) {
+module.exports = function validateSTPacketStructureFactory(validator) {
   /**
    * @typedef validateSTPacketStructure
    * @param {Object} rawStPacket

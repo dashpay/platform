@@ -5,10 +5,21 @@ const STPacketHeader = require('./STPacketHeader');
 const InvalidSTPacketHeaderStructureError = require('./errors/InvalidSTPacketHeaderStructureError');
 
 class STPacketHeaderFactory {
+  /**
+   * @param {validateSTPacketHeader} validateSTPacketHeader
+   */
   constructor(validateSTPacketHeader) {
     this.validateSTPacketHeader = validateSTPacketHeader;
   }
 
+  /**
+   * Create ST Packet Header
+   *
+   * @param {string} dapContractId
+   * @param {string} itemsMerkleRoot
+   * @param {string} itemsHash
+   * @return {STPacketHeader}
+   */
   create(dapContractId, itemsMerkleRoot, itemsHash) {
     return new STPacketHeader(
       dapContractId,
@@ -17,6 +28,12 @@ class STPacketHeaderFactory {
     );
   }
 
+  /**
+   * Create ST Packet Header from plain object
+   *
+   * @param {Object} object
+   * @return {STPacketHeader}
+   */
   createFromObject(object) {
     const errors = this.validateSTPacketHeader(object);
 
