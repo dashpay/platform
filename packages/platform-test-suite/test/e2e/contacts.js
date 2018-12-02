@@ -134,8 +134,8 @@ describe('Contacts app', () => {
         }
       }
 
-      expect(dapContractFromDAPI).to.have.property('dapName');
-      expect(dapContractFromDAPI.dapName).to.be.equal(dapSchema.title);
+      expect(dapContractFromDAPI).to.have.property('dapname');
+      expect(dapContractFromDAPI.dapname).to.be.equal(dapSchema.title);
     });
 
     it('should create profile in "Contacts" app', async function it() {
@@ -187,12 +187,12 @@ describe('Contacts app', () => {
       }
 
       expect(bobSpace).to.have.lengthOf(1);
-      expect(bobSpace[0].blockchainUserId).to.be.equal(bobRegTxId);
-      expect(bobSpace[0].object).to.be.deep.equal(
+      expect(bobSpace[0]).to.be.deep.equal(
         {
           act: 0,
           idx: 0,
           rev: 0,
+          pver: null,
           avatar: 'My avatar here',
           aboutme: 'This is story about me',
           objtype: 'user',
@@ -281,12 +281,12 @@ describe('Contacts app', () => {
       }
 
       expect(aliceSpace).to.have.lengthOf(2);
-      expect(aliceSpace[1].blockchainUserId).to.be.equal(aliceRegTxId);
-      expect(aliceSpace[1].object).to.be.deep.equal(
+      expect(aliceSpace[1]).to.be.deep.equal(
         {
           act: 0,
           idx: 0,
           rev: 0,
+          pver: null,
           avatar: 'Alice\'s avatar here',
           aboutme: 'I am Alice',
           objtype: 'user',
@@ -334,7 +334,7 @@ describe('Contacts app', () => {
       for (let i = 0; i <= attempts; i++) {
         aliceSpace = await dapiClient.fetchDapObjects(dapId, 'user', {});
         // waiting for Alice's profile modified
-        if (aliceSpace.length === 2 && aliceSpace[1].object.act === 1) {
+        if (aliceSpace.length === 2 && aliceSpace[1].act === 1) {
           break;
         } else {
           await wait(timeout);
@@ -342,12 +342,12 @@ describe('Contacts app', () => {
       }
 
       expect(aliceSpace).to.have.lengthOf(2);
-      expect(aliceSpace[1].blockchainUserId).to.be.equal(aliceRegTxId);
-      expect(aliceSpace[1].object).to.be.deep.equal(
+      expect(aliceSpace[1]).to.be.deep.equal(
         {
           act: 1,
           idx: 0,
           rev: 0,
+          pver: null,
           avatar: 'Alice\'s avatar here2',
           aboutme: 'I am Alice2',
           objtype: 'user',
@@ -406,12 +406,12 @@ describe('Contacts app', () => {
       }
 
       expect(bobContact).to.have.lengthOf(1);
-      expect(bobContact[0].blockchainUserId).to.be.equal(bobRegTxId);
-      expect(bobContact[0].object).to.be.deep.equal(
+      expect(bobContact[0]).to.be.deep.equal(
         {
           act: 0,
           idx: 0,
           rev: 0,
+          pver: null,
           objtype: 'contact',
           relation: aliceRegTxId,
           hdextpubkey: bobContactRequest.hdextpubkey,
@@ -469,13 +469,12 @@ describe('Contacts app', () => {
       }
 
       expect(aliceContact).to.have.lengthOf(2);
-      expect(aliceContact[0].blockchainUserId).to.be.equal(bobRegTxId);
-      expect(aliceContact[1].blockchainUserId).to.be.equal(aliceRegTxId);
-      expect(aliceContact[1].object).to.be.deep.equal(
+      expect(aliceContact[1]).to.be.deep.equal(
         {
           act: 1,
           idx: 0,
           rev: 0,
+          pver: null,
           objtype: 'contact',
           relation: bobRegTxId,
           hdextpubkey: contactAcceptance.hdextpubkey,
@@ -532,12 +531,12 @@ describe('Contacts app', () => {
       }
 
       expect(aliceContact).to.have.lengthOf(1);
-      expect(aliceContact[0].blockchainUserId).to.be.equal(bobRegTxId);
-      expect(aliceContact[0].object).to.be.deep.equal(
+      expect(aliceContact[0]).to.be.deep.equal(
         {
           act: 0,
           idx: 0,
           rev: 0,
+          pver: null,
           objtype: 'contact',
           relation: aliceRegTxId,
           hdextpubkey: bobPrivateKey.toPublicKey().toString('hex'),

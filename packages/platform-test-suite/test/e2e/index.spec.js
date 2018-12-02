@@ -1,4 +1,4 @@
 /* eslint-disable global-require */
 describe('e2e', () => {
-  require('./test');
+  require('./contacts');
 });
