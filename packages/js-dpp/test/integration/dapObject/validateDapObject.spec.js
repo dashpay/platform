@@ -1,140 +1,163 @@
-const { validateDapObject, DapObject, DapContract } = require('../../../lib/index');
+const Ajv = require('ajv');
 
-const InvalidDapObjectTypeError = require('../../../lib/dapContract/errors/InvalidDapObjectTypeError');
+const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator');
+const ValidationResult = require('../../../lib/validation/ValidationResult');
+
+const validateDapObjectFactory = require('../../../lib/dapObject/validateDapObjectFactory');
+const validateDapContractFactory = require('../../../lib/dapContract/validateDapContractFactory');
+const enrichDapContractWithBaseDapObject = require('../../../lib/dapObject/enrichDapContractWithBaseDapObject');
+
+const DapContractFactory = require('../../../lib/dapContract/DapContractFactory');
+
+const MissingDapObjectTypeError = require('../../../lib/consensusErrors/MissingDapObjectTypeError');
+const InvalidDapObjectTypeError = require('../../../lib/consensusErrors/InvalidDapObjectTypeError');
 
 const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
 const getLovelyDapObjects = require('../../../lib/test/fixtures/getLovelyDapObjects');
 
+const {
+  expectValidationError,
+  expectJsonSchemaError,
+} = require('../../../lib/test/expect/expectError');
+
 describe('validateDapObject', () => {
   let dapContract;
-  let dapObjects;
-  let dapObject;
+  let rawDapObjects;
+  let rawDapObject;
+  let validateDapObject;
 
   beforeEach(() => {
-    dapContract = DapContract.fromObject(getLovelyDapContract());
-    dapObjects = getLovelyDapObjects().map(rawDapObject => DapObject.fromObject(rawDapObject));
-    [dapObject] = dapObjects;
+    const ajv = new Ajv();
+    const validator = new JsonSchemaValidator(ajv);
+    const validateDapContract = validateDapContractFactory(validator);
+    const dapContractFactory = new DapContractFactory(validateDapContract);
+    dapContract = dapContractFactory.createFromObject(getLovelyDapContract());
+
+    validateDapObject = validateDapObjectFactory(
+      validator,
+      enrichDapContractWithBaseDapObject,
+    );
+
+    rawDapObjects = getLovelyDapObjects();
+    [rawDapObject] = rawDapObjects;
   });
 
+  describe('Base schema', () => {
+    describe('$type', () => {
+      it('should be present', () => {
+        delete rawDapObject.$type;
 
-  it('should return error if $$type is not present', () => {
-    delete rawDapObject.$$type;
+        const result = validateDapObject(rawDapObject, dapContract);
 
-    const errors = validateDapObjectStructure(rawDapObject);
+        expectValidationError(
+          result,
+          MissingDapObjectTypeError,
+        );
+      });
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+      it('should be string');
 
-    const [error] = errors;
+      it('should be defined in Dap Contract', () => {
+        rawDapObject.$type = 'undefinedObject';
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('$$type');
-  });
+        const result = validateDapObject(rawDapObject, dapContract);
 
-  it('should return error if $$revision is not present', () => {
-    delete rawDapObject.$$revision;
+        expectValidationError(
+          result,
+          InvalidDapObjectTypeError,
+        );
 
-    const errors = validateDapObjectStructure(rawDapObject);
+        const [error] = result.getErrors();
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+        expect(error).to.be.instanceOf(InvalidDapObjectTypeError);
+        expect(error.getType()).to.be.equal('undefinedObject');
+      });
+    });
 
-    const [error] = errors;
+    describe('$action', () => {
+      it('should be present', () => {
+        delete rawDapObject.$action;
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('$$revision');
-  });
+        const result = validateDapObject(rawDapObject, dapContract);
 
-  it('should return error if $$action is not present', () => {
-    delete rawDapObject.$$action;
+        expectJsonSchemaError(result);
 
-    const errors = validateDapObjectStructure(rawDapObject);
+        const [error] = result.getErrors();
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+        expect(error.dataPath).to.be.equal('');
+        expect(error.keyword).to.be.equal('required');
+        expect(error.params.missingProperty).to.be.equal('$action');
+      });
 
-    const [error] = errors;
+      it('should be a number');
+      it('should be 0, 1 or 2');
+    });
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('$$action');
-  });
+    describe('$rev', () => {
+      it('should return error if $rev is not present', () => {
+        delete rawDapObject.$rev;
 
-  it('should return empty array if Dap Object base structure is valid', () => {
-    delete rawDapObject.$$action;
+        const result = validateDapObject(rawDapObject, dapContract);
 
-    const errors = validateDapObjectStructure(rawDapObject);
+        expectJsonSchemaError(result);
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+        const [error] = result.getErrors();
 
-    const [error] = errors;
+        expect(error.dataPath).to.be.equal('');
+        expect(error.keyword).to.be.equal('required');
+        expect(error.params.missingProperty).to.be.equal('$rev');
+      });
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('$$action');
-  });
+      it('should be a number');
+      it('should be an integer');
+      it('should be greater or equal to zero');
+    });
 
-  describe('$$type', () => {
-    it('should be defined in Dap Contract', () => {
-      dapObject.setType('undefinedObject');
+    describe('$scope', () => {
+      it('should be present');
+      it('should be a string');
+      it('should be 64 chars long');
+    });
 
-      const errors = validateDapObject(dapObjects[0], dapContract);
-
-      expect(errors).to.be.an('array').and.lengthOf(1);
-
-      const [error] = errors;
-
-      expect(error).to.be.instanceOf(InvalidDapObjectTypeError);
-      expect(error.getType()).to.be.equal('undefinedObject');
+    describe('$scopeId', () => {
+      it('should be present');
+      it('should be a string');
+      it('should be 64 chars long');
     });
   });
 
-  describe('$$revision', () => {
-    it('should be less than 0');
-    it('should be a number');
-    it('should be an integer');
+  describe('Dap Contract schema', () => {
+    it('should return error if the first object is not valid against Dap Contract', () => {
+      rawDapObjects[0].name = 1;
+
+      const result = validateDapObject(rawDapObjects[0], dapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.name');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should return error if the second object is not valid against Dap Contract', () => {
+      rawDapObjects[1].undefined = 1;
+
+      const result = validateDapObject(rawDapObjects[1], dapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('');
+      expect(error.keyword).to.be.equal('additionalProperties');
+    });
   });
 
-  describe('$$action', () => {
-    it('should be a number');
-    it('should have predefined value');
-  });
+  it('should return valid response is an object is valid', () => {
+    const result = validateDapObject(rawDapObject, dapContract);
 
-  it('should return error if the first object is not valid against schema', () => {
-    dapObject.name = 1;
-
-    const errors = validateDapObject(dapObjects[0], dapContract);
-
-    expect(errors).to.be.an('array').and.lengthOf(1);
-
-    const [error] = errors;
-
-    expect(error.dataPath).to.be.equal('.name');
-    expect(error.keyword).to.be.equal('type');
-  });
-
-  it('should return error if object has undefined properties', () => {
-    dapObject.undefined = 1;
-
-    const errors = validateDapObject(dapObjects[0], dapContract);
-
-    expect(errors).to.be.an('array').and.lengthOf(1);
-
-    const [error] = errors;
-
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('additionalProperties');
-  });
-
-  it('should return error if the second object is not valid against schema', () => {
-    dapObjects[1].lastName = 1;
-
-    const errors = validateDapObject(dapObjects[1], dapContract);
-
-    expect(errors).to.be.an('array').and.lengthOf(1);
-
-    const [error] = errors;
-
-    expect(error.dataPath).to.be.equal('.lastName');
-    expect(error.keyword).to.be.equal('type');
+    expect(result).to.be.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
   });
 });

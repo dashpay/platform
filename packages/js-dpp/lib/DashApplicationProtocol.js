@@ -1,6 +1,6 @@
 const Ajv = require('ajv');
 
-const SchemaValidator = require('./validation/SchemaValidator');
+const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
 const DapContractFacade = require('./dapContract/DapContractFacade');
 const DapObjectFacade = require('./dapObject/DapObjectFacade');
@@ -22,14 +22,14 @@ class DashApplicationProtocol {
     this.dapContractId = options.dapContractId;
     this.dapContract = options.dapContract;
 
-    const validator = new SchemaValidator(new Ajv());
+    const validator = new JsonSchemaValidator(new Ajv());
 
     this.initializeFacades(validator);
   }
 
   /**
    * @private
-   * @param {SchemaValidator} validator
+   * @param {JsonSchemaValidator} validator
    */
   initializeFacades(validator) {
     this.contract = new DapContractFacade(validator);

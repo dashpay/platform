@@ -7,7 +7,7 @@ class DapObjectFacade {
   /**
    *
    * @param {DashApplicationProtocol} dap
-   * @param {SchemaValidator} validator
+   * @param {JsonSchemaValidator} validator
    */
   constructor(dap, validator) {
     this.dap = dap;

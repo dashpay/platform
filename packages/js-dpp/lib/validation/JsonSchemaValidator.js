@@ -4,7 +4,10 @@ const dapContractMetaSchema = require('../../schema/meta/dap-contract');
 const stPacketSchema = require('../../schema/st-packet');
 const stPacketHeaderSchema = require('../../schema/st-packet-header');
 
-class SchemaValidator {
+const ValidationResult = require('./ValidationResult');
+const JsonSchemaError = require('../consensusErrors/JsonSchemaError');
+
+class JsonSchemaValidator {
   constructor(ajv) {
     this.ajv = ajv;
 
@@ -21,7 +24,7 @@ class SchemaValidator {
    * @param {object} schema
    * @param {object} object
    * @param {array|Object} additionalSchemas
-   * @return {Object[]}
+   * @return {ValidationResult}
    */
   validate(schema, object, additionalSchemas = {}) {
     // TODO Keep cached/compiled additional schemas
@@ -36,15 +39,13 @@ class SchemaValidator {
       this.ajv.removeSchema(schemaId);
     });
 
-    if (this.ajv.errors) {
-      return this.ajv.errors;
-    }
-
-    return [];
+    return new ValidationResult(
+      (this.ajv.errors || []).map(error => new JsonSchemaError(error)),
+    );
   }
 }
 
-SchemaValidator.SCHEMAS = {
+JsonSchemaValidator.SCHEMAS = {
   META: {
     DAP_CONTRACT: 'https://schema.dash.org/platform-4-0-0/system/meta/dap-contract',
   },
@@ -55,4 +56,4 @@ SchemaValidator.SCHEMAS = {
   ST_PACKET_HEADER: 'https://schema.dash.org/platform-4-0-0/system/st-packet-header',
 };
 
-module.exports = SchemaValidator;
+module.exports = JsonSchemaValidator;

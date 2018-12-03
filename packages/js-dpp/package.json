@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "description": "",
   "scripts": {
-    "test": "mocha system/test/**/*.spec.js"
+    "test": "mocha"
   },
   "main": "./lib/DashApplicationProtocol.js",
   "author": "",

@@ -12,7 +12,7 @@ const STPacketFactory = require('./STPacketFactory');
 class STPacketFacade {
   /**
    * @param {DashApplicationProtocol} dap
-   * @param {SchemaValidator} validator
+   * @param {JsonSchemaValidator} validator
    */
   constructor(dap, validator) {
     this.dap = dap;

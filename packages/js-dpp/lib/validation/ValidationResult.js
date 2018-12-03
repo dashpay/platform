@@ -32,6 +32,17 @@ class ValidationResult {
   isValid() {
     return !this.errors.length;
   }
+
+  /**
+   * Merge Validation results
+   *
+   * @param {ValidationResult} result
+   */
+  merge(result) {
+    if (!result.isValid()) {
+      this.addError(...result.getErrors());
+    }
+  }
 }
 
 module.exports = ValidationResult;

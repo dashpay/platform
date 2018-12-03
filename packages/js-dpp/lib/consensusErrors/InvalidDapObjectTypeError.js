@@ -1,4 +1,6 @@
-class InvalidDapObjectTypeError extends Error {
+const ConsensusError = require('./ConsensusError');
+
+class InvalidDapObjectTypeError extends ConsensusError {
   /**
    * @param {string} type
    * @param {DapContract} dapContract

@@ -18,11 +18,23 @@
       "type": "number",
       "multipleOf": 1.0,
       "minimum": 0
+    },
+    "$scope": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "$scopeId": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64
     }
   },
   "required": [
     "$type",
+    "$action",
     "$rev",
-    "$action"
+    "$scope",
+    "$scopeId"
   ]
 }

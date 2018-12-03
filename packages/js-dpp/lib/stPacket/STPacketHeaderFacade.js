@@ -4,7 +4,7 @@ const STPacketHeaderFactory = require('./STPacketHeaderFactory');
 
 class STPacketHeaderFacade {
   /**
-   * @param {SchemaValidator} validator
+   * @param {JsonSchemaValidator} validator
    */
   constructor(validator) {
     this.validateSTPacketHeader = validateSTPacketHeaderFactory(validator);

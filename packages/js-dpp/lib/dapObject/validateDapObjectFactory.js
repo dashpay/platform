@@ -1,9 +1,13 @@
-const InvalidDapObjectTypeError = require('../dapContract/errors/InvalidDapObjectTypeError');
+const InvalidDapObjectTypeError = require('../consensusErrors/InvalidDapObjectTypeError');
 
 const DapObject = require('./DapObject');
 
+const ValidationResult = require('../validation/ValidationResult');
+
+const MissingDapObjectTypeError = require('../consensusErrors/MissingDapObjectTypeError');
+
 /**
- * @param {SchemaValidator} validator
+ * @param {JsonSchemaValidator} validator
  * @param {Function} enrichDapContractWithBaseDapObject
  * @return {validateDapObject}
  */
@@ -12,35 +16,32 @@ module.exports = function validateDapObjectFactory(validator, enrichDapContractW
    * @typedef validateDapObject
    * @param {Object|DapObject} dapObject
    * @param {DapContract} dapContract
-   * @return {Object[]}
+   * @return {ValidationResult}
    */
   function validateDapObject(dapObject, dapContract) {
-    let errors;
-
     const rawDapObject = (dapObject instanceof DapObject) ? dapObject.toJSON() : dapObject;
 
-    // TODO consensus error + test
-    if (Object.prototype.hasOwnProperty.call(rawDapObject, '$type')) {
-      return [new Error('$type is not present')];
+    if (!Object.prototype.hasOwnProperty.call(rawDapObject, '$type')) {
+      return new ValidationResult([
+        new MissingDapObjectTypeError(),
+      ]);
     }
 
     const enrichedDapContract = enrichDapContractWithBaseDapObject(dapContract);
 
     try {
-      errors = validator.validate(
+      return validator.validate(
         dapContract.getDapObjectSchemaRef(rawDapObject.$type),
         rawDapObject,
         { [dapContract.getSchemaId()]: enrichedDapContract },
       );
     } catch (e) {
       if (e instanceof InvalidDapObjectTypeError) {
-        return [e];
+        return new ValidationResult([e]);
       }
 
       throw e;
     }
-
-    return errors;
   }
 
   return validateDapObject;

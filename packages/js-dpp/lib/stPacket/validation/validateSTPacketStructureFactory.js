@@ -1,18 +1,18 @@
-const SchemaValidator = require('../../validation/SchemaValidator');
+const JsonSchemaValidator = require('../../validation/JsonSchemaValidator');
 
 /**
- * @param {SchemaValidator} validator
+ * @param {JsonSchemaValidator} validator
  * @return {validateSTPacketStructure}
  */
 module.exports = function validateSTPacketStructureFactory(validator) {
   /**
    * @typedef validateSTPacketStructure
    * @param {Object} rawStPacket
-   * @return {Object[]}
+   * @return {ValidationResult}
    */
   function validateSTPacketStructure(rawStPacket) {
     return validator.validate(
-      SchemaValidator.SCHEMAS.ST_PACKET,
+      JsonSchemaValidator.SCHEMAS.ST_PACKET,
       rawStPacket,
     );
   }

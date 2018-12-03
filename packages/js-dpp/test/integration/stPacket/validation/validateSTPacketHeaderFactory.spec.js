@@ -1,71 +1,199 @@
 const Ajv = require('ajv');
 
-const SchemaValidator = require('../../../../lib/validation/SchemaValidator');
+const JsonSchemaValidator = require('../../../../lib/validation/JsonSchemaValidator');
+const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
 const validateSTPacketHeaderFactory = require('../../../../lib/stPacket/validation/validateSTPacketHeaderFactory');
 
-describe('validateSTPacketHeader', () => {
-  let rawStPacket;
+const { expectJsonSchemaError } = require('../../../../lib/test/expect/expectError');
+
+describe('validateSTPacketHeaderStructure', () => {
+  let rawStPacketHeader;
   let validateSTPacketHeader;
 
   beforeEach(() => {
     const ajv = new Ajv();
-    const validator = new SchemaValidator(ajv);
+    const validator = new JsonSchemaValidator(ajv);
 
     validateSTPacketHeader = validateSTPacketHeaderFactory(validator);
 
-    rawStPacket = {
+    rawStPacketHeader = {
       contractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
     };
   });
 
-  it('should return error if packet doesn\'t contain `contractId`', () => {
-    delete rawStPacket.contractId;
 
-    const errors = validateSTPacketHeader(rawStPacket);
+  describe('contractId', () => {
+    it('should be present', () => {
+      delete rawStPacketHeader.contractId;
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+      const result = validateSTPacketHeader(rawStPacketHeader);
 
-    const [error] = errors;
+      expectJsonSchemaError(result);
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('contractId');
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('');
+      expect(error.keyword).to.be.equal('required');
+      expect(error.params.missingProperty).to.be.equal('contractId');
+    });
+
+    it('should be a string', () => {
+      rawStPacketHeader.contractId = 1;
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.contractId');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should not be less than 64 chars', () => {
+      rawStPacketHeader.contractId = '86b273ff';
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.contractId');
+      expect(error.keyword).to.be.equal('minLength');
+    });
+
+    it('should not be longer than 64 chars', () => {
+      rawStPacketHeader.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.contractId');
+      expect(error.keyword).to.be.equal('maxLength');
+    });
   });
 
-  it('should return error if packet doesn\'t contain `itemsMerkleRoot`', () => {
-    delete rawStPacket.itemsMerkleRoot;
+  describe('itemsMerkleRoot', () => {
+    it('should be present', () => {
+      delete rawStPacketHeader.itemsMerkleRoot;
 
-    const errors = validateSTPacketHeader(rawStPacket);
+      const result = validateSTPacketHeader(rawStPacketHeader);
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+      expectJsonSchemaError(result);
 
-    const [error] = errors;
+      const [error] = result.getErrors();
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('itemsMerkleRoot');
+      expect(error.dataPath).to.be.equal('');
+      expect(error.keyword).to.be.equal('required');
+      expect(error.params.missingProperty).to.be.equal('itemsMerkleRoot');
+    });
+
+    it('should be a string', () => {
+      rawStPacketHeader.itemsMerkleRoot = 1;
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.itemsMerkleRoot');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should not be less than 64 chars', () => {
+      rawStPacketHeader.itemsMerkleRoot = '86b273ff';
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.itemsMerkleRoot');
+      expect(error.keyword).to.be.equal('minLength');
+    });
+
+    it('should not be longer than 64 chars', () => {
+      rawStPacketHeader.itemsMerkleRoot = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.itemsMerkleRoot');
+      expect(error.keyword).to.be.equal('maxLength');
+    });
   });
 
-  it('should return error if packet doesn\'t contain `itemsHash`', () => {
-    delete rawStPacket.itemsHash;
+  describe('itemsHash', () => {
+    it('should be present', () => {
+      delete rawStPacketHeader.itemsHash;
 
-    const errors = validateSTPacketHeader(rawStPacket);
+      const result = validateSTPacketHeader(rawStPacketHeader);
 
-    expect(errors).to.be.an('array').and.lengthOf(1);
+      expectJsonSchemaError(result);
 
-    const [error] = errors;
+      const [error] = result.getErrors();
 
-    expect(error.dataPath).to.be.equal('');
-    expect(error.keyword).to.be.equal('required');
-    expect(error.params.missingProperty).to.be.equal('itemsHash');
+      expect(error.dataPath).to.be.equal('');
+      expect(error.keyword).to.be.equal('required');
+      expect(error.params.missingProperty).to.be.equal('itemsHash');
+    });
+
+    it('should be a string', () => {
+      rawStPacketHeader.itemsHash = 1;
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.itemsHash');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should not be less than 64 chars', () => {
+      rawStPacketHeader.itemsHash = '86b273ff';
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.itemsHash');
+      expect(error.keyword).to.be.equal('minLength');
+    });
+
+    it('should not be longer than 64 chars', () => {
+      rawStPacketHeader.itemsHash = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+
+      const result = validateSTPacketHeader(rawStPacketHeader);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.itemsHash');
+      expect(error.keyword).to.be.equal('maxLength');
+    });
   });
 
-  it('should return empty array if packet structure is correct', () => {
-    const errors = validateSTPacketHeader(rawStPacket);
+  it('should return valid result if packet structure is correct', () => {
+    const result = validateSTPacketHeader(rawStPacketHeader);
 
-    expect(errors).to.be.empty();
+    expect(result).to.be.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
   });
 });

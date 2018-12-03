@@ -4,7 +4,7 @@ const validateDapContractFactory = require('./validateDapContractFactory');
 class DapContractFacade {
   /**
    *
-   * @param {SchemaValidator} validator
+   * @param {JsonSchemaValidator} validator
    */
   constructor(validator) {
     this.validateDapContract = validateDapContractFactory(validator);

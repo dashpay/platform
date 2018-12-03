@@ -1,4 +1,4 @@
-const SchemaValidator = require('../validation/SchemaValidator');
+const JsonSchemaValidator = require('../validation/JsonSchemaValidator');
 
 const DapContract = require('./DapContract');
 
@@ -9,18 +9,19 @@ const DapContract = require('./DapContract');
 module.exports = function validateDapContractFactory(validator) {
   /**
    * @typedef validateDapContract
-   * @param {Object|DapContract} dapContract
-   * @return {Object[]}
+   * @param {DapContract|Object} dapContract
+   * @return {ValidationResult}
    */
   function validateDapContract(dapContract) {
-    // TODO: Use validateSchema?
-
     const rawDapContract = (dapContract instanceof DapContract)
       ? dapContract.toJSON()
       : dapContract;
 
+    // TODO: Use validateSchema
+    //  https://github.com/epoberezkin/ajv#validateschemaobject-schema---boolean
+
     return validator.validate(
-      SchemaValidator.SCHEMAS.META.DAP_CONTRACT,
+      JsonSchemaValidator.SCHEMAS.META.DAP_CONTRACT,
       rawDapContract,
     );
   }
