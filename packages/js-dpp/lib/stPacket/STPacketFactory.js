@@ -35,10 +35,10 @@ class STPacketFactory {
    * Create ST Packet
    *
    * @param {string} contractId
-   * @param {DapContract|Array} items
+   * @param {DapContract|Array} [items]
    * @return {STPacket}
    */
-  create(contractId, items) {
+  create(contractId, items = undefined) {
     const stPacket = new STPacket(contractId);
 
     if (items instanceof DapContract) {
