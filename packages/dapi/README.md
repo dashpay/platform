@@ -20,8 +20,6 @@
 
 Since this module contains private dependencies, please ensure you have access via GitHub and that your SSH keys are set appropriately.
 
-Currently, the `develop` branch is acting as `master`. Change to it in order to run the install command below. We can remove this line from the instructions once this is fixed.
-
 ```sh
 npm install
 ```
