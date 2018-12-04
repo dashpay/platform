@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema",
-    "$id": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
+    "$id": "https://schema.dash.org/dap-0-4-0/meta/dash-schema",
     "type": "object",
     "allOf": [
         {

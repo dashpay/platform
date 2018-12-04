@@ -1,10 +1,10 @@
 {
-  "$schema": "https://schema.dash.org/platform-4-0-0/dash-schema/schema",
-  "$id": "https://schema.dash.org/platform-4-0-0/system/meta/dap-contract",
+  "$schema": "https://schema.dash.org/dap-0-4-0/meta/dash-schema",
+  "$id": "https://schema.dash.org/dap-0-4-0/meta/dap-contract",
   "type": "object",
   "allOf": [
     {
-      "$ref": "https://schema.dash.org/platform-4-0-0/dash-schema/schema"
+      "$ref": "https://schema.dash.org/dap-0-4-0/meta/dash-schema"
     }
   ],
   "definitions": {
@@ -47,7 +47,7 @@
   "properties": {
     "$schema": {
       "type": "string",
-      "const": "https://schema.dash.org/platform-4-0-0/system/meta/dap-contract"
+      "const": "https://schema.dash.org/dap-0-4-0/meta/dap-contract"
     },
     "name": {
       "type": "string",

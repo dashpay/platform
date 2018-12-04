@@ -1,6 +1,6 @@
 module.exports = function getLovelyDapContract() {
   return {
-    $schema: 'https://schema.dash.org/platform-4-0-0/system/meta/dap-contract',
+    $schema: 'https://schema.dash.org/dap-0-4-0/meta/dap-contract',
     name: 'lovelyContract',
     version: 1,
     dapObjectsDefinition: {

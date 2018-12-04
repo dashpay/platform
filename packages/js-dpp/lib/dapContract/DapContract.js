@@ -216,7 +216,7 @@ class DapContract {
 
 DapContract.DEFAULTS = {
   VERSION: 1,
-  SCHEMA: 'https://schema.dash.org/platform-4-0-0/system/meta/dap-contract',
+  SCHEMA: 'https://schema.dash.org/dap-0-4-0/meta/dap-contract',
 };
 
 DapContract.SCHEMA_ID = 'dap-contract';

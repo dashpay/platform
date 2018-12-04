@@ -47,13 +47,13 @@ class JsonSchemaValidator {
 
 JsonSchemaValidator.SCHEMAS = {
   META: {
-    DAP_CONTRACT: 'https://schema.dash.org/platform-4-0-0/system/meta/dap-contract',
+    DAP_CONTRACT: 'https://schema.dash.org/dap-0-4-0/meta/dap-contract',
   },
   BASE: {
-    DAP_OBJECT: 'https://schema.dash.org/platform-4-0-0/system/base/dap-object',
+    DAP_OBJECT: 'https://schema.dash.org/dap-0-4-0/base/dap-object',
   },
-  ST_PACKET: 'https://schema.dash.org/platform-4-0-0/system/st-packet',
-  ST_PACKET_HEADER: 'https://schema.dash.org/platform-4-0-0/system/st-packet-header',
+  ST_PACKET: 'https://schema.dash.org/dap-0-4-0/st-packet',
+  ST_PACKET_HEADER: 'https://schema.dash.org/dap-0-4-0/st-packet-header',
 };
 
 module.exports = JsonSchemaValidator;
