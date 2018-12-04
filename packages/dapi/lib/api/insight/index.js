@@ -75,7 +75,7 @@ const getAddressTotalReceived = async (address) => {
 const getBlocks = async (blockDate, limit) => {
   let queryParams = '?';
   if (blockDate) {
-    queryParams = `blockDate=${blockDate}&`;
+    queryParams += `blockDate=${blockDate}&`;
   }
   if (limit) {
     queryParams += `limit=${limit}`;
