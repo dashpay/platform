@@ -1,13 +1,13 @@
-class InvalidDapContractStructureError extends Error {
+class InvalidDapContractError extends Error {
   /**
-   * @param {Object[]} errors
+   * @param {ConsensusError[]} errors
    * @param {Object} rawDapContract
    */
   constructor(errors, rawDapContract) {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid Dap Contract structure';
+    this.message = 'Invalid Dap Contract';
 
     this.errors = errors;
     this.rawDapContract = rawDapContract;
@@ -20,7 +20,7 @@ class InvalidDapContractStructureError extends Error {
   /**
    * Get validation errors
    *
-   * @return {Object[]}
+   * @return {ConsensusError[]}
    */
   getErrors() {
     return this.errors;
@@ -36,4 +36,4 @@ class InvalidDapContractStructureError extends Error {
   }
 }
 
-module.exports = InvalidDapContractStructureError;
+module.exports = InvalidDapContractError;

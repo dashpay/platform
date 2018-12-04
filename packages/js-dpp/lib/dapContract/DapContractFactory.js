@@ -1,14 +1,15 @@
-const InvalidDapContractStructureError = require('./errors/InvalidDapContractStructureError');
-const DapContract = require('./DapContract');
+const InvalidDapContractError = require('./errors/InvalidDapContractError');
 
 const serializer = require('../util/serializer');
 
 class DapContractFactory {
   /**
    * @param {validateDapContract} validateDapContract
+   * @param {createDapContract} createDapContract
    */
-  constructor(validateDapContract) {
+  constructor(validateDapContract, createDapContract) {
     this.validateDapContract = validateDapContract;
+    this.createDapContract = createDapContract;
   }
 
   /**
@@ -19,7 +20,10 @@ class DapContractFactory {
    * @return {DapContract}
    */
   create(name, dapObjectsDefinition) {
-    return new DapContract(name, dapObjectsDefinition);
+    return this.createDapContract({
+      name,
+      dapObjectsDefinition,
+    });
   }
 
   /**
@@ -29,22 +33,13 @@ class DapContractFactory {
    * @return {DapContract}
    */
   createFromObject(object) {
-    const errors = this.validateDapContract(object);
+    const result = this.validateDapContract(object);
 
-    if (errors.length) {
-      throw new InvalidDapContractStructureError(errors, object);
+    if (!result.isValid()) {
+      throw new InvalidDapContractError(result.getErrors(), object);
     }
 
-    const dapContract = this.create(object.name, object.dapObjectsDefinition);
-
-    dapContract.setSchema(object.$schema);
-    dapContract.setVersion(object.version);
-
-    if (object.definitions) {
-      dapContract.setDefinitions(object.definitions);
-    }
-
-    return dapContract;
+    return this.createDapContract(object);
   }
 
   /**

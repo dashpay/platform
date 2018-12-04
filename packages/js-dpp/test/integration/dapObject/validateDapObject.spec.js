@@ -4,6 +4,7 @@ const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const validateDapObjectFactory = require('../../../lib/dapObject/validateDapObjectFactory');
+const createDapContract = require('../../../lib/dapContract/createDapContract');
 const validateDapContractFactory = require('../../../lib/dapContract/validateDapContractFactory');
 const enrichDapContractWithBaseDapObject = require('../../../lib/dapObject/enrichDapContractWithBaseDapObject');
 
@@ -30,7 +31,7 @@ describe('validateDapObject', () => {
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
     const validateDapContract = validateDapContractFactory(validator);
-    const dapContractFactory = new DapContractFactory(validateDapContract);
+    const dapContractFactory = new DapContractFactory(validateDapContract, createDapContract);
     dapContract = dapContractFactory.createFromObject(getLovelyDapContract());
 
     validateDapObject = validateDapObjectFactory(

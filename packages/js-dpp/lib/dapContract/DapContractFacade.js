@@ -1,5 +1,6 @@
 const DapContractFactory = require('./DapContractFactory');
 const validateDapContractFactory = require('./validateDapContractFactory');
+const createDapContract = require('./createDapContract');
 
 class DapContractFacade {
   /**
@@ -9,7 +10,10 @@ class DapContractFacade {
   constructor(validator) {
     this.validateDapContract = validateDapContractFactory(validator);
 
-    this.factory = new DapContractFactory(this.validateDapContract);
+    this.factory = new DapContractFactory(
+      this.validateDapContract,
+      createDapContract,
+    );
   }
 
   updateDependencies() {
