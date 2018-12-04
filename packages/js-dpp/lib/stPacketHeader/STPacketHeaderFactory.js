@@ -2,7 +2,7 @@ const serializer = require('../util/serializer');
 
 const STPacketHeader = require('./STPacketHeader');
 
-const InvalidSTPacketHeaderError = require('./errors/InvalidSTPacketHeaderError');
+const InvalidSTPacketHeaderError = require('../stPacket/errors/InvalidSTPacketHeaderError');
 
 class STPacketHeaderFactory {
   /**

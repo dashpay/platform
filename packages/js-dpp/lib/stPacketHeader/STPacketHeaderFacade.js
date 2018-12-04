@@ -1,4 +1,4 @@
-const validateSTPacketHeaderFactory = require('./validation/validateSTPacketHeaderFactory');
+const validateSTPacketHeaderFactory = require('./validateSTPacketHeaderFactory');
 
 const STPacketHeaderFactory = require('./STPacketHeaderFactory');
 

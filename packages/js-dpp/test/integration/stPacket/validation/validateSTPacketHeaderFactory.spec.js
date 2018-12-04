@@ -3,7 +3,7 @@ const Ajv = require('ajv');
 const JsonSchemaValidator = require('../../../../lib/validation/JsonSchemaValidator');
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
-const validateSTPacketHeaderFactory = require('../../../../lib/stPacket/validation/validateSTPacketHeaderFactory');
+const validateSTPacketHeaderFactory = require('../../../../lib/stPacketHeader/validateSTPacketHeaderFactory');
 
 const { expectJsonSchemaError } = require('../../../../lib/test/expect/expectError');
 

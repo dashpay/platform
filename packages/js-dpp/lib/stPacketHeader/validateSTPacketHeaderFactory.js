@@ -1,4 +1,4 @@
-const JsonSchemaValidator = require('../../validation/JsonSchemaValidator');
+const JsonSchemaValidator = require('../validation/JsonSchemaValidator');
 
 /**
  * @param {JsonSchemaValidator} validator

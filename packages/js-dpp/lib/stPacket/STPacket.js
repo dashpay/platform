@@ -1,7 +1,7 @@
 const hash = require('../util/hash');
 const serializer = require('../util/serializer');
 
-const STPacketHeader = require('./STPacketHeader');
+const STPacketHeader = require('../stPacketHeader/STPacketHeader');
 
 const EitherDapContractOrDapObjectsAllowedError = require('./errors/EitherDapContractOrDapObjectsAllowedError');
 

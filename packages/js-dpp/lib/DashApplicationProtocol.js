@@ -5,7 +5,7 @@ const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 const DapContractFacade = require('./dapContract/DapContractFacade');
 const DapObjectFacade = require('./dapObject/DapObjectFacade');
 const STPacketFacade = require('./stPacket/STPacketFacade');
-const STPacketHeaderFacade = require('./stPacket/STPacketHeaderFacade');
+const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 
 const FACADES = ['contract', 'object', 'packet', 'packetHeader'];
 
