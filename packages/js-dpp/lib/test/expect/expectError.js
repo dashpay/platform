@@ -1,8 +1,8 @@
 const { expect } = require('chai');
 
 const ValidationResult = require('../../validation/ValidationResult');
-const ConsensusError = require('../../consensusErrors/ConsensusError');
-const JsonSchemaError = require('../../consensusErrors/JsonSchemaError');
+const ConsensusError = require('../../errors/ConsensusError');
+const JsonSchemaError = require('../../errors/JsonSchemaError');
 
 const expectError = {
   /**

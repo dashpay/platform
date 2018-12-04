@@ -1,10 +1,10 @@
-const InvalidDapObjectTypeError = require('../consensusErrors/InvalidDapObjectTypeError');
+const InvalidDapObjectTypeError = require('../errors/InvalidDapObjectTypeError');
 
 const DapObject = require('./DapObject');
 
 const ValidationResult = require('../validation/ValidationResult');
 
-const MissingDapObjectTypeError = require('../consensusErrors/MissingDapObjectTypeError');
+const MissingDapObjectTypeError = require('../errors/MissingDapObjectTypeError');
 
 /**
  * @param {JsonSchemaValidator} validator

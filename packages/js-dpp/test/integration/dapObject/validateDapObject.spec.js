@@ -10,8 +10,8 @@ const enrichDapContractWithBaseDapObject = require('../../../lib/dapObject/enric
 
 const DapContractFactory = require('../../../lib/dapContract/DapContractFactory');
 
-const MissingDapObjectTypeError = require('../../../lib/consensusErrors/MissingDapObjectTypeError');
-const InvalidDapObjectTypeError = require('../../../lib/consensusErrors/InvalidDapObjectTypeError');
+const MissingDapObjectTypeError = require('../../../lib/errors/MissingDapObjectTypeError');
+const InvalidDapObjectTypeError = require('../../../lib/errors/InvalidDapObjectTypeError');
 
 const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
 const getLovelyDapObjects = require('../../../lib/test/fixtures/getLovelyDapObjects');

@@ -1,7 +1,7 @@
 const VerificationResult = require('./VerificationResult');
 
-const EmptySTPacketError = require('../../consensusErrors/EmptySTPacketError');
-const ConsensusError = require('../../consensusErrors/ConsensusError');
+const EmptySTPacketError = require('../../errors/EmptySTPacketError');
+const ConsensusError = require('../../errors/ConsensusError');
 
 /**
  * @param {verifyDapContract} verifyDapContract

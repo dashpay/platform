@@ -1,4 +1,4 @@
-const InvalidSTPacketContractIdError = require('../../consensusErrors/InvalidSTPacketContractIdError');
+const InvalidSTPacketContractIdError = require('../../errors/InvalidSTPacketContractIdError');
 
 /**
  * @param {validateDapContract} validateDapContract

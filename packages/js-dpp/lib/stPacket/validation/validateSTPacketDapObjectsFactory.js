@@ -1,4 +1,4 @@
-const DuplicatedDapObjectsError = require('../../consensusErrors/DuplicatedDapObjectsError');
+const DuplicatedDapObjectsError = require('../../errors/DuplicatedDapObjectsError');
 
 /**
  * @param {validateDapObject} validateDapObject

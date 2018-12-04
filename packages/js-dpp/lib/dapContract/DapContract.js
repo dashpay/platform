@@ -1,7 +1,7 @@
 const hash = require('../util/hash');
 const serializer = require('../util/serializer');
 
-const InvalidDapObjectTypeError = require('../consensusErrors/InvalidDapObjectTypeError');
+const InvalidDapObjectTypeError = require('../errors/InvalidDapObjectTypeError');
 
 class DapContract {
   /**

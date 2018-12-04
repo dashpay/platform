@@ -5,7 +5,7 @@ const stPacketSchema = require('../../schema/st-packet');
 const stPacketHeaderSchema = require('../../schema/st-packet-header');
 
 const ValidationResult = require('./ValidationResult');
-const JsonSchemaError = require('../consensusErrors/JsonSchemaError');
+const JsonSchemaError = require('../errors/JsonSchemaError');
 
 class JsonSchemaValidator {
   constructor(ajv) {

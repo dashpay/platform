@@ -1,6 +1,6 @@
 const VerificationResult = require('./VerificationResult');
 
-const ConsensusError = require('../../consensusErrors/ConsensusError');
+const ConsensusError = require('../../errors/ConsensusError');
 
 /**
  * @typedef verifyDapContract
