@@ -13,10 +13,6 @@ function validateSTPacketDapObjectsFactory(validateDapObject, findDuplicatedDapO
    * @param {ValidationResult} result
    */
   function validateSTPacketDapObjects(rawDapObjects, dapContract, result) {
-    if (!rawDapObjects.length) {
-      return;
-    }
-
     const duplicatedDapObjects = findDuplicatedDapObjects(rawDapObjects);
     if (duplicatedDapObjects.length) {
       result.addError(

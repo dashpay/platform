@@ -13,10 +13,6 @@ function validateSTPacketDapContractsFactory(validateDapContract, createDapContr
    * @param {ValidationResult} result
    */
   function validateSTPacketDapContracts(rawDapContracts, rawStPacket, result) {
-    if (!rawDapContracts.length) {
-      return;
-    }
-
     const [rawDapContract] = rawDapContracts;
 
     const dapContractResult = validateDapContract(rawDapContract);
