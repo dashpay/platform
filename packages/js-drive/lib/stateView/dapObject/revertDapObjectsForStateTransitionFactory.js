@@ -1,5 +1,7 @@
 const GetPacketTimeoutError = require('../../storage/errors/GetPacketTimeoutError');
 
+const ReaderMediator = require('../../blockchain/reader/BlockchainReaderMediator');
+
 const rejectAfter = require('../../util/rejectAfter');
 
 /**
@@ -9,6 +11,7 @@ const rejectAfter = require('../../util/rejectAfter');
  * @param {createDapObjectMongoDbRepository} createDapObjectMongoDbRepository
  * @param {applyStateTransition} applyStateTransition
  * @param [applyStateTransitionFromReference} applyStateTransitionFromReference
+ * @param {BlockchainReaderMediator} readerMediator
  * @param {number} ipfsGetTimeout
  * @returns {revertDapObjectsForStateTransition}
  */
@@ -18,6 +21,7 @@ module.exports = function revertDapObjectsForStateTransitionFactory(
   createDapObjectMongoDbRepository,
   applyStateTransition,
   applyStateTransitionFromReference,
+  readerMediator,
   ipfsGetTimeout,
 ) {
   /**
@@ -47,12 +51,27 @@ module.exports = function revertDapObjectsForStateTransitionFactory(
         dapObject.markAsDeleted();
         await dapObjectMongoDbRepository.store(dapObject);
 
+        await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_MARKED_DELETED, {
+          userId: stateTransition.extraPayload.regTxId,
+          objectId: dapObject.getId(),
+          reference: dapObject.reference,
+          object: dapObject.getOriginalData(),
+        });
+
         continue;
       }
 
       for (const { reference } of previousRevisions) {
         await applyStateTransitionFromReference(reference);
       }
+
+      await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_REVERTED, {
+        userId: stateTransition.extraPayload.regTxId,
+        objectId: dapObject.getId(),
+        reference: dapObject.reference,
+        object: dapObject.getOriginalData(),
+        previousRevision: previousRevisions[previousRevisions.length - 1],
+      });
     }
   }
 

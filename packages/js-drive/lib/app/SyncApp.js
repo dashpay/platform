@@ -230,6 +230,7 @@ class SyncApp {
       this.getIpfsApi(),
       updateDapContract,
       updateDapObject,
+      this.createBlockchainReaderMediator(),
       this.options.getStorageIpfsTimeout(),
     );
     return this.applyStateTransition;
@@ -266,6 +267,7 @@ class SyncApp {
       createDapObjectMongoDbRepository,
       this.createApplyStateTransition(),
       this.createApplyStateTransitionFromReference(),
+      this.createBlockchainReaderMediator(),
       this.options.getStorageIpfsTimeout(),
     );
   }
@@ -283,6 +285,7 @@ class SyncApp {
       this.getRpcClient(),
       this.createApplyStateTransition(),
       this.createApplyStateTransitionFromReference(),
+      this.createBlockchainReaderMediator(),
     );
   }
 }

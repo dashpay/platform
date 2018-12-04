@@ -1,8 +1,11 @@
+const ReaderMediator = require('../../../lib/blockchain/reader/BlockchainReaderMediator');
+
 /**
  * @param {DapContractMongoDbRepository} dapContractMongoDbRepository
  * @param {RpcClient} rpcClient
  * @param {applyStateTransition} applyStateTransition
  * @param {applyStateTransitionFromReference} applyStateTransitionFromReference
+ * @param {BlockchainReaderMediator} readerMediator
  * @returns {revertDapContractsForStateTransition}
  */
 function revertDapContractsForStateTransitionFactory(
@@ -10,6 +13,7 @@ function revertDapContractsForStateTransitionFactory(
   rpcClient,
   applyStateTransition,
   applyStateTransitionFromReference,
+  readerMediator,
 ) {
   /**
    * @typedef revertDapContractsForStateTransition
@@ -28,12 +32,27 @@ function revertDapContractsForStateTransitionFactory(
         dapContract.markAsDeleted();
         await dapContractMongoDbRepository.store(dapContract);
 
+        await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_CONTRACT_MARKED_DELETED, {
+          userId: stateTransition.extraPayload.regTxId,
+          dapId: dapContract.dapId,
+          reference: dapContract.reference,
+          contract: dapContract.getOriginalData(),
+        });
+
         continue;
       }
 
       for (const { reference } of previousVersions) {
         await applyStateTransitionFromReference(reference);
       }
+
+      await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_CONTRACT_REVERTED, {
+        userId: stateTransition.extraPayload.regTxId,
+        dapId: dapContract.dapId,
+        reference: dapContract.reference,
+        contract: dapContract.getOriginalData(),
+        previousVersion: previousVersions[previousVersions.length - 1],
+      });
     }
   }
 

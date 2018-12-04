@@ -5,6 +5,8 @@ const {
   },
 } = require('@dashevo/js-evo-services-ctl');
 
+const ReaderMediator = require('../../../../lib/blockchain/reader/BlockchainReaderMediator');
+
 const Reference = require('../../../../lib/stateView/Reference');
 const DapContract = require('../../../../lib/stateView/dapContract/DapContract');
 const DapContractMongoDbRepository = require('../../../../lib/stateView/dapContract/DapContractMongoDbRepository');
@@ -16,6 +18,7 @@ const getTransitionHeaderFixtures = require('../../../../lib/test/fixtures/getTr
 const serializer = require('../../../../lib/util/serializer');
 
 const RpcClientMock = require('../../../../lib/test/mock/RpcClientMock');
+const ReaderMediatorMock = require('../../../../lib/test/mock/BlockchainReaderMediatorMock');
 
 const addSTPacketFactory = require('../../../../lib/storage/ipfs/addSTPacketFactory');
 const updateDapContractFactory = require('../../../../lib/stateView/dapContract/updateDapContractFactory');
@@ -40,15 +43,18 @@ describe('revertDapContractsForStateTransitionFactory', () => {
   let dapContractMongoDbRepository;
   let applyStateTransition;
   let rpcClientMock;
+  let readerMediator;
   let revertDapContractsForStateTransition;
   beforeEach(function beforeEach() {
     addSTPacket = addSTPacketFactory(ipfsClient);
     dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
+    readerMediator = new ReaderMediatorMock(this.sinon);
     applyStateTransition = applyStateTransitionFactory(
       ipfsClient,
       updateDapContract,
       null,
+      readerMediator,
       30 * 1000,
     );
     rpcClientMock = new RpcClientMock(this.sinon);
@@ -61,6 +67,7 @@ describe('revertDapContractsForStateTransitionFactory', () => {
       rpcClientMock,
       applyStateTransition,
       applyStateTransitionFromReference,
+      readerMediator,
     );
   });
 
@@ -143,6 +150,17 @@ describe('revertDapContractsForStateTransitionFactory', () => {
         reference: dapContractVersions[0].reference,
       },
     ]);
+
+    expect(readerMediator.emitSerial.getCall(2)).to.be.calledWith(
+      ReaderMediator.EVENTS.DAP_CONTRACT_REVERTED,
+      {
+        userId: lastDapContractVersion.header.extraPayload.regTxId,
+        dapId,
+        reference: lastDapContractVersion.reference,
+        contract: dapContract.getOriginalData(),
+        previousVersion: previousVersions[previousVersions.length - 1],
+      },
+    );
   });
 
   it('should delete DapContract if there are no previous versions', async () => {
@@ -187,5 +205,15 @@ describe('revertDapContractsForStateTransitionFactory', () => {
 
     const dapContractAfter = await dapContractMongoDbRepository.find(dapId);
     expect(dapContractAfter).to.not.exist();
+
+    expect(readerMediator.emitSerial).to.be.calledWith(
+      ReaderMediator.EVENTS.DAP_CONTRACT_MARKED_DELETED,
+      {
+        userId: header.extraPayload.regTxId,
+        dapId,
+        reference,
+        contract: data,
+      },
+    );
   });
 });

@@ -4,6 +4,7 @@ const {
     startIPFS,
   },
 } = require('@dashevo/js-evo-services-ctl');
+
 const Reference = require('../../../lib/stateView/Reference');
 const DapContract = require('../../../lib/stateView/dapContract/DapContract');
 const createDapObjectMongoDbRepositoryFactory = require('../../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
@@ -19,6 +20,9 @@ const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTrans
 const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
 const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
 const generateDapObjectId = require('../../../lib/stateView/dapObject/generateDapObjectId');
+
+const ReaderMediator = require('../../../lib/blockchain/reader/BlockchainReaderMediator');
+const ReaderMediatorMock = require('../../../lib/test/mock/BlockchainReaderMediatorMock');
 
 const doubleSha256 = require('../../../lib/util/doubleSha256');
 
@@ -38,8 +42,9 @@ describe('applyStateTransitionFactory', () => {
   let addSTPacket;
   let dapContractMongoDbRepository;
   let createDapObjectMongoDbRepository;
+  let readerMediator;
   let applyStateTransition;
-  beforeEach(() => {
+  beforeEach(function beforeEach() {
     addSTPacket = addSTPacketFactory(ipfsClient);
     dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
@@ -48,10 +53,12 @@ describe('applyStateTransitionFactory', () => {
     );
     const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
     const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
+    readerMediator = new ReaderMediatorMock(this.sinon);
     applyStateTransition = applyStateTransitionFactory(
       ipfsClient,
       updateDapContract,
       updateDapObject,
+      readerMediator,
       1000,
     );
   });
@@ -61,9 +68,26 @@ describe('applyStateTransitionFactory', () => {
     const packet = getTransitionPacketFixtures()[0];
     const header = getTransitionHeaderFixtures()[0];
     header.extraPayload.hashSTPacket = packet.getHash();
+    const reference = new Reference(
+      block.hash,
+      block.height,
+      header.hash,
+      packet.getHash(),
+      undefined,
+    );
 
     await addSTPacket(packet);
     await applyStateTransition(header, block);
+
+    expect(readerMediator.emitSerial).to.be.calledWith(
+      ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED,
+      {
+        userId: header.extraPayload.regTxId,
+        dapId: doubleSha256(packet.dapcontract),
+        reference,
+        contract: packet.dapcontract,
+      },
+    );
 
     const dapId = doubleSha256(packet.dapcontract);
     const dapContract = await dapContractMongoDbRepository.find(dapId);
@@ -101,9 +125,26 @@ describe('applyStateTransitionFactory', () => {
     packet.dapcontract.upgradedapid = dapId;
     const header = getTransitionHeaderFixtures()[0];
     header.extraPayload.hashSTPacket = packet.getHash();
+    const reference = new Reference(
+      block.hash,
+      block.height,
+      header.hash,
+      packet.getHash(),
+      undefined,
+    );
 
     await addSTPacket(packet);
     await applyStateTransition(header, block);
+
+    expect(readerMediator.emitSerial).to.be.calledWith(
+      ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED,
+      {
+        userId: header.extraPayload.regTxId,
+        dapId,
+        reference,
+        contract: packet.dapcontract,
+      },
+    );
 
     const dapContract = await dapContractMongoDbRepository.find(dapId);
 
@@ -122,9 +163,30 @@ describe('applyStateTransitionFactory', () => {
     packet.dapobjects[0].act = 0;
     const header = getTransitionHeaderFixtures()[1];
     header.extraPayload.hashSTPacket = packet.getHash();
+    const reference = new Reference(
+      block.hash,
+      block.height,
+      header.hash,
+      packet.getHash(),
+      undefined,
+    );
 
     await addSTPacket(packet);
     await applyStateTransition(header, block);
+
+    expect(readerMediator.emitSerial).to.be.calledWith(
+      ReaderMediator.EVENTS.DAP_OBJECT_APPLIED,
+      {
+        userId: header.extraPayload.regTxId,
+        dapId: packet.dapid,
+        objectId: generateDapObjectId(
+          header.extraPayload.regTxId,
+          packet.dapobjects[0].idx,
+        ),
+        reference,
+        object: packet.dapobjects[0],
+      },
+    );
 
     const dapId = packet.dapid;
     const dapObjectRepository = createDapObjectMongoDbRepository(dapId);
