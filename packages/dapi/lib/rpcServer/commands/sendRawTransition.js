@@ -21,36 +21,35 @@ const doubleSha256 = (data, cryptoLib = crypto) => {
   return secondHashHexDigest;
 };
 
-const createStateTransition =
-  ({
-    TransactionClass = Transaction,
-    rawTransitionHeader,
-    rawTransitionDataPacket,
-  }) => {
-    if (!rawTransitionDataPacket) {
-      throw new Error('Updating state requires a transition data packet');
-    }
+const createStateTransition = ({
+  TransactionClass = Transaction,
+  rawTransitionHeader,
+  rawTransitionDataPacket,
+}) => {
+  if (!rawTransitionDataPacket) {
+    throw new Error('Updating state requires a transition data packet');
+  }
 
-    const rawTransitionDataPacketHexBuffer = Buffer.from(rawTransitionDataPacket, 'hex');
-    const packet = Schema.serialize.decode(rawTransitionDataPacketHexBuffer);
+  const rawTransitionDataPacketHexBuffer = Buffer.from(rawTransitionDataPacket, 'hex');
+  const packet = Schema.serialize.decode(rawTransitionDataPacketHexBuffer);
 
-    const packetHash = doubleSha256(rawTransitionDataPacketHexBuffer);
-    // TODO: The following function is bugged and should be reported to Andy
-    // const packetHash = SchemaClass.hash.stpacket(packet);
-    const headerTransaction = new TransactionClass(rawTransitionHeader);
-    const headerTransactionHash = headerTransaction.extraPayload.hashSTPacket;
+  const packetHash = doubleSha256(rawTransitionDataPacketHexBuffer);
+  // TODO: The following function is bugged and should be reported to Andy
+  // const packetHash = SchemaClass.hash.stpacket(packet);
+  const headerTransaction = new TransactionClass(rawTransitionHeader);
+  const headerTransactionHash = headerTransaction.extraPayload.hashSTPacket;
 
-    if (packetHash !== headerTransactionHash) {
-      throw new Error('The hash of the data packet doesn\'t match the hash present in the header');
-    }
+  if (packetHash !== headerTransactionHash) {
+    throw new Error('The hash of the data packet doesn\'t match the hash present in the header');
+  }
 
-    const stateTransition = {
-      headerTransaction,
-      packet,
-    };
-
-    return stateTransition;
+  const stateTransition = {
+    headerTransaction,
+    packet,
   };
+
+  return stateTransition;
+};
 
 /**
  * @param coreAPI
@@ -70,8 +69,10 @@ function sendRawTransitionFactory(coreAPI, dashDriveAPI) {
   const sendRawTransition = async (args) => {
     validator.validate(args);
     const { rawTransitionHeader, rawTransitionPacket: rawTransitionDataPacket } = args;
-    const { headerTransaction: stateTransitionHeader } =
-        createStateTransition({ rawTransitionHeader, rawTransitionDataPacket });
+    const { headerTransaction: stateTransitionHeader } = createStateTransition({
+      rawTransitionHeader,
+      rawTransitionDataPacket,
+    });
     await dashDriveAPI.addSTPacket(rawTransitionDataPacket);
     const txid = await coreAPI.sendRawTransaction(stateTransitionHeader.serialize());
     return txid;

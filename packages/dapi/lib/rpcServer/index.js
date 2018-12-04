@@ -1,4 +1,5 @@
 const jayson = require('jayson/promise');
+const { isRegtest, isDevnet } = require('../utils');
 const errorHandlerDecorator = require('./errorHandlerDecorator');
 
 const estimateFee = require('./commands/estimateFee');
@@ -110,8 +111,9 @@ const createSpvServiceCommands = spvService => ({
 const start = (port, networkType, spvService, insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => {
   const spvCommands = createSpvServiceCommands(spvService);
   const commands = createCommands(insightAPI, dashcoreAPI, dashDriveAPI, userIndex);
+  const areRegtestCommandsEnabled = isRegtest(networkType) || isDevnet(networkType);
 
-  const allCommands = networkType === 'regtest'
+  const allCommands = areRegtestCommandsEnabled
     ? Object.assign(commands, spvCommands, createRegtestCommands(dashcoreAPI))
     : Object.assign(commands, spvCommands);
 

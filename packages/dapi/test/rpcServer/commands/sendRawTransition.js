@@ -1,12 +1,9 @@
-/* eslint-disable no-underscore-dangle */
 const chai = require('chai');
-const crypto = require('crypto');
 const Schema = require('@dashevo/dash-schema/dash-schema-lib');
 const { PrivateKey, Transaction } = require('@dashevo/dashcore-lib');
 const { createStateTransition, doubleSha256 } = require('../../../lib/rpcServer/commands/sendRawTransition');
 
 const { expect } = chai;
-const hash = crypto.createHash('sha256');
 
 describe('sendRawTransition', () => {
   describe('#doubleSha256', () => {
@@ -57,7 +54,9 @@ describe('sendRawTransition', () => {
         headerTransaction,
         packet: transitionDataPacket,
       };
+      // eslint-disable-next-line no-underscore-dangle
       expected.headerTransaction._inputAmount = undefined;
+      // eslint-disable-next-line no-underscore-dangle
       expected.headerTransaction._outputAmount = undefined;
 
       const actual = createStateTransition({ rawTransitionHeader, rawTransitionDataPacket });

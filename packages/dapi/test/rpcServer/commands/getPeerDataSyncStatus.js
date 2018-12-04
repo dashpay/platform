@@ -32,6 +32,8 @@ describe('getMNList', () => {
     const getPeerDataSyncStatus = getPeerDataSyncStatusFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
     const peerDataSyncStatus = await getPeerDataSyncStatus();
+    // TODO: is peerDataSyncStatus really supposed to return an empty string?
+    expect(peerDataSyncStatus).to.be.equal('');
     expect(spy.callCount).to.be.equal(1);
   });
 });

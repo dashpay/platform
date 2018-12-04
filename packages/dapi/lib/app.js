@@ -4,6 +4,7 @@ const dotenv = require('dotenv');
 // Load config from .env
 dotenv.config();
 
+const { isRegtest } = require('./utils');
 const config = require('./config');
 const log = require('./log');
 const rpcServer = require('./rpcServer');
@@ -14,7 +15,6 @@ const { SpvService } = require('./services/spv');
 const insightAPI = require('./api/insight');
 const dashcoreAPI = require('./api/dashcore/rpc');
 const userIndex = require('./services/userIndex');
-
 
 async function main() {
   /* Application start */
@@ -35,7 +35,7 @@ async function main() {
 
   // Start SPV service
   const spvService = new SpvService();
-  if (!config.isRegtestNetwork()) {
+  if (isRegtest(config.network)) {
     log.info(`SPV service running with ${spvService.clients.length} connected clients`);
   } else {
     log.warn('SPV service will not work in regtest mode');

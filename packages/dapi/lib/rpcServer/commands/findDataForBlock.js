@@ -1,6 +1,6 @@
+const BloomFilter = require('bloom-filter');
 const Validator = require('../../utils/Validator');
 const argsSchema = require('../schemas/getSpvData');
-const BloomFilter = require('bloom-filter');
 
 const validator = new Validator(argsSchema);
 /**

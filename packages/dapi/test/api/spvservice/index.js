@@ -3,8 +3,8 @@ process.on('unhandledRejection', (up) => {
 });
 const BloomFilter = require('bloom-filter');
 const chai = require('chai');
-const index = require('../../../lib/api/spvservice/index');
 const sinon = require('sinon');
+const index = require('../../../lib/api/spvservice/index');
 
 const { expect } = chai;
 

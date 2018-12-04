@@ -1,3 +1,6 @@
+/* eslint-disable no-unused-vars */
+// Unused variables represent signatures for clarity
+// TODO: Why are we doing this?
 module.exports = {
   async loadBloomFilter(filter) { return new Promise((resolve, reject) => { resolve(true); }); },
   async addToBloomFilter(filter) { return new Promise((resolve, reject) => { resolve(true); }); },

@@ -142,6 +142,7 @@ describe('api/dashcore/rpc', async () => {
         rpc.getTransactionFirstInputAddress(123);
         expect(stub.callCount).to.be.equal(1);
         const transaction = await rpc.getTransactionFirstInputAddress(addrStr);
+        expect(transaction).to.be.equal('50622f66236671501c0e80f388d6cf1e81158de8526f4acc9db00adf3c524077');
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -177,6 +178,7 @@ describe('api/dashcore/rpc', async () => {
         rpc.getCurrentBlockHeight();
         expect(stub.callCount).to.be.equal(1);
         const transaction = await rpc.getCurrentBlockHeight();
+        expect(transaction).to.be.equal('fake');
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -212,6 +214,7 @@ describe('api/dashcore/rpc', async () => {
         rpc.getMasternodesList();
         expect(stub.callCount).to.be.equal(1);
         const transaction = await rpc.getMasternodesList();
+        expect(transaction).to.be.equal('fake');
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -250,6 +253,7 @@ describe('api/dashcore/rpc', async () => {
         rpc.getUTXO(123);
         expect(stub.callCount).to.be.equal(1);
         const transaction = await rpc.getUTXO(addrStr);
+        expect(transaction).to.be.equal('fake');
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -287,6 +291,8 @@ describe('api/dashcore/rpc', async () => {
         rpc.getBlockHash(123);
         expect(stub.callCount).to.be.equal(1);
         const transaction = await rpc.getBlockHash(324);
+        // TODO: Should `transaction` really be undefined? Or is the test failing?
+        expect(transaction).to.be.equal(undefined);
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -338,7 +344,7 @@ describe('api/dashcore/rpc', async () => {
       it('Should callCount be correct', async () => {
         rpc.getBlock(123);
         expect(stub.callCount).to.be.equal(1);
-        const transaction = await rpc.getBlock(324);
+        await rpc.getBlock(324);
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -376,7 +382,7 @@ describe('api/dashcore/rpc', async () => {
       it('Should callCount be correct', async () => {
         rpc.getRawTransaction('123');
         expect(stub.callCount).to.be.equal(1);
-        const transaction = await rpc.getRawTransaction(tsid);
+        await rpc.getRawTransaction(tsid);
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -415,7 +421,7 @@ describe('api/dashcore/rpc', async () => {
       it('Should callCount be correct', async () => {
         rpc.getRawBlock('123');
         expect(stub.callCount).to.be.equal(1);
-        const transaction = await rpc.getRawBlock(tsid);
+        await rpc.getRawBlock(tsid);
         expect(stub.callCount).to.be.equal(2);
       });
     });
@@ -453,7 +459,7 @@ describe('api/dashcore/rpc', async () => {
       it('Should callCount be correct', async () => {
         rpc.sendRawTransaction('123');
         expect(stub.callCount).to.be.equal(1);
-        const transaction = await rpc.sendRawTransaction(tsid);
+        await rpc.sendRawTransaction(tsid);
         expect(stub.callCount).to.be.equal(2);
       });
     });

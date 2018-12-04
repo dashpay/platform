@@ -79,8 +79,4 @@ module.exports = {
     host: config[OPTIONS.DASHDRIVE_RPC_HOST],
     port: config[OPTIONS.DASHDRIVE_RPC_PORT],
   },
-  isRegtestNetwork() {
-    return config[OPTIONS.NETWORK].toLowerCase() === 'regtest' ||
-      config[OPTIONS.NETWORK].toLowerCase() === 'devnet';
-  },
 };
