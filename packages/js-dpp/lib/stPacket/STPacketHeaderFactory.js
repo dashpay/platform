@@ -2,7 +2,7 @@ const serializer = require('../util/serializer');
 
 const STPacketHeader = require('./STPacketHeader');
 
-const InvalidSTPacketHeaderStructureError = require('./errors/InvalidSTPacketHeaderStructureError');
+const InvalidSTPacketHeaderError = require('./errors/InvalidSTPacketHeaderError');
 
 class STPacketHeaderFactory {
   /**
@@ -35,10 +35,10 @@ class STPacketHeaderFactory {
    * @return {STPacketHeader}
    */
   createFromObject(object) {
-    const errors = this.validateSTPacketHeader(object);
+    const result = this.validateSTPacketHeader(object);
 
-    if (errors.length) {
-      throw new InvalidSTPacketHeaderStructureError(errors, object);
+    if (result.isValid()) {
+      throw new InvalidSTPacketHeaderError(result.getErrors(), object);
     }
 
     return this.create(object.contractId, object.itemsMerkleRoot, object.itemsHash);
@@ -48,10 +48,11 @@ class STPacketHeaderFactory {
    * Unserialize ST Packet Header
    *
    * @param {Buffer|string} payload
-   * @return {STPacket}
+   * @return {STPacketHeader}
    */
   createFromSerialized(payload) {
     const object = serializer.decode(payload);
+
     return this.createFromObject(object);
   }
 }
