@@ -6,21 +6,30 @@ const ValidationResult = require('../../../../lib/validation/ValidationResult');
 const getLovelyDapContract = require('../../../../lib/test/fixtures/getLovelyDapContract');
 const getLovelyDapObjects = require('../../../../lib/test/fixtures/getLovelyDapObjects');
 
-const validateSTPacketStructureFactory = require('../../../../lib/stPacket/validation/validateSTPacketStructureFactory');
+const validateSTPacketFactory = require('../../../../lib/stPacket/validation/validateSTPacketFactory');
 
 const { expectJsonSchemaError } = require('../../../../lib/test/expect/expectError');
 
-describe('validateSTPacketStructure', () => {
+describe('validateSTPacket', () => {
   let rawStPacket;
   let rawDapContract;
   let rawDapObjects;
-  let validateSTPacketStructure;
+  let validateSTPacket;
+  let validateSTPacketDapContractsMock;
+  let validateSTPacketDapObjectsMock;
 
-  beforeEach(() => {
+  beforeEach(function beforeEach() {
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
 
-    validateSTPacketStructure = validateSTPacketStructureFactory(validator);
+    validateSTPacketDapContractsMock = this.sinonSandbox.stub();
+    validateSTPacketDapObjectsMock = this.sinonSandbox.stub();
+
+    validateSTPacket = validateSTPacketFactory(
+      validator,
+      validateSTPacketDapContractsMock,
+      validateSTPacketDapObjectsMock,
+    );
 
     rawDapContract = getLovelyDapContract();
     rawDapObjects = getLovelyDapObjects();
@@ -37,7 +46,7 @@ describe('validateSTPacketStructure', () => {
     it('should be present', () => {
       delete rawStPacket.contractId;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -51,7 +60,7 @@ describe('validateSTPacketStructure', () => {
     it('should be a string', () => {
       rawStPacket.contractId = 1;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -64,7 +73,7 @@ describe('validateSTPacketStructure', () => {
     it('should not be less than 64 chars', () => {
       rawStPacket.contractId = '86b273ff';
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -77,7 +86,7 @@ describe('validateSTPacketStructure', () => {
     it('should not be longer than 64 chars', () => {
       rawStPacket.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -92,7 +101,7 @@ describe('validateSTPacketStructure', () => {
     it('should be present', () => {
       delete rawStPacket.itemsMerkleRoot;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -106,7 +115,7 @@ describe('validateSTPacketStructure', () => {
     it('should be a string', () => {
       rawStPacket.itemsMerkleRoot = 1;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -119,7 +128,7 @@ describe('validateSTPacketStructure', () => {
     it('should not be less than 64 chars', () => {
       rawStPacket.itemsMerkleRoot = '86b273ff';
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -132,7 +141,7 @@ describe('validateSTPacketStructure', () => {
     it('should not be longer than 64 chars', () => {
       rawStPacket.itemsMerkleRoot = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -147,7 +156,7 @@ describe('validateSTPacketStructure', () => {
     it('should be present', () => {
       delete rawStPacket.itemsHash;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -161,7 +170,7 @@ describe('validateSTPacketStructure', () => {
     it('should be a string', () => {
       rawStPacket.itemsHash = 1;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -174,7 +183,7 @@ describe('validateSTPacketStructure', () => {
     it('should not be less than 64 chars', () => {
       rawStPacket.itemsHash = '86b273ff';
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -187,7 +196,7 @@ describe('validateSTPacketStructure', () => {
     it('should not be longer than 64 chars', () => {
       rawStPacket.itemsHash = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -202,7 +211,7 @@ describe('validateSTPacketStructure', () => {
     it('should be present', () => {
       delete rawStPacket.objects;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -216,7 +225,7 @@ describe('validateSTPacketStructure', () => {
     it('should be an array', () => {
       rawStPacket.objects = 1;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -230,7 +239,7 @@ describe('validateSTPacketStructure', () => {
       const thousandDapObjects = (new Array(1001)).fill(rawDapObjects[0]);
       rawStPacket.objects.push(...thousandDapObjects);
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result, 3);
 
@@ -248,13 +257,15 @@ describe('validateSTPacketStructure', () => {
       expect(errors[2].keyword).to.be.equal('oneOf');
       expect(errors[2].params.passingSchemas).to.be.null();
     });
+
+    it('should not contain duplicates');
   });
 
   describe('contracts', () => {
     it('should be present', () => {
       delete rawStPacket.contracts;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -268,7 +279,7 @@ describe('validateSTPacketStructure', () => {
     it('should be an array', () => {
       rawStPacket.contracts = 1;
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result);
 
@@ -281,7 +292,7 @@ describe('validateSTPacketStructure', () => {
     it('should not contain more than one contract', () => {
       rawStPacket.contracts.push(rawDapContract, rawDapContract);
 
-      const result = validateSTPacketStructure(rawStPacket);
+      const result = validateSTPacket(rawStPacket);
 
       expectJsonSchemaError(result, 3);
 
@@ -303,7 +314,7 @@ describe('validateSTPacketStructure', () => {
     rawStPacket.contracts = [];
     rawStPacket.objects = [];
 
-    const result = validateSTPacketStructure(rawStPacket);
+    const result = validateSTPacket(rawStPacket);
 
     expectJsonSchemaError(result);
 
@@ -316,7 +327,7 @@ describe('validateSTPacketStructure', () => {
   it('should return error if packet contains the both objects and contracts', () => {
     rawStPacket.contracts.push(rawDapContract);
 
-    const result = validateSTPacketStructure(rawStPacket);
+    const result = validateSTPacket(rawStPacket);
 
     expectJsonSchemaError(result, 3);
 
@@ -338,7 +349,7 @@ describe('validateSTPacketStructure', () => {
 
     rawStPacket[additionalProperty] = {};
 
-    const result = validateSTPacketStructure(rawStPacket);
+    const result = validateSTPacket(rawStPacket);
 
     expectJsonSchemaError(result);
 
@@ -350,7 +361,7 @@ describe('validateSTPacketStructure', () => {
   });
 
   it('should return valid result if packet structure is correct', () => {
-    const result = validateSTPacketStructure(rawStPacket);
+    const result = validateSTPacket(rawStPacket);
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

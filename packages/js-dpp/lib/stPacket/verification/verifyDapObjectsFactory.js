@@ -4,11 +4,9 @@ const VerificationResult = require('./VerificationResult');
 const ConsensusError = require('../../consensusErrors/ConsensusError');
 
 /**
- *
- * @param {Function} findDuplicatedPrimaryKeyAndType
  * @return {verifyDapObjects}
  */
-function verifyDapObjectsFactory(findDuplicatedPrimaryKeyAndType) {
+function verifyDapObjectsFactory() {
   /**
    * @typedef verifyDapObjects
    * @param {STPacket} stPacket
@@ -18,15 +16,7 @@ function verifyDapObjectsFactory(findDuplicatedPrimaryKeyAndType) {
   async function verifyDapObjects(stPacket, dataProvider) {
     const result = new VerificationResult();
 
-    const duplicatedDapObjects = findDuplicatedPrimaryKeyAndType(stPacket.getDapObjects());
-    if (duplicatedDapObjects.length) {
-      const error = new ConsensusError('Duplicated Dap Objects in STPacket');
-
-      result.addError(error);
-
-      return result;
-    }
-
+    // eslint-disable-next-line
     const primaryKeysAndTypes = stPacket.getDapObjects().map((dapObject) => {
       return {
         dapContractId: stPacket.getDapContractId(),

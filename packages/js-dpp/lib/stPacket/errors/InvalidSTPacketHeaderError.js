@@ -1,13 +1,13 @@
-class InvalidSTPacketStructureHeaderError extends Error {
+class InvalidSTPacketStructureError extends Error {
   /**
-   * @param {Object[]} errors
+   * @param {ConsensusError[]} errors
    * @param {Object} rawSTPacketHeader
    */
   constructor(errors, rawSTPacketHeader) {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid ST Packet Header structure';
+    this.message = 'Invalid ST Packet Header';
 
     this.errors = errors;
     this.rawSTPacketHeader = rawSTPacketHeader;
@@ -20,7 +20,7 @@ class InvalidSTPacketStructureHeaderError extends Error {
   /**
    * Get validation errors
    *
-   * @return {Object[]}
+   * @return {ConsensusError[]}
    */
   getErrors() {
     return this.errors;
@@ -36,4 +36,4 @@ class InvalidSTPacketStructureHeaderError extends Error {
   }
 }
 
-module.exports = InvalidSTPacketStructureHeaderError;
+module.exports = InvalidSTPacketStructureError;

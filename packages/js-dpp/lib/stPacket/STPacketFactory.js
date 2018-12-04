@@ -2,33 +2,28 @@ const serializer = require('../util/serializer');
 
 const STPacket = require('./STPacket');
 
-const InvalidSTPacketStructureError = require('./errors/InvalidSTPacketStructureError');
-
-const DapObjectFactory = require('../dapObject/DapObjectFactory');
+const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
 
 const DapContract = require('../dapContract/DapContract');
+const DapObject = require('../dapObject/DapObject');
 
 class STPacketFactory {
   /**
    * @param {string} userId
    * @param {AbstractDataProvider} dataProvider
-   * @param {validateSTPacketStructure} validateSTPacketStructure
-   * @param {DapContractFactory} dapContractFactory
-   * @param {validateDapObject} validateDapObject
+   * @param {validateSTPacket} validateSTPacket
+   * @param {createDapContract} createDapContract
    */
   constructor(
     userId,
     dataProvider,
-    validateSTPacketStructure,
-    dapContractFactory,
-    validateDapObject,
+    validateSTPacket,
+    createDapContract,
   ) {
     this.userId = userId;
     this.dataProvider = dataProvider;
-    this.validateSTPacketStructure = validateSTPacketStructure;
-
-    this.dapContractFactory = dapContractFactory;
-    this.validateDapObject = validateDapObject;
+    this.validateSTPacket = validateSTPacket;
+    this.createDapContract = createDapContract;
   }
 
   /**
@@ -58,10 +53,10 @@ class STPacketFactory {
    * @return {STPacket}
    */
   createFromObject(object) {
-    const errors = this.validateSTPacketStructure(object);
+    const result = this.validateSTPacket(object);
 
-    if (errors.length) {
-      throw new InvalidSTPacketStructureError(errors, object);
+    if (!result.isValid()) {
+      throw new InvalidSTPacketError(result.getErrors(), object);
     }
 
     const stPacket = this.create(object.contractId);
@@ -70,7 +65,7 @@ class STPacketFactory {
     stPacket.setItemsHash(object.itemsHash);
 
     if (object.contracts.length) {
-      const dapContract = this.dapContractFactory.createFromObject(object.contracts[0]);
+      const dapContract = this.createDapContract(object.contracts[0]);
 
       stPacket.setDapContract(dapContract);
     }
@@ -78,15 +73,9 @@ class STPacketFactory {
     if (object.objects.length) {
       const dapContract = this.dataProvider.fetchDapContract(object.contractId);
 
-      const dapObjectFactory = new DapObjectFactory(
-        this.userId,
-        dapContract,
-        this.validateDapObject,
-      );
-
-      // eslint-disable-next-line arrow-body-style
-      const dapObjects = object.objects.map((dapObject) => {
-        return dapObjectFactory.createFromObject(dapObject);
+      // eslint-disable-next-line
+      const dapObjects = object.objects.map((rawDapObject) => {
+        return new DapObject(dapContract, this.userId, rawDapObject.type, rawDapObject);
       });
 
       stPacket.setDapObjects(dapObjects);

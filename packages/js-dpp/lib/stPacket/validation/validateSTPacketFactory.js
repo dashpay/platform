@@ -2,18 +2,16 @@ const JsonSchemaValidator = require('../../validation/JsonSchemaValidator');
 
 const STPacket = require('../STPacket');
 
-const ConsensusError = require('../../consensusErrors/ConsensusError');
-
 /**
  * @param {JsonSchemaValidator} validator
- * @param {validateDapObject} validateDapObject
- * @param {validateDapContract} validateDapContract
+ * @param {validateSTPacketDapContracts} validateSTPacketDapContracts
+ * @param {validateSTPacketDapObjects} validateSTPacketDapObjects
  * @return {validateSTPacket}
  */
 module.exports = function validateSTPacketFactory(
   validator,
-  validateDapObject,
-  validateDapContract,
+  validateSTPacketDapContracts,
+  validateSTPacketDapObjects,
 ) {
   /**
    * @typedef validateSTPacket
@@ -22,7 +20,7 @@ module.exports = function validateSTPacketFactory(
    * @return {ValidationResult}
    */
   function validateSTPacket(stPacket, dapContract) {
-    const rawStPacket = (dapContract instanceof STPacket)
+    const rawStPacket = (stPacket instanceof STPacket)
       ? stPacket.toJSON()
       : stPacket;
 
@@ -35,27 +33,11 @@ module.exports = function validateSTPacketFactory(
       return result;
     }
 
-    rawStPacket.objects.forEach((dapObject) => {
-      result.merge(
-        validateDapObject(dapObject, dapContract),
-      );
-    });
-
-    const [dapContractInsidePacket] = rawStPacket.contracts;
-
-    if (dapContractInsidePacket) {
-      if (stPacket.getDapContractId() !== dapContractInsidePacket.getId()) {
-        result.addError(
-          new ConsensusError('InvalidDapContractId'),
-        );
-      }
-
-      result.merge(
-        validateDapContract(dapContractInsidePacket.toJSON()),
-      );
-    }
-
     // TODO Validate itemsHashes and itemsMerkleRoot
+
+    validateSTPacketDapContracts(rawStPacket.contracts, rawStPacket, result);
+
+    validateSTPacketDapObjects(rawStPacket.objects, dapContract, result);
 
     return result;
   }

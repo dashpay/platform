@@ -11,10 +11,10 @@ use(dirtyChai);
 process.env.NODE_ENV = 'test';
 
 beforeEach(function beforeEach() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
+  if (!this.sinonSandbox) {
+    this.sinonSandbox = sinon.createSandbox();
   } else {
-    this.sinon.restore();
+    this.sinonSandbox.restore();
   }
 });
 

@@ -1,11 +1,14 @@
-const validateSTPacketStructureFactory = require('./validation/validateSTPacketStructureFactory');
 const validateSTPacketFactory = require('./validation/validateSTPacketFactory');
+
+const validateSTPacketDapContractsFactory = require('./validation/validateSTPacketDapContractsFactory');
+const validateSTPacketDapObjectsFactory = require('./validation/validateSTPacketDapObjectsFactory');
+
+const findDuplicatedDapObjects = require('./validation/findDuplicatedDapObjects');
+const createDapContract = require('../dapContract/createDapContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
 const verifyDapContract = require('./verification/verifyDapContract');
 const verifyDapObjectsFactory = require('./verification/verifyDapObjectsFactory');
-
-const findDuplicatedPrimaryKeyAndType = require('./verification/findDuplicatedPrimaryKeyAndType');
 
 const STPacketFactory = require('./STPacketFactory');
 
@@ -17,21 +20,30 @@ class STPacketFacade {
   constructor(dap, validator) {
     this.dap = dap;
 
+    const validateSTPacketDapContracts = validateSTPacketDapContractsFactory(
+      dap.contract.validateDapContract,
+      createDapContract,
+    );
+
+    const validateSTPacketDapObjects = validateSTPacketDapObjectsFactory(
+      dap.object.validateDapObject,
+      findDuplicatedDapObjects,
+    );
+
     this.validateSTPacket = validateSTPacketFactory(
       validator,
-      dap.object.validateDapObject,
-      dap.contract.validateDapContract,
+      validateSTPacketDapContracts,
+      validateSTPacketDapObjects,
     );
 
     this.factory = new STPacketFactory(
       dap.getUserId(),
       dap.getDataProvider(),
-      validateSTPacketStructureFactory(validator),
-      dap.contract.factory,
-      dap.object.validateDapObject,
+      this.validateSTPacket,
+      createDapContract,
     );
 
-    const verifyDapObjects = verifyDapObjectsFactory(findDuplicatedPrimaryKeyAndType);
+    const verifyDapObjects = verifyDapObjectsFactory();
 
     this.verifySTPacket = verifySTPacketFactory(verifyDapContract, verifyDapObjects);
   }
