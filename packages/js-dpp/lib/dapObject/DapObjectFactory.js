@@ -1,6 +1,6 @@
 const DapObject = require('./DapObject');
 
-const InvalidDapObjectStructureError = require('./errors/InvalidDapObjectStructureError');
+const InvalidDapObjectError = require('./errors/InvalidDapObjectError');
 
 const serializer = require('../util/serializer');
 
@@ -39,10 +39,10 @@ class DapObjectFactory {
    * @return {DapObject}
    */
   createFromObject(object) {
-    const errors = this.validateDapObject(object, this.dapContract.getId());
+    const result = this.validateDapObject(object, this.dapContract.getId());
 
-    if (errors.length) {
-      throw new InvalidDapObjectStructureError(errors, object);
+    if (!result.isValid()) {
+      throw new InvalidDapObjectError(result.getErrors(), object);
     }
 
     return this.create(object.$type, object);

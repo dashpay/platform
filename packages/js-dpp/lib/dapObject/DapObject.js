@@ -47,6 +47,11 @@ class DapObject {
     this.setData(userData);
   }
 
+  /**
+   * Get ID
+   *
+   * @return {string}
+   */
   getId() {
     if (!this.id) {
       this.id = hash(this.scope + this.scopeId);

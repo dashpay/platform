@@ -1,13 +1,13 @@
-class InvalidDapObjectStructureError extends Error {
+class InvalidDapObjectError extends Error {
   /**
-   * @param {Object[]} errors
+   * @param {ConsensusError[]} errors
    * @param {Object} rawDapObject
    */
   constructor(errors, rawDapObject) {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid Dap Object structure';
+    this.message = 'Invalid Dap Object';
 
     this.errors = errors;
     this.rawDapObject = rawDapObject;
@@ -20,7 +20,7 @@ class InvalidDapObjectStructureError extends Error {
   /**
    * Get validation errors
    *
-   * @return {Object[]}
+   * @return {ConsensusError[]}
    */
   getErrors() {
     return this.errors;
@@ -36,4 +36,4 @@ class InvalidDapObjectStructureError extends Error {
   }
 }
 
-module.exports = InvalidDapObjectStructureError;
+module.exports = InvalidDapObjectError;
