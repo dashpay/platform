@@ -1,17 +1,22 @@
-const InvalidDapObjectTypeError = require('../errors/InvalidDapObjectTypeError');
-
 const DapObject = require('./DapObject');
 
 const ValidationResult = require('../validation/ValidationResult');
 
+const InvalidDapObjectTypeError = require('../errors/InvalidDapObjectTypeError');
 const MissingDapObjectTypeError = require('../errors/MissingDapObjectTypeError');
+const InvalidDapObjectScopeIdError = require('../errors/InvalidDapObjectScopeIdError');
+
+const entropy = require('../util/entropy');
 
 /**
  * @param {JsonSchemaValidator} validator
  * @param {Function} enrichDapContractWithBaseDapObject
  * @return {validateDapObject}
  */
-module.exports = function validateDapObjectFactory(validator, enrichDapContractWithBaseDapObject) {
+module.exports = function validateDapObjectFactory(
+  validator,
+  enrichDapContractWithBaseDapObject,
+) {
   /**
    * @typedef validateDapObject
    * @param {Object|DapObject} dapObject
@@ -21,29 +26,41 @@ module.exports = function validateDapObjectFactory(validator, enrichDapContractW
   function validateDapObject(dapObject, dapContract) {
     const rawDapObject = (dapObject instanceof DapObject) ? dapObject.toJSON() : dapObject;
 
+    const result = new ValidationResult();
+
     if (!Object.prototype.hasOwnProperty.call(rawDapObject, '$type')) {
-      return new ValidationResult([
-        new MissingDapObjectTypeError(),
-      ]);
+      result.addError(
+        new MissingDapObjectTypeError(rawDapObject),
+      );
+
+      return result;
     }
 
     const enrichedDapContract = enrichDapContractWithBaseDapObject(dapContract);
 
     try {
-      return validator.validate(
-        dapContract.getDapObjectSchemaRef(rawDapObject.$type),
-        rawDapObject,
-        { [dapContract.getSchemaId()]: enrichedDapContract },
+      result.merge(
+        validator.validate(
+          dapContract.getDapObjectSchemaRef(rawDapObject.$type),
+          rawDapObject,
+          { [dapContract.getSchemaId()]: enrichedDapContract },
+        ),
       );
     } catch (e) {
-      if (e instanceof InvalidDapObjectTypeError) {
-        return new ValidationResult([e]);
+      if (!(e instanceof InvalidDapObjectTypeError)) {
+        throw e;
       }
 
-      throw e;
+      result.addError(e);
     }
 
-    // TODO: Validate scope and scopeId
+    if (!entropy.validate(dapObject.scopeId)) {
+      result.addError(
+        new InvalidDapObjectScopeIdError(rawDapObject),
+      );
+    }
+
+    return result;
   }
 
   return validateDapObject;
