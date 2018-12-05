@@ -42,6 +42,8 @@ module.exports = function validateDapObjectFactory(validator, enrichDapContractW
 
       throw e;
     }
+
+    // TODO: Validate scope and scopeId
   }
 
   return validateDapObject;
