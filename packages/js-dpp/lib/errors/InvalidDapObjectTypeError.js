@@ -6,10 +6,9 @@ class InvalidDapObjectTypeError extends ConsensusError {
    * @param {DapContract} dapContract
    */
   constructor(type, dapContract) {
-    super();
+    super(`Dap contract ${dapContract.name} doesn't contain type ${type}`);
 
     this.name = this.constructor.name;
-    this.message = `Dap contract ${dapContract.name} doesn't contain type ${type}`;
 
     this.type = type;
     this.dapContract = dapContract;
