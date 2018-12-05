@@ -28,7 +28,7 @@ module.exports = function validateDapObjectFactory(
 
     const result = new ValidationResult();
 
-    if (!Object.prototype.hasOwnProperty.call(rawDapObject, '$type')) {
+    if (!rawDapObject.$type) {
       result.addError(
         new MissingDapObjectTypeError(rawDapObject),
       );
@@ -39,13 +39,17 @@ module.exports = function validateDapObjectFactory(
     const enrichedDapContract = enrichDapContractWithBaseDapObject(dapContract);
 
     try {
-      result.merge(
-        validator.validate(
-          dapContract.getDapObjectSchemaRef(rawDapObject.$type),
-          rawDapObject,
-          { [dapContract.getSchemaId()]: enrichedDapContract },
-        ),
+      const additionalSchemas = {
+        [dapContract.getSchemaId()]: enrichedDapContract,
+      };
+
+      const schemaResult = validator.validate(
+        dapContract.getDapObjectSchemaRef(rawDapObject.$type),
+        rawDapObject,
+        additionalSchemas,
       );
+
+      result.merge(schemaResult);
     } catch (e) {
       if (!(e instanceof InvalidDapObjectTypeError)) {
         throw e;
