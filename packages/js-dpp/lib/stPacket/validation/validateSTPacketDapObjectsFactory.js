@@ -1,3 +1,5 @@
+const ValidationResult = require('../../validation/ValidationResult');
+
 const DuplicatedDapObjectsError = require('../../errors/DuplicatedDapObjectsError');
 
 /**
@@ -10,9 +12,11 @@ function validateSTPacketDapObjectsFactory(validateDapObject, findDuplicatedDapO
    * @typedef validateSTPacketDapObjects
    * @param {Object[]} rawDapObjects
    * @param {DapContract} dapContract
-   * @param {ValidationResult} result
+   * @return {ValidationResult}
    */
-  function validateSTPacketDapObjects(rawDapObjects, dapContract, result) {
+  function validateSTPacketDapObjects(rawDapObjects, dapContract) {
+    const result = new ValidationResult();
+
     const duplicatedDapObjects = findDuplicatedDapObjects(rawDapObjects);
     if (duplicatedDapObjects.length) {
       result.addError(
@@ -25,6 +29,8 @@ function validateSTPacketDapObjectsFactory(validateDapObject, findDuplicatedDapO
         validateDapObject(rawDapObject, dapContract),
       );
     });
+
+    return result;
   }
 
   return validateSTPacketDapObjects;

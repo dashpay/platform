@@ -10,17 +10,15 @@ function validateSTPacketDapContractsFactory(validateDapContract, createDapContr
    * @typedef validateSTPacketDapContracts
    * @param {Object[]} rawDapContracts
    * @param {Object} rawStPacket
-   * @param {ValidationResult} result
+   * @return {ValidationResult}
    */
-  function validateSTPacketDapContracts(rawDapContracts, rawStPacket, result) {
+  function validateSTPacketDapContracts(rawDapContracts, rawStPacket) {
     const [rawDapContract] = rawDapContracts;
 
-    const dapContractResult = validateDapContract(rawDapContract);
+    const result = validateDapContract(rawDapContract);
 
-    if (!dapContractResult.isValid()) {
-      result.merge(dapContractResult);
-
-      return;
+    if (!result.isValid()) {
+      return result;
     }
 
     const dapContract = createDapContract(rawDapContract);
@@ -30,6 +28,8 @@ function validateSTPacketDapContractsFactory(validateDapContract, createDapContr
         new InvalidSTPacketContractIdError(rawStPacket.contractId, dapContract),
       );
     }
+
+    return result;
   }
 
   return validateSTPacketDapContracts;

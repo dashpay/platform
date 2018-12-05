@@ -36,11 +36,15 @@ module.exports = function validateSTPacketFactory(
     // TODO Validate itemsHashes and itemsMerkleRoot
 
     if (rawStPacket.contracts.length > 0) {
-      validateSTPacketDapContracts(rawStPacket.contracts, rawStPacket, result);
+      result.merge(
+        validateSTPacketDapContracts(rawStPacket.contracts, rawStPacket),
+      );
     }
 
     if (rawStPacket.objects.length > 0) {
-      validateSTPacketDapObjects(rawStPacket.objects, dapContract, result);
+      result.merge(
+        validateSTPacketDapObjects(rawStPacket.objects, dapContract),
+      );
     }
 
     return result;
