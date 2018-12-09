@@ -2,7 +2,6 @@ os: linux
 language: node_js
 branches:
   only:
-    - develop
     - master
 node_js:
   - '8'
@@ -27,4 +26,4 @@ deploy:
   script: /bin/bash deploy.sh
   on:
     repo: dashevo/dapi
-    branch: develop
+    branch: master
