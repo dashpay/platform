@@ -26,8 +26,8 @@
     },
     "$scopeId": {
       "type": "string",
-      "minLength": 64,
-      "maxLength": 64
+      "minLength": 34,
+      "maxLength": 34
     }
   },
   "required": [

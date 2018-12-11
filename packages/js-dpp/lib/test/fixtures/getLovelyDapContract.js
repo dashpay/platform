@@ -1,31 +1,36 @@
+const DapContract = require('../../dapContract/DapContract');
+
+/**
+ * @return DapContract
+ */
 module.exports = function getLovelyDapContract() {
-  return {
-    $schema: 'https://schema.dash.org/dap-0-4-0/meta/dap-contract',
-    name: 'lovelyContract',
-    version: 1,
-    dapObjectsDefinition: {
-      niceObject: {
-        properties: {
-          name: {
-            type: 'string',
-          },
+  const dapObjectsDefinition = {
+    niceObject: {
+      properties: {
+        name: {
+          type: 'string',
         },
-        additionalProperties: false,
       },
-      prettyObject: {
-        properties: {
-          lastName: {
-            $ref: '#/definitions/lastName',
-          },
-        },
-        required: ['lastName'],
-        additionalProperties: false,
-      },
+      additionalProperties: false,
     },
-    definitions: {
-      lastName: {
-        type: 'string',
+    prettyObject: {
+      properties: {
+        lastName: {
+          $ref: '#/definitions/lastName',
+        },
       },
+      required: ['lastName'],
+      additionalProperties: false,
     },
   };
+
+  const dapContract = new DapContract('lovelyContract', dapObjectsDefinition);
+
+  dapContract.setDefinitions({
+    lastName: {
+      type: 'string',
+    },
+  });
+
+  return dapContract;
 };

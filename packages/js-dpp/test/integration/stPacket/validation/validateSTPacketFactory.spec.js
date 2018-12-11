@@ -22,8 +22,8 @@ describe('validateSTPacket', () => {
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
 
-    validateSTPacketDapContractsMock = this.sinonSandbox.stub();
-    validateSTPacketDapObjectsMock = this.sinonSandbox.stub();
+    validateSTPacketDapContractsMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    validateSTPacketDapObjectsMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
     validateSTPacket = validateSTPacketFactory(
       validator,
@@ -310,7 +310,7 @@ describe('validateSTPacket', () => {
     });
   });
 
-  it('should return error if packet is empty', () => {
+  it('should return invalid result if packet is empty', () => {
     rawStPacket.contracts = [];
     rawStPacket.objects = [];
 
@@ -324,7 +324,7 @@ describe('validateSTPacket', () => {
     expect(error.params.passingSchemas).to.be.deep.equal([0, 1]);
   });
 
-  it('should return error if packet contains the both objects and contracts', () => {
+  it('should return invalid result if packet contains the both objects and contracts', () => {
     rawStPacket.contracts.push(rawDapContract);
 
     const result = validateSTPacket(rawStPacket);
@@ -344,7 +344,7 @@ describe('validateSTPacket', () => {
     expect(errors[2].params.passingSchemas).to.be.null();
   });
 
-  it('should return error if there are additional properties in the packet', () => {
+  it('should return invalid result if there are additional properties in the packet', () => {
     const additionalProperty = 'additionalStuff';
 
     rawStPacket[additionalProperty] = {};
@@ -359,6 +359,10 @@ describe('validateSTPacket', () => {
     expect(error.keyword).to.be.equal('additionalProperties');
     expect(error.params.additionalProperty).to.be.equal(additionalProperty);
   });
+
+  it('should validate DAP Contract if present');
+
+  it('should validate DAP Objects if present');
 
   it('should return valid result if packet structure is correct', () => {
     const result = validateSTPacket(rawStPacket);

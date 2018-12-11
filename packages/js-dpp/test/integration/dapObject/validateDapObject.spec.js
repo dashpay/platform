@@ -4,11 +4,8 @@ const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const validateDapObjectFactory = require('../../../lib/dapObject/validateDapObjectFactory');
-const createDapContract = require('../../../lib/dapContract/createDapContract');
-const validateDapContractFactory = require('../../../lib/dapContract/validateDapContractFactory');
 const enrichDapContractWithBaseDapObject = require('../../../lib/dapObject/enrichDapContractWithBaseDapObject');
 
-const DapContractFactory = require('../../../lib/dapContract/DapContractFactory');
 
 const MissingDapObjectTypeError = require('../../../lib/errors/MissingDapObjectTypeError');
 const InvalidDapObjectTypeError = require('../../../lib/errors/InvalidDapObjectTypeError');
@@ -30,16 +27,15 @@ describe('validateDapObject', () => {
   beforeEach(() => {
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
-    const validateDapContract = validateDapContractFactory(validator);
-    const dapContractFactory = new DapContractFactory(validateDapContract, createDapContract);
-    dapContract = dapContractFactory.createFromObject(getLovelyDapContract());
+
+    dapContract = getLovelyDapContract();
 
     validateDapObject = validateDapObjectFactory(
       validator,
       enrichDapContractWithBaseDapObject,
     );
 
-    rawDapObjects = getLovelyDapObjects();
+    rawDapObjects = getLovelyDapObjects().map(o => o.toJSON());
     [rawDapObject] = rawDapObjects;
   });
 
@@ -123,7 +119,7 @@ describe('validateDapObject', () => {
     describe('$scopeId', () => {
       it('should be present');
       it('should be a string');
-      it('should be 64 chars long');
+      it('should be 34 chars long');
     });
   });
 

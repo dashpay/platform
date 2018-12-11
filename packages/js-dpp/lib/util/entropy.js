@@ -7,6 +7,6 @@ module.exports = {
     return publicKey.toAddress(Networks.testnet).toString();
   },
   validate(string) {
-    return Address.isValid(string, Networks.testnet, 'pubkey');
+    return Address.isValid(string, Networks.testnet, Address.PayToPublicKeyHash);
   },
 };

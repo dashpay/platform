@@ -15,7 +15,7 @@ describe('validateDapContractFactory', () => {
   let validateDapContract;
 
   beforeEach(() => {
-    rawDapContract = getLovelyDapContract();
+    rawDapContract = getLovelyDapContract().toJSON();
 
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);

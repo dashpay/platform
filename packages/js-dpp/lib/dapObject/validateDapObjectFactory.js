@@ -58,7 +58,7 @@ module.exports = function validateDapObjectFactory(
       result.addError(e);
     }
 
-    if (!entropy.validate(dapObject.scopeId)) {
+    if (!entropy.validate(rawDapObject.$scopeId)) {
       result.addError(
         new InvalidDapObjectScopeIdError(rawDapObject),
       );
