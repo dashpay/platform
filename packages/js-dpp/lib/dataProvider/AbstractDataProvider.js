@@ -11,24 +11,26 @@ class AbstractDataProvider {
   }
 
   /**
-   * Fetch Dap Objects
+   * Fetch DAP Objects
    *
-   * @param {[{type: string, primaryKey: string}]} primaryKeysAndTypes
+   * @param {string} dapContractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
    * @return {DapObject[]}
    */
   // eslint-disable-next-line no-unused-vars
-  fetchDapObjects(primaryKeysAndTypes) {
+  fetchDapObjects(dapContractId, type, options = {}) {
     throw new Error('Not implemented');
   }
 
   /**
-   * Get transaction by ID
+   * Fetch transaction by ID
    *
    * @param {string} id
    * @return {{ confirmations: number }}
    */
   // eslint-disable-next-line no-unused-vars
-  getTransaction(id) {
+  fetchTransaction(id) {
     throw new Error('Not implemented');
   }
 }

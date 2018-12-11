@@ -23,6 +23,8 @@
   "dependencies": {
     "@dashevo/dashcore-lib": "^1.0.0-alpha.17",
     "ajv": "^6.5.4",
-    "cbor": "^4.1.1"
+    "cbor": "^4.1.1",
+    "lodash-query": "^1.4.2",
+    "lowdb": "^1.0.0"
   }
 }
