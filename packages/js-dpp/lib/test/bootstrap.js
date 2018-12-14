@@ -8,8 +8,6 @@ use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
 
-process.env.NODE_ENV = 'test';
-
 beforeEach(function beforeEach() {
   if (!this.sinonSandbox) {
     this.sinonSandbox = sinon.createSandbox();
