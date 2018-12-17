@@ -10,35 +10,40 @@ class DapObject {
    * @param {object} [data]
    */
   constructor(dapContract, blockchainUserId, type, data = {}) {
-    this.type = type;
-
     // TODO Strange to pass system fields as data, but then prevent to use setData for them
 
     const userData = Object.assign({}, data);
 
-    if (userData.$scopeId) {
+    if (Object.prototype.hasOwnProperty.call(userData, '$type')) {
+      this.type = userData.$type;
+      delete userData.$type;
+    } else {
+      this.type = type;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(userData, '$scopeId')) {
       this.scopeId = userData.$scopeId;
       delete userData.$scopeId;
     } else {
       this.scopeId = entropy.generate();
     }
 
-    if (userData.$scope) {
+    if (Object.prototype.hasOwnProperty.call(userData, '$scope')) {
       this.scope = userData.$scope;
       delete userData.$scope;
     } else {
       this.scope = hash(dapContract.getId() + blockchainUserId);
     }
 
-    if (userData.$action) {
+    if (Object.prototype.hasOwnProperty.call(userData, '$action')) {
       this.action = userData.$action;
       delete userData.$action;
     } else {
       this.action = DapObject.ACTIONS.CREATE;
     }
 
-    if (userData.$rev) {
-      this.action = userData.$rev;
+    if (Object.prototype.hasOwnProperty.call(userData, '$rev')) {
+      this.revision = userData.$rev;
       delete userData.$rev;
     } else {
       this.revision = DapObject.DEFAULTS.REVISION;

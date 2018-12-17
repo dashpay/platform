@@ -16,11 +16,11 @@ class DashApplicationProtocol {
    * @param {string} [options.dapContractId]
    * @param {AbstractDataProvider} [options.dataProvider]
    */
-  constructor(dataProvider, options) {
-    this.dataProvider = options.dataProvider;
+  constructor(options) {
     this.userId = options.userId;
     this.dapContractId = options.dapContractId;
     this.dapContract = options.dapContract;
+    this.dataProvider = options.dataProvider;
 
     const validator = new JsonSchemaValidator(new Ajv());
 

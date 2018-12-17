@@ -7,8 +7,9 @@ const findDuplicatedDapObjects = require('./validation/findDuplicatedDapObjects'
 const createDapContract = require('../dapContract/createDapContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
-const verifyDapContract = require('./verification/verifyDapContract');
+const verifyDapContractFactory = require('./verification/verifyDapContractFactory');
 const verifyDapObjectsFactory = require('./verification/verifyDapObjectsFactory');
+const fetchDapObjectsByObjectsFactory = require('./verification/fetchDapObjectsByObjectsFactory');
 
 const STPacketFactory = require('./STPacketFactory');
 
@@ -36,16 +37,23 @@ class STPacketFacade {
       validateSTPacketDapObjects,
     );
 
+    const verifyDapContract = verifyDapContractFactory(dap.getDataProvider());
+
+    const fetchDapObjectsByObjects = fetchDapObjectsByObjectsFactory(dap.getDataProvider());
+    const verifyDapObjects = verifyDapObjectsFactory(fetchDapObjectsByObjects);
+
+    this.verifySTPacket = verifySTPacketFactory(
+      verifyDapContract,
+      verifyDapObjects,
+      dap.getDataProvider(),
+    );
+
     this.factory = new STPacketFactory(
       dap.getUserId(),
       dap.getDataProvider(),
       this.validateSTPacket,
       createDapContract,
     );
-
-    const verifyDapObjects = verifyDapObjectsFactory();
-
-    this.verifySTPacket = verifySTPacketFactory(verifyDapContract, verifyDapObjects);
   }
 
   /**
@@ -99,10 +107,10 @@ class STPacketFacade {
   /**
    * @param {STPacket} stPacket
    * @param {Transaction} stateTransition
-   * @return {VerificationResult}
+   * @return {ValidationResult}
    */
   verify(stPacket, stateTransition) {
-    return this.verifySTPacket(stPacket, stateTransition, this.dap.getDataProvider());
+    return this.verifySTPacket(stPacket, stateTransition);
   }
 }
 

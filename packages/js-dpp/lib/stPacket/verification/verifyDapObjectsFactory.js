@@ -1,69 +1,72 @@
 const DapObject = require('../../dapObject/DapObject');
 
-const VerificationResult = require('./VerificationResult');
-const ConsensusError = require('../../errors/ConsensusError');
+const ValidationResult = require('../../validation/ValidationResult');
+
+const InvalidDapObjectActionError = require('../errors/InvalidDapObjectActionError');
+
+const DapObjectAlreadyPresentError = require('../../errors/DapObjectAlreadyPresentError');
+const DapObjectNotFoundError = require('../../errors/DapObjectNotFoundError');
+const InvalidDapObjectRevisionError = require('../../errors/InvalidDapObjectRevisionError');
+const InvalidDapObjectScopeError = require('../../errors/InvalidDapObjectScopeError');
+
+const hash = require('../../util/hash');
 
 /**
+ * @param {fetchDapObjectsByObjects} fetchDapObjectsByObjects
  * @return {verifyDapObjects}
  */
-function verifyDapObjectsFactory() {
+function verifyDapObjectsFactory(fetchDapObjectsByObjects) {
   /**
    * @typedef verifyDapObjects
    * @param {STPacket} stPacket
-   * @param {AbstractDataProvider} dataProvider
-   * @return {Promise<VerificationResult>}
+   * @param {string} userId
+   * @return {ValidationResult}
    */
-  async function verifyDapObjects(stPacket, dataProvider) {
-    const result = new VerificationResult();
+  async function verifyDapObjects(stPacket, userId) {
+    const result = new ValidationResult();
 
-    // eslint-disable-next-line
-    const primaryKeysAndTypes = stPacket.getDapObjects().map((dapObject) => {
-      return {
-        dapContractId: stPacket.getDapContractId(),
-        type: dapObject.getType(),
-        primaryKey: dapObject.getPrimaryKey(),
-      };
-    });
-
-    const fetchedDapObjects = await dataProvider.fetchDapObjects(primaryKeysAndTypes);
+    const fetchedDapObjects = await fetchDapObjectsByObjects(
+      stPacket.getDapContractId(),
+      stPacket.getDapObjects(),
+    );
 
     stPacket.getDapObjects().forEach((dapObject) => {
-      // eslint-disable-next-line arrow-body-style
-      const fetchedDapObject = fetchedDapObjects.find((object) => {
-        return dapObject.getType() === object.getType()
-          && dapObject.getPrimaryKey() === object.getPrimaryKey();
-      });
+      const fetchedDapObject = fetchedDapObjects.find(o => dapObject.getId() === o.getId());
 
-      const dapObjectSchema = stPacket.getDapContract().getDapObjectSchema(dapObject.getType());
-      if (dapObjectSchema.primaryKey && dapObjectSchema.primaryKey.composite) {
-        // TODO: Recreate ID and compare
+      const stPacketScope = hash(stPacket.getDapContractId() + userId);
+      if (dapObject.scope !== stPacketScope) {
+        result.addError(
+          new InvalidDapObjectScopeError(dapObject),
+        );
       }
 
       switch (dapObject.getAction()) {
         case DapObject.ACTIONS.CREATE:
           if (fetchedDapObject) {
-            result.addError(new ConsensusError('Dap Object with the same primary key already created'));
+            result.addError(
+              new DapObjectAlreadyPresentError(dapObject, fetchedDapObject),
+            );
           }
           break;
         case DapObject.ACTIONS.UPDATE:
         case DapObject.ACTIONS.DELETE:
           if (!fetchedDapObject) {
-            result.addError(new ConsensusError('Dap Object is not present'));
+            result.addError(
+              new DapObjectNotFoundError(dapObject),
+            );
 
             break;
           }
 
-          // TODO: Verify owner
-
           if (dapObject.getRevision() !== fetchedDapObject.getRevision() + 1) {
-            result.addError(new ConsensusError('Invalid Dap Object revision'));
+            result.addError(
+              new InvalidDapObjectRevisionError(dapObject, fetchedDapObject),
+            );
           }
 
           break;
         default:
-          result.addError(new ConsensusError('Invalid Dap Object action'));
-
-          break;
+          throw new InvalidDapObjectActionError(dapObject);
       }
     });
 

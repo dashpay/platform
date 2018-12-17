@@ -28,7 +28,7 @@ module.exports = function validateDapObjectFactory(
 
     const result = new ValidationResult();
 
-    if (!rawDapObject.$type) {
+    if (!Object.prototype.hasOwnProperty.call(rawDapObject, '$type')) {
       result.addError(
         new MissingDapObjectTypeError(rawDapObject),
       );
