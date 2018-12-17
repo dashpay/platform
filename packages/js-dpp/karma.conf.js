@@ -19,7 +19,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['Chrome', 'Firefox'],
+    browsers: ['Chrome'],
     singleRun: false,
     concurrency: Infinity,
     plugins: [
