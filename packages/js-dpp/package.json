@@ -4,10 +4,11 @@
   "description": "",
   "scripts": {
     "lint": "eslint .",
-    "test": "npm run test:node && npm run test:browsers",
+    "test": "npm run test:coverage && npm run test:browsers",
     "build": "webpack --display-error-details",
     "test:node": "NODE_ENV=test mocha",
-    "test:browsers": "karma start ./karma.conf.js --single-run"
+    "test:browsers": "karma start ./karma.conf.js --single-run",
+    "test:coverage": "nyc --check-coverage --stmts=12.5 --branch=0 --funcs=0 --lines=12.5 mocha"
   },
   "main": "./lib/DashApplicationProtocol.js",
   "author": "",
@@ -35,7 +36,9 @@
     "sinon": "^6.3.5",
     "sinon-chai": "^3.2.0",
     "webpack": "^4.27.1",
-    "webpack-cli": "^3.1.2"
+    "webpack-cli": "^3.1.2",
+    "istanbul": "^0.4.5",
+    "nyc": "^13.1.0"
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "^1.0.0-alpha.17",
