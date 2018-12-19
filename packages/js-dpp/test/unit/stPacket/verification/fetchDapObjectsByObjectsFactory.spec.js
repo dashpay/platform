@@ -1,5 +1,5 @@
-const getLovelyDapObjects = require('../../../../lib/test/fixtures/getLovelyDapObjects');
-const getLovelyDapContract = require('../../../../lib/test/fixtures/getLovelyDapContract');
+const getDapObjectsFixture = require('../../../../lib/test/fixtures/getDapObjectsFixture');
+const getDapContractFixture = require('../../../../lib/test/fixtures/getDapContractFixture');
 
 const AbstractDataProvider = require('../../../../lib/dataProvider/AbstractDataProvider');
 
@@ -20,8 +20,8 @@ describe('fetchDapObjectsByObjects', () => {
 
     fetchDapObjectsByObjects = fetchDapObjectsByObjectsFactory(dataProviderMock);
 
-    dapObjects = getLovelyDapObjects();
-    dapContract = getLovelyDapContract();
+    dapObjects = getDapObjectsFixture();
+    dapContract = getDapContractFixture();
   });
 
   it('should fetch specified DAP Objects using DataProvider', async () => {

@@ -6,7 +6,7 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const validateDapContractFactory = require('../../../lib/dapContract/validateDapContractFactory');
 
-const getLovelyDapContract = require('../../../lib/test/fixtures/getLovelyDapContract');
+const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
 
 const { expectJsonSchemaError } = require('../../../lib/test/expect/expectError');
 
@@ -15,7 +15,7 @@ describe('validateDapContractFactory', () => {
   let validateDapContract;
 
   beforeEach(() => {
-    rawDapContract = getLovelyDapContract().toJSON();
+    rawDapContract = getDapContractFixture().toJSON();
 
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
@@ -36,6 +36,19 @@ describe('validateDapContractFactory', () => {
       expect(error.dataPath).to.be.equal('');
       expect(error.keyword).to.be.equal('required');
       expect(error.params.missingProperty).to.be.equal('$schema');
+    });
+
+    it('should be a string', () => {
+      rawDapContract.$schema = 1;
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.$schema');
+      expect(error.keyword).to.be.equal('type');
     });
 
     it('should be particular url', () => {
@@ -67,9 +80,44 @@ describe('validateDapContractFactory', () => {
       expect(error.params.missingProperty).to.be.equal('name');
     });
 
-    it('should be greater or equal to three');
+    it('should be a string', () => {
+      rawDapContract.name = 1;
 
-    it('should be less or equal to 23');
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.name');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should be greater or equal to 3', () => {
+      rawDapContract.name = 'a'.repeat(2);
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.name');
+      expect(error.keyword).to.be.equal('minLength');
+    });
+
+    it('should be less or equal to 24', () => {
+      rawDapContract.name = 'a'.repeat(25);
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.name');
+      expect(error.keyword).to.be.equal('maxLength');
+    });
 
     it('should be an alphanumeric string', () => {
       rawDapContract.name = '*(*&^';
@@ -113,17 +161,103 @@ describe('validateDapContractFactory', () => {
       expect(error.keyword).to.be.equal('type');
     });
 
-    it('should be an integer');
+    it('should be an integer', () => {
+      rawDapContract.version = 1.2;
 
-    it('should be greater or equal to one');
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.version');
+      expect(error.keyword).to.be.equal('multipleOf');
+    });
+
+    it('should be greater or equal to one', () => {
+      rawDapContract.version = 0;
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.version');
+      expect(error.keyword).to.be.equal('minimum');
+    });
   });
 
   describe('definitions', () => {
-    it('may not be present');
-    it('should be object');
-    it('should not be empty');
-    it('should have no a non-alphanumeric properties');
-    it('should have no more than 100 properties');
+    it('may not be present', () => {
+      delete rawDapContract.definitions;
+
+      const result = validateDapContract(rawDapContract);
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.true();
+    });
+
+    it('should be an object', () => {
+      rawDapContract.definitions = 1;
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.definitions');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should not be empty', () => {
+      rawDapContract.definitions = {};
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.definitions');
+      expect(error.keyword).to.be.equal('minProperties');
+    });
+
+    it('should have no a non-alphanumeric properties', () => {
+      rawDapContract.definitions = {
+        $subSchema: {},
+      };
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result, 2);
+
+      const [patternError, propertyNamesError] = result.getErrors();
+
+      expect(patternError.dataPath).to.be.equal('.definitions');
+      expect(patternError.keyword).to.be.equal('pattern');
+
+      expect(propertyNamesError.dataPath).to.be.equal('.definitions');
+      expect(propertyNamesError.keyword).to.be.equal('propertyNames');
+    });
+
+    it('should have no more than 100 properties', () => {
+      rawDapContract.definitions = {};
+
+      Array(101).fill({}).forEach((item, i) => {
+        rawDapContract.definitions[i] = item;
+      });
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.definitions');
+      expect(error.keyword).to.be.equal('maxProperties');
+    });
   });
 
   describe('dapObjectsDefinition', () => {
@@ -141,8 +275,8 @@ describe('validateDapContractFactory', () => {
       expect(error.params.missingProperty).to.be.equal('dapObjectsDefinition');
     });
 
-    it('should not be empty', () => {
-      rawDapContract.dapObjectsDefinition.niceObject.properties = {};
+    it('should be an object', () => {
+      rawDapContract.dapObjectsDefinition = 1;
 
       const result = validateDapContract(rawDapContract);
 
@@ -150,7 +284,20 @@ describe('validateDapContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].properties');
+      expect(error.dataPath).to.be.equal('.dapObjectsDefinition');
+      expect(error.keyword).to.be.equal('type');
+    });
+
+    it('should not be empty', () => {
+      rawDapContract.dapObjectsDefinition = {};
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.dapObjectsDefinition');
       expect(error.keyword).to.be.equal('minProperties');
     });
 
@@ -167,9 +314,39 @@ describe('validateDapContractFactory', () => {
       expect(error.keyword).to.be.equal('additionalProperties');
     });
 
-    it('should have no more than 100 properties');
+    it('should have no more than 100 properties', () => {
+      const niceObjectDefinition = rawDapContract.dapObjectsDefinition.niceObject;
+
+      rawDapContract.dapObjectsDefinition = {};
+
+      Array(101).fill(niceObjectDefinition).forEach((item, i) => {
+        rawDapContract.dapObjectsDefinition[i] = item;
+      });
+
+      const result = validateDapContract(rawDapContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.be.equal('.dapObjectsDefinition');
+      expect(error.keyword).to.be.equal('maxProperties');
+    });
 
     describe('Dap Object schema', () => {
+      it('should not be empty', () => {
+        rawDapContract.dapObjectsDefinition.niceObject.properties = {};
+
+        const result = validateDapContract(rawDapContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].properties');
+        expect(error.keyword).to.be.equal('minProperties');
+      });
+
       it('should have type "object" if defined', () => {
         delete rawDapContract.dapObjectsDefinition.niceObject.properties;
 
@@ -213,8 +390,6 @@ describe('validateDapContractFactory', () => {
         expect(errors[1].keyword).to.be.equal('propertyNames');
       });
 
-      it('should not overwrite base object properties');
-
       it('should have "additionalProperties" defined', () => {
         delete rawDapContract.dapObjectsDefinition.niceObject.additionalProperties;
 
@@ -242,27 +417,41 @@ describe('validateDapContractFactory', () => {
         expect(error.keyword).to.be.equal('const');
       });
 
-      describe('primaryKey', () => {
-        it('can be omitted');
-        it('should have "composite" property if defined');
-        it('should have "includes" if "composite" property is true');
-        it('should not have "includes if "composite" property is false');
+      it('should have no more than 100 properties', () => {
+        const propertyDefinition = { };
 
-        describe('includes', () => {
-          it('should be array');
-          it('should have string items');
-          it('should have alphanumeric items');
-          it('should have at least one item');
-          it('should have unique items');
-          it('can have many items');
-          it('should have only allowed items: "buid" and properties');
-          it('should contains only "string" and "number" typed properties');
+        rawDapContract.dapObjectsDefinition.niceObject.properties = {};
+
+        Array(101).fill(propertyDefinition).forEach((item, i) => {
+          rawDapContract.dapObjectsDefinition.niceObject.properties[i] = item;
         });
+
+        const result = validateDapContract(rawDapContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.be.equal('.dapObjectsDefinition[\'niceObject\'].properties');
+        expect(error.keyword).to.be.equal('maxProperties');
       });
     });
   });
 
-  it('should return empty array if contract is valid', () => {
+  it('should return invalid result if there are additional properties', () => {
+    rawDapContract.additionalProperty = { };
+
+    const result = validateDapContract(rawDapContract);
+
+    expectJsonSchemaError(result);
+
+    const [error] = result.getErrors();
+
+    expect(error.dataPath).to.be.equal('');
+    expect(error.keyword).to.be.equal('additionalProperties');
+  });
+
+  it('should return valid result if contract is valid', () => {
     const result = validateDapContract(rawDapContract);
 
     expect(result).to.be.instanceOf(ValidationResult);

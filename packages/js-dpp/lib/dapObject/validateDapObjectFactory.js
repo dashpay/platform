@@ -38,24 +38,30 @@ module.exports = function validateDapObjectFactory(
 
     const enrichedDapContract = enrichDapContractWithBaseDapObject(dapContract);
 
+    let dapObjectSchemaRef;
+
     try {
-      const additionalSchemas = {
-        [dapContract.getSchemaId()]: enrichedDapContract,
-      };
-
-      const schemaResult = validator.validate(
-        dapContract.getDapObjectSchemaRef(rawDapObject.$type),
-        rawDapObject,
-        additionalSchemas,
-      );
-
-      result.merge(schemaResult);
+      dapObjectSchemaRef = dapContract.getDapObjectSchemaRef(rawDapObject.$type);
     } catch (e) {
       if (!(e instanceof InvalidDapObjectTypeError)) {
         throw e;
       }
 
       result.addError(e);
+    }
+
+    if (dapObjectSchemaRef) {
+      const additionalSchemas = {
+        [dapContract.getSchemaId()]: enrichedDapContract,
+      };
+
+      const schemaResult = validator.validate(
+        dapObjectSchemaRef,
+        rawDapObject,
+        additionalSchemas,
+      );
+
+      result.merge(schemaResult);
     }
 
     if (!entropy.validate(rawDapObject.$scopeId)) {

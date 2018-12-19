@@ -4,7 +4,7 @@ const AbstractDataProvider = require('../../../../lib/dataProvider/AbstractDataP
 
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
-const getLovelyDapContract = require('../../../../lib/test/fixtures/getLovelyDapContract');
+const getDapContractFixture = require('../../../../lib/test/fixtures/getDapContractFixture');
 
 const DapContractAlreadyPresentError = require('../../../../lib/errors/DapContractAlreadyPresentError');
 
@@ -25,7 +25,7 @@ describe('verifyDapContract', () => {
 
     verifyDapContract = verifyDapContractFactory(dataProviderMock);
 
-    dapContract = getLovelyDapContract();
+    dapContract = getDapContractFixture();
 
     stPacket = new STPacket(dapContract.getId());
     stPacket.setDapContract(dapContract);

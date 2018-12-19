@@ -3,8 +3,8 @@ const verifyDapObjectsFactory = require('../../../../lib/stPacket/verification/v
 const STPacket = require('../../../../lib/stPacket/STPacket');
 const DapObject = require('../../../../lib/dapObject/DapObject');
 
-const getLovelyDapObjects = require('../../../../lib/test/fixtures/getLovelyDapObjects');
-const getLovelyDapContract = require('../../../../lib/test/fixtures/getLovelyDapContract');
+const getDapObjectsFixture = require('../../../../lib/test/fixtures/getDapObjectsFixture');
+const getDapContractFixture = require('../../../../lib/test/fixtures/getDapContractFixture');
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
@@ -25,10 +25,10 @@ describe('verifyDapObjects', () => {
   let userId;
 
   beforeEach(function beforeEach() {
-    ({ userId } = getLovelyDapObjects);
+    ({ userId } = getDapObjectsFixture);
 
-    dapObjects = getLovelyDapObjects();
-    dapContract = getLovelyDapContract();
+    dapObjects = getDapObjectsFixture();
+    dapContract = getDapContractFixture();
 
     stPacket = new STPacket(dapContract.getId());
     stPacket.setDapObjects(dapObjects);

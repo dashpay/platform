@@ -1,35 +1,40 @@
-const findDuplicates = require('../../util/findDuplicates');
-
 /**
- * @param {Object} dapObject
+ * @param {Object} rawDapObject
  * @return {string}
  */
-function createFingerPrint(dapObject) {
+function createFingerPrint(rawDapObject) {
   return [
-    dapObject.$type,
-    dapObject.$scope,
-    dapObject.$scopeId,
+    rawDapObject.$type,
+    rawDapObject.$scope,
+    rawDapObject.$scopeId,
   ].join(':');
 }
 
 /**
  * Find duplicates
  *
- * @param {Object[]} dapObjects
+ * @param {Object[]} rawDapObjects
  * @return {Object[]}
  */
-function findDuplicatedDapObjects(dapObjects) {
-  const dapObjectFingerprints = {};
+function findDuplicatedDapObjects(rawDapObjects) {
+  const fingerprints = {};
+  const duplicates = new Set();
 
-  dapObjects.forEach((dapObject) => {
-    dapObjectFingerprints[createFingerPrint(dapObject)] = dapObject;
+  rawDapObjects.forEach((rawDapObject) => {
+    const fingerprint = createFingerPrint(rawDapObject);
+
+    if (!fingerprints[fingerprint]) {
+      fingerprints[fingerprint] = [];
+    }
+
+    fingerprints[fingerprint].push(rawDapObject);
+
+    if (fingerprints[fingerprint].length > 1) {
+      fingerprints[fingerprint].forEach(o => duplicates.add(o));
+    }
   });
 
-  const duplicates = findDuplicates(
-    Object.keys(dapObjectFingerprints),
-  );
-
-  return duplicates.map(fingerprint => dapObjectFingerprints[fingerprint]);
+  return Array.from(duplicates);
 }
 
 module.exports = findDuplicatedDapObjects;

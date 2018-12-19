@@ -3,7 +3,7 @@ const DapContract = require('../../dapContract/DapContract');
 /**
  * @return DapContract
  */
-module.exports = function getLovelyDapContract() {
+module.exports = function getDapContractFixture() {
   const dapObjectsDefinition = {
     niceObject: {
       properties: {

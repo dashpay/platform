@@ -2,13 +2,13 @@ const ConsensusError = require('./ConsensusError');
 
 class InvalidSTPacketContractIdError extends ConsensusError {
   /**
-   * @param {string} contractId
+   * @param {string} dapContractId
    * @param {DapContract} dapContract
    */
-  constructor(contractId, dapContract) {
+  constructor(dapContractId, dapContract) {
     super('ST Packet\'s contractId should be equal to DapContract ID');
 
-    this.contractId = contractId;
+    this.dapContractId = dapContractId;
     this.dapContract = dapContract;
   }
 
@@ -17,8 +17,8 @@ class InvalidSTPacketContractIdError extends ConsensusError {
    *
    * @return {string}
    */
-  getContractId() {
-    return this.contractId;
+  getDapContractId() {
+    return this.dapContractId;
   }
 
   /**
@@ -26,7 +26,7 @@ class InvalidSTPacketContractIdError extends ConsensusError {
    *
    * @return {DapContract}
    */
-  getDapContractId() {
+  getDapContract() {
     return this.dapContract;
   }
 }

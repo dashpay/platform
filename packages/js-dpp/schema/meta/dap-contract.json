@@ -7,43 +7,6 @@
       "$ref": "https://schema.dash.org/dap-0-4-0/meta/dash-schema"
     }
   ],
-  "definitions": {
-    "primaryKey": {
-      "$id": "#primaryKey",
-      "type": "object",
-      "properties": {
-        "composite": {
-          "type": "boolean"
-        },
-        "includes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[a-zA-Z0-9-_]{1,255}$"
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        }
-      },
-      "if": {
-        "properties": {
-          "composite": {
-            "const": true
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "composite",
-          "includes"
-        ]
-      },
-      "required": [
-        "composite"
-      ],
-      "additionalProperties": false
-    }
-  },
   "properties": {
     "$schema": {
       "type": "string",
@@ -70,9 +33,6 @@
               "type": "string",
               "const": "object"
             },
-            "primaryKey": {
-              "$ref": "#primaryKey"
-            },
             "properties": {
               "type": "object",
               "propertyNames": {
@@ -92,6 +52,8 @@
           ]
         }
       },
+      "minProperties": 1,
+      "maxProperties": 100,
       "additionalProperties": false
     },
     "definitions": {
