@@ -23,16 +23,14 @@ dotenvExpand(dotenvConfig);
 
 const rootPath = process.cwd();
 const options = {
+  cacheNodeModules: true,
+  localAppPath: rootPath,
   container: {
     volumes: [
       `${rootPath}/lib:/usr/src/app/lib`,
       `${rootPath}/scripts:/usr/src/app/scripts`,
       `${rootPath}/.env:/usr/src/app/.env`,
       `${rootPath}/.env.example:/usr/src/app/.env.example`,
-      `${rootPath}/package.json:/usr/src/app/package.json`,
-      `${rootPath}/package-lock.json:/usr/src/app/package-lock.json`,
-      `${rootPath}/package.json:/package.json`,
-      `${rootPath}/package-lock.json:/package-lock.json`,
     ],
   },
 };
