@@ -90,6 +90,52 @@ describe('updateDapContractFactory', () => {
     ]);
   });
 
+  it('should remove unnecessary previous versions of DapContract upon reverting', async () => {
+    const dapId = '1234';
+
+    const firstReference = new Reference(null, null, null, null, null);
+    const firstData = {
+      dapver: 1,
+    };
+    const firstDapContractVersion = new DapContract(
+      dapId,
+      firstData,
+      firstReference,
+      false,
+    );
+
+    const secondReference = new Reference(null, null, null, null, null);
+    const secondData = {
+      dapver: 2,
+      upgradedapid: dapId,
+    };
+    const secondDapContractVersion = new DapContract(
+      dapId,
+      secondData,
+      secondReference,
+      false,
+      [firstDapContractVersion.currentRevision()],
+    );
+    await dapContractRepository.store(secondDapContractVersion);
+
+    const packet = getTransitionPacketFixtures()[0];
+    const thirdVersion = 3;
+    const thirdDapContractData = packet.dapcontract;
+    thirdDapContractData.dapver = thirdVersion;
+    thirdDapContractData.upgradedapid = dapId;
+    const thirdReference = new Reference();
+
+    await updateDapContract(dapId, thirdReference, thirdDapContractData);
+
+    await updateDapContract(dapId, secondReference, secondData, true);
+
+    const secondDapContractEntity = await dapContractRepository.find(dapId);
+
+    expect(secondDapContractEntity.getPreviousVersions()).to.deep.equal([
+      firstDapContractVersion.currentRevision(),
+    ]);
+  });
+
   it('should not store DapContract if DapContract with upgrade dap id is not found', async () => {
     const dapId = '1234';
 

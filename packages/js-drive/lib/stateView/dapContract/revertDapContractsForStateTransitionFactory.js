@@ -25,8 +25,7 @@ function revertDapContractsForStateTransitionFactory(
       .findAllByReferenceSTHeaderHash(stateTransition.hash);
 
     for (const dapContract of dapContracts) {
-      const previousVersions = dapContract.getPreviousVersions()
-        .sort((prev, next) => prev.version - next.version);
+      const previousVersions = dapContract.getPreviousVersions();
 
       if (previousVersions.length === 0) {
         dapContract.markAsDeleted();
@@ -42,16 +41,16 @@ function revertDapContractsForStateTransitionFactory(
         continue;
       }
 
-      for (const { reference } of previousVersions) {
-        await applyStateTransitionFromReference(reference);
-      }
+      const [lastPreviousVersion] = previousVersions
+        .sort((prev, next) => next.version - prev.version);
+      await applyStateTransitionFromReference(lastPreviousVersion.reference, true);
 
       await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_CONTRACT_REVERTED, {
         userId: stateTransition.extraPayload.regTxId,
         dapId: dapContract.dapId,
         reference: dapContract.reference,
         contract: dapContract.getOriginalData(),
-        previousVersion: previousVersions[previousVersions.length - 1],
+        previousVersion: lastPreviousVersion,
       });
     }
   }

@@ -9,9 +9,10 @@ function updateDapObjectFactory(createDapObjectRepository) {
    * @param {string} blockchainUserId
    * @param {Reference} reference
    * @param {object} dapObjectData
+   * @param {boolean} reverting
    * @returns {Promise<void>}
    */
-  async function updateDapObject(dapId, blockchainUserId, reference, dapObjectData) {
+  async function updateDapObject(dapId, blockchainUserId, reference, dapObjectData, reverting) {
     const dapObjectRepository = createDapObjectRepository(dapId);
     const dapObject = new DapObject(blockchainUserId, dapObjectData, reference, false);
 
@@ -25,7 +26,16 @@ function updateDapObjectFactory(createDapObjectRepository) {
         if (!previousDapObject) {
           return;
         }
-        dapObject.addRevision(previousDapObject);
+        dapObject.addRevision(previousDapObject, reverting);
+
+        // NOTE: Since reverting is more complicated
+        // `previousDapObject` is actually next one here
+        // so we have to remove it's revision and the revision before that
+        // to have a proper set of `previousRevisions`
+        if (reverting) {
+          dapObject.removeAheadRevisions();
+        }
+
         await dapObjectRepository.store(dapObject);
         break;
       }

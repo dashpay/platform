@@ -73,6 +73,11 @@ class DapObject {
       .concat([previousDapObject.currentRevision()]);
   }
 
+  removeAheadRevisions() {
+    this.previousRevisions = this.previousRevisions
+      .filter(({ revision }) => revision < this.getRevision());
+  }
+
   toJSON() {
     return {
       blockchainUserId: this.blockchainUserId,

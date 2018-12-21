@@ -184,7 +184,7 @@ describe('revertDapObjectsForStateTransitionFactory', () => {
     expect(previousRevision.revision).to.be.equal(1);
     expect(previousRevision.reference).to.be.deep.equal(references[0]);
 
-    expect(readerMediator.emitSerial.getCall(2)).to.be.calledWith(
+    expect(readerMediator.emitSerial.getCall(1)).to.be.calledWith(
       ReaderMediator.EVENTS.DAP_OBJECT_REVERTED,
       {
         userId: lastTransition.extraPayload.regTxId,

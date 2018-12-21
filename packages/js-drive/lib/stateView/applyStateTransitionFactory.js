@@ -30,9 +30,10 @@ function applyStateTransitionFactory(
    * @typedef {Promise} applyStateTransition
    * @param {object} header
    * @param {object} block
+   * @param {boolean} reverting
    * @returns {Promise<void>}
    */
-  async function applyStateTransition(header, block) {
+  async function applyStateTransition(header, block, reverting = false) {
     const stHeader = new StateTransitionHeader(header);
 
     const getPromise = ipfs.dag.get(stHeader.getPacketCID());
@@ -49,7 +50,7 @@ function applyStateTransitionFactory(
         header.hash,
         header.extraPayload.hashSTPacket,
       );
-      await updateDapContract(dapId, reference, packet.dapcontract);
+      await updateDapContract(dapId, reference, packet.dapcontract, reverting);
 
       await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED, {
         userId: header.extraPayload.regTxId,
@@ -69,7 +70,13 @@ function applyStateTransitionFactory(
         header.hash,
         header.extraPayload.hashSTPacket,
       );
-      await updateDapObject(packet.dapid, header.extraPayload.regTxId, reference, objectData);
+      await updateDapObject(
+        packet.dapid,
+        header.extraPayload.regTxId,
+        reference,
+        objectData,
+        reverting,
+      );
 
       await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_APPLIED, {
         userId: header.extraPayload.regTxId,

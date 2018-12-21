@@ -65,6 +65,11 @@ class DapContract {
       .concat([previousDapContract.currentRevision()]);
   }
 
+  removeAheadRevisions() {
+    this.previousVersions = this.previousVersions
+      .filter(({ version }) => version < this.getVersion());
+  }
+
   /**
    * Get DapContract JSON representation
    *

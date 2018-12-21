@@ -44,8 +44,7 @@ module.exports = function revertDapObjectsForStateTransitionFactory(
       .findAllBySTHeaderHash(stateTransition.hash);
 
     for (const dapObject of dapObjects) {
-      const previousRevisions = dapObject.getPreviousRevisions()
-        .sort((prev, next) => prev.revision - next.revision);
+      const previousRevisions = dapObject.getPreviousRevisions();
 
       if (previousRevisions.length === 0) {
         dapObject.markAsDeleted();
@@ -61,16 +60,16 @@ module.exports = function revertDapObjectsForStateTransitionFactory(
         continue;
       }
 
-      for (const { reference } of previousRevisions) {
-        await applyStateTransitionFromReference(reference);
-      }
+      const [lastPreviousRevision] = previousRevisions
+        .sort((prev, next) => next.revision - prev.revision);
+      await applyStateTransitionFromReference(lastPreviousRevision.reference, true);
 
       await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_REVERTED, {
         userId: stateTransition.extraPayload.regTxId,
         objectId: dapObject.getId(),
         reference: dapObject.reference,
         object: dapObject.getOriginalData(),
-        previousRevision: previousRevisions[previousRevisions.length - 1],
+        previousRevision: lastPreviousRevision,
       });
     }
   }
