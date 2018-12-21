@@ -19,7 +19,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['Chrome'],
+    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
     plugins: [
@@ -30,5 +30,11 @@ module.exports = (config) => {
       'karma-firefox-launcher',
       'karma-webpack',
     ],
+    customLaunchers: {
+      FirefoxHeadless: {
+        base: 'Firefox',
+        flags: ['-headless'],
+      },
+    },
   });
 };
