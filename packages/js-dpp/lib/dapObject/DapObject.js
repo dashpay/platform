@@ -1,55 +1,44 @@
+const lodashGet = require('lodash.get');
+const lodashSet = require('lodash.set');
+
 const hash = require('../util/hash');
-const serializer = require('../util/serializer');
-const entropy = require('../util/entropy');
+const { encode } = require('../util/serializer');
 
 class DapObject {
   /**
-   * @param {DapContract} dapContract
-   * @param {string} blockchainUserId
-   * @param {string} type
-   * @param {object} [data]
+   * @param {Object} rawDapObject
    */
-  constructor(dapContract, blockchainUserId, type, data = {}) {
-    // TODO Strange to pass system fields as data, but then prevent to use setData for them
+  constructor(rawDapObject) {
+    const data = Object.assign({}, rawDapObject);
 
-    const userData = Object.assign({}, data);
+    this.id = null;
 
-    if (Object.prototype.hasOwnProperty.call(userData, '$type')) {
-      this.type = userData.$type;
-      delete userData.$type;
-    } else {
-      this.type = type;
+    if (Object.prototype.hasOwnProperty.call(rawDapObject, '$type')) {
+      this.type = rawDapObject.$type;
+      delete data.$type;
     }
 
-    if (Object.prototype.hasOwnProperty.call(userData, '$scopeId')) {
-      this.scopeId = userData.$scopeId;
-      delete userData.$scopeId;
-    } else {
-      this.scopeId = entropy.generate();
+    if (Object.prototype.hasOwnProperty.call(rawDapObject, '$scopeId')) {
+      this.scopeId = rawDapObject.$scopeId;
+      delete data.$scopeId;
     }
 
-    if (Object.prototype.hasOwnProperty.call(userData, '$scope')) {
-      this.scope = userData.$scope;
-      delete userData.$scope;
-    } else {
-      this.scope = hash(dapContract.getId() + blockchainUserId);
+    if (Object.prototype.hasOwnProperty.call(rawDapObject, '$scope')) {
+      this.scope = rawDapObject.$scope;
+      delete data.$scope;
     }
 
-    if (Object.prototype.hasOwnProperty.call(userData, '$action')) {
-      this.action = userData.$action;
-      delete userData.$action;
-    } else {
-      this.action = DapObject.ACTIONS.CREATE;
+    if (Object.prototype.hasOwnProperty.call(rawDapObject, '$action')) {
+      this.action = rawDapObject.$action;
+      delete data.$action;
     }
 
-    if (Object.prototype.hasOwnProperty.call(userData, '$rev')) {
-      this.revision = userData.$rev;
-      delete userData.$rev;
-    } else {
-      this.revision = DapObject.DEFAULTS.REVISION;
+    if (Object.prototype.hasOwnProperty.call(rawDapObject, '$rev')) {
+      this.revision = rawDapObject.$rev;
+      delete data.$rev;
     }
 
-    this.setData(userData);
+    this.setData(data);
   }
 
   /**
@@ -125,7 +114,8 @@ class DapObject {
   setData(data) {
     this.data = {};
 
-    Object.entries(data).forEach(([name, value]) => this.set(name, value));
+    Object.entries(data)
+      .forEach(([name, value]) => this.set(name, value));
 
     return this;
   }
@@ -146,24 +136,18 @@ class DapObject {
    * @return {*}
    */
   get(path) {
-    // TODO implement path
-    return this.data[path];
+    return lodashGet(this.data, path);
   }
 
   /**
    * Set the field specified by {path}
    *
-   * @param path
-   * @param value
+   * @param {string} path
+   * @param {*} value
    * @return {DapObject}
    */
   set(path, value) {
-    if (path[0] === '$') {
-      throw new Error();
-    }
-
-    // TODO implement path
-    this.data[path] = value;
+    lodashSet(this.data, path, value);
 
     return this;
   }
@@ -175,9 +159,9 @@ class DapObject {
    */
   toJSON() {
     return {
+      $type: this.getType(),
       $scope: this.scope,
       $scopeId: this.scopeId,
-      $type: this.getType(),
       $rev: this.getRevision(),
       $action: this.getAction(),
       ...this.getData(),
@@ -190,7 +174,7 @@ class DapObject {
    * @return {Buffer}
    */
   serialize() {
-    return serializer.encode(this.toJSON());
+    return encode(this.toJSON());
   }
 
   /**
@@ -211,6 +195,9 @@ DapObject.ACTIONS = {
 
 DapObject.DEFAULTS = {
   REVISION: 0,
+  ACTION: DapObject.ACTIONS.CREATE,
 };
+
+DapObject.SYSTEM_PREFIX = '$';
 
 module.exports = DapObject;

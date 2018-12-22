@@ -53,7 +53,14 @@ class STPacketFactory {
    * @return {STPacket}
    */
   createFromObject(object) {
-    const result = this.validateSTPacket(object);
+    // TODO We don't need contract if there are no objects in STPacket
+    // TODO Check if contractId is present
+
+    const dapContract = this.dataProvider.fetchDapContract(object.contractId);
+
+    // TODO Return error if contract is not present
+
+    const result = this.validateSTPacket(object, dapContract);
 
     if (!result.isValid()) {
       throw new InvalidSTPacketError(result.getErrors(), object);
@@ -65,18 +72,13 @@ class STPacketFactory {
     stPacket.setItemsHash(object.itemsHash);
 
     if (object.contracts.length) {
-      const dapContract = this.createDapContract(object.contracts[0]);
+      const packetDapContract = this.createDapContract(object.contracts[0]);
 
-      stPacket.setDapContract(dapContract);
+      stPacket.setDapContract(packetDapContract);
     }
 
     if (object.objects.length) {
-      const dapContract = this.dataProvider.fetchDapContract(object.contractId);
-
-      // eslint-disable-next-line
-      const dapObjects = object.objects.map((rawDapObject) => {
-        return new DapObject(dapContract, this.userId, rawDapObject.type, rawDapObject);
-      });
+      const dapObjects = object.objects.map(rawDapObject => new DapObject(rawDapObject));
 
       stPacket.setDapObjects(dapObjects);
     }

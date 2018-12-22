@@ -168,16 +168,8 @@ describe('verifyDapObjects', () => {
 
   it('should return valid result if Dap Objects are valid', async () => {
     const fetchedDapObjects = [
-      new DapObject(
-        dapContract,
-        userId,
-        dapObjects[1].getType(), dapObjects[1].toJSON(),
-      ),
-      new DapObject(
-        dapContract,
-        userId,
-        dapObjects[2].getType(), dapObjects[2].toJSON(),
-      ),
+      new DapObject(dapObjects[1].toJSON()),
+      new DapObject(dapObjects[2].toJSON()),
     ];
 
     fetchDapObjectsByObjectsMock.resolves(fetchedDapObjects);

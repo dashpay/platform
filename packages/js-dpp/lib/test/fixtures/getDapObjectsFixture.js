@@ -1,5 +1,6 @@
-const DapObject = require('../../dapObject/DapObject');
 const getDapContractFixture = require('./getDapContractFixture');
+
+const DapObjectFactory = require('../../dapObject/DapObjectFactory');
 
 const userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
 
@@ -9,10 +10,18 @@ const userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288
 module.exports = function getDapObjectsFixture() {
   const dapContract = getDapContractFixture();
 
+  const validateDapObjectStub = () => {};
+
+  const factory = new DapObjectFactory(
+    userId,
+    dapContract,
+    validateDapObjectStub,
+  );
+
   return [
-    new DapObject(dapContract, userId, 'niceObject', { name: 'Cutie' }),
-    new DapObject(dapContract, userId, 'prettyObject', { lastName: 'Shiny' }),
-    new DapObject(dapContract, userId, 'prettyObject', { lastName: 'Sweety' }),
+    factory.create('niceObject', { name: 'Cutie' }),
+    factory.create('prettyObject', { lastName: 'Shiny' }),
+    factory.create('prettyObject', { lastName: 'Sweety' }),
   ];
 };
 

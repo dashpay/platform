@@ -1,8 +1,10 @@
 const DapObject = require('./DapObject');
 
-const InvalidDapObjectError = require('./errors/InvalidDapObjectError');
-
 const serializer = require('../util/serializer');
+const entropy = require('../util/entropy');
+const hash = require('../util/hash');
+
+const InvalidDapObjectError = require('./errors/InvalidDapObjectError');
 
 class DapObjectFactory {
   /**
@@ -24,11 +26,20 @@ class DapObjectFactory {
    * @return {DapObject}
    */
   create(type, data = {}) {
-    if (this.dapContract.isDapObjectDefined(type)) {
+    if (!this.dapContract.isDapObjectDefined(type)) {
       throw Error();
     }
 
-    return new DapObject(this.dapContract, this.userId, type, data);
+    const rawDapObject = {
+      $type: type,
+      $scope: hash(this.dapContract.getId() + this.userId),
+      $scopeId: entropy.generate(),
+      $action: DapObject.DEFAULTS.ACTION,
+      $rev: DapObject.DEFAULTS.REVISION,
+      ...data,
+    };
+
+    return new DapObject(rawDapObject);
   }
 
 
@@ -45,7 +56,7 @@ class DapObjectFactory {
       throw new InvalidDapObjectError(result.getErrors(), object);
     }
 
-    return this.create(object.$type, object);
+    return new DapObject(object);
   }
 
   /**
