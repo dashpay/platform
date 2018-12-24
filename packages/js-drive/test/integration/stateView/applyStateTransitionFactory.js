@@ -18,7 +18,8 @@ const serializer = require('../../../lib/util/serializer');
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
 const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
-const addSTPacketFactory = require('../../../lib/storage/ipfs/addSTPacketFactory');
+const addSTPacketFactory = require('../../../lib/storage/stPacket/addSTPacketFactory');
+const StateTransitionPacketIpfsRepository = require('../../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
 const generateDapObjectId = require('../../../lib/stateView/dapObject/generateDapObjectId');
 
 const ReaderMediator = require('../../../lib/blockchain/reader/BlockchainReaderMediator');
@@ -45,7 +46,11 @@ describe('applyStateTransitionFactory', () => {
   let readerMediator;
   let applyStateTransition;
   beforeEach(function beforeEach() {
-    addSTPacket = addSTPacketFactory(ipfsClient);
+    const stPacketRepository = new StateTransitionPacketIpfsRepository(
+      ipfsClient,
+      1000,
+    );
+    addSTPacket = addSTPacketFactory(stPacketRepository);
     dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
     createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
       mongoClient,
@@ -55,11 +60,10 @@ describe('applyStateTransitionFactory', () => {
     const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
     readerMediator = new ReaderMediatorMock(this.sinon);
     applyStateTransition = applyStateTransitionFactory(
-      ipfsClient,
+      stPacketRepository,
       updateDapContract,
       updateDapObject,
       readerMediator,
-      1000,
     );
   });
 

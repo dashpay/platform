@@ -2,7 +2,7 @@ const cbor = require('cbor');
 const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 
 const getStateTransitionPackets = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
-const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
+const StateTransitionPacket = require('../../../lib/storage/stPacket/StateTransitionPacket');
 
 const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
 

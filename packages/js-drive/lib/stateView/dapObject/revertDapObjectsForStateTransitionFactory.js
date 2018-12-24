@@ -1,28 +1,22 @@
-const GetPacketTimeoutError = require('../../storage/errors/GetPacketTimeoutError');
-
 const ReaderMediator = require('../../blockchain/reader/BlockchainReaderMediator');
-
-const rejectAfter = require('../../util/rejectAfter');
 
 /**
  *
- * @param {IpfsAPI} ipfsAPI
+ * @param {StateTransitionPacketIpfsRepository} stPacketRepository
  * @param {RpcClient} rpcClient
  * @param {createDapObjectMongoDbRepository} createDapObjectMongoDbRepository
  * @param {applyStateTransition} applyStateTransition
  * @param [applyStateTransitionFromReference} applyStateTransitionFromReference
  * @param {BlockchainReaderMediator} readerMediator
- * @param {number} ipfsGetTimeout
  * @returns {revertDapObjectsForStateTransition}
  */
 module.exports = function revertDapObjectsForStateTransitionFactory(
-  ipfsAPI,
+  stPacketRepository,
   rpcClient,
   createDapObjectMongoDbRepository,
   applyStateTransition,
   applyStateTransitionFromReference,
   readerMediator,
-  ipfsGetTimeout,
 ) {
   /**
    * @typedef revertDapObjectsForStateTransition
@@ -30,9 +24,9 @@ module.exports = function revertDapObjectsForStateTransitionFactory(
    * @returns {Promise<void>}
    */
   async function revertDapObjectsForStateTransition({ stateTransition }) {
-    const getPacketDataPromise = ipfsAPI.dag.get(stateTransition.getPacketCID());
-    const error = new GetPacketTimeoutError();
-    const { value: packetData } = await rejectAfter(getPacketDataPromise, error, ipfsGetTimeout);
+    const stPacket = await stPacketRepository
+      .find(stateTransition.getPacketCID());
+    const packetData = stPacket.toJSON({ skipMeta: true });
 
     if (!packetData.dapid) {
       return;

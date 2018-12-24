@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const StateTransitionPacket = require('../../storage/StateTransitionPacket');
+const StateTransitionPacket = require('../../storage/stPacket/StateTransitionPacket');
 
 module.exports = function getTransitionPacketFixtures() {
   const packetsJSON = fs.readFileSync(`${__dirname}/../../../test/fixtures/stateTransitionPackets.json`);

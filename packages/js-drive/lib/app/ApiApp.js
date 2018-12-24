@@ -10,7 +10,8 @@ const getCheckSyncStateHttpMiddleware = require('../../lib/sync/getCheckSyncHttp
 
 const wrapToErrorHandler = require('../../lib/api/jsonRpc/wrapToErrorHandler');
 
-const addSTPacketFactory = require('../../lib/storage/ipfs/addSTPacketFactory');
+const StateTransitionPacketIpfsRepository = require('../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
+const addSTPacketFactory = require('../../lib/storage/stPacket/addSTPacketFactory');
 const addSTPacketMethodFactory = require('../../lib/api/methods/addSTPacketMethodFactory');
 
 const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
@@ -133,13 +134,27 @@ class ApiApp {
     ];
   }
 
+  /**
+   * @private
+   * @return {StateTransitionPacketIpfsRepository}
+   */
+  createSTPacketRepository() {
+    if (this.stPacketRepository) {
+      return this.stPacketRepository;
+    }
+    this.stPacketRepository = new StateTransitionPacketIpfsRepository(
+      this.ipfsAPI,
+      this.options.getStorageIpfsTimeout(),
+    );
+    return this.stPacketRepository;
+  }
 
   /**
    * @private
    * @return {addSTPacketMethod}
    */
   createAddSTPacketMethod() {
-    const addSTPacket = addSTPacketFactory(this.ipfsAPI);
+    const addSTPacket = addSTPacketFactory(this.createSTPacketRepository());
     return addSTPacketMethodFactory(addSTPacket);
   }
 

@@ -35,10 +35,7 @@ const errorHandler = require('../lib/util/errorHandler');
 
   attachStorageHandlers(
     readerMediator,
-    syncApp.getIpfsApi(),
-    syncApp.getRpcClient(),
-    syncApp.createUnpinAllIpfsPackets(),
-    syncAppOptions.getStorageIpfsTimeout(),
+    syncApp.createSTPacketRepository(),
   );
 
   attachStateViewHandlers(

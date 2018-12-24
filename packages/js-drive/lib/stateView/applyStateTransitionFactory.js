@@ -1,30 +1,24 @@
 const Reference = require('./Reference');
 
 const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
-
 const StateTransitionHeader = require('../blockchain/StateTransitionHeader');
-const StateTransitionPacket = require('../storage/StateTransitionPacket');
-const GetPacketTimeoutError = require('../storage/errors/GetPacketTimeoutError');
 
 const generateDapObjectId = require('../stateView/dapObject/generateDapObjectId');
 
 const doubleSha256 = require('../util/doubleSha256');
-const rejectAfter = require('../util/rejectAfter');
 
 /**
- * @param {IpfsAPI} ipfs
+ * @param {StateTransitionPacketIpfsRepository} stPacketRepository
  * @param {updateDapContract} updateDapContract
  * @param {updateDapObject} updateDapObject
  * @param {BlockchainReaderMediator} readerMediator
- * @param {number} ipfsGetTimeout
  * @returns {applyStateTransition}
  */
 function applyStateTransitionFactory(
-  ipfs,
+  stPacketRepository,
   updateDapContract,
   updateDapObject,
   readerMediator,
-  ipfsGetTimeout,
 ) {
   /**
    * @typedef {Promise} applyStateTransition
@@ -36,11 +30,8 @@ function applyStateTransitionFactory(
   async function applyStateTransition(header, block, reverting = false) {
     const stHeader = new StateTransitionHeader(header);
 
-    const getPromise = ipfs.dag.get(stHeader.getPacketCID());
-    const error = new GetPacketTimeoutError();
-    const { value: packetData } = await rejectAfter(getPromise, error, ipfsGetTimeout);
-
-    const packet = new StateTransitionPacket(packetData);
+    const packet = await stPacketRepository
+      .find(stHeader.getPacketCID());
 
     if (packet.dapcontract) {
       const dapId = packet.dapcontract.upgradedapid || doubleSha256(packet.dapcontract);

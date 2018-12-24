@@ -1,8 +1,8 @@
 /**
- * @param {IpfsAPI} ipfsApi
+ * @param {StateTransitionPacketIpfsRepository} stPacketRepository
  * @return {addSTPacket}
  */
-module.exports = function addSTPacketFactory(ipfsApi) {
+module.exports = function addSTPacketFactory(stPacketRepository) {
   /**
    * Store State Transition packet in IPFS
    *
@@ -13,9 +13,7 @@ module.exports = function addSTPacketFactory(ipfsApi) {
    * @return {Promise<CID>}
    */
   async function addSTPacket(packet) {
-    const packetData = packet.toJSON({ skipMeta: true });
-
-    return ipfsApi.dag.put(packetData, { cid: packet.getCID() });
+    return stPacketRepository.store(packet);
   }
 
   return addSTPacket;

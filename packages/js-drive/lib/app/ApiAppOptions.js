@@ -8,6 +8,7 @@ class ApiAppOptions {
     this.dashCoreRunningCheckInterval = parseInt(options.DASHCORE_RUNNING_CHECK_INTERVAL, 10)
       * 1000;
     this.storageIpfsMultiAddr = options.STORAGE_IPFS_MULTIADDR;
+    this.storageIpfsTimeout = parseInt(options.STORAGE_IPFS_TIMEOUT, 10) * 1000;
     this.storageMongoDbUrl = options.STORAGE_MONGODB_URL;
     this.storageMongoDbDatabase = options.STORAGE_MONGODB_DB;
     this.syncStateCheckInterval = parseInt(options.SYNC_STATE_CHECK_INTERVAL, 10) * 1000;
@@ -42,6 +43,13 @@ class ApiAppOptions {
 
   getStorageIpfsMultiAddr() {
     return this.storageIpfsMultiAddr;
+  }
+
+  /**
+   * @return {number}
+   */
+  getStorageIpfsTimeout() {
+    return this.storageIpfsTimeout;
   }
 
   getStorageMongoDbUrl() {

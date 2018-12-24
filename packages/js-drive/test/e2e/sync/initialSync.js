@@ -5,7 +5,7 @@ const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
 
 const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
-const StateTransitionPacket = require('../../../lib/storage/StateTransitionPacket');
+const StateTransitionPacket = require('../../../lib/storage/stPacket/StateTransitionPacket');
 
 const registerUser = require('../../../lib/test/registerUser');
 

@@ -1,5 +1,5 @@
 const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
-const StateTransitionPacket = require('../storage/StateTransitionPacket');
+const StateTransitionPacket = require('../storage/stPacket/StateTransitionPacket');
 
 class StateTransitionHeader extends Transaction {
   constructor(data) {

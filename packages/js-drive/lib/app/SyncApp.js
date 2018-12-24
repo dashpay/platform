@@ -22,7 +22,8 @@ const BlockchainReaderMediator = require('../blockchain/reader/BlockchainReaderM
 const createStateTransitionsFromBlockFactory = require('../blockchain/createStateTransitionsFromBlockFactory');
 const readBlockchainFactory = require('../blockchain/reader/readBlockchainFactory');
 
-const unpinAllIpfsPacketsFactory = require('../storage/ipfs/unpinAllIpfsPacketsFactory');
+const StateTransitionPacketIpfsRepository = require('../storage/stPacket/StateTransitionPacketIpfsRepository');
+
 const dropMongoDatabasesWithPrefixFactory = require('../mongoDb/dropMongoDatabasesWithPrefixFactory');
 
 const isDashCoreRunningFactory = require('../sync/isDashCoreRunningFactory');
@@ -191,15 +192,6 @@ class SyncApp {
   }
 
   /**
-   * Create unpinAllIpfsPackets
-   *
-   * @returns {unpinAllIpfsPackets}
-   */
-  createUnpinAllIpfsPackets() {
-    return unpinAllIpfsPacketsFactory(this.getIpfsApi());
-  }
-
-  /**
    * Create dropMonoDatabasesWithPrefix
    *
    * @returns {dropMongoDatabasesWithPrefix}
@@ -227,11 +219,10 @@ class SyncApp {
     const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
     const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
     this.applyStateTransition = applyStateTransitionFactory(
-      this.getIpfsApi(),
+      this.createSTPacketRepository(),
       updateDapContract,
       updateDapObject,
       this.createBlockchainReaderMediator(),
-      this.options.getStorageIpfsTimeout(),
     );
     return this.applyStateTransition;
   }
@@ -262,13 +253,12 @@ class SyncApp {
       DapObjectMongoDbRepository,
     );
     return revertDapObjectsForStateTransitionFactory(
-      this.getIpfsApi(),
+      this.createSTPacketRepository(),
       this.getRpcClient(),
       createDapObjectMongoDbRepository,
       this.createApplyStateTransition(),
       this.createApplyStateTransitionFromReference(),
       this.createBlockchainReaderMediator(),
-      this.options.getStorageIpfsTimeout(),
     );
   }
 
@@ -287,6 +277,22 @@ class SyncApp {
       this.createApplyStateTransitionFromReference(),
       this.createBlockchainReaderMediator(),
     );
+  }
+
+  /**
+   * Create ST packet repository
+   *
+   * @return {StateTransitionPacketIpfsRepository}
+   */
+  createSTPacketRepository() {
+    if (this.stPacketRepository) {
+      return this.stPacketRepository;
+    }
+    this.stPacketRepository = new StateTransitionPacketIpfsRepository(
+      this.getIpfsApi(),
+      this.options.getStorageIpfsTimeout(),
+    );
+    return this.stPacketRepository;
   }
 }
 

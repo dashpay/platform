@@ -1,6 +1,6 @@
 const multihashes = require('multihashes');
 const CID = require('cids');
-const doubleSha256 = require('../util/doubleSha256');
+const doubleSha256 = require('../../util/doubleSha256');
 
 const PACKET_FIELDS = ['pver', 'dapid', 'dapobjectshash', 'dapcontract', 'dapobjects', 'meta'];
 
