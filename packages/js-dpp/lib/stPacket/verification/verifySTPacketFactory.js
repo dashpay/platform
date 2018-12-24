@@ -2,6 +2,7 @@ const ValidationResult = require('../../validation/ValidationResult');
 
 const UnconfirmedUserError = require('../../errors/UnconfirmedUserError');
 const UserNotFoundError = require('../../errors/UserNotFoundError');
+const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
 
 /**
  * @param {verifyDapContract} verifyDapContract
@@ -18,6 +19,12 @@ function verifySTPacketFactory(verifyDapContract, verifyDapObjects, dataProvider
    */
   async function verifySTPacket(stPacket, stateTransition) {
     const result = new ValidationResult();
+
+    if (stPacket.hash() !== stateTransition.extraPayload.hashSTPacket) {
+      result.addError(
+        new InvalidSTPacketHashError(stPacket, stateTransition),
+      );
+    }
 
     const userId = stateTransition.extraPayload.regTxId;
 
