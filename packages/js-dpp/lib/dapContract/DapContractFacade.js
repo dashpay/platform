@@ -11,8 +11,8 @@ class DapContractFacade {
     this.validateDapContract = validateDapContractFactory(validator);
 
     this.factory = new DapContractFactory(
-      this.validateDapContract,
       createDapContract,
+      this.validateDapContract,
     );
   }
 

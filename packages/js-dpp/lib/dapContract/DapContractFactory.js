@@ -1,15 +1,15 @@
 const InvalidDapContractError = require('./errors/InvalidDapContractError');
 
-const serializer = require('../util/serializer');
+const { decode } = require('../util/serializer');
 
 class DapContractFactory {
   /**
-   * @param {validateDapContract} validateDapContract
    * @param {createDapContract} createDapContract
+   * @param {validateDapContract} validateDapContract
    */
-  constructor(validateDapContract, createDapContract) {
-    this.validateDapContract = validateDapContract;
+  constructor(createDapContract, validateDapContract) {
     this.createDapContract = createDapContract;
+    this.validateDapContract = validateDapContract;
   }
 
   /**
@@ -49,7 +49,7 @@ class DapContractFactory {
    * @return {DapContract}
    */
   createFromSerialized(payload) {
-    const object = serializer.encode(payload);
+    const object = decode(payload);
 
     return this.createFromObject(object);
   }
