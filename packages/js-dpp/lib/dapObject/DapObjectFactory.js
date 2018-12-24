@@ -1,10 +1,11 @@
 const DapObject = require('./DapObject');
 
-const serializer = require('../util/serializer');
+const { decode } = require('../util/serializer');
 const entropy = require('../util/entropy');
 const hash = require('../util/hash');
 
 const InvalidDapObjectError = require('./errors/InvalidDapObjectError');
+const InvalidDapObjectTypeError = require('../errors/InvalidDapObjectTypeError');
 
 class DapObjectFactory {
   /**
@@ -27,7 +28,7 @@ class DapObjectFactory {
    */
   create(type, data = {}) {
     if (!this.dapContract.isDapObjectDefined(type)) {
-      throw Error();
+      throw new InvalidDapObjectTypeError(type, this.dapContract);
     }
 
     const rawDapObject = {
@@ -50,7 +51,7 @@ class DapObjectFactory {
    * @return {DapObject}
    */
   createFromObject(object) {
-    const result = this.validateDapObject(object, this.dapContract.getId());
+    const result = this.validateDapObject(object, this.dapContract);
 
     if (!result.isValid()) {
       throw new InvalidDapObjectError(result.getErrors(), object);
@@ -66,7 +67,7 @@ class DapObjectFactory {
    * @return {DapObject}
    */
   createFromSerialized(payload) {
-    const object = serializer.decode(payload);
+    const object = decode(payload);
 
     return this.createFromObject(object);
   }
@@ -95,7 +96,7 @@ class DapObjectFactory {
   /**
    * Set Dap Contract
    *
-   * @param dapContract
+   * @param {DapContract} dapContract
    * @return {DapObjectFactory}
    */
   setDapContract(dapContract) {
