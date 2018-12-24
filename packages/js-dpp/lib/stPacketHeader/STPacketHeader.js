@@ -1,5 +1,5 @@
 const hash = require('../util/hash');
-const serializer = require('../util/serializer');
+const { encode } = require('../util/serializer');
 
 class STPacketHeader {
   /**
@@ -73,7 +73,6 @@ class STPacketHeader {
    * @return {{contractId: string, itemsMerkleRoot: string, itemsHash: string}}
    */
   toJSON() {
-    // TODO: Validate before to JSON ?
     return {
       contractId: this.getDapContractId(),
       itemsMerkleRoot: this.getItemsMerkleRoot(),
@@ -87,8 +86,7 @@ class STPacketHeader {
    * @return {Buffer}
    */
   serialize() {
-    // TODO: Validate before serialization ?
-    return serializer.encode(this.toJSON());
+    return encode(this.toJSON());
   }
 
   /**

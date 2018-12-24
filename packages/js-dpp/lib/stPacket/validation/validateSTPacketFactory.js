@@ -1,6 +1,7 @@
-const JsonSchemaValidator = require('../../validation/JsonSchemaValidator');
-
 const STPacket = require('../STPacket');
+
+const stPacketBaseSchema = require('../../../schema/base/st-packet');
+const stPacketHeaderSchema = require('../../../schema/st-packet-header');
 
 /**
  * @param {JsonSchemaValidator} validator
@@ -14,6 +15,26 @@ module.exports = function validateSTPacketFactory(
   validateSTPacketDapObjects,
 ) {
   /**
+   * @return {Object}
+   */
+  function createSTPacketSchema() {
+    const stPacketSchema = Object.assign({ }, stPacketBaseSchema);
+
+    delete stPacketSchema.$id;
+
+    stPacketSchema.properties = Object.assign(
+      { },
+      stPacketBaseSchema.properties,
+      stPacketHeaderSchema.properties,
+    );
+
+    stPacketSchema.required = Array.from(stPacketBaseSchema.required)
+      .concat(stPacketHeaderSchema.required);
+
+    return stPacketSchema;
+  }
+
+  /**
    * @typedef validateSTPacket
    * @param {STPacket|Object} stPacket
    * @param {DapContract} dapContract
@@ -25,7 +46,7 @@ module.exports = function validateSTPacketFactory(
       : stPacket;
 
     const result = validator.validate(
-      JsonSchemaValidator.SCHEMAS.ST_PACKET,
+      createSTPacketSchema(),
       rawStPacket,
     );
 

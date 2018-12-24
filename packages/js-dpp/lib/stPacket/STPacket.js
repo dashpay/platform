@@ -19,8 +19,6 @@ class STPacket {
     this.contracts = [];
   }
 
-  // TODO Reuse code from STPacketHeader ?
-
   /**
    * Set Dap Contract ID
    *

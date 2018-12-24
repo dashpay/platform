@@ -1,7 +1,5 @@
 const dashSchema = require('../../schema/meta/dash-schema');
-const dapObjectBaseSchema = require('../../schema/base/dap-object');
 const dapContractMetaSchema = require('../../schema/meta/dap-contract');
-const stPacketSchema = require('../../schema/st-packet');
 const stPacketHeaderSchema = require('../../schema/st-packet-header');
 
 const ValidationResult = require('./ValidationResult');
@@ -11,10 +9,10 @@ class JsonSchemaValidator {
   constructor(ajv) {
     this.ajv = ajv;
 
+    // TODO Validator shouldn't know about schemas
+
     this.ajv.addMetaSchema(dashSchema);
 
-    this.ajv.addSchema(dapObjectBaseSchema);
-    this.ajv.addSchema(stPacketSchema);
     this.ajv.addSchema(stPacketHeaderSchema);
 
     this.ajv.addMetaSchema(dapContractMetaSchema);
@@ -51,8 +49,8 @@ JsonSchemaValidator.SCHEMAS = {
   },
   BASE: {
     DAP_OBJECT: 'https://schema.dash.org/dap-0-4-0/base/dap-object',
+    ST_PACKET: 'https://schema.dash.org/dap-0-4-0/base/st-packet',
   },
-  ST_PACKET: 'https://schema.dash.org/dap-0-4-0/st-packet',
   ST_PACKET_HEADER: 'https://schema.dash.org/dap-0-4-0/st-packet-header',
 };
 
