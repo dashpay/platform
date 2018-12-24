@@ -52,7 +52,7 @@ module.exports = function validateDapObjectFactory(
 
     if (dapObjectSchemaRef) {
       const additionalSchemas = {
-        [dapContract.getSchemaId()]: enrichedDapContract,
+        [dapContract.getJsonSchemaId()]: enrichedDapContract,
       };
 
       const schemaResult = validator.validate(

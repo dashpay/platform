@@ -4,7 +4,7 @@ function createDapContract(object) {
   const dapContract = new DapContract(object.name, object.dapObjectsDefinition);
 
   if (object.$schema) {
-    dapContract.setSchema(object.$schema);
+    dapContract.setJsonMetaSchema(object.$schema);
   }
 
   if (object.version) {

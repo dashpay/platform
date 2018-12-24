@@ -1,5 +1,5 @@
 const hash = require('../util/hash');
-const serializer = require('../util/serializer');
+const { encode } = require('../util/serializer');
 
 const InvalidDapObjectTypeError = require('../errors/InvalidDapObjectTypeError');
 
@@ -11,7 +11,7 @@ class DapContract {
   constructor(name, dapObjectsDefinition) {
     this.setName(name);
     this.setVersion(DapContract.DEFAULTS.VERSION);
-    this.setSchema(DapContract.DEFAULTS.SCHEMA);
+    this.setJsonMetaSchema(DapContract.DEFAULTS.SCHEMA);
     this.setDapObjectsDefinition(dapObjectsDefinition);
     this.setDefinitions({});
   }
@@ -24,16 +24,15 @@ class DapContract {
   getId() {
     // TODO: Id should be unique for whole network
     //  so we need something like BUID for DapContracts or use ST hash what is not so flexible
-    const serializedDapContract = serializer.encode(this.toJSON());
-    return hash(serializedDapContract);
+    return this.hash();
   }
 
   /**
-   * Get Schema ID
+   * Get JSON Schema ID
    *
    * @return {string}
    */
-  getSchemaId() {
+  getJsonSchemaId() {
     return 'dap-contract';
   }
 
@@ -79,16 +78,18 @@ class DapContract {
    *
    * @param {string} schema
    */
-  setSchema(schema) {
-    this.$schema = schema;
+  setJsonMetaSchema(schema) {
+    this.schema = schema;
+
+    return this;
   }
 
   /**
    *
    * @return {string}
    */
-  getSchema() {
-    return this.$schema;
+  getJsonMetaSchema() {
+    return this.schema;
   }
 
   /**
@@ -111,17 +112,13 @@ class DapContract {
   }
 
   /**
-   * @param {Object<string, Object>} definitions
+   * Returns true if object type is defined in this dap contract
+   *
+   * @param {string} type
+   * @return {boolean}
    */
-  setDefinitions(definitions) {
-    this.definitions = definitions;
-  }
-
-  /**
-   * @return {Object<string, Object>}
-   */
-  getDefinitions() {
-    return this.definitions;
+  isDapObjectDefined(type) {
+    return Object.prototype.hasOwnProperty.call(this.dapObjectsDefinition, type);
   }
 
   /**
@@ -134,16 +131,6 @@ class DapContract {
     this.dapObjectsDefinition[type] = schema;
 
     return this;
-  }
-
-  /**
-   * Returns true if object type is defined in this dap contract
-   *
-   * @param {string} type
-   * @return {boolean}
-   */
-  isDapObjectDefined(type) {
-    return Object.prototype.hasOwnProperty.call(this.dapObjectsDefinition, type);
   }
 
   /**
@@ -168,7 +155,25 @@ class DapContract {
       throw new InvalidDapObjectTypeError(type, this);
     }
 
-    return { $ref: `${this.getSchemaId()}#/dapObjectsDefinition/${type}` };
+    return { $ref: `${this.getJsonSchemaId()}#/dapObjectsDefinition/${type}` };
+  }
+
+
+  /**
+   * @param {Object<string, Object>} definitions
+   * @return {DapContract}
+   */
+  setDefinitions(definitions) {
+    this.definitions = definitions;
+
+    return this;
+  }
+
+  /**
+   * @return {Object<string, Object>}
+   */
+  getDefinitions() {
+    return this.definitions;
   }
 
   /**
@@ -180,7 +185,7 @@ class DapContract {
    */
   toJSON() {
     const json = {
-      $schema: this.getSchema(),
+      $schema: this.getJsonMetaSchema(),
       name: this.getName(),
       version: this.getVersion(),
       dapObjectsDefinition: this.getDapObjectsDefinition(),
@@ -201,7 +206,7 @@ class DapContract {
    * @return {Buffer}
    */
   serialize() {
-    return serializer.encode(this.toJSON());
+    return encode(this.toJSON());
   }
 
   /**
