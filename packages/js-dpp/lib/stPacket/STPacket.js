@@ -1,9 +1,7 @@
 const hash = require('../util/hash');
 const serializer = require('../util/serializer');
 
-const STPacketHeader = require('../stPacketHeader/STPacketHeader');
-
-const EitherDapContractOrDapObjectsAllowedError = require('./errors/EitherDapContractOrDapObjectsAllowedError');
+const ContractAndObjectsNotAllowedSamePacketError = require('./errors/ContractAndObjectsNotAllowedSamePacketError');
 
 class STPacket {
   /**
@@ -26,6 +24,8 @@ class STPacket {
    */
   setDapContractId(contractId) {
     this.contractId = contractId;
+
+    return this;
   }
 
   /**
@@ -44,6 +44,8 @@ class STPacket {
    */
   setItemsMerkleRoot(itemsMerkleRoot) {
     this.itemsMerkleRoot = itemsMerkleRoot;
+
+    return this;
   }
 
   /**
@@ -62,6 +64,8 @@ class STPacket {
    */
   setItemsHash(itemsHash) {
     this.itemsHash = itemsHash;
+
+    return this;
   }
 
   /**
@@ -79,14 +83,11 @@ class STPacket {
    * @param {DapContract} dapContract
    */
   setDapContract(dapContract) {
-    if (this.objects.length) {
-      throw new EitherDapContractOrDapObjectsAllowedError(this);
+    if (this.objects.length > 0) {
+      throw new ContractAndObjectsNotAllowedSamePacketError(this);
     }
 
     this.contracts = !dapContract ? [] : [dapContract];
-
-    // TODO: set contract id
-    // this.contractId = toHash(dapContract);
 
     return this;
   }
@@ -111,10 +112,12 @@ class STPacket {
    */
   setDapObjects(dapObjects) {
     if (this.contracts.length) {
-      throw new EitherDapContractOrDapObjectsAllowedError(this);
+      throw new ContractAndObjectsNotAllowedSamePacketError(this);
     }
 
     this.objects = dapObjects;
+
+    return this;
   }
 
   /**
@@ -133,28 +136,20 @@ class STPacket {
    */
   addDapObject(...dapObjects) {
     this.objects.push(...dapObjects);
-  }
 
-  /**
-   * Create STPacketHeader with STPacket data
-   *
-   * @return STPacketHeader
-   */
-  extractHeader() {
-    return STPacketHeader(
-      this.getDapContractId(),
-      this.getItemsMerkleRoot(),
-      this.getItemsHash(),
-    );
+    return this;
   }
 
   /**
    * Return ST Packet as plain object
    *
-   * @return {{contractId: string, contracts: Object[], objects: Object[]}}
+   * @return {{contractId: string,
+   *           itemsMerkleRoot: string,
+   *           itemsHash: string,
+   *           contracts: Object[],
+   *           objects: Object[]}}
    */
   toJSON() {
-    // TODO: Validate before to JSON ?
     return {
       contractId: this.getDapContractId(),
       itemsMerkleRoot: this.getItemsMerkleRoot(),
@@ -170,7 +165,6 @@ class STPacket {
    * @return {Buffer}
    */
   serialize() {
-    // TODO: Validate before serialization ?
     return serializer.encode(this.toJSON());
   }
 

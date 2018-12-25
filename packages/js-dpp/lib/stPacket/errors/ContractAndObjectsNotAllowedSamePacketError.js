@@ -1,4 +1,4 @@
-class EitherDapContractOrDapObjectsAllowedError extends Error {
+class ContractAndObjectsNotAllowedSamePacketError extends Error {
   /**
    * @param {STPacket} stPacket
    */
@@ -21,8 +21,8 @@ class EitherDapContractOrDapObjectsAllowedError extends Error {
    * @return {STPacket}
    */
   getSTPacket() {
-    return this.rawSTPacketHeader;
+    return this.stPacket;
   }
 }
 
-module.exports = EitherDapContractOrDapObjectsAllowedError;
+module.exports = ContractAndObjectsNotAllowedSamePacketError;

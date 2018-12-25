@@ -20,6 +20,8 @@ class STPacketHeader {
    */
   setDapContractId(contractId) {
     this.contractId = contractId;
+
+    return this;
   }
 
   /**
@@ -38,6 +40,8 @@ class STPacketHeader {
    */
   setItemsMerkleRoot(itemsMerkleRoot) {
     this.itemsMerkleRoot = itemsMerkleRoot;
+
+    return this;
   }
 
   /**
@@ -56,6 +60,8 @@ class STPacketHeader {
    */
   setItemsHash(itemsHash) {
     this.itemsHash = itemsHash;
+
+    return this;
   }
 
   /**
