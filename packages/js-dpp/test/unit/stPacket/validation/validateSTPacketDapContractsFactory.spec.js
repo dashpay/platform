@@ -10,7 +10,7 @@ const InvalidSTPacketContractIdError = require('../../../../lib/errors/InvalidST
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe('validateSTPacketDapContractsFactory', () => {
-  let rawStPacket;
+  let rawSTPacket;
   let rawDapContract;
   let dapContract;
   let validateSTPacketDapContracts;
@@ -20,7 +20,7 @@ describe('validateSTPacketDapContractsFactory', () => {
   beforeEach(function beforeEach() {
     dapContract = getDapContractFixture();
     rawDapContract = dapContract.toJSON();
-    rawStPacket = {
+    rawSTPacket = {
       contractId: dapContract.getId(),
       itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
@@ -44,7 +44,7 @@ describe('validateSTPacketDapContractsFactory', () => {
       new ValidationResult([dapContractError]),
     );
 
-    const result = validateSTPacketDapContracts(rawStPacket.contracts, rawStPacket);
+    const result = validateSTPacketDapContracts(rawSTPacket);
 
     expectValidationError(result);
 
@@ -56,9 +56,9 @@ describe('validateSTPacketDapContractsFactory', () => {
   });
 
   it('should return invalid result if STPacket\'s contractId is not equal to DAP Contract ID', () => {
-    rawStPacket.contractId = 'wrong';
+    rawSTPacket.contractId = 'wrong';
 
-    const result = validateSTPacketDapContracts(rawStPacket.contracts, rawStPacket);
+    const result = validateSTPacketDapContracts(rawSTPacket);
 
     expectValidationError(result, InvalidSTPacketContractIdError);
 
@@ -66,14 +66,14 @@ describe('validateSTPacketDapContractsFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getDapContractId()).to.be.equal(rawStPacket.contractId);
+    expect(error.getDapContractId()).to.be.equal(rawSTPacket.contractId);
     expect(error.getDapContract()).to.be.equal(dapContract);
   });
 
   it('should return valid result if DAP Contract is valid and STPacket\'s contractId is correct', () => {
     createDapContractMock.returns(dapContract);
 
-    const result = validateSTPacketDapContracts(rawStPacket.contracts, rawStPacket);
+    const result = validateSTPacketDapContracts(rawSTPacket);
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

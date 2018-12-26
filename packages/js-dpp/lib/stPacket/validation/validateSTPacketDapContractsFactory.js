@@ -8,12 +8,11 @@ const InvalidSTPacketContractIdError = require('../../errors/InvalidSTPacketCont
 function validateSTPacketDapContractsFactory(validateDapContract, createDapContract) {
   /**
    * @typedef validateSTPacketDapContracts
-   * @param {Object[]} rawDapContracts
-   * @param {Object} rawStPacket
+   * @param {Object} rawSTPacket
    * @return {ValidationResult}
    */
-  function validateSTPacketDapContracts(rawDapContracts, rawStPacket) {
-    const [rawDapContract] = rawDapContracts;
+  function validateSTPacketDapContracts(rawSTPacket) {
+    const { contracts: [rawDapContract] } = rawSTPacket;
 
     const result = validateDapContract(rawDapContract);
 
@@ -23,9 +22,9 @@ function validateSTPacketDapContractsFactory(validateDapContract, createDapContr
 
     const dapContract = createDapContract(rawDapContract);
 
-    if (rawStPacket.contractId !== dapContract.getId()) {
+    if (rawSTPacket.contractId !== dapContract.getId()) {
       result.addError(
-        new InvalidSTPacketContractIdError(rawStPacket.contractId, dapContract),
+        new InvalidSTPacketContractIdError(rawSTPacket.contractId, dapContract),
       );
     }
 

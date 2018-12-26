@@ -37,17 +37,17 @@ module.exports = function validateSTPacketFactory(
   /**
    * @typedef validateSTPacket
    * @param {STPacket|Object} stPacket
-   * @param {DapContract} dapContract
+   * @param {DapContract} [dapContract]
    * @return {ValidationResult}
    */
-  function validateSTPacket(stPacket, dapContract) {
-    const rawStPacket = (stPacket instanceof STPacket)
+  function validateSTPacket(stPacket, dapContract = undefined) {
+    const rawSTPacket = (stPacket instanceof STPacket)
       ? stPacket.toJSON()
       : stPacket;
 
     const result = validator.validate(
       createSTPacketSchema(),
-      rawStPacket,
+      rawSTPacket,
     );
 
     if (!result.isValid()) {
@@ -56,15 +56,15 @@ module.exports = function validateSTPacketFactory(
 
     // TODO Validate itemsHashes and itemsMerkleRoot
 
-    if (rawStPacket.contracts.length > 0) {
+    if (rawSTPacket.contracts.length > 0) {
       result.merge(
-        validateSTPacketDapContracts(rawStPacket.contracts, rawStPacket),
+        validateSTPacketDapContracts(rawSTPacket),
       );
     }
 
-    if (rawStPacket.objects.length > 0) {
+    if (rawSTPacket.objects.length > 0) {
       result.merge(
-        validateSTPacketDapObjects(rawStPacket.objects, dapContract),
+        validateSTPacketDapObjects(rawSTPacket, dapContract),
       );
     }
 

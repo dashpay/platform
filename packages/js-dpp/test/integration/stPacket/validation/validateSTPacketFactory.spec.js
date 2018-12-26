@@ -16,7 +16,7 @@ const {
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe('validateSTPacketFactory', () => {
-  let rawStPacket;
+  let rawSTPacket;
   let rawDapContract;
   let dapContract;
   let rawDapObjects;
@@ -28,7 +28,7 @@ describe('validateSTPacketFactory', () => {
     dapContract = getDapContractFixture();
     rawDapContract = dapContract.toJSON();
     rawDapObjects = getDapObjectsFixture().map(o => o.toJSON());
-    rawStPacket = {
+    rawSTPacket = {
       contractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
       itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
@@ -51,9 +51,9 @@ describe('validateSTPacketFactory', () => {
 
   describe('contractId', () => {
     it('should be present', () => {
-      delete rawStPacket.contractId;
+      delete rawSTPacket.contractId;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -68,9 +68,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should be a string', () => {
-      rawStPacket.contractId = 1;
+      rawSTPacket.contractId = 1;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -84,9 +84,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not be less than 64 chars', () => {
-      rawStPacket.contractId = '86b273ff';
+      rawSTPacket.contractId = '86b273ff';
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -100,9 +100,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not be longer than 64 chars', () => {
-      rawStPacket.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+      rawSTPacket.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -118,9 +118,9 @@ describe('validateSTPacketFactory', () => {
 
   describe('itemsMerkleRoot', () => {
     it('should be present', () => {
-      delete rawStPacket.itemsMerkleRoot;
+      delete rawSTPacket.itemsMerkleRoot;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -135,9 +135,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should be a string', () => {
-      rawStPacket.itemsMerkleRoot = 1;
+      rawSTPacket.itemsMerkleRoot = 1;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -151,9 +151,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not be less than 64 chars', () => {
-      rawStPacket.itemsMerkleRoot = '86b273ff';
+      rawSTPacket.itemsMerkleRoot = '86b273ff';
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -167,9 +167,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not be longer than 64 chars', () => {
-      rawStPacket.itemsMerkleRoot = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+      rawSTPacket.itemsMerkleRoot = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -185,9 +185,9 @@ describe('validateSTPacketFactory', () => {
 
   describe('itemsHash', () => {
     it('should be present', () => {
-      delete rawStPacket.itemsHash;
+      delete rawSTPacket.itemsHash;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -202,9 +202,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should be a string', () => {
-      rawStPacket.itemsHash = 1;
+      rawSTPacket.itemsHash = 1;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -218,9 +218,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not be less than 64 chars', () => {
-      rawStPacket.itemsHash = '86b273ff';
+      rawSTPacket.itemsHash = '86b273ff';
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -234,9 +234,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not be longer than 64 chars', () => {
-      rawStPacket.itemsHash = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+      rawSTPacket.itemsHash = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -252,9 +252,9 @@ describe('validateSTPacketFactory', () => {
 
   describe('objects', () => {
     it('should be present', () => {
-      delete rawStPacket.objects;
+      delete rawSTPacket.objects;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -269,9 +269,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should be an array', () => {
-      rawStPacket.objects = 1;
+      rawSTPacket.objects = 1;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -286,9 +286,9 @@ describe('validateSTPacketFactory', () => {
 
     it('should not contain more than 1000 items', () => {
       const thousandDapObjects = (new Array(1001)).fill(rawDapObjects[0]);
-      rawStPacket.objects.push(...thousandDapObjects);
+      rawSTPacket.objects.push(...thousandDapObjects);
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result, 3);
 
@@ -313,9 +313,9 @@ describe('validateSTPacketFactory', () => {
 
   describe('contracts', () => {
     it('should be present', () => {
-      delete rawStPacket.contracts;
+      delete rawSTPacket.contracts;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -330,9 +330,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should be an array', () => {
-      rawStPacket.contracts = 1;
+      rawSTPacket.contracts = 1;
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result);
 
@@ -346,9 +346,9 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not contain more than one contract', () => {
-      rawStPacket.contracts.push(rawDapContract, rawDapContract);
+      rawSTPacket.contracts.push(rawDapContract, rawDapContract);
 
-      const result = validateSTPacket(rawStPacket, dapContract);
+      const result = validateSTPacket(rawSTPacket, dapContract);
 
       expectJsonSchemaError(result, 3);
 
@@ -370,10 +370,10 @@ describe('validateSTPacketFactory', () => {
   });
 
   it('should return invalid result if packet is empty', () => {
-    rawStPacket.contracts = [];
-    rawStPacket.objects = [];
+    rawSTPacket.contracts = [];
+    rawSTPacket.objects = [];
 
-    const result = validateSTPacket(rawStPacket, dapContract);
+    const result = validateSTPacket(rawSTPacket, dapContract);
 
     expectJsonSchemaError(result);
 
@@ -387,9 +387,9 @@ describe('validateSTPacketFactory', () => {
   });
 
   it('should return invalid result if packet contains the both objects and contracts', () => {
-    rawStPacket.contracts.push(rawDapContract);
+    rawSTPacket.contracts.push(rawDapContract);
 
-    const result = validateSTPacket(rawStPacket, dapContract);
+    const result = validateSTPacket(rawSTPacket, dapContract);
 
     expectJsonSchemaError(result, 3);
 
@@ -412,9 +412,9 @@ describe('validateSTPacketFactory', () => {
   it('should return invalid result if there are additional properties in the packet', () => {
     const additionalProperty = 'additionalStuff';
 
-    rawStPacket[additionalProperty] = {};
+    rawSTPacket[additionalProperty] = {};
 
-    const result = validateSTPacket(rawStPacket, dapContract);
+    const result = validateSTPacket(rawSTPacket, dapContract);
 
     expectJsonSchemaError(result);
 
@@ -429,11 +429,11 @@ describe('validateSTPacketFactory', () => {
   });
 
   it('should validate DAP Contract if present', () => {
-    rawStPacket.contracts = [
+    rawSTPacket.contracts = [
       rawDapContract,
     ];
 
-    rawStPacket.objects = [];
+    rawSTPacket.objects = [];
 
     const dapContractError = new ConsensusError('test');
 
@@ -441,14 +441,11 @@ describe('validateSTPacketFactory', () => {
       new ValidationResult([dapContractError]),
     );
 
-    const result = validateSTPacket(rawStPacket, dapContract);
+    const result = validateSTPacket(rawSTPacket);
 
     expectValidationError(result);
 
-    expect(validateSTPacketDapContractsMock).to.be.calledOnceWith(
-      rawStPacket.contracts,
-      rawStPacket,
-    );
+    expect(validateSTPacketDapContractsMock).to.be.calledOnceWith(rawSTPacket);
 
     const [error] = result.getErrors();
 
@@ -462,12 +459,12 @@ describe('validateSTPacketFactory', () => {
       new ValidationResult([dapContractError]),
     );
 
-    const result = validateSTPacket(rawStPacket, dapContract);
+    const result = validateSTPacket(rawSTPacket, dapContract);
 
     expectValidationError(result);
 
     expect(validateSTPacketDapObjectsMock).to.be.calledOnceWith(
-      rawStPacket.objects,
+      rawSTPacket,
       dapContract,
     );
 
@@ -477,7 +474,7 @@ describe('validateSTPacketFactory', () => {
   });
 
   it('should return valid result if packet structure is correct', () => {
-    const result = validateSTPacket(rawStPacket);
+    const result = validateSTPacket(rawSTPacket);
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
