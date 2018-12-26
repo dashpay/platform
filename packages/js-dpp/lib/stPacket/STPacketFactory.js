@@ -1,8 +1,9 @@
-const serializer = require('../util/serializer');
+const { decode } = require('../util/serializer');
 
 const STPacket = require('./STPacket');
 
 const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
+const InvalidSTPacketContractIdError = require('../errors/InvalidSTPacketContractIdError');
 
 const DapContract = require('../dapContract/DapContract');
 const DapObject = require('../dapObject/DapObject');
@@ -37,7 +38,7 @@ class STPacketFactory {
     const stPacket = new STPacket(contractId);
 
     if (items instanceof DapContract) {
-      stPacket.addDapObject(items);
+      stPacket.setDapContract(items);
     }
 
     if (Array.isArray(items)) {
@@ -48,17 +49,22 @@ class STPacketFactory {
   }
 
   /**
+   * Create ST Packet from plain object
    *
    * @param {Object} object
-   * @return {STPacket}
+   * @return {Promise<STPacket>}
    */
-  createFromObject(object) {
-    // TODO We don't need contract if there are no objects in STPacket
-    // TODO Check if contractId is present
+  async createFromObject(object) {
+    let dapContract;
+    if (object.contractId && Array.isArray(object.objects) && object.objects.length > 0) {
+      dapContract = await this.dataProvider.fetchDapContract(object.contractId);
 
-    const dapContract = this.dataProvider.fetchDapContract(object.contractId);
+      if (!dapContract) {
+        const error = new InvalidSTPacketContractIdError(object.contractId, dapContract);
 
-    // TODO Return error if contract is not present
+        throw new InvalidSTPacketError([error], object);
+      }
+    }
 
     const result = this.validateSTPacket(object, dapContract);
 
@@ -71,13 +77,13 @@ class STPacketFactory {
     stPacket.setItemsMerkleRoot(object.itemsMerkleRoot);
     stPacket.setItemsHash(object.itemsHash);
 
-    if (object.contracts.length) {
+    if (object.contracts.length > 0) {
       const packetDapContract = this.createDapContract(object.contracts[0]);
 
       stPacket.setDapContract(packetDapContract);
     }
 
-    if (object.objects.length) {
+    if (dapContract && object.objects.length > 0) {
       const dapObjects = object.objects.map(rawDapObject => new DapObject(rawDapObject));
 
       stPacket.setDapObjects(dapObjects);
@@ -90,10 +96,10 @@ class STPacketFactory {
    * Unserialize ST Packet
    *
    * @param {Buffer|string} payload
-   * @return {STPacket}
+   * @return {Promise<STPacket>}
    */
-  createFromSerialized(payload) {
-    const object = serializer.decode(payload);
+  async createFromSerialized(payload) {
+    const object = decode(payload);
 
     return this.createFromObject(object);
   }

@@ -13,17 +13,6 @@ class ConsensusError extends Error {
       Error.captureStackTrace(this, this.constructor);
     }
   }
-
-  /**
-   * Mark consensus rule as deprecated
-   */
-  markAsDeprecated() {
-    this.deprecated = true;
-  }
-
-  isDeprecated() {
-    return this.deprecated;
-  }
 }
 
 module.exports = ConsensusError;

@@ -1,4 +1,4 @@
-const serializer = require('../util/serializer');
+const { decode } = require('../util/serializer');
 
 const STPacketHeader = require('./STPacketHeader');
 
@@ -37,7 +37,7 @@ class STPacketHeaderFactory {
   createFromObject(object) {
     const result = this.validateSTPacketHeader(object);
 
-    if (result.isValid()) {
+    if (!result.isValid()) {
       throw new InvalidSTPacketHeaderError(result.getErrors(), object);
     }
 
@@ -51,7 +51,7 @@ class STPacketHeaderFactory {
    * @return {STPacketHeader}
    */
   createFromSerialized(payload) {
-    const object = serializer.decode(payload);
+    const object = decode(payload);
 
     return this.createFromObject(object);
   }

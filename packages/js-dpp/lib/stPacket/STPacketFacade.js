@@ -79,9 +79,9 @@ class STPacketFacade {
   /**
    *
    * @param {Object} object
-   * @return {STPacket}
+   * @return {Promise<STPacket>}
    */
-  createFromObject(object) {
+  async createFromObject(object) {
     return this.factory.createFromObject(object);
   }
 
@@ -89,9 +89,9 @@ class STPacketFacade {
    * Unserialize ST Packet
    *
    * @param {Buffer|string} payload
-   * @return {STPacket}
+   * @return {Promise<STPacket>}
    */
-  createFromSerialized(payload) {
+  async createFromSerialized(payload) {
     return this.factory.createFromSerialized(payload);
   }
 
@@ -107,9 +107,9 @@ class STPacketFacade {
   /**
    * @param {STPacket} stPacket
    * @param {Transaction} stateTransition
-   * @return {ValidationResult}
+   * @return {Promise<ValidationResult>}
    */
-  verify(stPacket, stateTransition) {
+  async verify(stPacket, stateTransition) {
     return this.verifySTPacket(stPacket, stateTransition);
   }
 }
