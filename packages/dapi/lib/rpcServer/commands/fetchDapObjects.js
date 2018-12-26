@@ -31,4 +31,84 @@ const fetchDapObjectsFactory = (dashDriveAPI) => {
   return fetchDapObjects;
 };
 
+/* eslint-disable max-len */
+/**
+ * @swagger
+ * /fetchDapObjects:
+ *   post:
+ *      operationId: fetchDapObjects
+ *      deprecated: false
+ *      summary: fetchDapObjects
+ *      description: Fetches user objects for a given condition
+ *      tags:
+ *        - L2
+ *      responses:
+ *        200:
+ *          description: Successful response. Promise (object) with user objects.
+ *      requestBody:
+ *        content:
+ *          application/json:
+ *            schema:
+ *              type: object
+ *              required:
+ *                - method
+ *                - id
+ *                - jsonrpc
+ *                - params
+ *              properties:
+ *                method:
+ *                  type: string
+ *                  default: fetchDapObjects
+ *                  description: Method name
+ *                id:
+ *                  type: integer
+ *                  default: 1
+ *                  format: int32
+ *                  description: Request ID
+ *                jsonrpc:
+ *                  type: string
+ *                  default: '2.0'
+ *                  description: JSON-RPC Version (2.0)
+ *                params:
+ *                  title: Parameters
+ *                  type: object
+ *                  required:
+ *                    - dapId
+ *                    - type
+ *                  properties:
+ *                    dapId:
+ *                      type: string
+ *                      default: ''
+ *                      description: A user's DAP ID
+ *                    type:
+ *                      type: string
+ *                      default: ''
+ *                      description: DAP object type to fetch
+ *                    options:
+ *                      title: Options
+ *                      type: object
+ *                      properties:
+ *                        where:
+ *                          type: string
+ *                          default: ''
+ *                          description: Mongo-like query
+ *                        orderBy:
+ *                          type: string
+ *                          default: ''
+ *                          description: Mongo-like sort field
+ *                        limit:
+ *                          type: integer
+ *                          default: ''
+ *                          description: How many objects to fetch
+ *                        startAt:
+ *                          type: integer
+ *                          default: ''
+ *                          description: Number of objects to skip
+ *                        startAfter:
+ *                          type: integer
+ *                          default: ''
+ *                          description: Exlusive skip
+ */
+/* eslint-enable max-len */
+
 module.exports = fetchDapObjectsFactory;

@@ -25,4 +25,55 @@ const sendRawIxTransactionFactory = (coreAPI) => {
   return sendRawIxTransaction;
 };
 
+/* eslint-disable max-len */
+/**
+ * @swagger
+ * /sendRawIxTransaction:
+ *   post:
+ *      operationId: sendRawIxTransaction
+ *      deprecated: false
+ *      summary: sendRawIxTransaction
+ *      description: Sends raw InstantSend transaction and returns the transaction ID
+ *      tags:
+ *        - L1
+ *      responses:
+ *        200:
+ *          description: Successful response. Promise (string array) containing the transaction ID.
+ *      requestBody:
+ *        content:
+ *          application/json:
+ *            schema:
+ *              type: object
+ *              required:
+ *                - method
+ *                - id
+ *                - jsonrpc
+ *                - params
+ *              properties:
+ *                method:
+ *                  type: string
+ *                  default: sendRawIxTransaction
+ *                  description: Method name
+ *                id:
+ *                  type: integer
+ *                  default: 1
+ *                  format: int32
+ *                  description: Request ID
+ *                jsonrpc:
+ *                  type: string
+ *                  default: '2.0'
+ *                  description: JSON-RPC Version (2.0)
+ *                params:
+ *                  title: Parameters
+ *                  type: object
+ *                  required:
+ *                    - rawIxTransaction
+ *                  properties:
+ *                    rawIxTransaction:
+ *                      type: string
+ *                      default: ''
+ *                      description: Raw InstantSend transaction
+ */
+/* eslint-enable max-len */
+
 module.exports = sendRawIxTransactionFactory;

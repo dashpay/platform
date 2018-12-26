@@ -8,7 +8,8 @@
     "test:full-reporting": "nyc --check-coverage --reporter=html --reporter=text --lines=70 --branches=50 --functions=70 mocha test/ --recursive",
     "test:integration": "node test/integration/",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "oas:generate": "swagger-jsdoc -d doc/swaggerDef.js lib/rpcServer/**/*.js -o doc/swagger.json"
   },
   "nyc": {
     "include": [
@@ -59,7 +60,8 @@
     "proxyquire": "^2.1.0",
     "rewire": "^4.0.1",
     "should": "^11.2.1",
-    "sinon": "^4.2.0"
+    "sinon": "^4.2.0",
+    "swagger-jsdoc": "^3.2.6"
   },
   "main": "index.js",
   "repository": {
