@@ -5,23 +5,19 @@ const STPacket = require('./STPacket');
 const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
 const InvalidSTPacketContractIdError = require('../errors/InvalidSTPacketContractIdError');
 
-const DapContract = require('../dapContract/DapContract');
 const DapObject = require('../dapObject/DapObject');
 
 class STPacketFactory {
   /**
-   * @param {string} userId
    * @param {AbstractDataProvider} dataProvider
    * @param {validateSTPacket} validateSTPacket
    * @param {createDapContract} createDapContract
    */
   constructor(
-    userId,
     dataProvider,
     validateSTPacket,
     createDapContract,
   ) {
-    this.userId = userId;
     this.dataProvider = dataProvider;
     this.validateSTPacket = validateSTPacket;
     this.createDapContract = createDapContract;
@@ -35,17 +31,7 @@ class STPacketFactory {
    * @return {STPacket}
    */
   create(contractId, items = undefined) {
-    const stPacket = new STPacket(contractId);
-
-    if (items instanceof DapContract) {
-      stPacket.setDapContract(items);
-    }
-
-    if (Array.isArray(items)) {
-      stPacket.setDapObjects(items);
-    }
-
-    return stPacket;
+    return new STPacket(contractId, items);
   }
 
   /**
@@ -102,27 +88,6 @@ class STPacketFactory {
     const object = decode(payload);
 
     return this.createFromObject(object);
-  }
-
-  /**
-   * Set User ID
-   *
-   * @param {string} userId
-   * @return {STPacketFactory}
-   */
-  setUserId(userId) {
-    this.userId = userId;
-
-    return this;
-  }
-
-  /**
-   * Get User ID
-   *
-   * @return {string}
-   */
-  getUserId() {
-    return this.userId;
   }
 
   /**

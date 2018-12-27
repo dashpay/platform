@@ -3,6 +3,9 @@ const rewiremock = require('rewiremock/node');
 const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
 const getDapObjectsFixture = require('../../../lib/test/fixtures/getDapObjectsFixture');
 
+const DapContract = require('../../../lib/dapContract/DapContract');
+const DapObject = require('../../../lib/dapObject/DapObject');
+
 const ContractAndObjectsNotAllowedSamePacketError = require('../../../lib/stPacket/errors/ContractAndObjectsNotAllowedSamePacketError');
 
 describe('STPacket', () => {
@@ -24,6 +27,8 @@ describe('STPacket', () => {
     STPacket = rewiremock.proxy('../../../lib/stPacket/STPacket', {
       '../../../lib/util/hash': hashMock,
       '../../../lib/util/serializer': serializerMock,
+      '../../../lib/dapContract/DapContract': DapContract,
+      '../../../lib/dapObject/DapObject': DapObject,
     });
 
     dapContract = getDapContractFixture();
@@ -39,10 +44,28 @@ describe('STPacket', () => {
   });
 
   describe('constructor', () => {
-    it('should return new ST Packet with specified Contract ID', () => {
+    it('should return new ST Packet with specified DAP Contract ID', () => {
       expect(stPacket).to.be.instanceOf(STPacket);
 
       expect(stPacket.contractId).to.be.equal(dapContractId);
+    });
+
+    it('should return new STPacket with specified DAP Contract ID and DAP Contract', () => {
+      const result = new STPacket(dapContractId, dapContract);
+
+      expect(result).to.be.instanceOf(STPacket);
+
+      expect(result.getDapContractId()).to.be.equal(dapContractId);
+      expect(result.getDapContract()).to.be.equal(dapContract);
+    });
+
+    it('should return new STPacket with specified DAP Contract ID and DAP Objects', () => {
+      const result = new STPacket(dapContractId, dapObjects);
+
+      expect(result).to.be.instanceOf(STPacket);
+
+      expect(result.getDapContractId()).to.be.equal(dapContractId);
+      expect(result.getDapObjects()).to.be.equal(dapObjects);
     });
   });
 

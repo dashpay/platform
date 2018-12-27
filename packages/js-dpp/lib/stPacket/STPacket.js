@@ -1,13 +1,16 @@
 const hash = require('../util/hash');
 const serializer = require('../util/serializer');
 
+const DapContract = require('../dapContract/DapContract');
+
 const ContractAndObjectsNotAllowedSamePacketError = require('./errors/ContractAndObjectsNotAllowedSamePacketError');
 
 class STPacket {
   /**
    * @param {string} contractId
+   * @param {DapContract|DapObject[]} [items] DAP Contract or DAP Objects
    */
-  constructor(contractId) {
+  constructor(contractId, items = undefined) {
     this.setDapContractId(contractId);
 
     this.itemsMerkleRoot = null;
@@ -15,6 +18,14 @@ class STPacket {
 
     this.objects = [];
     this.contracts = [];
+
+    if (items instanceof DapContract) {
+      this.setDapContract(items);
+    }
+
+    if (Array.isArray(items)) {
+      this.setDapObjects(items);
+    }
   }
 
   /**

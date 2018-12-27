@@ -3,10 +3,9 @@ const rewiremock = require('rewiremock/node');
 const AbstractDataProvider = require('../../../lib/dataProvider/AbstractDataProvider');
 
 const STPacket = require('../../../lib/stPacket/STPacket');
-const DapContract = require('../../../lib/dapContract/DapContract');
 
-const getDapObjectsFixture = require('../../../lib/test/fixtures/getDapObjectsFixture');
 const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
+const getSTPacketFixture = require('../../../lib/test/fixtures/getSTPacketFixture');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
@@ -22,8 +21,6 @@ describe('STPacketFactory', () => {
   let fetchDapContractMock;
   let dataProviderMock;
   let dapContract;
-  let dapObjects;
-  let userId;
   let factory;
   let dapContractId;
   let stPacket;
@@ -46,55 +43,30 @@ describe('STPacketFactory', () => {
     STPacketFactory = rewiremock.proxy('../../../lib/stPacket/STPacketFactory', {
       '../../../lib/util/serializer': { decode: decodeMock },
       '../../../lib/stPacket/STPacket': STPacket,
-      '../../../lib/dapContract/DapContract': DapContract,
     });
 
-    ({ userId } = getDapObjectsFixture);
-
     dapContract = getDapContractFixture();
-    dapObjects = getDapObjectsFixture();
 
     dapContractId = dapContract.getId();
 
     factory = new STPacketFactory(
-      userId,
       dataProviderMock,
       validateSTPacketMock,
       createDapContractMock,
     );
 
-    stPacket = new STPacket(dapContractId);
-    stPacket.setItemsMerkleRoot('6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b')
-      .setItemsHash('y90b273ff34fce19d6b804eff5a3f5747ada4eaa22f86fj5jf652ddb78755642');
+    stPacket = getSTPacketFixture();
 
     rawSTPacket = stPacket.toJSON();
   });
 
   describe('create', () => {
-    it('should return new STPacket with specified DAP Contract ID', () => {
+    it('should return new STPacket', () => {
       const newSTPacket = factory.create(dapContractId, dapContract);
 
       expect(newSTPacket).to.be.instanceOf(STPacket);
 
       expect(newSTPacket.getDapContractId()).to.be.equal(dapContractId);
-    });
-
-    it('should return new STPacket with specified DAP Contract ID and DAP Contract', () => {
-      const newSTPacket = factory.create(dapContractId, dapContract);
-
-      expect(newSTPacket).to.be.instanceOf(STPacket);
-
-      expect(newSTPacket.getDapContractId()).to.be.equal(dapContractId);
-      expect(newSTPacket.getDapContract()).to.be.equal(dapContract);
-    });
-
-    it('should return new STPacket with specified DAP Contract ID and DAP Objects', () => {
-      const newSTPacket = factory.create(dapContractId, dapObjects);
-
-      expect(newSTPacket).to.be.instanceOf(STPacket);
-
-      expect(newSTPacket.getDapContractId()).to.be.equal(dapContractId);
-      expect(newSTPacket.getDapObjects()).to.be.equal(dapObjects);
     });
   });
 
@@ -102,8 +74,6 @@ describe('STPacketFactory', () => {
     it('should return new STPacket with DAP Objects', async () => {
       validateSTPacketMock.returns(new ValidationResult());
       fetchDapContractMock.resolves(dapContract);
-
-      stPacket.setDapObjects(dapObjects);
 
       rawSTPacket = stPacket.toJSON();
 
@@ -119,10 +89,6 @@ describe('STPacketFactory', () => {
     });
 
     it('should throw error if STPacket has invalid contract ID', async () => {
-      stPacket.setDapObjects(dapObjects);
-
-      rawSTPacket = stPacket.toJSON();
-
       let error;
       try {
         await factory.createFromObject(rawSTPacket);
@@ -148,6 +114,7 @@ describe('STPacketFactory', () => {
 
       createDapContractMock.returns(dapContract);
 
+      stPacket.setDapObjects([]);
       stPacket.setDapContract(dapContract);
 
       rawSTPacket = stPacket.toJSON();
@@ -164,6 +131,8 @@ describe('STPacketFactory', () => {
     });
 
     it('should throw error if passed object is not valid', async () => {
+      fetchDapContractMock.returns(dapContract);
+
       const validationError = new ConsensusError('test');
 
       validateSTPacketMock.returns(new ValidationResult([validationError]));
@@ -177,7 +146,10 @@ describe('STPacketFactory', () => {
 
       expect(error).to.be.instanceOf(InvalidSTPacketError);
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getErrors()[0]).to.be.equal(validationError);
+
+      const [consensusError] = error.getErrors();
+
+      expect(consensusError).to.be.equal(validationError);
 
       expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket);
     });
@@ -202,25 +174,6 @@ describe('STPacketFactory', () => {
       expect(factory.createFromObject).to.be.calledOnceWith(rawSTPacket);
 
       expect(decodeMock).to.be.calledOnceWith(serializedSTPacket);
-    });
-  });
-
-  describe('setUserId', () => {
-    it('should set User ID', () => {
-      userId = '123';
-
-      const result = factory.setUserId(userId);
-
-      expect(result).to.be.equal(factory);
-      expect(factory.userId).to.be.equal(userId);
-    });
-  });
-
-  describe('getUserId', () => {
-    it('should return User ID', () => {
-      const result = factory.getUserId();
-
-      expect(result).to.be.equal(userId);
     });
   });
 

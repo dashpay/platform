@@ -4,7 +4,7 @@ const JsonSchemaValidator = require('../../../../lib/validation/JsonSchemaValida
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
 const getDapContractFixture = require('../../../../lib/test/fixtures/getDapContractFixture');
-const getDapObjectsFixture = require('../../../../lib/test/fixtures/getDapObjectsFixture');
+const getSTPacketFixture = require('../../../../lib/test/fixtures/getSTPacketFixture');
 
 const validateSTPacketFactory = require('../../../../lib/stPacket/validation/validateSTPacketFactory');
 
@@ -19,7 +19,6 @@ describe('validateSTPacketFactory', () => {
   let rawSTPacket;
   let rawDapContract;
   let dapContract;
-  let rawDapObjects;
   let validateSTPacket;
   let validateSTPacketDapContractsMock;
   let validateSTPacketDapObjectsMock;
@@ -27,14 +26,7 @@ describe('validateSTPacketFactory', () => {
   beforeEach(function beforeEach() {
     dapContract = getDapContractFixture();
     rawDapContract = dapContract.toJSON();
-    rawDapObjects = getDapObjectsFixture().map(o => o.toJSON());
-    rawSTPacket = {
-      contractId: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
-      itemsMerkleRoot: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
-      itemsHash: '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b',
-      contracts: [],
-      objects: rawDapObjects,
-    };
+    rawSTPacket = getSTPacketFixture().toJSON();
 
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
@@ -285,7 +277,7 @@ describe('validateSTPacketFactory', () => {
     });
 
     it('should not contain more than 1000 items', () => {
-      const thousandDapObjects = (new Array(1001)).fill(rawDapObjects[0]);
+      const thousandDapObjects = (new Array(1001)).fill(rawSTPacket.objects[0]);
       rawSTPacket.objects.push(...thousandDapObjects);
 
       const result = validateSTPacket(rawSTPacket, dapContract);
