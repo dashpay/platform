@@ -13,6 +13,8 @@ const fetchDapObjectsByObjectsFactory = require('./verification/fetchDapObjectsB
 
 const STPacketFactory = require('./STPacketFactory');
 
+const MissingOptionError = require('../errors/MissingOptionError');
+
 class STPacketFacade {
   /**
    * @param {DashApplicationProtocol} dap
@@ -37,33 +39,11 @@ class STPacketFacade {
       validateSTPacketDapObjects,
     );
 
-    const verifyDapContract = verifyDapContractFactory(dap.getDataProvider());
-
-    const fetchDapObjectsByObjects = fetchDapObjectsByObjectsFactory(dap.getDataProvider());
-    const verifyDapObjects = verifyDapObjectsFactory(fetchDapObjectsByObjects);
-
-    this.verifySTPacket = verifySTPacketFactory(
-      verifyDapContract,
-      verifyDapObjects,
-      dap.getDataProvider(),
-    );
-
     this.factory = new STPacketFactory(
-      dap.getUserId(),
       dap.getDataProvider(),
       this.validateSTPacket,
       createDapContract,
     );
-  }
-
-  /**
-   * Update dependencies
-   *
-   * @param {DashApplicationProtocol} dap
-   */
-  updateDependencies(dap) {
-    this.factory.setUserId(dap.getUserId());
-    this.factory.setDataProvider(dap.getDataProvider());
   }
 
   /**
@@ -73,7 +53,13 @@ class STPacketFacade {
    * @return {STPacket}
    */
   create(items) {
-    return this.factory.create(this.dap.getDapContractId(), items);
+    const dapContract = this.dap.getDapContract();
+
+    if (!dapContract) {
+      throw new MissingOptionError('dapContract');
+    }
+
+    return this.factory.create(dapContract.getId(), items);
   }
 
   /**
@@ -82,7 +68,7 @@ class STPacketFacade {
    * @return {Promise<STPacket>}
    */
   async createFromObject(object) {
-    return this.factory.createFromObject(object);
+    return this.getFactory().createFromObject(object);
   }
 
   /**
@@ -92,7 +78,7 @@ class STPacketFacade {
    * @return {Promise<STPacket>}
    */
   async createFromSerialized(payload) {
-    return this.factory.createFromSerialized(payload);
+    return this.getFactory().createFromSerialized(payload);
   }
 
   /**
@@ -101,7 +87,13 @@ class STPacketFacade {
    * @return {Object[]|*}
    */
   validate(stPacket) {
-    return this.validateSTPacket(stPacket, this.dap.getDapContract());
+    const dapContract = this.dap.getDapContract();
+
+    if (!dapContract) {
+      throw new MissingOptionError('dapContract');
+    }
+
+    return this.validateSTPacket(stPacket, dapContract);
   }
 
   /**
@@ -110,7 +102,49 @@ class STPacketFacade {
    * @return {Promise<ValidationResult>}
    */
   async verify(stPacket, stateTransition) {
-    return this.verifySTPacket(stPacket, stateTransition);
+    if (!this.dap.getDataProvider()) {
+      throw new MissingOptionError('dataProvider');
+    }
+
+    const verifySTPacket = this.createVerifySTPacket();
+
+    return verifySTPacket(stPacket, stateTransition);
+  }
+
+  /**
+   * @private
+   * @return {verifySTPacket}
+   */
+  createVerifySTPacket() {
+    const verifyDapContract = verifyDapContractFactory(
+      this.dap.getDataProvider(),
+    );
+
+    const fetchDapObjectsByObjects = fetchDapObjectsByObjectsFactory(
+      this.dap.getDataProvider(),
+    );
+
+    const verifyDapObjects = verifyDapObjectsFactory(fetchDapObjectsByObjects);
+
+    return verifySTPacketFactory(
+      verifyDapContract,
+      verifyDapObjects,
+      this.dap.getDataProvider(),
+    );
+  }
+
+  /**
+   * @private
+   * @return {STPacketFactory}
+   */
+  getFactory() {
+    if (!this.dap.getDataProvider()) {
+      throw new MissingOptionError('dataProvider');
+    }
+
+    this.factory.setDataProvider(this.dap.getDataProvider());
+
+    return this.factory;
   }
 }
 
