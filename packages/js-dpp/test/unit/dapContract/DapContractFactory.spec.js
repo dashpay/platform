@@ -80,8 +80,13 @@ describe('DapContractFactory', () => {
       }
 
       expect(error).to.be.instanceOf(InvalidDapContractError);
+      expect(error.getRawDapContract()).to.be.equal(rawDapContract);
+
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getErrors()[0]).to.be.equal(validationError);
+
+      const [consensusError] = error.getErrors();
+
+      expect(consensusError).to.be.equal(validationError);
 
       expect(validateDapContractMock).to.be.calledOnceWith(rawDapContract);
 

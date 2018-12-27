@@ -8,7 +8,7 @@
     "build": "webpack --display-error-details",
     "test:node": "NODE_ENV=test mocha",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test:coverage": "nyc --check-coverage --stmts=98.07 --branch=89.74 --funcs=93.75 --lines=98.06 mocha"
+    "test:coverage": "nyc --check-coverage --stmts=90 --branch=85 --funcs=80 --lines=90 mocha"
   },
   "main": "./lib/DashApplicationProtocol.js",
   "author": "",
