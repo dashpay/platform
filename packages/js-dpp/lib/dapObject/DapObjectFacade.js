@@ -3,6 +3,8 @@ const validateDapObjectFactory = require('./validateDapObjectFactory');
 
 const DapObjectFactory = require('./DapObjectFactory');
 
+const MissingOptionError = require('../errors/MissingOptionError');
+
 class DapObjectFacade {
   /**
    *
@@ -25,16 +27,6 @@ class DapObjectFacade {
   }
 
   /**
-   * Update dependencies
-   *
-   * @param {DashApplicationProtocol} dap
-   */
-  updateDependencies(dap) {
-    this.factory.setUserId(dap.getUserId());
-    this.factory.setDapContract(dap.getDapContract());
-  }
-
-  /**
    * Create DapObject
    *
    * @param {string} type
@@ -42,7 +34,7 @@ class DapObjectFacade {
    * @return {DapObject}
    */
   create(type, data = {}) {
-    return this.factory.create(type, data);
+    return this.getFactory().create(type, data);
   }
 
   /**
@@ -52,7 +44,7 @@ class DapObjectFacade {
    * @return {DapObject}
    */
   createFromObject(object) {
-    return this.factory.createFromObject(object);
+    return this.getFactory().createFromObject(object);
   }
 
   /**
@@ -62,7 +54,7 @@ class DapObjectFacade {
    * @return {DapObject}
    */
   createFromSerialized(payload) {
-    return this.factory.createFromSerialized(payload);
+    return this.getFactory().createFromSerialized(payload);
   }
 
   /**
@@ -72,6 +64,25 @@ class DapObjectFacade {
    */
   validate(dapObject) {
     return this.validateDapObject(dapObject, this.dap.getDapContract());
+  }
+
+  /**
+   * @private
+   * @return {DapObjectFactory}
+   */
+  getFactory() {
+    if (!this.dap.getUserId()) {
+      throw new MissingOptionError('userId');
+    }
+
+    if (!this.dap.getDapContract()) {
+      throw new MissingOptionError('dapContract');
+    }
+
+    this.factory.setUserId(this.dap.getUserId());
+    this.factory.setDapContract(this.dap.getDapContract());
+
+    return this.factory;
   }
 }
 

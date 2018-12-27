@@ -10,13 +10,11 @@ const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 class DashApplicationProtocol {
   /**
    * @param {string} [options.userId]
-   * @param {string} [options.dapContract]
-   * @param {string} [options.dapContractId]
+   * @param {DapContract} [options.dapContract]
    * @param {AbstractDataProvider} [options.dataProvider]
    */
   constructor(options = {}) {
     this.userId = options.userId;
-    this.dapContractId = options.dapContractId;
     this.dapContract = options.dapContract;
     this.dataProvider = options.dataProvider;
 
@@ -40,15 +38,6 @@ class DashApplicationProtocol {
   }
 
   /**
-   * @private
-   */
-  updateFacades() {
-    DashApplicationProtocol.FACADES.forEach((name) => {
-      this[name].updateDependencies(this);
-    });
-  }
-
-  /**
    * Set User ID
    *
    * @param {string} userId
@@ -57,41 +46,16 @@ class DashApplicationProtocol {
   setUserId(userId) {
     this.userId = userId;
 
-    this.updateFacades();
-
     return this;
   }
 
   /**
    * Get User ID
    *
-   * @return {string|undefined}
+   * @return {string}
    */
   getUserId() {
     return this.userId;
-  }
-
-  /**
-   * Set Dap Contract ID
-   *
-   * @return {DashApplicationProtocol}
-   */
-  setDapContractId(dapContractId) {
-    this.dapContractId = dapContractId;
-    this.dapContract = null;
-
-    this.updateFacades();
-
-    return this;
-  }
-
-  /**
-   * Get Dap Contract ID
-   *
-   * @return {string|undefined}
-   */
-  getDapContractId() {
-    return this.dapContractId;
   }
 
   /**
@@ -103,8 +67,6 @@ class DashApplicationProtocol {
   setDapContract(dapContract) {
     this.dapContract = dapContract;
 
-    this.updateFacades();
-
     return this;
   }
 
@@ -113,15 +75,7 @@ class DashApplicationProtocol {
    *
    * @return {DapContract}
    */
-  async getDapContract() {
-    if (!this.dapContract && this.dapContractId) {
-      this.dapContract = await this.getDataProvider().fetchDapContract(this.dapContractId);
-
-      if (!this.dapContract) {
-        throw new Error();
-      }
-    }
-
+  getDapContract() {
     return this.dapContract;
   }
 
@@ -133,8 +87,6 @@ class DashApplicationProtocol {
    */
   setDataProvider(dataProvider) {
     this.dataProvider = dataProvider;
-
-    this.updateFacades();
 
     return this;
   }
@@ -148,7 +100,5 @@ class DashApplicationProtocol {
     return this.dataProvider;
   }
 }
-
-DashApplicationProtocol.FACADES = ['contract', 'object', 'packet', 'packetHeader'];
 
 module.exports = DashApplicationProtocol;

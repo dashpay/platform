@@ -16,10 +16,6 @@ class DapContractFacade {
     );
   }
 
-  updateDependencies() {
-
-  }
-
   /**
    * Create Dap Contract
    *

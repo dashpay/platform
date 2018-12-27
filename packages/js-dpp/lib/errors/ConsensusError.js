@@ -6,7 +6,6 @@ class ConsensusError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.deprecated = false;
     this.message = message;
 
     if (Error.captureStackTrace) {
