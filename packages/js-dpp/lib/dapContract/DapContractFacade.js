@@ -50,7 +50,7 @@ class DapContractFacade {
   /**
    *
    * @param {DapContract|Object} dapContract
-   * @return {*}
+   * @return {ValidationResult}
    */
   validate(dapContract) {
     return this.validateDapContract(dapContract);

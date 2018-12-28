@@ -84,7 +84,7 @@ class STPacketFacade {
   /**
    *
    * @param {STPacket|Object} stPacket
-   * @return {Object[]|*}
+   * @return {ValidationResult}
    */
   validate(stPacket) {
     const dapContract = this.dap.getDapContract();

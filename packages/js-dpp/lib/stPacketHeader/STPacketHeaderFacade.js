@@ -12,10 +12,6 @@ class STPacketHeaderFacade {
     this.factory = new STPacketHeaderFactory(this.validateSTPacketHeader);
   }
 
-  updateDependencies() {
-
-  }
-
   /**
    * Create ST Packet Header
    *
@@ -42,7 +38,7 @@ class STPacketHeaderFacade {
    * Unserialize ST Packet Header
    *
    * @param {Buffer|string} payload
-   * @return {STPacket}
+   * @return {STPacketHeader}
    */
   createFromSerialized(payload) {
     return this.factory.createFromSerialized(payload);
@@ -51,7 +47,7 @@ class STPacketHeaderFacade {
   /**
    *
    * @param {STPacket|Object} stPacketHeader
-   * @return {Object[]|*}
+   * @return {ValidationResult}
    */
   validate(stPacketHeader) {
     return this.validateSTPacketHeader(stPacketHeader);

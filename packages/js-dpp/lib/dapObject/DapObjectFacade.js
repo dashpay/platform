@@ -60,7 +60,7 @@ class DapObjectFacade {
   /**
    *
    * @param {Object|DapObject} dapObject
-   * @return {Object[]|*}
+   * @return {ValidationResult}
    */
   validate(dapObject) {
     return this.validateDapObject(dapObject, this.dap.getDapContract());
