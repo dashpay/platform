@@ -1,7 +1,10 @@
+const { Transaction } = require('@dashevo/dashcore-lib');
+
 const ValidationResult = require('../../validation/ValidationResult');
 
 const UnconfirmedUserError = require('../../errors/UnconfirmedUserError');
 const UserNotFoundError = require('../../errors/UserNotFoundError');
+const InvalidTransactionTypeError = require('../../errors/InvalidTransactionTypeError');
 const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
 
 /**
@@ -19,6 +22,15 @@ function verifySTPacketFactory(verifyDapContract, verifyDapObjects, dataProvider
    */
   async function verifySTPacket(stPacket, stateTransition) {
     const result = new ValidationResult();
+
+    if (!stateTransition.isSpecialTransaction()
+      || stateTransition.type !== Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION) {
+      result.addError(
+        new InvalidTransactionTypeError(stateTransition),
+      );
+
+      return result;
+    }
 
     if (stPacket.hash() !== stateTransition.extraPayload.hashSTPacket) {
       result.addError(

@@ -1,4 +1,4 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+const { Transaction, PrivateKey } = require('@dashevo/dashcore-lib');
 
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
@@ -16,6 +16,7 @@ const ValidationResult = require('../../../../lib/validation/ValidationResult');
 const UserNotFoundError = require('../../../../lib/errors/UserNotFoundError');
 const UnconfirmedUserError = require('../../../../lib/errors/UnconfirmedUserError');
 const InvalidSTPacketHashError = require('../../../../lib/errors/InvalidSTPacketHashError');
+const InvalidTransactionTypeError = require('../../../../lib/errors/InvalidTransactionTypeError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe('verifySTPacketFactory', () => {
@@ -65,6 +66,26 @@ describe('verifySTPacketFactory', () => {
         hashPrevSubTx: userId,
       },
     });
+  });
+
+  it('should return invalid result if Transaction is not State Transition', async () => {
+    const privateKey = new PrivateKey();
+    const extraPayload = new Transaction.Payload.SubTxRegisterPayload()
+      .setUserName('test')
+      .setPubKeyIdFromPrivateKey(privateKey);
+
+    stateTransition = new Transaction({
+      type: Transaction.TYPES.TRANSACTION_SUBTX_REGISTER,
+      extraPayload,
+    });
+
+    const result = await verifySTPacket(stPacket, stateTransition);
+
+    expectValidationError(result, InvalidTransactionTypeError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getTransaction()).to.be.equal(stateTransition);
   });
 
   it('should return invalid result if State Transition contains wrong ST Packet hash', async () => {
