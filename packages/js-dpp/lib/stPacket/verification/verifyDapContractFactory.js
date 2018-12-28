@@ -4,7 +4,7 @@ const DapContractAlreadyPresentError = require('../../errors/DapContractAlreadyP
 
 /**
  *
- * @param {AbstractDataProvider} dataProvider
+ * @param {DataProvider} dataProvider
  * @return {verifyDapContract}
  */
 function verifyDapContractFactory(dataProvider) {

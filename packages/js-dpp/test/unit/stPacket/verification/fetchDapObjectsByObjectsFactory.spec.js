@@ -1,22 +1,18 @@
 const getDapObjectsFixture = require('../../../../lib/test/fixtures/getDapObjectsFixture');
 const getDapContractFixture = require('../../../../lib/test/fixtures/getDapContractFixture');
 
-const AbstractDataProvider = require('../../../../lib/dataProvider/AbstractDataProvider');
-
 const fetchDapObjectsByObjectsFactory = require('../../../../lib/stPacket/verification/fetchDapObjectsByObjectsFactory');
+
+const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
 
 describe('fetchDapObjectsByObjects', () => {
   let fetchDapObjectsByObjects;
-  let fetchDapObjectsMock;
+  let dataProviderMock;
   let dapObjects;
   let dapContract;
 
   beforeEach(function beforeEach() {
-    const dataProviderMock = this.sinonSandbox.createStubInstance(AbstractDataProvider, {
-      fetchDapObjects: this.sinonSandbox.stub(),
-    });
-
-    fetchDapObjectsMock = dataProviderMock.fetchDapObjects;
+    dataProviderMock = createDataProviderMock(this.sinonSandbox);
 
     fetchDapObjectsByObjects = fetchDapObjectsByObjectsFactory(dataProviderMock);
 
@@ -25,23 +21,23 @@ describe('fetchDapObjectsByObjects', () => {
   });
 
   it('should fetch specified DAP Objects using DataProvider', async () => {
-    fetchDapObjectsMock.withArgs(
+    dataProviderMock.fetchDapObjects.withArgs(
       dapContract.getId(),
       dapObjects[0].getType(),
     ).resolves([dapObjects[0]]);
 
-    fetchDapObjectsMock.withArgs(
+    dataProviderMock.fetchDapObjects.withArgs(
       dapContract.getId(),
       dapObjects[1].getType(),
     ).resolves([dapObjects[1], dapObjects[2]]);
 
     const fetchedDapObjects = await fetchDapObjectsByObjects(dapContract.getId(), dapObjects);
 
-    expect(fetchDapObjectsMock).to.be.calledTwice();
+    expect(dataProviderMock.fetchDapObjects).to.be.calledTwice();
 
     let where = { id: { $in: [dapObjects[0].getId()] } };
 
-    expect(fetchDapObjectsMock).to.be.calledWith(
+    expect(dataProviderMock.fetchDapObjects).to.be.calledWith(
       dapContract.getId(),
       dapObjects[0].getType(),
       { where },
@@ -49,7 +45,7 @@ describe('fetchDapObjectsByObjects', () => {
 
     where = { id: { $in: [dapObjects[1].getId(), dapObjects[2].getId()] } };
 
-    expect(fetchDapObjectsMock).to.be.calledWith(
+    expect(dataProviderMock.fetchDapObjects).to.be.calledWith(
       dapContract.getId(),
       dapObjects[1].getType(),
       { where },

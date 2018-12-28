@@ -1,10 +1,10 @@
 const verifyDapContractFactory = require('../../../../lib/stPacket/verification/verifyDapContractFactory');
 
-const AbstractDataProvider = require('../../../../lib/dataProvider/AbstractDataProvider');
-
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
 const getDapContractFixture = require('../../../../lib/test/fixtures/getDapContractFixture');
+
+const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
 
 const DapContractAlreadyPresentError = require('../../../../lib/errors/DapContractAlreadyPresentError');
 
@@ -12,16 +12,12 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 describe('verifyDapContract', () => {
   let verifyDapContract;
-  let fetchDapContractMock;
+  let dataProviderMock;
   let dapContract;
   let stPacket;
 
   beforeEach(function beforeEach() {
-    const dataProviderMock = this.sinonSandbox.createStubInstance(AbstractDataProvider, {
-      fetchDapContract: this.sinonSandbox.stub(),
-    });
-
-    fetchDapContractMock = dataProviderMock.fetchDapContract;
+    dataProviderMock = createDataProviderMock(this.sinonSandbox);
 
     verifyDapContract = verifyDapContractFactory(dataProviderMock);
 
@@ -32,7 +28,7 @@ describe('verifyDapContract', () => {
   });
 
   it('should return invalid result if DAP Contract is already present', async () => {
-    fetchDapContractMock.resolves(dapContract);
+    dataProviderMock.fetchDapContract.resolves(dapContract);
 
     const result = await verifyDapContract(stPacket);
 
@@ -42,7 +38,7 @@ describe('verifyDapContract', () => {
 
     expect(error.getDapContract()).to.be.equal(dapContract);
 
-    expect(fetchDapContractMock).to.be.calledOnceWith(dapContract.getId());
+    expect(dataProviderMock.fetchDapContract).to.be.calledOnceWith(dapContract.getId());
   });
 
   it('should return valid result if DAP Contract is not present', async () => {

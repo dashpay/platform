@@ -9,7 +9,7 @@ const DapObject = require('../dapObject/DapObject');
 
 class STPacketFactory {
   /**
-   * @param {AbstractDataProvider} dataProvider
+   * @param {DataProvider} dataProvider
    * @param {validateSTPacket} validateSTPacket
    * @param {createDapContract} createDapContract
    */
@@ -93,7 +93,7 @@ class STPacketFactory {
   /**
    * Set Data Provider
    *
-   * @param {AbstractDataProvider} dataProvider
+   * @param {DataProvider} dataProvider
    * @return {STPacketFactory}
    */
   setDataProvider(dataProvider) {
@@ -105,7 +105,7 @@ class STPacketFactory {
   /**
    * Get Data Provider
    *
-   * @return {AbstractDataProvider}
+   * @return {DataProvider}
    */
   getDataProvider() {
     return this.dataProvider;

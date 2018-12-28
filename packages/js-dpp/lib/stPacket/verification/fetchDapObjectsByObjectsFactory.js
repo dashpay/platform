@@ -1,5 +1,5 @@
 /**
- * @param {AbstractDataProvider} dataProvider
+ * @param {DataProvider} dataProvider
  * @return {fetchDapObjectsByObjects}
  */
 function fetchDapObjectsByObjectsFactory(dataProvider) {

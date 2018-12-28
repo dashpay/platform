@@ -7,11 +7,48 @@ const DapObjectFacade = require('./dapObject/DapObjectFacade');
 const STPacketFacade = require('./stPacket/STPacketFacade');
 const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 
+/**
+ * @classdesc DataProvider interface definition
+ *
+ * @name DataProvider
+ * @class
+ */
+
+/**
+ * Fetch Dap Contract by ID
+ *
+ * @method
+ * @name DataProvider#fetchDapContract
+ * @param {string} id
+ * @returns {DapContract|null}
+ */
+
+/**
+ * Fetch DAP Objects by contract ID and type
+ *
+ * @method
+ * @name DataProvider#fetchDapObjects
+ * @param {string} dapContractId
+ * @param {string} type
+ * @param {{ where: Object }} [options]
+ * @returns {DapObject[]}
+ */
+
+/**
+ * Fetch transaction by ID
+ *
+ * @method
+ * @name DataProvider#fetchTransaction
+ * @param {string} id
+ * @returns {{ confirmations: number }}
+ */
+
+
 class DashApplicationProtocol {
   /**
    * @param {string} [options.userId]
    * @param {DapContract} [options.dapContract]
-   * @param {AbstractDataProvider} [options.dataProvider]
+   * @param {DataProvider} [options.dataProvider]
    */
   constructor(options = {}) {
     this.userId = options.userId;
@@ -82,7 +119,7 @@ class DashApplicationProtocol {
   /**
    * Set Data Provider
    *
-   * @param {AbstractDataProvider} dataProvider
+   * @param {DataProvider} dataProvider
    * @return {DashApplicationProtocol}
    */
   setDataProvider(dataProvider) {
@@ -94,7 +131,7 @@ class DashApplicationProtocol {
   /**
    * Get Data Provider
    *
-   * @return AbstractDataProvider
+   * @return {DataProvider}
    */
   getDataProvider() {
     return this.dataProvider;

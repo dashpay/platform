@@ -1,11 +1,11 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 
-const AbstractDataProvider = require('../../../../lib/dataProvider/AbstractDataProvider');
-
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
 const getDapObjectsFixture = require('../../../../lib/test/fixtures/getDapObjectsFixture');
 const getDapContractFixture = require('../../../../lib/test/fixtures/getDapContractFixture');
+
+const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
@@ -22,7 +22,7 @@ describe('verifySTPacketFactory', () => {
   let verifyDapContractMock;
   let verifyDapObjectsMock;
   let transaction;
-  let fetchTransactionMock;
+  let dataProviderMock;
   let verifySTPacket;
   let dapObjects;
   let dapContract;
@@ -34,16 +34,12 @@ describe('verifySTPacketFactory', () => {
     verifyDapContractMock = this.sinonSandbox.stub().resolves(new ValidationResult());
     verifyDapObjectsMock = this.sinonSandbox.stub().resolves(new ValidationResult());
 
-    const dataProviderMock = this.sinonSandbox.createStubInstance(AbstractDataProvider, {
-      fetchTransaction: this.sinonSandbox.stub(),
-    });
-
-    fetchTransactionMock = dataProviderMock.fetchTransaction;
+    dataProviderMock = createDataProviderMock(this.sinonSandbox);
 
     transaction = {
       confirmations: 6,
     };
-    fetchTransactionMock.resolves(transaction);
+    dataProviderMock.fetchTransaction.resolves(transaction);
 
     verifySTPacket = verifySTPacketFactory(
       verifyDapContractMock,
@@ -85,13 +81,13 @@ describe('verifySTPacketFactory', () => {
   });
 
   it('should return invalid result if user not found', async () => {
-    fetchTransactionMock.resolves(null);
+    dataProviderMock.fetchTransaction.resolves(null);
 
     const result = await verifySTPacket(stPacket, stateTransition);
 
     expectValidationError(result, UserNotFoundError);
 
-    expect(fetchTransactionMock).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
 
     const [error] = result.getErrors();
 
@@ -101,13 +97,13 @@ describe('verifySTPacketFactory', () => {
   it('should return invalid result if user has less than 6 block confirmation', async () => {
     transaction.confirmations = 5;
 
-    fetchTransactionMock.resolves(transaction);
+    dataProviderMock.fetchTransaction.resolves(transaction);
 
     const result = await verifySTPacket(stPacket, stateTransition);
 
     expectValidationError(result, UnconfirmedUserError);
 
-    expect(fetchTransactionMock).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
 
     const [error] = result.getErrors();
 
@@ -129,7 +125,7 @@ describe('verifySTPacketFactory', () => {
 
     expectValidationError(result);
 
-    expect(fetchTransactionMock).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
 
     expect(verifyDapContractMock).to.be.calledOnceWith(stPacket);
     expect(verifyDapObjectsMock).to.be.not.called();
@@ -149,7 +145,7 @@ describe('verifySTPacketFactory', () => {
 
     expectValidationError(result);
 
-    expect(fetchTransactionMock).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
 
     expect(verifyDapContractMock).to.be.not.called();
     expect(verifyDapObjectsMock).to.be.calledOnceWith(stPacket, userId);
@@ -165,7 +161,7 @@ describe('verifySTPacketFactory', () => {
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(fetchTransactionMock).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
 
     expect(verifyDapContractMock).to.be.not.called();
     expect(verifyDapObjectsMock).to.be.calledOnceWith(stPacket, userId);

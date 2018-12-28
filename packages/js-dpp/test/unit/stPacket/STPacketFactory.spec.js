@@ -1,11 +1,11 @@
 const rewiremock = require('rewiremock/node');
 
-const AbstractDataProvider = require('../../../lib/dataProvider/AbstractDataProvider');
-
 const STPacket = require('../../../lib/stPacket/STPacket');
 
 const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
 const getSTPacketFixture = require('../../../lib/test/fixtures/getSTPacketFixture');
+
+const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
@@ -18,7 +18,6 @@ describe('STPacketFactory', () => {
   let STPacketFactory;
   let validateSTPacketMock;
   let createDapContractMock;
-  let fetchDapContractMock;
   let dataProviderMock;
   let dapContract;
   let factory;
@@ -31,10 +30,7 @@ describe('STPacketFactory', () => {
     validateSTPacketMock = this.sinonSandbox.stub();
     createDapContractMock = this.sinonSandbox.stub();
 
-    dataProviderMock = this.sinonSandbox.createStubInstance(AbstractDataProvider, {
-      fetchDapContract: this.sinonSandbox.stub(),
-    });
-    fetchDapContractMock = dataProviderMock.fetchDapContract;
+    dataProviderMock = createDataProviderMock(this.sinonSandbox);
 
     // Require STPacketFactory for webpack
     // eslint-disable-next-line global-require
@@ -73,7 +69,7 @@ describe('STPacketFactory', () => {
   describe('createFromObject', () => {
     it('should return new STPacket with DAP Objects', async () => {
       validateSTPacketMock.returns(new ValidationResult());
-      fetchDapContractMock.resolves(dapContract);
+      dataProviderMock.fetchDapContract.resolves(dapContract);
 
       rawSTPacket = stPacket.toJSON();
 
@@ -83,7 +79,7 @@ describe('STPacketFactory', () => {
 
       expect(result.toJSON()).to.be.deep.equal(rawSTPacket);
 
-      expect(fetchDapContractMock).to.be.calledOnceWith(rawSTPacket.contractId);
+      expect(dataProviderMock.fetchDapContract).to.be.calledOnceWith(rawSTPacket.contractId);
 
       expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket, dapContract);
     });
@@ -105,7 +101,7 @@ describe('STPacketFactory', () => {
       expect(consensusError.getDapContractId()).to.be.equal(rawSTPacket.contractId);
       expect(consensusError.getDapContract()).to.be.undefined();
 
-      expect(fetchDapContractMock).to.be.calledOnceWith(rawSTPacket.contractId);
+      expect(dataProviderMock.fetchDapContract).to.be.calledOnceWith(rawSTPacket.contractId);
       expect(validateSTPacketMock).not.to.be.called();
     });
 
@@ -125,13 +121,13 @@ describe('STPacketFactory', () => {
 
       expect(result.toJSON()).to.be.deep.equal(rawSTPacket);
 
-      expect(fetchDapContractMock).not.to.be.called();
+      expect(dataProviderMock.fetchDapContract).not.to.be.called();
 
       expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket);
     });
 
     it('should throw error if passed object is not valid', async () => {
-      fetchDapContractMock.returns(dapContract);
+      dataProviderMock.fetchDapContract.returns(dapContract);
 
       const validationError = new ConsensusError('test');
 

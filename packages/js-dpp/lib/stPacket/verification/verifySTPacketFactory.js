@@ -7,7 +7,7 @@ const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError'
 /**
  * @param {verifyDapContract} verifyDapContract
  * @param {verifyDapObjects} verifyDapObjects
- * @param {AbstractDataProvider} dataProvider
+ * @param {DataProvider} dataProvider
  * @return {verifySTPacket}
  */
 function verifySTPacketFactory(verifyDapContract, verifyDapObjects, dataProvider) {
