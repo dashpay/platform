@@ -127,7 +127,7 @@ describe('STPacketFactory', () => {
     });
 
     it('should throw error if passed object is not valid', async () => {
-      dataProviderMock.fetchDapContract.returns(dapContract);
+      dataProviderMock.fetchDapContract.resolves(dapContract);
 
       const validationError = new ConsensusError('test');
 

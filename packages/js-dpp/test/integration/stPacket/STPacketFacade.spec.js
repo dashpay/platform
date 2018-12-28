@@ -9,6 +9,8 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 const getSTPacketFixture = require('../../../lib/test/fixtures/getSTPacketFixture');
 const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
 
+const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
+
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('STPacketFacade', () => {
@@ -20,11 +22,11 @@ describe('STPacketFacade', () => {
   beforeEach(function beforeEach() {
     dapContract = getDapContractFixture();
 
-    dataProviderMock = {
-      fetchDapContract: this.sinonSandbox.stub().returns(dapContract),
-      fetchTransaction: this.sinonSandbox.stub().returns(null),
-      fetchDapObjects: this.sinonSandbox.stub().returns([]),
-    };
+    dataProviderMock = createDataProviderMock(this.sinonSandbox);
+
+    dataProviderMock.fetchDapContract.resolves(dapContract);
+    dataProviderMock.fetchTransaction.resolves(null);
+    dataProviderMock.fetchDapObjects.resolves([]);
 
     stPacket = getSTPacketFixture();
 

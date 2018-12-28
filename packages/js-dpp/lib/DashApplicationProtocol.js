@@ -10,6 +10,7 @@ const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 /**
  * @classdesc DataProvider interface definition
  *
+ * @async
  * @name DataProvider
  * @class
  */
@@ -17,6 +18,7 @@ const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 /**
  * Fetch Dap Contract by ID
  *
+ * @async
  * @method
  * @name DataProvider#fetchDapContract
  * @param {string} id
@@ -26,6 +28,7 @@ const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 /**
  * Fetch DAP Objects by contract ID and type
  *
+ * @async
  * @method
  * @name DataProvider#fetchDapObjects
  * @param {string} dapContractId
@@ -37,6 +40,7 @@ const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 /**
  * Fetch transaction by ID
  *
+ * @async
  * @method
  * @name DataProvider#fetchTransaction
  * @param {string} id
