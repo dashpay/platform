@@ -1,12 +1,12 @@
 {
   "type": "object",
   "properties": {
-    "nbBlocks": {
+    "blocks": {
       "type": "integer",
       "minimum": 0
     }
   },
   "required": [
-    "nbBlocks"
+    "blocks"
   ]
 }

@@ -13,13 +13,13 @@ const estimateFeeFactory = (coreAPI) => {
    * estimates fee
    * @typedef estimateFee
    * @param {object} args
-   * @param {number} args.nbBlocks - target
+   * @param {number} args.blocks - target
    * @return {Promise<number>} - fee in duffs per kilobyte
    */
   async function estimateFee(args) {
     validator.validate(args);
-    const { nbBlocks } = args;
-    return coreAPI.estimateFee(nbBlocks);
+    const { blocks } = args;
+    return coreAPI.estimateFee(blocks);
   }
 
   return estimateFee;
@@ -67,9 +67,9 @@ const estimateFeeFactory = (coreAPI) => {
  *                  title: Parameters
  *                  type: object
  *                  required:
- *                    - nbBlocks
+ *                    - blocks
  *                  properties:
- *                    nbBlocks:
+ *                    blocks:
  *                      type: integer
  *                      default: 1
  *                      description: Number of blocks for fee estimate

@@ -32,7 +32,7 @@ describe('estimateFee', () => {
   it('Should return a number', async () => {
     const estimateFee = estimateFeeFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
-    const fee = await estimateFee({ nbBlocks: 1 });
+    const fee = await estimateFee({ blocks: 1 });
     expect(fee).to.be.a('number');
     expect(spy.callCount).to.be.equal(1);
   });
@@ -40,15 +40,15 @@ describe('estimateFee', () => {
   it('Should throw an error if arguments are not valid', async () => {
     const estimateFee = estimateFeeFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
-    await expect(estimateFee({ nbBlocks: -1 })).to.be.rejectedWith('should be >= 0');
+    await expect(estimateFee({ blocks: -1 })).to.be.rejectedWith('should be >= 0');
     expect(spy.callCount).to.be.equal(0);
-    await expect(estimateFee({ nbBlocks: 0.5 })).to.be.rejectedWith('should be integer');
+    await expect(estimateFee({ blocks: 0.5 })).to.be.rejectedWith('should be integer');
     expect(spy.callCount).to.be.equal(0);
     await expect(estimateFee({})).to.be.rejectedWith('should have required property');
     expect(spy.callCount).to.be.equal(0);
     await expect(estimateFee()).to.be.rejectedWith('should be object');
     expect(spy.callCount).to.be.equal(0);
-    await expect(estimateFee({ nbBlocks: 'string' })).to.be.rejectedWith('should be integer');
+    await expect(estimateFee({ blocks: 'string' })).to.be.rejectedWith('should be integer');
     expect(spy.callCount).to.be.equal(0);
     await expect(estimateFee([-1])).to.be.rejected;
     expect(spy.callCount).to.be.equal(0);

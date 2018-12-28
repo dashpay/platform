@@ -138,9 +138,9 @@ const getPeerDataSyncStatus = async () => {
   return res;
 };
 
-const estimateFee = async (nbBlocks) => {
-  if (nbBlocks) {
-    const res = await get(`/utils/estimatefee?nbBlocks=${nbBlocks}`);
+const estimateFee = async (blocks) => {
+  if (blocks) {
+    const res = await get(`/utils/estimatefee?nbBlocks=${blocks}`);
     return res;
   }
   const res = await get('/utils/estimatefee');
