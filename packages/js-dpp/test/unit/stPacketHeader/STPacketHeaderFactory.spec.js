@@ -84,8 +84,12 @@ describe('STPacketHeaderFactory', () => {
       }
 
       expect(error).to.be.instanceOf(InvalidSTPacketHeaderError);
+
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getErrors()[0]).to.be.equal(validationError);
+      expect(error.getRawSTPacketHeader()).to.be.equal(rawSTPacketHeader);
+
+      const [consensusError] = error.getErrors();
+      expect(consensusError).to.be.equal(validationError);
 
       expect(validateSTPacketHeaderMock).to.be.calledOnceWith(rawSTPacketHeader);
     });

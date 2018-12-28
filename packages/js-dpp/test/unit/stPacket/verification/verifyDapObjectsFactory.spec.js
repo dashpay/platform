@@ -72,6 +72,7 @@ describe('verifyDapObjects', () => {
     const [error] = result.getErrors();
 
     expect(error.getDapObject()).to.be.equal(dapObjects[0]);
+    expect(error.getFetchedDapObject()).to.be.equal(dapObjects[0]);
   });
 
   it('should return invalid result if Dap Object with action "update" is not present', async () => {
@@ -129,6 +130,7 @@ describe('verifyDapObjects', () => {
     const [error] = result.getErrors();
 
     expect(error.getDapObject()).to.be.equal(dapObjects[0]);
+    expect(error.getFetchedDapObject()).to.be.equal(dapObjects[0]);
   });
 
   it('should return invalid result if Dap Object with action "delete" has wrong revision', async () => {

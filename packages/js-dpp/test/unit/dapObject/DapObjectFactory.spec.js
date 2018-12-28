@@ -123,8 +123,12 @@ describe('DapObjectFactory', () => {
       }
 
       expect(error).to.be.instanceOf(InvalidDapObjectError);
+
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getErrors()[0]).to.be.equal(validationError);
+      expect(error.getRawDapObject()).to.be.equal(rawDapObject);
+
+      const [consensusError] = error.getErrors();
+      expect(consensusError).to.be.equal(validationError);
 
       expect(validateDapObjectMock).to.be.calledOnceWith(rawDapObject, dapContract);
     });

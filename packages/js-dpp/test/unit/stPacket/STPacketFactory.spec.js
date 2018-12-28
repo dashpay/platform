@@ -95,6 +95,7 @@ describe('STPacketFactory', () => {
       expect(error).to.be.instanceOf(InvalidSTPacketError);
 
       expect(error.getErrors()).to.have.length(1);
+      expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
 
       const [consensusError] = error.getErrors();
       expect(consensusError).to.be.instanceOf(InvalidSTPacketContractIdError);
@@ -141,7 +142,9 @@ describe('STPacketFactory', () => {
       }
 
       expect(error).to.be.instanceOf(InvalidSTPacketError);
+
       expect(error.getErrors()).to.have.length(1);
+      expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
 
       const [consensusError] = error.getErrors();
 

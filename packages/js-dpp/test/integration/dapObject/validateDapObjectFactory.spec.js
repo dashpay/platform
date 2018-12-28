@@ -72,6 +72,23 @@ describe('validateDapObjectFactory', () => {
 
         expect(error.getType()).to.be.equal('undefinedObject');
       });
+
+      it('should throw error if getDapObjectSchemaRef throws error', function it() {
+        const someError = new Error();
+
+        this.sinonSandbox.stub(dapContract, 'getDapObjectSchemaRef').throws(someError);
+
+        let error;
+        try {
+          validateDapObject(rawDapObject, dapContract);
+        } catch (e) {
+          error = e;
+        }
+
+        expect(error).to.be.equal(someError);
+
+        expect(dapContract.getDapObjectSchemaRef).to.be.calledOnce();
+      });
     });
 
     describe('$action', () => {
