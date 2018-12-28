@@ -30,11 +30,11 @@ class DapContractFacade {
   /**
    * Create Dap Contract from plain object
    *
-   * @param {Object} object
+   * @param {Object} rawDapContract
    * @return {DapContract}
    */
-  createFromObject(object) {
-    return this.factory.createFromObject(object);
+  createFromObject(rawDapContract) {
+    return this.factory.createFromObject(rawDapContract);
   }
 
   /**

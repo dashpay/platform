@@ -37,40 +37,45 @@ class STPacketFactory {
   /**
    * Create ST Packet from plain object
    *
-   * @param {Object} object
+   * @param {Object} rawSTPacket
    * @return {Promise<STPacket>}
    */
-  async createFromObject(object) {
+  async createFromObject(rawSTPacket) {
     let dapContract;
-    if (object.contractId && Array.isArray(object.objects) && object.objects.length > 0) {
-      dapContract = await this.dataProvider.fetchDapContract(object.contractId);
+
+    const areDapObjectsPresent = rawSTPacket.contractId
+      && Array.isArray(rawSTPacket.objects)
+      && rawSTPacket.objects.length > 0;
+
+    if (areDapObjectsPresent) {
+      dapContract = await this.dataProvider.fetchDapContract(rawSTPacket.contractId);
 
       if (!dapContract) {
-        const error = new InvalidSTPacketContractIdError(object.contractId, dapContract);
+        const error = new InvalidSTPacketContractIdError(rawSTPacket.contractId, dapContract);
 
-        throw new InvalidSTPacketError([error], object);
+        throw new InvalidSTPacketError([error], rawSTPacket);
       }
     }
 
-    const result = this.validateSTPacket(object, dapContract);
+    const result = this.validateSTPacket(rawSTPacket, dapContract);
 
     if (!result.isValid()) {
-      throw new InvalidSTPacketError(result.getErrors(), object);
+      throw new InvalidSTPacketError(result.getErrors(), rawSTPacket);
     }
 
-    const stPacket = this.create(object.contractId);
+    const stPacket = this.create(rawSTPacket.contractId);
 
-    stPacket.setItemsMerkleRoot(object.itemsMerkleRoot);
-    stPacket.setItemsHash(object.itemsHash);
+    stPacket.setItemsMerkleRoot(rawSTPacket.itemsMerkleRoot);
+    stPacket.setItemsHash(rawSTPacket.itemsHash);
 
-    if (object.contracts.length > 0) {
-      const packetDapContract = this.createDapContract(object.contracts[0]);
+    if (rawSTPacket.contracts.length > 0) {
+      const packetDapContract = this.createDapContract(rawSTPacket.contracts[0]);
 
       stPacket.setDapContract(packetDapContract);
     }
 
-    if (dapContract && object.objects.length > 0) {
-      const dapObjects = object.objects.map(rawDapObject => new DapObject(rawDapObject));
+    if (dapContract && rawSTPacket.objects.length > 0) {
+      const dapObjects = rawSTPacket.objects.map(rawDapObject => new DapObject(rawDapObject));
 
       stPacket.setDapObjects(dapObjects);
     }
@@ -85,9 +90,9 @@ class STPacketFactory {
    * @return {Promise<STPacket>}
    */
   async createFromSerialized(payload) {
-    const object = decode(payload);
+    const rawSTPacket = decode(payload);
 
-    return this.createFromObject(object);
+    return this.createFromObject(rawSTPacket);
   }
 
   /**

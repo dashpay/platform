@@ -31,17 +31,21 @@ class STPacketHeaderFactory {
   /**
    * Create ST Packet Header from plain object
    *
-   * @param {Object} object
+   * @param {Object} rawSTPacketHeader
    * @return {STPacketHeader}
    */
-  createFromObject(object) {
-    const result = this.validateSTPacketHeader(object);
+  createFromObject(rawSTPacketHeader) {
+    const result = this.validateSTPacketHeader(rawSTPacketHeader);
 
     if (!result.isValid()) {
-      throw new InvalidSTPacketHeaderError(result.getErrors(), object);
+      throw new InvalidSTPacketHeaderError(result.getErrors(), rawSTPacketHeader);
     }
 
-    return this.create(object.contractId, object.itemsMerkleRoot, object.itemsHash);
+    return this.create(
+      rawSTPacketHeader.contractId,
+      rawSTPacketHeader.itemsMerkleRoot,
+      rawSTPacketHeader.itemsHash,
+    );
   }
 
   /**
@@ -51,9 +55,9 @@ class STPacketHeaderFactory {
    * @return {STPacketHeader}
    */
   createFromSerialized(payload) {
-    const object = decode(payload);
+    const rawSTPacketHeader = decode(payload);
 
-    return this.createFromObject(object);
+    return this.createFromObject(rawSTPacketHeader);
   }
 }
 

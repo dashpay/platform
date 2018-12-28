@@ -29,17 +29,17 @@ class DapContractFactory {
   /**
    * Create Dap Contract from plain object
    *
-   * @param {Object} object
+   * @param {Object} rawDapContract
    * @return {DapContract}
    */
-  createFromObject(object) {
-    const result = this.validateDapContract(object);
+  createFromObject(rawDapContract) {
+    const result = this.validateDapContract(rawDapContract);
 
     if (!result.isValid()) {
-      throw new InvalidDapContractError(result.getErrors(), object);
+      throw new InvalidDapContractError(result.getErrors(), rawDapContract);
     }
 
-    return this.createDapContract(object);
+    return this.createDapContract(rawDapContract);
   }
 
   /**
@@ -49,9 +49,9 @@ class DapContractFactory {
    * @return {DapContract}
    */
   createFromSerialized(payload) {
-    const object = decode(payload);
+    const rawDapContract = decode(payload);
 
-    return this.createFromObject(object);
+    return this.createFromObject(rawDapContract);
   }
 }
 

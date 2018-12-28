@@ -1,18 +1,21 @@
 const DapContract = require('./DapContract');
 
-function createDapContract(object) {
-  const dapContract = new DapContract(object.name, object.dapObjectsDefinition);
+function createDapContract(rawDapContract) {
+  const dapContract = new DapContract(
+    rawDapContract.name,
+    rawDapContract.dapObjectsDefinition,
+  );
 
-  if (object.$schema) {
-    dapContract.setJsonMetaSchema(object.$schema);
+  if (rawDapContract.$schema) {
+    dapContract.setJsonMetaSchema(rawDapContract.$schema);
   }
 
-  if (object.version) {
-    dapContract.setVersion(object.version);
+  if (rawDapContract.version) {
+    dapContract.setVersion(rawDapContract.version);
   }
 
-  if (object.definitions) {
-    dapContract.setDefinitions(object.definitions);
+  if (rawDapContract.definitions) {
+    dapContract.setDefinitions(rawDapContract.definitions);
   }
 
   return dapContract;

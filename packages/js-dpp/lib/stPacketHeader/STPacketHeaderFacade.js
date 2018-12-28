@@ -27,11 +27,11 @@ class STPacketHeaderFacade {
   /**
    * Create ST Packet Header from plain object
    *
-   * @param {Object} object
+   * @param {Object} rawSTPacketHeader
    * @return {STPacketHeader}
    */
-  createFromObject(object) {
-    return this.factory.createFromObject(object);
+  createFromObject(rawSTPacketHeader) {
+    return this.factory.createFromObject(rawSTPacketHeader);
   }
 
   /**

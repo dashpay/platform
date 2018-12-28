@@ -40,11 +40,11 @@ class DapObjectFacade {
   /**
    * Create Dap Object from plain object
    *
-   * @param {Object} object
+   * @param {Object} rawDapObject
    * @return {DapObject}
    */
-  createFromObject(object) {
-    return this.getFactory().createFromObject(object);
+  createFromObject(rawDapObject) {
+    return this.getFactory().createFromObject(rawDapObject);
   }
 
   /**

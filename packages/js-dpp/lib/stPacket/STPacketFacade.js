@@ -64,11 +64,11 @@ class STPacketFacade {
 
   /**
    *
-   * @param {Object} object
+   * @param {Object} rawSTPacket
    * @return {Promise<STPacket>}
    */
-  async createFromObject(object) {
-    return this.getFactory().createFromObject(object);
+  async createFromObject(rawSTPacket) {
+    return this.getFactory().createFromObject(rawSTPacket);
   }
 
   /**

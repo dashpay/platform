@@ -47,17 +47,17 @@ class DapObjectFactory {
   /**
    * Create Dap Object from plain object
    *
-   * @param {Object} object
+   * @param {Object} rawDapObject
    * @return {DapObject}
    */
-  createFromObject(object) {
-    const result = this.validateDapObject(object, this.dapContract);
+  createFromObject(rawDapObject) {
+    const result = this.validateDapObject(rawDapObject, this.dapContract);
 
     if (!result.isValid()) {
-      throw new InvalidDapObjectError(result.getErrors(), object);
+      throw new InvalidDapObjectError(result.getErrors(), rawDapObject);
     }
 
-    return new DapObject(object);
+    return new DapObject(rawDapObject);
   }
 
   /**
@@ -67,9 +67,9 @@ class DapObjectFactory {
    * @return {DapObject}
    */
   createFromSerialized(payload) {
-    const object = decode(payload);
+    const rawDapObject = decode(payload);
 
-    return this.createFromObject(object);
+    return this.createFromObject(rawDapObject);
   }
 
   /**
