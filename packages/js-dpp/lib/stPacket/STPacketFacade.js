@@ -56,7 +56,10 @@ class STPacketFacade {
     const dapContract = this.dap.getDapContract();
 
     if (!dapContract) {
-      throw new MissingOptionError('dapContract');
+      throw new MissingOptionError(
+        'dapContract',
+        'Can\'t create ST Packet because DAP Contract is not set, use setDapContract method',
+      );
     }
 
     return this.factory.create(dapContract.getId(), items);
@@ -90,7 +93,10 @@ class STPacketFacade {
     const dapContract = this.dap.getDapContract();
 
     if (!dapContract) {
-      throw new MissingOptionError('dapContract');
+      throw new MissingOptionError(
+        'dapContract',
+        'Can\'t validate ST Packet because DAP Contract is not set, use setDapContract method',
+      );
     }
 
     return this.validateSTPacket(stPacket, dapContract);
@@ -103,7 +109,10 @@ class STPacketFacade {
    */
   async verify(stPacket, stateTransition) {
     if (!this.dap.getDataProvider()) {
-      throw new MissingOptionError('dataProvider');
+      throw new MissingOptionError(
+        'dataProvider',
+        'Can\'t verify ST Packer because Data Provider is not set, use setDataProvider method',
+      );
     }
 
     const verifySTPacket = this.createVerifySTPacket();
@@ -139,7 +148,10 @@ class STPacketFacade {
    */
   getFactory() {
     if (!this.dap.getDataProvider()) {
-      throw new MissingOptionError('dataProvider');
+      throw new MissingOptionError(
+        'dataProvider',
+        'Can\'t create ST Packer because Data Provider is not set, use setDataProvider method',
+      );
     }
 
     this.factory.setDataProvider(this.dap.getDataProvider());

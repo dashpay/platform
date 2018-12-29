@@ -1,13 +1,14 @@
 class MissingOptionError extends Error {
   /**
    * @param {string} optionName
+   * @param {string} message
    */
-  constructor(optionName) {
+  constructor(optionName, message) {
     super();
 
     this.name = this.constructor.name;
     this.optionName = optionName;
-    this.message = `${optionName} is not defined`;
+    this.message = message;
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);

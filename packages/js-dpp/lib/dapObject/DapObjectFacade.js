@@ -72,11 +72,17 @@ class DapObjectFacade {
    */
   getFactory() {
     if (!this.dap.getUserId()) {
-      throw new MissingOptionError('userId');
+      throw new MissingOptionError(
+        'userId',
+        'Can\'t create packet because User ID is not set, use setUserId method',
+      );
     }
 
     if (!this.dap.getDapContract()) {
-      throw new MissingOptionError('dapContract');
+      throw new MissingOptionError(
+        'dapContract',
+        'Can\'t create DAP Object because DAP Contract is not set, use setDapContract method',
+      );
     }
 
     this.factory.setUserId(this.dap.getUserId());
