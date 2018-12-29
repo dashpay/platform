@@ -18,15 +18,25 @@ describe('STPacket', () => {
   let itemsHash;
   let itemsMerkleRoot;
   let dapContractId;
+  let merkleTreeUtilMock;
+  let getMerkleTreeMock;
+  let getMerkleRootMock;
 
   beforeEach(function beforeEach() {
     hashMock = this.sinonSandbox.stub();
     const serializerMock = { encode: this.sinonSandbox.stub() };
     encodeMock = serializerMock.encode;
+    getMerkleTreeMock = this.sinonSandbox.stub();
+    getMerkleRootMock = this.sinonSandbox.stub();
+    merkleTreeUtilMock = {
+      getMerkleTree: getMerkleTreeMock,
+      getMerkleRoot: getMerkleRootMock,
+    };
 
     STPacket = rewiremock.proxy('../../../lib/stPacket/STPacket', {
       '../../../lib/util/hash': hashMock,
       '../../../lib/util/serializer': serializerMock,
+      '../../../lib/util/merkleTree': merkleTreeUtilMock,
       '../../../lib/dapContract/DapContract': DapContract,
       '../../../lib/dapObject/DapObject': DapObject,
     });
@@ -35,12 +45,10 @@ describe('STPacket', () => {
     dapObjects = getDapObjectsFixture();
 
     dapContractId = dapContract.getId();
-    itemsHash = '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b';
-    itemsMerkleRoot = 'y90b273ff34fce19d6b804eff5a3f5747ada4eaa22f86fj5jf652ddb78755642';
+    itemsHash = '14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293';
+    itemsMerkleRoot = '44207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc292';
 
     stPacket = new STPacket(dapContractId);
-    stPacket.setItemsMerkleRoot(itemsMerkleRoot)
-      .setItemsHash(itemsHash);
   });
 
   describe('constructor', () => {
@@ -89,39 +97,34 @@ describe('STPacket', () => {
     });
   });
 
-  describe('#setItemsMerkleRoot', () => {
-    it('should set items merkle root', () => {
-      const result = stPacket.setItemsMerkleRoot(itemsMerkleRoot);
-
-      expect(result).to.be.instanceOf(STPacket);
-
-      expect(result.itemsMerkleRoot).to.be.equal(itemsMerkleRoot);
-    });
-  });
-
   describe('#getItemsMerkleRoot', () => {
     it('should return items merkle root', () => {
+      stPacket.setDapContract(dapContract);
+      getMerkleRootMock.returns(Buffer.from(itemsMerkleRoot, 'hex'));
+      getMerkleTreeMock.returns([Buffer.from(itemsHash, 'hex')]);
       const result = stPacket.getItemsMerkleRoot();
 
       expect(result).to.be.equal(itemsMerkleRoot);
     });
-  });
+    it('should return null hash if no items found', () => {
+      const result = stPacket.getItemsMerkleRoot();
 
-  describe('#setItemsHash', () => {
-    it('should set items hash', () => {
-      const result = stPacket.setItemsHash(itemsHash);
-
-      expect(result).to.be.instanceOf(STPacket);
-
-      expect(result.itemsHash).to.be.equal(itemsHash);
+      expect(result).to.be.equal(null);
     });
   });
 
   describe('#getItemsHash', () => {
     it('should return items hash', () => {
+      hashMock.returns(itemsHash);
+      stPacket.setDapContract(dapContract);
       const result = stPacket.getItemsHash();
 
       expect(result).to.be.equal(itemsHash);
+    });
+    it('should return null hash if no items found', () => {
+      const result = stPacket.getItemsMerkleRoot();
+
+      expect(result).to.be.equal(null);
     });
   });
 
@@ -218,6 +221,9 @@ describe('STPacket', () => {
 
   describe('#toJSON', () => {
     it('should return ST Packet as plain object', () => {
+      hashMock.returns(itemsHash);
+      getMerkleRootMock.returns(Buffer.from(itemsMerkleRoot, 'hex'));
+      getMerkleTreeMock.returns([Buffer.from(itemsHash, 'hex')]);
       stPacket.setDapContract(dapContract);
 
       const result = stPacket.toJSON();
@@ -234,6 +240,9 @@ describe('STPacket', () => {
 
   describe('#serialize', () => {
     it('should return serialized ST Packet', () => {
+      hashMock.returns(itemsHash);
+      getMerkleRootMock.returns(Buffer.from(itemsMerkleRoot, 'hex'));
+      getMerkleTreeMock.returns([Buffer.from(itemsHash, 'hex')]);
       stPacket.setDapContract(dapContract);
 
       const serializedSTPacket = '123';
@@ -242,15 +251,19 @@ describe('STPacket', () => {
 
       const result = stPacket.serialize();
 
+      const rawDapContract = dapContract.toJSON();
+
       expect(result).to.be.equal(serializedSTPacket);
 
-      expect(encodeMock).to.be.calledOnceWith({
+      expect(encodeMock).to.be.calledTwice();
+      expect(encodeMock).to.be.calledWith({
         contractId: dapContractId,
         itemsMerkleRoot,
         itemsHash,
         objects: [],
-        contracts: [dapContract.toJSON()],
+        contracts: [rawDapContract],
       });
+      expect(encodeMock).to.be.calledWith(stPacket.getItemsHashes());
     });
   });
 

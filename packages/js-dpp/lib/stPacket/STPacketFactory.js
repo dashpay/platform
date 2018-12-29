@@ -65,9 +65,6 @@ class STPacketFactory {
 
     const stPacket = this.create(rawSTPacket.contractId);
 
-    stPacket.setItemsMerkleRoot(rawSTPacket.itemsMerkleRoot);
-    stPacket.setItemsHash(rawSTPacket.itemsHash);
-
     if (rawSTPacket.contracts.length > 0) {
       const packetDapContract = this.createDapContract(rawSTPacket.contracts[0]);
 

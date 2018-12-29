@@ -1,5 +1,6 @@
 const hash = require('../util/hash');
-const serializer = require('../util/serializer');
+const { encode } = require('../util/serializer');
+const { getMerkleTree, getMerkleRoot } = require('../util/merkleTree');
 
 const DapContract = require('../dapContract/DapContract');
 
@@ -12,9 +13,6 @@ class STPacket {
    */
   constructor(contractId, items = undefined) {
     this.setDapContractId(contractId);
-
-    this.itemsMerkleRoot = null;
-    this.itemsHash = null;
 
     this.objects = [];
     this.contracts = [];
@@ -49,34 +47,36 @@ class STPacket {
   }
 
   /**
-   * Set items merkle root
+   * Get all hashes of all items in a packets as an array of buffers
    *
-   * @param {string} itemsMerkleRoot
+   * @private
+   * @returns {{
+   *   objects: Buffer[],
+   *   contracts: Buffer[]
+   * }}
    */
-  setItemsMerkleRoot(itemsMerkleRoot) {
-    this.itemsMerkleRoot = itemsMerkleRoot;
-
-    return this;
+  getItemsHashes() {
+    return {
+      objects: this.objects.map(object => Buffer.from(object.hash(), 'hex')),
+      contracts: this.contracts.map(contract => Buffer.from(contract.hash(), 'hex')),
+    };
   }
 
   /**
    * Get items merkle root
    *
-   * @return {string}
+   * @return {string|null}
    */
   getItemsMerkleRoot() {
-    return this.itemsMerkleRoot;
-  }
+    const { contracts, objects } = this.getItemsHashes();
+    // Always concatenate arrays in bitwise order of their names
+    const itemsHashes = contracts.concat(objects);
 
-  /**
-   * Set items hash
-   *
-   * @param {string} itemsHash
-   */
-  setItemsHash(itemsHash) {
-    this.itemsHash = itemsHash;
+    if (itemsHashes.length === 0) {
+      return null;
+    }
 
-    return this;
+    return getMerkleRoot(getMerkleTree(itemsHashes)).toString('hex');
   }
 
   /**
@@ -85,7 +85,9 @@ class STPacket {
    * @return {string}
    */
   getItemsHash() {
-    return this.itemsHash;
+    const itemsHashes = this.getItemsHashes();
+
+    return hash(encode(itemsHashes));
   }
 
   /**
@@ -176,7 +178,7 @@ class STPacket {
    * @return {Buffer}
    */
   serialize() {
-    return serializer.encode(this.toJSON());
+    return encode(this.toJSON());
   }
 
   /**
