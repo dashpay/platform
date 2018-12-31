@@ -1,5 +1,5 @@
+const DashUtil = require('@dashevo/dash-util');
 const utils = require('../lib/utils');
-const DashUtil = require('dash-util');
 
 module.exports = {
   getLowDiffGenesis() {
