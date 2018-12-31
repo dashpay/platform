@@ -1,6 +1,8 @@
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
-const { getMerkleTree, getMerkleRoot } = require('../util/merkleTree');
+
+const calculateItemsMerkleRoot = require('./calculateItemsMerkleRoot');
+const calculateItemsHash = require('./calculateItemsHash');
 
 const DapContract = require('../dapContract/DapContract');
 
@@ -46,21 +48,6 @@ class STPacket {
     return this.contractId;
   }
 
-  /**
-   * Get all hashes of all items in a packets as an array of buffers
-   *
-   * @private
-   * @returns {{
-   *   objects: Buffer[],
-   *   contracts: Buffer[]
-   * }}
-   */
-  getItemsHashes() {
-    return {
-      objects: this.objects.map(object => Buffer.from(object.hash(), 'hex')),
-      contracts: this.contracts.map(contract => Buffer.from(contract.hash(), 'hex')),
-    };
-  }
 
   /**
    * Get items merkle root
@@ -68,15 +55,10 @@ class STPacket {
    * @return {string|null}
    */
   getItemsMerkleRoot() {
-    const { contracts, objects } = this.getItemsHashes();
-    // Always concatenate arrays in bitwise order of their names
-    const itemsHashes = contracts.concat(objects);
-
-    if (itemsHashes.length === 0) {
-      return null;
-    }
-
-    return getMerkleRoot(getMerkleTree(itemsHashes)).toString('hex');
+    return calculateItemsMerkleRoot({
+      contracts: this.contracts,
+      objects: this.objects,
+    });
   }
 
   /**
@@ -85,9 +67,10 @@ class STPacket {
    * @return {string}
    */
   getItemsHash() {
-    const itemsHashes = this.getItemsHashes();
-
-    return hash(encode(itemsHashes));
+    return calculateItemsHash({
+      contracts: this.contracts,
+      objects: this.objects,
+    });
   }
 
   /**

@@ -3,6 +3,12 @@ const STPacket = require('../STPacket');
 const stPacketBaseSchema = require('../../../schema/base/st-packet');
 const stPacketHeaderSchema = require('../../../schema/st-packet-header');
 
+const calculateItemsHash = require('../calculateItemsHash');
+const calculateItemsMerkleRoot = require('../calculateItemsMerkleRoot');
+
+const InvalidItemsHashError = require('../../errors/InvalidItemsHashError');
+const InvalidItemsMerkleRootError = require('../../errors/InvalidItemsMerkleRootError');
+
 /**
  * @param {JsonSchemaValidator} validator
  * @param {validateSTPacketDapContracts} validateSTPacketDapContracts
@@ -18,12 +24,12 @@ module.exports = function validateSTPacketFactory(
    * @return {Object}
    */
   function createSTPacketSchema() {
-    const stPacketSchema = Object.assign({ }, stPacketBaseSchema);
+    const stPacketSchema = Object.assign({}, stPacketBaseSchema);
 
     delete stPacketSchema.$id;
 
     stPacketSchema.properties = Object.assign(
-      { },
+      {},
       stPacketBaseSchema.properties,
       stPacketHeaderSchema.properties,
     );
@@ -54,8 +60,6 @@ module.exports = function validateSTPacketFactory(
       return result;
     }
 
-    // TODO Validate itemsHashes and itemsMerkleRoot
-
     if (rawSTPacket.contracts.length > 0) {
       result.merge(
         validateSTPacketDapContracts(rawSTPacket),
@@ -65,6 +69,22 @@ module.exports = function validateSTPacketFactory(
     if (rawSTPacket.objects.length > 0) {
       result.merge(
         validateSTPacketDapObjects(rawSTPacket, dapContract),
+      );
+    }
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (calculateItemsMerkleRoot(rawSTPacket) !== rawSTPacket.itemsMerkleRoot) {
+      result.addError(
+        new InvalidItemsMerkleRootError(rawSTPacket),
+      );
+    }
+
+    if (calculateItemsHash(rawSTPacket) !== rawSTPacket.itemsHash) {
+      result.addError(
+        new InvalidItemsHashError(rawSTPacket),
       );
     }
 

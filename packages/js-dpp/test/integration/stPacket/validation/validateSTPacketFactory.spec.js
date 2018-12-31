@@ -13,9 +13,12 @@ const {
   expectValidationError,
 } = require('../../../../lib/test/expect/expectError');
 
+const InvalidItemsMerkleRootError = require('../../../../lib/errors/InvalidItemsMerkleRootError');
+const InvalidItemsHashError = require('../../../../lib/errors/InvalidItemsHashError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe('validateSTPacketFactory', () => {
+  let stPacket;
   let rawSTPacket;
   let rawDapContract;
   let dapContract;
@@ -26,7 +29,9 @@ describe('validateSTPacketFactory', () => {
   beforeEach(function beforeEach() {
     dapContract = getDapContractFixture();
     rawDapContract = dapContract.toJSON();
-    rawSTPacket = getSTPacketFixture().toJSON();
+
+    stPacket = getSTPacketFixture();
+    rawSTPacket = stPacket.toJSON();
 
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
@@ -173,6 +178,18 @@ describe('validateSTPacketFactory', () => {
       expect(validateSTPacketDapContractsMock).to.be.not.called();
       expect(validateSTPacketDapObjectsMock).to.be.not.called();
     });
+
+    it('should be merkle root of items', () => {
+      rawSTPacket.itemsMerkleRoot = '8dsjd9w86b273ff86b273ff86b273ff86b3273ff86b273ff86b2737dh7ff86b2';
+
+      const result = validateSTPacket(rawSTPacket);
+
+      expectValidationError(result, InvalidItemsMerkleRootError);
+
+      const [error] = result.getErrors();
+
+      expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
+    });
   });
 
   describe('itemsHash', () => {
@@ -239,6 +256,18 @@ describe('validateSTPacketFactory', () => {
 
       expect(validateSTPacketDapContractsMock).to.be.not.called();
       expect(validateSTPacketDapObjectsMock).to.be.not.called();
+    });
+
+    it('should be hash of items\' hashes', () => {
+      rawSTPacket.itemsHash = '8dsjd9w86b273ff86b273ff86b273ff86b3273ff86b273ff86b2737dh7ff86b2';
+
+      const result = validateSTPacket(rawSTPacket);
+
+      expectValidationError(result, InvalidItemsHashError);
+
+      const [error] = result.getErrors();
+
+      expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
     });
   });
 
@@ -421,11 +450,10 @@ describe('validateSTPacketFactory', () => {
   });
 
   it('should validate DAP Contract if present', () => {
-    rawSTPacket.contracts = [
-      rawDapContract,
-    ];
+    stPacket.setDapObjects([]);
+    stPacket.setDapContract(dapContract);
 
-    rawSTPacket.objects = [];
+    rawSTPacket = stPacket.toJSON();
 
     const dapContractError = new ConsensusError('test');
 
