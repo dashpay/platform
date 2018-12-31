@@ -12,11 +12,14 @@ const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 describe('DapObjectFacade', () => {
   let dap;
   let dapObject;
+  let dapContract;
 
   beforeEach(() => {
+    dapContract = getDapContractFixture();
+
     dap = new DashApplicationProtocol({
       userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      dapContract: getDapContractFixture(),
+      dapContract,
     });
 
     ([dapObject] = getDapObjectsFixture());
@@ -37,7 +40,7 @@ describe('DapObjectFacade', () => {
 
     it('should throw error if User ID is not defined', () => {
       dap = new DashApplicationProtocol({
-        dapContract: getDapContractFixture().toJSON(),
+        dapContract,
       });
 
       let error;
@@ -85,7 +88,7 @@ describe('DapObjectFacade', () => {
 
     it('should throw error if User ID is not defined', () => {
       dap = new DashApplicationProtocol({
-        dapContract: getDapContractFixture().toJSON(),
+        dapContract: getDapContractFixture(),
       });
 
       let error;
@@ -127,7 +130,7 @@ describe('DapObjectFacade', () => {
 
     it('should throw error if User ID is not defined', () => {
       dap = new DashApplicationProtocol({
-        dapContract: getDapContractFixture().toJSON(),
+        dapContract,
       });
 
       let error;

@@ -47,7 +47,9 @@ const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
  * @returns {{ confirmations: number }}
  */
 
-
+/**
+ * @class DashApplicationProtocol
+ */
 class DashApplicationProtocol {
   /**
    * @param {string} [options.userId]
