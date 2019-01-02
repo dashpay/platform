@@ -32,6 +32,8 @@ const getSyncInfoMethodFactory = require('../../lib/api/methods/getSyncInfoMetho
 const isDashCoreRunningFactory = require('../../lib/sync/isDashCoreRunningFactory');
 const DashCoreIsNotRunningError = require('../../lib/sync/DashCoreIsNotRunningError');
 
+const DriveDataProvider = require('../dpp/DriveDataProvider');
+
 /**
  * Remove 'Method' Postfix
  *
@@ -160,13 +162,42 @@ class ApiApp {
 
   /**
    * @private
+   * @return {fetchDapContract}
+   */
+  createFetchDapContract() {
+    if (!this.fetchDapContract) {
+      const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
+      const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
+      this.fetchDapContract = fetchDapContractFactory(dapContractMongoDbRepository);
+    }
+
+    return this.fetchDapContract;
+  }
+
+  /**
+   * @private
    * @returns {fetchDapContractMethod}
    */
   createFetchDapContractMethod() {
-    const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
-    const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
-    const fetchDapContract = fetchDapContractFactory(dapContractMongoDbRepository);
-    return fetchDapContractMethodFactory(fetchDapContract);
+    return fetchDapContractMethodFactory(
+      this.createFetchDapContract(),
+    );
+  }
+
+  /**
+   * @private
+   * @return {fetchDapObjects}
+   */
+  createFetchDapObjects() {
+    if (!this.fetchDapObjects) {
+      const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
+        this.mongoClient,
+        DapObjectMongoDbRepository,
+      );
+      this.fetchDapObjects = fetchDapObjectsFactory(createDapObjectMongoDbRepository);
+    }
+
+    return this.fetchDapObjects;
   }
 
   /**
@@ -174,12 +205,9 @@ class ApiApp {
    * @return {fetchDapObjectsMethod}
    */
   createFetchDapObjectsMethod() {
-    const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
-      this.mongoClient,
-      DapObjectMongoDbRepository,
+    return fetchDapObjectsMethodFactory(
+      this.createFetchDapObjects(),
     );
-    const fetchDapObjects = fetchDapObjectsFactory(createDapObjectMongoDbRepository);
-    return fetchDapObjectsMethodFactory(fetchDapObjects);
   }
 
   /**
@@ -200,6 +228,17 @@ class ApiApp {
    */
   createGetSyncInfoMethod() {
     return getSyncInfoMethodFactory(this.createGetSyncInfo());
+  }
+
+  /**
+   * @return {DriveDataProvider}
+   */
+  createDriveDataProvder() {
+    return new DriveDataProvider(
+      this.createFetchDapObjects(),
+      this.createFetchDapContract(),
+      this.rpcClient,
+    );
   }
 }
 
