@@ -2,6 +2,7 @@ const StateTransitionPacket = require('../stPacket/StateTransitionPacket');
 
 const PinPacketTimeoutError = require('../errors/PinPacketTimeoutError');
 const GetPacketTimeoutError = require('../errors/GetPacketTimeoutError');
+const PacketNotPinnedError = require('../errors/PacketNotPinnedError');
 
 const rejectAfter = require('../../util/rejectAfter');
 
@@ -72,15 +73,23 @@ class StateTransitionPacketIpfsRepository {
   /**
    * Unpin specific packet by CID
    *
+   * @throws PacketNotPinnedError
    * @param {CID} cid
    *
    * @return {Promise<void>}
    */
   async delete(cid) {
-    await this.ipfsApi.pin.rm(
-      cid.toBaseEncodedString(),
-      { recursive: true },
-    );
+    try {
+      await this.ipfsApi.pin.rm(
+        cid.toBaseEncodedString(),
+        { recursive: true },
+      );
+    } catch (e) {
+      if (e.message === 'not pinned') {
+        throw new PacketNotPinnedError(cid);
+      }
+      throw e;
+    }
   }
 
   /**

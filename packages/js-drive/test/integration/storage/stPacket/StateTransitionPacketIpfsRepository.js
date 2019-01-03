@@ -89,4 +89,17 @@ describe('StateTransitionPacketIpfsRepository', function main() {
       expect(e.name).to.be.equal('GetPacketTimeoutError');
     }
   });
+
+  it('should throw an error if trying to remove packet not pinned', async () => {
+    const packet = new StateTransitionPacket({
+      pver: 42,
+    });
+
+    try {
+      await stPacketRepository.delete(packet.getCID());
+      expect.fail('the error have not been thrown');
+    } catch (e) {
+      expect(e.name).to.be.equal('PacketNotPinnedError');
+    }
+  });
 });

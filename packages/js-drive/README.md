@@ -74,6 +74,16 @@ Add State Transition Packet to DashDrive storage
 |---------|--------|----------------------------------------------|
 | result  | string | ST Packet [CID](https://github.com/ipld/cid) |
 
+#### removeSTPacket
+
+Remove State Transition Packet from DashDrive storage
+
+##### Params
+
+| name       | type   | description                                  |
+|------------|--------|----------------------------------------------|
+| packetHash | string | ST Packet hash previously submitted to Drive |
+
 #### fetchDapContact
 
 Fetch DAP Contract from DashDrive State View

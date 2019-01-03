@@ -2,6 +2,8 @@ const multihashes = require('multihashes');
 const CID = require('cids');
 const doubleSha256 = require('../../util/doubleSha256');
 
+const InvalidHashError = require('../errors/InvalidHashError');
+
 const PACKET_FIELDS = ['pver', 'dapid', 'dapobjectshash', 'dapcontract', 'dapobjects', 'meta'];
 
 class StateTransitionPacket {
@@ -49,13 +51,18 @@ class StateTransitionPacket {
   /**
    * Create IPFS CID from hash
    *
+   * @throws InvalidMultihashError
    * @param {string} hash
    * @return {CID}
    */
   static createCIDFromHash(hash) {
     const buffer = Buffer.from(hash, 'hex');
     const multihash = multihashes.encode(buffer, 'dbl-sha2-256');
-    return new CID(1, 'dag-cbor', multihash);
+    try {
+      return new CID(1, 'dag-cbor', multihash);
+    } catch (e) {
+      throw new InvalidHashError(`could not create CID: ${e.message}`);
+    }
   }
 }
 

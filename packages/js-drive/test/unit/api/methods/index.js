@@ -4,4 +4,5 @@ describe('Methods', () => {
   require('./fetchDapContractMethod');
   require('./fetchDapObjectsMethodFactory');
   require('./getSyncInfoMethodFactory');
+  require('./removeSTPacketMethod');
 });

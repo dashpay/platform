@@ -2,4 +2,6 @@
 describe('StateTransitionPacket', () => {
   require('./StateTransitionPacketIpfsRepository');
   require('./addSTPacket');
+  require('./removeSTPacket');
+  require('./StateTransitionPacket');
 });

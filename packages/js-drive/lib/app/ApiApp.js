@@ -13,6 +13,8 @@ const wrapToErrorHandler = require('../../lib/api/jsonRpc/wrapToErrorHandler');
 const StateTransitionPacketIpfsRepository = require('../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
 const addSTPacketFactory = require('../../lib/storage/stPacket/addSTPacketFactory');
 const addSTPacketMethodFactory = require('../../lib/api/methods/addSTPacketMethodFactory');
+const removeSTPacketFactory = require('../../lib/storage/stPacket/removeSTPacketFactory');
+const removeSTPacketMethodFactory = require('../../lib/api/methods/removeSTPacketMethodFactory');
 
 const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
 const serializer = require('../util/serializer');
@@ -130,6 +132,7 @@ class ApiApp {
   createRpcMethods() {
     return [
       this.createAddSTPacketMethod(),
+      this.createRemoveSTPacketMethod(),
       this.createFetchDapContractMethod(),
       this.createFetchDapObjectsMethod(),
       this.createGetSyncInfoMethod(),
@@ -158,6 +161,15 @@ class ApiApp {
   createAddSTPacketMethod() {
     const addSTPacket = addSTPacketFactory(this.createSTPacketRepository());
     return addSTPacketMethodFactory(addSTPacket);
+  }
+
+  /**
+   * @private
+   * @return {removeSTPacketMethod}
+   */
+  createRemoveSTPacketMethod() {
+    const removeSTPacket = removeSTPacketFactory(this.createSTPacketRepository());
+    return removeSTPacketMethodFactory(removeSTPacket);
   }
 
   /**
