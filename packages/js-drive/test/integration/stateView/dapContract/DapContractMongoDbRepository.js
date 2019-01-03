@@ -71,5 +71,12 @@ describe('DapContractRepository', () => {
     expect(contract).to.be.null();
   });
 
+  it('should convert dapId to its base58 counterpart using createIdFromDapId', () => {
+    const dapId = '1234567';
+    const dbId = '77em';
+    const converted = dapContractRepository.createIdFromDapId(dapId);
+    expect(converted).to.be.equal(dbId);
+  });
+
   it('should successfuly delete a contract');
 });

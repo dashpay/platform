@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const mongo = require('mongodb');
 const Reference = require('../Reference');
 const DapContract = require('./DapContract');
@@ -20,7 +21,8 @@ class DapContractMongoDbRepository {
    * @returns {Promise<DapContract|null>}
    */
   async find(dapId) {
-    const result = await this.collection.findOne({ _id: dapId, isDeleted: false });
+    const documentId = this.createIdFromDapId(dapId);
+    const result = await this.collection.findOne({ _id: documentId, isDeleted: false });
     if (!result) {
       return null;
     }
@@ -53,8 +55,9 @@ class DapContractMongoDbRepository {
       this.encode(dapContractData.data),
     );
 
+    const documentId = this.createIdFromDapId(dapContractData.dapId);
     return this.collection.updateOne(
-      { _id: dapContractData.dapId },
+      { _id: documentId },
       { $set: dapContractData },
       { upsert: true },
     );
@@ -132,6 +135,18 @@ class DapContractMongoDbRepository {
         ),
       };
     });
+  }
+
+  /**
+   * Create Base58 Database ID from DAP ID
+   *
+   * @private
+   * @param {string} dapId
+   *
+   * @return {string}
+   */
+  createIdFromDapId(dapId) {
+    return bs58.encode(Buffer.from(dapId, 'hex'));
   }
 }
 
