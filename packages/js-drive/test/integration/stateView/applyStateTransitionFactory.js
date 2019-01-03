@@ -193,9 +193,9 @@ describe('applyStateTransitionFactory', () => {
     );
 
     const dapId = packet.dapid;
-    const dapObjectRepository = createDapObjectMongoDbRepository(dapId);
     const objectType = packet.dapobjects[0].objtype;
-    const objects = await dapObjectRepository.fetch(objectType);
+    const dapObjectRepository = createDapObjectMongoDbRepository(dapId, objectType);
+    const objects = await dapObjectRepository.fetch();
 
     expect(objects.length).to.be.equal(1);
 

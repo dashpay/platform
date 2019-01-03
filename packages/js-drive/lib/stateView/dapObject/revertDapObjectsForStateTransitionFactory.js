@@ -32,39 +32,46 @@ module.exports = function revertDapObjectsForStateTransitionFactory(
       return;
     }
 
-    const dapObjectMongoDbRepository = await createDapObjectMongoDbRepository(packetData.dapid);
+    const objectTypes = new Set(packetData.dapobjects.map(o => o.objtype));
 
-    const dapObjects = await dapObjectMongoDbRepository
-      .findAllBySTHeaderHash(stateTransition.hash);
+    for (const objectType of objectTypes) {
+      const dapObjectMongoDbRepository = await createDapObjectMongoDbRepository(
+        packetData.dapid,
+        objectType,
+      );
 
-    for (const dapObject of dapObjects) {
-      const previousRevisions = dapObject.getPreviousRevisions();
+      const dapObjects = await dapObjectMongoDbRepository
+        .findAllBySTHeaderHash(stateTransition.hash);
 
-      if (previousRevisions.length === 0) {
-        dapObject.markAsDeleted();
-        await dapObjectMongoDbRepository.store(dapObject);
+      for (const dapObject of dapObjects) {
+        const previousRevisions = dapObject.getPreviousRevisions();
 
-        await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_MARKED_DELETED, {
+        if (previousRevisions.length === 0) {
+          dapObject.markAsDeleted();
+          await dapObjectMongoDbRepository.store(dapObject);
+
+          await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_MARKED_DELETED, {
+            userId: stateTransition.extraPayload.regTxId,
+            objectId: dapObject.getId(),
+            reference: dapObject.reference,
+            object: dapObject.getOriginalData(),
+          });
+
+          continue;
+        }
+
+        const [lastPreviousRevision] = previousRevisions
+          .sort((prev, next) => next.revision - prev.revision);
+        await applyStateTransitionFromReference(lastPreviousRevision.reference, true);
+
+        await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_REVERTED, {
           userId: stateTransition.extraPayload.regTxId,
           objectId: dapObject.getId(),
           reference: dapObject.reference,
           object: dapObject.getOriginalData(),
+          previousRevision: lastPreviousRevision,
         });
-
-        continue;
       }
-
-      const [lastPreviousRevision] = previousRevisions
-        .sort((prev, next) => next.revision - prev.revision);
-      await applyStateTransitionFromReference(lastPreviousRevision.reference, true);
-
-      await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_REVERTED, {
-        userId: stateTransition.extraPayload.regTxId,
-        objectId: dapObject.getId(),
-        reference: dapObject.reference,
-        object: dapObject.getOriginalData(),
-        previousRevision: lastPreviousRevision,
-      });
     }
   }
 

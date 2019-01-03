@@ -10,9 +10,10 @@ const AmbiguousStartError = require('./errors/AmbiguousStartError');
 class DapObjectMongoDbRepository {
   /**
    * @param {Db} mongoClient
+   * @param {string} objectType
    */
-  constructor(mongoClient) {
-    this.mongoClient = mongoClient.collection('dapObjects');
+  constructor(mongoClient, objectType) {
+    this.mongoClient = mongoClient.collection(`dapObjects_${objectType}`);
   }
 
   /**
@@ -46,9 +47,8 @@ class DapObjectMongoDbRepository {
   }
 
   /**
-   * Fetch DapObjects by type
+   * Fetch DapObjects
    *
-   * @param {string} type
    * @param options
    * @param options.where
    * @param options.limit
@@ -57,7 +57,7 @@ class DapObjectMongoDbRepository {
    * @param options.orderBy
    * @returns {Promise<DapObject[]>}
    */
-  async fetch(type, options = {}) {
+  async fetch(options = {}) {
     let query = {};
     let opts = {};
 
@@ -98,7 +98,7 @@ class DapObjectMongoDbRepository {
       throw new InvalidOrderByError();
     }
 
-    query = Object.assign({ isDeleted: false }, query, { type });
+    query = Object.assign({ isDeleted: false }, query);
     const results = await this.mongoClient.find(query, opts).toArray();
     return results.map(document => this.toDapObject(document));
   }

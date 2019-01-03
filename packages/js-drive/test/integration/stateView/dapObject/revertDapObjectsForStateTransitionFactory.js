@@ -91,6 +91,7 @@ describe('revertDapObjectsForStateTransitionFactory', () => {
 
     const dapObjectRepository = createDapObjectMongoDbRepository(
       packet.dapid,
+      'user',
     );
 
     const [dapObjectData] = packet.dapobjects;
@@ -109,7 +110,7 @@ describe('revertDapObjectsForStateTransitionFactory', () => {
       stateTransition: transition,
     });
 
-    const dapObjectList = await dapObjectRepository.fetch('user');
+    const dapObjectList = await dapObjectRepository.fetch();
 
     expect(dapObjectList).to.be.empty();
 
@@ -131,6 +132,7 @@ describe('revertDapObjectsForStateTransitionFactory', () => {
 
     const dapObjectRepository = createDapObjectMongoDbRepository(
       packet.dapid,
+      'user',
     );
 
     const references = [];
@@ -173,7 +175,7 @@ describe('revertDapObjectsForStateTransitionFactory', () => {
       stateTransition: lastTransition,
     });
 
-    const dapObjectList = await dapObjectRepository.fetch('user');
+    const dapObjectList = await dapObjectRepository.fetch();
 
     expect(dapObjectList.length).to.be.equal(1);
 

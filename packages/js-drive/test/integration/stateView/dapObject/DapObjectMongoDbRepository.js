@@ -48,7 +48,7 @@ describe('DapObjectMongoDbRepository', () => {
   startMongoDb().then(async (mongoDbInstance) => {
     const mongoClient = await mongoDbInstance.getClient();
     const mongoDb = mongoClient.db('test_dap');
-    dapObjectRepository = new DapObjectMongoDbRepository(mongoDb);
+    dapObjectRepository = new DapObjectMongoDbRepository(mongoDb, 'DashPayContact');
   });
 
   const dapObject = createDapObjectWithAge(90);
@@ -60,17 +60,15 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should fetch DapObject by type', async () => {
-    const type = 'DashPayContact';
-    const result = await dapObjectRepository.fetch(type);
+    const result = await dapObjectRepository.fetch();
     expect(result).to.be.deep.equal([dapObject]);
   });
 
   it('should fetch DapObject by type with where condition', async () => {
-    const type = 'DashPayContact';
     const options = {
       where: { 'data.user': 'dashy' },
     };
-    const result = await dapObjectRepository.fetch(type, options);
+    const result = await dapObjectRepository.fetch(options);
     expect(result).to.be.deep.equal([dapObject]);
   });
 
@@ -81,14 +79,13 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should throw InvalidWhereError if where is not an object', async () => {
-    const type = 'DashPayContact';
     const options = {
       where: 'something',
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -96,14 +93,13 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should throw InvalidWhereError if where is boolean', async () => {
-    const type = 'DashPayContact';
     const options = {
       where: false,
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -111,23 +107,21 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should return empty array if where conditions do not match', async () => {
-    const type = 'DashPayContact';
     const options = {
       where: { 'object.aboutme': 'Dash enthusiast' },
     };
-    const result = await dapObjectRepository.fetch(type, options);
+    const result = await dapObjectRepository.fetch(options);
     expect(result).to.be.deep.equal([]);
   });
 
   it('should throw unknown operator error if where conditions are invalid', async () => {
-    const type = 'DashPayContact';
     const options = {
       where: { 'object.user': { $dirty: true } },
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -139,23 +133,21 @@ describe('DapObjectMongoDbRepository', () => {
     const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
-    const type = 'DashPayContact';
     const options = {
       limit: 1,
     };
-    const result = await dapObjectRepository.fetch(type, options);
+    const result = await dapObjectRepository.fetch(options);
     expect(result.length).to.be.equal(1);
   });
 
   it('should throw InvalidLimitError if limit is not a number', async () => {
-    const type = 'DashPayContact';
     const options = {
       limit: 'something',
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -163,14 +155,13 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should throw InvalidLimitError if limit is boolean', async () => {
-    const type = 'DashPayContact';
     const options = {
       limit: false,
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -182,13 +173,12 @@ describe('DapObjectMongoDbRepository', () => {
     const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
-    const type = 'DashPayContact';
     const options = {
       orderBy: {
         'data.age': -1,
       },
     };
-    const result = await dapObjectRepository.fetch(type, options);
+    const result = await dapObjectRepository.fetch(options);
     expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
@@ -197,25 +187,23 @@ describe('DapObjectMongoDbRepository', () => {
     const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
-    const type = 'DashPayContact';
     const options = {
       orderBy: {
         'data.age': 1,
       },
     };
-    const result = await dapObjectRepository.fetch(type, options);
+    const result = await dapObjectRepository.fetch(options);
     expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
   it('should throw InvalidOrderBy if orderBy is not an object', async () => {
-    const type = 'DashPayContact';
     const options = {
       orderBy: 'something',
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -223,14 +211,13 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should throw InvalidOrderBy if orderBy is boolean', async () => {
-    const type = 'DashPayContact';
     const options = {
       orderBy: false,
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -242,26 +229,24 @@ describe('DapObjectMongoDbRepository', () => {
     const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
-    const type = 'DashPayContact';
     const options = {
       orderBy: {
         'data.age': 1,
       },
       startAt: 1,
     };
-    const result = await dapObjectRepository.fetch(type, options);
+    const result = await dapObjectRepository.fetch(options);
     expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
   it('should throw InvalidStartAtError if startAt is not a number', async () => {
-    const type = 'DashPayContact';
     const options = {
       startAt: 'something',
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -269,14 +254,13 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should throw InvalidStartAtError if startAt is boolean', async () => {
-    const type = 'DashPayContact';
     const options = {
       startAt: 'something',
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -288,26 +272,24 @@ describe('DapObjectMongoDbRepository', () => {
     const dapObj = createDapObjectWithAge(age);
     await dapObjectRepository.store(dapObj);
 
-    const type = 'DashPayContact';
     const options = {
       orderBy: {
         'data.age': 1,
       },
       startAfter: 1,
     };
-    const result = await dapObjectRepository.fetch(type, options);
+    const result = await dapObjectRepository.fetch(options);
     expect(result[0].toJSON().data.age).to.be.equal(age);
   });
 
   it('should throw InvalidStartAfterError if startAfter is not a number', async () => {
-    const type = 'DashPayContact';
     const options = {
       startAfter: 'something',
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -315,14 +297,13 @@ describe('DapObjectMongoDbRepository', () => {
   });
 
   it('should throw InvalidStartAfterError if startAfter is boolean', async () => {
-    const type = 'DashPayContact';
     const options = {
       startAfter: false,
     };
 
     let error;
     try {
-      await dapObjectRepository.fetch(type, options);
+      await dapObjectRepository.fetch(options);
     } catch (e) {
       error = e;
     }
@@ -332,17 +313,11 @@ describe('DapObjectMongoDbRepository', () => {
   it('should throw AmbiguousStartError if the both startAt and startAfter are present', async () => {
     let error;
     try {
-      await dapObjectRepository.fetch('any', { startAt: 1, startAfter: 2 });
+      await dapObjectRepository.fetch({ startAt: 1, startAfter: 2 });
     } catch (e) {
       error = e;
     }
     expect(error).to.be.instanceOf(AmbiguousStartError);
-  });
-
-  it('should return empty array if fetch does not find DapObjects', async () => {
-    const type = 'UnknownType';
-    const result = await dapObjectRepository.fetch(type);
-    expect(result).to.be.deep.equal([]);
   });
 
   it('should delete DapObject entity', async () => {

@@ -13,12 +13,13 @@ function createDapObjectMongoDbRepositoryFactory(mongoClient, DapObjectMongoDbRe
    *
    * @typedef {Promise} createDapObjectMongoDbRepository
    * @param {string} dapId
+   * @param {string} objectType
    * @returns {DapObjectMongoDbRepository}
    */
-  function createDapObjectMongoDbRepository(dapId) {
+  function createDapObjectMongoDbRepository(dapId, objectType) {
     const dapIdEncoded = bs58.encode(Buffer.from(dapId, 'hex'));
     const mongoDb = mongoClient.db(`${process.env.MONGODB_DB_PREFIX}${PREFIX}${dapIdEncoded}`);
-    return new DapObjectMongoDbRepository(mongoDb);
+    return new DapObjectMongoDbRepository(mongoDb, objectType);
   }
 
   return createDapObjectMongoDbRepository;

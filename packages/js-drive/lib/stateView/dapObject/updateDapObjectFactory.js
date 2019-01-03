@@ -13,7 +13,7 @@ function updateDapObjectFactory(createDapObjectRepository) {
    * @returns {Promise<void>}
    */
   async function updateDapObject(dapId, blockchainUserId, reference, dapObjectData, reverting) {
-    const dapObjectRepository = createDapObjectRepository(dapId);
+    const dapObjectRepository = createDapObjectRepository(dapId, dapObjectData.objtype);
     const dapObject = new DapObject(blockchainUserId, dapObjectData, reference, false);
 
     switch (dapObject.getAction()) {

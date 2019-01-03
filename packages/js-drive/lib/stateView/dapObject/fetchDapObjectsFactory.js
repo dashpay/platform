@@ -13,8 +13,8 @@ function fetchDapObjectsFactory(createDapObjectRepository) {
    * @returns {Promise<DapObject[]>}
    */
   async function fetchDapObjects(dapId, type, options) {
-    const dapObjectRepository = createDapObjectRepository(dapId);
-    const dapObjects = await dapObjectRepository.fetch(type, options);
+    const dapObjectRepository = createDapObjectRepository(dapId, type);
+    const dapObjects = await dapObjectRepository.fetch(options);
     return dapObjects.map(dapObject => dapObject.getOriginalData());
   }
 
