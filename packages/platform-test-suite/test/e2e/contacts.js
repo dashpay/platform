@@ -82,9 +82,11 @@ describe('Contacts app', () => {
 
       ({ txid: bobRegTxId } = await dapiClient.sendRawTransaction(transaction.serialize()));
 
+      expect(bobRegTxId).to.be.a('string');
+
       bobPreviousST = bobRegTxId;
 
-      // await dapiClient.generate(1);
+      await dapiClient.generate(1);
       await wait(5000);
 
       const userByName = await dapiClient.getUserByName(bobUserName);
@@ -122,8 +124,11 @@ describe('Contacts app', () => {
 
       bobPreviousST = transitionHash;
 
-      let dapContractFromDAPI;
+      // 3. Mine block with ST
+      await dapiClient.generate(1);
 
+      // 4. Fetch DAP Contract
+      let dapContractFromDAPI;
       for (let i = 0; i <= attempts; i++) {
         try {
           // waiting for Contacts to be added
@@ -175,19 +180,23 @@ describe('Contacts app', () => {
 
       bobPreviousST = transitionHash;
 
-      let bobSpace;
+      // 3. Mine block with ST
+      await dapiClient.generate(1);
+
+      // 4. Fetch users
+      let dapUsers;
       for (let i = 0; i <= attempts; i++) {
-        bobSpace = await dapiClient.fetchDapObjects(dapId, 'user', {});
+        dapUsers = await dapiClient.fetchDapObjects(dapId, 'user', {});
         // waiting for Bob's profile to be added
-        if (bobSpace.length > 0) {
+        if (dapUsers.length > 0) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(bobSpace).to.have.lengthOf(1);
-      expect(bobSpace[0]).to.be.deep.equal(
+      expect(dapUsers).to.have.lengthOf(1);
+      expect(dapUsers[0]).to.be.deep.equal(
         {
           act: 0,
           idx: 0,
@@ -224,7 +233,7 @@ describe('Contacts app', () => {
 
       alicePreviousST = aliceRegTxId;
 
-      // await dapiClient.generate(1);
+      await dapiClient.generate(1);
       await wait(5000);
 
       const userByName = await dapiClient.getUserByName(aliceUserName);
@@ -269,19 +278,23 @@ describe('Contacts app', () => {
 
       alicePreviousST = transitionHash;
 
-      let aliceSpace;
+      // 3. Mine block with ST
+      await dapiClient.generate(1);
+
+      // 4. Fetch users
+      let dapUsers;
       for (let i = 0; i <= attempts; i++) {
-        aliceSpace = await dapiClient.fetchDapObjects(dapId, 'user', {});
+        dapUsers = await dapiClient.fetchDapObjects(dapId, 'user', {});
         // waiting for Alice's profile to be added
-        if (aliceSpace.length > 1) {
+        if (dapUsers.length > 1) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(aliceSpace).to.have.lengthOf(2);
-      expect(aliceSpace[1]).to.be.deep.equal(
+      expect(dapUsers).to.have.lengthOf(2);
+      expect(dapUsers[1]).to.be.deep.equal(
         {
           act: 0,
           idx: 0,
@@ -330,19 +343,23 @@ describe('Contacts app', () => {
 
       alicePreviousST = transitionHash;
 
-      let aliceSpace;
+      // 3. Mine block with ST
+      await dapiClient.generate(1);
+
+      // 4. Fetch users
+      let dapUsers;
       for (let i = 0; i <= attempts; i++) {
-        aliceSpace = await dapiClient.fetchDapObjects(dapId, 'user', {});
+        dapUsers = await dapiClient.fetchDapObjects(dapId, 'user', {});
         // waiting for Alice's profile modified
-        if (aliceSpace.length === 2 && aliceSpace[1].act === 1) {
+        if (dapUsers.length === 2 && dapUsers[1].act === 1) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(aliceSpace).to.have.lengthOf(2);
-      expect(aliceSpace[1]).to.be.deep.equal(
+      expect(dapUsers).to.have.lengthOf(2);
+      expect(dapUsers[1]).to.be.deep.equal(
         {
           act: 1,
           idx: 0,
@@ -394,19 +411,23 @@ describe('Contacts app', () => {
 
       bobPreviousST = transitionHash;
 
-      let bobContact;
+      // 3. Mine block with ST
+      await dapiClient.generate(1);
+
+      // 4. Fetch contacts
+      let dapContacts;
       for (let i = 0; i <= attempts; i++) {
-        bobContact = await dapiClient.fetchDapObjects(dapId, 'contact', {});
+        dapContacts = await dapiClient.fetchDapObjects(dapId, 'contact', {});
         // waiting for Bob's contact request to be added
-        if (bobContact.length > 0) {
+        if (dapContacts.length > 0) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(bobContact).to.have.lengthOf(1);
-      expect(bobContact[0]).to.be.deep.equal(
+      expect(dapContacts).to.have.lengthOf(1);
+      expect(dapContacts[0]).to.be.deep.equal(
         {
           act: 0,
           idx: 0,
@@ -457,19 +478,23 @@ describe('Contacts app', () => {
 
       alicePreviousST = transitionHash;
 
-      let aliceContact;
+      // 3. Mine block with ST
+      await dapiClient.generate(1);
+
+      // 4. Fetch contacts
+      let dapContacts;
       for (let i = 0; i <= attempts; i++) {
-        aliceContact = await dapiClient.fetchDapObjects(dapId, 'contact', {});
+        dapContacts = await dapiClient.fetchDapObjects(dapId, 'contact', {});
         // waiting for Bob's contact to be approved from Alice
-        if (aliceContact.length > 1) {
+        if (dapContacts.length > 1) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(aliceContact).to.have.lengthOf(2);
-      expect(aliceContact[1]).to.be.deep.equal(
+      expect(dapContacts).to.have.lengthOf(2);
+      expect(dapContacts[1]).to.be.deep.equal(
         {
           act: 1,
           idx: 0,
@@ -519,6 +544,10 @@ describe('Contacts app', () => {
 
       alicePreviousST = transitionHash;
 
+      // 3. Mine block with ST
+      await dapiClient.generate(1);
+
+      // 4. Fetch contacts
       let aliceContact;
       for (let i = 0; i <= attempts; i++) {
         // waiting for Bob's contact to be deleted from Alice
