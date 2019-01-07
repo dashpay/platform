@@ -1,2 +1,9 @@
+# do not track dependencies
 node_modules
-/dist/
+
+# ignore generated code coverage output
+coverage
+.nyc_output
+
+# ignore build artifacts
+dist
