@@ -69,7 +69,7 @@ const getBlockHash = async (blockHeight) => {
 
 const getAddressTotalReceived = async (address) => {
   const res = await get(`/addr/${address}/totalReceived`);
-  return res.totalReceived;
+  return res;
 };
 
 const getBlocks = async (blockDate, limit) => {
