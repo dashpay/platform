@@ -15,14 +15,14 @@ class STPacketHeaderFactory {
   /**
    * Create ST Packet Header
    *
-   * @param {string} dapContractId
+   * @param {string} dpContractId
    * @param {string} itemsMerkleRoot
    * @param {string} itemsHash
    * @return {STPacketHeader}
    */
-  create(dapContractId, itemsMerkleRoot, itemsHash) {
+  create(dpContractId, itemsMerkleRoot, itemsHash) {
     return new STPacketHeader(
-      dapContractId,
+      dpContractId,
       itemsMerkleRoot,
       itemsHash,
     );

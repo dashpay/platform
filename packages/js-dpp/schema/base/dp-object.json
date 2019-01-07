@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/dash-schema",
+  "$id": "https://schema.dash.org/dpp-0-4-0/base/dp-object",
+  "type": "object",
+  "properties": {
+    "$type": {
+      "type": "string"
+    },
+    "$action": {
+      "type": "number",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "$rev": {
+      "type": "number",
+      "multipleOf": 1.0,
+      "minimum": 0
+    },
+    "$scope": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "$scopeId": {
+      "type": "string",
+      "minLength": 34,
+      "maxLength": 34
+    }
+  },
+  "required": [
+    "$type",
+    "$action",
+    "$rev",
+    "$scope",
+    "$scopeId"
+  ]
+}

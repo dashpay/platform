@@ -1,7 +1,7 @@
 {
-  "name": "js-dap",
+  "name": "dpp",
   "version": "0.4.0",
-  "description": "",
+  "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
     "test": "npm run test:coverage && npm run test:browsers",
@@ -10,7 +10,7 @@
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:coverage": "nyc --check-coverage --stmts=95 --branch=90 --funcs=95 --lines=95 mocha"
   },
-  "main": "./lib/DashApplicationProtocol.js",
+  "main": "lib/DashPlatformProtocol.js",
   "author": "",
   "license": "MIT",
   "devDependencies": {

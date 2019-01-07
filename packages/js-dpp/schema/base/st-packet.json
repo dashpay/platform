@@ -1,6 +1,6 @@
 {
-  "$schema": "https://schema.dash.org/dap-0-4-0/meta/dash-schema",
-  "$id": "https://schema.dash.org/dap-0-4-0/base/st-packet",
+  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/dash-schema",
+  "$id": "https://schema.dash.org/dpp-0-4-0/base/st-packet",
   "properties": {
     "objects": {
       "type": "array"

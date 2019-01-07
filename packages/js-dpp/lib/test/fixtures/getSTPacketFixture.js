@@ -1,16 +1,16 @@
 const STPacket = require('../../stPacket/STPacket');
 
-const getDapContractFixture = require('./getDapContractFixture');
-const getDapObjectsFixture = require('./getDapObjectsFixture');
+const getDPContractFixture = require('./getDPContractFixture');
+const getDPObjectsFixture = require('./getDPObjectsFixture');
 
 /**
  * @return {STPacket}
  */
 function getSTPacketFixture() {
-  const dapContract = getDapContractFixture();
-  const dapObjects = getDapObjectsFixture();
+  const dpContract = getDPContractFixture();
+  const dpObjects = getDPObjectsFixture();
 
-  return new STPacket(dapContract.getId(), dapObjects);
+  return new STPacket(dpContract.getId(), dpObjects);
 }
 
 module.exports = getSTPacketFixture;

@@ -1,15 +1,15 @@
-const DashApplicationProtocol = require('../../../lib/DashApplicationProtocol');
+const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const STPacketHeader = require('../../../lib/stPacketHeader/STPacketHeader');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 describe('STPacketHeaderFacade', () => {
-  let dap;
+  let dpp;
   let stPacketHeader;
 
   beforeEach(() => {
-    dap = new DashApplicationProtocol();
+    dpp = new DashPlatformProtocol();
 
     stPacketHeader = new STPacketHeader(
       '4b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b75',
@@ -20,15 +20,15 @@ describe('STPacketHeaderFacade', () => {
 
   describe('create', () => {
     it('should create ST Packet Header', () => {
-      const result = dap.packetHeader.create(
-        stPacketHeader.getDapContractId(),
+      const result = dpp.packetHeader.create(
+        stPacketHeader.getDPContractId(),
         stPacketHeader.getItemsMerkleRoot(),
         stPacketHeader.getItemsHash(),
       );
 
       expect(result).to.be.instanceOf(STPacketHeader);
 
-      expect(result.getDapContractId()).to.be.equal(stPacketHeader.getDapContractId());
+      expect(result.getDPContractId()).to.be.equal(stPacketHeader.getDPContractId());
       expect(result.getItemsMerkleRoot()).to.be.equal(stPacketHeader.getItemsMerkleRoot());
       expect(result.getItemsHash()).to.be.equal(stPacketHeader.getItemsHash());
     });
@@ -36,7 +36,7 @@ describe('STPacketHeaderFacade', () => {
 
   describe('createFromObject', () => {
     it('should create ST Packet Header from plain object', () => {
-      const result = dap.packetHeader.createFromObject(stPacketHeader.toJSON());
+      const result = dpp.packetHeader.createFromObject(stPacketHeader.toJSON());
 
       expect(result).to.be.instanceOf(STPacketHeader);
 
@@ -46,7 +46,7 @@ describe('STPacketHeaderFacade', () => {
 
   describe('createFromSerialized', () => {
     it('should create ST Packet Header from string', () => {
-      const result = dap.packetHeader.createFromSerialized(stPacketHeader.serialize());
+      const result = dpp.packetHeader.createFromSerialized(stPacketHeader.serialize());
 
       expect(result).to.be.instanceOf(STPacketHeader);
 
@@ -56,7 +56,7 @@ describe('STPacketHeaderFacade', () => {
 
   describe('validate', () => {
     it('should validate ST Packet Header', () => {
-      const result = dap.packetHeader.validate(stPacketHeader.toJSON());
+      const result = dpp.packetHeader.validate(stPacketHeader.toJSON());
 
       expect(result).to.be.instanceOf(ValidationResult);
     });

@@ -3,33 +3,33 @@ const { encode } = require('../util/serializer');
 
 class STPacketHeader {
   /**
-   * @param {string} dapContractId
+   * @param {string} dpContractId
    * @param {string} itemsMerkleRoot
    * @param {string} itemsHash
    */
-  constructor(dapContractId, itemsMerkleRoot, itemsHash) {
-    this.setDapContractId(dapContractId);
+  constructor(dpContractId, itemsMerkleRoot, itemsHash) {
+    this.setDPContractId(dpContractId);
     this.setItemsMerkleRoot(itemsMerkleRoot);
     this.setItemsHash(itemsHash);
   }
 
   /**
-   * Set Dap Contract ID
+   * Set DP Contract ID
    *
    * @param {string} contractId
    */
-  setDapContractId(contractId) {
+  setDPContractId(contractId) {
     this.contractId = contractId;
 
     return this;
   }
 
   /**
-   * Get Dap Contract ID
+   * Get DP Contract ID
    *
    * @return {string}
    */
-  getDapContractId() {
+  getDPContractId() {
     return this.contractId;
   }
 
@@ -80,7 +80,7 @@ class STPacketHeader {
    */
   toJSON() {
     return {
-      contractId: this.getDapContractId(),
+      contractId: this.getDPContractId(),
       itemsMerkleRoot: this.getItemsMerkleRoot(),
       itemsHash: this.getItemsHash(),
     };

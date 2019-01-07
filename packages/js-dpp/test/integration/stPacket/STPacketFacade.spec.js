@@ -1,70 +1,70 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 
-const DashApplicationProtocol = require('../../../lib/DashApplicationProtocol');
+const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const STPacket = require('../../../lib/stPacket/STPacket');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const getSTPacketFixture = require('../../../lib/test/fixtures/getSTPacketFixture');
-const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
+const getDPContractFixture = require('../../../lib/test/fixtures/getDPContractFixture');
 
 const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
 
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('STPacketFacade', () => {
-  let dap;
+  let dpp;
   let stPacket;
-  let dapContract;
+  let dpContract;
   let dataProviderMock;
 
   beforeEach(function beforeEach() {
-    dapContract = getDapContractFixture();
+    dpContract = getDPContractFixture();
 
     dataProviderMock = createDataProviderMock(this.sinonSandbox);
 
-    dataProviderMock.fetchDapContract.resolves(dapContract);
+    dataProviderMock.fetchDPContract.resolves(dpContract);
     dataProviderMock.fetchTransaction.resolves(null);
-    dataProviderMock.fetchDapObjects.resolves([]);
+    dataProviderMock.fetchDPObjects.resolves([]);
 
     stPacket = getSTPacketFixture();
 
-    dap = new DashApplicationProtocol({
+    dpp = new DashPlatformProtocol({
       userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      dapContract,
+      dpContract,
       dataProvider: dataProviderMock,
     });
   });
 
   describe('create', () => {
     it('should create ST Packet', () => {
-      const result = dap.packet.create(stPacket.getDapObjects());
+      const result = dpp.packet.create(stPacket.getDPObjects());
 
       expect(result).to.be.instanceOf(STPacket);
 
-      expect(result.getDapContractId()).to.be.equal(stPacket.getDapContractId());
-      expect(result.getDapObjects()).to.be.deep.equal(stPacket.getDapObjects());
+      expect(result.getDPContractId()).to.be.equal(stPacket.getDPContractId());
+      expect(result.getDPObjects()).to.be.deep.equal(stPacket.getDPObjects());
     });
 
-    it('should throw error if DAP Contract is not defined', () => {
-      dap = new DashApplicationProtocol();
+    it('should throw error if DP Contract is not defined', () => {
+      dpp = new DashPlatformProtocol();
 
       let error;
       try {
-        dap.packet.create(stPacket.objects);
+        dpp.packet.create(stPacket.objects);
       } catch (e) {
         error = e;
       }
 
       expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dapContract');
+      expect(error.getOptionName()).to.be.equal('dpContract');
     });
   });
 
   describe('createFromObject', () => {
     it('should create ST Packet from plain object', async () => {
-      const result = await dap.packet.createFromObject(stPacket.toJSON());
+      const result = await dpp.packet.createFromObject(stPacket.toJSON());
 
       expect(result).to.be.instanceOf(STPacket);
 
@@ -72,11 +72,11 @@ describe('STPacketFacade', () => {
     });
 
     it('should throw error if DataProvider is not defined', async () => {
-      dap = new DashApplicationProtocol();
+      dpp = new DashPlatformProtocol();
 
       let error;
       try {
-        await dap.packet.createFromObject(stPacket.toJSON());
+        await dpp.packet.createFromObject(stPacket.toJSON());
       } catch (e) {
         error = e;
       }
@@ -88,7 +88,7 @@ describe('STPacketFacade', () => {
 
   describe('createFromSerialized', () => {
     it('should create ST Packet from string', async () => {
-      const result = await dap.packet.createFromSerialized(stPacket.serialize());
+      const result = await dpp.packet.createFromSerialized(stPacket.serialize());
 
       expect(result).to.be.instanceOf(STPacket);
 
@@ -96,11 +96,11 @@ describe('STPacketFacade', () => {
     });
 
     it('should throw error if DataProvider is not defined', async () => {
-      dap = new DashApplicationProtocol();
+      dpp = new DashPlatformProtocol();
 
       let error;
       try {
-        await dap.packet.createFromSerialized(stPacket.serialize());
+        await dpp.packet.createFromSerialized(stPacket.serialize());
       } catch (e) {
         error = e;
       }
@@ -112,23 +112,23 @@ describe('STPacketFacade', () => {
 
   describe('validate', () => {
     it('should validate ST Packet', () => {
-      const result = dap.packet.validate(stPacket);
+      const result = dpp.packet.validate(stPacket);
 
       expect(result).to.be.instanceOf(ValidationResult);
     });
 
-    it('should throw error if Dap Contract is not defined', () => {
-      dap = new DashApplicationProtocol();
+    it('should throw error if DP Contract is not defined', () => {
+      dpp = new DashPlatformProtocol();
 
       let error;
       try {
-        dap.packet.validate(stPacket);
+        dpp.packet.validate(stPacket);
       } catch (e) {
         error = e;
       }
 
       expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dapContract');
+      expect(error.getOptionName()).to.be.equal('dpContract');
     });
   });
 
@@ -149,17 +149,17 @@ describe('STPacketFacade', () => {
     });
 
     it('should verify ST Packet', async () => {
-      const result = await dap.packet.verify(stPacket, stateTransition);
+      const result = await dpp.packet.verify(stPacket, stateTransition);
 
       expect(result).to.be.instanceOf(ValidationResult);
     });
 
     it('should throw error if DataProvider is not defined', async () => {
-      dap = new DashApplicationProtocol();
+      dpp = new DashPlatformProtocol();
 
       let error;
       try {
-        await dap.packet.verify(stPacket, stateTransition);
+        await dpp.packet.verify(stPacket, stateTransition);
       } catch (e) {
         error = e;
       }

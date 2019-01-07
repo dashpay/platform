@@ -1,15 +1,15 @@
 const validateSTPacketFactory = require('./validation/validateSTPacketFactory');
 
-const validateSTPacketDapContractsFactory = require('./validation/validateSTPacketDapContractsFactory');
-const validateSTPacketDapObjectsFactory = require('./validation/validateSTPacketDapObjectsFactory');
+const validateSTPacketDPContractsFactory = require('./validation/validateSTPacketDPContractsFactory');
+const validateSTPacketDPObjectsFactory = require('./validation/validateSTPacketDPObjectsFactory');
 
-const findDuplicatedDapObjects = require('./validation/findDuplicatedDapObjects');
-const createDapContract = require('../dapContract/createDapContract');
+const findDuplicatedDPObjects = require('./validation/findDuplicatedDPObjects');
+const createDPContract = require('../contract/createDPContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
-const verifyDapContractFactory = require('./verification/verifyDapContractFactory');
-const verifyDapObjectsFactory = require('./verification/verifyDapObjectsFactory');
-const fetchDapObjectsByObjectsFactory = require('./verification/fetchDapObjectsByObjectsFactory');
+const verifyDPContractFactory = require('./verification/verifyDPContractFactory');
+const verifyDPObjectsFactory = require('./verification/verifyDPObjectsFactory');
+const fetchDPObjectsByObjectsFactory = require('./verification/fetchDPObjectsByObjectsFactory');
 
 const STPacketFactory = require('./STPacketFactory');
 
@@ -17,52 +17,52 @@ const MissingOptionError = require('../errors/MissingOptionError');
 
 class STPacketFacade {
   /**
-   * @param {DashApplicationProtocol} dap
+   * @param {DashPlatformProtocol} dpp
    * @param {JsonSchemaValidator} validator
    */
-  constructor(dap, validator) {
-    this.dap = dap;
+  constructor(dpp, validator) {
+    this.dpp = dpp;
 
-    const validateSTPacketDapContracts = validateSTPacketDapContractsFactory(
-      dap.contract.validateDapContract,
-      createDapContract,
+    const validateSTPacketDPContracts = validateSTPacketDPContractsFactory(
+      dpp.contract.validateDPContract,
+      createDPContract,
     );
 
-    const validateSTPacketDapObjects = validateSTPacketDapObjectsFactory(
-      dap.object.validateDapObject,
-      findDuplicatedDapObjects,
+    const validateSTPacketDPObjects = validateSTPacketDPObjectsFactory(
+      dpp.object.validateDPObject,
+      findDuplicatedDPObjects,
     );
 
     this.validateSTPacket = validateSTPacketFactory(
       validator,
-      validateSTPacketDapContracts,
-      validateSTPacketDapObjects,
+      validateSTPacketDPContracts,
+      validateSTPacketDPObjects,
     );
 
     this.factory = new STPacketFactory(
-      dap.getDataProvider(),
+      dpp.getDataProvider(),
       this.validateSTPacket,
-      createDapContract,
+      createDPContract,
     );
   }
 
   /**
    * Create ST Packet
    *
-   * @param {DapContract|Array} items
+   * @param {DPContract|Array} items
    * @return {STPacket}
    */
   create(items) {
-    const dapContract = this.dap.getDapContract();
+    const dpContract = this.dpp.getDPContract();
 
-    if (!dapContract) {
+    if (!dpContract) {
       throw new MissingOptionError(
-        'dapContract',
-        'Can\'t create ST Packet because DAP Contract is not set, use setDapContract method',
+        'dpContract',
+        'Can\'t create ST Packet because DP Contract is not set, use setDPContract method',
       );
     }
 
-    return this.factory.create(dapContract.getId(), items);
+    return this.factory.create(dpContract.getId(), items);
   }
 
   /**
@@ -90,16 +90,16 @@ class STPacketFacade {
    * @return {ValidationResult}
    */
   validate(stPacket) {
-    const dapContract = this.dap.getDapContract();
+    const dpContract = this.dpp.getDPContract();
 
-    if (!dapContract) {
+    if (!dpContract) {
       throw new MissingOptionError(
-        'dapContract',
-        'Can\'t validate ST Packet because DAP Contract is not set, use setDapContract method',
+        'dpContract',
+        'Can\'t validate ST Packet because DP Contract is not set, use setDPContract method',
       );
     }
 
-    return this.validateSTPacket(stPacket, dapContract);
+    return this.validateSTPacket(stPacket, dpContract);
   }
 
   /**
@@ -108,7 +108,7 @@ class STPacketFacade {
    * @return {Promise<ValidationResult>}
    */
   async verify(stPacket, stateTransition) {
-    if (!this.dap.getDataProvider()) {
+    if (!this.dpp.getDataProvider()) {
       throw new MissingOptionError(
         'dataProvider',
         'Can\'t verify ST Packer because Data Provider is not set, use setDataProvider method',
@@ -125,20 +125,20 @@ class STPacketFacade {
    * @return {verifySTPacket}
    */
   createVerifySTPacket() {
-    const verifyDapContract = verifyDapContractFactory(
-      this.dap.getDataProvider(),
+    const verifyDPContract = verifyDPContractFactory(
+      this.dpp.getDataProvider(),
     );
 
-    const fetchDapObjectsByObjects = fetchDapObjectsByObjectsFactory(
-      this.dap.getDataProvider(),
+    const fetchDPObjectsByObjects = fetchDPObjectsByObjectsFactory(
+      this.dpp.getDataProvider(),
     );
 
-    const verifyDapObjects = verifyDapObjectsFactory(fetchDapObjectsByObjects);
+    const verifyDPObjects = verifyDPObjectsFactory(fetchDPObjectsByObjects);
 
     return verifySTPacketFactory(
-      verifyDapContract,
-      verifyDapObjects,
-      this.dap.getDataProvider(),
+      verifyDPContract,
+      verifyDPObjects,
+      this.dpp.getDataProvider(),
     );
   }
 
@@ -147,14 +147,14 @@ class STPacketFacade {
    * @return {STPacketFactory}
    */
   getFactory() {
-    if (!this.dap.getDataProvider()) {
+    if (!this.dpp.getDataProvider()) {
       throw new MissingOptionError(
         'dataProvider',
         'Can\'t create ST Packer because Data Provider is not set, use setDataProvider method',
       );
     }
 
-    this.factory.setDataProvider(this.dap.getDataProvider());
+    this.factory.setDataProvider(this.dpp.getDataProvider());
 
     return this.factory;
   }

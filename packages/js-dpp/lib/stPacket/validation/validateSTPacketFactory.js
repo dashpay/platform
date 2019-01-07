@@ -11,14 +11,14 @@ const InvalidItemsMerkleRootError = require('../../errors/InvalidItemsMerkleRoot
 
 /**
  * @param {JsonSchemaValidator} validator
- * @param {validateSTPacketDapContracts} validateSTPacketDapContracts
- * @param {validateSTPacketDapObjects} validateSTPacketDapObjects
+ * @param {validateSTPacketDPContracts} validateSTPacketDPContracts
+ * @param {validateSTPacketDPObjects} validateSTPacketDPObjects
  * @return {validateSTPacket}
  */
 module.exports = function validateSTPacketFactory(
   validator,
-  validateSTPacketDapContracts,
-  validateSTPacketDapObjects,
+  validateSTPacketDPContracts,
+  validateSTPacketDPObjects,
 ) {
   /**
    * @return {Object}
@@ -43,10 +43,10 @@ module.exports = function validateSTPacketFactory(
   /**
    * @typedef validateSTPacket
    * @param {STPacket|Object} stPacket
-   * @param {DapContract} [dapContract]
+   * @param {DPContract} [dpContract]
    * @return {ValidationResult}
    */
-  function validateSTPacket(stPacket, dapContract = undefined) {
+  function validateSTPacket(stPacket, dpContract = undefined) {
     const rawSTPacket = (stPacket instanceof STPacket)
       ? stPacket.toJSON()
       : stPacket;
@@ -62,13 +62,13 @@ module.exports = function validateSTPacketFactory(
 
     if (rawSTPacket.contracts.length > 0) {
       result.merge(
-        validateSTPacketDapContracts(rawSTPacket),
+        validateSTPacketDPContracts(rawSTPacket),
       );
     }
 
     if (rawSTPacket.objects.length > 0) {
       result.merge(
-        validateSTPacketDapObjects(rawSTPacket, dapContract),
+        validateSTPacketDPObjects(rawSTPacket, dpContract),
       );
     }
 

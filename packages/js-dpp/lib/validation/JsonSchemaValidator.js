@@ -1,5 +1,5 @@
 const dashSchema = require('../../schema/meta/dash-schema');
-const dapContractMetaSchema = require('../../schema/meta/dap-contract');
+const dpContractMetaSchema = require('../../schema/meta/dp-contract');
 const stPacketHeaderSchema = require('../../schema/st-packet-header');
 
 const ValidationResult = require('./ValidationResult');
@@ -15,7 +15,7 @@ class JsonSchemaValidator {
 
     this.ajv.addSchema(stPacketHeaderSchema);
 
-    this.ajv.addMetaSchema(dapContractMetaSchema);
+    this.ajv.addMetaSchema(dpContractMetaSchema);
   }
 
   /**
@@ -45,13 +45,13 @@ class JsonSchemaValidator {
 
 JsonSchemaValidator.SCHEMAS = {
   META: {
-    DAP_CONTRACT: 'https://schema.dash.org/dap-0-4-0/meta/dap-contract',
+    DP_CONTRACT: 'https://schema.dash.org/dpp-0-4-0/meta/dp-contract',
   },
   BASE: {
-    DAP_OBJECT: 'https://schema.dash.org/dap-0-4-0/base/dap-object',
-    ST_PACKET: 'https://schema.dash.org/dap-0-4-0/base/st-packet',
+    DP_OBJECT: 'https://schema.dash.org/dpp-0-4-0/base/dp-object',
+    ST_PACKET: 'https://schema.dash.org/dpp-0-4-0/base/st-packet',
   },
-  ST_PACKET_HEADER: 'https://schema.dash.org/dap-0-4-0/st-packet-header',
+  ST_PACKET_HEADER: 'https://schema.dash.org/dpp-0-4-0/st-packet-header',
 };
 
 module.exports = JsonSchemaValidator;

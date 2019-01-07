@@ -2,7 +2,7 @@ const rewiremock = require('rewiremock/node');
 
 const STPacket = require('../../../lib/stPacket/STPacket');
 
-const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
+const getDPContractFixture = require('../../../lib/test/fixtures/getDPContractFixture');
 const getSTPacketFixture = require('../../../lib/test/fixtures/getSTPacketFixture');
 
 const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
@@ -17,11 +17,11 @@ describe('STPacketFactory', () => {
   let decodeMock;
   let STPacketFactory;
   let validateSTPacketMock;
-  let createDapContractMock;
+  let createDPContractMock;
   let dataProviderMock;
-  let dapContract;
+  let dpContract;
   let factory;
-  let dapContractId;
+  let dpContractId;
   let stPacket;
   let rawSTPacket;
   let encodeMock;
@@ -35,7 +35,7 @@ describe('STPacketFactory', () => {
     decodeMock = this.sinonSandbox.stub();
     encodeMock = this.sinonSandbox.stub();
     validateSTPacketMock = this.sinonSandbox.stub();
-    createDapContractMock = this.sinonSandbox.stub();
+    createDPContractMock = this.sinonSandbox.stub();
     serializerMock = { encode: encodeMock, decode: decodeMock };
     hashMock = this.sinonSandbox.stub();
     getMerkleTreeMock = this.sinonSandbox.stub();
@@ -58,14 +58,14 @@ describe('STPacketFactory', () => {
       '../../../lib/stPacket/STPacket': STPacket,
     });
 
-    dapContract = getDapContractFixture();
+    dpContract = getDPContractFixture();
 
-    dapContractId = dapContract.getId();
+    dpContractId = dpContract.getId();
 
     factory = new STPacketFactory(
       dataProviderMock,
       validateSTPacketMock,
-      createDapContractMock,
+      createDPContractMock,
     );
 
     stPacket = getSTPacketFixture();
@@ -75,23 +75,23 @@ describe('STPacketFactory', () => {
 
   describe('create', () => {
     it('should return new STPacket', () => {
-      const newSTPacket = factory.create(dapContractId, dapContract);
+      const newSTPacket = factory.create(dpContractId, dpContract);
 
       expect(newSTPacket).to.be.instanceOf(STPacket);
 
-      expect(newSTPacket.getDapContractId()).to.be.equal(dapContractId);
+      expect(newSTPacket.getDPContractId()).to.be.equal(dpContractId);
     });
   });
 
   describe('createFromObject', () => {
-    it.skip('should return new STPacket with DAP Objects', async () => {
+    it.skip('should return new STPacket with DP Objects', async () => {
       // Mocks aren't working properly for this test
       // This functionality is also tested in integration/stPacket/STPacketFacade
       hashMock.returns('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293');
       getMerkleRootMock.returns(Buffer.from('44207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc292', 'hex'));
       getMerkleTreeMock.returns([Buffer.from('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293', 'hex')]);
       validateSTPacketMock.returns(new ValidationResult());
-      dataProviderMock.fetchDapContract.resolves(dapContract);
+      dataProviderMock.fetchDPContract.resolves(dpContract);
 
       rawSTPacket = stPacket.toJSON();
 
@@ -101,9 +101,9 @@ describe('STPacketFactory', () => {
 
       expect(result.toJSON()).to.be.deep.equal(rawSTPacket);
 
-      expect(dataProviderMock.fetchDapContract).to.be.calledOnceWith(rawSTPacket.contractId);
+      expect(dataProviderMock.fetchDPContract).to.be.calledOnceWith(rawSTPacket.contractId);
 
-      expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket, dapContract);
+      expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket, dpContract);
     });
 
     it('should throw error if STPacket has invalid contract ID', async () => {
@@ -121,20 +121,20 @@ describe('STPacketFactory', () => {
 
       const [consensusError] = error.getErrors();
       expect(consensusError).to.be.instanceOf(InvalidSTPacketContractIdError);
-      expect(consensusError.getDapContractId()).to.be.equal(rawSTPacket.contractId);
-      expect(consensusError.getDapContract()).to.be.undefined();
+      expect(consensusError.getDPContractId()).to.be.equal(rawSTPacket.contractId);
+      expect(consensusError.getDPContract()).to.be.undefined();
 
-      expect(dataProviderMock.fetchDapContract).to.be.calledOnceWith(rawSTPacket.contractId);
+      expect(dataProviderMock.fetchDPContract).to.be.calledOnceWith(rawSTPacket.contractId);
       expect(validateSTPacketMock).not.to.be.called();
     });
 
-    it('should return new STPacket with DAP Contract', async () => {
+    it('should return new STPacket with DP Contract', async () => {
       validateSTPacketMock.returns(new ValidationResult());
 
-      createDapContractMock.returns(dapContract);
+      createDPContractMock.returns(dpContract);
 
-      stPacket.setDapObjects([]);
-      stPacket.setDapContract(dapContract);
+      stPacket.setDPObjects([]);
+      stPacket.setDPContract(dpContract);
 
       rawSTPacket = stPacket.toJSON();
 
@@ -144,13 +144,13 @@ describe('STPacketFactory', () => {
 
       expect(result.toJSON()).to.be.deep.equal(rawSTPacket);
 
-      expect(dataProviderMock.fetchDapContract).not.to.be.called();
+      expect(dataProviderMock.fetchDPContract).not.to.be.called();
 
       expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket);
     });
 
     it('should throw error if passed object is not valid', async () => {
-      dataProviderMock.fetchDapContract.resolves(dapContract);
+      dataProviderMock.fetchDPContract.resolves(dpContract);
 
       const validationError = new ConsensusError('test');
 
@@ -181,7 +181,7 @@ describe('STPacketFactory', () => {
       this.sinonSandbox.stub(factory, 'createFromObject');
     });
 
-    it('should return new DapContract from serialized DapContract', async () => {
+    it('should return new DPContract from serialized DPContract', async () => {
       const serializedSTPacket = stPacket.serialize();
 
       decodeMock.returns(rawSTPacket);

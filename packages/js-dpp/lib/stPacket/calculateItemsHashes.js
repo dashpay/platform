@@ -1,7 +1,7 @@
-const DapObject = require('../dapObject/DapObject');
-const DapContract = require('../dapContract/DapContract');
+const DPObject = require('../object/DPObject');
+const DPContract = require('../contract/DPContract');
 
-const createDapContract = require('../dapContract/createDapContract');
+const createDPContract = require('../contract/createDPContract');
 
 /**
  * Get all hashes of all items in a packets as an array of buffers
@@ -15,16 +15,16 @@ const createDapContract = require('../dapContract/createDapContract');
 function calculateItemsHashes({ contracts, objects }) {
   return {
     objects: objects.map((object) => {
-      const dapObject = object instanceof DapObject ? object : new DapObject(object);
+      const dpObject = object instanceof DPObject ? object : new DPObject(object);
 
-      return Buffer.from(dapObject.hash(), 'hex');
+      return Buffer.from(dpObject.hash(), 'hex');
     }),
     contracts: contracts.map((contract) => {
-      const dapContract = contract instanceof DapContract
+      const dpContract = contract instanceof DPContract
         ? contract
-        : createDapContract(contract);
+        : createDPContract(contract);
 
-      return Buffer.from(dapContract.hash(), 'hex');
+      return Buffer.from(dpContract.hash(), 'hex');
     }),
   };
 }

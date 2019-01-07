@@ -6,7 +6,7 @@ class ContractAndObjectsNotAllowedSamePacketError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Either DapContract Or DapObjects is allowed in the same packet';
+    this.message = 'Either DP Contract Or DP Objects is allowed in the same packet';
 
     this.stPacket = stPacket;
 

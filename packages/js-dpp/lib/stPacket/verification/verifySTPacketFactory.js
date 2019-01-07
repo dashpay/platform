@@ -8,12 +8,12 @@ const InvalidTransactionTypeError = require('../../errors/InvalidTransactionType
 const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
 
 /**
- * @param {verifyDapContract} verifyDapContract
- * @param {verifyDapObjects} verifyDapObjects
+ * @param {verifyDPContract} verifyDPContract
+ * @param {verifyDPObjects} verifyDPObjects
  * @param {DataProvider} dataProvider
  * @return {verifySTPacket}
  */
-function verifySTPacketFactory(verifyDapContract, verifyDapObjects, dataProvider) {
+function verifySTPacketFactory(verifyDPContract, verifyDPObjects, dataProvider) {
   /**
    * @typedef verifySTPacket
    * @param {STPacket} stPacket
@@ -52,15 +52,15 @@ function verifySTPacketFactory(verifyDapContract, verifyDapObjects, dataProvider
       );
     }
 
-    if (stPacket.getDapContract()) {
+    if (stPacket.getDPContract()) {
       result.merge(
-        await verifyDapContract(stPacket),
+        await verifyDPContract(stPacket),
       );
     }
 
-    if (stPacket.getDapObjects().length) {
+    if (stPacket.getDPObjects().length) {
       result.merge(
-        await verifyDapObjects(stPacket, userId),
+        await verifyDPObjects(stPacket, userId),
       );
     }
 

@@ -5,29 +5,29 @@ const STPacket = require('./STPacket');
 const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
 const InvalidSTPacketContractIdError = require('../errors/InvalidSTPacketContractIdError');
 
-const DapObject = require('../dapObject/DapObject');
+const DPObject = require('../object/DPObject');
 
 class STPacketFactory {
   /**
    * @param {DataProvider} dataProvider
    * @param {validateSTPacket} validateSTPacket
-   * @param {createDapContract} createDapContract
+   * @param {createDPContract} createDPContract
    */
   constructor(
     dataProvider,
     validateSTPacket,
-    createDapContract,
+    createDPContract,
   ) {
     this.dataProvider = dataProvider;
     this.validateSTPacket = validateSTPacket;
-    this.createDapContract = createDapContract;
+    this.createDPContract = createDPContract;
   }
 
   /**
    * Create ST Packet
    *
    * @param {string} contractId
-   * @param {DapContract|Array} [items]
+   * @param {DPContract|Array} [items]
    * @return {STPacket}
    */
   create(contractId, items = undefined) {
@@ -41,23 +41,23 @@ class STPacketFactory {
    * @return {Promise<STPacket>}
    */
   async createFromObject(rawSTPacket) {
-    let dapContract;
+    let dpContract;
 
-    const areDapObjectsPresent = rawSTPacket.contractId
+    const areDPObjectsPresent = rawSTPacket.contractId
       && Array.isArray(rawSTPacket.objects)
       && rawSTPacket.objects.length > 0;
 
-    if (areDapObjectsPresent) {
-      dapContract = await this.dataProvider.fetchDapContract(rawSTPacket.contractId);
+    if (areDPObjectsPresent) {
+      dpContract = await this.dataProvider.fetchDPContract(rawSTPacket.contractId);
 
-      if (!dapContract) {
-        const error = new InvalidSTPacketContractIdError(rawSTPacket.contractId, dapContract);
+      if (!dpContract) {
+        const error = new InvalidSTPacketContractIdError(rawSTPacket.contractId, dpContract);
 
         throw new InvalidSTPacketError([error], rawSTPacket);
       }
     }
 
-    const result = this.validateSTPacket(rawSTPacket, dapContract);
+    const result = this.validateSTPacket(rawSTPacket, dpContract);
 
     if (!result.isValid()) {
       throw new InvalidSTPacketError(result.getErrors(), rawSTPacket);
@@ -66,15 +66,15 @@ class STPacketFactory {
     const stPacket = this.create(rawSTPacket.contractId);
 
     if (rawSTPacket.contracts.length > 0) {
-      const packetDapContract = this.createDapContract(rawSTPacket.contracts[0]);
+      const packetDPContract = this.createDPContract(rawSTPacket.contracts[0]);
 
-      stPacket.setDapContract(packetDapContract);
+      stPacket.setDPContract(packetDPContract);
     }
 
-    if (dapContract && rawSTPacket.objects.length > 0) {
-      const dapObjects = rawSTPacket.objects.map(rawDapObject => new DapObject(rawDapObject));
+    if (dpContract && rawSTPacket.objects.length > 0) {
+      const dpObjects = rawSTPacket.objects.map(rawDPObject => new DPObject(rawDPObject));
 
-      stPacket.setDapObjects(dapObjects);
+      stPacket.setDPObjects(dpObjects);
     }
 
     return stPacket;

@@ -1,8 +1,8 @@
-# js-dap
+# Dash Platform Protocol JS
 
 [![Build Status](https://travis-ci.com/dashevo/dash-platform.svg?token=Pzix7aqnMuGS9c6BmBz2&branch=v4-ivan-anton)](https://travis-ci.org/dashevo/dash-platform)
 
-> Library for validation, hashing, serialization of Dash Application Protocol (DAP) components in Javascript.
+> The JavaScript implementation of the [Dash Platform Protocol](http://github.com/dashevo/dpp-spec)
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@
 ## Install
 
 ```sh
-npm install @dashevo/js-dap
+npm install @dashevo/dpp
 ```
 
 ## Usage

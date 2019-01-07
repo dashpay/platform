@@ -1,10 +1,10 @@
 const path = require('path');
 
 const commonJSConfig = {
-  entry: ['@babel/polyfill', './lib/DashApplicationProtocol.js'],
+  entry: ['@babel/polyfill', './lib/DashPlatformProtocol.js'],
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'DashApplicationProtocol.min.js',
+    filename: 'DashPlatformProtocol.min.js',
     library: 'dash-platform',
     libraryTarget: 'umd',
   },

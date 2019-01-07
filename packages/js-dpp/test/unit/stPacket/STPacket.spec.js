@@ -1,10 +1,10 @@
 const rewiremock = require('rewiremock/node');
 
-const getDapContractFixture = require('../../../lib/test/fixtures/getDapContractFixture');
-const getDapObjectsFixture = require('../../../lib/test/fixtures/getDapObjectsFixture');
+const getDPContractFixture = require('../../../lib/test/fixtures/getDPContractFixture');
+const getDPObjectsFixture = require('../../../lib/test/fixtures/getDPObjectsFixture');
 
-const DapContract = require('../../../lib/dapContract/DapContract');
-const DapObject = require('../../../lib/dapObject/DapObject');
+const DPContract = require('../../../lib/contract/DPContract');
+const DPObject = require('../../../lib/object/DPObject');
 
 const ContractAndObjectsNotAllowedSamePacketError = require('../../../lib/stPacket/errors/ContractAndObjectsNotAllowedSamePacketError');
 
@@ -12,20 +12,20 @@ describe('STPacket', () => {
   let hashMock;
   let encodeMock;
   let STPacket;
-  let dapContract;
-  let dapObjects;
+  let dpContract;
+  let dpObjects;
   let stPacket;
   let itemsHash;
   let itemsMerkleRoot;
-  let dapContractId;
+  let dpContractId;
   let calculateItemsMerkleRootMock;
   let calculateItemsHashMock;
 
   beforeEach(function beforeEach() {
-    dapContract = getDapContractFixture();
-    dapObjects = getDapObjectsFixture();
+    dpContract = getDPContractFixture();
+    dpObjects = getDPObjectsFixture();
 
-    dapContractId = dapContract.getId();
+    dpContractId = dpContract.getId();
     itemsHash = '14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293';
     itemsMerkleRoot = '44207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc292';
 
@@ -38,46 +38,46 @@ describe('STPacket', () => {
     STPacket = rewiremock.proxy('../../../lib/stPacket/STPacket', {
       '../../../lib/util/hash': hashMock,
       '../../../lib/util/serializer': serializerMock,
-      '../../../lib/dapContract/DapContract': DapContract,
-      '../../../lib/dapObject/DapObject': DapObject,
+      '../../../lib/contract/DPContract': DPContract,
+      '../../../lib/object/DPObject': DPObject,
       '../../../lib/stPacket/calculateItemsMerkleRoot': calculateItemsMerkleRootMock,
       '../../../lib/stPacket/calculateItemsHash': calculateItemsHashMock,
     });
 
-    stPacket = new STPacket(dapContractId);
+    stPacket = new STPacket(dpContractId);
   });
 
   describe('constructor', () => {
-    it('should return new ST Packet with specified DAP Contract ID', () => {
+    it('should return new ST Packet with specified DP Contract ID', () => {
       expect(stPacket).to.be.instanceOf(STPacket);
 
-      expect(stPacket.contractId).to.be.equal(dapContractId);
+      expect(stPacket.contractId).to.be.equal(dpContractId);
     });
 
-    it('should return new STPacket with specified DAP Contract ID and DAP Contract', () => {
-      const result = new STPacket(dapContractId, dapContract);
+    it('should return new STPacket with specified DP Contract ID and DP Contract', () => {
+      const result = new STPacket(dpContractId, dpContract);
 
       expect(result).to.be.instanceOf(STPacket);
 
-      expect(result.getDapContractId()).to.be.equal(dapContractId);
-      expect(result.getDapContract()).to.be.equal(dapContract);
+      expect(result.getDPContractId()).to.be.equal(dpContractId);
+      expect(result.getDPContract()).to.be.equal(dpContract);
     });
 
-    it('should return new STPacket with specified DAP Contract ID and DAP Objects', () => {
-      const result = new STPacket(dapContractId, dapObjects);
+    it('should return new STPacket with specified DP Contract ID and DP Objects', () => {
+      const result = new STPacket(dpContractId, dpObjects);
 
       expect(result).to.be.instanceOf(STPacket);
 
-      expect(result.getDapContractId()).to.be.equal(dapContractId);
-      expect(result.getDapObjects()).to.be.equal(dapObjects);
+      expect(result.getDPContractId()).to.be.equal(dpContractId);
+      expect(result.getDPObjects()).to.be.equal(dpObjects);
     });
   });
 
-  describe('#setDapContractId', () => {
-    it('should set Dap Contract ID', () => {
-      const contractId = dapContractId;
+  describe('#setDPContractId', () => {
+    it('should set DP Contract ID', () => {
+      const contractId = dpContractId;
 
-      const result = stPacket.setDapContractId(contractId);
+      const result = stPacket.setDPContractId(contractId);
 
       expect(result).to.be.instanceOf(STPacket);
 
@@ -85,11 +85,11 @@ describe('STPacket', () => {
     });
   });
 
-  describe('#getDapContractId', () => {
-    it('should return Dap Contract ID', () => {
-      const result = stPacket.getDapContractId();
+  describe('#getDPContractId', () => {
+    it('should return DP Contract ID', () => {
+      const result = stPacket.getDPContractId();
 
-      expect(result).to.be.equal(dapContractId);
+      expect(result).to.be.equal(dpContractId);
     });
   });
 
@@ -119,22 +119,22 @@ describe('STPacket', () => {
     });
   });
 
-  describe('#setDapContract', () => {
-    it('should set Dap Contract', () => {
-      const result = stPacket.setDapContract(dapContract);
+  describe('#setDPContract', () => {
+    it('should set DP Contract', () => {
+      const result = stPacket.setDPContract(dpContract);
 
       expect(result).to.be.instanceOf(STPacket);
 
       expect(stPacket.contracts).to.have.lengthOf(1);
-      expect(stPacket.contracts[0]).to.be.equal(dapContract);
+      expect(stPacket.contracts[0]).to.be.equal(dpContract);
     });
 
-    it('should throw error if Dap Objects are present', () => {
-      stPacket.setDapObjects(dapObjects);
+    it('should throw error if DPObjects are present', () => {
+      stPacket.setDPObjects(dpObjects);
 
       let error;
       try {
-        stPacket.setDapContract(dapContract);
+        stPacket.setDPContract(dpContract);
       } catch (e) {
         error = e;
       }
@@ -145,39 +145,39 @@ describe('STPacket', () => {
     });
   });
 
-  describe('#getDapContract', () => {
-    it('should return Dap Contract', () => {
-      stPacket.contracts = [dapContract];
+  describe('#getDPContract', () => {
+    it('should return DP Contract', () => {
+      stPacket.contracts = [dpContract];
 
-      const result = stPacket.getDapContract();
+      const result = stPacket.getDPContract();
 
-      expect(result).to.be.equal(dapContract);
+      expect(result).to.be.equal(dpContract);
     });
 
-    it('should return null of DAP Contract is not present', () => {
-      const result = stPacket.getDapContract();
+    it('should return null of DP Contract is not present', () => {
+      const result = stPacket.getDPContract();
 
       expect(result).to.be.null();
     });
   });
 
-  describe('#setDapObjects', () => {
-    it('should set DAP Objects and replace previous', () => {
-      stPacket.setDapObjects([dapObjects[0]]);
+  describe('#setDPObjects', () => {
+    it('should set DP Objects and replace previous', () => {
+      stPacket.setDPObjects([dpObjects[0]]);
 
-      const result = stPacket.setDapObjects(dapObjects);
+      const result = stPacket.setDPObjects(dpObjects);
 
       expect(result).to.be.instanceOf(STPacket);
 
-      expect(stPacket.objects).to.be.equal(dapObjects);
+      expect(stPacket.objects).to.be.equal(dpObjects);
     });
 
-    it('should throw error if DAP Contract is present', () => {
-      stPacket.setDapContract(dapContract);
+    it('should throw error if DP Contract is present', () => {
+      stPacket.setDPContract(dpContract);
 
       let error;
       try {
-        stPacket.setDapObjects(dapObjects);
+        stPacket.setDPObjects(dpObjects);
       } catch (e) {
         error = e;
       }
@@ -188,25 +188,25 @@ describe('STPacket', () => {
     });
   });
 
-  describe('#getDapObjects', () => {
-    it('should return DAP Objects', () => {
-      stPacket.objects = dapObjects;
+  describe('#getDPObjects', () => {
+    it('should return DP Objects', () => {
+      stPacket.objects = dpObjects;
 
-      const result = stPacket.getDapObjects();
+      const result = stPacket.getDPObjects();
 
-      expect(result).to.be.equal(dapObjects);
+      expect(result).to.be.equal(dpObjects);
     });
   });
 
-  describe('#addDapObject', () => {
-    it('should add DAP Object', () => {
-      stPacket.addDapObject(dapObjects[0]);
+  describe('#addDPObject', () => {
+    it('should add DP Object', () => {
+      stPacket.addDPObject(dpObjects[0]);
 
-      const result = stPacket.addDapObject(dapObjects[1], dapObjects[2]);
+      const result = stPacket.addDPObject(dpObjects[1], dpObjects[2]);
 
       expect(result).to.be.instanceOf(STPacket);
 
-      expect(stPacket.objects).to.be.deep.equal(dapObjects);
+      expect(stPacket.objects).to.be.deep.equal(dpObjects);
     });
   });
 
@@ -214,23 +214,23 @@ describe('STPacket', () => {
     it('should return ST Packet as plain object', () => {
       hashMock.returns(itemsHash);
 
-      stPacket.setDapContract(dapContract);
+      stPacket.setDPContract(dpContract);
 
       const result = stPacket.toJSON();
 
       expect(result).to.be.deep.equal({
-        contractId: dapContractId,
+        contractId: dpContractId,
         itemsMerkleRoot,
         itemsHash,
         objects: [],
-        contracts: [dapContract.toJSON()],
+        contracts: [dpContract.toJSON()],
       });
     });
   });
 
   describe('#serialize', () => {
     it('should return serialized ST Packet', () => {
-      stPacket.setDapContract(dapContract);
+      stPacket.setDPContract(dpContract);
 
       const serializedSTPacket = '123';
 
@@ -238,16 +238,16 @@ describe('STPacket', () => {
 
       const result = stPacket.serialize();
 
-      const rawDapContract = dapContract.toJSON();
+      const rawDPContract = dpContract.toJSON();
 
       expect(result).to.be.equal(serializedSTPacket);
 
       expect(encodeMock).to.be.calledOnceWith({
-        contractId: dapContractId,
+        contractId: dpContractId,
         itemsMerkleRoot,
         itemsHash,
         objects: [],
-        contracts: [rawDapContract],
+        contracts: [rawDPContract],
       });
     });
   });

@@ -11,9 +11,9 @@ class InvalidTransactionTypeError extends ConsensusError {
   }
 
   /**
-   * Get contract ID
+   * Get transaction
    *
-   * @return {DapContract}
+   * @return {Object}
    */
   getTransaction() {
     return this.transaction;

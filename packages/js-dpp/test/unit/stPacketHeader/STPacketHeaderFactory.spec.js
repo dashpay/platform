@@ -12,7 +12,7 @@ describe('STPacketHeaderFactory', () => {
   let STPacketHeaderFactory;
   let validateSTPacketHeaderMock;
   let factory;
-  let dapContractId;
+  let dpContractId;
   let stPacketHeader;
   let rawSTPacketHeader;
   let itemsMerkleRoot;
@@ -31,13 +31,13 @@ describe('STPacketHeaderFactory', () => {
       '../../../lib/stPacketHeader/STPacketHeader': STPacketHeader,
     });
 
-    dapContractId = '5586b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b74';
+    dpContractId = '5586b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b74';
     itemsMerkleRoot = '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b';
     itemsHash = 'y90b273ff34fce19d6b804eff5a3f5747ada4eaa22f86fj5jf652ddb78755642';
 
     factory = new STPacketHeaderFactory(validateSTPacketHeaderMock);
 
-    stPacketHeader = new STPacketHeader(dapContractId, itemsMerkleRoot, itemsHash);
+    stPacketHeader = new STPacketHeader(dpContractId, itemsMerkleRoot, itemsHash);
 
     rawSTPacketHeader = stPacketHeader.toJSON();
   });
@@ -45,14 +45,14 @@ describe('STPacketHeaderFactory', () => {
   describe('create', () => {
     it('should return new STPacketHeader', () => {
       const newSTPacketHeader = factory.create(
-        dapContractId,
+        dpContractId,
         itemsMerkleRoot,
         itemsHash,
       );
 
       expect(newSTPacketHeader).to.be.instanceOf(STPacketHeader);
 
-      expect(newSTPacketHeader.getDapContractId()).to.be.equal(dapContractId);
+      expect(newSTPacketHeader.getDPContractId()).to.be.equal(dpContractId);
       expect(newSTPacketHeader.getItemsMerkleRoot()).to.be.equal(itemsMerkleRoot);
       expect(newSTPacketHeader.getItemsHash()).to.be.equal(itemsHash);
     });
@@ -100,7 +100,7 @@ describe('STPacketHeaderFactory', () => {
       this.sinonSandbox.stub(factory, 'createFromObject');
     });
 
-    it('should return new DapContract from serialized DapContract', () => {
+    it('should return new DPContract from serialized DPContract', () => {
       const serializedSTPacket = stPacketHeader.serialize();
 
       decodeMock.returns(rawSTPacketHeader);

@@ -4,47 +4,47 @@ const { encode } = require('../util/serializer');
 const calculateItemsMerkleRoot = require('./calculateItemsMerkleRoot');
 const calculateItemsHash = require('./calculateItemsHash');
 
-const DapContract = require('../dapContract/DapContract');
+const DPContract = require('../contract/DPContract');
 
 const ContractAndObjectsNotAllowedSamePacketError = require('./errors/ContractAndObjectsNotAllowedSamePacketError');
 
 class STPacket {
   /**
    * @param {string} contractId
-   * @param {DapContract|DapObject[]} [items] DAP Contract or DAP Objects
+   * @param {DPContract|DPObject[]} [items] DP Contract or DP Objects
    */
   constructor(contractId, items = undefined) {
-    this.setDapContractId(contractId);
+    this.setDPContractId(contractId);
 
     this.objects = [];
     this.contracts = [];
 
-    if (items instanceof DapContract) {
-      this.setDapContract(items);
+    if (items instanceof DPContract) {
+      this.setDPContract(items);
     }
 
     if (Array.isArray(items)) {
-      this.setDapObjects(items);
+      this.setDPObjects(items);
     }
   }
 
   /**
-   * Set Dap Contract ID
+   * Set DP Contract ID
    *
    * @param {string} contractId
    */
-  setDapContractId(contractId) {
+  setDPContractId(contractId) {
     this.contractId = contractId;
 
     return this;
   }
 
   /**
-   * Get Dap Contract ID
+   * Get DP Contract ID
    *
    * @return {string}
    */
-  getDapContractId() {
+  getDPContractId() {
     return this.contractId;
   }
 
@@ -74,26 +74,26 @@ class STPacket {
   }
 
   /**
-   * Set Dap Contract
+   * Set DP Contract
    *
-   * @param {DapContract} dapContract
+   * @param {DPContract} dpContract
    */
-  setDapContract(dapContract) {
+  setDPContract(dpContract) {
     if (this.objects.length > 0) {
       throw new ContractAndObjectsNotAllowedSamePacketError(this);
     }
 
-    this.contracts = !dapContract ? [] : [dapContract];
+    this.contracts = !dpContract ? [] : [dpContract];
 
     return this;
   }
 
   /**
-   * Get Dap Contract
+   * Get DP Contract
    *
-   * @return {DapContract|null}
+   * @return {DPContract|null}
    */
-  getDapContract() {
+  getDPContract() {
     if (this.contracts.length) {
       return this.contracts[0];
     }
@@ -102,36 +102,36 @@ class STPacket {
   }
 
   /**
-   * Set Dap Objects
+   * Set DPObjects
    *
-   * @param {DapObject[]} dapObjects
+   * @param {DPObject[]} dpObjects
    */
-  setDapObjects(dapObjects) {
+  setDPObjects(dpObjects) {
     if (this.contracts.length) {
       throw new ContractAndObjectsNotAllowedSamePacketError(this);
     }
 
-    this.objects = dapObjects;
+    this.objects = dpObjects;
 
     return this;
   }
 
   /**
-   * Get Dap Objects
+   * Get DPObjects
    *
-   * @return {DapObject[]}
+   * @return {DPObject[]}
    */
-  getDapObjects() {
+  getDPObjects() {
     return this.objects;
   }
 
   /**
-   * Add Dap Object
+   * Add DP Object
    *
-   * @param {DapObject...} dapObjects
+   * @param {DPObject...} dpObjects
    */
-  addDapObject(...dapObjects) {
-    this.objects.push(...dapObjects);
+  addDPObject(...dpObjects) {
+    this.objects.push(...dpObjects);
 
     return this;
   }
@@ -147,11 +147,11 @@ class STPacket {
    */
   toJSON() {
     return {
-      contractId: this.getDapContractId(),
+      contractId: this.getDPContractId(),
       itemsMerkleRoot: this.getItemsMerkleRoot(),
       itemsHash: this.getItemsHash(),
-      contracts: this.contracts.map(dapContract => dapContract.toJSON()),
-      objects: this.objects.map(dapObject => dapObject.toJSON()),
+      contracts: this.contracts.map(dpContract => dpContract.toJSON()),
+      objects: this.objects.map(dpObject => dpObject.toJSON()),
     };
   }
 
