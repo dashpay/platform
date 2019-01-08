@@ -12,15 +12,15 @@
   "license": "MIT",
   "dependencies": {
     "@dashevo/dark-gravity-wave": "^1.0.1",
+    "@dashevo/dashcore-lib": "git://github.com/dashevo/dashcore-lib.git#evo",
     "@dashevo/dash-util": "^2.0.3",
-    "@dashevo/dashcore-lib": "^1.0.0-alpha.23",
-    "@dashevo/dashcore-p2p": "^1.1.6",
+    "bitcoin-merkle-proof": "^0.1.0",
     "bn.js": "^4.11.8",
-    "levelup": "^2.0.2",
-    "memdown": "^2.0.0"
+    "levelup": "^4.0.0",
+    "memdown": "^3.0.0"
   },
   "devDependencies": {
-    "eslint": "^5.11.1",
+    "eslint": "^5.12.0",
     "eslint-config-airbnb-base": "^13.1.0",
     "eslint-plugin-import": "^2.14.0",
     "mocha": "^5.2.0",
