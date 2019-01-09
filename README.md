@@ -1,2 +1,9 @@
-/libs/spv-dash/node_modules/buffers/index.js
-apply this fix https://github.com/vlocityinc/node-buffers/commit/eb663888b693bcca3ce715eaadef8748d3e0f835
+# dash-spv
+
+> Temporary repo until spv functions moved into dashcore-lib
+
+No new features should be added to this repo.
+
+## License
+
+[MIT](LICENSE) &copy; Dash Core Group, Inc.
