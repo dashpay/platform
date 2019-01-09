@@ -12,9 +12,8 @@
   "license": "MIT",
   "dependencies": {
     "@dashevo/dark-gravity-wave": "^1.0.1",
-    "@dashevo/dashcore-lib": "git://github.com/dashevo/dashcore-lib.git#evo",
+    "@dashevo/dashcore-lib": "^0.16.1",
     "@dashevo/dash-util": "^2.0.3",
-    "bitcoin-merkle-proof": "^0.1.0",
     "bn.js": "^4.11.8",
     "levelup": "^4.0.0",
     "memdown": "^3.0.0"
