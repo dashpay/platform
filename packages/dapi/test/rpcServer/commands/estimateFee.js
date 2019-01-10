@@ -29,11 +29,12 @@ describe('estimateFee', () => {
     spy.restore();
   });
 
-  it('Should return a number', async () => {
+  it('Should return 1', async () => {
     const estimateFee = estimateFeeFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
     const fee = await estimateFee({ blocks: 1 });
     expect(fee).to.be.a('number');
+    expect(fee).to.be.equal(1);
     expect(spy.callCount).to.be.equal(1);
   });
 

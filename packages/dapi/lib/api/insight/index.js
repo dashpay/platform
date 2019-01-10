@@ -138,14 +138,8 @@ const getPeerDataSyncStatus = async () => {
   return res;
 };
 
-const estimateFee = async (blocks) => {
-  if (blocks) {
-    const res = await get(`/utils/estimatefee?nbBlocks=${blocks}`);
-    return res;
-  }
-  const res = await get('/utils/estimatefee');
-  return res;
-};
+// eslint-disable-next-line no-unused-vars
+const estimateFee = async blocks => 1; // 1 duff per byte
 
 const getTransactionById = async (txid) => {
   const res = await get(`/tx/${txid}`);
