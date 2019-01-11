@@ -26,3 +26,14 @@ before_script:
 script:
   - npm run lint
   - npm run test
+
+deploy:
+  - provider: script
+    skip_cleanup: true
+    script:
+      - test "$TRAVIS_NODE_VERSION" = "10"
+      - test v"$(jq -r .version package.json)" = "$TRAVIS_TAG"
+      - npm publish
+    on:
+      repo: dashevo/js-dpp
+      tags: true
