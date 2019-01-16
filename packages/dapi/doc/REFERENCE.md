@@ -41,13 +41,10 @@
 
     - [fetchDapContract](#fetchdapcontract)
     - [getUser](#getuser)
-    - [getUserDapContext](#getuserdapcontext)
-    - [getUserDapSpace](#getuserdapspace)
-    - [searchDapContracts](#searchdapcontracts)
     - [searchUsers](#searchusers)
     - [sendRawTransition](#sendrawtransition)
-    
-    
+
+
 ## Layer 1 endpoints
 ### addToBloomFilter
 
@@ -537,62 +534,6 @@ Returns blockchain user
 | name    | type          | description                            |
 |---------|---------------|----------------------------------------|
 | user    | promise (obj) | object containing user info            |
-
----
-
-### getUserDapContext
-
-Returns user dap context.
-
-##### Params
-
-| name        | type   | description                            |
-|-------------|--------|----------------------------------------|
-| args.dapId  | string | id of dap that user belongs to         |
-| args.userId | string | id of user                             |
-
-##### Response
-
-| name       | type           | description                                    |
-|------------|----------------|------------------------------------------------|
-| dapContext |  promise (obj) | obj containing details of user's dap context   |
-
----
-
-### getUserDapSpace
-
-Returns user dap space.
-
-#### Params
-
-| name        | type   | description                            |
-|-------------|--------|----------------------------------------|
-| args.dapId  | string | id of dap that user belongs to         |
-| args.userId | string | id of user                             |
-
-##### Response
-
-| name     | type          | description                                  |
-|----------|---------------|----------------------------------------------|
-| dapSpace | promise (obj) | obj containing details of user's dap space   |
-
----
-
-### searchDapContracts
-
-Returns dap dds given a search pattern.
-
-##### Params
-
-| name         | type   | description                                    |
-|--------------|--------|------------------------------------------------|
-| args.pattern | string | *needs to be filled in, what kind of pattern?* |
-
-##### Response
-
-| name    | type                   | description                            |
-|---------|------------------------|----------------------------------------|
-| dapIds  | promise (string array) | array of dapIds                        |
 
 ---
 
