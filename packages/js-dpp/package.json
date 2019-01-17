@@ -43,7 +43,7 @@
     "rewiremock": "^3.12.3"
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "^1.0.0-alpha.17",
+    "@dashevo/dashcore-lib": "^1.0.0-alpha.24",
     "ajv": "^6.5.4",
     "cbor": "^4.1.1",
     "lodash.get": "^4.4.2",
