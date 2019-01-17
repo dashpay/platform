@@ -25,7 +25,6 @@ class STPacketFacade {
 
     const validateSTPacketDPContracts = validateSTPacketDPContractsFactory(
       dpp.contract.validateDPContract,
-      createDPContract,
     );
 
     const validateSTPacketDPObjects = validateSTPacketDPObjectsFactory(

@@ -6,7 +6,6 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContractFixture');
 
-const InvalidSTPacketContractIdError = require('../../../../lib/errors/InvalidSTPacketContractIdError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe('validateSTPacketDPContractsFactory', () => {
@@ -15,7 +14,6 @@ describe('validateSTPacketDPContractsFactory', () => {
   let dpContract;
   let validateSTPacketDPContracts;
   let validateDPContractMock;
-  let createDPContractMock;
 
   beforeEach(function beforeEach() {
     dpContract = getDPContractFixture();
@@ -28,12 +26,10 @@ describe('validateSTPacketDPContractsFactory', () => {
       objects: [],
     };
 
-    createDPContractMock = this.sinonSandbox.stub().returns(dpContract);
     validateDPContractMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
     validateSTPacketDPContracts = validateSTPacketDPContractsFactory(
       validateDPContractMock,
-      createDPContractMock,
     );
   });
 
@@ -51,33 +47,12 @@ describe('validateSTPacketDPContractsFactory', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.equal(dpContractError);
-
-    expect(createDPContractMock).to.be.not.called();
   });
 
-  it('should return invalid result if STPacket\'s contractId is not equal to DP Contract ID', () => {
-    rawSTPacket.contractId = 'wrong';
-
-    const result = validateSTPacketDPContracts(rawSTPacket);
-
-    expectValidationError(result, InvalidSTPacketContractIdError);
-
-    expect(createDPContractMock).to.be.calledOnceWith(rawDPContract);
-
-    const [error] = result.getErrors();
-
-    expect(error.getDPContractId()).to.be.equal(rawSTPacket.contractId);
-    expect(error.getDPContract()).to.be.equal(dpContract);
-  });
-
-  it('should return valid result if DP Contract is valid and STPacket\'s contractId is correct', () => {
-    createDPContractMock.returns(dpContract);
-
+  it('should return valid result if DP Contract is valid', () => {
     const result = validateSTPacketDPContracts(rawSTPacket);
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
-
-    expect(createDPContractMock).to.be.calledOnceWith(rawDPContract);
   });
 });
