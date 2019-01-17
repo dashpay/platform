@@ -41,20 +41,24 @@ class DPObjectFacade {
    * Create DPObject from plain object
    *
    * @param {Object} rawDPObject
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPObject}
    */
-  createFromObject(rawDPObject) {
-    return this.getFactory().createFromObject(rawDPObject);
+  createFromObject(rawDPObject, options = { skipValidation: false }) {
+    return this.getFactory().createFromObject(rawDPObject, options);
   }
 
   /**
    * Create DPObject from string/buffer
    *
    * @param {Buffer|string} payload
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPObject}
    */
-  createFromSerialized(payload) {
-    return this.getFactory().createFromSerialized(payload);
+  createFromSerialized(payload, options = { skipValidation: false }) {
+    return this.getFactory().createFromSerialized(payload, options);
   }
 
   /**

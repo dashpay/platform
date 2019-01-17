@@ -30,13 +30,17 @@ class DPContractFactory {
    * Create DP Contract from plain object
    *
    * @param {Object} rawDPContract
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPContract}
    */
-  createFromObject(rawDPContract) {
-    const result = this.validateDPContract(rawDPContract);
+  createFromObject(rawDPContract, options = { skipValidation: false }) {
+    if (!options.skipValidation) {
+      const result = this.validateDPContract(rawDPContract);
 
-    if (!result.isValid()) {
-      throw new InvalidDPContractError(result.getErrors(), rawDPContract);
+      if (!result.isValid()) {
+        throw new InvalidDPContractError(result.getErrors(), rawDPContract);
+      }
     }
 
     return this.createDPContract(rawDPContract);
@@ -46,12 +50,14 @@ class DPContractFactory {
    * Create DP Contract from string/buffer
    *
    * @param {Buffer|string} payload
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPContract}
    */
-  createFromSerialized(payload) {
+  createFromSerialized(payload, options = { skipValidation: false }) {
     const rawDPContract = decode(payload);
 
-    return this.createFromObject(rawDPContract);
+    return this.createFromObject(rawDPContract, options);
   }
 }
 

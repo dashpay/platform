@@ -38,29 +38,33 @@ class STPacketFactory {
    * Create ST Packet from plain object
    *
    * @param {Object} rawSTPacket
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {Promise<STPacket>}
    */
-  async createFromObject(rawSTPacket) {
-    let dpContract;
+  async createFromObject(rawSTPacket, options = { skipValidation: false }) {
+    if (!options.skipValidation) {
+      let dpContract;
 
-    const areDPObjectsPresent = rawSTPacket.contractId
-      && Array.isArray(rawSTPacket.objects)
-      && rawSTPacket.objects.length > 0;
+      const areDPObjectsPresent = rawSTPacket.contractId
+        && Array.isArray(rawSTPacket.objects)
+        && rawSTPacket.objects.length > 0;
 
-    if (areDPObjectsPresent) {
-      dpContract = await this.dataProvider.fetchDPContract(rawSTPacket.contractId);
+      if (areDPObjectsPresent) {
+        dpContract = await this.dataProvider.fetchDPContract(rawSTPacket.contractId);
 
-      if (!dpContract) {
-        const error = new InvalidSTPacketContractIdError(rawSTPacket.contractId, dpContract);
+        if (!dpContract) {
+          const error = new InvalidSTPacketContractIdError(rawSTPacket.contractId, dpContract);
 
-        throw new InvalidSTPacketError([error], rawSTPacket);
+          throw new InvalidSTPacketError([error], rawSTPacket);
+        }
       }
-    }
 
-    const result = this.validateSTPacket(rawSTPacket, dpContract);
+      const result = this.validateSTPacket(rawSTPacket, dpContract);
 
-    if (!result.isValid()) {
-      throw new InvalidSTPacketError(result.getErrors(), rawSTPacket);
+      if (!result.isValid()) {
+        throw new InvalidSTPacketError(result.getErrors(), rawSTPacket);
+      }
     }
 
     const stPacket = this.create(rawSTPacket.contractId);
@@ -71,7 +75,7 @@ class STPacketFactory {
       stPacket.setDPContract(packetDPContract);
     }
 
-    if (dpContract && rawSTPacket.objects.length > 0) {
+    if (rawSTPacket.objects.length > 0) {
       const dpObjects = rawSTPacket.objects.map(rawDPObject => new DPObject(rawDPObject));
 
       stPacket.setDPObjects(dpObjects);
@@ -84,12 +88,14 @@ class STPacketFactory {
    * Unserialize ST Packet
    *
    * @param {Buffer|string} payload
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {Promise<STPacket>}
    */
-  async createFromSerialized(payload) {
+  async createFromSerialized(payload, options = { skipValidation: false }) {
     const rawSTPacket = decode(payload);
 
-    return this.createFromObject(rawSTPacket);
+    return this.createFromObject(rawSTPacket, options);
   }
 
   /**

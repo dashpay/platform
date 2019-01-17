@@ -68,20 +68,24 @@ class STPacketFacade {
   /**
    *
    * @param {Object} rawSTPacket
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {Promise<STPacket>}
    */
-  async createFromObject(rawSTPacket) {
-    return this.getFactory().createFromObject(rawSTPacket);
+  async createFromObject(rawSTPacket, options = { skipValidation: false }) {
+    return this.getFactory().createFromObject(rawSTPacket, options);
   }
 
   /**
    * Unserialize ST Packet
    *
    * @param {Buffer|string} payload
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {Promise<STPacket>}
    */
-  async createFromSerialized(payload) {
-    return this.getFactory().createFromSerialized(payload);
+  async createFromSerialized(payload, options = { skipValidation: false }) {
+    return this.getFactory().createFromSerialized(payload, options);
   }
 
   /**

@@ -31,20 +31,24 @@ class DPContractFacade {
    * Create DP Contract from plain object
    *
    * @param {Object} rawDPContract
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPContract}
    */
-  createFromObject(rawDPContract) {
-    return this.factory.createFromObject(rawDPContract);
+  createFromObject(rawDPContract, options = { skipValidation: false }) {
+    return this.factory.createFromObject(rawDPContract, options);
   }
 
   /**
    * Create DP Contract from string/buffer
    *
    * @param {Buffer|string} payload
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPContract}
    */
-  createFromSerialized(payload) {
-    return this.factory.createFromSerialized(payload);
+  createFromSerialized(payload, options = { skipValidation: false }) {
+    return this.factory.createFromSerialized(payload, options);
   }
 
   /**

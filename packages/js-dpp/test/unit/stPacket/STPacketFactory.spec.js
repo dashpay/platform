@@ -84,26 +84,62 @@ describe('STPacketFactory', () => {
   });
 
   describe('createFromObject', () => {
-    it.skip('should return new STPacket with DP Objects', async () => {
-      // Mocks aren't working properly for this test
+    it('should return new STPacket with DP Objects', async () => {
+      // TODO: Mocks aren't working properly for this test
       // This functionality is also tested in integration/stPacket/STPacketFacade
-      hashMock.returns('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293');
-      getMerkleRootMock.returns(Buffer.from('44207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc292', 'hex'));
-      getMerkleTreeMock.returns([Buffer.from('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293', 'hex')]);
-      validateSTPacketMock.returns(new ValidationResult());
-      dataProviderMock.fetchDPContract.resolves(dpContract);
+      // hashMock.returns('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293');
+      // getMerkleRootMock.returns(
+      //    Buffer.from('44207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc292', 'hex')
+      // );
+      // getMerkleTreeMock.returns([
+      //    Buffer.from('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293', 'hex')
+      // ]);
 
-      rawSTPacket = stPacket.toJSON();
+      validateSTPacketMock.returns(new ValidationResult());
+
+      dataProviderMock.fetchDPContract.resolves(dpContract);
 
       const result = await factory.createFromObject(rawSTPacket);
 
       expect(result).to.be.instanceOf(STPacket);
 
-      expect(result.toJSON()).to.be.deep.equal(rawSTPacket);
+      // Solving problem described above
+      const createdRawSTPacket = result.toJSON();
+      createdRawSTPacket.itemsHash = rawSTPacket.itemsHash;
+      createdRawSTPacket.itemsMerkleRoot = rawSTPacket.itemsMerkleRoot;
+
+      expect(createdRawSTPacket).to.be.deep.equal(rawSTPacket);
 
       expect(dataProviderMock.fetchDPContract).to.be.calledOnceWith(rawSTPacket.contractId);
 
       expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket, dpContract);
+    });
+
+    it('should return new STPacket without validation if "skipValidation" option is passed', async () => {
+      // TODO: Mocks aren't working properly for this test
+      // This functionality is also tested in integration/stPacket/STPacketFacade
+      // hashMock.returns('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293');
+      // getMerkleRootMock.returns(
+      //    Buffer.from('44207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc292', 'hex')
+      // );
+      // getMerkleTreeMock.returns([
+      //    Buffer.from('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293', 'hex')
+      // ]);
+
+      const result = await factory.createFromObject(rawSTPacket, { skipValidation: true });
+
+      expect(result).to.be.instanceOf(STPacket);
+
+      // Solving problem described above
+      const createdRawSTPacket = result.toJSON();
+      createdRawSTPacket.itemsHash = rawSTPacket.itemsHash;
+      createdRawSTPacket.itemsMerkleRoot = rawSTPacket.itemsMerkleRoot;
+
+      expect(createdRawSTPacket).to.be.deep.equal(rawSTPacket);
+
+      expect(dataProviderMock.fetchDPContract).not.to.be.called();
+
+      expect(validateSTPacketMock).not.to.be.called();
     });
 
     it('should throw error if STPacket has invalid contract ID', async () => {

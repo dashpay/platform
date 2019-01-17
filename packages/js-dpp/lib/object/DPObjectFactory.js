@@ -48,13 +48,17 @@ class DPObjectFactory {
    * Create DP Object from plain object
    *
    * @param {Object} rawDPObject
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPObject}
    */
-  createFromObject(rawDPObject) {
-    const result = this.validateDPObject(rawDPObject, this.dpContract);
+  createFromObject(rawDPObject, options = { skipValidation: false }) {
+    if (!options.skipValidation) {
+      const result = this.validateDPObject(rawDPObject, this.dpContract);
 
-    if (!result.isValid()) {
-      throw new InvalidDPObjectError(result.getErrors(), rawDPObject);
+      if (!result.isValid()) {
+        throw new InvalidDPObjectError(result.getErrors(), rawDPObject);
+      }
     }
 
     return new DPObject(rawDPObject);
@@ -64,12 +68,14 @@ class DPObjectFactory {
    * Create DPObject from string/buffer
    *
    * @param {Buffer|string} payload
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
    * @return {DPObject}
    */
-  createFromSerialized(payload) {
+  createFromSerialized(payload, options = { skipValidation: false }) {
     const rawDPObject = decode(payload);
 
-    return this.createFromObject(rawDPObject);
+    return this.createFromObject(rawDPObject, options);
   }
 
   /**

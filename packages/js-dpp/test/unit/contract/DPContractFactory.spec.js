@@ -67,6 +67,16 @@ describe('DPContractFactory', () => {
       expect(createDPContractMock).to.be.calledOnceWith(rawDPContract);
     });
 
+    it('should return new DPContract without validation if "skipValidation" option is passed', () => {
+      const result = factory.createFromObject(rawDPContract, { skipValidation: true });
+
+      expect(result).to.be.equal(dpContract);
+
+      expect(validateDPContractMock).not.to.be.called();
+
+      expect(createDPContractMock).to.be.calledOnceWith(rawDPContract);
+    });
+
     it('should throw error if passed object is not valid', () => {
       const validationError = new ConsensusError('test');
 
