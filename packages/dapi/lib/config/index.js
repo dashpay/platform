@@ -53,7 +53,7 @@ module.exports = {
   insightUri: config[OPTIONS.INSIGHT_URI],
   livenet: Boolean(config[OPTIONS.LIVENET]),
   server: {
-    port: config[OPTIONS.RPC_SERVER_PORT],
+    port: parseInt(config[OPTIONS.RPC_SERVER_PORT], 10),
   },
   dashcore: {
     rpc: {
@@ -61,15 +61,15 @@ module.exports = {
       user: config[OPTIONS.DASHCORE_RPC_USER],
       pass: config[OPTIONS.DASHCORE_RPC_PASS],
       host: config[OPTIONS.DASHCORE_RPC_HOST],
-      port: config[OPTIONS.DASHCORE_RPC_PORT],
+      port: parseInt(config[OPTIONS.DASHCORE_RPC_PORT], 10),
     },
     zmq: {
       host: config[OPTIONS.DASHCORE_ZMQ_HOST],
-      port: config[OPTIONS.DASHCORE_ZMQ_PORT],
+      port: parseInt(config[OPTIONS.DASHCORE_ZMQ_PORT], 10),
     },
     p2p: {
       host: config[OPTIONS.DASHCORE_P2P_HOST],
-      port: config[OPTIONS.DASHCORE_P2P_PORT],
+      port: parseInt(config[OPTIONS.DASHCORE_P2P_PORT], 10),
       network: config[OPTIONS.DASHCORE_P2P_NETWORK],
     },
   },
@@ -77,6 +77,6 @@ module.exports = {
   bloomFilterPersistenceTimeout: config[OPTIONS.BLOOM_FILTER_PERSISTENCE_TIMEOUT],
   dashDrive: {
     host: config[OPTIONS.DASHDRIVE_RPC_HOST],
-    port: config[OPTIONS.DASHDRIVE_RPC_PORT],
+    port: parseInt(config[OPTIONS.DASHDRIVE_RPC_PORT], 10),
   },
 };

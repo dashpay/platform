@@ -6,7 +6,7 @@ dotenv.config();
 
 const { isRegtest } = require('./utils');
 const config = require('./config');
-const verifyConfig = require('./config/verifyConfig');
+const { validateConfig } = require('./config/validator');
 const log = require('./log');
 const rpcServer = require('./rpcServer');
 const quorumService = require('./services/quorum');
@@ -19,7 +19,12 @@ const userIndex = require('./services/userIndex');
 
 async function main() {
   /* Application start */
-  verifyConfig(config);
+  const configValidationResult = validateConfig(config);
+  if (!configValidationResult.isValid) {
+    configValidationResult.validationErrors.forEach(log.error);
+    log.log('Aborting DAPI startup due to config validation errors');
+    process.exit();
+  }
 
   // Subscribe to events from dashcore
   const dashcoreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
