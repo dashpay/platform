@@ -2,6 +2,9 @@ const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 
 const DapObject = require('../stateView/dapObject/DapObject');
 
+const WrongSequenceError = require('../blockchain/reader/eventHandlers/errors/WrongSequenceError');
+const NotAbleToValidateSequenceError = require('../blockchain/reader/eventHandlers/errors/NotAbleToValidateSequenceError');
+
 const doubleSha256 = require('../util/doubleSha256');
 
 /**
@@ -93,8 +96,18 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
 
   readerMediator.on(ReaderMediator.EVENTS.BLOCK_ERROR, (params) => {
     const { error, block, stateTransition } = params;
-    logger.error(
-      `Error occurred during processing of a block ${block.height}: ${error.name} ${error.message}`,
+
+    let loggingMethod = 'error';
+    let loggingMessage = 'Error occurred during processing of a block '
+      + `${block.height}: ${error.name} ${error.message}`;
+
+    if (error instanceof WrongSequenceError || error instanceof NotAbleToValidateSequenceError) {
+      loggingMethod = 'info';
+      loggingMessage = `Incorrect sequence detected on a block: ${block.height}`;
+    }
+
+    logger[loggingMethod](
+      loggingMessage,
       {
         block: {
           hash: block.hash,
