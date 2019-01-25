@@ -16,7 +16,12 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
       'DASHCORE_RUNNING_CHECK_MAX_RETRIES=0',
       'DASHCORE_RUNNING_CHECK_INTERVAL=0',
     ];
-    const opts = { container: { envs } };
+    const opts = {
+      container: {
+        envs,
+        throwErrorsFromLog: false,
+      },
+    };
     driveApi = await createDriveApi(opts);
     driveApi.initialize = () => {};
     driveSync = await createDriveSync(opts);
@@ -25,7 +30,7 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
     await Promise.all([
       driveApi.start(),
       driveSync.start(),
-      wait(50000), // Waiting for `npm i`
+      wait(5000),
     ]);
   });
 

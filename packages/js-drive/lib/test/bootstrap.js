@@ -26,6 +26,7 @@ const options = {
   cacheNodeModules: true,
   localAppPath: rootPath,
   container: {
+    throwErrorsFromLog: true,
     volumes: [
       `${rootPath}/lib:/usr/src/app/lib`,
       `${rootPath}/scripts:/usr/src/app/scripts`,
