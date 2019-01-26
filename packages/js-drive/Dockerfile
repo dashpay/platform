@@ -1,4 +1,4 @@
-FROM node:10-alpine
+FROM 103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/node:10-alpine
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DashDrive Node.JS"
@@ -14,10 +14,6 @@ RUN apk update && \
 # Install dependencies first, in a different location
 # for easier app bind mounting for local development
 WORKDIR /
-
-# Authentication for private packages
-ARG npm_token
-RUN echo "//registry.npmjs.org/:_authToken=$npm_token" >> .npmrc
 
 # Install packages
 COPY package.json package-lock.json ./
