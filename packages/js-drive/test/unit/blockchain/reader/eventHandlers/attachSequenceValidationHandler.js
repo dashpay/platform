@@ -8,8 +8,8 @@ const NotAbleToValidateSequenceError = require('../../../../../lib/blockchain/re
 
 const attachSequenceValidationHandler = require('../../../../../lib/blockchain/reader/eventHandlers/attachSequenceValidationHandler');
 
-const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlockFixtures');
-const getTransitionHeaderFixtures = require('../../../../../lib/test/fixtures/getTransitionHeaderFixtures');
+const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlocksFixture');
+const getTransitionHeaderFixtures = require('../../../../../lib/test/fixtures/getStateTransitionsFixture');
 
 describe('attachSequenceValidationHandler', () => {
   let readerMediatorMock;

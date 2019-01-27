@@ -1,15 +1,13 @@
 /**
- * @param {StateTransitionPacketIpfsRepository} stPacketRepository
+ * @param {STPacketIpfsRepository} stPacketRepository
  * @return {addSTPacket}
  */
 module.exports = function addSTPacketFactory(stPacketRepository) {
   /**
-   * Store State Transition packet in IPFS
-   *
-   * Stores and pins ST packet to IPFS storage and returns its hash
+   * Store ST Packet
    *
    * @typedef addSTPacket
-   * @param {StateTransitionPacket} packet State Transition packet
+   * @param {STPacket} packet
    * @return {Promise<CID>}
    */
   async function addSTPacket(packet) {

@@ -6,7 +6,7 @@ class PacketNotPinnedError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'packet is not pinned';
+    this.message = 'Packet is not pinned';
     this.cid = cid;
 
     Error.captureStackTrace(this, this.constructor);

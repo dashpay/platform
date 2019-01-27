@@ -1,8 +1,10 @@
 const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
 
-const StateTransitionPacketIpfsRepository = require('../../../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
+const DashPlatformProtocol = require('@dashevo/dpp');
+
+const STPacketIpfsRepository = require('../../../../lib/storage/stPacket/STPacketIpfsRepository');
 const addSTPacketFactory = require('../../../../lib/storage/stPacket/addSTPacketFactory');
-const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
+const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
 
 describe('addSTPacket', () => {
   let ipfsApi;
@@ -13,15 +15,18 @@ describe('addSTPacket', () => {
   });
 
   beforeEach(() => {
-    const stPacketRepository = new StateTransitionPacketIpfsRepository(
+    const dpp = new DashPlatformProtocol();
+
+    const stPacketRepository = new STPacketIpfsRepository(
       ipfsApi,
+      dpp,
       1000,
     );
     addSTPacket = addSTPacketFactory(stPacketRepository);
   });
 
   it('should add packets to storage and returns hash', async () => {
-    const packets = getTransitionPacketFixtures();
+    const packets = getSTPacketsFixture();
     const addPacketsPromises = packets.map(addSTPacket);
     const packetsCids = await Promise.all(addPacketsPromises);
 
@@ -36,7 +41,7 @@ describe('addSTPacket', () => {
     // 2. Packets should have the same data
     const packetFromIPFS = packetsFromIPFS.map(packet => packet.value);
 
-    const packetsData = packets.map(packet => packet.toJSON({ skipMeta: true }));
+    const packetsData = packets.map(packet => packet.toJSON());
 
     expect(packetsData).to.deep.equal(packetFromIPFS);
   });

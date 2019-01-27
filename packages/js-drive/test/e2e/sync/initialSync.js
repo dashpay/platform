@@ -1,18 +1,14 @@
-const cbor = require('cbor');
+const DashPlatformProtocol = require('@dashevo/dpp');
 
 const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
 
-const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
-
 const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
-const StateTransitionPacket = require('../../../lib/storage/stPacket/StateTransitionPacket');
 
 const registerUser = require('../../../lib/test/registerUser');
 
-const createSTHeader = require('../../../lib/test/createSTHeader');
+const createStateTransition = require('../../../lib/test/createStateTransition');
 const wait = require('../../../lib/util/wait');
 
-const doubleSha256 = require('../../../lib/util/doubleSha256');
 
 const apiAppOptions = new ApiAppOptions(process.env);
 
@@ -41,26 +37,33 @@ async function dashDriveSyncToFinish(instance) {
   }
 }
 
-async function createAndSubmitST(
+async function sendSTPacket(
   userId,
   privateKeyString,
   username,
-  basePacketData,
+  stPacket,
   instance,
   previousTransitionHash = undefined,
 ) {
-  const packet = new StateTransitionPacket(basePacketData);
+  const stateTransition = await createStateTransition(
+    userId,
+    privateKeyString,
+    stPacket,
+    previousTransitionHash,
+  );
 
-  const header = await createSTHeader(userId, privateKeyString, packet, previousTransitionHash);
-
-  const serializedPacket = cbor.encodeCanonical(packet.toJSON({ skipMeta: true }));
-  const serializedPacketJson = {
-    packet: serializedPacket.toString('hex'),
+  const params = {
+    packet: stPacket.serialize().toString('hex'),
   };
-  await instance.driveApi.getApi()
-    .request('addSTPacket', serializedPacketJson);
 
-  const { result: tsId } = await instance.dashCore.getApi().sendRawTransaction(header);
+  const { error } = await instance.driveApi.getApi().request('addSTPacket', params);
+
+  if (error) {
+    throw new Error(`Can't add ST Packet: ${JSON.stringify(error)}`);
+  }
+
+  const { result: tsId } = await instance.dashCore.getApi().sendRawTransaction(stateTransition);
+
   await instance.dashCore.getApi().generate(1);
 
   return { tsId };
@@ -69,18 +72,15 @@ async function createAndSubmitST(
 describe('Initial sync of Dash Drive and Dash Core', function main() {
   let firstDashDrive;
   let secondDashDrive;
-
-  let packetsData;
-
   let users;
-
-  let dapId;
+  let dpp;
+  let dpContract;
+  let objectType;
 
   this.timeout(900000);
 
   before('having Dash Drive node #1 up and ready, some amount of STs generated and Dash Drive on node #1 fully synced', async () => {
-    packetsData = getTransitionPacketFixtures();
-    users = [];
+    dpp = new DashPlatformProtocol();
 
     // 1. Start first Dash Drive node
     firstDashDrive = await startDashDrive();
@@ -89,10 +89,12 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     await firstDashDrive.dashCore.getApi().generate(1000);
 
     // 2. Register a bunch of users on a blockchain
+    users = [];
+
     for (let i = 0; i < 4; i++) {
       const user = {
         username: `BC_USER_${i}`,
-        aboutMe: `Something about BC_USER_${i}`,
+        aboutMe: `User ${i} description`,
       };
 
       ({
@@ -106,60 +108,67 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       users.push(user);
     }
 
-    // 3. Create DAP Contract
-    ({ tsId: dapId } = await createAndSubmitST(
+    // 3. Create DP Contract
+    objectType = 'user';
+    dpContract = dpp.contract.create('TestContract', {
+      [objectType]: {
+        properties: {
+          aboutMe: {
+            type: 'string',
+          },
+        },
+        additionalProperties: false,
+      },
+    });
+
+    dpp.setDPContract(dpContract);
+
+    const dpContractPacket = dpp.packet.create(dpContract);
+
+    const { tsId: dpContractTsId } = await sendSTPacket(
       users[0].userId,
       users[0].privateKeyString,
       users[0].username,
-      packetsData[0],
+      dpContractPacket,
       firstDashDrive,
-    ));
+    );
 
     // 3.1 Await Drive to sync
     await dashDriveSyncToFinish(firstDashDrive.driveApi);
 
-    // 3.2 Check DAP Contract is in Drive and ok
-    const otherDapId = doubleSha256(packetsData[0].dapcontract);
-    const { result: dapContract } = await firstDashDrive.driveApi.getApi()
-      .request('fetchDapContract', { dapId: otherDapId });
+    // 3.2 Check DP Contract is in Drive and ok
+    const { result: rawDPContract } = await firstDashDrive.driveApi.getApi()
+      .request('fetchDPContract', { contractId: dpContract.getId() });
 
-    expect(dapContract).to.be.deep.equal(packetsData[0].dapcontract);
+    expect(rawDPContract).to.be.deep.equal(dpContract.toJSON());
 
-    // 4. Register a bunch of `user` DAP Objects (for every blockchain user)
+    // 4. Create a bunch of `user` DP Objects (for every blockchain user)
     let prevTransitionId;
 
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
 
-      // if it's the user used to register dapId, use it
+      // if it's the user used to register contractId, use it
       // use nothing if else
       if (i === 0) {
-        prevTransitionId = dapId;
+        prevTransitionId = dpContractTsId;
       } else {
-        prevTransitionId = undefined;
+        prevTransitionId = user.userId;
       }
 
-      const userData = Object.assign({}, packetsData[1], {
-        dapid: dapId,
-        dapobjects: [
-          {
-            objtype: 'user',
-            aboutme: user.aboutMe,
-            pver: 1,
-            idx: 0,
-            rev: 0,
-            act: 0,
-          },
-        ],
+      dpp.setUserId(user.userId);
+
+      const userDPObject = dpp.object.create(objectType, {
+        aboutMe: user.aboutMe,
       });
 
-      user.userData = userData;
+      const stPacket = dpp.packet.create([userDPObject]);
 
-      ({ tsId: user.prevTransitionId } = await createAndSubmitST(
+      ({ tsId: user.prevTransitionId } = await sendSTPacket(
         user.userId,
         user.privateKeyString,
         user.username,
-        userData,
+        stPacket,
         firstDashDrive,
         prevTransitionId,
       ));
@@ -172,29 +181,29 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     await secondDashDrive.ipfs.connect(firstDashDrive.ipfs);
     await secondDashDrive.dashCore.connect(firstDashDrive.dashCore);
 
-    // 4. Add ST packet to Drive
-    const packet = getTransitionPacketFixtures()[0];
-    const serializedPacket = cbor.encodeCanonical(packet.toJSON({ skipMeta: true }));
-    const serializedPacketJson = {
-      packet: serializedPacket.toString('hex'),
-    };
-    await secondDashDrive.driveApi.getApi()
-      .request('addSTPacket', serializedPacketJson);
-
-    // 5. Await Dash Drive on the 2nd node to finish syncing
+    // 4. Await Dash Drive on the 2nd node to finish syncing
     await dashDriveSyncToFinish(secondDashDrive.driveApi);
 
-    // 6. Ensure second Dash Drive have a proper data
-    {
-      const { result: objects } = await secondDashDrive.driveApi.getApi()
-        .request('fetchDapObjects', { dapId, type: 'user' });
-      expect(objects).to.have.lengthOf(users.length);
+    // 5. Ensure second Dash Drive have a proper data
+    const driveApi = secondDashDrive.driveApi.getApi();
 
-      const aboutMes = objects.map(o => o.aboutme);
+    const { result: fetchedDPContract } = await driveApi.request('fetchDPContract', {
+      contractId: dpContract.getId(),
+    });
 
-      for (let i = 0; i < users.length; i++) {
-        expect(aboutMes).to.include(users[i].aboutMe);
-      }
+    expect(fetchedDPContract).to.be.deep.equal(dpContract.toJSON());
+
+    const { result: fetchedDPObjects } = await driveApi.request('fetchDPObjects', {
+      contractId: dpContract.getId(),
+      type: objectType,
+    });
+
+    expect(fetchedDPObjects).to.have.lengthOf(users.length);
+
+    const aboutMes = fetchedDPObjects.map(o => o.aboutMe);
+
+    for (let i = 0; i < users.length; i++) {
+      expect(aboutMes).to.include(users[i].aboutMe);
     }
   });
 

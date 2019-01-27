@@ -1,11 +1,9 @@
 const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 
-const DapObject = require('../stateView/dapObject/DapObject');
+const SVObject = require('../stateView/object/SVObject');
 
 const WrongSequenceError = require('../blockchain/reader/eventHandlers/errors/WrongSequenceError');
 const NotAbleToValidateSequenceError = require('../blockchain/reader/eventHandlers/errors/NotAbleToValidateSequenceError');
-
-const doubleSha256 = require('../util/doubleSha256');
 
 /**
  *
@@ -190,59 +188,60 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED, (params) => {
-    const { dapId, contract } = params;
+  readerMediator.on(ReaderMediator.EVENTS.DP_CONTRACT_APPLIED, (params) => {
+    const { contractId, contract } = params;
 
-    const contractAction = dapId === doubleSha256(contract) ? 'Created' : 'Updated';
+    const contractAction = contract.version === 1 ? 'Created' : 'Updated';
 
     logger.info(
-      `${contractAction} DAP Contract ${dapId}`,
+      `${contractAction} DP Contract ${contractId}`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED,
+        event: ReaderMediator.EVENTS.DP_CONTRACT_APPLIED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DAP_CONTRACT_REVERTED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.DP_CONTRACT_REVERTED, (params) => {
     const {
-      dapId,
+      contractId,
       contract,
-      previousVersion,
+      previousRevision,
     } = params;
 
     logger.info(
-      `Reverted DAP Contract ${dapId} from ${contract.dapver} to ${previousVersion.version}`,
+      `Reverted DP Contract ${contractId} from ${contract.version} to ${previousRevision.getRevision()}`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DAP_CONTRACT_REVERTED,
+        previousRevision: previousRevision.toJSON(),
+        event: ReaderMediator.EVENTS.DP_CONTRACT_REVERTED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DAP_CONTRACT_MARKED_DELETED, (params) => {
-    const { dapId } = params;
+  readerMediator.on(ReaderMediator.EVENTS.DP_CONTRACT_MARKED_DELETED, (params) => {
+    const { contractId } = params;
 
     logger.info(
-      `Marked DAP Contract for ${dapId} as deleted`,
+      `Marked DP Contract for ${contractId} as deleted`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DAP_CONTRACT_MARKED_DELETED,
+        event: ReaderMediator.EVENTS.DP_CONTRACT_MARKED_DELETED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DAP_OBJECT_APPLIED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.DP_OBJECT_APPLIED, (params) => {
     const {
-      dapId,
+      contractId,
       objectId,
       object,
     } = params;
 
     const messages = {
-      [DapObject.ACTION_CREATE]: `Created DAP Object ${objectId} for ${dapId}`,
-      [DapObject.ACTION_UPDATE]: `Updated DAP Object ${objectId} for ${dapId}`,
-      [DapObject.ACTION_DELETE]: `Deleted DAP Object ${objectId} for ${dapId}`,
+      [SVObject.ACTION_CREATE]: `Created DP Object ${objectId} for ${contractId}`,
+      [SVObject.ACTION_UPDATE]: `Updated DP Object ${objectId} for ${contractId}`,
+      [SVObject.ACTION_DELETE]: `Deleted DP Object ${objectId} for ${contractId}`,
     };
 
     const message = messages[object.act];
@@ -251,12 +250,12 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
       message,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DAP_OBJECT_APPLIED,
+        event: ReaderMediator.EVENTS.DP_OBJECT_APPLIED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DAP_OBJECT_REVERTED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.DP_OBJECT_REVERTED, (params) => {
     const {
       objectId,
       object,
@@ -264,22 +263,23 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     } = params;
 
     logger.info(
-      `Reverted DAP Object ${objectId} from ${object.rev} to ${previousRevision.revision}`,
+      `Reverted DP Object ${objectId} from ${object.rev} to ${previousRevision.getRevision()}`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DAP_OBJECT_REVERTED,
+        previousRevision: previousRevision.toJSON(),
+        event: ReaderMediator.EVENTS.DP_OBJECT_REVERTED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DAP_OBJECT_MARKED_DELETED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.DP_OBJECT_MARKED_DELETED, (params) => {
     const { objectId } = params;
 
     logger.info(
-      `DAP Object ${objectId} marked as deleted`,
+      `DP Object ${objectId} marked as deleted`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DAP_OBJECT_MARKED_DELETED,
+        event: ReaderMediator.EVENTS.DP_OBJECT_MARKED_DELETED,
       },
     );
   });

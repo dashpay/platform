@@ -1,5 +1,6 @@
 const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
-const StateTransitionPacket = require('../storage/stPacket/StateTransitionPacket');
+
+const createCIDFromHash = require('../storage/stPacket/createCIDFromHash');
 
 class StateTransitionHeader extends Transaction {
   constructor(data) {
@@ -11,7 +12,7 @@ class StateTransitionHeader extends Transaction {
      * @returns {CID} CID
      */
     this.getPacketCID = function getPacketCID() {
-      return StateTransitionPacket.createCIDFromHash(this.extraPayload.hashSTPacket);
+      return createCIDFromHash(this.extraPayload.hashSTPacket);
     };
   }
 }

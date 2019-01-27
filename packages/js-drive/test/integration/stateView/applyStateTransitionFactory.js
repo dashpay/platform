@@ -5,205 +5,179 @@ const {
   },
 } = require('@dashevo/js-evo-services-ctl');
 
-const Reference = require('../../../lib/stateView/Reference');
-const DapContract = require('../../../lib/stateView/dapContract/DapContract');
-const createDapObjectMongoDbRepositoryFactory = require('../../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
-const DapObjectMongoDbRepository = require('../../../lib/stateView/dapObject/DapObjectMongoDbRepository');
-const DapContractMongoDbRepository = require('../../../lib/stateView/dapContract/DapContractMongoDbRepository');
-const updateDapContractFactory = require('../../../lib/stateView/dapContract/updateDapContractFactory');
-const updateDapObjectFactory = require('../../../lib/stateView/dapObject/updateDapObjectFactory');
-const applyStateTransitionFactory = require('../../../lib/stateView/applyStateTransitionFactory');
-const serializer = require('../../../lib/util/serializer');
+const DashPlatformProtocol = require('@dashevo/dpp');
 
-const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
-const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
-const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
+const DriveDataProvider = require('../../../lib/dpp/DriveDataProvider');
+
+const Reference = require('../../../lib/stateView/revisions/Reference');
+
+const sanitizer = require('../../../lib/mongoDb/sanitizer');
+
+const createSVObjectMongoDbRepositoryFactory = require('../../../lib/stateView/object/createSVObjectMongoDbRepositoryFactory');
+const SVObjectMongoDbRepository = require('../../../lib/stateView/object/SVObjectMongoDbRepository');
+const SVContractMongoDbRepository = require('../../../lib/stateView/contract/SVContractMongoDbRepository');
+const updateSVContractFactory = require('../../../lib/stateView/contract/updateSVContractFactory');
+const updateSVObjectFactory = require('../../../lib/stateView/object/updateSVObjectFactory');
+const applyStateTransitionFactory = require('../../../lib/stateView/applyStateTransitionFactory');
+
+const fetchDPContractFactory = require('../../../lib/stateView/contract/fetchDPContractFactory');
 const addSTPacketFactory = require('../../../lib/storage/stPacket/addSTPacketFactory');
-const StateTransitionPacketIpfsRepository = require('../../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
-const generateDapObjectId = require('../../../lib/stateView/dapObject/generateDapObjectId');
+const STPacketIpfsRepository = require('../../../lib/storage/stPacket/STPacketIpfsRepository');
 
 const ReaderMediator = require('../../../lib/blockchain/reader/BlockchainReaderMediator');
 const ReaderMediatorMock = require('../../../lib/test/mock/BlockchainReaderMediatorMock');
 
-const doubleSha256 = require('../../../lib/util/doubleSha256');
+const getBlocksFixture = require('../../../lib/test/fixtures/getBlocksFixture');
+const getSTPacketsFixture = require('../../../lib/test/fixtures/getSTPacketsFixture');
+const getStateTransitionsFixture = require('../../../lib/test/fixtures/getStateTransitionsFixture');
+const getSVContractFixture = require('../../../lib/test/fixtures/getSVContractFixture');
 
 describe('applyStateTransitionFactory', () => {
   let mongoClient;
   let mongoDb;
   let ipfsClient;
-
-  startMongoDb().then(async (mongoDbInstance) => {
-    mongoClient = await mongoDbInstance.getClient();
-    mongoDb = await mongoDbInstance.getDb();
-  });
-  startIPFS().then(async (ipfsInstance) => {
-    ipfsClient = await ipfsInstance.getApi();
-  });
-
   let addSTPacket;
-  let dapContractMongoDbRepository;
-  let createDapObjectMongoDbRepository;
+  let svContractMongoDbRepository;
+  let createSVObjectMongoDbRepository;
   let readerMediator;
   let applyStateTransition;
+
+  startMongoDb().then((mongoDbInstance) => {
+    mongoClient = mongoDbInstance.getClient();
+    mongoDb = mongoDbInstance.getDb();
+  });
+
+  startIPFS().then((ipfsInstance) => {
+    ipfsClient = ipfsInstance.getApi();
+  });
+
   beforeEach(function beforeEach() {
-    const stPacketRepository = new StateTransitionPacketIpfsRepository(
+    const dpp = new DashPlatformProtocol();
+
+    svContractMongoDbRepository = new SVContractMongoDbRepository(mongoDb, dpp);
+
+    const createFetchDPContract = () => fetchDPContractFactory(svContractMongoDbRepository);
+
+    const dataProvider = new DriveDataProvider(
+      null,
+      createFetchDPContract,
+      null,
+    );
+
+    dpp.setDataProvider(dataProvider);
+
+    const stPacketRepository = new STPacketIpfsRepository(
       ipfsClient,
+      dpp,
       1000,
     );
+
     addSTPacket = addSTPacketFactory(stPacketRepository);
-    dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
-    createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
+
+    createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
       mongoClient,
-      DapObjectMongoDbRepository,
+      SVObjectMongoDbRepository,
+      sanitizer,
     );
-    const updateDapContract = updateDapContractFactory(dapContractMongoDbRepository);
-    const updateDapObject = updateDapObjectFactory(createDapObjectMongoDbRepository);
+
+    const updateSVContract = updateSVContractFactory(svContractMongoDbRepository);
+    const updateSVObject = updateSVObjectFactory(createSVObjectMongoDbRepository);
     readerMediator = new ReaderMediatorMock(this.sinon);
     applyStateTransition = applyStateTransitionFactory(
       stPacketRepository,
-      updateDapContract,
-      updateDapObject,
+      updateSVContract,
+      updateSVObject,
       readerMediator,
     );
   });
 
-  it('should compute DapContract state view', async () => {
-    const block = getBlockFixtures()[0];
-    const packet = getTransitionPacketFixtures()[0];
-    const header = getTransitionHeaderFixtures()[0];
-    header.extraPayload.hashSTPacket = packet.getHash();
-    const reference = new Reference(
-      block.hash,
-      block.height,
-      header.hash,
-      packet.getHash(),
-      undefined,
-    );
+  it('should compute DP Contract state view', async () => {
+    const block = getBlocksFixture()[0];
+    const stPacket = getSTPacketsFixture()[0];
+    const stateTransition = getStateTransitionsFixture()[0];
+    const contractId = stPacket.getDPContractId();
 
-    await addSTPacket(packet);
-    await applyStateTransition(header, block);
+    stateTransition.extraPayload.hashSTPacket = stPacket.hash();
+
+    const reference = new Reference({
+      blockHash: block.hash,
+      blockHeight: block.height,
+      stHeaderHash: stateTransition.hash,
+      stPacketHash: stPacket.hash(),
+      hash: stPacket.getDPContract().hash(),
+    });
+
+    await addSTPacket(stPacket);
+
+    await applyStateTransition(stateTransition, block);
 
     expect(readerMediator.emitSerial).to.be.calledWith(
-      ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED,
+      ReaderMediator.EVENTS.DP_CONTRACT_APPLIED,
       {
-        userId: header.extraPayload.regTxId,
-        dapId: doubleSha256(packet.dapcontract),
+        userId: stateTransition.extraPayload.regTxId,
+        contractId,
         reference,
-        contract: packet.dapcontract,
+        contract: stPacket.getDPContract().toJSON(),
       },
     );
 
-    const dapId = doubleSha256(packet.dapcontract);
-    const dapContract = await dapContractMongoDbRepository.find(dapId);
+    const svContract = await svContractMongoDbRepository.find(contractId);
 
-    expect(dapContract.getDapId()).to.be.equal(dapId);
-    expect(dapContract.getDapName()).to.be.equal(packet.dapcontract.dapname);
-    expect(dapContract.getOriginalData()).to.be.deep.equal(packet.dapcontract);
-    expect(dapContract.getVersion()).to.be.deep.equal(packet.dapcontract.dapver);
-    expect(dapContract.getPreviousVersions()).to.be.deep.equal([]);
+    expect(svContract.getContractId()).to.be.equal(contractId);
+    expect(svContract.getDPContract().toJSON()).to.be.deep.equal(stPacket.getDPContract().toJSON());
+    expect(svContract.getReference()).to.be.deep.equal(reference);
+    expect(svContract.getPreviousRevisions()).to.be.deep.equal([]);
   });
 
-  it('should update with revisions DapContract state view', async () => {
-    const dapId = '1234';
-    const dapName = 'DashPay';
+  it('should compute DP Objects state view', async () => {
+    const svContract = getSVContractFixture();
 
-    const firstReference = new Reference(null, null, null, null, null);
-    const firstData = {
-      dapname: dapName,
-      dapver: 1,
-    };
-    const firstVersionDeleted = false;
-    const firstPreviousVersions = [];
-    const firstDapContractVersion = new DapContract(
-      dapId,
-      firstData,
-      firstReference,
-      firstVersionDeleted,
-      firstPreviousVersions,
-    );
-    await dapContractMongoDbRepository.store(firstDapContractVersion);
+    svContractMongoDbRepository.store(svContract);
 
-    const block = getBlockFixtures()[0];
-    const packet = getTransitionPacketFixtures()[0];
-    packet.dapcontract.dapver = 2;
-    packet.dapcontract.upgradedapid = dapId;
-    const header = getTransitionHeaderFixtures()[0];
-    header.extraPayload.hashSTPacket = packet.getHash();
-    const reference = new Reference(
-      block.hash,
-      block.height,
-      header.hash,
-      packet.getHash(),
-      undefined,
-    );
+    const block = getBlocksFixture()[1];
+    const stPacket = getSTPacketsFixture()[1];
+    const stateTransition = getStateTransitionsFixture()[1];
 
-    await addSTPacket(packet);
-    await applyStateTransition(header, block);
+    stateTransition.extraPayload.hashSTPacket = stPacket.hash();
 
-    expect(readerMediator.emitSerial).to.be.calledWith(
-      ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED,
-      {
-        userId: header.extraPayload.regTxId,
-        dapId,
-        reference,
-        contract: packet.dapcontract,
-      },
-    );
+    await addSTPacket(stPacket);
 
-    const dapContract = await dapContractMongoDbRepository.find(dapId);
+    await applyStateTransition(stateTransition, block);
 
-    expect(dapContract.getDapId()).to.be.equal(dapId);
-    expect(dapContract.getDapName()).to.be.equal(packet.dapcontract.dapname);
-    expect(dapContract.getOriginalData()).to.be.deep.equal(packet.dapcontract);
-    expect(dapContract.getVersion()).to.be.deep.equal(packet.dapcontract.dapver);
-    expect(dapContract.getPreviousVersions()).to.be.deep.equal([
-      firstDapContractVersion.currentRevision(),
-    ]);
-  });
+    expect(readerMediator.emitSerial).to.be.calledTwice();
 
-  it('should compute DapObject state view', async () => {
-    const block = getBlockFixtures()[1];
-    const packet = getTransitionPacketFixtures()[1];
-    packet.dapobjects[0].act = 0;
-    const header = getTransitionHeaderFixtures()[1];
-    header.extraPayload.hashSTPacket = packet.getHash();
-    const reference = new Reference(
-      block.hash,
-      block.height,
-      header.hash,
-      packet.getHash(),
-      undefined,
-    );
+    for (const dpObject of stPacket.getDPObjects()) {
+      const svObjectRepository = createSVObjectMongoDbRepository(
+        stPacket.getDPContractId(),
+        dpObject.getType(),
+      );
+      const svObjects = await svObjectRepository.fetch();
 
-    await addSTPacket(packet);
-    await applyStateTransition(header, block);
+      expect(svObjects).to.be.a('array');
+      expect(svObjects).to.have.lengthOf(1);
 
-    expect(readerMediator.emitSerial).to.be.calledWith(
-      ReaderMediator.EVENTS.DAP_OBJECT_APPLIED,
-      {
-        userId: header.extraPayload.regTxId,
-        dapId: packet.dapid,
-        objectId: generateDapObjectId(
-          header.extraPayload.regTxId,
-          packet.dapobjects[0].idx,
-        ),
-        reference,
-        object: packet.dapobjects[0],
-      },
-    );
+      const [svObject] = svObjects;
 
-    const dapId = packet.dapid;
-    const objectType = packet.dapobjects[0].objtype;
-    const dapObjectRepository = createDapObjectMongoDbRepository(dapId, objectType);
-    const objects = await dapObjectRepository.fetch();
+      expect(svObject.getDPObject().toJSON()).to.be.deep.equal(dpObject.toJSON());
 
-    expect(objects.length).to.be.equal(1);
+      const reference = new Reference({
+        blockHash: block.hash,
+        blockHeight: block.height,
+        stHeaderHash: stateTransition.hash,
+        stPacketHash: stPacket.hash(),
+        hash: dpObject.hash(),
+      });
 
-    const dapObject = objects[0];
-    const blockchainUserId = header.extraPayload.regTxId;
-    const slotNumber = packet.dapobjects[0].idx;
-    const dapObjectId = generateDapObjectId(blockchainUserId, slotNumber);
-
-    expect(dapObject.getId()).to.be.equal(dapObjectId);
+      expect(readerMediator.emitSerial).to.be.calledWith(
+        ReaderMediator.EVENTS.DP_OBJECT_APPLIED,
+        {
+          userId: stateTransition.extraPayload.regTxId,
+          contractId: stPacket.getDPContractId(),
+          objectId: dpObject.getId(),
+          reference,
+          object: dpObject.toJSON(),
+        },
+      );
+    }
   });
 });

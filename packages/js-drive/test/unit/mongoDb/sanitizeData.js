@@ -1,4 +1,4 @@
-const { sanitize, unsanitize, INTERNAL_PREFIX } = require('../../../lib/mongoDb/sanitizeData');
+const { sanitize, unsanitize, INTERNAL_PREFIX } = require('../../../lib/mongoDb/sanitizer');
 
 describe('sanitizeData', () => {
   let unsanitizedData;

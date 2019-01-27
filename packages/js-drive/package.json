@@ -28,7 +28,7 @@
   },
   "homepage": "https://github.com/dashevo/dashdrive",
   "devDependencies": {
-    "@dashevo/js-evo-services-ctl": "^1.0.0-alpha.11",
+    "@dashevo/js-evo-services-ctl": "1.0.0-alpha.17",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
@@ -46,8 +46,8 @@
   "dependencies": {
     "@dashevo/dashcore-lib": "^1.0.0-alpha.24",
     "@dashevo/dashd-rpc": "^1.2.1",
+    "@dashevo/dpp": "^0.4.4",
     "bs58": "^4.0.1",
-    "cbor": "^4.1.4",
     "cids": "^0.5.7",
     "connect": "^3.6.6",
     "dotenv-expand": "^4.2.0",

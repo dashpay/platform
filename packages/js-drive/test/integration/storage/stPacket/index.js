@@ -1,7 +1,7 @@
 /* eslint-disable global-require */
 describe('StateTransitionPacket', () => {
-  require('./StateTransitionPacketIpfsRepository');
+  require('./STPacketIpfsRepository');
   require('./addSTPacket');
   require('./removeSTPacket');
-  require('./StateTransitionPacket');
+  require('./createCIDFromHash');
 });

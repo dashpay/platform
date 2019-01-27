@@ -41,8 +41,8 @@ const errorHandler = require('../lib/util/errorHandler');
   attachStateViewHandlers(
     readerMediator,
     syncApp.createApplyStateTransition(),
-    syncApp.createRevertDapObjectsForStateTransition(),
-    syncApp.createRevertDapContractsForStateTransition(),
+    syncApp.createRevertSVObjectsForStateTransition(),
+    syncApp.createRevertSVContractsForStateTransition(),
     syncApp.createDropMongoDatabasesWithPrefix(),
     syncAppOptions.getMongoDbPrefix(),
   );

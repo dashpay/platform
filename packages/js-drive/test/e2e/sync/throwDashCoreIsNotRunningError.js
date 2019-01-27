@@ -30,7 +30,7 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
     await Promise.all([
       driveApi.start(),
       driveSync.start(),
-      wait(5000),
+      wait(10000),
     ]);
   });
 

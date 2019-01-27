@@ -1,16 +1,18 @@
 const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
+
 const dropMongoDatabasesWithPrefixFactory = require('../../../lib/mongoDb/dropMongoDatabasesWithPrefixFactory');
 
 const byDbPrefix = prefix => db => db.name.includes(prefix);
 
 describe('dropMongoDatabasesWithPrefixFactory', () => {
   let mongoClient;
-  startMongoDb().then((_instance) => {
-    mongoClient = _instance.getClient();
+
+  startMongoDb().then((instance) => {
+    mongoClient = instance.getClient();
   });
 
   it('should drop all Drive Mongo databases', async () => {
-    await mongoClient.db('drive_db').collection('dapObjects').insertOne({ name: 'DashPay' });
+    await mongoClient.db('drive_db').collection('something').insertOne({ name: 'DashPay' });
 
     const { databases: dbs } = await mongoClient.db('test').admin().listDatabases();
     const filterDb = dbs.filter(byDbPrefix(process.env.MONGODB_DB_PREFIX));

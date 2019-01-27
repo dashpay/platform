@@ -1,12 +1,11 @@
-const StateTransitionPacket = require('../../storage/stPacket/StateTransitionPacket');
-
 const InvalidParamsError = require('../InvalidParamsError');
 
 /**
  * @param {removeSTPacket} removeSTPacket
+ * @param {createCIDFromHash} createCIDFromHash
  * @return {removeSTPacketMethod}
  */
-module.exports = function removeSTPacketMethodFactory(removeSTPacket) {
+module.exports = function removeSTPacketMethodFactory(removeSTPacket, createCIDFromHash) {
   /**
    * @typedef removeSTPacketMethod
    * @param params
@@ -21,7 +20,7 @@ module.exports = function removeSTPacketMethodFactory(removeSTPacket) {
 
     let cid;
     try {
-      cid = StateTransitionPacket.createCIDFromHash(params.packetHash);
+      cid = createCIDFromHash(params.packetHash);
     } catch (e) {
       if (e.name === 'InvalidHashError') {
         throw new InvalidParamsError(`Invalid "packetHash" param: ${e.message}`);

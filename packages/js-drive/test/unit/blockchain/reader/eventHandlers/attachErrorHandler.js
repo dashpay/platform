@@ -3,8 +3,8 @@ const BlockchainReaderMediatorMock = require('../../../../../lib/test/mock/Block
 const ReaderMediator = require('../../../../../lib/blockchain/reader/BlockchainReaderMediator');
 const IgnoreStateTransitionError = require('../../../../../lib/blockchain/reader/errors/IgnoreStateTransitionError');
 
-const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlockFixtures');
-const getTransitionHeaderFixtures = require('../../../../../lib/test/fixtures/getTransitionHeaderFixtures');
+const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlocksFixture');
+const getTransitionHeaderFixtures = require('../../../../../lib/test/fixtures/getStateTransitionsFixture');
 
 const attachErrorHandler = require('../../../../../lib/blockchain/reader/eventHandlers/attachErrorHandler');
 

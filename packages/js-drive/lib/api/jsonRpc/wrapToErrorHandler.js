@@ -15,7 +15,7 @@ module.exports = function wrapToErrorHandler(method) {
       return await method(params);
     } catch (e) {
       if (e instanceof InvalidParamsError) {
-        throw createError(errors.INVALID_PARAMS, e.message);
+        throw createError(errors.INVALID_PARAMS, e.message, e.data);
       }
 
       throw e;

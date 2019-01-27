@@ -1,4 +1,4 @@
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 const ArrayBlockIterator = require('../../../../lib/blockchain/blockIterator/ArrayBlockIterator');
 const InvalidBlockHeightError = require('../../../../lib/blockchain/blockIterator/InvalidBlockHeightError');
 
@@ -48,7 +48,7 @@ describe('ArrayBlockIterator', () => {
   });
 
   describe('getBlockHeight', () => {
-    it('should returns block height', async () => {
+    it('should return block height', async () => {
       const firstBlockHeight = blockIterator.getBlockHeight();
 
       await blockIterator.next();

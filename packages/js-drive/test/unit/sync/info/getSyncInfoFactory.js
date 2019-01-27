@@ -1,4 +1,4 @@
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 const SyncState = require('../../../../lib/sync/state/SyncState');
 const SyncInfo = require('../../../../lib/sync/info/SyncInfo');
 const ChainInfo = require('../../../../lib/sync/info/chain/ChainInfo');

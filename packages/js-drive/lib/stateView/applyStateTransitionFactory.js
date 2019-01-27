@@ -1,80 +1,83 @@
-const Reference = require('./Reference');
+const Reference = require('./revisions/Reference');
 
 const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 const StateTransitionHeader = require('../blockchain/StateTransitionHeader');
 
-const generateDapObjectId = require('../stateView/dapObject/generateDapObjectId');
-
-const doubleSha256 = require('../util/doubleSha256');
-
 /**
- * @param {StateTransitionPacketIpfsRepository} stPacketRepository
- * @param {updateDapContract} updateDapContract
- * @param {updateDapObject} updateDapObject
+ * @param {STPacketIpfsRepository} stPacketRepository
+ * @param {updateSVContract} updateSVContract
+ * @param {updateSVObject} updateSVObject
  * @param {BlockchainReaderMediator} readerMediator
  * @returns {applyStateTransition}
  */
 function applyStateTransitionFactory(
   stPacketRepository,
-  updateDapContract,
-  updateDapObject,
+  updateSVContract,
+  updateSVObject,
   readerMediator,
 ) {
   /**
    * @typedef {Promise} applyStateTransition
    * @param {object} header
    * @param {object} block
-   * @param {boolean} reverting
+   * @param {boolean} [reverting]
    * @returns {Promise<void>}
    */
   async function applyStateTransition(header, block, reverting = false) {
     const stHeader = new StateTransitionHeader(header);
 
-    const packet = await stPacketRepository
+    const stPacket = await stPacketRepository
       .find(stHeader.getPacketCID());
 
-    if (packet.dapcontract) {
-      const dapId = packet.dapcontract.upgradedapid || doubleSha256(packet.dapcontract);
-      const reference = new Reference(
-        block.hash,
-        block.height,
-        header.hash,
-        header.extraPayload.hashSTPacket,
-      );
-      await updateDapContract(dapId, reference, packet.dapcontract, reverting);
+    if (stPacket.getDPContract()) {
+      const reference = new Reference({
+        blockHash: block.hash,
+        blockHeight: block.height,
+        stHeaderHash: header.hash,
+        stPacketHash: header.extraPayload.hashSTPacket,
+        hash: stPacket.getDPContract().hash(),
+      });
 
-      await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_CONTRACT_APPLIED, {
-        userId: header.extraPayload.regTxId,
-        dapId,
+      await updateSVContract(
+        stPacket.getDPContractId(),
         reference,
-        contract: packet.dapcontract,
+        stPacket.getDPContract(),
+        reverting,
+      );
+
+      await readerMediator.emitSerial(ReaderMediator.EVENTS.DP_CONTRACT_APPLIED, {
+        userId: header.extraPayload.regTxId,
+        contractId: stPacket.getDPContractId(),
+        reference,
+        contract: stPacket.getDPContract().toJSON(),
       });
 
       return;
     }
 
-    for (let i = 0; i < packet.dapobjects.length; i++) {
-      const objectData = packet.dapobjects[i];
-      const reference = new Reference(
-        block.hash,
-        block.height,
-        header.hash,
-        header.extraPayload.hashSTPacket,
-      );
-      await updateDapObject(
-        packet.dapid,
+    for (const dpObject of stPacket.getDPObjects()) {
+      const reference = new Reference({
+        blockHash: block.hash,
+        blockHeight: block.height,
+        stHeaderHash: header.hash,
+        stPacketHash: header.extraPayload.hashSTPacket,
+        hash: dpObject.hash(),
+      });
+
+      await updateSVObject(
+        stPacket.getDPContractId(),
         header.extraPayload.regTxId,
         reference,
-        objectData,
+        dpObject,
         reverting,
       );
 
-      await readerMediator.emitSerial(ReaderMediator.EVENTS.DAP_OBJECT_APPLIED, {
+      await readerMediator.emitSerial(ReaderMediator.EVENTS.DP_OBJECT_APPLIED, {
         userId: header.extraPayload.regTxId,
-        dapId: packet.dapid,
-        objectId: generateDapObjectId(header.extraPayload.regTxId, objectData.idx),
+        contractId: stPacket.getDPContractId(),
+        objectId: dpObject.getId(),
         reference,
-        object: objectData,
+        object: dpObject.toJSON(),
       });
     }
   }

@@ -1,10 +1,10 @@
 /**
- * @param {StateTransitionPacketIpfsRepository} stPacketRepository
+ * @param {STPacketIpfsRepository} stPacketRepository
  * @return {removeSTPacket}
  */
 module.exports = function removeSTPacketFactory(stPacketRepository) {
   /**
-   * Unpin State Transition packet from IPFS
+   * Remove ST Packet
    *
    * @typedef removeSTPacket
    * @param {CID} cid

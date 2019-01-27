@@ -1,42 +1,42 @@
 class DriveDataProvider {
   /**
-   * @param {fetchDapObjects} fetchDapObjects
-   * @param {fetchDapContract} fetchDapContract
+   * @param {fetchDPObjects} fetchDPObjects
+   * @param {Function} createFetchDPContract
    * @param {RpcClient} rpcClient
    */
-  constructor(fetchDapObjects, fetchDapContract, rpcClient) {
-    this.fetchDapObjectsFromDrive = fetchDapObjects;
-    this.fetchDapContractFromDrive = fetchDapContract;
+  constructor(fetchDPObjects, createFetchDPContract, rpcClient) {
+    this.fetchDPObjectsFromDrive = fetchDPObjects;
+    this.createFetchDPContract = createFetchDPContract;
     this.rpcClient = rpcClient;
   }
 
   /**
-   * Fetch Dap Contract
+   * Fetch DP Contract by ID
    *
    * @param {string} id
-   * @return {DapContract|null}
+   * @returns {Promise<DPContract|null>}
    */
-  async fetchDapContract(id) {
-    return this.fetchDapContractFromDrive(id);
+  async fetchDPContract(id) {
+    return this.createFetchDPContract()(id);
   }
 
   /**
-   * Fetch DAP Objects
+   * Fetch DP Objects by contract ID and type
    *
-   * @param {string} dapContractId
+   * @param {string} dpContractId
    * @param {string} type
    * @param {{ where: Object }} [options]
-   * @return {DapObject[]}
+   * @returns {Promise<DPObject[]>}
    */
-  async fetchDapObjects(dapContractId, type, options = {}) {
-    return this.fetchDapObjectsFromDrive(dapContractId, type, options);
+  async fetchDPObjects(dpContractId, type, options = {}) {
+    return this.fetchDPObjectsFromDrive(dpContractId, type, options);
   }
 
   /**
    * Fetch transaction by ID
    *
    * @param {string} id
-   * @return {{ confirmations: number }}
+   * @returns {Promise<DPContract|null>}
    */
   async fetchTransaction(id) {
     return this.rpcClient.getTransaction(id);

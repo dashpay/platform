@@ -9,7 +9,6 @@ const chaiAsPromised = require('chai-as-promised');
 const DashApiOptions = require('@dashevo/js-evo-services-ctl/lib/services/driveApi/DriveApiOptions');
 const DashSyncOptions = require('@dashevo/js-evo-services-ctl/lib/services/driveSync/DriveSyncOptions');
 
-
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);

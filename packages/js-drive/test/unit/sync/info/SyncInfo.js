@@ -1,5 +1,5 @@
 const SyncInfo = require('../../../../lib/sync/info/SyncInfo');
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 
 describe('SyncInfo', () => {
   const blocks = getBlockFixtures();

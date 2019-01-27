@@ -1,5 +1,5 @@
-const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
-const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
+const getBlockFixtures = require('../../../lib/test/fixtures/getBlocksFixture');
+const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getStateTransitionsFixture');
 
 const StateTransitionHeader = require('../../../lib/blockchain/StateTransitionHeader');
 

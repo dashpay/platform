@@ -1,5 +1,5 @@
 const SyncState = require('../../../../lib/sync/state/SyncState');
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 
 describe('SyncState', () => {
   let blocks;

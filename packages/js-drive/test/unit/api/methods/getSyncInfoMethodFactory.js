@@ -1,4 +1,4 @@
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 const SyncInfo = require('../../../../lib/sync/info/SyncInfo');
 const getSyncInfoMethodFactory = require('../../../../lib/api/methods/getSyncInfoMethodFactory');
 

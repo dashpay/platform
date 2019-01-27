@@ -1,42 +1,105 @@
-const cbor = require('cbor');
-const fs = require('fs');
-const path = require('path');
+const serializer = require('@dashevo/dpp/lib/util/serializer');
+
+const InvalidSTPacketError = require('@dashevo/dpp/lib/stPacket/errors/InvalidSTPacketError');
 
 const addSTPacketMethodFactory = require('../../../../lib/api/methods/addSTPacketMethodFactory');
+const createCIDFromHash = require('../../../../lib/storage/stPacket/createCIDFromHash');
+
+const createDPPMock = require('../../../../lib/test/mock/createDPPMock');
+
+const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
+
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 
-const getTransitionPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
-
 describe('addSTPacketMethod', () => {
-  let addSTPacket;
-  let addSTPacketMethod;
+  let stPacket;
   let cid;
-  const packet = getTransitionPacketFixtures()[0];
+  let dppMock;
+  let addSTPacketMock;
+  let addSTPacketMethod;
 
   beforeEach(function beforeEach() {
-    cid = packet.getCID();
-    addSTPacket = this.sinon.stub().returns(cid);
-    addSTPacketMethod = addSTPacketMethodFactory(addSTPacket);
+    ([stPacket] = getSTPacketsFixture());
+
+    cid = createCIDFromHash(stPacket.hash());
+
+    dppMock = createDPPMock(this.sinon);
+
+    addSTPacketMock = this.sinon.stub().resolves(cid);
+
+    addSTPacketMethod = addSTPacketMethodFactory(addSTPacketMock, dppMock);
   });
 
-  it('should throw error if "packet" params is missing', () => {
-    expect(addSTPacketMethod({ })).to.be.rejectedWith(InvalidParamsError);
-    expect(addSTPacket).to.not.be.called();
+  it('should throw error if "packet" params is missing', async () => {
+    let error;
+    try {
+      await addSTPacketMethod({});
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).to.be.instanceOf(InvalidParamsError);
+
+    expect(addSTPacketMock).to.not.be.called();
   });
-  it('should throw error if "packet" params is not a serialized ST Packet', () => {
-    expect(addSTPacketMethod({ packet: 'shit' })).to.be.rejectedWith(InvalidParamsError);
-    expect(addSTPacket).to.not.be.called();
+
+  it('should throw error if "packet" params is not a serialized ST Packet', async () => {
+    const wrongString = 'something';
+
+    const cborError = new Error();
+
+    dppMock.packet.createFromSerialized.throws(cborError);
+
+    let error;
+    try {
+      await addSTPacketMethod({ packet: wrongString });
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).to.be.equal(cborError);
+
+    expect(dppMock.packet.createFromSerialized).to.be.calledOnceWith(wrongString);
+
+    expect(addSTPacketMock).to.not.be.called();
   });
+
+  it('should throw error if "packet" params is not valid ST Packet', async () => {
+    const invalidSTPacket = { ...stPacket.toJSON(), wrongField: true };
+
+    const serializedSTPacket = serializer.encode(invalidSTPacket);
+
+    const validationError = new InvalidSTPacketError([], invalidSTPacket);
+
+    dppMock.packet.createFromSerialized.throws(validationError);
+
+    let error;
+    try {
+      await addSTPacketMethod({ packet: serializedSTPacket });
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).to.be.instanceOf(InvalidParamsError);
+
+    expect(dppMock.packet.createFromSerialized).to.be.calledOnceWith(serializedSTPacket);
+
+    expect(addSTPacketMock).to.not.be.called();
+  });
+
   it('should add ST Packet', async () => {
-    // TODO: extract to separate method
-    const packetsJSON = fs.readFileSync(path.join(__dirname, '/../../../fixtures/stateTransitionPackets.json'));
-    const packetsData = JSON.parse(packetsJSON);
+    const serializedSTPacket = stPacket.serialize().toString('hex');
 
-    const serializedPacket = cbor.encodeCanonical(packetsData[0]);
+    dppMock.packet.createFromSerialized.resolves(stPacket);
 
-    const cidString = await addSTPacketMethod({ packet: serializedPacket.toString('hex') });
+    const result = await addSTPacketMethod(
+      { packet: serializedSTPacket },
+    );
 
-    expect(addSTPacket).to.be.calledOnce();
-    expect(cidString).to.be.equal(cid.toBaseEncodedString());
+    expect(result).to.be.equal(cid.toBaseEncodedString());
+
+    expect(dppMock.packet.createFromSerialized).to.be.calledOnceWith(serializedSTPacket);
+
+    expect(addSTPacketMock).to.be.calledOnceWith(stPacket);
   });
 });

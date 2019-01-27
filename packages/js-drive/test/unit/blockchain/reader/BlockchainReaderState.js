@@ -1,5 +1,5 @@
 const BlockchainReaderState = require('../../../../lib/blockchain/reader/BlockchainReaderState');
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 
 describe('BlockchainReaderState', () => {
   let blocks;

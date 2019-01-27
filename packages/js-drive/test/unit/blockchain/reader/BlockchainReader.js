@@ -7,8 +7,8 @@ const ReaderMediator = require('../../../../lib/blockchain/reader/BlockchainRead
 const RestartBlockchainReaderError = require('../../../../lib/blockchain/reader/errors/RestartBlockchainReaderError');
 const IgnoreStateTransitionError = require('../../../../lib/blockchain/reader/errors/IgnoreStateTransitionError');
 
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
-const getTransitionHeaderFixtures = require('../../../../lib/test/fixtures/getTransitionHeaderFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
+const getTransitionHeaderFixtures = require('../../../../lib/test/fixtures/getStateTransitionsFixture');
 
 describe('BlockchainReader', () => {
   let blocks;

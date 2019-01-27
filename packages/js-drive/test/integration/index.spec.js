@@ -5,5 +5,4 @@ describe('Integration', () => {
   require('./storage');
   require('./sync/index.js');
   require('./sync.js');
-  require('./util');
 });

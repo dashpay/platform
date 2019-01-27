@@ -5,16 +5,16 @@ const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
  *
  * @param {BlockchainReaderMediator} readerMediator
  * @param {applyStateTransition} applyStateTransition
- * @param {revertDapObjectsForStateTransition} revertDapObjectsForStateTransition
- * @param {revertDapContractsForStateTransition} revertDapContractsForStateTransition
+ * @param {revertSVObjectsForStateTransition} revertSVObjectsForStateTransition
+ * @param {revertSVContractsForStateTransition} revertSVContractsForStateTransition
  * @param {dropMongoDatabasesWithPrefix} dropMongoDatabasesWithPrefix
  * @param {string} mongoDbPrefix
  */
 function attachStateViewHandlers(
   readerMediator,
   applyStateTransition,
-  revertDapObjectsForStateTransition,
-  revertDapContractsForStateTransition,
+  revertSVObjectsForStateTransition,
+  revertSVContractsForStateTransition,
   dropMongoDatabasesWithPrefix,
   mongoDbPrefix,
 ) {
@@ -24,12 +24,12 @@ function attachStateViewHandlers(
 
   readerMediator.on(
     ReaderMediator.EVENTS.STATE_TRANSITION_STALE,
-    revertDapObjectsForStateTransition,
+    revertSVObjectsForStateTransition,
   );
 
   readerMediator.on(
     ReaderMediator.EVENTS.STATE_TRANSITION_STALE,
-    revertDapContractsForStateTransition,
+    revertSVContractsForStateTransition,
   );
 
   readerMediator.on(ReaderMediator.EVENTS.RESET, async () => {

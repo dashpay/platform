@@ -1,12 +1,14 @@
-const cbor = require('cbor');
-const StateTransitionPacket = require('../../storage/stPacket/StateTransitionPacket');
+const InvalidSTPacketError = require('@dashevo/dpp/lib/stPacket/errors/InvalidSTPacketError');
+
 const InvalidParamsError = require('../InvalidParamsError');
 
 /**
  * @param {addSTPacket} addSTPacket
+ * @param {DashPlatformProtocol} dpp
+ *
  * @return {addSTPacketMethod}
  */
-module.exports = function addSTPacketMethodFactory(addSTPacket) {
+module.exports = function addSTPacketMethodFactory(addSTPacket, dpp) {
   /**
    * @typedef addSTPacketMethod
    * @param params
@@ -19,16 +21,18 @@ module.exports = function addSTPacketMethodFactory(addSTPacket) {
       throw new InvalidParamsError('Param "packet" is required');
     }
 
-    let packet;
+    let stPacket;
     try {
-      const unserializedPacket = cbor.decodeFirstSync(params.packet);
-
-      packet = new StateTransitionPacket(unserializedPacket);
+      stPacket = await dpp.packet.createFromSerialized(params.packet);
     } catch (e) {
-      throw new InvalidParamsError(`Invalid "packet" param: ${e.message}`);
+      if (e instanceof InvalidSTPacketError) {
+        throw new InvalidParamsError(`Invalid "packet" param: ${e.message}`, e.getErrors());
+      }
+
+      throw e;
     }
 
-    const cid = await addSTPacket(packet);
+    const cid = await addSTPacket(stPacket);
 
     return cid.toBaseEncodedString();
   }

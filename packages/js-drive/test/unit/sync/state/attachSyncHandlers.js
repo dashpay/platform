@@ -3,7 +3,7 @@ const BlockchainReaderMediatorMock = require('../../../../lib/test/mock/Blockcha
 const SyncState = require('../../../../lib/sync/state/SyncState');
 const ReaderMediator = require('../../../../lib/blockchain/reader/BlockchainReaderMediator');
 
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 const attachSyncHandlers = require('../../../../lib/sync/state/attachSyncHandlers');
 
 describe('attachSyncHandlers', () => {

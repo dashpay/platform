@@ -1,5 +1,5 @@
-const getBlockFixtures = require('../fixtures/getBlockFixtures');
-const getTransitionHeaderFixtures = require('../fixtures/getTransitionHeaderFixtures');
+const getBlockFixtures = require('../fixtures/getBlocksFixture');
+const getTransitionHeaderFixtures = require('../fixtures/getStateTransitionsFixture');
 
 module.exports = class RpcClientMock {
   /**

@@ -4,30 +4,30 @@ const BlockchainReaderMediatorMock = require('../../../lib/test/mock/BlockchainR
 
 const attachStateViewHandlers = require('../../../lib/stateView/attachStateViewHandlers');
 
-const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
-const getBlockFixtures = require('../../../lib/test/fixtures/getBlockFixtures');
+const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getStateTransitionsFixture');
+const getBlockFixtures = require('../../../lib/test/fixtures/getBlocksFixture');
 
 describe('attachStateViewHandlers', () => {
   let readerMediatorMock;
   let applyStateTransition;
-  let revertDapObjectsForStateTransition;
-  let revertDapContractsForStateTransition;
+  let revertSVObjectsForStateTransition;
+  let revertSVContractsForStateTransition;
   let dropMongoDatabasesWithPrefixStub;
   let mongoDbPrefix;
 
   beforeEach(function beforeEach() {
     readerMediatorMock = new BlockchainReaderMediatorMock(this.sinon);
     applyStateTransition = this.sinon.stub();
-    revertDapObjectsForStateTransition = this.sinon.stub();
-    revertDapContractsForStateTransition = this.sinon.stub();
+    revertSVObjectsForStateTransition = this.sinon.stub();
+    revertSVContractsForStateTransition = this.sinon.stub();
     dropMongoDatabasesWithPrefixStub = this.sinon.stub();
     mongoDbPrefix = 'test';
 
     attachStateViewHandlers(
       readerMediatorMock,
       applyStateTransition,
-      revertDapObjectsForStateTransition,
-      revertDapContractsForStateTransition,
+      revertSVObjectsForStateTransition,
+      revertSVContractsForStateTransition,
       dropMongoDatabasesWithPrefixStub,
       mongoDbPrefix,
     );
@@ -46,7 +46,7 @@ describe('attachStateViewHandlers', () => {
     expect(applyStateTransition).to.be.calledWith(stateTransition, block);
   });
 
-  it('should call revertDapObjectsForStateTransition on the stale state transition event', async () => {
+  it('should call revertSVObjectsForStateTransition on the stale state transition event', async () => {
     const [stateTransition] = getTransitionHeaderFixtures();
     const [block] = getBlockFixtures();
 
@@ -55,11 +55,11 @@ describe('attachStateViewHandlers', () => {
       block,
     });
 
-    expect(revertDapObjectsForStateTransition).to.be.calledOnce();
-    expect(revertDapObjectsForStateTransition).to.be.calledWith({ stateTransition, block });
+    expect(revertSVObjectsForStateTransition).to.be.calledOnce();
+    expect(revertSVObjectsForStateTransition).to.be.calledWith({ stateTransition, block });
   });
 
-  it('should call revertDapContractsForStateTransition on the stale state transition event', async () => {
+  it('should call revertSVContractsForStateTransition on the stale state transition event', async () => {
     const [stateTransition] = getTransitionHeaderFixtures();
     const [block] = getBlockFixtures();
 
@@ -68,8 +68,8 @@ describe('attachStateViewHandlers', () => {
       block,
     });
 
-    expect(revertDapContractsForStateTransition).to.be.calledOnce();
-    expect(revertDapContractsForStateTransition).to.be.calledWith({ stateTransition, block });
+    expect(revertSVContractsForStateTransition).to.be.calledOnce();
+    expect(revertSVContractsForStateTransition).to.be.calledWith({ stateTransition, block });
   });
 
   it('should call dropMongoDatabasesWithPrefix on the reset event', async () => {

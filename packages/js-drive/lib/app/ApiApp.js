@@ -1,6 +1,9 @@
 const IpfsAPI = require('ipfs-api');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 const { MongoClient } = require('mongodb');
+const DashPlatformProtocol = require('@dashevo/dpp');
+
+const sanitizer = require('../mongoDb/sanitizer');
 
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
 const SyncStateRepositoryChangeListener = require('../../lib/sync/state/repository/SyncStateRepositoryChangeListener');
@@ -10,22 +13,22 @@ const getCheckSyncStateHttpMiddleware = require('../../lib/sync/getCheckSyncHttp
 
 const wrapToErrorHandler = require('../../lib/api/jsonRpc/wrapToErrorHandler');
 
-const StateTransitionPacketIpfsRepository = require('../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
+const STPacketIpfsRepository = require('../storage/stPacket/STPacketIpfsRepository');
 const addSTPacketFactory = require('../../lib/storage/stPacket/addSTPacketFactory');
 const addSTPacketMethodFactory = require('../../lib/api/methods/addSTPacketMethodFactory');
 const removeSTPacketFactory = require('../../lib/storage/stPacket/removeSTPacketFactory');
 const removeSTPacketMethodFactory = require('../../lib/api/methods/removeSTPacketMethodFactory');
 
-const DapContractMongoDbRepository = require('../stateView/dapContract/DapContractMongoDbRepository');
-const serializer = require('../util/serializer');
+const SVContractMongoDbRepository = require('../stateView/contract/SVContractMongoDbRepository');
+const createCIDFromHash = require('../storage/stPacket/createCIDFromHash');
 
-const fetchDapContractFactory = require('../../lib/stateView/dapContract/fetchDapContractFactory');
-const fetchDapContractMethodFactory = require('../api/methods/fetchDapContractMethodFactory');
+const fetchDPContractFactory = require('../stateView/contract/fetchDPContractFactory');
+const fetchDPContractMethodFactory = require('../api/methods/fetchDPContractMethodFactory');
 
-const DapObjectMongoDbRepository = require('../../lib/stateView/dapObject/DapObjectMongoDbRepository');
-const createDapObjectMongoDbRepositoryFactory = require('../../lib/stateView/dapObject/createDapObjectMongoDbRepositoryFactory');
-const fetchDapObjectsFactory = require('../../lib/stateView/dapObject/fetchDapObjectsFactory');
-const fetchDapObjectsMethodFactory = require('../../lib/api/methods/fetchDapObjectsMethodFactory');
+const SVObjectMongoDbRepository = require('../stateView/object/SVObjectMongoDbRepository');
+const createSVObjectMongoDbRepositoryFactory = require('../stateView/object/createSVObjectMongoDbRepositoryFactory');
+const fetchDPObjectsFactory = require('../stateView/object/fetchDPObjectsFactory');
+const fetchDPObjectsMethodFactory = require('../api/methods/fetchDPObjectsMethodFactory');
 
 const getChainInfoFactory = require('../../lib/sync/info/chain/getChainInfoFactory');
 const getSyncInfoFactory = require('../../lib/sync/info/getSyncInfoFactory');
@@ -47,6 +50,7 @@ const DriveDataProvider = require('../dpp/DriveDataProvider');
  */
 function rmPostfix(func) {
   const funcName = func.name;
+
   return funcName.substr(0, funcName.length - 'Method'.length);
 }
 
@@ -133,22 +137,23 @@ class ApiApp {
     return [
       this.createAddSTPacketMethod(),
       this.createRemoveSTPacketMethod(),
-      this.createFetchDapContractMethod(),
-      this.createFetchDapObjectsMethod(),
+      this.createFetchDPContractMethod(),
+      this.createFetchDPObjectsMethod(),
       this.createGetSyncInfoMethod(),
     ];
   }
 
   /**
    * @private
-   * @return {StateTransitionPacketIpfsRepository}
+   * @return {STPacketIpfsRepository}
    */
   createSTPacketRepository() {
     if (this.stPacketRepository) {
       return this.stPacketRepository;
     }
-    this.stPacketRepository = new StateTransitionPacketIpfsRepository(
+    this.stPacketRepository = new STPacketIpfsRepository(
       this.ipfsAPI,
+      this.createDashPlatformProtocol(),
       this.options.getStorageIpfsTimeout(),
     );
     return this.stPacketRepository;
@@ -160,7 +165,10 @@ class ApiApp {
    */
   createAddSTPacketMethod() {
     const addSTPacket = addSTPacketFactory(this.createSTPacketRepository());
-    return addSTPacketMethodFactory(addSTPacket);
+    return addSTPacketMethodFactory(
+      addSTPacket,
+      this.createDashPlatformProtocol(),
+    );
   }
 
   /**
@@ -169,56 +177,64 @@ class ApiApp {
    */
   createRemoveSTPacketMethod() {
     const removeSTPacket = removeSTPacketFactory(this.createSTPacketRepository());
-    return removeSTPacketMethodFactory(removeSTPacket);
-  }
-
-  /**
-   * @private
-   * @return {fetchDapContract}
-   */
-  createFetchDapContract() {
-    if (!this.fetchDapContract) {
-      const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
-      const dapContractMongoDbRepository = new DapContractMongoDbRepository(mongoDb, serializer);
-      this.fetchDapContract = fetchDapContractFactory(dapContractMongoDbRepository);
-    }
-
-    return this.fetchDapContract;
-  }
-
-  /**
-   * @private
-   * @returns {fetchDapContractMethod}
-   */
-  createFetchDapContractMethod() {
-    return fetchDapContractMethodFactory(
-      this.createFetchDapContract(),
+    return removeSTPacketMethodFactory(
+      removeSTPacket,
+      createCIDFromHash,
     );
   }
 
   /**
    * @private
-   * @return {fetchDapObjects}
+   * @return {fetchDPContract}
    */
-  createFetchDapObjects() {
-    if (!this.fetchDapObjects) {
-      const createDapObjectMongoDbRepository = createDapObjectMongoDbRepositoryFactory(
-        this.mongoClient,
-        DapObjectMongoDbRepository,
+  createFetchDPContract() {
+    if (!this.fetchDPContract) {
+      const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
+      const svContractMongoDbRepository = new SVContractMongoDbRepository(
+        mongoDb,
+        this.createDashPlatformProtocol(),
       );
-      this.fetchDapObjects = fetchDapObjectsFactory(createDapObjectMongoDbRepository);
+
+      this.fetchDPContract = fetchDPContractFactory(svContractMongoDbRepository);
     }
 
-    return this.fetchDapObjects;
+    return this.fetchDPContract;
   }
 
   /**
    * @private
-   * @return {fetchDapObjectsMethod}
+   * @returns {fetchDPContractMethod}
    */
-  createFetchDapObjectsMethod() {
-    return fetchDapObjectsMethodFactory(
-      this.createFetchDapObjects(),
+  createFetchDPContractMethod() {
+    return fetchDPContractMethodFactory(
+      this.createFetchDPContract(),
+    );
+  }
+
+  /**
+   * @private
+   * @return {fetchDPObjects}
+   */
+  createFetchDPObjects() {
+    if (!this.fetchDPObjects) {
+      const createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
+        this.mongoClient,
+        SVObjectMongoDbRepository,
+        sanitizer,
+      );
+      this.fetchDPObjects = fetchDPObjectsFactory(createSVObjectMongoDbRepository);
+    }
+
+    return this.fetchDPObjects;
+  }
+
+  /**
+   * @private
+   * @return {fetchDPObjectsMethod}
+   */
+  createFetchDPObjectsMethod() {
+    return fetchDPObjectsMethodFactory(
+      this.createFetchDPObjects(),
     );
   }
 
@@ -243,14 +259,23 @@ class ApiApp {
   }
 
   /**
-   * @return {DriveDataProvider}
+   * @private
+   * @return {DashPlatformProtocol}
    */
-  createDriveDataProvder() {
-    return new DriveDataProvider(
-      this.createFetchDapObjects(),
-      this.createFetchDapContract(),
-      this.rpcClient,
-    );
+  createDashPlatformProtocol() {
+    if (!this.dashPlatfromProtocol) {
+      const dataProvider = new DriveDataProvider(
+        this.createFetchDPObjects(),
+        this.createFetchDPContract.bind(this),
+        this.rpcClient,
+      );
+
+      this.dashPlatfromProtocol = new DashPlatformProtocol({
+        dataProvider,
+      });
+    }
+
+    return this.dashPlatfromProtocol;
   }
 }
 

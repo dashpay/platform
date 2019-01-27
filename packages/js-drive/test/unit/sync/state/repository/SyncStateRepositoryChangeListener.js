@@ -1,7 +1,7 @@
 const SyncState = require('../../../../../lib/sync/state/SyncState');
 const SyncStateRepositoryChangeListener = require('../../../../../lib/sync/state/repository/SyncStateRepositoryChangeListener');
 
-const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlocksFixture');
 
 describe('SyncStateRepositoryChangeListener', () => {
   let repositoryMock;

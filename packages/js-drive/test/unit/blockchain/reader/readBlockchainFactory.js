@@ -6,7 +6,7 @@ const BlockchainReaderMediatorMock = require('../../../../lib/test/mock/Blockcha
 
 const RpcClientMock = require('../../../../lib/test/mock/RpcClientMock');
 
-const getBlockFixtures = require('../../../../lib/test/fixtures/getBlockFixtures');
+const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
 
 describe('readBlockchainFactory', () => {
   let readerMediatorMock;

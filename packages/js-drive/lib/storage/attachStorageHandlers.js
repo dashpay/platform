@@ -6,7 +6,7 @@ const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
  * Remove all State Transition Packets from blockchain when reset.
  *
  * @param {BlockchainReaderMediator} readerMediator
- * @param {StateTransitionPacketIpfsRepository} stPacketRepository
+ * @param {STPacketIpfsRepository} stPacketRepository
  */
 function attachStorageHandlers(
   readerMediator,

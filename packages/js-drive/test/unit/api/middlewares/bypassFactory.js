@@ -3,6 +3,7 @@ const bypassFactory = require('../../../../lib/api/middlewares/bypassFactory');
 describe('bypassFactory', () => {
   let next;
   let method;
+
   beforeEach(function beforeEach() {
     next = this.sinon.spy();
     method = this.sinon.spy();
@@ -26,7 +27,7 @@ describe('bypassFactory', () => {
   it('should not bypass method and call method if request method is not in the whitelist', () => {
     const req = {
       body: {
-        method: 'fetchDapObjects',
+        method: 'fetchDPObjects',
       },
     };
 

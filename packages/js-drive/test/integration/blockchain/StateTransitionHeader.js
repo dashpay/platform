@@ -1,28 +1,46 @@
 const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
+
 const addSTPacketFactory = require('../../../lib/storage/stPacket/addSTPacketFactory');
-const StateTransitionPacketIpfsRepository = require('../../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
-const getTransitionPacketFixtures = require('../../../lib/test/fixtures/getTransitionPacketFixtures');
-const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getTransitionHeaderFixtures');
+
+const STPacketIpfsRepository = require('../../../lib/storage/stPacket/STPacketIpfsRepository');
+
+const getSTPacketsFixture = require('../../../lib/test/fixtures/getSTPacketsFixture');
+const getStateTransitionsFixture = require('../../../lib/test/fixtures/getStateTransitionsFixture');
+
+const createDPPMock = require('../../../lib/test/mock/createDPPMock');
 
 describe('StateTransitionHeader', () => {
-  const packet = getTransitionPacketFixtures()[0];
-  const header = getTransitionHeaderFixtures()[0];
-
+  let dppMock;
+  let stPacket;
+  let stateTransition;
   let addSTPacket;
+  let ipfsApi;
+
   startIPFS().then((instance) => {
-    const stPacketRepository = new StateTransitionPacketIpfsRepository(
-      instance.getApi(),
+    ipfsApi = instance.getApi();
+  });
+
+  beforeEach(function beforeEach() {
+    dppMock = createDPPMock(this.sinon);
+
+    ([stPacket] = getSTPacketsFixture());
+    ([stateTransition] = getStateTransitionsFixture());
+
+    const stPacketRepository = new STPacketIpfsRepository(
+      ipfsApi,
+      dppMock,
       1000,
     );
+
     addSTPacket = addSTPacketFactory(stPacketRepository);
   });
 
   it('should StateTransitionHeader CID equal to IPFS CID', async () => {
-    header.extraPayload.setHashSTPacket(packet.getHash());
+    stateTransition.extraPayload.setHashSTPacket(stPacket.hash());
 
-    const ipfsCid = await addSTPacket(packet);
+    const ipfsCid = await addSTPacket(stPacket);
 
-    const stHeaderCid = header.getPacketCID();
+    const stHeaderCid = stateTransition.getPacketCID();
     expect(stHeaderCid.toBaseEncodedString()).to.equal(ipfsCid.toBaseEncodedString());
   });
 });

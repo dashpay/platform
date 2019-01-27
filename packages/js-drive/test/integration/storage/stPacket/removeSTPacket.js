@@ -1,32 +1,39 @@
 const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
 
-const StateTransitionPacket = require('../../../../lib/storage/stPacket/StateTransitionPacket');
-const StateTransitionPacketIpfsRepository = require('../../../../lib/storage/stPacket/StateTransitionPacketIpfsRepository');
+const DashPlatformProtocol = require('@dashevo/dpp');
+
+const STPacketIpfsRepository = require('../../../../lib/storage/stPacket/STPacketIpfsRepository');
+
 const removeSTPacketFactory = require('../../../../lib/storage/stPacket/removeSTPacketFactory');
 
-const getPacketFixtures = require('../../../../lib/test/fixtures/getTransitionPacketFixtures');
+const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
 
 describe('removeSTPacket', () => {
   let ipfsApi;
+  let removeSTPacket;
+  let stPacketRepository;
+
   startIPFS().then((_instance) => {
     ipfsApi = _instance.getApi();
   });
 
-  let removeSTPacket;
-  let stPacketRepository;
   beforeEach(() => {
-    stPacketRepository = new StateTransitionPacketIpfsRepository(
+    const dpp = new DashPlatformProtocol();
+
+    stPacketRepository = new STPacketIpfsRepository(
       ipfsApi,
+      dpp,
       1000,
     );
+
     removeSTPacket = removeSTPacketFactory(stPacketRepository);
   });
 
   it('should unpin previously stored and pinned packet', async () => {
-    const [packetData] = getPacketFixtures();
-    const packet = new StateTransitionPacket(packetData);
+    const [stPacket] = getSTPacketsFixture();
 
-    const storedCid = await stPacketRepository.store(packet);
+    const storedCid = await stPacketRepository.store(stPacket);
+
     await stPacketRepository.download(storedCid);
 
     await removeSTPacket(storedCid);

@@ -1,8 +1,8 @@
 /* eslint-disable global-require */
 describe('stateView', () => {
-  require('./dapContract');
-  require('./dapObject');
+  require('./revisions');
+  require('./contract');
+  require('./object');
   require('./attachStateViewHandlers');
-  require('./Reference');
   require('./applyStateTransitionFromReference');
 });
