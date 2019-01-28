@@ -1,4 +1,4 @@
-const IpfsAPI = require('ipfs-api');
+const IpfsAPI = require('ipfs-http-client');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 const { MongoClient } = require('mongodb');
 const DashPlatformProtocol = require('@dashevo/dpp');
