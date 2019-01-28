@@ -39,11 +39,11 @@ describe('SVContractMongoDbRepository', () => {
     expect(result).to.be.null();
   });
 
-  it('should find all contracts by stHeaderHash', async () => {
+  it('should find all contracts by stHash', async () => {
     await svContractRepository.store(svContract);
 
-    const svContracts = await svContractRepository.findAllByReferenceSTHeaderHash(
-      svContract.getReference().getSTHeaderHash(),
+    const svContracts = await svContractRepository.findAllByReferenceSTHash(
+      svContract.getReference().getSTHash(),
     );
 
     expect(svContracts.length).to.be.equal(1);

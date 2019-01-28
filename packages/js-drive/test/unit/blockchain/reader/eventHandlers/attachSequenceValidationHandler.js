@@ -9,7 +9,7 @@ const NotAbleToValidateSequenceError = require('../../../../../lib/blockchain/re
 const attachSequenceValidationHandler = require('../../../../../lib/blockchain/reader/eventHandlers/attachSequenceValidationHandler');
 
 const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlocksFixture');
-const getTransitionHeaderFixtures = require('../../../../../lib/test/fixtures/getStateTransitionsFixture');
+const getStateTransitionsFixture = require('../../../../../lib/test/fixtures/getStateTransitionsFixture');
 
 describe('attachSequenceValidationHandler', () => {
   let readerMediatorMock;
@@ -255,7 +255,7 @@ describe('attachSequenceValidationHandler', () => {
       currentBlock.height = 2;
       lastSyncedBlock.height = 1;
 
-      const stateTransitions = getTransitionHeaderFixtures();
+      const stateTransitions = getStateTransitionsFixture();
 
       readerMediatorMock.getState().getLastBlock.returns(lastSyncedBlock);
 
@@ -309,7 +309,7 @@ describe('attachSequenceValidationHandler', () => {
       currentBlock.height = 2;
       lastSyncedBlock.height = 3;
 
-      const stateTransitions = getTransitionHeaderFixtures();
+      const stateTransitions = getStateTransitionsFixture();
 
       readerMediatorMock.getState().getLastBlock.returns(lastSyncedBlock);
 

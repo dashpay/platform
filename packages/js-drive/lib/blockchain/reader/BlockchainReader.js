@@ -15,7 +15,7 @@ class BlockchainReader {
   }
 
   /**
-   * Read ST headers and emit events
+   * Read State Transitions and emit events
    *
    * @return {Promise<number>}
    */

@@ -1,4 +1,4 @@
-const StateTransitionHeader = require('./StateTransitionHeader');
+const StateTransition = require('./StateTransition');
 
 /**
  * @param {RpcClient} rpcClient
@@ -8,8 +8,8 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
   /**
    * Search for previous transition index in an array
    *
-   * @param {StateTransitionHeader} referenceTransition
-   * @param {StateTransitionHeader[]} transitions
+   * @param {StateTransition} referenceTransition
+   * @param {StateTransition[]} transitions
    * @returns {number}
    */
   function findPrevTransitionIndex(referenceTransition, transitions) {
@@ -24,8 +24,8 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
   /**
    * Search for next transition index in an array
    *
-   * @param {StateTransitionHeader} referenceTransition
-   * @param {StateTransitionHeader[]} transitions
+   * @param {StateTransition} referenceTransition
+   * @param {StateTransition[]} transitions
    * @returns {number}
    */
   function findNextTransitionIndex(referenceTransition, transitions) {
@@ -43,8 +43,8 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
    *
    * @param {number} sourceIndex
    * @param {number} targetIndex
-   * @param {StateTransitionHeader[]} sourceArray
-   * @param {StateTransitionHeader[]} targetArray
+   * @param {StateTransition[]} sourceArray
+   * @param {StateTransition[]} targetArray
    */
   function moveTransition(sourceIndex, targetIndex, sourceArray, targetArray) {
     const transition = sourceArray[sourceIndex];
@@ -58,8 +58,8 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
    *
    * @param {number} sourceIndex
    * @param {number} targetIndex
-   * @param {StateTransitionHeader[]} sourceArray
-   * @param {StateTransitionHeader[]} targetArray
+   * @param {StateTransition[]} sourceArray
+   * @param {StateTransition[]} targetArray
    */
   function putPrevTransitionInPlace(sourceIndex, targetIndex, sourceArray, targetArray) {
     if (sourceIndex !== -1) {
@@ -76,8 +76,8 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
    *
    * @param {number} sourceIndex
    * @param {number} targetIndex
-   * @param {StateTransitionHeader[]} sourceArray
-   * @param {StateTransitionHeader[]} targetArray
+   * @param {StateTransition[]} sourceArray
+   * @param {StateTransition[]} targetArray
    */
   function putNextTransitionInPlace(sourceIndex, targetIndex, sourceArray, targetArray) {
     if (sourceIndex !== -1) {
@@ -88,8 +88,8 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
   /**
    *  Sort state transitions array using `hash` and `hashPrevSubTx`
    *
-   * @param {StateTransitionHeader[]} stateTransitions
-   * @returns {StateTransitionHeader[]}
+   * @param {StateTransition[]} stateTransitions
+   * @returns {StateTransition[]}
    */
   function sortStateTransitions(stateTransitions) {
     const [firstStateTransition, ...restOfStateTransitions] = stateTransitions;
@@ -141,7 +141,7 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
   /**
    * @typedef createStateTransitionsFromBlock
    * @param {object} block
-   * @return {StateTransitionHeader[]}
+   * @return {StateTransition[]}
    */
   async function createStateTransitionsFromBlock(block) {
     const stateTransitions = [];
@@ -149,10 +149,10 @@ module.exports = function createStateTransitionsFromBlockFactory(rpcClient) {
     for (const transactionId of block.tx) {
       const { result: serializedTransaction } = await rpcClient.getRawTransaction(transactionId);
 
-      const transaction = new StateTransitionHeader(serializedTransaction);
+      const transaction = new StateTransition(serializedTransaction);
 
       if (transaction.isSpecialTransaction()
-          && transaction.type === StateTransitionHeader.TYPES.TRANSACTION_SUBTX_TRANSITION) {
+          && transaction.type === StateTransition.TYPES.TRANSACTION_SUBTX_TRANSITION) {
         stateTransitions.push(transaction);
       }
     }

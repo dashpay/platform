@@ -8,7 +8,7 @@ const RestartBlockchainReaderError = require('../../../../lib/blockchain/reader/
 const IgnoreStateTransitionError = require('../../../../lib/blockchain/reader/errors/IgnoreStateTransitionError');
 
 const getBlockFixtures = require('../../../../lib/test/fixtures/getBlocksFixture');
-const getTransitionHeaderFixtures = require('../../../../lib/test/fixtures/getStateTransitionsFixture');
+const getStateTransitionsFixture = require('../../../../lib/test/fixtures/getStateTransitionsFixture');
 
 describe('BlockchainReader', () => {
   let blocks;
@@ -20,7 +20,7 @@ describe('BlockchainReader', () => {
 
   beforeEach(function beforeEach() {
     blocks = getBlockFixtures();
-    stateTransitions = getTransitionHeaderFixtures();
+    stateTransitions = getStateTransitionsFixture();
     iteratorMock = new ArrayBlockIterator(blocks);
     readerMediatorMock = new BlockchainReaderMediatorMock(this.sinon);
     createStateTransitionsMock = this.sinon.stub().returns([]);

@@ -64,14 +64,14 @@ class SVObjectMongoDbRepository {
   }
 
   /**
-   * Find all objects by `reference.stHeaderHash`
+   * Find all objects by `reference.stHash`
    *
-   * @param {string} stHeaderHash
+   * @param {string} stHash
    * @returns {Promise<SVObject[]>}
    */
-  async findAllBySTHeaderHash(stHeaderHash) {
+  async findAllBySTHash(stHash) {
     const result = await this.mongoClient
-      .find({ 'reference.stHeaderHash': stHeaderHash })
+      .find({ 'reference.stHash': stHash })
       .toArray();
 
     return result.map(rawObject => this.createSVObject(rawObject));

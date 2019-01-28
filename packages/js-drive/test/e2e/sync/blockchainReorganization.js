@@ -5,7 +5,7 @@ const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
 
 const registerUser = require('../../../lib/test/registerUser');
 
-const createSTHeader = require('../../../lib/test/createStateTransition');
+const createStateTransition = require('../../../lib/test/createStateTransition');
 const wait = require('../../../lib/util/wait');
 
 const apiAppOptions = new ApiAppOptions(process.env);
@@ -17,7 +17,7 @@ async function createAndSubmitST(
   instance,
   previousTransitionHash = undefined,
 ) {
-  const header = await createSTHeader(
+  const stateTransition = await createStateTransition(
     userId, privateKeyString, stPacket, previousTransitionHash,
   );
 
@@ -29,7 +29,10 @@ async function createAndSubmitST(
     throw new Error(`Can't add ST Packet: ${JSON.stringify(error)}`);
   }
 
-  const { result: txId } = await instance.dashCore.getApi().sendRawTransaction(header);
+  const { result: txId } = await instance.dashCore.getApi().sendRawTransaction(
+    stateTransition.serialize(),
+  );
+
   await instance.dashCore.getApi().generate(1);
 
   return txId;

@@ -50,13 +50,13 @@ class SVContractMongoDbRepository {
   }
 
   /**
-   * Find list of SV Contract by `reference.stHeaderHash`
+   * Find list of SV Contract by `reference.stHash`
    *
    * @param {string} hash
    * @returns {Promise<SVContract[]|null>}
    */
-  async findAllByReferenceSTHeaderHash(hash) {
-    const result = await this.collection.find({ 'reference.stHeaderHash': hash })
+  async findAllByReferenceSTHash(hash) {
+    const result = await this.collection.find({ 'reference.stHash': hash })
       .toArray();
 
     return result.map(document => this.createSVContract(document));

@@ -14,13 +14,13 @@ module.exports = function applyStateTransitionFromReferenceFactory(
    * @param {boolean} [reverting]
    * @returns {Promise<void>}
    */
-  async function applyStateTransitionFromReference({ blockHash, stHeaderHash }, reverting = false) {
-    const [{ result: block }, { result: header }] = await Promise.all([
+  async function applyStateTransitionFromReference({ blockHash, stHash }, reverting = false) {
+    const [{ result: block }, { result: stateTransition }] = await Promise.all([
       rpcClient.getBlock(blockHash),
-      rpcClient.getRawTransaction(stHeaderHash),
+      rpcClient.getRawTransaction(stHash),
     ]);
 
-    await applyStateTransition(header, block, reverting);
+    await applyStateTransition(stateTransition, block, reverting);
   }
 
   return applyStateTransitionFromReference;

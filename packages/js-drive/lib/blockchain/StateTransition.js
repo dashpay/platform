@@ -2,7 +2,7 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 
 const createCIDFromHash = require('../storage/stPacket/createCIDFromHash');
 
-class StateTransitionHeader extends Transaction {
+class StateTransition extends Transaction {
   constructor(data) {
     super(data);
 
@@ -17,6 +17,6 @@ class StateTransitionHeader extends Transaction {
   }
 }
 
-StateTransitionHeader.TYPES = Transaction.TYPES;
+StateTransition.TYPES = Transaction.TYPES;
 
-module.exports = StateTransitionHeader;
+module.exports = StateTransition;

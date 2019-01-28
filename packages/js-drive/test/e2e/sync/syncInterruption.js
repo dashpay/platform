@@ -6,7 +6,7 @@ const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
 
 const registerUser = require('../../../lib/test/registerUser');
 
-const createSTHeader = require('../../../lib/test/createStateTransition');
+const createStateTransition = require('../../../lib/test/createStateTransition');
 const wait = require('../../../lib/util/wait');
 
 const apiAppOptions = new ApiAppOptions(process.env);
@@ -56,13 +56,13 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
       // 2.1 Set ST Packet name
       stPacket.getDPContract().setName(`${username}Contract`);
 
-      // 2.2 Register user and create DP Contract State Transition packet and header
+      // 2.2 Register user and create DP Contract ST Packet and State Transition
       const {
         userId,
         privateKeyString,
       } = await registerUser(username, firstDashDrive.dashCore.getApi());
 
-      const header = await createSTHeader(userId, privateKeyString, stPacket);
+      const stateTransition = await createStateTransition(userId, privateKeyString, stPacket);
 
       // 2.3 Add ST packet
       const driveApi = firstDashDrive.driveApi.getApi();
@@ -74,8 +74,8 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
         throw new Error(`Can't add ST Packet: ${JSON.stringify(error)}`);
       }
 
-      // 2.4 Send ST header to Dash Core and generate a block with it
-      await firstDashDrive.dashCore.getApi().sendRawTransaction(header.serialize());
+      // 2.4 Send ST to Dash Core and generate a block with it
+      await firstDashDrive.dashCore.getApi().sendRawTransaction(stateTransition.serialize());
       await firstDashDrive.dashCore.getApi().generate(1);
     }
 

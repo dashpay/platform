@@ -60,7 +60,7 @@ class SVContract extends Revisions {
    * @return {{reference: {
    *            blockHash: string,
    *            blockHeight: number,
-   *            stHeaderHash: string,
+   *            stHash: string,
    *            stPacketHash: string,
    *            hash: string
    *          },
@@ -71,7 +71,7 @@ class SVContract extends Revisions {
    *            reference: {
    *              blockHash: string,
    *              blockHeight: number,
-   *              stHeaderHash: string,
+   *              stHash: string,
    *              stPacketHash: string,
    *              hash: string
    *            }

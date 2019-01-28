@@ -1,7 +1,7 @@
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlocksFixture');
-const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getStateTransitionsFixture');
+const getStateTransitionsFixture = require('../../../lib/test/fixtures/getStateTransitionsFixture');
 
-const StateTransitionHeader = require('../../../lib/blockchain/StateTransitionHeader');
+const StateTransition = require('../../../lib/blockchain/StateTransition');
 
 const RpcClientMock = require('../../../lib/test/mock/RpcClientMock');
 
@@ -17,7 +17,7 @@ describe('createStateTransitionsFromBlockFactory', () => {
 
   beforeEach(function beforeEach() {
     blocks = getBlockFixtures();
-    transitions = getTransitionHeaderFixtures();
+    transitions = getStateTransitionsFixture();
     rpcClientMock = new RpcClientMock(this.sinon);
     createStateTransitionsFromBlock = createStateTransitionsFromBlockFactory(rpcClientMock);
   });
@@ -27,7 +27,7 @@ describe('createStateTransitionsFromBlockFactory', () => {
     const [transitionOne, transitionTwo] = transitions;
 
     // With a default constructor call it is a simple Transaction
-    const nonStateTransitionTx = new StateTransitionHeader();
+    const nonStateTransitionTx = new StateTransition();
 
     // When instance of Transaction is passed to a Transaction constructor
     // it replaces itself. So we're using it to not construct a proper Transaction,
@@ -45,11 +45,11 @@ describe('createStateTransitionsFromBlockFactory', () => {
     ];
 
     const stateTransitions = await createStateTransitionsFromBlock(someBlock);
-    const stateTransitionHashes = stateTransitions.map(t => t.hash);
+    const stHashes = stateTransitions.map(t => t.hash);
 
-    expect(stateTransitionHashes).to.include(transitionOne.hash);
-    expect(stateTransitionHashes).to.include(transitionTwo.hash);
-    expect(stateTransitionHashes).to.not.include(nonStateTransitionTx.hash);
+    expect(stHashes).to.include(transitionOne.hash);
+    expect(stHashes).to.include(transitionTwo.hash);
+    expect(stHashes).to.not.include(nonStateTransitionTx.hash);
   });
 
   it('should return state transition in a sorted order', async () => {
@@ -76,7 +76,7 @@ describe('createStateTransitionsFromBlockFactory', () => {
             result: transition.serialize(),
           });
 
-        result.push(new StateTransitionHeader(transition));
+        result.push(new StateTransition(transition));
       }
 
       return result;

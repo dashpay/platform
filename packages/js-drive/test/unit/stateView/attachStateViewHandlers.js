@@ -4,7 +4,7 @@ const BlockchainReaderMediatorMock = require('../../../lib/test/mock/BlockchainR
 
 const attachStateViewHandlers = require('../../../lib/stateView/attachStateViewHandlers');
 
-const getTransitionHeaderFixtures = require('../../../lib/test/fixtures/getStateTransitionsFixture');
+const getStateTransitionsFixture = require('../../../lib/test/fixtures/getStateTransitionsFixture');
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlocksFixture');
 
 describe('attachStateViewHandlers', () => {
@@ -34,7 +34,7 @@ describe('attachStateViewHandlers', () => {
   });
 
   it('should call applyStateTransition on the state transition event', async () => {
-    const [stateTransition] = getTransitionHeaderFixtures();
+    const [stateTransition] = getStateTransitionsFixture();
     const [block] = getBlockFixtures();
 
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION, {
@@ -47,7 +47,7 @@ describe('attachStateViewHandlers', () => {
   });
 
   it('should call revertSVObjectsForStateTransition on the stale state transition event', async () => {
-    const [stateTransition] = getTransitionHeaderFixtures();
+    const [stateTransition] = getStateTransitionsFixture();
     const [block] = getBlockFixtures();
 
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, {
@@ -60,7 +60,7 @@ describe('attachStateViewHandlers', () => {
   });
 
   it('should call revertSVContractsForStateTransition on the stale state transition event', async () => {
-    const [stateTransition] = getTransitionHeaderFixtures();
+    const [stateTransition] = getStateTransitionsFixture();
     const [block] = getBlockFixtures();
 
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, {

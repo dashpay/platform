@@ -1,7 +1,7 @@
 const { PrivateKey, Transaction } = require('@dashevo/dashcore-lib');
 
 /**
- * Create DP Contract state transaction packet and header
+ * Create DP Contract state transaction packet and ST
  *
  * @param {string} regTxId Registration transaction ID (User ID)
  * @param {string} privateKeyString

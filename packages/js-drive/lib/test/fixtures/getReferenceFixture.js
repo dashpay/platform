@@ -27,7 +27,7 @@ function getReferenceFixture(blockHeight = 1) {
   return new Reference({
     blockHash: block.hash,
     blockHeight: block.height,
-    stHeaderHash: stateTransition.hash,
+    stHash: stateTransition.hash,
     stPacketHash: stPacket.hash(),
     hash,
   });

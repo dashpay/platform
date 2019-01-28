@@ -9,7 +9,7 @@ const getStateTransitionsFixture = require('../../../lib/test/fixtures/getStateT
 
 const createDPPMock = require('../../../lib/test/mock/createDPPMock');
 
-describe('StateTransitionHeader', () => {
+describe('StateTransition', () => {
   let dppMock;
   let stPacket;
   let stateTransition;
@@ -35,12 +35,12 @@ describe('StateTransitionHeader', () => {
     addSTPacket = addSTPacketFactory(stPacketRepository);
   });
 
-  it('should StateTransitionHeader CID equal to IPFS CID', async () => {
+  it('should StateTransition packet CID equal to IPFS CID', async () => {
     stateTransition.extraPayload.setHashSTPacket(stPacket.hash());
 
     const ipfsCid = await addSTPacket(stPacket);
 
-    const stHeaderCid = stateTransition.getPacketCID();
-    expect(stHeaderCid.toBaseEncodedString()).to.equal(ipfsCid.toBaseEncodedString());
+    const stPacketCid = stateTransition.getPacketCID();
+    expect(stPacketCid.toBaseEncodedString()).to.equal(ipfsCid.toBaseEncodedString());
   });
 });

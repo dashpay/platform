@@ -4,7 +4,7 @@ const ReaderMediator = require('../../../../../lib/blockchain/reader/BlockchainR
 const IgnoreStateTransitionError = require('../../../../../lib/blockchain/reader/errors/IgnoreStateTransitionError');
 
 const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlocksFixture');
-const getTransitionHeaderFixtures = require('../../../../../lib/test/fixtures/getStateTransitionsFixture');
+const getStateTransitionsFixture = require('../../../../../lib/test/fixtures/getStateTransitionsFixture');
 
 const attachErrorHandler = require('../../../../../lib/blockchain/reader/eventHandlers/attachErrorHandler');
 
@@ -17,7 +17,7 @@ describe('attachErrorHandler', () => {
     readerMediatorMock = new BlockchainReaderMediatorMock(this.sinon);
 
     blocks = getBlockFixtures();
-    stateTransitions = getTransitionHeaderFixtures();
+    stateTransitions = getStateTransitionsFixture();
   });
 
   it('should do nothing if skipStateTransitionWithErrors is disabled', async () => {

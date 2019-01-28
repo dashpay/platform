@@ -1,5 +1,5 @@
 const getBlockFixtures = require('../fixtures/getBlocksFixture');
-const getTransitionHeaderFixtures = require('../fixtures/getStateTransitionsFixture');
+const getStateTransitionsFixture = require('../fixtures/getStateTransitionsFixture');
 
 module.exports = class RpcClientMock {
   /**
@@ -7,7 +7,7 @@ module.exports = class RpcClientMock {
    */
   constructor(sinonSandbox) {
     this.blocks = getBlockFixtures();
-    this.transitionHeaders = getTransitionHeaderFixtures();
+    this.transactions = getStateTransitionsFixture();
 
     const { __proto__: proto } = this;
     for (const method of Object.getOwnPropertyNames(proto)) {
@@ -77,13 +77,13 @@ module.exports = class RpcClientMock {
    * @param {string} hash
    */
   getTransaction(hash) {
-    const header = this.transitionHeaders.find(h => h.hash === hash);
+    const transaction = this.transactions.find(h => h.hash === hash);
 
-    if (!header) {
+    if (!transaction) {
       return Promise.reject(new Error(`Transaction ${hash} not found`));
     }
 
-    return Promise.resolve({ result: header });
+    return Promise.resolve({ result: transaction });
   }
 
   /**

@@ -20,7 +20,7 @@ module.exports = function revertSVObjectsForStateTransitionFactory(
 ) {
   /**
    * @typedef revertSVObjectsForStateTransition
-   * @param {StateTransitionHeader} stateTransition
+   * @param {StateTransition} stateTransition
    * @returns {Promise<void>}
    */
   async function revertSVObjectsForStateTransition({ stateTransition }) {
@@ -34,7 +34,7 @@ module.exports = function revertSVObjectsForStateTransitionFactory(
         objectType,
       );
 
-      const svObjects = await svObjectRepository.findAllBySTHeaderHash(stateTransition.hash);
+      const svObjects = await svObjectRepository.findAllBySTHash(stateTransition.hash);
 
       for (const svObject of svObjects) {
         const previousRevisions = svObject.getPreviousRevisions();

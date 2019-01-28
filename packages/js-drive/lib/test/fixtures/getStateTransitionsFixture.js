@@ -1,14 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const StateTransitionHeader = require('../../blockchain/StateTransitionHeader');
+const StateTransition = require('../../blockchain/StateTransition');
 
 /**
- * @return {StateTransitionHeader[]}
+ * @return {StateTransition[]}
  */
-module.exports = function getTransitionHeaderFixtures() {
-  const transitionHeadersJSON = fs.readFileSync(path.join(__dirname, '/../../../test/fixtures/stateTransitionHeaders.json'));
-  const transitionHeadersData = JSON.parse(transitionHeadersJSON.toString());
+module.exports = function getStateTransitionsFixture() {
+  const stateTransitionsJSON = fs.readFileSync(path.join(__dirname, '/../../../test/fixtures/stateTransitions.json'));
+  const stateTransitionsData = JSON.parse(stateTransitionsJSON.toString());
 
-  return transitionHeadersData.map(h => new StateTransitionHeader(h));
+  return stateTransitionsData.map(h => new StateTransition(h));
 };

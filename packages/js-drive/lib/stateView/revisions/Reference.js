@@ -3,14 +3,14 @@ class Reference {
    * @param {Object} hashes
    * @param {string} hashes.blockHash
    * @param {number} hashes.blockHeight
-   * @param {string} hashes.stHeaderHash
+   * @param {string} hashes.stHash
    * @param {string} hashes.stPacketHash
    * @param {string} hashes.hash
    */
   constructor(hashes) {
     this.blockHash = hashes.blockHash;
     this.blockHeight = hashes.blockHeight;
-    this.stHeaderHash = hashes.stHeaderHash;
+    this.stHash = hashes.stHash;
     this.stPacketHash = hashes.stPacketHash;
     this.hash = hashes.hash;
   }
@@ -32,8 +32,8 @@ class Reference {
   /**
    * @return {string}
    */
-  getSTHeaderHash() {
-    return this.stHeaderHash;
+  getSTHash() {
+    return this.stHash;
   }
 
   /**
@@ -55,7 +55,7 @@ class Reference {
    *
    * @return {{ blockHash: string,
    *            blockHeight: number,
-   *            stHeaderHash: string,
+   *            stHash: string,
    *            stPacketHash: string,
    *            hash: string }}
    */
@@ -63,7 +63,7 @@ class Reference {
     return {
       blockHash: this.getBlockHash(),
       blockHeight: this.getBlockHeight(),
-      stHeaderHash: this.getSTHeaderHash(),
+      stHash: this.getSTHash(),
       stPacketHash: this.getSTPacketHash(),
       hash: this.getHash(),
     };

@@ -1,7 +1,7 @@
 const Reference = require('./revisions/Reference');
 
 const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
-const StateTransitionHeader = require('../blockchain/StateTransitionHeader');
+const StateTransition = require('../blockchain/StateTransition');
 
 /**
  * @param {STPacketIpfsRepository} stPacketRepository
@@ -18,23 +18,23 @@ function applyStateTransitionFactory(
 ) {
   /**
    * @typedef {Promise} applyStateTransition
-   * @param {object} header
-   * @param {object} block
+   * @param {Object} rawStateTransition
+   * @param {Object} block
    * @param {boolean} [reverting]
    * @returns {Promise<void>}
    */
-  async function applyStateTransition(header, block, reverting = false) {
-    const stHeader = new StateTransitionHeader(header);
+  async function applyStateTransition(rawStateTransition, block, reverting = false) {
+    const stateTransition = new StateTransition(rawStateTransition);
 
     const stPacket = await stPacketRepository
-      .find(stHeader.getPacketCID());
+      .find(stateTransition.getPacketCID());
 
     if (stPacket.getDPContract()) {
       const reference = new Reference({
         blockHash: block.hash,
         blockHeight: block.height,
-        stHeaderHash: header.hash,
-        stPacketHash: header.extraPayload.hashSTPacket,
+        stHash: stateTransition.hash,
+        stPacketHash: stateTransition.extraPayload.hashSTPacket,
         hash: stPacket.getDPContract().hash(),
       });
 
@@ -46,7 +46,7 @@ function applyStateTransitionFactory(
       );
 
       await readerMediator.emitSerial(ReaderMediator.EVENTS.DP_CONTRACT_APPLIED, {
-        userId: header.extraPayload.regTxId,
+        userId: stateTransition.extraPayload.regTxId,
         contractId: stPacket.getDPContractId(),
         reference,
         contract: stPacket.getDPContract().toJSON(),
@@ -59,21 +59,21 @@ function applyStateTransitionFactory(
       const reference = new Reference({
         blockHash: block.hash,
         blockHeight: block.height,
-        stHeaderHash: header.hash,
-        stPacketHash: header.extraPayload.hashSTPacket,
+        stHash: stateTransition.hash,
+        stPacketHash: stateTransition.extraPayload.hashSTPacket,
         hash: dpObject.hash(),
       });
 
       await updateSVObject(
         stPacket.getDPContractId(),
-        header.extraPayload.regTxId,
+        stateTransition.extraPayload.regTxId,
         reference,
         dpObject,
         reverting,
       );
 
       await readerMediator.emitSerial(ReaderMediator.EVENTS.DP_OBJECT_APPLIED, {
-        userId: header.extraPayload.regTxId,
+        userId: stateTransition.extraPayload.regTxId,
         contractId: stPacket.getDPContractId(),
         objectId: dpObject.getId(),
         reference,

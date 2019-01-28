@@ -70,7 +70,7 @@ class SVObject extends Revisions {
    * @return {{reference: {
    *            blockHash: string,
    *            blockHeight: number,
-   *            stHeaderHash: string,
+   *            stHash: string,
    *            stPacketHash: string,
    *            hash: string
    *           },
@@ -82,7 +82,7 @@ class SVObject extends Revisions {
    *            reference: {
    *              blockHash: string,
    *              blockHeight: number,
-   *              stHeaderHash: string,
+   *              stHash: string,
    *              stPacketHash: string,
    *              hash: string
    *            }

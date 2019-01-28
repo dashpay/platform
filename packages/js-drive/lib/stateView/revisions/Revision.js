@@ -32,7 +32,7 @@ class Revision {
    * @return {{ reference: {
    *              blockHash: string,
    *              blockHeight: number,
-   *              stHeaderHash: string,
+   *              stHash: string,
    *              stPacketHash: string,
    *              hash: string
    *            },

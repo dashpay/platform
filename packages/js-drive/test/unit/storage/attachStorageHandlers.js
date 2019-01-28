@@ -28,7 +28,7 @@ describe('attachStorageHandlers', () => {
   });
 
   it('should pin ST packet when new state transition appears', async () => {
-    const [stateTransition] = rpcClientMock.transitionHeaders;
+    const [stateTransition] = rpcClientMock.transactions;
     const [block] = rpcClientMock.blocks;
 
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION, {
@@ -43,7 +43,7 @@ describe('attachStorageHandlers', () => {
   });
 
   it('should unpin ST packets in case of reorg', async () => {
-    const [stateTransition] = rpcClientMock.transitionHeaders;
+    const [stateTransition] = rpcClientMock.transactions;
     const [block] = rpcClientMock.blocks;
 
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, {
@@ -57,7 +57,7 @@ describe('attachStorageHandlers', () => {
     expect(stPacketRepositoryMock.delete).to.be.calledWith(packetCid);
   });
 
-  it('should unpin all packets on stHeadersReader reset event', async () => {
+  it('should unpin all packets on reset event', async () => {
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.RESET);
 
     expect(stPacketRepositoryMock.deleteAll).to.be.calledOnce();

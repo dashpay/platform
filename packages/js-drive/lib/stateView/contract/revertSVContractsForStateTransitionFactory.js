@@ -17,12 +17,12 @@ function revertSVContractsForStateTransitionFactory(
 ) {
   /**
    * @typedef revertSVContractsForStateTransition
-   * @param {{ stateTransition: StateTransitionHeader, block: object }}
+   * @param {{ stateTransition: StateTransition, block: object }}
    * @returns {Promise<void>}
    */
   async function revertSVContractsForStateTransition({ stateTransition }) {
     const svContracts = await svContractRepository
-      .findAllByReferenceSTHeaderHash(stateTransition.hash);
+      .findAllByReferenceSTHash(stateTransition.hash);
 
     for (const svContract of svContracts) {
       const previousRevisions = svContract.getPreviousRevisions();

@@ -398,11 +398,11 @@ describe('SVObjectMongoDbRepository', () => {
     });
   });
 
-  describe('#findAllBySTHeaderHash', () => {
-    it('should find all SV Objects by stHeaderHash', async () => {
-      const stHeaderHash = svObject.getReference().getSTHeaderHash();
+  describe('#findAllBySTHash', () => {
+    it('should find all SV Objects by stHash', async () => {
+      const stHash = svObject.getReference().getSTHash();
 
-      const result = await svObjectRepository.findAllBySTHeaderHash(stHeaderHash);
+      const result = await svObjectRepository.findAllBySTHash(stHash);
 
       expect(result).to.be.a('array');
 

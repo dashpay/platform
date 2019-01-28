@@ -1,7 +1,7 @@
 const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 
 /**
- * Add State Transition Packet from blockchain when new ST header will appear.
+ * Add State Transition Packet from blockchain when new ST will appear.
  * Remove State Transition Packet from blockchain when wrong sequence.
  * Remove all State Transition Packets from blockchain when reset.
  *

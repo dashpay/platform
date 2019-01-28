@@ -130,7 +130,7 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
     const reference = new Reference({
       blockHash: block.hash,
       blockHeight: block.height,
-      stHeaderHash: stateTransition.hash,
+      stHash: stateTransition.hash,
       stPacketHash: stPacket.hash(),
       hash: dpObject.hash(),
     });
@@ -198,7 +198,7 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
       const reference = new Reference({
         blockHash: block.hash,
         blockHeight: block.height,
-        stHeaderHash: stateTransition.hash,
+        stHash: stateTransition.hash,
         stPacketHash: stPacket.hash(),
         hash: updatedDPObject.hash(),
       });
