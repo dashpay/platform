@@ -47,12 +47,12 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
   let ipfsAPI;
   let stPacket;
 
-  startMongoDb().then((mongoDbInstance) => {
-    mongoClient = mongoDbInstance.getClient();
+  startMongoDb().then((mongoDb) => {
+    mongoClient = mongoDb.getClient();
   });
 
-  startIPFS().then((ipfsInstance) => {
-    ipfsAPI = ipfsInstance.getApi();
+  startIPFS().then((ipfs) => {
+    ipfsAPI = ipfs.getApi();
   });
 
   beforeEach(function beforeEach() {

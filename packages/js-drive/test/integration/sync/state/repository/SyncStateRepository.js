@@ -6,28 +6,29 @@ const getBlockFixtures = require('../../../../../lib/test/fixtures/getBlocksFixt
 describe('SyncStateRepository', function main() {
   this.timeout(90000);
 
-  let mongoDb;
-  let mongoCollection;
+  let mongoDatabase;
+  let syncStateCollection;
   let syncStateRepository;
   let syncState;
-  let instance;
 
-  startMongoDb().then((_instance) => {
-    instance = _instance;
+  startMongoDb().then((mongoDb) => {
+    mongoDatabase = mongoDb.getDb();
+    syncStateCollection = mongoDatabase.collection('syncState');
   });
 
   beforeEach(async () => {
-    mongoDb = await instance.getDb();
-    mongoCollection = mongoDb.collection('syncState');
     const blocks = getBlockFixtures();
+
     syncState = new SyncState(blocks, new Date(), new Date());
-    syncStateRepository = new SyncStateRepository(mongoDb);
+    syncStateRepository = new SyncStateRepository(mongoDatabase);
   });
 
   it('should store state', async () => {
     await syncStateRepository.store(syncState);
 
-    const dataFromMongoDb = await mongoCollection.findOne(SyncStateRepository.mongoDbCondition);
+    const dataFromMongoDb = await syncStateCollection.findOne(
+      SyncStateRepository.mongoDbCondition,
+    );
 
     // eslint-disable-next-line no-underscore-dangle
     delete dataFromMongoDb._id;
@@ -37,7 +38,7 @@ describe('SyncStateRepository', function main() {
 
   it('should fetch updated state', async () => {
     syncState.setLastInitialSyncAt(new Date('2018-01-01'));
-    await mongoCollection.updateOne(
+    await syncStateCollection.updateOne(
       SyncStateRepository.mongoDbCondition,
       { $set: syncState.toJSON() },
       { upsert: true },

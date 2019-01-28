@@ -24,18 +24,18 @@ describe('SVObjectMongoDbRepository', () => {
   let svObjectRepository;
   let svObject;
   let svObjects;
-  let mongoDb;
+  let mongoDatabase;
 
-  startMongoDb().then((mongoDbInstance) => {
-    mongoDb = mongoDbInstance.getDb();
+  startMongoDb().then((mongoDb) => {
+    mongoDatabase = mongoDb.getDb();
   });
 
   beforeEach(async () => {
-    (svObjects = getSVObjectsFixture());
-    ([svObject] = svObjects);
+    svObjects = getSVObjectsFixture();
+    [svObject] = svObjects;
 
     svObjectRepository = new SVObjectMongoDbRepository(
-      mongoDb,
+      mongoDatabase,
       sanitizer,
       svObject.getDPObject().getType(),
     );

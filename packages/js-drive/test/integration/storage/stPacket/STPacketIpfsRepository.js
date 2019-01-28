@@ -18,8 +18,8 @@ describe('STPacketIpfsRepository', function main() {
 
   this.timeout(60000);
 
-  startIPFS().then((instance) => {
-    ipfsApi = instance.getApi();
+  startIPFS().then((ipfs) => {
+    ipfsApi = ipfs.getApi();
   });
 
   beforeEach(() => {
@@ -35,7 +35,7 @@ describe('STPacketIpfsRepository', function main() {
       1000,
     );
 
-    ([stPacket] = getSTPacketsFixture());
+    [stPacket] = getSTPacketsFixture();
   });
 
   it('should store and find a packet', async () => {

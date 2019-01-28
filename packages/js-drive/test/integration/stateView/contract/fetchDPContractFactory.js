@@ -7,17 +7,17 @@ const fetchDPContractFactory = require('../../../../lib/stateView/contract/fetch
 const getSVContractFixture = require('../../../../lib/test/fixtures/getSVContractFixture');
 
 describe('fetchDPContractFactory', () => {
-  let mongoDb;
+  let mongoDatabase;
   let svContractMongoDbRepository;
   let fetchDPContract;
 
-  startMongoDb().then((instance) => {
-    mongoDb = instance.getDb();
+  startMongoDb().then((mongoDb) => {
+    mongoDatabase = mongoDb.getDb();
   });
 
   beforeEach(() => {
     const dpp = new DashPlatformProtocol();
-    svContractMongoDbRepository = new SVContractMongoDbRepository(mongoDb, dpp);
+    svContractMongoDbRepository = new SVContractMongoDbRepository(mongoDatabase, dpp);
     fetchDPContract = fetchDPContractFactory(svContractMongoDbRepository);
   });
 

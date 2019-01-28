@@ -16,15 +16,15 @@ describe('StateTransition', () => {
   let addSTPacket;
   let ipfsApi;
 
-  startIPFS().then((instance) => {
-    ipfsApi = instance.getApi();
+  startIPFS().then((ipfs) => {
+    ipfsApi = ipfs.getApi();
   });
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
 
-    ([stPacket] = getSTPacketsFixture());
-    ([stateTransition] = getStateTransitionsFixture());
+    [stPacket] = getSTPacketsFixture();
+    [stateTransition] = getStateTransitionsFixture();
 
     const stPacketRepository = new STPacketIpfsRepository(
       ipfsApi,

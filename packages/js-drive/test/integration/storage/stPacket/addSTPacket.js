@@ -10,8 +10,8 @@ describe('addSTPacket', () => {
   let ipfsApi;
   let addSTPacket;
 
-  startIPFS().then((_instance) => {
-    ipfsApi = _instance.getApi();
+  startIPFS().then((ipfs) => {
+    ipfsApi = ipfs.getApi();
   });
 
   beforeEach(() => {

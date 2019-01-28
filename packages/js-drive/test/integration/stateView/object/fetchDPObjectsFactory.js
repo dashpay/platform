@@ -17,8 +17,8 @@ describe('fetchDPObjectsFactory', () => {
   let contractId;
   let dpObject;
 
-  startMongoDb().then((instance) => {
-    mongoClient = instance.getClient();
+  startMongoDb().then((mongoDb) => {
+    mongoClient = mongoDb.getClient();
   });
 
   beforeEach(() => {
@@ -30,7 +30,7 @@ describe('fetchDPObjectsFactory', () => {
 
     fetchDPObjects = fetchDPObjectsFactory(createSVObjectMongoDbRepository);
 
-    ([svObject] = getSVObjectsFixture());
+    [svObject] = getSVObjectsFixture();
 
     dpObject = svObject.getDPObject();
     type = dpObject.getType();

@@ -13,8 +13,8 @@ describe('removeSTPacket', () => {
   let removeSTPacket;
   let stPacketRepository;
 
-  startIPFS().then((_instance) => {
-    ipfsApi = _instance.getApi();
+  startIPFS().then((ipfs) => {
+    ipfsApi = ipfs.getApi();
   });
 
   beforeEach(() => {

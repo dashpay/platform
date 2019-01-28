@@ -13,7 +13,7 @@ describe('SVObject', () => {
 
   beforeEach(() => {
     ({ userId } = getDPObjectsFixture);
-    ([dpObject] = getDPObjectsFixture());
+    [dpObject] = getDPObjectsFixture();
     reference = getReferenceFixture();
     isDeleted = false;
     previousRevisions = [];

@@ -11,10 +11,10 @@ const getSVContractFixture = require('../../../../lib/test/fixtures/getSVContrac
 describe('SVContractMongoDbRepository', () => {
   let svContractRepository;
   let svContract;
-  let mongoDb;
+  let mongoDatabase;
 
-  startMongoDb().then((mongoDbInstance) => {
-    mongoDb = mongoDbInstance.getDb();
+  startMongoDb().then((mongoDb) => {
+    mongoDatabase = mongoDb.getDb();
   });
 
   beforeEach(() => {
@@ -22,7 +22,7 @@ describe('SVContractMongoDbRepository', () => {
 
     svContract = getSVContractFixture();
 
-    svContractRepository = new SVContractMongoDbRepository(mongoDb, dpp);
+    svContractRepository = new SVContractMongoDbRepository(mongoDatabase, dpp);
   });
 
   it('should store SV Contract entity', async () => {
@@ -63,7 +63,7 @@ describe('SVContractMongoDbRepository', () => {
   it('should use base58-encoded Contract ID as MongoDB document ID', async () => {
     await svContractRepository.store(svContract);
 
-    const result = await mongoDb.collection('contracts').findOne({
+    const result = await mongoDatabase.collection('contracts').findOne({
       _id: bs58.encode(Buffer.from(svContract.getContractId(), 'hex')),
     });
 

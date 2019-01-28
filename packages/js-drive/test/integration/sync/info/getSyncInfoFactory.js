@@ -7,23 +7,25 @@ const SyncStateRepository = require('../../../../lib/sync/state/repository/SyncS
 const getChainInfoFactory = require('../../../../lib/sync/info/chain/getChainInfoFactory');
 
 describe('getSyncInfoFactory', () => {
-  let mongoDb;
-  startMongoDb().then(async (mongoInstance) => {
-    mongoDb = await mongoInstance.getDb();
-  });
-
-  let rpcClient;
-  startDashCore().then((dashCoreInstance) => {
-    rpcClient = dashCoreInstance.getApi();
-  });
+  let mongoDatabase;
+  let dashCoreApi;
 
   let blocks;
   let syncStateRepository;
   let getSyncInfo;
+
+  startMongoDb().then((mongoDb) => {
+    mongoDatabase = mongoDb.getDb();
+  });
+
+  startDashCore().then((dashCore) => {
+    dashCoreApi = dashCore.getApi();
+  });
+
   beforeEach(() => {
     blocks = getBlockFixtures();
-    syncStateRepository = new SyncStateRepository(mongoDb);
-    const getChainInfo = getChainInfoFactory(rpcClient);
+    syncStateRepository = new SyncStateRepository(mongoDatabase);
+    const getChainInfo = getChainInfoFactory(dashCoreApi);
     getSyncInfo = getSyncInfoFactory(syncStateRepository, getChainInfo);
   });
 
@@ -85,7 +87,7 @@ describe('getSyncInfoFactory', () => {
     const syncState = new SyncState([lastSyncedBlock], lastSyncAt, lastInitialSyncAt);
     await syncStateRepository.store(syncState);
 
-    const { result: chainBlocksHashes } = await rpcClient.generate(20);
+    const { result: chainBlocksHashes } = await dashCoreApi.generate(20);
     const lastChainBlockHash = chainBlocksHashes[chainBlocksHashes.length - 1];
 
     const syncInfo = await getSyncInfo();

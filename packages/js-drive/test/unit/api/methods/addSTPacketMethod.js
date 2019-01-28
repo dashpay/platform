@@ -19,7 +19,7 @@ describe('addSTPacketMethod', () => {
   let addSTPacketMethod;
 
   beforeEach(function beforeEach() {
-    ([stPacket] = getSTPacketsFixture());
+    [stPacket] = getSTPacketsFixture();
 
     cid = createCIDFromHash(stPacket.hash());
 

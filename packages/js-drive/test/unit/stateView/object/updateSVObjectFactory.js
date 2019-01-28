@@ -25,7 +25,7 @@ describe('updateSVObjectFactory', () => {
 
     contractId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
     ({ userId } = getDPObjectsFixture);
-    ([dpObject] = getDPObjectsFixture());
+    [dpObject] = getDPObjectsFixture();
 
     const createSVObjectRepository = () => svObjectRepository;
 
