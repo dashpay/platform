@@ -2,35 +2,18 @@ language: node_js
 node_js:
   - '8'
 
-services:
-  - docker
-
 addons:
   firefox: "latest"
-  apt:
-    packages:
-      - docker-ce
 
 env:
-  - DOCKER_COMPOSE_VERSION: 1.18.0
+  - MOZ_HEADLESS=1
 
 script:
   - npm test
-  - npm run test:integration
 
 install:
-  - pip install awscli --upgrade --user
-  - cd ..
-  - git clone --depth=50 git@github.com:dashevo/mn-bootstrap.git mn-bootstrap
-  - cd mn-bootstrap
-  - . ./.env
-  - $(~/.local/bin/aws ecr get-login --no-include-email)
-  - cd ../dapi-sdk
   - npm install
 before_install:
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 before_script:
   - npm run lint
-env:
-  - MOZ_HEADLESS=1
-

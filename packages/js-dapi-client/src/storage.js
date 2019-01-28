@@ -1,7 +1,7 @@
 const lowdb = require('lowdb');
-const Adapter = typeof window === 'undefined' ?
-  require('lowdb/adapters/FileAsync') :
-  require('lowdb/adapters/LocalStorage');
+const Adapter = typeof window === 'undefined'
+  ? require('lowdb/adapters/FileAsync')
+  : require('lowdb/adapters/LocalStorage');
 const { NODE, BROWSER } = require('./constants').storage;
 
 const isNode = typeof window === 'undefined';

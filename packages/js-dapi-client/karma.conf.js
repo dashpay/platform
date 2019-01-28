@@ -13,6 +13,7 @@ module.exports = (config) => {
       './test.spec.js': ['webpack'],
     },
     webpack: {
+      mode: 'production',
       node: {
         fs: 'empty',
       },
@@ -28,7 +29,7 @@ module.exports = (config) => {
             use: {
               loader: 'babel-loader',
               options: {
-                presets: ['env'],
+                presets: ['@babel/preset-env'],
               },
             },
           },

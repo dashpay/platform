@@ -78,6 +78,13 @@ describe('MNDiscovery', async () => {
             discovery.masternodeListProvider.getMNList.restore();
         });
 
+        it('Should reset cached MNList and resets it back to initial seed', async () => {
+            const discovery = new MNDiscovery();
+            sinon.spy(discovery.masternodeListProvider, 'getMNList');
+            discovery.reset();
+            expect(discovery.masternodeListProvider.seeds).to.be.undefined;
+        });
+
         it('Should return random node from MN list', async () => {
             const discovery = new MNDiscovery();
             sinon.spy(discovery.masternodeListProvider, 'getMNList');

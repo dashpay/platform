@@ -1,7 +1,7 @@
 const path = require('path');
 
 const commonJSConfig = {
-  entry: ['babel-polyfill', './src/index.js'],
+  entry: ['@babel/polyfill', './src/index.js'],
   module: {
     rules: [
       {
@@ -10,7 +10,7 @@ const commonJSConfig = {
         use: {
           loader: 'babel-loader',
           options: {
-            presets: ['env'],
+            presets: ['@babel/preset-env'],
           },
         },
       },

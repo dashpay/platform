@@ -6,22 +6,24 @@ const defaultHost = '127.0.0.1';
  * @param {string|object} url - rpc endpoint config
  * @param {string} [url.host]
  * @param {string|number} [url.port]
- * @param method
- * @param params
+ * @param {string} method
+ * @param {object} params
+ * @param {object} options
  * @returns {Promise<*>}
  */
-async function request(url, method, params) {
-  let destination = url;
-  if (typeof url !== 'string') {
-    destination = `http://${url.host ? url.host : defaultHost}:${url.port ? url.port : ''}`;
-  }
+async function request(url, method, params, options = {}) {
+  const destination = url.host
+    ? `http://${url.host ? url.host : defaultHost}:${url.port ? url.port : ''}` : url;
   const payload = {
     jsonrpc: '2.0',
     method,
     params,
     id: 1,
   };
-  const res = await axios.post(destination, payload);
+  const res = options.timeout
+    ? await axios({
+      method: 'post', url: destination, data: payload, timeout: options.timeout,
+    }) : await axios.post(destination, payload);
   if (res.status !== 200) {
     throw new Error(res.statusMessage);
   }

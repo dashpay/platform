@@ -1,6 +1,6 @@
+const dashQuorums = require('@dashevo/quorums');
 const MNDiscoveryService = require('./MNDiscovery/index');
 const { block: blockApi } = require('./index');
-const dashQuorums = require('quorums-dash');
 
 const QuorumService = {
   async getQuorumForUser(userRegTxId) {

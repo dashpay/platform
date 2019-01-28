@@ -6,8 +6,8 @@
  * @module MasternodeListProvider
  */
 
-const RPCClient = require('../RPCClient');
 const sample = require('lodash/sample');
+const RPCClient = require('../RPCClient');
 const config = require('../config');
 
 /**
@@ -37,6 +37,7 @@ class MasternodeListProvider {
     this.DAPIPort = DAPIPort;
     this.lastUpdateDate = 0;
   }
+
   /**
    * @private
    * Fetches masternode list from DAPI.
@@ -53,6 +54,7 @@ class MasternodeListProvider {
     }
     return MNList;
   }
+
   /**
    * @private
    * Updates masternodes list. No need to call it manually
@@ -66,6 +68,7 @@ class MasternodeListProvider {
     }
     this.lastUpdateDate = Date.now();
   }
+
   /**
    * @private
    * Checks whether masternode list needs update

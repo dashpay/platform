@@ -30,6 +30,7 @@ class MNDiscovery {
      */
     this.seeds = seeds;
   }
+
   /**
    * @returns {Promise<Masternode>}
    */
@@ -37,12 +38,14 @@ class MNDiscovery {
     const MNList = await this.masternodeListProvider.getMNList();
     return sample(MNList);
   }
+
   /**
    * @returns {Promise<Array<Masternode>>}
    */
   getMNList() {
     return this.masternodeListProvider.getMNList();
   }
+
   /**
    * @private
    * Deletes cached MNList and resets it back to initial seed.

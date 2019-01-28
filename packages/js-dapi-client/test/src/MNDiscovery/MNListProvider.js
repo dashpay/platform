@@ -182,6 +182,12 @@ describe('MNListProvider', async () => {
       expect(MNListItem.ip).to.be.equal(MockedMNList[0].ip);
       expect(RPCClient.request.callCount).to.be.equal(networkCallCount);
     });
+    it('Should  throw error if seed is not an array', async() => {
+        return expect(() => new MNListProvider(1)).to.throw(Error, 'seed is not an array');
+      });
+    it('Should  throw error if seed is string', async() => {
+          return expect(() => new MNListProvider("127.0.0.1")).to.throw(Error, 'seed is not an array');
+      });
     it('Should throw error if can\'t connect to dns seeder', async () => {
       // Override stub behaviour for next call
       RPCClient.request.resetHistory();
