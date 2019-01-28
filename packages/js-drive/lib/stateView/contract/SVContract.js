@@ -1,17 +1,26 @@
 const Revisions = require('../revisions/Revisions');
 
+/**
+ * @param {string} contractId
+ * @param {string} userId
+ * @param {DPContract} dpContract
+ * @param {Reference} reference
+ * @param {boolean} [isDeleted=false]
+ * @param {array} [previousRevisions=[]]
+ */
 class SVContract extends Revisions {
-  /**
-   * @param {string} contractId
-   * @param {DPContract} dpContract
-   * @param {Reference} reference
-   * @param {boolean} [isDeleted]
-   * @param {array} [previousRevisions]
-   */
-  constructor(contractId, dpContract, reference, isDeleted = false, previousRevisions = []) {
+  constructor(
+    contractId,
+    userId,
+    dpContract,
+    reference,
+    isDeleted = false,
+    previousRevisions = [],
+  ) {
     super(reference, previousRevisions);
 
     this.contractId = contractId;
+    this.userId = userId;
     this.dpContract = dpContract;
     this.deleted = isDeleted;
   }
@@ -23,6 +32,15 @@ class SVContract extends Revisions {
    */
   getContractId() {
     return this.contractId;
+  }
+
+  /**
+   * Get user ID
+   *
+   * @return {string}
+   */
+  getUserId() {
+    return this.userId;
   }
 
   /**
@@ -65,6 +83,7 @@ class SVContract extends Revisions {
    *            hash: string
    *          },
    *          isDeleted: boolean,
+   *          userId: string,
    *          contractId: string,
    *          previousRevisions: {
    *            revision: number,
@@ -87,6 +106,7 @@ class SVContract extends Revisions {
   toJSON() {
     return {
       contractId: this.getContractId(),
+      userId: this.getUserId(),
       reference: this.reference.toJSON(),
       dpContract: this.getDPContract().toJSON(),
       isDeleted: this.isDeleted(),

@@ -10,15 +10,17 @@ function updateSVContractFactory(svContractRepository) {
    *
    * @typedef {Promise} updateSVContract
    * @param {string} contractId
+   * @param {string} userId
    * @param {Reference} reference
    * @param {DPContract} dpContract
    * @param {boolean} [reverting]
    *
    * @returns {Promise<void>}
    */
-  async function updateSVContract(contractId, reference, dpContract, reverting = false) {
+  async function updateSVContract(contractId, userId, reference, dpContract, reverting = false) {
     const currentSVContract = new SVContract(
       contractId,
+      userId,
       dpContract,
       reference,
     );

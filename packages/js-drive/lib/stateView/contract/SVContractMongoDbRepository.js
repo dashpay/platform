@@ -103,6 +103,7 @@ class SVContractMongoDbRepository {
    */
   createSVContract({
     contractId,
+    userId,
     dpContract: serializedRawDPContract,
     reference,
     isDeleted,
@@ -115,6 +116,7 @@ class SVContractMongoDbRepository {
 
     return new SVContract(
       contractId,
+      userId,
       dpContract,
       new Reference(reference),
       isDeleted,

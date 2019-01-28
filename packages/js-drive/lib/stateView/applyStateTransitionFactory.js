@@ -40,6 +40,7 @@ function applyStateTransitionFactory(
 
       await updateSVContract(
         stPacket.getDPContractId(),
+        stateTransition.extraPayload.regTxId,
         reference,
         stPacket.getDPContract(),
         reverting,
