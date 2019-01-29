@@ -148,21 +148,21 @@ describe('api/dashcore/rpc', async () => {
     });
   });
 
-  describe('getCurrentBlockHeight', () => {
+  describe('getBestBlockHeight', () => {
     describe('#factory', () => {
       it('should return a promise', () => {
-        const res = rpc.getCurrentBlockHeight();
+        const res = rpc.getBestBlockHeight();
         expect(res).to.be.a('promise');
       });
       it('should return error with invalid transaction', async () => {
-        const res = rpc.getCurrentBlockHeight();
+        const res = rpc.getBestBlockHeight();
         await expect(res).to.be.rejectedWith('JSON');
       });
     });
 
     describe('#stub', () => {
       before(() => {
-        stub = sinon.stub(rpc, 'getCurrentBlockHeight');
+        stub = sinon.stub(rpc, 'getBestBlockHeight');
         stub.returns(new Promise(resolve => resolve('fake')));
       });
 
@@ -175,9 +175,9 @@ describe('api/dashcore/rpc', async () => {
       });
 
       it('Should return a hash', async () => {
-        rpc.getCurrentBlockHeight();
+        rpc.getBestBlockHeight();
         expect(stub.callCount).to.be.equal(1);
-        const transaction = await rpc.getCurrentBlockHeight();
+        const transaction = await rpc.getBestBlockHeight();
         expect(transaction).to.be.equal('fake');
         expect(stub.callCount).to.be.equal(2);
       });

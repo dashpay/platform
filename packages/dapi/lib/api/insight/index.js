@@ -38,11 +38,6 @@ const getTransactionFirstInputAddress = async (txHash) => {
   return res.vin[0].addr;
 };
 
-const getCurrentBlockHeight = async () => {
-  const res = await get('/status');
-  return res.info.blocks;
-};
-
 const getHashFromHeight = async (height) => {
   const res = await get(`/block-index/${height}`);
   return res.blockHash;
@@ -52,14 +47,12 @@ const getMnList = () => mnListGenerator.getMockMnList();
 const getMnUpdateList = () => mnListGenerator.getMockMnUpdateList();
 const getUTXO = async address => get(`/addr/${address}/utxo`);
 const getBalance = async address => get(`/addr/${address}/balance`);
-const sendRawTransition = async rawTransition => post('/ts/send', { rawts: rawTransition });
-const sendRawTransaction = async rawTransaction => post('/tx/send', { rawtx: rawTransaction });
 const getUser = async usernameOrRegTx => get(`/getuser/${usernameOrRegTx}`);
 const getMasternodesList = async () => get('/masternodes/list');
 
 const getBestBlockHeight = async () => {
-  const res = await get('/bestBlockHeight');
-  return res.height;
+  const res = await get('/status');
+  return res.info.blocks;
 };
 
 const getBlockHash = async (blockHeight) => {
@@ -146,16 +139,10 @@ const getTransactionById = async (txid) => {
   return res;
 };
 
-const sendRawIxTransaction = async (rawtx) => {
-  const res = post('/tx/sendix', { rawtx });
-  return res;
-};
-
 const getBlockHeaders = async (offset, limit) => get(`/block-headers/${offset}/${limit}`);
 
 module.exports = {
   getTransactionFirstInputAddress,
-  getCurrentBlockHeight,
   getHashFromHeight,
   getMnList,
   getMnUpdateList,
@@ -164,8 +151,6 @@ module.exports = {
   post,
   getUTXO,
   getBalance,
-  sendRawTransition,
-  sendRawTransaction,
   getUser,
   getBestBlockHeight,
   getBlockHash,
@@ -182,6 +167,5 @@ module.exports = {
   getPeerDataSyncStatus,
   estimateFee,
   getTransactionById,
-  sendRawIxTransaction,
   getBlockHeaders,
 };

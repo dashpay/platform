@@ -24,23 +24,20 @@ const getUTXO = require('./commands/getUTXO');
 const getBlockHeader = require('./commands/getBlockHeader');
 const getBlockHeaders = require('./commands/getBlockHeaders');
 const sendRawTransaction = require('./commands/sendRawTransaction');
+const sendRawIxTransaction = require('./commands/sendRawIxTransaction');
 const generate = require('./commands/generate');
 const sendRawTransition = require('./commands/sendRawTransition');
 const fetchDapContract = require('./commands/fetchDapContract');
 const fetchDapObjects = require('./commands/fetchDapObjects');
-// Currently not available in Drive
-// const searchDapContracts = require('./commands/searchDapContracts');
 const searchUsers = require('./commands/searchUsers');
 const loadBloomFilter = require('./commands/loadBloomFilter');
 const addToBloomFilter = require('./commands/addToBloomFilter');
 const clearBloomFilter = require('./commands/clearBloomFilter');
 const getSpvData = require('./commands/getSpvData');
 const findDataForBlock = require('./commands/findDataForBlock');
-const sendRawIxTransaction = require('./commands/sendRawIxTransaction');
 const getQuorum = require('./commands/getQuorum');
 
-// Following commands don't seem to be working:
-// const getAuthChallenge = require('./commands/getAuthChallenge');
+// Following commands are not implemented yet:
 // const getCurrency = require('./commands/getCurrency');
 // const getMNUpdateList = require('./commands/getMNUpdateList');
 // const getVersion = require('./commands/getVersion');
@@ -68,22 +65,14 @@ const createCommands = (insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => ({
   getBlockHeader: getBlockHeader(dashcoreAPI),
   getBlockHeaders: getBlockHeaders(dashcoreAPI),
   sendRawTransaction: sendRawTransaction(insightAPI),
+  sendRawIxTransaction: sendRawIxTransaction(insightAPI),
   getQuorum: getQuorum(dashcoreAPI),
 
   // Methods that are using DashDrive
   sendRawTransition: sendRawTransition(dashcoreAPI, dashDriveAPI),
   fetchDapContract: fetchDapContract(dashDriveAPI),
   fetchDapObjects: fetchDapObjects(dashDriveAPI),
-
-  // This functionality is currently unavailable in DashDrive
-  // searchDapContracts: searchDapContracts(dashDriveAPI),
-
   searchUsers: searchUsers(userIndex),
-  sendRawIxTransaction,
-  // getVersion,
-  // getAuthChallenge,
-  // getCurrency,
-  // getMNUpdateList,
 });
 
 const createRegtestCommands = dashcoreAPI => ({

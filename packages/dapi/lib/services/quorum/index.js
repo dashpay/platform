@@ -17,7 +17,7 @@ const quorumService = {
 
     dashcoreZmqClient.on(newBlockEvent, async (msg) => {
       const hash = msg.toString('hex');
-      const height = await dashcore.getCurrentBlockHeight();
+      const height = await dashcore.getBestBlockHeight();
       // let's see if we have a new heartbeat and need to migrate/join new quorum
       isHeartBeat = height % heartbeatInterval === 0;
       logger.debug(newBlockEvent, msg, hash, height, isHeartBeat);
@@ -42,7 +42,7 @@ const quorumService = {
   },
 
   async getQuorumHash() {
-    const bestHeight = await dashcore.getCurrentBlockHeight();
+    const bestHeight = await dashcore.getBestBlockHeight();
     return dashcore.getHashFromHeight(qDash.getRefHeight(bestHeight));
   },
 

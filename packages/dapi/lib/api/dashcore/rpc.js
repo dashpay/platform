@@ -72,16 +72,6 @@ const getBlockHeaders = (offset, limit) => new Promise((resolve, reject) => {
   });
 });
 
-const getCurrentBlockHeight = () => new Promise((resolve, reject) => {
-  client.getblockcount((err, r) => {
-    if (err) {
-      reject(err);
-    } else {
-      resolve(r.result);
-    }
-  });
-});
-
 const getHashFromHeight = height => new Promise((resolve, reject) => {
   client.getblockhash(height, (err, r) => {
     if (err) {
@@ -234,20 +224,30 @@ const sendRawTransaction = tx => new Promise((resolve, reject) => {
   });
 });
 
+const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
+  client.sendrawtransaction(tx, false, true, (err, r) => {
+    if (err) {
+      reject(err);
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
 module.exports = {
   generate,
   getBestBlockHeight,
-  getBlockHash, //= =getCurrentBlockHeight
+  getBlockHash,
   getBlock,
   getBlockHeader,
   getBlockHeaders,
-  getCurrentBlockHeight,
   getHashFromHeight,
   getMasternodesList,
   getMnListDiff,
   getQuorum,
   sendRawTransition,
   sendRawTransaction,
+  sendRawIxTransaction,
   getRawTransaction,
   getRawBlock,
   getTransaction,

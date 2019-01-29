@@ -555,7 +555,7 @@
 //     });
 //   });
 //
-//   describe('#getCurrentBlockHeight', () => {
+//   describe('#getBestBlockHeight', () => {
 //     beforeEach(() => {
 //       requestStub = sinon.stub(request, 'get');
 //       requestStub.rejects(new Error('not defined'));
@@ -566,7 +566,7 @@
 //
 //
 //     it('Should return getBalance', async () => {
-//       const status = await insight.getCurrentBlockHeight();
+//       const status = await insight.getBestBlockHeight();
 //       expect(status).to.be.equal(testStatus.info.blocks);
 //     });
 //   });

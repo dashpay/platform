@@ -18,8 +18,10 @@ const sendRawTransactionFactory = (coreAPI) => {
    */
   async function sendRawTransaction(args) {
     validator.validate(args);
-    const { rawTransaction } = args;
-    return coreAPI.sendRawTransaction(rawTransaction);
+    const {
+      rawTransaction, allowHighFees, instantSend, bypassLimits,
+    } = args;
+    return coreAPI.sendRawTransaction(rawTransaction, allowHighFees, instantSend, bypassLimits);
   }
 
   return sendRawTransaction;

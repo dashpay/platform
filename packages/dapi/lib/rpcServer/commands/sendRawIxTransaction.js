@@ -67,9 +67,9 @@ const sendRawIxTransactionFactory = (coreAPI) => {
  *                  title: Parameters
  *                  type: object
  *                  required:
- *                    - rawIxTransaction
+ *                    - rawTransaction
  *                  properties:
- *                    rawIxTransaction:
+ *                    rawTransaction:
  *                      type: string
  *                      default: ''
  *                      description: Raw InstantSend transaction
