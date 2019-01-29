@@ -4,7 +4,7 @@ const PacketNotPinnedError = require('../../../../lib/storage/errors/PacketNotPi
 const InvalidHashError = require('../../../../lib/storage/stPacket/errors/InvalidHashError');
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 
-describe('removeSTPacketMethod', () => {
+describe('removeSTPacketMethodFactory', () => {
   let cid;
   let packetHash;
   let removeSTPacketMock;

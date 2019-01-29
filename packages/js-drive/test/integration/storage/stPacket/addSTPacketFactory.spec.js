@@ -6,7 +6,7 @@ const STPacketIpfsRepository = require('../../../../lib/storage/stPacket/STPacke
 const addSTPacketFactory = require('../../../../lib/storage/stPacket/addSTPacketFactory');
 const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
 
-describe('addSTPacket', () => {
+describe('addSTPacketFactory', () => {
   let ipfsApi;
   let addSTPacket;
 

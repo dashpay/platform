@@ -6,7 +6,7 @@ const getReferenceFixture = require('../../../lib/test/fixtures/getReferenceFixt
 const getBlockFixtures = require('../../../lib/test/fixtures/getBlocksFixture');
 const getTransitionFixtures = require('../../../lib/test/fixtures/getStateTransitionsFixture');
 
-describe('applyStateTransitionFromReference', () => {
+describe('applyStateTransitionFromReferenceFactory', () => {
   let rpcClientMock;
   let applyStateTransition;
   let applyStateTransitionFromReference;

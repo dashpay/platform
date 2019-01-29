@@ -4,7 +4,7 @@ const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContrac
 
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 
-describe('fetchDPContractMethod', () => {
+describe('fetchDPContractMethodFactory', () => {
   let dpContract;
   let contractId;
   let fetchDPContractMethod;

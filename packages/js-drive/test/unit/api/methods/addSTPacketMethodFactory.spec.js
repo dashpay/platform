@@ -11,7 +11,7 @@ const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsF
 
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 
-describe('addSTPacketMethod', () => {
+describe('addSTPacketMethodFactory', () => {
   let stPacket;
   let cid;
   let dppMock;

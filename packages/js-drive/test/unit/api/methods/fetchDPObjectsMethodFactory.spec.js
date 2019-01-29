@@ -10,7 +10,7 @@ const InvalidStartAtError = require('../../../../lib/stateView/object/errors/Inv
 const InvalidStartAfterError = require('../../../../lib/stateView/object/errors/InvalidStartAfterError');
 const AmbiguousStartError = require('../../../../lib/stateView/object/errors/AmbiguousStartError');
 
-describe('fetchDPObjectsMethod', () => {
+describe('fetchDPObjectsMethodFactory', () => {
   let contractId;
   let type;
   let options;

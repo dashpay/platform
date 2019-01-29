@@ -61,9 +61,9 @@ describe('SVObjectMongoDbRepository', () => {
       expect(result).to.be.a('array');
 
       const actualRawSVObjects = sortAndJsonizeSVObjects(result);
-      const expectedRawSVObject = sortAndJsonizeSVObjects(svObjects);
+      const expectedRawSVObjects = sortAndJsonizeSVObjects(svObjects);
 
-      expect(actualRawSVObjects).to.be.deep.equal(expectedRawSVObject);
+      expect(actualRawSVObjects).to.have.deep.members(expectedRawSVObjects);
     });
 
     it('should not fetch SV Object marked as deleted');

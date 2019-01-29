@@ -3,7 +3,7 @@ const {
   createDriveSync,
 } = require('@dashevo/js-evo-services-ctl');
 
-const wait = require('../../../lib/util/wait');
+const wait = require('../../lib/util/wait');
 
 describe('DashDrive throws DashCoreIsNotRunningError', function main() {
   this.timeout(200000);

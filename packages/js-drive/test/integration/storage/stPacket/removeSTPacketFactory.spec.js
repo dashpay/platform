@@ -8,7 +8,7 @@ const removeSTPacketFactory = require('../../../../lib/storage/stPacket/removeST
 
 const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
 
-describe('removeSTPacket', () => {
+describe('removeSTPacketFactory', () => {
   let ipfsApi;
   let removeSTPacket;
   let stPacketRepository;

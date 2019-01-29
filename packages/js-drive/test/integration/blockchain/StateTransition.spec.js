@@ -35,12 +35,14 @@ describe('StateTransition', () => {
     addSTPacket = addSTPacketFactory(stPacketRepository);
   });
 
-  it('should StateTransition packet CID equal to IPFS CID', async () => {
-    stateTransition.extraPayload.setHashSTPacket(stPacket.hash());
+  describe('#getPacketCID', () => {
+    it('should create correct CID', async () => {
+      stateTransition.extraPayload.setHashSTPacket(stPacket.hash());
 
-    const ipfsCid = await addSTPacket(stPacket);
+      const cidFromIPFS = await addSTPacket(stPacket);
 
-    const stPacketCid = stateTransition.getPacketCID();
-    expect(stPacketCid.toBaseEncodedString()).to.equal(ipfsCid.toBaseEncodedString());
+      const cidFromST = stateTransition.getPacketCID();
+      expect(cidFromST.toBaseEncodedString()).to.equal(cidFromIPFS.toBaseEncodedString());
+    });
   });
 });
