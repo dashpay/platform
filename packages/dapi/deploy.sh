@@ -5,7 +5,7 @@ echo "Docker deploy started"
 eval $(~/.local/bin/aws ecr get-login --no-include-email)
 
 # 0.5. set the current version:
-VERSION="1.0.0"
+VERSION=$(node -p "require('./package.json').version")
 REPO_URL="103738324493.dkr.ecr.us-west-2.amazonaws.com"
 IMAGE_NAME="dashevo/dapi"
 
