@@ -53,7 +53,8 @@ async function sendSTPacket(
   );
 
   const params = {
-    packet: stPacket.serialize().toString('hex'),
+    stPacket: stPacket.serialize().toString('hex'),
+    stateTransition: stateTransition.serialize(),
   };
 
   const { error } = await instance.driveApi.getApi().request('addSTPacket', params);

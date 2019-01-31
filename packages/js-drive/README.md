@@ -64,9 +64,10 @@ Add State Transition Packet to DashDrive storage
 
 ##### Params
 
-| name    | type   | description                            |
-|---------|--------|----------------------------------------|
-| packet  | string | ST Packet object serialized using CBOR |
+| name            | type   | description                   |
+|-----------------|--------|-------------------------------|
+| stateTransition | string | serialized State Transition   |
+| stPacket        | string | serialized ST Packet object   |
 
 ##### Response
 

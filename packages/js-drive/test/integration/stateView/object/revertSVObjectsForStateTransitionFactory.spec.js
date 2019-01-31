@@ -23,7 +23,6 @@ const updateSVObjectFactory = require('../../../../lib/stateView/object/updateSV
 const applyStateTransitionFactory = require('../../../../lib/stateView/applyStateTransitionFactory');
 const applyStateTransitionFromReferenceFactory = require('../../../../lib/stateView/applyStateTransitionFromReferenceFactory');
 
-const addSTPacketFactory = require('../../../../lib/storage/stPacket/addSTPacketFactory');
 const STPacketIpfsRepository = require('../../../../lib/storage/stPacket/STPacketIpfsRepository');
 
 const RpcClientMock = require('../../../../lib/test/mock/RpcClientMock');
@@ -36,7 +35,7 @@ const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContrac
 
 describe('revertSVObjectsForStateTransitionFactory', () => {
   let userId;
-  let addSTPacket;
+  let stPacketRepository;
   let createSVObjectMongoDbRepository;
   let updateSVObject;
   let applyStateTransition;
@@ -58,7 +57,7 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
   beforeEach(function beforeEach() {
     userId = '3557b9a8dfcc1ef9674b50d8d232e0e3e9020f49fa44f89cace622a01f43d03e';
 
-    ([, stPacket] = getSTPacketsFixture());
+    [, stPacket] = getSTPacketsFixture();
 
     const dpContract = getDPContractFixture();
 
@@ -70,13 +69,11 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
       dataProvider: dataProviderMock,
     });
 
-    const stPacketRepository = new STPacketIpfsRepository(
+    stPacketRepository = new STPacketIpfsRepository(
       ipfsAPI,
       dpp,
       1000,
     );
-
-    addSTPacket = addSTPacketFactory(stPacketRepository);
 
     createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
       mongoClient,
@@ -120,7 +117,7 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
     stateTransition.extraPayload.regTxId = userId;
     stateTransition.extraPayload.hashSTPacket = stPacket.hash();
 
-    await addSTPacket(stPacket);
+    await stPacketRepository.store(stPacket);
 
     const svObjectRepository = createSVObjectMongoDbRepository(
       stPacket.getDPContractId(),
@@ -190,7 +187,7 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
 
       stPacket.setDPObjects([updatedDPObject]);
 
-      await addSTPacket(stPacket);
+      await stPacketRepository.store(stPacket);
 
       stateTransition.extraPayload.regTxId = userId;
       stateTransition.extraPayload.hashSTPacket = stPacket.hash();

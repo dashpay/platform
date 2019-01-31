@@ -164,7 +164,11 @@ class ApiApp {
    * @return {addSTPacketMethod}
    */
   createAddSTPacketMethod() {
-    const addSTPacket = addSTPacketFactory(this.createSTPacketRepository());
+    const addSTPacket = addSTPacketFactory(
+      this.createSTPacketRepository(),
+      this.createDashPlatformProtocol(),
+    );
+
     return addSTPacketMethodFactory(
       addSTPacket,
       this.createDashPlatformProtocol(),

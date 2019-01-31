@@ -1,7 +1,5 @@
 const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
 
-const addSTPacketFactory = require('../../../lib/storage/stPacket/addSTPacketFactory');
-
 const STPacketIpfsRepository = require('../../../lib/storage/stPacket/STPacketIpfsRepository');
 
 const getSTPacketsFixture = require('../../../lib/test/fixtures/getSTPacketsFixture');
@@ -13,7 +11,7 @@ describe('StateTransition', () => {
   let dppMock;
   let stPacket;
   let stateTransition;
-  let addSTPacket;
+  let stPacketRepository;
   let ipfsApi;
 
   startIPFS().then((ipfs) => {
@@ -26,20 +24,18 @@ describe('StateTransition', () => {
     [stPacket] = getSTPacketsFixture();
     [stateTransition] = getStateTransitionsFixture();
 
-    const stPacketRepository = new STPacketIpfsRepository(
+    stPacketRepository = new STPacketIpfsRepository(
       ipfsApi,
       dppMock,
       1000,
     );
-
-    addSTPacket = addSTPacketFactory(stPacketRepository);
   });
 
   describe('#getPacketCID', () => {
     it('should create correct CID', async () => {
       stateTransition.extraPayload.setHashSTPacket(stPacket.hash());
 
-      const cidFromIPFS = await addSTPacket(stPacket);
+      const cidFromIPFS = await stPacketRepository.store(stPacket);
 
       const cidFromST = stateTransition.getPacketCID();
       expect(cidFromST.toBaseEncodedString()).to.equal(cidFromIPFS.toBaseEncodedString());

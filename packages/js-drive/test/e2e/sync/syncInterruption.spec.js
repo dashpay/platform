@@ -54,7 +54,8 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
     // 2. Populate Dash Drive and Dash Core with data
     async function createAndSubmitST(username) {
       // 2.1 Set ST Packet name
-      stPacket.getDPContract().setName(`${username}Contract`);
+      stPacket.getDPContract().setName(`${username}_contract`);
+      stPacket.setDPContractId(stPacket.getDPContract().hash());
 
       // 2.2 Register user and create DP Contract ST Packet and State Transition
       const {
@@ -67,7 +68,8 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
       // 2.3 Add ST packet
       const driveApi = firstDashDrive.driveApi.getApi();
       const { error } = await driveApi.request('addSTPacket', {
-        packet: stPacket.serialize().toString('hex'),
+        stPacket: stPacket.serialize().toString('hex'),
+        stateTransition: stateTransition.serialize(),
       });
 
       if (error) {

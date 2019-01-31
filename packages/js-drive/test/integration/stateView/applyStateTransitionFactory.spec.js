@@ -21,7 +21,6 @@ const updateSVObjectFactory = require('../../../lib/stateView/object/updateSVObj
 const applyStateTransitionFactory = require('../../../lib/stateView/applyStateTransitionFactory');
 
 const fetchDPContractFactory = require('../../../lib/stateView/contract/fetchDPContractFactory');
-const addSTPacketFactory = require('../../../lib/storage/stPacket/addSTPacketFactory');
 const STPacketIpfsRepository = require('../../../lib/storage/stPacket/STPacketIpfsRepository');
 
 const ReaderMediator = require('../../../lib/blockchain/reader/BlockchainReaderMediator');
@@ -36,7 +35,7 @@ describe('applyStateTransitionFactory', () => {
   let mongoClient;
   let mongoDatabase;
   let ipfsClient;
-  let addSTPacket;
+  let stPacketRepository;
   let svContractMongoDbRepository;
   let createSVObjectMongoDbRepository;
   let readerMediator;
@@ -66,13 +65,11 @@ describe('applyStateTransitionFactory', () => {
 
     dpp.setDataProvider(dataProvider);
 
-    const stPacketRepository = new STPacketIpfsRepository(
+    stPacketRepository = new STPacketIpfsRepository(
       ipfsClient,
       dpp,
       1000,
     );
-
-    addSTPacket = addSTPacketFactory(stPacketRepository);
 
     createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
       mongoClient,
@@ -107,7 +104,7 @@ describe('applyStateTransitionFactory', () => {
       hash: stPacket.getDPContract().hash(),
     });
 
-    await addSTPacket(stPacket);
+    await stPacketRepository.store(stPacket);
 
     await applyStateTransition(stateTransition, block);
 
@@ -140,7 +137,7 @@ describe('applyStateTransitionFactory', () => {
 
     stateTransition.extraPayload.hashSTPacket = stPacket.hash();
 
-    await addSTPacket(stPacket);
+    await stPacketRepository.store(stPacket);
 
     await applyStateTransition(stateTransition, block);
 

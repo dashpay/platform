@@ -36,10 +36,19 @@ class DriveDataProvider {
    * Fetch transaction by ID
    *
    * @param {string} id
-   * @returns {Promise<DPContract|null>}
+   * @returns {Promise<{ confirmations: number }|null>}
    */
   async fetchTransaction(id) {
-    return this.rpcClient.getTransaction(id);
+    try {
+      return await this.rpcClient.getRawTransaction(id);
+    } catch (e) {
+      // Invalid address or key error
+      if (e.code === -5) {
+        return null;
+      }
+
+      throw e;
+    }
   }
 }
 

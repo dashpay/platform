@@ -2,47 +2,73 @@ const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
+const createDataProviderMock = require('@dashevo/dpp/lib/test/mocks/createDataProviderMock');
+
 const STPacketIpfsRepository = require('../../../../lib/storage/stPacket/STPacketIpfsRepository');
+
 const addSTPacketFactory = require('../../../../lib/storage/stPacket/addSTPacketFactory');
+
 const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
+const getStateTransitionsFixture = require('../../../../lib/test/fixtures/getStateTransitionsFixture');
+
+const InvalidSTPacketDataError = require('../../../../lib/storage/stPacket/errors/InvalidSTPacketDataError');
 
 describe('addSTPacketFactory', () => {
   let ipfsApi;
   let addSTPacket;
+  let stPacket;
+  let stateTransition;
+  let stPacketRepository;
+  let dataProviderMock;
 
   startIPFS().then((ipfs) => {
     ipfsApi = ipfs.getApi();
   });
 
-  beforeEach(() => {
-    const dpp = new DashPlatformProtocol();
+  beforeEach(function beforeEach() {
+    [stPacket] = getSTPacketsFixture();
+    [stateTransition] = getStateTransitionsFixture();
 
-    const stPacketRepository = new STPacketIpfsRepository(
+    stateTransition.extraPayload.hashSTPacket = stPacket.hash();
+
+    dataProviderMock = createDataProviderMock(this.sinon);
+
+    const dpp = new DashPlatformProtocol({
+      dataProvider: dataProviderMock,
+    });
+
+    stPacketRepository = new STPacketIpfsRepository(
       ipfsApi,
       dpp,
       1000,
     );
-    addSTPacket = addSTPacketFactory(stPacketRepository);
+
+    addSTPacket = addSTPacketFactory(stPacketRepository, dpp);
   });
 
-  it('should add packets to storage and returns hash', async () => {
-    const packets = getSTPacketsFixture();
-    const addPacketsPromises = packets.map(addSTPacket);
-    const packetsCids = await Promise.all(addPacketsPromises);
+  it('should throw error if ST or ST Packet is invalid', async () => {
+    try {
+      await addSTPacket(stPacket, stateTransition);
+      expect.fail('should throw InvalidSTPacketDataError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidSTPacketDataError);
+      expect(e.getErrors()).to.lengthOf(1);
 
-    // 1. Packets should be available in IPFS
-    // eslint-disable-next-line arrow-body-style
-    const packetsPromisesFromIPFS = packetsCids.map((packetCid) => {
-      return ipfsApi.dag.get(packetCid);
+      const [consensusError] = e.getErrors();
+
+      expect(consensusError.name).to.be.equal('UserNotFoundError');
+    }
+  });
+
+  it('should add ST Packet to storage', async () => {
+    dataProviderMock.fetchTransaction.resolves({
+      confirmations: 6,
     });
 
-    const packetsFromIPFS = await Promise.all(packetsPromisesFromIPFS);
+    const stPacketCID = await addSTPacket(stPacket, stateTransition);
 
-    // 2. Packets should have the same data
-    const packetFromIPFS = packetsFromIPFS.map(packet => packet.value);
+    const stPacketFromIPFS = await stPacketRepository.find(stPacketCID);
 
-    const packetsData = packets.map(packet => packet.toJSON());
-
-    expect(packetsData).to.deep.equal(packetFromIPFS);
+    expect(stPacketFromIPFS.toJSON()).to.deep.equal(stPacket.toJSON());
   });
 });

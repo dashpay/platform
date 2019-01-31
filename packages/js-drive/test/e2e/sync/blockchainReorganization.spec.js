@@ -22,7 +22,8 @@ async function createAndSubmitST(
   );
 
   const { error } = await instance.driveApi.getApi().request('addSTPacket', {
-    packet: stPacket.serialize().toString('hex'),
+    stPacket: stPacket.serialize().toString('hex'),
+    stateTransition: stateTransition.serialize(),
   });
 
   if (error) {
@@ -140,15 +141,20 @@ describe('Blockchain reorganization', function main() {
     // Do that here so major part of blocks are in the beginning
     const registeredUsers = [];
     for (let i = 1; i <= 3; i++) {
-      const instance = firstDashDrive;
       const username = `user${i}`;
 
-      const { userId, privateKeyString } = await registerUser(username, instance.dashCore.getApi());
+      const { userId, privateKeyString } = await registerUser(
+        username,
+        firstDashDrive.dashCore.getApi(),
+      );
 
       registeredUsers.push({ username, userId, privateKeyString });
     }
 
     [firstUser, secondUser, thirdUser] = registeredUsers;
+
+    // Mine block with SubTx + 6 blocks on top of it
+    await firstDashDrive.dashCore.getApi().generate(7);
 
     // Await number of blocks even on both nodes
     await blockCountEvenAndEqual(
@@ -320,7 +326,7 @@ describe('Blockchain reorganization', function main() {
 
   it('Dash Drive should sync data after blockchain reorganization, removing missing STs. Adding them back after they reappear in the blockchain.', async () => {
     // Save initialSyncAt to test it later and make sure
-    // There was no intial sync
+    // There was no initial sync
     const {
       result: {
         lastInitialSyncAt: lastInitialSyncAtBefore,
