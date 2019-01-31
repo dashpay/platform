@@ -64,8 +64,8 @@ const createCommands = (insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => ({
   getUTXO: getUTXO(insightAPI),
   getBlockHeader: getBlockHeader(dashcoreAPI),
   getBlockHeaders: getBlockHeaders(dashcoreAPI),
-  sendRawTransaction: sendRawTransaction(insightAPI),
-  sendRawIxTransaction: sendRawIxTransaction(insightAPI),
+  sendRawTransaction: sendRawTransaction(dashcoreAPI),
+  sendRawIxTransaction: sendRawIxTransaction(dashcoreAPI),
   getQuorum: getQuorum(dashcoreAPI),
 
   // Methods that are using DashDrive
