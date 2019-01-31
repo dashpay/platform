@@ -149,7 +149,9 @@ describe('updateSVObjectFactory', () => {
     expect(svObject.getUserId()).to.be.equal(userId);
     expect(svObject.getDPObject()).to.be.equal(dpObject);
     expect(svObject.getReference()).to.be.equal(reference);
-    expect(svObject.getPreviousRevisions()).to.be.deep.equal([]);
+    expect(svObject.getPreviousRevisions()).to.be.deep.equal([
+      previousSVObject.getCurrentRevision(),
+    ]);
     expect(svObject.isDeleted()).to.be.true();
   });
 

@@ -25,6 +25,10 @@ function updateSVObjectFactory(createSVObjectRepository) {
         break;
       }
 
+      case DPObject.ACTIONS.DELETE: {
+        svObject.markAsDeleted();
+      }
+      // eslint-disable-next-line no-fallthrough
       case DPObject.ACTIONS.UPDATE: {
         const previousSVObject = await svObjectRepository.find(svObject.getDPObject().getId());
 
@@ -41,14 +45,6 @@ function updateSVObjectFactory(createSVObjectRepository) {
         if (reverting) {
           svObject.removeAheadRevisions();
         }
-
-        await svObjectRepository.store(svObject);
-
-        break;
-      }
-
-      case DPObject.ACTIONS.DELETE: {
-        svObject.markAsDeleted();
 
         await svObjectRepository.store(svObject);
 
