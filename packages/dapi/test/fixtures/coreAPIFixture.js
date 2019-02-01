@@ -8,6 +8,7 @@ module.exports = {
   async getAddressTotalSent(address) { return 900; },
   async getAddressUnconfirmedBalance(address) { return 1100; },
   async getBalance(address) { return 100; },
+  async getBestBlockHash() { return '000000000074fc08fb6a92cb8994b14307038261e4266abc6994fa03955a1a59'; },
   async getBestBlockHeight() { return 243789; },
   async getBlockHash() { return 'hash'; },
   async getBlockHeaders() { return [{}]; },

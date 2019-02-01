@@ -22,6 +22,16 @@ const generate = amount => new Promise((resolve, reject) => { // not exist?
   });
 });
 
+const getBestBlockHash = () => new Promise((resolve, reject) => {
+  client.getbestblockhash((err, r) => {
+    if (err) {
+      reject(err);
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
 const getBestBlockHeight = () => new Promise((resolve, reject) => {
   client.getblockcount((err, r) => {
     if (err) {
@@ -236,6 +246,7 @@ const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
 
 module.exports = {
   generate,
+  getBestBlockHash,
   getBestBlockHeight,
   getBlockHash,
   getBlock,

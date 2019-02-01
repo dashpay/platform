@@ -148,6 +148,42 @@ describe('api/dashcore/rpc', async () => {
     });
   });
 
+  describe('getBestBlockHash', () => {
+    describe('#factory', () => {
+      it('should return a promise', () => {
+        const res = rpc.getBestBlockHash();
+        expect(res).to.be.a('promise');
+      });
+      it('should return error with invalid transaction', async () => {
+        const res = rpc.getBestBlockHash();
+        await expect(res).to.be.rejectedWith('JSON');
+      });
+    });
+
+    describe('#stub', () => {
+      before(() => {
+        stub = sinon.stub(rpc, 'getBestBlockHash');
+        stub.returns(new Promise(resolve => resolve('fake')));
+      });
+
+      beforeEach(() => {
+        stub.resetHistory();
+      });
+
+      after(() => {
+        stub.restore();
+      });
+
+      it('Should return a hash', async () => {
+        rpc.getBestBlockHash();
+        expect(stub.callCount).to.be.equal(1);
+        const bestBlockHash = await rpc.getBestBlockHash();
+        expect(bestBlockHash).to.be.equal('fake');
+        expect(stub.callCount).to.be.equal(2);
+      });
+    });
+  });
+
   describe('getBestBlockHeight', () => {
     describe('#factory', () => {
       it('should return a promise', () => {

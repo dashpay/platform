@@ -8,6 +8,7 @@ const getAddressTotalReceived = require('./commands/getAddressTotalReceived');
 const getAddressTotalSent = require('./commands/getAddressTotalSent');
 const getAddressUnconfirmedBalance = require('./commands/getAddressUnconfirmedBalance');
 const getBalance = require('./commands/getBalance');
+const getBestBlockHash = require('./commands/getBestBlockHash');
 const getBestBlockHeight = require('./commands/getBestBlockHeight');
 const getBlockHash = require('./commands/getBlockHash');
 const getBlocks = require('./commands/getBlocks');
@@ -49,6 +50,7 @@ const createCommands = (insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => ({
   getAddressTotalSent: getAddressTotalSent(insightAPI),
   getAddressUnconfirmedBalance: getAddressUnconfirmedBalance(insightAPI),
   getBalance: getBalance(insightAPI),
+  getBestBlockHash: getBestBlockHash(dashcoreAPI),
   getBestBlockHeight: getBestBlockHeight(dashcoreAPI),
   getBlockHash: getBlockHash(dashcoreAPI),
   getBlocks: getBlocks(insightAPI),

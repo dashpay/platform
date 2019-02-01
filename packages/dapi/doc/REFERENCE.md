@@ -17,6 +17,7 @@
     - [getAddressUnconfirmedBalance](#getaddressunconfirmedbalance)
     - [getAuthChallenge](#getauthchallenge)
     - [getBalance](#getbalance)
+    - [getBestBlockHash](#getbestblockhash)
     - [getBestBlockHeight](#getbestblockheight)
     - [getBlockHash](#getblockhash)
     - [getBlockHeaders](#getblockheaders)
@@ -224,6 +225,20 @@ Returns calculated balance for an address.
 | name          | type             | description                            |
 |---------------|------------------|----------------------------------------|
 | calcBalance   | promise (number) | promise containing calculated balance  |
+
+---
+
+### getBestBlockHash
+
+Returns best block hash (hash of the chaintip)
+
+*takes no arguments*
+
+##### Response
+
+| name         | type             | description                            |
+|--------------|------------------|----------------------------------------|
+| blockHash  | promise (string) | hash of chaintip                 |
 
 ---
 
