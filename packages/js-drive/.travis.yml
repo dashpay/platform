@@ -29,7 +29,7 @@ before_install:
   - echo '103738324493.dkr.ecr.us-west-2.amazonaws.com' | docker-credential-ecr-login get
 
 install:
-  - npm install
+  - npm ci
   - cp .env.example .env
 
 script:

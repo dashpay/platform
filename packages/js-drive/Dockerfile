@@ -18,7 +18,7 @@ WORKDIR /
 # Install packages
 COPY package.json package-lock.json ./
 ENV npm_config_zmq_external=true
-RUN npm install --production
+RUN npm ci --production
 ENV PATH /node_modules/.bin:$PATH
 
 # Copy project files
