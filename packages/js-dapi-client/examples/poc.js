@@ -38,7 +38,7 @@ async function init() {
 // ==== Build HeaderChain
 
 async function setTrustedMnLists() {
-  const latestHash = await api.getBlockHash(await api.getBestBlockHeight());
+  const latestHash = await api.getBestBlockHash();
   const trustedMnListDiff = await api.getMnListDiff(nullHash, latestHash);
   const trustedMnList = helpers.constructMnList([], trustedMnListDiff);
 

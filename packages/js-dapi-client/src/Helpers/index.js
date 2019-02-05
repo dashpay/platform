@@ -5,8 +5,7 @@ const Client = require('../');
 const client = new Client();
 
 function getBestBlockHash() {
-  return client.getBestBlockHeight()
-    .then(height => client.getBlockHash(height));
+  return client.getBestBlockHash();
 }
 
 function constructMnList(originalMnList, diffList) {

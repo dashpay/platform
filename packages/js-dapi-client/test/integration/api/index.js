@@ -183,21 +183,19 @@ describe('basicAPIs', () => {
     });
 
     describe('Block', () => {
+
+        it('should return correct getBestBlockHash', async function it() {
+            const dapiOutput = await dapiClient.getBestBlockHash();
+            const coreOutput = await masterNode.dashCore.getApi().getbestblockhash();
+            // curl --user myusername --data-binary '{"jsonrpc": "1.0", "id":"curltest", "method": "getbestblockhash", "params": [] }' -H 'content-type: text/plain;' http://127.0.0.1:27410/
+            expect(dapiOutput).to.be.deep.equal(coreOutput.result);
+        });
+
         it('should return correct getBestBlockHeight', async function it() {
             const dapiOutput = await dapiClient.getBestBlockHeight();
             const coreOutput = await masterNode.dashCore.getApi().getblockcount();
 
             expect(dapiOutput).to.be.deep.equal(coreOutput.result);
-        });
-
-        it('should return correct getBlockHash', async function it() {
-            const height = await dapiClient.getBestBlockHeight();
-            const dapiOutput = await dapiClient.getBlockHash(height);
-            const coreOutput = await masterNode.dashCore.getApi().getbestblockhash();
-            // curl --user myusername --data-binary '{"jsonrpc": "1.0", "id":"curltest", "method": "getbestblockhash", "params": [] }' -H 'content-type: text/plain;' http://127.0.0.1:27410/
-
-            expect(dapiOutput).to.be.deep.equal(coreOutput.result);
-
         });
 
         it('should return correct getBlockHeaders', async function it() {
@@ -219,8 +217,7 @@ describe('basicAPIs', () => {
         });
 
         it('should return correct getRawBlock', async function it() {
-            const height = await dapiClient.getBestBlockHeight();
-            const blockHash = await dapiClient.getBlockHash(height);
+            const blockHash = await dapiClient.getBestBlockHash();
             const dapiOutput = await dapiClient.getRawBlock(blockHash);
             const url = insightURL + `/rawblock/${blockHash}`;
             const response = await fetch(url);

@@ -432,6 +432,9 @@ describe('api', () => {
                         "txid": "9eda025a3b9e1e31e883f0cf2d249f4218466677c6707ec98b1f3f4a4570fa1a"
                     };
                 }
+                if (method === 'getBestBlockHash') {
+                  return validBlockHash;
+                }
                 if (method === 'getBestBlockHeight') {
                     return 100;
                 }
@@ -684,6 +687,14 @@ describe('api', () => {
           // TODO: implement real unit test
           expect(res).to.be.deep.equal([]);
         });
+    });
+    describe('.block.getBestBlockHash', () => {
+      it('Should return chaintip hash', async () => {
+        const dapi = new Api();
+        const bestBlockHash = await dapi.getBestBlockHash();
+        expect(bestBlockHash).to.be.a('string');
+        expect(bestBlockHash).to.be.equal(validBlockHash);
+      });
     });
     describe('.block.getBestBlockHeight', () => {
         it('Should return block height', async () => {

@@ -107,6 +107,12 @@ class DAPIClient {
   getBalance(address) { return this.makeRequestToRandomDAPINode('getBalance', { address }); }
 
   /**
+   * Returns block hash of chaintip
+   * @returns {Promise<string>}
+   */
+  getBestBlockHash() { return this.makeRequestToRandomDAPINode('getBestBlockHash', {}); }
+
+  /**
    * Returns best block height
    * @returns {Promise<number>}
    */
