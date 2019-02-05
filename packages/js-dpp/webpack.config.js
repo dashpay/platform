@@ -5,7 +5,7 @@ const commonJSConfig = {
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'DashPlatformProtocol.min.js',
-    library: 'dash-platform',
+    library: 'DashPlatformProtocol',
     libraryTarget: 'umd',
   },
   module: {

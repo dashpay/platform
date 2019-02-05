@@ -30,7 +30,7 @@ npm start
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/dash-platform/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/js-dpp/issues/new) or submit PRs.
 
 ## License
 
