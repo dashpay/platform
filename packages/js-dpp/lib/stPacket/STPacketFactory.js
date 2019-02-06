@@ -3,7 +3,7 @@ const { decode } = require('../util/serializer');
 const STPacket = require('./STPacket');
 
 const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
-const InvalidSTPacketContractIdError = require('../errors/InvalidSTPacketContractIdError');
+const DPContractNotPresentError = require('../errors/DPContractNotPresentError');
 
 const DPObject = require('../object/DPObject');
 
@@ -54,7 +54,7 @@ class STPacketFactory {
         dpContract = await this.dataProvider.fetchDPContract(rawSTPacket.contractId);
 
         if (!dpContract) {
-          const error = new InvalidSTPacketContractIdError(rawSTPacket.contractId, dpContract);
+          const error = new DPContractNotPresentError(rawSTPacket.contractId);
 
           throw new InvalidSTPacketError([error], rawSTPacket);
         }

@@ -10,7 +10,7 @@ const createDataProviderMock = require('../../../lib/test/mocks/createDataProvid
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const InvalidSTPacketError = require('../../../lib/stPacket/errors/InvalidSTPacketError');
-const InvalidSTPacketContractIdError = require('../../../lib/errors/InvalidSTPacketContractIdError');
+const DPContractNotPresentError = require('../../../lib/errors/DPContractNotPresentError');
 const ConsensusError = require('../../../lib/errors/ConsensusError');
 
 describe('STPacketFactory', () => {
@@ -142,7 +142,7 @@ describe('STPacketFactory', () => {
       expect(validateSTPacketMock).not.to.be.called();
     });
 
-    it('should throw error if STPacket has invalid contract ID', async () => {
+    it('should throw error if DP Contract is not present with contract ID specified in ST Packet', async () => {
       let error;
       try {
         await factory.createFromObject(rawSTPacket);
@@ -156,9 +156,8 @@ describe('STPacketFactory', () => {
       expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
 
       const [consensusError] = error.getErrors();
-      expect(consensusError).to.be.instanceOf(InvalidSTPacketContractIdError);
+      expect(consensusError).to.be.instanceOf(DPContractNotPresentError);
       expect(consensusError.getDPContractId()).to.be.equal(rawSTPacket.contractId);
-      expect(consensusError.getDPContract()).to.be.undefined();
 
       expect(dataProviderMock.fetchDPContract).to.be.calledOnceWith(rawSTPacket.contractId);
       expect(validateSTPacketMock).not.to.be.called();
