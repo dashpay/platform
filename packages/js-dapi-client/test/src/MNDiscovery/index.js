@@ -1,43 +1,18 @@
+const { SimplifiedMNList } = require('@dashevo/dashcore-lib');
 const MNDiscovery = require('../../../src/MNDiscovery/index');
 const sinon = require('sinon');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const RPCClient = require('../../../src/RPCClient');
 const config = require('../../../src/config');
+const SMNListFixture = require('../../fixtures/mnList');
 
 chai.use(chaiAsPromised);
 const {expect} = chai;
 
-const MockedMNList = [{
-    vin: '54754314335419cc04ef09295ff7765c8062a6123486aed55fd7e9b04f300b13-0',
-    status: 'ENABLED',
-    rank: 1,
-    ip: '138.156.10.21',
-    protocol: 70208,
-    payee: 'ycn5RWc4Ruo35FTS8bJwugVyCEkfVcrw9a',
-    activeseconds: 1073078,
-    lastseen: 1516291362,
-}, {
-    vin: '54754314335419cc04ef09295ff7765c8062a6123486aed55fd7e9b04f300b13-0',
-    status: 'ENABLED',
-    rank: 1,
-    ip: '171.86.98.52',
-    protocol: 70208,
-    payee: 'ycn5RWc4Ruo35FTS8bJwugVyCEkfVcrw9a',
-    activeseconds: 1073078,
-    lastseen: 1516291362,
-}, {
-    vin: '54754314335419cc04ef09295ff7765c8062a6123486aed55fd7e9b04f300b13-0',
-    status: 'ENABLED',
-    rank: 1,
-    ip: '146.81.95.64',
-    protocol: 70208,
-    payee: 'ycn5RWc4Ruo35FTS8bJwugVyCEkfVcrw9a',
-    activeseconds: 1073078,
-    lastseen: 1516291362,
-}];
+const MockedMNList = SMNListFixture.getFirstDiff();
 
-const masternodeIps = MockedMNList.map(masternode => masternode.ip);
+const masternodeIps = SMNListFixture.getFirstDiff().mnList.map(masternode => masternode.service.split(':')[0]);
 
 describe('MNDiscovery', async () => {
 
@@ -45,12 +20,19 @@ describe('MNDiscovery', async () => {
 
         before(() => {
             // Stub for request to seed, which is 127.0.0.1
+            let baseHash = config.nullHash;
+            let blockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
             const RPCClientStub = sinon.stub(RPCClient, 'request');
             RPCClientStub
-                .withArgs({host: '127.0.0.1', port: config.Api.port}, 'getMNList', {})
+                .withArgs({host: '127.0.0.1', port: config.Api.port}, 'getMnListDiff', { baseHash, blockHash })
                 .returns(new Promise((resolve) => {
-                    resolve(MockedMNList);
+                    resolve(SMNListFixture.getFirstDiff());
                 }));
+          RPCClientStub
+            .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getBestBlockHash', {})
+            .returns(new Promise((resolve) => {
+              resolve(blockHash);
+            }));
         });
 
         after(() => {
@@ -63,14 +45,17 @@ describe('MNDiscovery', async () => {
 
             const MNList = await discovery.getMNList();
 
-            var i = 0;
+            const smnList = new SimplifiedMNList(MockedMNList);
+            const validNodes = smnList.getValidMasternodesList();
+            let i = 0;
             MNList.forEach((MNListItem) => {
                 expect(MNListItem);
-                expect(MNListItem.ip).to.be.equal(MockedMNList[i].ip);
-                expect(MNListItem.status).to.be.a('string');
-                expect(MNListItem.rank).to.be.a('number');
-                expect(MNListItem.lastseen).to.be.a('number');
-                expect(MNListItem.activeseconds).to.be.a('number');
+                expect(MNListItem.service).to.be.equal(validNodes[i].service);
+                expect(MNListItem.proRegTxHash).to.be.a('string');
+                expect(MNListItem.confirmedHash).to.be.a('string');
+                expect(MNListItem.keyIDVoting).to.be.a('string');
+                expect(MNListItem.pubKeyOperator).to.be.a('string');
+                expect(MNListItem.isValid).to.be.a('boolean');
                 expect(discovery.masternodeListProvider.getMNList.callCount).to.equal(1);
                 i++;
             });
@@ -93,13 +78,14 @@ describe('MNDiscovery', async () => {
             async function verifyRandomf(array) {
                 for (const item of array) {
                     let randomMasternode = await discovery.getRandomMasternode();
-                    expect(masternodeIps).to.contain(randomMasternode.ip);
-                    expect(randomMasternode.ip).to.be.a('string');
-                    expect(randomMasternode.status).to.be.a('string');
-                    expect(randomMasternode.rank).to.be.a('number');
-                    expect(randomMasternode.lastseen).to.be.a('number');
-                    expect(randomMasternode.activeseconds).to.be.a('number');
-                    ips.push(randomMasternode.ip);
+                    expect(masternodeIps).to.contain(randomMasternode.service.split(':')[0]);
+                    expect(randomMasternode.proRegTxHash).to.be.a('string');
+                    expect(randomMasternode.confirmedHash).to.be.a('string');
+                    expect(randomMasternode.keyIDVoting).to.be.a('string');
+                    expect(randomMasternode.pubKeyOperator).to.be.a('string');
+                    expect(randomMasternode.service).to.be.a('string');
+                    expect(randomMasternode.isValid).to.be.a('boolean');
+                    ips.push(randomMasternode.service.split(':')[0]);
                 }
                 expect(discovery.masternodeListProvider.getMNList.callCount).to.equal(array.length);
                 let uniqueIps = ips.filter(function (elem, pos) {

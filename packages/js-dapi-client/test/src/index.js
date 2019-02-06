@@ -1,11 +1,12 @@
+const Schema = require('@dashevo/dash-schema/dash-schema-lib');
+const DashPay = require('@dashevo/dash-schema/dash-core-daps');
 const Api = require('../../src/index');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const sinon = require('sinon');
 const rpcClient = require('../../src/RPCClient');
-
-const Schema = require('@dashevo/dash-schema/dash-schema-lib');
-const DashPay = require('@dashevo/dash-schema/dash-core-daps');
+const config = require('../../src/config');
+const SMNListFixture = require('../fixtures/mnList');
 
 const {
     Transaction,
@@ -291,8 +292,8 @@ const notExistingUsername = 'Bob';
 const invalidUsername = '1.2';
 
 const validBlockHeight = 2357;
-const validBlockHash = '6ce21c33e86c23dac892dab7be45ed791157d9463fbbb1bb45c9fe55a29d8bf8';
-const validBaseBlockHash = '000004543e350b99f43114fe0bf649344a28f4fde6785d80e487d90689ae3918';
+const validBlockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
+const validBaseBlockHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
 const validBlockHeader =
     {
@@ -311,36 +312,7 @@ const validBlockHeader =
         "nextblockhash": "3f4a8012763b1d9b985cc77b0c0bca918830b1ef7dd083665bdc592c2cd31cf6"
     };
 
-const validMnListDiff =
-    {
-        baseBlockHash: validBaseBlockHash,
-        blockHash: validBlockHash,
-        deletedMNs: [],
-        mnList: [
-            {
-                proRegTxHash: 'f7737beb39779971e9bc59632243e13fc5fc9ada93b69bf48c2d4c463296cd5a',
-                service: '207.154.244.13:19999',
-                keyIDOperator: '43ce12751c4ba45dcdfe2c16cefd61461e17a54d',
-                keyIDVoting: '43ce12751c4ba45dcdfe2c16cefd61461e17a54d',
-                isValid: true,
-            },
-            {
-                proRegTxHash: '85c11a56c7ebc5d0b6abf32d6e60870516595a861a73e96d771c04edd26423ab',
-                service: '207.154.249.154:19999',
-                keyIDOperator: 'e0f05fac2f981f182aab2df9c8dbc8e06dc038b8',
-                keyIDVoting: 'e0f05fac2f981f182aab2df9c8dbc8e06dc038b8',
-                isValid: true,
-            },
-            {
-                proRegTxHash: '75aa128db4cd7679fd88206bd6ef71f57e1b6fe04c2da5515193a6fcd40a47eb',
-                service: '159.89.110.184:19999',
-                keyIDOperator: '03d90b1cdc04f1dbe435a4ba51ca2d1ddb53e08c',
-                keyIDVoting: '03d90b1cdc04f1dbe435a4ba51ca2d1ddb53e08c',
-                isValid: true,
-            },
-        ],
-        merkleRootMNList: 'adbb061b19bdcd582b50fae5a29c857e34058d23db79e6defdc8a3498cc2969a',
-    };
+const validMnListDiff = SMNListFixture.getFirstDiff();
 
 const dapObjects = [{
     "avatar": "My avatar here",
@@ -454,7 +426,7 @@ describe('api', () => {
                     throw new Error('Invalid block hash');
                 }
                 if (method === 'getMnListDiff') {
-                    if (baseBlockHash === validBaseBlockHash && blockHash === validBlockHash) {
+                    if (baseBlockHash === validBaseBlockHash || config.nullHash && blockHash === validBlockHash) {
                         return validMnListDiff;
                     }
                     throw new Error('Invalid baseBlockHash or blockHash');
@@ -534,15 +506,17 @@ describe('api', () => {
 
     describe('constructor', () => {
         it('Should set seeds and port, if passed', async () => {
-            const dapi = new Api({seeds: [{ip: '127.1.2.3'}], port: 1234});
+            const dapi = new Api({seeds: [{service: '127.1.2.3:19999'}], port: 1234});
             expect(dapi.DAPIPort).to.be.equal(1234);
             expect(dapi.MNDiscovery.masternodeListProvider.DAPIPort).to.be.equal(1234);
-            expect(dapi.MNDiscovery.masternodeListProvider.masternodeList).to.be.deep.equal([{ip: '127.1.2.3'}]);
-            expect(dapi.MNDiscovery.seeds).to.be.deep.equal([{ip: '127.1.2.3'}]);
+            expect(dapi.MNDiscovery.masternodeListProvider.masternodeList).to.be.deep.equal([{service: '127.1.2.3:19999'}]);
+            expect(dapi.MNDiscovery.seeds).to.be.deep.equal([{service: '127.1.2.3:19999'}]);
 
-            await dapi.getBestBlockHeight();
-            expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getMNList', {})).to.be.true;
-            expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getBestBlockHeight', {})).to.be.true;
+            await dapi.getBestBlockHash();
+           const baseHash = config.nullHash;
+           const blockHash = validBlockHash;
+           expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getMnListDiff', { baseHash, blockHash })).to.be.true;
+           expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getBestBlockHash', {})).to.be.true;
         });
     });
     describe('.address.getUTXO', () => {

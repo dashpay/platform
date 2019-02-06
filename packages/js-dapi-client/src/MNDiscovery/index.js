@@ -32,7 +32,7 @@ class MNDiscovery {
   }
 
   /**
-   * @returns {Promise<Masternode>}
+   * @returns {Promise<SimplifiedMNListEntry>}
    */
   async getRandomMasternode() {
     const MNList = await this.masternodeListProvider.getMNList();
@@ -40,7 +40,7 @@ class MNDiscovery {
   }
 
   /**
-   * @returns {Promise<Array<Masternode>>}
+   * @returns {Promise<Array<SimplifiedMNListEntry>>}
    */
   getMNList() {
     return this.masternodeListProvider.getMNList();
