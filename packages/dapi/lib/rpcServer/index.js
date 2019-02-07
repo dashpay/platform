@@ -13,6 +13,7 @@ const getBestBlockHeight = require('./commands/getBestBlockHeight');
 const getBlockHash = require('./commands/getBlockHash');
 const getBlocks = require('./commands/getBlocks');
 const getHistoricBlockchainDataSyncStatus = require('./commands/getHistoricBlockchainDataSyncStatus');
+const getMempoolInfo = require('./commands/getMempoolInfo');
 const getMNList = require('./commands/getMNList');
 const getMnListDiff = require('./commands/getMnListDiff');
 const getPeerDataSyncStatus = require('./commands/getPeerDataSyncStatus');
@@ -55,6 +56,7 @@ const createCommands = (insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => ({
   getBlockHash: getBlockHash(dashcoreAPI),
   getBlocks: getBlocks(insightAPI),
   getHistoricBlockchainDataSyncStatus: getHistoricBlockchainDataSyncStatus(insightAPI),
+  getMempoolInfo: getMempoolInfo(dashcoreAPI),
   getMNList: getMNList(insightAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
   getPeerDataSyncStatus: getPeerDataSyncStatus(insightAPI),

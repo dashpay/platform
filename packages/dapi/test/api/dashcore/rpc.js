@@ -256,6 +256,42 @@ describe('api/dashcore/rpc', async () => {
     });
   });
 
+  describe('getMempoolInfo', () => {
+    describe('#factory', () => {
+      it('should return a promise', () => {
+        const res = rpc.getMempoolInfo();
+        expect(res).to.be.a('promise');
+      });
+      it('should return error with invalid transaction', async () => {
+        const res = rpc.getMempoolInfo();
+        await expect(res).to.be.rejectedWith('JSON');
+      });
+    });
+
+    describe('#stub', () => {
+      before(() => {
+        stub = sinon.stub(rpc, 'getMempoolInfo');
+        stub.returns(new Promise(resolve => resolve('fake')));
+      });
+
+      beforeEach(() => {
+        stub.resetHistory();
+      });
+
+      after(() => {
+        stub.restore();
+      });
+
+      it('Should return an info object', async () => {
+        rpc.getMempoolInfo();
+        expect(stub.callCount).to.be.equal(1);
+        const info = await rpc.getMempoolInfo();
+        expect(info).to.be.equal('fake');
+        expect(stub.callCount).to.be.equal(2);
+      });
+    });
+  });
+
   describe('getUTXO', () => {
     describe('#factory', () => {
       it('should return a promise', () => {

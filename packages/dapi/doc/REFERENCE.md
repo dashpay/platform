@@ -24,6 +24,7 @@
     - [getBlocks](#getblocks)
     - [getCurrency](#getcurrency)
     - [getHistoricBlockchainDataSyncStatus](#gethistoricblockchaindatasyncstatus)
+    - [getMempoolInfo](#getmempoolinfo)
     - [getMNList](#getmnlist)
     - [getMnListDiff](#getmnlistdiff)
     - [getMNUpdateList](#getmnupdatelist)
@@ -323,6 +324,20 @@ Returns historic blockchain data sync status.
 | name            | type          | description                              |
 |-----------------|---------------|------------------------------------------|
 | historicStatus  | promise (obj) | object containing historical sync status |
+
+---
+
+### getMempoolInfo
+
+Returns historic blockchain data sync status.
+
+*Takes no arguments*
+
+##### Response
+
+| name            | type          | description                              |
+|-----------------|---------------|------------------------------------------|
+| mempoolInfo  | promise (obj) | object containing mempool info |
 
 ---
 

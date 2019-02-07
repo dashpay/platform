@@ -102,6 +102,16 @@ const getMasternodesList = () => new Promise((resolve, reject) => {
   });
 });
 
+const getMempoolInfo = () => new Promise((resolve, reject) => {
+  client.getmempoolinfo((err, r) => {
+    if (err) {
+      reject(err);
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
 const getMnListDiff = (baseBlockHash, blockHash) => new Promise((resolve, reject) => {
   client.protx(constants.DASHCORE_RPC_COMMANDS.protx.diff, baseBlockHash, blockHash, (err, r) => {
     if (err) {
@@ -254,6 +264,7 @@ module.exports = {
   getBlockHeaders,
   getHashFromHeight,
   getMasternodesList,
+  getMempoolInfo,
   getMnListDiff,
   getQuorum,
   sendRawTransition,

@@ -18,6 +18,15 @@ module.exports = {
     return {};
   },
   async getMasternodesList() { return [{ ip: '127.0.0.1' }]; },
+  async getMempoolInfo() {
+    return {
+      size: 0,
+      bytes: 0,
+      usage: 384,
+      maxmempool: 300000000,
+      mempoolminfee: 0.00000000,
+    };
+  },
   async getPeerDataSyncStatus() { return ''; },
   async getMnListDiff() {
     return {
