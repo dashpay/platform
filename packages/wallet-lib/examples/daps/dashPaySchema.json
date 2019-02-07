@@ -1,0 +1,58 @@
+{
+  "$id": "http://dash.org/schemas/sys/dapschema",
+  "title": "DashPay",
+  "user": {
+    "$id": "http://dash.org/schemas/sys/dapobject",
+    "_isrole": true,
+    "allOf": [
+      {
+        "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
+      }
+    ],
+    "properties": {
+      "bio": {
+        "type": "string"
+      },
+      "avatar": {
+        "type": "string"
+      }
+    }
+  },
+  "contact": {
+    "$id": "http://dash.org/schemas/sys/dapobject",
+    "allOf": [
+      {
+        "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
+      }
+    ],
+    "properties": {
+      "hdextpubkey": {
+        "type": "string"
+      },
+      "user": {
+        "$ref": "http://dash.org/schemas/sys#/definitions/relation"
+      },
+      "pub": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "hdextpubkey",
+      "user"
+    ]
+  },
+  "store": {
+    "$id": "http://dash.org/schemas/sys/dapobject",
+    "_isrole": true,
+    "allOf": [
+      {
+        "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
+      }
+    ],
+    "properties": {
+      "storename": {
+        "type": "number"
+      }
+    }
+  }
+}

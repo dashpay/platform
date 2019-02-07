@@ -1,6 +1,5 @@
 const { expect } = require('chai');
-const { Networks, Address } = require('@dashevo/dashcore-lib');
-const Mnemonic = require('@dashevo/dashcore-mnemonic');
+const { Networks, Address, Mnemonic } = require('@dashevo/dashcore-lib');
 const {
   dashToDuffs,
   duffsToDash,
@@ -10,7 +9,8 @@ const {
   hasProp,
   getBytesOf,
 } = require('../../src/utils/index');
-const { mnemonicString1, HDPrivateKey1Testnet } = require('../fixtures');
+const knifeEasilyFixture = require('../fixtures/knifeeasily');
+const figureBridgeFixture = require('../fixtures/figurebridge');
 
 describe('Utils', () => {
   it('should handle dash2Duff', () => {
@@ -30,9 +30,9 @@ describe('Utils', () => {
   });
   it('should convert mnemonic to seed', () => {
     const network = Networks.testnet;
-    const seed = mnemonicToHDPrivateKey(mnemonicString1, network);
+    const seed = mnemonicToHDPrivateKey(knifeEasilyFixture.mnemonic, network);
     expect(seed).to.be.a('object');
-    expect(seed.toString()).to.equal(HDPrivateKey1Testnet);
+    expect(seed.toString()).to.equal(knifeEasilyFixture.HDRootPrivateKeyTestnet);
   });
   it('should throw error when mnemonic is not provided in mnemonicToHDPrivateKey', () => {
     const network = Networks.testnet;
@@ -213,15 +213,21 @@ describe('Utils', () => {
     expect(is.address(addr)).to.be.equal(true);
   });
   it('should is.txid work', () => {
-    const txid = '00000';
-    expect(is.txid(txid)).to.be.equal(true);
+    const validtxid = '56150e17895255d178eb4d3da0ccd580fdf50233a3767e1f562e05f00b48cf79';
+    expect(is.txid(validtxid)).to.be.equal(true);
+
+    const invalidtxid = '00000';
+    expect(is.txid(invalidtxid)).to.be.equal(false);
   });
-  it('should is.transaction work', () => {
-    const transaction = {
+  it('should is.transactionObj work', () => {
+    const validTransaction = figureBridgeFixture.transactions['3428f0c29370d1293b4706ffd0f8b0c84a5b7c1c217d319e5ef4722354000c6e'];
+    expect(is.transactionObj(validTransaction)).to.be.equal(true);
+
+    const invalidTransaction = {
       vin: [],
       vout: [],
     };
-    expect(is.transaction(transaction)).to.be.equal(true);
+    expect(is.transactionObj(invalidTransaction)).to.be.equal(false);
   });
   it('should is.feeRate work', () => {
     const feeRate = {

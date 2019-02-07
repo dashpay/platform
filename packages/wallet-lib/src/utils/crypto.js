@@ -8,12 +8,12 @@ function sha256(data) {
   return hash('sha256', data);
 }
 
-function hash256(data) {
+function doubleSha256(data) {
   return sha256(sha256(data));
 }
 
 module.exports = {
   hash,
-  hash256,
+  doubleSha256,
   sha256,
 };

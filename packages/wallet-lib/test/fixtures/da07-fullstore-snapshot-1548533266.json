@@ -1,0 +1,300 @@
+{
+  "wallets": {
+    "f60f493200": {
+      "accounts": {
+        "0": {
+          "label": null,
+          "path": "0",
+          "network": {
+            "name": "testnet",
+            "alias": "regtest",
+            "pubkeyhash": 140,
+            "privatekey": 239,
+            "scripthash": 19,
+            "xpubkey": 70617039,
+            "xprivkey": 70615956,
+            "port": 19999,
+            "networkMagic": {
+              "type": "Buffer",
+              "data": [
+                206,
+                226,
+                202,
+                255
+              ]
+            },
+            "dnsSeeds": [
+              "testnet-seed.darkcoin.io",
+              "testnet-seed.dashdot.io",
+              "test.dnsseed.masternode.io"
+            ]
+          }
+        }
+      },
+      "network": {
+        "name": "testnet",
+        "alias": "regtest",
+        "pubkeyhash": 140,
+        "privatekey": 239,
+        "scripthash": 19,
+        "xpubkey": 70617039,
+        "xprivkey": 70615956,
+        "port": 19999,
+        "networkMagic": {
+          "type": "Buffer",
+          "data": [
+            206,
+            226,
+            202,
+            255
+          ]
+        },
+        "dnsSeeds": [
+          "testnet-seed.darkcoin.io",
+          "testnet-seed.dashdot.io",
+          "test.dnsseed.masternode.io"
+        ]
+      },
+      "mnemonic": null,
+      "type": null,
+      "blockheight": 0,
+      "addresses": {
+        "external": {},
+        "internal": {},
+        "misc": {
+          "0": {
+            "address": "ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ",
+            "path": "0",
+            "balanceSat": 49999999506,
+            "unconfirmedBalanceSat": 0,
+            "transactions": [
+              "2d1cce77517e8411c9c9548884029edabbbd11ca3d13d6e11acdd90a79bb4408",
+              "4493e8a39bb97d6709ca69d391b0b99f573d3aed5ce50da5f8c7626fc1cb1a7d",
+              "f59ea94b2edf9b42e97027cc528b10d4874ce9ff604f095072e924611463053e"
+            ],
+            "fetchedLast": 1548533508688,
+            "used": true,
+            "utxos": {
+              "2d1cce77517e8411c9c9548884029edabbbd11ca3d13d6e11acdd90a79bb4408": {
+                "txid": "2d1cce77517e8411c9c9548884029edabbbd11ca3d13d6e11acdd90a79bb4408",
+                "outputIndex": 0,
+                "satoshis": 49900000000,
+                "scriptPubKey": "76a914e0d1017780c580d7beb2e06d93a95f77c105ef1a88ac"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "transactions": {
+    "2d1cce77517e8411c9c9548884029edabbbd11ca3d13d6e11acdd90a79bb4408": {
+      "txid": "2d1cce77517e8411c9c9548884029edabbbd11ca3d13d6e11acdd90a79bb4408",
+      "blockhash": "000000dd9a35951470124d88a0c87a5c9f2c0f2a1f31b00643b4a228624189c5",
+      "blockheight": 6310,
+      "blocktime": 1548533266,
+      "fees": 247,
+      "size": 225,
+      "vout": [
+        {
+          "value": "499.00000000",
+          "n": 0,
+          "scriptPubKey": {
+            "hex": "76a914e0d1017780c580d7beb2e06d93a95f77c105ef1a88ac",
+            "asm": "OP_DUP OP_HASH160 e0d1017780c580d7beb2e06d93a95f77c105ef1a OP_EQUALVERIFY OP_CHECKSIG",
+            "addresses": [
+              "ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ"
+            ],
+            "type": "pubkeyhash"
+          },
+          "spentTxId": null,
+          "spentIndex": null,
+          "spentHeight": null
+        },
+        {
+          "value": "0.99999506",
+          "n": 1,
+          "scriptPubKey": {
+            "hex": "76a914e0d1017780c580d7beb2e06d93a95f77c105ef1a88ac",
+            "asm": "OP_DUP OP_HASH160 e0d1017780c580d7beb2e06d93a95f77c105ef1a OP_EQUALVERIFY OP_CHECKSIG",
+            "addresses": [
+              "ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ"
+            ],
+            "type": "pubkeyhash"
+          },
+          "spentTxId": null,
+          "spentIndex": null,
+          "spentHeight": null
+        }
+      ],
+      "vin": [
+        {
+          "txid": "4493e8a39bb97d6709ca69d391b0b99f573d3aed5ce50da5f8c7626fc1cb1a7d",
+          "vout": 1,
+          "sequence": 4294967295,
+          "n": 0,
+          "scriptSig": {
+            "hex": "473044022021b301971a3dee4dbc9ba3a73313ec260c847457b2988d6c0e24063c6017eff702205851b27349c9910efc4639278a879ae2a61908a10a7a9666009cf274c95272c001210247ea333d3bda2261442e8a5851b4d96a1c9bc029712d52f575fa8aa31fa76f10",
+            "asm": "3044022021b301971a3dee4dbc9ba3a73313ec260c847457b2988d6c0e24063c6017eff702205851b27349c9910efc4639278a879ae2a61908a10a7a9666009cf274c95272c0[ALL] 0247ea333d3bda2261442e8a5851b4d96a1c9bc029712d52f575fa8aa31fa76f10"
+          },
+          "addr": "ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ",
+          "valueSat": 49999999753,
+          "value": 499.99999753,
+          "doubleSpentTxID": null
+        }
+      ],
+      "txlock": false,
+      "spendable": false
+    },
+    "4493e8a39bb97d6709ca69d391b0b99f573d3aed5ce50da5f8c7626fc1cb1a7d": {
+      "txid": "4493e8a39bb97d6709ca69d391b0b99f573d3aed5ce50da5f8c7626fc1cb1a7d",
+      "blockhash": "000002c283d7d55eb6a7d1939b9c428242d09869d6b456f82e1d0df3fdd83dec",
+      "blockheight": 6121,
+      "blocktime": 1548506741,
+      "fees": 247,
+      "size": 226,
+      "vout": [
+        {
+          "value": "500.00000000",
+          "n": 0,
+          "scriptPubKey": {
+            "hex": "76a91419ba12c566e1e21deafa60f2a6de42d15f85dbbc88ac",
+            "asm": "OP_DUP OP_HASH160 19ba12c566e1e21deafa60f2a6de42d15f85dbbc OP_EQUALVERIFY OP_CHECKSIG",
+            "addresses": [
+              "yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT"
+            ],
+            "type": "pubkeyhash"
+          },
+          "spentTxId": null,
+          "spentIndex": null,
+          "spentHeight": null
+        },
+        {
+          "value": "499.99999753",
+          "n": 1,
+          "scriptPubKey": {
+            "hex": "76a914e0d1017780c580d7beb2e06d93a95f77c105ef1a88ac",
+            "asm": "OP_DUP OP_HASH160 e0d1017780c580d7beb2e06d93a95f77c105ef1a OP_EQUALVERIFY OP_CHECKSIG",
+            "addresses": [
+              "ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ"
+            ],
+            "type": "pubkeyhash"
+          },
+          "spentTxId": "2d1cce77517e8411c9c9548884029edabbbd11ca3d13d6e11acdd90a79bb4408",
+          "spentIndex": 0,
+          "spentHeight": 6310
+        }
+      ],
+      "vin": [
+        {
+          "txid": "f59ea94b2edf9b42e97027cc528b10d4874ce9ff604f095072e924611463053e",
+          "vout": 1,
+          "sequence": 4294967295,
+          "n": 0,
+          "scriptSig": {
+            "hex": "4830450221008078d0922828a868040c9576ea6c58b166764d1a4195a6e9f14b8b489baab8d002201a2a3554a76d42c4f0a922228a90945a07af26a121373130926e4face562d6e901210247ea333d3bda2261442e8a5851b4d96a1c9bc029712d52f575fa8aa31fa76f10",
+            "asm": "30450221008078d0922828a868040c9576ea6c58b166764d1a4195a6e9f14b8b489baab8d002201a2a3554a76d42c4f0a922228a90945a07af26a121373130926e4face562d6e9[ALL] 0247ea333d3bda2261442e8a5851b4d96a1c9bc029712d52f575fa8aa31fa76f10"
+          },
+          "addr": "ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ",
+          "valueSat": 100000000000,
+          "value": 1000,
+          "doubleSpentTxID": null
+        }
+      ],
+      "txlock": false,
+      "spendable": false
+    },
+    "f59ea94b2edf9b42e97027cc528b10d4874ce9ff604f095072e924611463053e": {
+      "txid": "f59ea94b2edf9b42e97027cc528b10d4874ce9ff604f095072e924611463053e",
+      "blockhash": "000000e0d3c67f9aceb3d91f812dbdc879d0c6ee70e86b67fa3e283af34b6f89",
+      "blockheight": 6119,
+      "blocktime": 1548505964,
+      "fees": 522,
+      "size": 519,
+      "vout": [
+        {
+          "value": "2.99998060",
+          "n": 0,
+          "scriptPubKey": {
+            "hex": "76a914e4a02c346887cbf8d7f821588fe1b41e80eff8d288ac",
+            "asm": "OP_DUP OP_HASH160 e4a02c346887cbf8d7f821588fe1b41e80eff8d2 OP_EQUALVERIFY OP_CHECKSIG",
+            "addresses": [
+              "yhAJnw4eDwJWBJR7CKwmwrysGWxyVPFPEz"
+            ],
+            "type": "pubkeyhash"
+          },
+          "spentTxId": null,
+          "spentIndex": null,
+          "spentHeight": null
+        },
+        {
+          "value": "1000.00000000",
+          "n": 1,
+          "scriptPubKey": {
+            "hex": "76a914e0d1017780c580d7beb2e06d93a95f77c105ef1a88ac",
+            "asm": "OP_DUP OP_HASH160 e0d1017780c580d7beb2e06d93a95f77c105ef1a OP_EQUALVERIFY OP_CHECKSIG",
+            "addresses": [
+              "ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ"
+            ],
+            "type": "pubkeyhash"
+          },
+          "spentTxId": "4493e8a39bb97d6709ca69d391b0b99f573d3aed5ce50da5f8c7626fc1cb1a7d",
+          "spentIndex": 0,
+          "spentHeight": 6121
+        }
+      ],
+      "vin": [
+        {
+          "txid": "467fd032162f50a8354255e272490828eef8b6c2c1ad190b09452ff3b7d1a03f",
+          "vout": 1,
+          "sequence": 4294967294,
+          "n": 0,
+          "scriptSig": {
+            "hex": "473044022057a7ed74505767eafcb7ad24616dc26d6c39133493e703527a9bc38300b7d3eb02206cbd82e1975b605c0bb1a22112a90d129a0ef1b5844584f5c3e0e39043ec9976012103353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844",
+            "asm": "3044022057a7ed74505767eafcb7ad24616dc26d6c39133493e703527a9bc38300b7d3eb02206cbd82e1975b605c0bb1a22112a90d129a0ef1b5844584f5c3e0e39043ec9976[ALL] 03353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844"
+          },
+          "addr": "yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5",
+          "valueSat": 90000000000,
+          "value": 900,
+          "doubleSpentTxID": null
+        },
+        {
+          "txid": "7d869d991b1c973e1626cdc4a8cf56b37f18d7f1a0c6b929f7333533c1cce4e1",
+          "vout": 0,
+          "sequence": 4294967294,
+          "n": 1,
+          "scriptSig": {
+            "hex": "47304402202f37d22beccdb74df3e48c87a09b0f54365fe4a4586efa050db4bbf7497c4fa302202cf666507d238d652cc56dd6ec88bf1e7b2664d1b6796960bbb734dcfb5e880f0121030b992a821076dc5dee6b00e135178f71ae7047dfa136862a4d274713f4eb0177",
+            "asm": "304402202f37d22beccdb74df3e48c87a09b0f54365fe4a4586efa050db4bbf7497c4fa302202cf666507d238d652cc56dd6ec88bf1e7b2664d1b6796960bbb734dcfb5e880f[ALL] 030b992a821076dc5dee6b00e135178f71ae7047dfa136862a4d274713f4eb0177"
+          },
+          "addr": "yifmFokBdParjkfZp3Bu5oR9gTtHtPEU3b",
+          "valueSat": 299998582,
+          "value": 2.99998582,
+          "doubleSpentTxID": null
+        },
+        {
+          "txid": "baaa48cea28652dbadab9ec056a75f79bdc5e9f10df25a979a8dab6a3f415682",
+          "vout": 1,
+          "sequence": 4294967294,
+          "n": 2,
+          "scriptSig": {
+            "hex": "47304402202e7a9c79a72f9e2c037138e2fc1d6e44e683dedd14dbdf1049e9ceb73668f3b802202db60a1aed9c06bc413c8e2d6bfd63cc928a2989cf30c5f1e5f08d9ec1c581be012103353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844",
+            "asm": "304402202e7a9c79a72f9e2c037138e2fc1d6e44e683dedd14dbdf1049e9ceb73668f3b802202db60a1aed9c06bc413c8e2d6bfd63cc928a2989cf30c5f1e5f08d9ec1c581be[ALL] 03353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844"
+          },
+          "addr": "yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5",
+          "valueSat": 10000000000,
+          "value": 100,
+          "doubleSpentTxID": null
+        }
+      ],
+      "txlock": false,
+      "spendable": false
+    }
+  },
+  "chains": {
+    "testnet": {
+      "name": "testnet",
+      "blockheight": 6310
+    }
+  }
+}

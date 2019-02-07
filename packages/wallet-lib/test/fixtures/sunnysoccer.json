@@ -16,7 +16,7 @@
         "utxos": [
           {
             "address": "yPWxUxcGmeT8ZMMSVS9kBVk9drz151ZPx4",
-            "txId": "1a855e19b90ca52851a94c0e520ee6a3eaa91bdc2bb84cdda1969b5b5b76201a",
+            "txid": "1a855e19b90ca52851a94c0e520ee6a3eaa91bdc2bb84cdda1969b5b5b76201a",
             "outputIndex": 1,
             "script": "76a9142315b09ef82bf97cc06cd9b6ae2caf0a664c89f188ac",
             "satoshis": 10000000
@@ -40,7 +40,7 @@
       "utxos": [
         {
           "address": "yPWxUxcGmeT8ZMMSVS9kBVk9drz151ZPx4",
-          "txId": "1a855e19b90ca52851a94c0e520ee6a3eaa91bdc2bb84cdda1969b5b5b76201a",
+          "txid": "1a855e19b90ca52851a94c0e520ee6a3eaa91bdc2bb84cdda1969b5b5b76201a",
           "outputIndex": 1,
           "script": "76a9142315b09ef82bf97cc06cd9b6ae2caf0a664c89f188ac",
           "satoshis": 10000000

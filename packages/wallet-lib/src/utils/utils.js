@@ -1,5 +1,5 @@
 const { Script, Address } = require('@dashevo/dashcore-lib');
-const { DUFFS_PER_DASH } = require('../Constants');
+const { DUFFS_PER_DASH } = require('../CONSTANTS');
 
 function dashToDuffs(dash) {
   if (dash === undefined || dash.constructor.name !== 'Number') {
@@ -27,11 +27,11 @@ function getBytesOf(elem, type) {
   switch (type) {
     case 'utxo':
       BASE_BYTES = 32 + 4 + 1 + 4;
-      SCRIPT_BYTES = elem.script.length;
+      SCRIPT_BYTES = Buffer.from(elem.script, 'hex').length;
       return BASE_BYTES + SCRIPT_BYTES;
     case 'output':
-      BASE_BYTES = 9;
-      SCRIPT_BYTES = Script(new Address(elem.address)).toString().length;
+      BASE_BYTES = 8 + 1;
+      SCRIPT_BYTES = Script(new Address(elem.address)).toBuffer().length;
       return BASE_BYTES + SCRIPT_BYTES;
     default:
       return false;

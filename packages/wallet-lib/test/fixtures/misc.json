@@ -174,6 +174,7 @@
     "address": "yizmJb63ygipuJaRgYtpWCV2erQodmaZt8",
     "balanceSat": 0,
     "fetchedLast": 1534867407075,
+    "index":0,
     "path": "m/44'/1'/0'/0/0",
     "transactions": [
       "688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23",

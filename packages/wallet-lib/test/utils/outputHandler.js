@@ -14,7 +14,7 @@ describe('Utils - outputHandler', () => {
       scriptPubKey: '76a914cbdb740680e713c141e9fb32e92c7d90a3f3297588ac',
       type: 'P2PKH',
     }];
-    const expected = [{},{
+    const expected = [{}, {
       value: 9.9999,
       script: '76a914cbdb740680e713c141e9fb32e92c7d90a3f3297588ac',
     }];

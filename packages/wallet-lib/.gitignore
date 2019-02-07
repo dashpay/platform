@@ -91,3 +91,8 @@ out/
 atlassian-ide-plugin.xml
 
 .DS_Store
+
+# nodeForage
+*.db.json
+
+*.ungit.js

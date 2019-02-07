@@ -1,5 +1,5 @@
-const Mnemonic = require('@dashevo/dashcore-mnemonic');
-const { hash256 } = require('./crypto');
+const { Mnemonic } = require('@dashevo/dashcore-lib');
+const { doubleSha256 } = require('./crypto');
 
 function generateNewMnemonic() {
   return Mnemonic();
@@ -24,7 +24,7 @@ function mnemonicToWalletId(mnemonic) {
   if (!mnemonic) throw new Error('Expect mnemonic to be provided');
 
   const buffMnemonic = Buffer.from(mnemonic.toString());
-  const buff = hash256(buffMnemonic);
+  const buff = doubleSha256(buffMnemonic);
   return buff.toString('hex').slice(0, 10);
 }
 

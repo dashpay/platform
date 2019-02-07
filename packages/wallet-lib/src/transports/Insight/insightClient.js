@@ -74,9 +74,13 @@ class InsightClient {
   }
 
   async getAddressSummary(address) {
-    const res = await axios
-      .get(`${this.insightUri}/addr/${address}`);
-    return res.data;
+    const url = `${this.insightUri}/addr/${address}`;
+    return axios
+      .get(url)
+      .then(res => res.data)
+      .catch((err) => {
+        throw err;
+      });
   }
 
 
@@ -111,7 +115,7 @@ class InsightClient {
       .post(url, { rawtx })
       .then(res => res.data)
       .catch((err) => {
-        console.log(err.response.data);
+        console.log(err);
         throw new Error(err);
       });
   }

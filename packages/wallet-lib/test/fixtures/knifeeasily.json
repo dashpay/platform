@@ -1,3 +1,9 @@
 {
-  "mnemonic":"knife easily prosper input concert merge prepare autumn pen blood glance toilet"
+  "mnemonic":"knife easily prosper input concert merge prepare autumn pen blood glance toilet",
+  "walletIdTestnet":"906469385b",
+  "walletIdMainnet":"419829f73c",
+  "HDRootPrivateKeyMainnet":"xprv9s21ZrQH143K37d2j9YW7snYGbAJJX9vzEZRwU7QEc4yP39t1Yc7t2Aw79aBBQWfLNqnpo9bFRnWoDv7xCPyBpLFHZvvrtVYfRv2zEBtnT5",
+  "HDRootPrivateKeyTestnet":"tprv8ZgxMBicQKsPdvrZPiQ1HXQXaiaWY3BwKnUYotXriaZTAdtxzuwsPmYP2KjqBmtyhpNZptmMQnNKG5Ts5QjuzsbqpD9EXFDbaXfTRxbTNsr",
+  "HDPrivateKeyMainnetWalletId":"419829f73c",
+  "HDPrivateKeyTestnetWalletId":"906469385b"
 }

@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const Mnemonic = require('@dashevo/dashcore-mnemonic');
+const { Mnemonic } = require('@dashevo/dashcore-lib');
 const Dashcore = require('@dashevo/dashcore-lib');
 const {
   generateNewMnemonic, mnemonicToHDPrivateKey, mnemonicToWalletId,
