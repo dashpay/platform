@@ -419,6 +419,15 @@ describe('api', () => {
                 if (method === 'getMNList') {
                     return [];
                 }
+                if (method === 'getMempoolInfo') {
+                  return {
+                    size: 0,
+                    bytes: 0,
+                    usage: 384,
+                    maxmempool: 300000000,
+                    mempoolminfee: 0.00000000,
+                  };
+                }
                 if (method === 'getBlockHeader') {
                     if (blockHash === validBlockHash) {
                         return validBlockHeader;
@@ -843,6 +852,23 @@ describe('api', () => {
             expect(mnlistdiff.deletedMNs).to.be.an('array');
             expect(mnlistdiff.mnList).to.be.an('array');
         });
+    });
+
+    describe('.mempool.getMempoolInfo', () => {
+      it('Should return mempool info', async () => {
+        const dapi = new Api();
+        const info = await dapi.getMempoolInfo();
+        expect(info.size).to.be.equal(0);
+        expect(info.bytes).to.be.equal(0);
+        expect(info.usage).to.be.equal(384);
+        expect(info.maxmempool).to.be.equal(300000000);
+        expect(info.mempoolminfee).to.be.equal(0.00000000);
+        expect(info.size).to.be.a('number');
+        expect(info.bytes).to.be.a('number');
+        expect(info.usage).to.be.a('number');
+        expect(info.maxmempool).to.be.a('number');
+        expect(info.mempoolminfee).to.be.a('number');
+      });
     });
 
     describe('.spv.loadBloomFilter', () => {

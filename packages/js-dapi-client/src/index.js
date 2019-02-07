@@ -155,6 +155,12 @@ class DAPIClient {
   getHistoricBlockchainDataSyncStatus() { return this.makeRequestToRandomDAPINode('getHistoricBlockchainDataSyncStatus', {}); }
 
   /**
+   * Returns mempool usage info
+   * @returns {Promise<object>}
+   */
+  getMempoolInfo() { return this.makeRequestToRandomDAPINode('getMempoolInfo', {}); }
+
+  /**
    * Get deterministic masternodelist diff
    * @param {string} baseBlockHash - hash or height of start block
    * @param {string} blockHash - hash or height of end block

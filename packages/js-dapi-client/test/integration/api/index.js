@@ -237,6 +237,16 @@ describe('basicAPIs', () => {
 
     });
 
+    describe('Mempool', () => {
+
+        it('should return correct getMempoolInfo output', async function it() {
+          const dapiOutput = await dapiClient.getMempoolInfo();
+          const coreOutput = await masterNode.dashCore.getApi().getmempoolinfo();
+          expect(dapiOutput).to.be.deep.equal(coreOutput.result);
+        });
+
+    });
+
     describe('Transaction', () => {
         it('should return correct getTransaction', async function it() {
             let dapiOutput = await dapiClient.getTransaction(transactionIdSendToAddress.result);
