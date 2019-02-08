@@ -12,7 +12,7 @@ before_install:
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 install:
-  - npm install
+  - npm ci
 
 env:
   - MOZ_HEADLESS=1
