@@ -291,9 +291,9 @@ const validUsername = 'Alice';
 const notExistingUsername = 'Bob';
 const invalidUsername = '1.2';
 
-const validBlockHeight = 2357;
+const validBlockHeight = 0;
 const validBlockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
-const validBaseBlockHash = '0000000000000000000000000000000000000000000000000000000000000000';
+const validBaseBlockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
 
 const validBlockHeader =
     {
@@ -411,8 +411,8 @@ describe('api', () => {
                     return 100;
                 }
                 if (method === 'getBlockHash') {
-                    if (height === validBlockHeight) {
-                        return validBlockHash;
+                    if (height === 0) {
+                      return validBaseBlockHash;
                     }
                     throw new Error('Invalid block height');
                 }
@@ -522,7 +522,8 @@ describe('api', () => {
             expect(dapi.MNDiscovery.seeds).to.be.deep.equal([{service: '127.1.2.3:19999'}]);
 
             await dapi.getBestBlockHash();
-           const baseHash = config.nullHash;
+           //const baseHash = config.nullHash;
+           const baseHash = validBaseBlockHash;
            const blockHash = validBlockHash;
            expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getMnListDiff', { baseHash, blockHash })).to.be.true;
            expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getBestBlockHash', {})).to.be.true;
@@ -690,9 +691,9 @@ describe('api', () => {
     describe('.block.getBlockHash', () => {
         it('Should return hash for a given block height', async () => {
             const dapi = new Api();
-            const blockHash = await dapi.getBlockHash(2357);
+            const blockHash = await dapi.getBlockHash(0);
             expect(blockHash).to.be.a('string');
-            expect(blockHash).to.be.equal(validBlockHash);
+            expect(blockHash).to.be.equal(validBaseBlockHash);
         });
         it('Should be rejected if height is invalid', async () => {
             const dapi = new Api();

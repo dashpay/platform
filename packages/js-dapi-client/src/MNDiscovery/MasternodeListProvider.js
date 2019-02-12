@@ -109,10 +109,29 @@ class MasternodeListProvider {
 
   /**
    * @private
+   * temp function to get genesisHash for use
+   * instead of nullHash due to core bug
+   * @returns {string} hash - genesis hash
+   */
+  async getGenesisHash() {
+    const genesisHeight = 0;
+    const node = sample(this.masternodeList);
+    const ipAddress = node.service.split(':')[0];
+    return RPCClient.request({
+      host: ipAddress,
+      port: this.DAPIPort,
+    }, 'getBlockHash', { height: genesisHeight });
+  }
+
+  /**
+   * @private
    * Updates simplified masternodes list. No need to call it manually
    * @returns {Promise<void>}
    */
   async updateMNList() {
+    if (this.baseBlockHash === config.nullHash) {
+      this.baseBlockHash = await this.getGenesisHash();
+    }
     const diff = await this.getSimplifiedMNListDiff();
     if (!diff) {
       // TODO: query other dapi node
@@ -130,7 +149,11 @@ class MasternodeListProvider {
     if (!this.simplifiedMNList) {
       throw new Error('simplifiedMNList is empty');
     }
-    this.masternodeList = this.simplifiedMNList.getValidMasternodesList();
+    const validMasternodesList = this.simplifiedMNList.getValidMasternodesList();
+    if (!validMasternodesList.length) {
+      throw new Error('No MNs in list. Can\'t connect to the network.');
+    }
+    this.masternodeList = validMasternodesList;
     this.baseBlockHash = diff.blockHash;
     this.lastUpdateDate = Date.now();
   }

@@ -20,14 +20,21 @@ describe('MNDiscovery', async () => {
 
         before(() => {
             // Stub for request to seed, which is 127.0.0.1
-            let baseHash = config.nullHash;
+            //let baseHash = config.nullHash;
+            let baseHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
             let blockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
+            const genesisHeight = 0;
             const RPCClientStub = sinon.stub(RPCClient, 'request');
             RPCClientStub
                 .withArgs({host: '127.0.0.1', port: config.Api.port}, 'getMnListDiff', { baseHash, blockHash })
                 .returns(new Promise((resolve) => {
                     resolve(SMNListFixture.getFirstDiff());
                 }));
+            RPCClientStub
+              .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getBlockHash', { height: genesisHeight })
+              .returns(new Promise((resolve) => {
+                  resolve(baseHash);
+              }));
           RPCClientStub
             .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getBestBlockHash', {})
             .returns(new Promise((resolve) => {

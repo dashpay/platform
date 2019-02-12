@@ -7,6 +7,7 @@ const RPCClient = require('../../../src/RPCClient');
 const config = require('../../../src/config');
 const SMNListFixture = require('../../fixtures/mnList');
 
+const genesisHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
 chai.use(chaiAsPromised);
 const { expect } = chai;
 
@@ -37,12 +38,18 @@ describe('MNListProvider', async () => {
     before(() => {
       // Stub for request to seed, which is 127.0.0.1
       const RPCClientStub = sinon.stub(RPCClient, 'request');
-      let baseHash = config.nullHash;
+      // let baseHash = config.nullHash;
+      let baseHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
       let blockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
-      const FirstBaseHash = config.nullHash;
+      const genesisHeight = 0;
       const FirstBlockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
       const SecondBaseHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
       const SecondBlockHash = '000000325235a2a92011589df3d2be404eaea062afb6fa9a0dc02eee6e53bec8';
+      RPCClientStub
+        .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getBlockHash', { height: genesisHeight })
+        .returns(new Promise((resolve) => {
+          resolve(genesisHash);
+        }));
       RPCClientStub
         .withArgs({ host: '127.0.0.1', port: config.Api.port }, 'getBestBlockHash', {})
         .returns(new Promise((resolve) => {
@@ -158,7 +165,7 @@ describe('MNListProvider', async () => {
       });
     it('Should throw error if can\'t connect to dns seeder', async () => {
       // Override stub behaviour for next call
-      const baseHash = config.nullHash;
+      const baseHash = genesisHash;
       const blockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
       RPCClient.request.resetHistory();
       RPCClient.request
@@ -171,7 +178,7 @@ describe('MNListProvider', async () => {
     });
     it('Should throw error if can\'t connect to dns seeder, wrong port', async () => {
         // Override stub behaviour for next call
-      const baseHash = config.nullHash;
+      const baseHash = genesisHash;
       const blockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
         RPCClient.request.resetHistory();
         RPCClient.request
@@ -184,7 +191,7 @@ describe('MNListProvider', async () => {
       });
     it('Should throw error if can\'t update masternode list', async () => {
       // Override stub behaviour for next call
-      const baseHash = config.nullHash;
+      const baseHash = genesisHash;
       const blockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
       RPCClient.request.resetHistory();
       RPCClient.request
