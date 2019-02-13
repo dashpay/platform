@@ -23,7 +23,7 @@ describe('IsDashCoreRunning', () => {
   it('should return false if DashCore is down', async () => {
     await dashCoreApi.stop();
 
-    await wait(100);
+    await wait(1000);
 
     const retries = null;
     const retryDelay = 0.1;
