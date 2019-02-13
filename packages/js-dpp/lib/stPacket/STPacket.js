@@ -142,8 +142,20 @@ class STPacket {
    * @return {{contractId: string,
    *           itemsMerkleRoot: string,
    *           itemsHash: string,
-   *           contracts: Object[],
-   *           objects: Object[]}}
+   *           contracts: {
+   *               $schema: string,
+   *               name: string,
+   *               version: number,
+   *               dpObjectsDefinition: Object<string, Object>,
+   *               [definitions]: Object<string, Object>
+   *           }[],
+   *           objects: {
+   *               $type: string,
+   *               $scope: string,
+   *               $scopeId: string,
+   *               $rev: number,
+   *               $action: number
+   *           }[]}}
    */
   toJSON() {
     return {

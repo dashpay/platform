@@ -155,7 +155,11 @@ class DPObject {
   /**
    * Return DPObject as plain object
    *
-   * @return {Object}
+   * @return {{$type: string,
+   *           $scope: string,
+   *           $scopeId: string,
+   *           $rev: number,
+   *           $action: number}}
    */
   toJSON() {
     return {

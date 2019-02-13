@@ -179,8 +179,10 @@ class DPContract {
   /**
    * Return DP Contract as plain object
    *
-   * @return {{$schema: string, name: string,
-   *           version: number, dpObjectsDefinition: Object<string, Object>,
+   * @return {{$schema: string,
+   *           name: string,
+   *           version: number,
+   *           dpObjectsDefinition: Object<string, Object>,
    *           [definitions]: Object<string, Object>}}
    */
   toJSON() {
