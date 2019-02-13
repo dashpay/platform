@@ -46,7 +46,7 @@ class STPacketHeaderFacade {
 
   /**
    *
-   * @param {STPacket|Object} stPacketHeader
+   * @param {STPacketHeader|Object} stPacketHeader
    * @return {ValidationResult}
    */
   validate(stPacketHeader) {
