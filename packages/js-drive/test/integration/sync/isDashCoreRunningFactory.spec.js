@@ -3,7 +3,9 @@ const isDashCoreRunningFactory = require('../../../lib/sync/isDashCoreRunningFac
 
 const wait = require('../../../lib/util/wait');
 
-describe('IsDashCoreRunning', () => {
+describe('IsDashCoreRunning', function main() {
+  this.timeout(10000);
+
   let dashCoreApi;
   let isDashCoreRunning;
 

@@ -20,7 +20,9 @@ function sortAndJsonizeSVObjects(svObjects) {
   )).map(o => o.toJSON());
 }
 
-describe('SVObjectMongoDbRepository', () => {
+describe('SVObjectMongoDbRepository', function main() {
+  this.timeout(10000);
+
   let svObjectRepository;
   let svObject;
   let svObjects;
