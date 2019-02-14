@@ -26,7 +26,7 @@ describe('MNDiscovery', async () => {
             const genesisHeight = 0;
             const RPCClientStub = sinon.stub(RPCClient, 'request');
             RPCClientStub
-                .withArgs({host: '127.0.0.1', port: config.Api.port}, 'getMnListDiff', { baseHash, blockHash })
+                .withArgs({host: '127.0.0.1', port: config.Api.port}, 'getMnListDiff', { baseBlockHash: baseHash, blockHash: blockHash })
                 .returns(new Promise((resolve) => {
                     resolve(SMNListFixture.getFirstDiff());
                 }));

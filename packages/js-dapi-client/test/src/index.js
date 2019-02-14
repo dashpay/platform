@@ -525,7 +525,7 @@ describe('api', () => {
            //const baseHash = config.nullHash;
            const baseHash = validBaseBlockHash;
            const blockHash = validBlockHash;
-           expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getMnListDiff', { baseHash, blockHash })).to.be.true;
+           expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getMnListDiff', { baseBlockHash: baseHash, blockHash: blockHash })).to.be.true;
            expect(rpcClient.request.calledWith({host: '127.1.2.3', port: 1234}, 'getBestBlockHash', {})).to.be.true;
         });
     });
