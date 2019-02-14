@@ -28,16 +28,22 @@ You can ignore the warning that states: `WARNING! Using --password via the CLI i
 ### Using mn-bootstrap.sh for regtest
 
 mn-bootstrap provides a wrapper around docker-compose to make using different networks
-easier. It is called this way:
+and presets easier. It is called this way:
 
 ```bash
-$ ./mn-bootstrap.sh <network> <compose_args...>
+$ ./mn-bootstrap.sh <network> [preset] <compose_args...>
 ```
 
-To bootstrap with regtest as network use:
+To bootstrap with regtest as network and latest preset use:
 
 ```bash
 $ ./mn-bootstrap.sh regtest up -d
+```
+
+To bootstrap with regtest as network and specific preset use:
+
+```bash
+$ ./mn-bootstrap.sh regtest maithai up -d
 ```
 
 The argument `-d` is is used to start everything in the background. User `logs`

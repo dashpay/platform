@@ -11,4 +11,12 @@ shift 1
 
 source networks/$NETWORK.env
 
+PRESET=$1
+if [[ -z "$PRESET" || ! -f presets/$PRESET.env ]]; then
+  source presets/latest.env
+else
+  source presets/$PRESET.env
+  shift 1
+fi
+
 docker-compose "$@"
