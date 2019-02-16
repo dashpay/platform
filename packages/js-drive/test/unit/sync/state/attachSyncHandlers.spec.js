@@ -47,10 +47,10 @@ describe('attachSyncHandlers', () => {
     expect(syncStateRepositoryMock.store).to.be.calledWith(syncState);
   });
 
-  it('should store sync state when stale block has processed', async () => {
+  it('should store sync state when orphaned block has processed', async () => {
     attachSyncHandlers(readerMediatorMock, syncState, syncStateRepositoryMock);
 
-    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.BLOCK_STALE, blocks[0]);
+    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.BLOCK_ORPHANED, blocks[0]);
 
     expect(syncState.setBlocks).to.be.calledOnce();
     expect(syncState.setBlocks).to.be.calledWith(blocks);

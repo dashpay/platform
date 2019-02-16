@@ -25,7 +25,7 @@ function attachSyncHandlers(readerMediator, syncState, syncStateRepository) {
   });
 
   readerMediator.on(ReaderMediator.EVENTS.BLOCK_END, saveState);
-  readerMediator.on(ReaderMediator.EVENTS.BLOCK_STALE, saveState);
+  readerMediator.on(ReaderMediator.EVENTS.BLOCK_ORPHANED, saveState);
 
   readerMediator.on(ReaderMediator.EVENTS.END, async () => {
     syncState.setLastSyncAt(new Date());

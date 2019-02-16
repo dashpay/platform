@@ -17,10 +17,13 @@ function attachStorageHandlers(
     await stPacketRepository.download(packetCid);
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, async ({ stateTransition }) => {
-    const packetCid = stateTransition.getPacketCID();
-    await stPacketRepository.delete(packetCid);
-  });
+  readerMediator.on(
+    ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED,
+    async ({ stateTransition }) => {
+      const packetCid = stateTransition.getPacketCID();
+      await stPacketRepository.delete(packetCid);
+    },
+  );
 
   readerMediator.on(ReaderMediator.EVENTS.RESET, async () => {
     await stPacketRepository.deleteAll();

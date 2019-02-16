@@ -46,11 +46,11 @@ describe('attachStateViewHandlers', () => {
     expect(applyStateTransition).to.be.calledWith(stateTransition, block);
   });
 
-  it('should call revertSVObjectsForStateTransition on the stale state transition event', async () => {
+  it('should call revertSVObjectsForStateTransition on the orphaned state transition event', async () => {
     const [stateTransition] = getStateTransitionsFixture();
     const [block] = getBlockFixtures();
 
-    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, {
+    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED, {
       stateTransition,
       block,
     });
@@ -59,11 +59,11 @@ describe('attachStateViewHandlers', () => {
     expect(revertSVObjectsForStateTransition).to.be.calledWith({ stateTransition, block });
   });
 
-  it('should call revertSVContractsForStateTransition on the stale state transition event', async () => {
+  it('should call revertSVContractsForStateTransition on the orphaned state transition event', async () => {
     const [stateTransition] = getStateTransitionsFixture();
     const [block] = getBlockFixtures();
 
-    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, {
+    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED, {
       stateTransition,
       block,
     });

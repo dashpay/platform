@@ -46,7 +46,7 @@ describe('attachStorageHandlers', () => {
     const [stateTransition] = rpcClientMock.transactions;
     const [block] = rpcClientMock.blocks;
 
-    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, {
+    await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED, {
       stateTransition,
       block,
     });

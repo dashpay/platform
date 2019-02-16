@@ -94,18 +94,18 @@ module.exports = function attachSequenceValidationHandler(readerMediator, create
 
       readerMediator.getState().removeLastBlock();
 
-      // Mark block as stale
+      // Mark block as orphaned
       await readerMediator.emitSerial(
-        ReaderMediator.EVENTS.BLOCK_STALE,
+        ReaderMediator.EVENTS.BLOCK_ORPHANED,
         lastSyncedBlock,
       );
 
-      // Mark State Transitions from block as stale
-      const staleStateTransitions = await createStateTransitions(lastSyncedBlock);
+      // Mark State Transitions from block as orphaned
+      const orphanedStateTransitions = await createStateTransitions(lastSyncedBlock);
 
-      for (const staleStateTransition of staleStateTransitions.reverse()) {
-        await readerMediator.emitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, {
-          stateTransition: staleStateTransition,
+      for (const orphanedStateTransition of orphanedStateTransitions.reverse()) {
+        await readerMediator.emitSerial(ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED, {
+          stateTransition: orphanedStateTransition,
           block: lastSyncedBlock,
         });
       }

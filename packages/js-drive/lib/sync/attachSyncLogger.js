@@ -83,12 +83,12 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     });
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.BLOCK_STALE, (block) => {
-    logger.info(`Reverting stale block ${block.height}`, {
+  readerMediator.on(ReaderMediator.EVENTS.BLOCK_ORPHANED, (block) => {
+    logger.info(`Reverting orphaned block ${block.height}`, {
       hash: block.hash,
       height: block.height,
       previousBlockHash: block.previousblockhash,
-      event: ReaderMediator.EVENTS.BLOCK_STALE,
+      event: ReaderMediator.EVENTS.BLOCK_ORPHANED,
     });
   });
 
@@ -135,10 +135,10 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.STATE_TRANSITION_STALE, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED, (params) => {
     const { block, stateTransition } = params;
     logger.info(
-      `Reverting stale State Transition ${stateTransition.hash} for block ${block.height}`,
+      `Reverting orphaned State Transition ${stateTransition.hash} for block ${block.height}`,
       {
         block: {
           hash: block.hash,
@@ -147,7 +147,7 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
         stateTransition: {
           hash: stateTransition.hash,
         },
-        event: ReaderMediator.EVENTS.STATE_TRANSITION_STALE,
+        event: ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED,
       },
     );
   });

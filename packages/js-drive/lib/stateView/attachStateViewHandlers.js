@@ -23,12 +23,12 @@ function attachStateViewHandlers(
   });
 
   readerMediator.on(
-    ReaderMediator.EVENTS.STATE_TRANSITION_STALE,
+    ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED,
     revertSVObjectsForStateTransition,
   );
 
   readerMediator.on(
-    ReaderMediator.EVENTS.STATE_TRANSITION_STALE,
+    ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED,
     revertSVContractsForStateTransition,
   );
 

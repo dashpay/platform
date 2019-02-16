@@ -275,14 +275,14 @@ describe('attachSequenceValidationHandler', () => {
           expect(readerMediatorMock.emitSerial).to.have.callCount(stateTransitions.length + 1);
 
           expect(readerMediatorMock.emitSerial).to.be.calledWith(
-            ReaderMediator.EVENTS.BLOCK_STALE,
+            ReaderMediator.EVENTS.BLOCK_ORPHANED,
             lastSyncedBlock,
           );
 
           for (const [index, stateTransition] of stateTransitions.reverse().entries()) {
             const callIndex = 1 + index;
             expect(readerMediatorMock.emitSerial.getCall(callIndex)).to.be.calledWith(
-              ReaderMediator.EVENTS.STATE_TRANSITION_STALE,
+              ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED,
               {
                 stateTransition,
                 block: lastSyncedBlock,
@@ -329,14 +329,14 @@ describe('attachSequenceValidationHandler', () => {
           expect(readerMediatorMock.emitSerial).to.have.callCount(stateTransitions.length + 1);
 
           expect(readerMediatorMock.emitSerial).to.be.calledWith(
-            ReaderMediator.EVENTS.BLOCK_STALE,
+            ReaderMediator.EVENTS.BLOCK_ORPHANED,
             lastSyncedBlock,
           );
 
           for (const [index, stateTransition] of stateTransitions.reverse().entries()) {
             const callIndex = 1 + index;
             expect(readerMediatorMock.emitSerial.getCall(callIndex)).to.be.calledWith(
-              ReaderMediator.EVENTS.STATE_TRANSITION_STALE,
+              ReaderMediator.EVENTS.STATE_TRANSITION_ORPHANED,
               {
                 stateTransition,
                 block: lastSyncedBlock,
