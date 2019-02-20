@@ -1,6 +1,8 @@
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 
+const DataIsNotAllowedWithActionDeleteError = require('./errors/DataIsNotAllowedWithActionDeleteError');
+
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
@@ -70,6 +72,10 @@ class DPObject {
    * @return {DPObject}
    */
   setAction(action) {
+    if (action === DPObject.ACTIONS.DELETE && Object.keys(this.data).length !== 0) {
+      throw new DataIsNotAllowedWithActionDeleteError(this);
+    }
+
     this.action = action;
 
     return this;
@@ -147,6 +153,10 @@ class DPObject {
    * @return {DPObject}
    */
   set(path, value) {
+    if (this.action === DPObject.ACTIONS.DELETE) {
+      throw new DataIsNotAllowedWithActionDeleteError(this);
+    }
+
     lodashSet(this.data, path, value);
 
     return this;

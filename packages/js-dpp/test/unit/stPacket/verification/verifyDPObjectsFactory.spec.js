@@ -95,6 +95,7 @@ describe('verifyDPObjects', () => {
   });
 
   it('should return invalid result if DPObject with action "delete" is not present', async () => {
+    dpObjects[0].setData({});
     dpObjects[0].setAction(DPObject.ACTIONS.DELETE);
 
     fetchDPObjectsByObjectsMock.resolves([]);
@@ -134,6 +135,7 @@ describe('verifyDPObjects', () => {
   });
 
   it('should return invalid result if DPObject with action "delete" has wrong revision', async () => {
+    dpObjects[0].setData({});
     dpObjects[0].setAction(DPObject.ACTIONS.DELETE);
 
     fetchDPObjectsByObjectsMock.resolves([dpObjects[0]]);
@@ -179,6 +181,7 @@ describe('verifyDPObjects', () => {
     dpObjects[1].setAction(DPObject.ACTIONS.UPDATE);
     dpObjects[1].setRevision(1);
 
+    dpObjects[2].setData({});
     dpObjects[2].setAction(DPObject.ACTIONS.DELETE);
     dpObjects[2].setRevision(1);
 

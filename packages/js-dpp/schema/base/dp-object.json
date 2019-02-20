@@ -36,5 +36,6 @@
     "$rev",
     "$scope",
     "$scopeId"
-  ]
+  ],
+  "additionalProperties": false
 }
