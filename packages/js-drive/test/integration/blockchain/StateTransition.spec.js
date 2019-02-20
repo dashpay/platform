@@ -1,11 +1,11 @@
 const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
 
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+
 const STPacketIpfsRepository = require('../../../lib/storage/stPacket/STPacketIpfsRepository');
 
 const getSTPacketsFixture = require('../../../lib/test/fixtures/getSTPacketsFixture');
 const getStateTransitionsFixture = require('../../../lib/test/fixtures/getStateTransitionsFixture');
-
-const createDPPMock = require('../../../lib/test/mock/createDPPMock');
 
 describe('StateTransition', () => {
   let dppMock;

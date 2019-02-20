@@ -136,7 +136,7 @@ describe('updateSVObjectFactory', () => {
     svObjectRepository.find.returns(previousSVObject);
 
     dpObject.setRevision(1);
-
+    dpObject.setData({});
     dpObject.setAction(DPObject.ACTIONS.DELETE);
 
     await updateSVObject(contractId, userId, reference, dpObject);

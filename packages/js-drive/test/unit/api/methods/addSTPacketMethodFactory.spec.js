@@ -1,10 +1,10 @@
 const InvalidSTPacketError = require('@dashevo/dpp/lib/stPacket/errors/InvalidSTPacketError');
 
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+
 const StateTransition = require('../../../../lib/blockchain/StateTransition');
 
 const addSTPacketMethodFactory = require('../../../../lib/api/methods/addSTPacketMethodFactory');
-
-const createDPPMock = require('../../../../lib/test/mock/createDPPMock');
 
 const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
 const getStateTransitionsFixture = require('../../../../lib/test/fixtures/getStateTransitionsFixture');
