@@ -27,7 +27,7 @@ describe('attachStorageHandlers', () => {
     );
   });
 
-  it('should pin ST packet when new state transition appears', async () => {
+  it('should pin ST packet when a new state transition appears', async () => {
     const [stateTransition] = rpcClientMock.transactions;
     const [block] = rpcClientMock.blocks;
 
@@ -38,11 +38,10 @@ describe('attachStorageHandlers', () => {
 
     const packetCid = stateTransition.getPacketCID();
 
-    expect(stPacketRepositoryMock.download).to.be.calledOnce();
-    expect(stPacketRepositoryMock.download).to.be.calledWith(packetCid);
+    expect(stPacketRepositoryMock.download).to.have.been.calledOnceWith(packetCid);
   });
 
-  it('should unpin ST packets in case of reorg', async () => {
+  it('should unpin ST packets in the event of blockchain reorganization', async () => {
     const [stateTransition] = rpcClientMock.transactions;
     const [block] = rpcClientMock.blocks;
 
@@ -53,13 +52,12 @@ describe('attachStorageHandlers', () => {
 
     const packetCid = stateTransition.getPacketCID();
 
-    expect(stPacketRepositoryMock.delete).to.be.calledOnce();
-    expect(stPacketRepositoryMock.delete).to.be.calledWith(packetCid);
+    expect(stPacketRepositoryMock.delete).to.have.been.calledOnceWith(packetCid);
   });
 
   it('should unpin all packets on reset event', async () => {
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.RESET);
 
-    expect(stPacketRepositoryMock.deleteAll).to.be.calledOnce();
+    expect(stPacketRepositoryMock.deleteAll).to.have.been.calledOnce();
   });
 });

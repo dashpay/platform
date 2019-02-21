@@ -50,7 +50,7 @@ describe('DashDrive throws DashCoreIsNotRunningError', function main() {
     expect(inspection.State.Running).to.be.false();
   });
 
-  after('Clean instances', async () => {
+  after('cleanup services', async () => {
     const instances = [
       driveApi,
       driveSync,

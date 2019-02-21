@@ -31,7 +31,7 @@ describe('createSVObjectMongoDbRepositoryFactory', () => {
     );
   });
 
-  it('should create Mongo database with prefix + contractId', async () => {
+  it('should create a MongoDb database with a prefix + contractId', async () => {
     const contractIdEncoded = bs58.encode(Buffer.from(contractId, 'hex'));
     const dbName = `${process.env.MONGODB_DB_PREFIX}dpa_${contractIdEncoded}`;
 
@@ -39,8 +39,12 @@ describe('createSVObjectMongoDbRepositoryFactory', () => {
 
     expect(result).to.be.an.instanceof(SVObjectMongoDbRepositoryMock);
 
-    expect(mongoClient.db).to.be.calledOnceWith(dbName);
+    expect(mongoClient.db).to.have.been.calledOnceWith(dbName);
 
-    expect(SVObjectMongoDbRepositoryMock).to.be.calledOnceWith(mongoDb, sanitizerMock, objectType);
+    expect(SVObjectMongoDbRepositoryMock).to.have.been.calledOnceWith(
+      mongoDb,
+      sanitizerMock,
+      objectType,
+    );
   });
 });

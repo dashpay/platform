@@ -46,17 +46,17 @@ describe('addSTPacketFactory', () => {
     addSTPacket = addSTPacketFactory(stPacketRepository, dpp);
   });
 
-  it('should throw error if ST or ST Packet is invalid', async () => {
+  it('should throw an error if ST or ST Packet is invalid', async () => {
     try {
       await addSTPacket(stPacket, stateTransition);
       expect.fail('should throw InvalidSTPacketDataError');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidSTPacketDataError);
+      expect(e).to.be.an.instanceOf(InvalidSTPacketDataError);
       expect(e.getErrors()).to.lengthOf(1);
 
       const [consensusError] = e.getErrors();
 
-      expect(consensusError.name).to.be.equal('UserNotFoundError');
+      expect(consensusError.name).to.equal('UserNotFoundError');
     }
   });
 

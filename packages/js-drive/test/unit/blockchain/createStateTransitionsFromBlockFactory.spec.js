@@ -52,7 +52,7 @@ describe('createStateTransitionsFromBlockFactory', () => {
     expect(stHashes).to.not.include(nonStateTransitionTx.hash);
   });
 
-  it('should return state transition in a sorted order', async () => {
+  it('should return state transitions in a sorted order', async () => {
     const [someBlock] = blocks;
 
     const groupOneRegTxId = 'c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b';

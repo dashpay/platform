@@ -40,11 +40,9 @@ describe('attachSyncHandlers', () => {
 
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.BLOCK_END, blocks[0]);
 
-    expect(syncState.setBlocks).to.be.calledOnce();
-    expect(syncState.setBlocks).to.be.calledWith(blocks);
+    expect(syncState.setBlocks).to.have.been.calledOnceWith(blocks);
 
-    expect(syncStateRepositoryMock.store).to.be.calledOnce();
-    expect(syncStateRepositoryMock.store).to.be.calledWith(syncState);
+    expect(syncStateRepositoryMock.store).to.have.been.calledOnceWith(syncState);
   });
 
   it('should store sync state when orphaned block has processed', async () => {
@@ -52,11 +50,9 @@ describe('attachSyncHandlers', () => {
 
     await readerMediatorMock.originalEmitSerial(ReaderMediator.EVENTS.BLOCK_ORPHANED, blocks[0]);
 
-    expect(syncState.setBlocks).to.be.calledOnce();
-    expect(syncState.setBlocks).to.be.calledWith(blocks);
+    expect(syncState.setBlocks).to.have.been.calledOnceWith(blocks);
 
-    expect(syncStateRepositoryMock.store).to.be.calledOnce();
-    expect(syncStateRepositoryMock.store).to.be.calledWith(syncState);
+    expect(syncStateRepositoryMock.store).to.have.been.calledOnceWith(syncState);
   });
 
   it('should update lastSyncAt when sync has completed', async () => {
@@ -67,11 +63,9 @@ describe('attachSyncHandlers', () => {
       blocks[blocks.length - 1].height,
     );
 
-    expect(syncState.setLastSyncAt).to.be.calledOnce();
-    expect(syncState.setLastSyncAt).to.be.calledWith(new Date());
+    expect(syncState.setLastSyncAt).to.have.been.calledOnceWith(new Date());
 
-    expect(syncStateRepositoryMock.store).to.be.calledOnce();
-    expect(syncStateRepositoryMock.store).to.be.calledWith(syncState);
+    expect(syncStateRepositoryMock.store).to.have.been.calledOnceWith(syncState);
   });
 
   it('should update lastInitialSyncAt once upon start', async () => {
@@ -84,8 +78,7 @@ describe('attachSyncHandlers', () => {
       blocks[blocks.length - 1].height,
     );
 
-    expect(syncState.setLastInitialSyncAt).to.be.calledOnce();
-    expect(syncState.setLastInitialSyncAt).to.be.calledWith(date);
+    expect(syncState.setLastInitialSyncAt).to.have.been.calledOnceWith(date);
 
     clock.tick(30000);
 
@@ -94,8 +87,7 @@ describe('attachSyncHandlers', () => {
       blocks[blocks.length - 1].height,
     );
 
-    expect(syncState.setLastInitialSyncAt).to.be.calledOnce();
-    expect(syncState.setLastInitialSyncAt).to.be.calledWith(date);
+    expect(syncState.setLastInitialSyncAt).to.have.been.calledOnceWith(date);
   });
 
   it('should update lastInitialSyncAt after RESET event', async () => {
@@ -106,8 +98,7 @@ describe('attachSyncHandlers', () => {
       blocks[blocks.length - 1].height,
     );
 
-    expect(syncState.setLastInitialSyncAt).to.be.calledOnce();
-    expect(syncState.setLastInitialSyncAt).to.be.calledWith(new Date());
+    expect(syncState.setLastInitialSyncAt).to.have.been.calledOnceWith(new Date());
 
     await readerMediatorMock.originalEmitSerial(
       ReaderMediator.EVENTS.RESET,
@@ -120,8 +111,8 @@ describe('attachSyncHandlers', () => {
       blocks[blocks.length - 1].height,
     );
 
-    expect(syncState.setLastInitialSyncAt).to.be.calledTwice();
-    expect(syncState.setLastInitialSyncAt).to.be.calledWith(new Date());
+    expect(syncState.setLastInitialSyncAt).to.have.been.calledTwice();
+    expect(syncState.setLastInitialSyncAt).to.have.been.calledWith(new Date());
   });
 
   it('should not update lastInitialSyncAt after FULLY_SYNCED event', async () => {
@@ -137,6 +128,6 @@ describe('attachSyncHandlers', () => {
       blocks[blocks.length - 1].height + 1,
     );
 
-    expect(syncState.setLastInitialSyncAt).have.not.been.called();
+    expect(syncState.setLastInitialSyncAt).to.have.not.been.called();
   });
 });

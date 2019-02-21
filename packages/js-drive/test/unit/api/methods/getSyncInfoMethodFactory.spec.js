@@ -34,7 +34,7 @@ describe('getSyncInfoMethodFactory', () => {
     );
     getSyncInfo.returns(syncInfo);
     const syncStatusData = await getSyncInfoMethod();
-    expect(syncStatusData).to.be.deep.equal({
+    expect(syncStatusData).to.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,

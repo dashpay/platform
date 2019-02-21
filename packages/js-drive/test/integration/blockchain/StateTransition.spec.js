@@ -32,7 +32,7 @@ describe('StateTransition', () => {
   });
 
   describe('#getPacketCID', () => {
-    it('should create correct CID', async () => {
+    it('should create a correct CID', async () => {
       stateTransition.extraPayload.setHashSTPacket(stPacket.hash());
 
       const cidFromIPFS = await stPacketRepository.store(stPacket);

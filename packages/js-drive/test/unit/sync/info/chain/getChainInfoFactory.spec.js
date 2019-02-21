@@ -15,7 +15,7 @@ describe('getChainInfoFactory', () => {
     const lastBestBlock = rpcClient.blocks[rpcClient.blocks.length - 1];
     const chainInfo = await getChainInfo();
     expect(chainInfo).to.be.an.instanceOf(ChainInfo);
-    expect(chainInfo.toJSON()).to.be.deep.equal({
+    expect(chainInfo.toJSON()).to.deep.equal({
       lastChainBlockHeight: lastBestBlock.height,
       lastChainBlockHash: lastBestBlock.hash,
       isBlockchainSynced: true,

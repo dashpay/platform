@@ -31,26 +31,26 @@ describe('Revisions', () => {
     oldRevisions.getRevisionNumber = this.sinon.stub();
   });
 
-  it('should add and get revisions', () => {
+  it('should be able to add and get revisions', () => {
     oldRevisions.getRevisionNumber.returns(4);
 
     const result = newRevisions.addRevision(oldRevisions);
 
-    expect(result).to.be.equal(newRevisions);
+    expect(result).to.equal(newRevisions);
 
-    expect(newRevisions.getPreviousRevisions()).to.be.deep.equal(
+    expect(newRevisions.getPreviousRevisions()).to.deep.equal(
       previousRevisions.concat([oldRevisions.getCurrentRevision()]),
     );
   });
 
-  it('should remove specified revisions', () => {
+  it('should remove revisions that are ahead of the current one', () => {
     newRevisions.getRevisionNumber.returns(2);
 
     newRevisions.addRevision(oldRevisions);
 
     newRevisions.removeAheadRevisions();
 
-    expect(newRevisions.getPreviousRevisions()).to.be.deep.equal(
+    expect(newRevisions.getPreviousRevisions()).to.deep.equal(
       previousRevisions.slice(0, 2),
     );
   });

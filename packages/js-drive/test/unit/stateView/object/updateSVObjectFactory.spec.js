@@ -37,19 +37,19 @@ describe('updateSVObjectFactory', () => {
   it('should store SVObject if action is "create"', async () => {
     await updateSVObject(contractId, userId, reference, dpObject);
 
-    expect(svObjectRepository.store).to.calledOnce();
+    expect(svObjectRepository.store).to.have.been.calledOnce();
 
     const svObject = svObjectRepository.store.getCall(0).args[0];
 
-    expect(svObject).to.be.instanceOf(SVObject);
-    expect(svObject.getUserId()).to.be.equal(userId);
-    expect(svObject.getDPObject()).to.be.equal(dpObject);
-    expect(svObject.getReference()).to.be.equal(reference);
-    expect(svObject.getPreviousRevisions()).to.be.deep.equal([]);
+    expect(svObject).to.be.an.instanceOf(SVObject);
+    expect(svObject.getUserId()).to.equal(userId);
+    expect(svObject.getDPObject()).to.equal(dpObject);
+    expect(svObject.getReference()).to.equal(reference);
+    expect(svObject.getPreviousRevisions()).to.deep.equal([]);
     expect(svObject.isDeleted()).to.be.false();
   });
 
-  it('should store SVObject if action is "update" and has previous version', async () => {
+  it('should store SVObject if action is "update" and it has a previous version', async () => {
     const [previousSVObject] = getSVObjectsFixture();
 
     svObjectRepository.find.returns(previousSVObject);
@@ -59,22 +59,22 @@ describe('updateSVObjectFactory', () => {
 
     await updateSVObject(contractId, userId, reference, dpObject);
 
-    expect(svObjectRepository.find).to.be.calledOnceWith(dpObject.getId());
-    expect(svObjectRepository.store).to.calledOnce();
+    expect(svObjectRepository.find).to.have.been.calledOnceWith(dpObject.getId());
+    expect(svObjectRepository.store).to.have.been.calledOnce();
 
     const svObject = svObjectRepository.store.getCall(0).args[0];
 
-    expect(svObject).to.be.instanceOf(SVObject);
-    expect(svObject.getUserId()).to.be.equal(userId);
-    expect(svObject.getDPObject()).to.be.equal(dpObject);
-    expect(svObject.getReference()).to.be.equal(reference);
-    expect(svObject.getPreviousRevisions()).to.be.deep.equal([
+    expect(svObject).to.be.an.instanceOf(SVObject);
+    expect(svObject.getUserId()).to.equal(userId);
+    expect(svObject.getDPObject()).to.equal(dpObject);
+    expect(svObject.getReference()).to.equal(reference);
+    expect(svObject.getPreviousRevisions()).to.deep.equal([
       previousSVObject.getCurrentRevision(),
     ]);
     expect(svObject.isDeleted()).to.be.false();
   });
 
-  it('should throw error if action is "update" and there is no previous version', async () => {
+  it('should throw an error if action is "update" and there is no previous version', async () => {
     svObjectRepository.find.returns(null);
 
     dpObject.setAction(DPObject.ACTIONS.UPDATE);
@@ -86,13 +86,13 @@ describe('updateSVObjectFactory', () => {
       error = e;
     }
 
-    expect(error).to.be.instanceOf(Error);
+    expect(error).to.be.an.instanceOf(Error);
 
-    expect(svObjectRepository.find).to.be.calledOnceWith(dpObject.getId());
-    expect(svObjectRepository.store).not.to.be.called();
+    expect(svObjectRepository.find).to.have.been.calledOnceWith(dpObject.getId());
+    expect(svObjectRepository.store).to.have.not.been.called();
   });
 
-  it('should store SVObject remove ahead versions if action is "update" upon reverting', async () => {
+  it('should store SVObject and remove ahead versions if action is "update" upon reverting', async () => {
     const previousRevisions = [
       new Revision(0, reference),
       new Revision(1, reference),
@@ -117,16 +117,16 @@ describe('updateSVObjectFactory', () => {
 
     await updateSVObject(contractId, userId, reference, dpObject, true);
 
-    expect(svObjectRepository.find).to.be.calledOnceWith(dpObject.getId());
-    expect(svObjectRepository.store).to.calledOnce();
+    expect(svObjectRepository.find).to.have.been.calledOnceWith(dpObject.getId());
+    expect(svObjectRepository.store).to.have.been.calledOnce();
 
     const svObject = svObjectRepository.store.getCall(0).args[0];
 
-    expect(svObject).to.be.instanceOf(SVObject);
-    expect(svObject.getUserId()).to.be.equal(userId);
-    expect(svObject.getDPObject()).to.be.equal(dpObject);
-    expect(svObject.getReference()).to.be.equal(reference);
-    expect(svObject.getPreviousRevisions()).to.be.deep.equal(previousRevisions.slice(0, 2));
+    expect(svObject).to.be.an.instanceOf(SVObject);
+    expect(svObject.getUserId()).to.equal(userId);
+    expect(svObject.getDPObject()).to.equal(dpObject);
+    expect(svObject.getReference()).to.equal(reference);
+    expect(svObject.getPreviousRevisions()).to.deep.equal(previousRevisions.slice(0, 2));
     expect(svObject.isDeleted()).to.be.false();
   });
 
@@ -141,22 +141,22 @@ describe('updateSVObjectFactory', () => {
 
     await updateSVObject(contractId, userId, reference, dpObject);
 
-    expect(svObjectRepository.store).to.calledOnce();
+    expect(svObjectRepository.store).to.have.been.calledOnce();
 
     const svObject = svObjectRepository.store.getCall(0).args[0];
 
-    expect(svObject).to.be.instanceOf(SVObject);
-    expect(svObject.getUserId()).to.be.equal(userId);
-    expect(svObject.getDPObject()).to.be.equal(dpObject);
-    expect(svObject.getReference()).to.be.equal(reference);
-    expect(svObject.getPreviousRevisions()).to.be.deep.equal([
+    expect(svObject).to.be.an.instanceOf(SVObject);
+    expect(svObject.getUserId()).to.equal(userId);
+    expect(svObject.getDPObject()).to.equal(dpObject);
+    expect(svObject.getReference()).to.equal(reference);
+    expect(svObject.getPreviousRevisions()).to.deep.equal([
       previousSVObject.getCurrentRevision(),
     ]);
     expect(svObject.isDeleted()).to.be.true();
   });
 
 
-  it('should throw error if action is not supported', async () => {
+  it('should throw an error if action is not supported', async () => {
     dpObject.setAction(100);
 
     let error;
@@ -166,8 +166,8 @@ describe('updateSVObjectFactory', () => {
       error = e;
     }
 
-    expect(error).to.be.instanceOf(Error);
+    expect(error).to.be.an.instanceOf(Error);
 
-    expect(svObjectRepository.store).not.to.be.called();
+    expect(svObjectRepository.store).to.have.not.been.called();
   });
 });

@@ -13,7 +13,7 @@ describe('SyncState', () => {
   it('should set and return blocks', () => {
     state.setBlocks(blocks);
 
-    expect(state.getBlocks()).to.be.equals(blocks);
+    expect(state.getBlocks()).to.equal(blocks);
   });
 
   it('should set and return last sync date', () => {
@@ -21,7 +21,7 @@ describe('SyncState', () => {
 
     state.setLastSyncAt(date);
 
-    expect(state.getLastSyncAt()).to.be.equals(date);
+    expect(state.getLastSyncAt()).to.equal(date);
   });
 
   it('should return last block hash');
@@ -31,14 +31,14 @@ describe('SyncState', () => {
     const passedDate = new Date();
     state = new SyncState(passedBlocks, passedDate);
 
-    expect(state.getBlocks()).to.be.equals(passedBlocks);
-    expect(state.getLastSyncAt()).to.be.equals(passedDate);
+    expect(state.getBlocks()).to.equal(passedBlocks);
+    expect(state.getLastSyncAt()).to.equal(passedDate);
   });
 
   it('should return last block', () => {
     state.setBlocks(blocks);
 
-    expect(state.getLastBlock()).to.be.equals(blocks[blocks.length - 1]);
+    expect(state.getLastBlock()).to.equal(blocks[blocks.length - 1]);
   });
 
   it('should compare state data with another sync state', () => {
@@ -55,7 +55,7 @@ describe('SyncState', () => {
   it('should return plain data', () => {
     state.setBlocks(blocks);
 
-    expect(state.toJSON()).to.be.deep.equals({
+    expect(state.toJSON()).to.deep.equal({
       blocks: state.getBlocks(),
       lastSyncAt: state.getLastSyncAt(),
       lastInitialSyncAt: state.getLastInitialSyncAt(),
@@ -85,8 +85,8 @@ describe('SyncState', () => {
     const lastInitialSyncAt = null;
     const syncState = new SyncState(blocks, firstLastSyncAt, lastInitialSyncAt);
 
-    expect(syncState.getLastSyncAt()).to.be.equal(firstLastSyncAt);
-    expect(syncState.getLastInitialSyncAt()).to.be.equal(null);
+    expect(syncState.getLastSyncAt()).to.equal(firstLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.equal(null);
   });
 
   it('should have equal differents lastInitialSyncAt and lastSyncAt if lastInitialSyncAt is provided', () => {
@@ -94,8 +94,8 @@ describe('SyncState', () => {
     const lastInitialSyncAt = new Date();
     const syncState = new SyncState(blocks, firstLastSyncAt, lastInitialSyncAt);
 
-    expect(syncState.getLastSyncAt()).to.be.equal(firstLastSyncAt);
-    expect(syncState.getLastInitialSyncAt()).to.be.equal(lastInitialSyncAt);
+    expect(syncState.getLastSyncAt()).to.equal(firstLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.equal(lastInitialSyncAt);
   });
 
   it('should not update lastInitialSyncAt provided when setLastSyncAt', () => {
@@ -106,8 +106,8 @@ describe('SyncState', () => {
     const secondLastSyncAt = new Date();
     syncState.setLastSyncAt(secondLastSyncAt);
 
-    expect(syncState.getLastSyncAt()).to.be.equal(secondLastSyncAt);
-    expect(syncState.getLastInitialSyncAt()).to.be.equal(lastInitialSyncAt);
+    expect(syncState.getLastSyncAt()).to.equal(secondLastSyncAt);
+    expect(syncState.getLastInitialSyncAt()).to.equal(lastInitialSyncAt);
   });
 
   it('should clean state');

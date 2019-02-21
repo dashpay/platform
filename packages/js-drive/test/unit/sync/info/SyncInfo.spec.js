@@ -19,7 +19,7 @@ describe('SyncInfo', () => {
       lastChainBlock.hash,
       isBlockChainSynced,
     );
-    expect(syncInfo.toJSON()).to.be.deep.equal({
+    expect(syncInfo.toJSON()).to.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
@@ -47,7 +47,7 @@ describe('SyncInfo', () => {
         lastChainBlock.hash,
         isBlockChainSynced,
       );
-      expect(syncInfo.getStatus()).to.be.equal(SyncInfo.STATUSES.INITIAL_SYNC);
+      expect(syncInfo.getStatus()).to.equal(SyncInfo.STATUSES.INITIAL_SYNC);
     });
 
     it('should be INITIAL_SYNC if has not lastInitialSyncAt', async () => {
@@ -66,7 +66,7 @@ describe('SyncInfo', () => {
         lastChainBlock.hash,
         isBlockChainSynced,
       );
-      expect(syncInfo.getStatus()).to.be.equal(SyncInfo.STATUSES.INITIAL_SYNC);
+      expect(syncInfo.getStatus()).to.equal(SyncInfo.STATUSES.INITIAL_SYNC);
     });
 
     it('should be SYNCING if has lastSyncAt and isBlockchainSynced is false', async () => {
@@ -85,7 +85,7 @@ describe('SyncInfo', () => {
         lastChainBlock.hash,
         isBlockChainSynced,
       );
-      expect(syncInfo.getStatus()).to.be.equal(SyncInfo.STATUSES.SYNCING);
+      expect(syncInfo.getStatus()).to.equal(SyncInfo.STATUSES.SYNCING);
     });
 
     it('should be SYNCING if last synced block hash is different with last chain block hash', async () => {
@@ -104,7 +104,7 @@ describe('SyncInfo', () => {
         lastChainBlock.hash,
         isBlockChainSynced,
       );
-      expect(syncInfo.getStatus()).to.be.equal(SyncInfo.STATUSES.SYNCING);
+      expect(syncInfo.getStatus()).to.equal(SyncInfo.STATUSES.SYNCING);
     });
 
     it('should be synced if ChainInfo isBlockchainSynced is true and SyncState last block hash is equal to ChainInfo last block hash', async () => {
@@ -123,7 +123,7 @@ describe('SyncInfo', () => {
         lastChainBlock.hash,
         isBlockChainSynced,
       );
-      expect(syncInfo.getStatus()).to.be.equal(SyncInfo.STATUSES.SYNCED);
+      expect(syncInfo.getStatus()).to.equal(SyncInfo.STATUSES.SYNCED);
     });
   });
 });

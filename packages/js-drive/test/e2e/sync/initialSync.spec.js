@@ -141,7 +141,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     const { result: rawDPContract } = await firstDashDrive.driveApi.getApi()
       .request('fetchDPContract', { contractId: dpContract.getId() });
 
-    expect(rawDPContract).to.be.deep.equal(dpContract.toJSON());
+    expect(rawDPContract).to.deep.equal(dpContract.toJSON());
 
     // 4. Create a bunch of `user` DP Objects (for every blockchain user)
     let prevTransitionId;
@@ -192,7 +192,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       contractId: dpContract.getId(),
     });
 
-    expect(fetchedDPContract).to.be.deep.equal(dpContract.toJSON());
+    expect(fetchedDPContract).to.deep.equal(dpContract.toJSON());
 
     const { result: fetchedDPObjects } = await driveApi.request('fetchDPObjects', {
       contractId: dpContract.getId(),
@@ -208,7 +208,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     }
   });
 
-  after('cleanup lone services', async () => {
+  after('cleanup services', async () => {
     const instances = [
       firstDashDrive,
       secondDashDrive,

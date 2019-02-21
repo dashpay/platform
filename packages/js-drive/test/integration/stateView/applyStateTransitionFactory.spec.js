@@ -108,7 +108,7 @@ describe('applyStateTransitionFactory', () => {
 
     await applyStateTransition(stateTransition, block);
 
-    expect(readerMediator.emitSerial).to.be.calledWith(
+    expect(readerMediator.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.DP_CONTRACT_APPLIED,
       {
         userId: stateTransition.extraPayload.regTxId,
@@ -120,10 +120,10 @@ describe('applyStateTransitionFactory', () => {
 
     const svContract = await svContractMongoDbRepository.find(contractId);
 
-    expect(svContract.getContractId()).to.be.equal(contractId);
-    expect(svContract.getDPContract().toJSON()).to.be.deep.equal(stPacket.getDPContract().toJSON());
-    expect(svContract.getReference()).to.be.deep.equal(reference);
-    expect(svContract.getPreviousRevisions()).to.be.deep.equal([]);
+    expect(svContract.getContractId()).to.equal(contractId);
+    expect(svContract.getDPContract().toJSON()).to.deep.equal(stPacket.getDPContract().toJSON());
+    expect(svContract.getReference()).to.deep.equal(reference);
+    expect(svContract.getPreviousRevisions()).to.deep.equal([]);
   });
 
   it('should compute DP Objects state view', async () => {
@@ -141,7 +141,7 @@ describe('applyStateTransitionFactory', () => {
 
     await applyStateTransition(stateTransition, block);
 
-    expect(readerMediator.emitSerial).to.be.calledTwice();
+    expect(readerMediator.emitSerial).to.have.been.calledTwice();
 
     for (const dpObject of stPacket.getDPObjects()) {
       const svObjectRepository = createSVObjectMongoDbRepository(
@@ -150,12 +150,12 @@ describe('applyStateTransitionFactory', () => {
       );
       const svObjects = await svObjectRepository.fetch();
 
-      expect(svObjects).to.be.a('array');
+      expect(svObjects).to.be.an('array');
       expect(svObjects).to.have.lengthOf(1);
 
       const [svObject] = svObjects;
 
-      expect(svObject.getDPObject().toJSON()).to.be.deep.equal(dpObject.toJSON());
+      expect(svObject.getDPObject().toJSON()).to.deep.equal(dpObject.toJSON());
 
       const reference = new Reference({
         blockHash: block.hash,
@@ -165,7 +165,7 @@ describe('applyStateTransitionFactory', () => {
         hash: dpObject.hash(),
       });
 
-      expect(readerMediator.emitSerial).to.be.calledWith(
+      expect(readerMediator.emitSerial).to.have.been.calledWith(
         ReaderMediator.EVENTS.DP_OBJECT_APPLIED,
         {
           userId: stateTransition.extraPayload.regTxId,

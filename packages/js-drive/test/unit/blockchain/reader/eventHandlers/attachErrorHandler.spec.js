@@ -36,7 +36,7 @@ describe('attachErrorHandler', () => {
       },
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.not.called();
+    expect(readerMediatorMock.emitSerial).to.have.not.been.called();
   });
 
   it('should skip State Transition if skipStateTransitionWithErrors is enabled', async () => {
@@ -62,9 +62,9 @@ describe('attachErrorHandler', () => {
       expectedError = e;
     }
 
-    expect(expectedError).to.be.instanceOf(IgnoreStateTransitionError);
+    expect(expectedError).to.be.an.instanceOf(IgnoreStateTransitionError);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledOnceWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledOnceWith(
       ReaderMediator.EVENTS.STATE_TRANSITION_SKIP,
       {
         block: blocks[0],

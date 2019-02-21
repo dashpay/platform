@@ -141,7 +141,7 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
 
     const svObjects = await svObjectRepository.fetch();
 
-    expect(svObjects).not.to.be.empty();
+    expect(svObjects).to.be.not.empty();
 
     await revertSVObjectsForStateTransition({
       stateTransition,
@@ -151,7 +151,7 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
 
     expect(svObjectsAfterReverting).to.be.empty();
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.DP_OBJECT_MARKED_DELETED,
       {
         userId,
@@ -247,19 +247,19 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
 
     const revertedSVObjects = await svObjectRepository.fetch(dpObject.getId());
 
-    expect(revertedSVObjects).to.be.a('array');
+    expect(revertedSVObjects).to.be.an('array');
 
     const [revertedSVObject] = revertedSVObjects;
 
-    expect(revertedSVObject).to.be.instanceOf(SVObject);
+    expect(revertedSVObject).to.be.an.instanceOf(SVObject);
 
-    expect(revertedSVObject.getDPObject().getRevision()).to.be.equal(1);
+    expect(revertedSVObject.getDPObject().getRevision()).to.equal(1);
 
-    expect(revertedSVObject.getPreviousRevisions()).to.be.deep.equal([
+    expect(revertedSVObject.getPreviousRevisions()).to.deep.equal([
       previousRevisions[0],
     ]);
 
-    expect(readerMediatorMock.emitSerial.getCall(1)).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial.getCall(1)).to.have.been.calledWith(
       ReaderMediator.EVENTS.DP_OBJECT_REVERTED,
       {
         userId: svObject.getUserId(),

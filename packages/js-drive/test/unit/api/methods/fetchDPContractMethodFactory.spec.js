@@ -26,12 +26,12 @@ describe('fetchDPContractMethodFactory', () => {
       error = e;
     }
 
-    expect(error).to.be.instanceOf(InvalidParamsError);
+    expect(error).to.be.an.instanceOf(InvalidParamsError);
 
-    expect(fetchDPContractMock).not.to.be.called();
+    expect(fetchDPContractMock).to.have.not.been.called();
   });
 
-  it('should throw error if DP Contract not found', async () => {
+  it('should throw error if DP Contract is not found', async () => {
     fetchDPContractMock.returns(null);
 
     let error;
@@ -41,9 +41,9 @@ describe('fetchDPContractMethodFactory', () => {
       error = e;
     }
 
-    expect(error).to.be.instanceOf(InvalidParamsError);
+    expect(error).to.be.an.instanceOf(InvalidParamsError);
 
-    expect(fetchDPContractMock).to.be.calledOnceWith(contractId);
+    expect(fetchDPContractMock).to.have.been.calledOnceWith(contractId);
   });
 
   it('should return DP contract', async () => {
@@ -51,8 +51,8 @@ describe('fetchDPContractMethodFactory', () => {
 
     const result = await fetchDPContractMethod({ contractId });
 
-    expect(result).to.be.deep.equal(dpContract.toJSON());
+    expect(result).to.deep.equal(dpContract.toJSON());
 
-    expect(fetchDPContractMock).to.be.calledOnceWith(contractId);
+    expect(fetchDPContractMock).to.have.been.calledOnceWith(contractId);
   });
 });

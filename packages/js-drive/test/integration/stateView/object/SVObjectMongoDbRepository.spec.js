@@ -51,7 +51,7 @@ describe('SVObjectMongoDbRepository', function main() {
     it('should store SV Object', async () => {
       const result = await svObjectRepository.find(svObject.getDPObject().getId());
 
-      expect(result).to.be.instanceOf(SVObject);
+      expect(result).to.be.an.instanceOf(SVObject);
       expect(result.toJSON()).to.deep.equal(svObject.toJSON());
     });
   });
@@ -60,7 +60,7 @@ describe('SVObjectMongoDbRepository', function main() {
     it('should fetch SV Objects', async () => {
       const result = await svObjectRepository.fetch();
 
-      expect(result).to.be.a('array');
+      expect(result).to.be.an('array');
 
       const actualRawSVObjects = sortAndJsonizeSVObjects(result);
       const expectedRawSVObjects = sortAndJsonizeSVObjects(svObjects);
@@ -68,7 +68,7 @@ describe('SVObjectMongoDbRepository', function main() {
       expect(actualRawSVObjects).to.have.deep.members(expectedRawSVObjects);
     });
 
-    it('should not fetch SV Object marked as deleted');
+    it('should not fetch SV Object that is marked as deleted');
 
     describe('where', () => {
       it('should fetch SV Objects by where condition', async () => {
@@ -78,14 +78,14 @@ describe('SVObjectMongoDbRepository', function main() {
 
         const result = await svObjectRepository.fetch(options);
 
-        expect(result).to.be.a('array');
+        expect(result).to.be.an('array');
 
         const [expectedSVObject] = result;
 
-        expect(expectedSVObject.toJSON()).to.be.deep.equal(svObject.toJSON());
+        expect(expectedSVObject.toJSON()).to.deep.equal(svObject.toJSON());
       });
 
-      it('should throw InvalidWhereError if where is not an object', async () => {
+      it('should throw InvalidWhereError if where clause is not an object', async () => {
         const options = {
           where: 'something',
         };
@@ -97,10 +97,10 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidWhereError);
+        expect(error).to.be.an.instanceOf(InvalidWhereError);
       });
 
-      it('should throw InvalidWhereError if where is boolean', async () => {
+      it('should throw InvalidWhereError if where clause is boolean', async () => {
         const options = {
           where: false,
         };
@@ -112,20 +112,20 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidWhereError);
+        expect(error).to.be.an.instanceOf(InvalidWhereError);
       });
 
-      it('should return empty array if where conditions do not match', async () => {
+      it('should return empty array if where clause conditions do not match', async () => {
         const options = {
           where: { 'dpObject.name': 'Dash enthusiast' },
         };
 
         const result = await svObjectRepository.fetch(options);
 
-        expect(result).to.be.deep.equal([]);
+        expect(result).to.deep.equal([]);
       });
 
-      it('should throw unknown operator error if where conditions are invalid', async () => {
+      it('should throw an unknown operator error if where clause conditions are invalid', async () => {
         const options = {
           where: { 'dpObject.name': { $dirty: true } },
         };
@@ -137,10 +137,10 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error.message).to.be.equal('unknown operator: $dirty');
+        expect(error.message).to.equal('unknown operator: $dirty');
       });
 
-      it('should throw unknown operator error if where conditions are invalid', async () => {
+      it('should throw an unknown operator error if where clause conditions are invalid', async () => {
         const options = {
           where: { 'dpObject.name': { $dirty: true } },
         };
@@ -152,19 +152,19 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error.message).to.be.equal('unknown operator: $dirty');
+        expect(error.message).to.equal('unknown operator: $dirty');
       });
     });
 
     describe('limit', () => {
-      it('should limit return to 1 SV Object if limit', async () => {
+      it('should limit return to 1 SV Object if limit is set', async () => {
         const options = {
           limit: 1,
         };
 
         const result = await svObjectRepository.fetch(options);
 
-        expect(result).to.be.a('array');
+        expect(result).to.be.an('array');
         expect(result).to.have.lengthOf(1);
       });
 
@@ -180,10 +180,10 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidLimitError);
+        expect(error).to.be.an.instanceOf(InvalidLimitError);
       });
 
-      it('should throw InvalidLimitError if limit is boolean', async () => {
+      it('should throw InvalidLimitError if limit is a boolean', async () => {
         const options = {
           limit: false,
         };
@@ -195,7 +195,7 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidLimitError);
+        expect(error).to.be.an.instanceOf(InvalidLimitError);
       });
     });
 
@@ -215,12 +215,12 @@ describe('SVObjectMongoDbRepository', function main() {
 
         const result = await svObjectRepository.fetch(options);
 
-        expect(result).to.be.a('array');
+        expect(result).to.be.an('array');
 
         const actualRawSVObjects = result.map(o => o.toJSON());
         const expectedRawSVObjects = svObjects.reverse().map(o => o.toJSON());
 
-        expect(actualRawSVObjects).to.be.deep.equal(expectedRawSVObjects);
+        expect(actualRawSVObjects).to.deep.equal(expectedRawSVObjects);
       });
 
       it('should order asc', async () => {
@@ -238,12 +238,12 @@ describe('SVObjectMongoDbRepository', function main() {
 
         const result = await svObjectRepository.fetch(options);
 
-        expect(result).to.be.a('array');
+        expect(result).to.be.an('array');
 
         const actualRawSVObjects = result.map(o => o.toJSON());
         const expectedRawSVObjects = svObjects.map(o => o.toJSON());
 
-        expect(actualRawSVObjects).to.be.deep.equal(expectedRawSVObjects);
+        expect(actualRawSVObjects).to.deep.equal(expectedRawSVObjects);
       });
 
       it('should throw InvalidOrderBy if orderBy is not an object', async () => {
@@ -258,10 +258,10 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidOrderBy);
+        expect(error).to.be.an.instanceOf(InvalidOrderBy);
       });
 
-      it('should throw InvalidOrderBy if orderBy is boolean', async () => {
+      it('should throw InvalidOrderBy if orderBy is a boolean', async () => {
         const options = {
           orderBy: false,
         };
@@ -273,7 +273,7 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidOrderBy);
+        expect(error).to.be.an.instanceOf(InvalidOrderBy);
       });
     });
 
@@ -294,12 +294,12 @@ describe('SVObjectMongoDbRepository', function main() {
 
         const result = await svObjectRepository.fetch(options);
 
-        expect(result).to.be.a('array');
+        expect(result).to.be.an('array');
 
         const actualRawSVObjects = result.map(o => o.toJSON());
         const expectedRawSVObjects = svObjects.splice(1).map(o => o.toJSON());
 
-        expect(actualRawSVObjects).to.be.deep.equal(expectedRawSVObjects);
+        expect(actualRawSVObjects).to.deep.equal(expectedRawSVObjects);
       });
 
       it('should throw InvalidStartAtError if startAt is not a number', async () => {
@@ -314,10 +314,10 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidStartAtError);
+        expect(error).to.be.an.instanceOf(InvalidStartAtError);
       });
 
-      it('should throw InvalidStartAtError if startAt is boolean', async () => {
+      it('should throw InvalidStartAtError if startAt is a boolean', async () => {
         const options = {
           startAt: 'something',
         };
@@ -329,7 +329,7 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidStartAtError);
+        expect(error).to.be.an.instanceOf(InvalidStartAtError);
       });
 
       it('should start after 1 object', async () => {
@@ -348,12 +348,12 @@ describe('SVObjectMongoDbRepository', function main() {
 
         const result = await svObjectRepository.fetch(options);
 
-        expect(result).to.be.a('array');
+        expect(result).to.be.an('array');
 
         const actualRawSVObjects = result.map(o => o.toJSON());
         const expectedRawSVObjects = svObjects.splice(1).map(o => o.toJSON());
 
-        expect(actualRawSVObjects).to.be.deep.equal(expectedRawSVObjects);
+        expect(actualRawSVObjects).to.deep.equal(expectedRawSVObjects);
       });
 
       it('should throw InvalidStartAfterError if startAfter is not a number', async () => {
@@ -368,10 +368,10 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidStartAfterError);
+        expect(error).to.be.an.instanceOf(InvalidStartAfterError);
       });
 
-      it('should throw InvalidStartAfterError if startAfter is boolean', async () => {
+      it('should throw InvalidStartAfterError if startAfter is a boolean', async () => {
         const options = {
           startAfter: false,
         };
@@ -383,10 +383,10 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(InvalidStartAfterError);
+        expect(error).to.be.an.instanceOf(InvalidStartAfterError);
       });
 
-      it('should throw AmbiguousStartError if the both startAt and startAfter are present', async () => {
+      it('should throw AmbiguousStartError if both startAt and startAfter are present', async () => {
         let error;
 
         try {
@@ -395,7 +395,7 @@ describe('SVObjectMongoDbRepository', function main() {
           error = e;
         }
 
-        expect(error).to.be.instanceOf(AmbiguousStartError);
+        expect(error).to.be.an.instanceOf(AmbiguousStartError);
       });
     });
   });
@@ -406,11 +406,11 @@ describe('SVObjectMongoDbRepository', function main() {
 
       const result = await svObjectRepository.findAllBySTHash(stHash);
 
-      expect(result).to.be.a('array');
+      expect(result).to.be.an('array');
 
       const [expectedSVObject] = result;
 
-      expect(expectedSVObject.toJSON()).to.be.deep.equal(svObject.toJSON());
+      expect(expectedSVObject.toJSON()).to.deep.equal(svObject.toJSON());
     });
   });
 
@@ -429,7 +429,7 @@ describe('SVObjectMongoDbRepository', function main() {
 
     it('should find SV Object marked as deleted by ID');
 
-    it('should return null if SV object not found', async () => {
+    it('should return null if SV object was not found', async () => {
       const object = await svObjectRepository.find('unknown');
 
       expect(object).to.be.null();

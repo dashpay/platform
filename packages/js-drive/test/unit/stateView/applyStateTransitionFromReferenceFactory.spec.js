@@ -36,13 +36,8 @@ describe('applyStateTransitionFromReferenceFactory', () => {
 
     await applyStateTransitionFromReference(reference);
 
-    expect(rpcClientMock.getBlock).to.be.calledOnce();
-    expect(rpcClientMock.getBlock).to.be.calledWith(block.hash);
-
-    expect(rpcClientMock.getRawTransaction).to.be.calledOnce();
-    expect(rpcClientMock.getRawTransaction).to.be.calledWith(stateTransition.hash);
-
-    expect(applyStateTransition).to.be.calledOnce();
-    expect(applyStateTransition).to.be.calledWith(stateTransition, block);
+    expect(rpcClientMock.getBlock).to.have.been.calledOnceWith(block.hash);
+    expect(rpcClientMock.getRawTransaction).to.have.been.calledOnceWith(stateTransition.hash);
+    expect(applyStateTransition).to.have.been.calledOnceWith(stateTransition, block);
   });
 });

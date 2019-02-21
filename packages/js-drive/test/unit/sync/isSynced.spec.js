@@ -52,7 +52,7 @@ describe('isSynced', () => {
 
     const syncInfo = await isSynced(getSyncInfo, changeListenerMock, checkInterval);
 
-    expect(info).to.be.equals(syncInfo);
+    expect(info).to.equals(syncInfo);
   });
 
   it('should return state if last block in chain is synced', async () => {
@@ -65,7 +65,7 @@ describe('isSynced', () => {
 
     const syncInfo = await isSynced(getSyncInfo, changeListenerMock, checkInterval);
 
-    expect(info).to.be.equals(syncInfo);
+    expect(info).to.equals(syncInfo);
   });
 
   it('should listen changes until last block in chain is synced', (done) => {
@@ -78,14 +78,14 @@ describe('isSynced', () => {
     const isSyncedPromise = isSynced(getSyncInfo, changeListenerMock, checkInterval);
 
     setImmediate(() => {
-      expect(changeListenerMock.listen).to.be.calledOnce();
+      expect(changeListenerMock.listen).to.have.been.calledOnce();
 
       // State changed but sync is not completed
       state.setBlocks([rpcClientMock.blocks[0]]);
       changeListenerMock.emit('change', state);
 
-      expect(changeListenerMock.stop).not.to.be.called();
-      expect(changeListenerMock.removeListener).not.to.be.called();
+      expect(changeListenerMock.stop).to.have.not.been.called();
+      expect(changeListenerMock.removeListener).to.have.not.been.called();
 
       // State changed and sync is completed
       const changeTime = new Date();
@@ -97,12 +97,11 @@ describe('isSynced', () => {
       const changedState = new SyncState(rpcClientMock.blocks, changeTime);
       changeListenerMock.emit('change', changedState);
 
-      expect(changeListenerMock.removeListener).to.be.calledOnce();
-      expect(changeListenerMock.removeListener).to.be.calledWith('change');
+      expect(changeListenerMock.removeListener).to.have.been.calledOnceWith('change');
 
-      expect(changeListenerMock.stop).to.be.calledOnce();
+      expect(changeListenerMock.stop).to.have.been.calledOnce();
 
-      expect(isSyncedPromise).become(changedState);
+      expect(isSyncedPromise).to.become(changedState);
 
       done();
     });
@@ -142,12 +141,11 @@ describe('isSynced', () => {
       const changedState = new SyncState(rpcClientMock.blocks, null);
       changeListenerMock.emit('change', changedState);
 
-      expect(changeListenerMock.removeListener).to.be.not.calledOnce();
-      expect(changeListenerMock.removeListener).to.be.not.calledWith('change');
+      expect(changeListenerMock.removeListener).to.have.not.been.called();
 
-      expect(changeListenerMock.stop).to.be.not.calledOnce();
+      expect(changeListenerMock.stop).to.have.not.been.called();
 
-      expect(isSyncedPromise).become(changedState);
+      expect(isSyncedPromise).to.become(changedState);
 
       done();
     });
@@ -167,12 +165,11 @@ describe('isSynced', () => {
       const changedState = new SyncState(rpcClientMock.blocks, new Date());
       changeListenerMock.emit('change', changedState);
 
-      expect(changeListenerMock.removeListener).to.be.calledOnce();
-      expect(changeListenerMock.removeListener).to.be.calledWith('change');
+      expect(changeListenerMock.removeListener).to.have.been.calledOnceWith('change');
 
-      expect(changeListenerMock.stop).to.be.calledOnce();
+      expect(changeListenerMock.stop).to.have.been.calledOnce();
 
-      expect(isSyncedPromise).become(changedState);
+      expect(isSyncedPromise).to.become(changedState);
 
       done();
     });
@@ -192,12 +189,11 @@ describe('isSynced', () => {
       const changedState = new SyncState(rpcClientMock.blocks, null);
       changeListenerMock.emit('change', changedState);
 
-      expect(changeListenerMock.removeListener).to.be.not.calledOnce();
-      expect(changeListenerMock.removeListener).to.be.not.calledWith('change');
+      expect(changeListenerMock.removeListener).to.have.not.been.called();
 
-      expect(changeListenerMock.stop).to.be.not.calledOnce();
+      expect(changeListenerMock.stop).to.have.not.been.called();
 
-      expect(isSyncedPromise).become(changedState);
+      expect(isSyncedPromise).to.become(changedState);
 
       done();
     });

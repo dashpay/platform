@@ -43,18 +43,18 @@ describe('fetchDPObjectsFactory', () => {
 
     const result = await fetchDPObjects(contractId, type);
 
-    expect(result).to.be.a('array');
+    expect(result).to.be.an('array');
     expect(result).to.have.lengthOf(1);
 
     const [actualDPObject] = result;
 
-    expect(actualDPObject.toJSON()).to.be.deep.equal(dpObject.toJSON());
+    expect(actualDPObject.toJSON()).to.deep.equal(dpObject.toJSON());
   });
 
   it('should fetch DP objects for specified contract id, object type and name', async () => {
     let result = await fetchDPObjects(contractId, type);
 
-    expect(result).to.be.deep.equal([]);
+    expect(result).to.deep.equal([]);
 
     const svObjectRepository = createSVObjectMongoDbRepository(contractId, type);
     await svObjectRepository.store(svObject);
@@ -62,12 +62,12 @@ describe('fetchDPObjectsFactory', () => {
     const options = { where: { 'dpObject.name': dpObject.get('name') } };
     result = await fetchDPObjects(contractId, type, options);
 
-    expect(result).to.be.a('array');
+    expect(result).to.be.an('array');
     expect(result).to.have.lengthOf(1);
 
     const [actualDPObject] = result;
 
-    expect(actualDPObject.toJSON()).to.be.deep.equal(dpObject.toJSON());
+    expect(actualDPObject.toJSON()).to.deep.equal(dpObject.toJSON());
   });
 
   it('should return empty array for specified contract ID, object type and name not exist', async () => {
@@ -78,7 +78,7 @@ describe('fetchDPObjectsFactory', () => {
 
     const result = await fetchDPObjects(contractId, type, options);
 
-    expect(result).to.be.deep.equal([]);
+    expect(result).to.deep.equal([]);
   });
 
   it('should return empty array if contract ID does not exist', async () => {
@@ -90,7 +90,7 @@ describe('fetchDPObjectsFactory', () => {
 
     const result = await fetchDPObjects(contractId, type);
 
-    expect(result).to.be.deep.equal([]);
+    expect(result).to.deep.equal([]);
   });
 
   it('should return empty array if type does not exist', async () => {
@@ -102,6 +102,6 @@ describe('fetchDPObjectsFactory', () => {
 
     const result = await fetchDPObjects(contractId, type);
 
-    expect(result).to.be.deep.equal([]);
+    expect(result).to.deep.equal([]);
   });
 });

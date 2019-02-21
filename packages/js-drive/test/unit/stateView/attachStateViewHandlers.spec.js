@@ -42,8 +42,7 @@ describe('attachStateViewHandlers', () => {
       block,
     });
 
-    expect(applyStateTransition).to.be.calledOnce();
-    expect(applyStateTransition).to.be.calledWith(stateTransition, block);
+    expect(applyStateTransition).to.have.been.calledOnceWith(stateTransition, block);
   });
 
   it('should call revertSVObjectsForStateTransition on the orphaned state transition event', async () => {
@@ -55,8 +54,10 @@ describe('attachStateViewHandlers', () => {
       block,
     });
 
-    expect(revertSVObjectsForStateTransition).to.be.calledOnce();
-    expect(revertSVObjectsForStateTransition).to.be.calledWith({ stateTransition, block });
+    expect(revertSVObjectsForStateTransition).to.have.been.calledOnceWith({
+      stateTransition,
+      block,
+    });
   });
 
   it('should call revertSVContractsForStateTransition on the orphaned state transition event', async () => {
@@ -68,14 +69,15 @@ describe('attachStateViewHandlers', () => {
       block,
     });
 
-    expect(revertSVContractsForStateTransition).to.be.calledOnce();
-    expect(revertSVContractsForStateTransition).to.be.calledWith({ stateTransition, block });
+    expect(revertSVContractsForStateTransition).to.have.been.calledOnceWith({
+      stateTransition,
+      block,
+    });
   });
 
   it('should call dropMongoDatabasesWithPrefix on the reset event', async () => {
     await readerMediatorMock.emit(ReaderMediator.EVENTS.RESET);
 
-    expect(dropMongoDatabasesWithPrefixStub).to.be.calledOnce();
-    expect(dropMongoDatabasesWithPrefixStub).to.be.calledWith(mongoDbPrefix);
+    expect(dropMongoDatabasesWithPrefixStub).to.have.been.calledOnceWith(mongoDbPrefix);
   });
 });

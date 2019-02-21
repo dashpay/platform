@@ -37,7 +37,7 @@ describe('SVContract', () => {
     it('should return contract ID', () => {
       const result = svContract.getContractId();
 
-      expect(result).to.be.equal(contractId);
+      expect(result).to.equal(contractId);
     });
   });
 
@@ -45,7 +45,7 @@ describe('SVContract', () => {
     it('should return user ID', () => {
       const result = svContract.getUserId();
 
-      expect(result).to.be.equal(userId);
+      expect(result).to.equal(userId);
     });
   });
 
@@ -53,7 +53,7 @@ describe('SVContract', () => {
     it('should return DP Contract', () => {
       const result = svContract.getDPContract();
 
-      expect(result.toJSON()).to.be.deep.equal(dpContract.toJSON());
+      expect(result.toJSON()).to.deep.equal(dpContract.toJSON());
     });
   });
 
@@ -61,7 +61,7 @@ describe('SVContract', () => {
     it('should return true if contract is deleted', () => {
       const result = svContract.isDeleted();
 
-      expect(result).to.be.equal(isDeleted);
+      expect(result).to.equal(isDeleted);
     });
   });
 
@@ -69,14 +69,14 @@ describe('SVContract', () => {
     it('should mark SV Contract as deleted', () => {
       const result = svContract.markAsDeleted();
 
-      expect(result).to.be.equal(svContract);
+      expect(result).to.equal(svContract);
 
       expect(svContract.deleted).to.be.true();
     });
   });
 
   describe('#toJSON', () => {
-    it('should return SV Contract as plain object', () => {
+    it('should return SV Contract as a plain object', () => {
       svContract = new SVContract(
         contractId,
         userId,
@@ -86,7 +86,7 @@ describe('SVContract', () => {
         previousRevisions,
       );
 
-      expect(svContract.toJSON()).to.be.deep.equal({
+      expect(svContract.toJSON()).to.deep.equal({
         contractId,
         userId,
         dpContract: dpContract.toJSON(),

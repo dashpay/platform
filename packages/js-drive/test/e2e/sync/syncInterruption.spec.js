@@ -152,7 +152,7 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
     // TODO Check that all contracts are available
   });
 
-  after('cleanup lone services', async () => {
+  after('cleanup services', async () => {
     const instances = [
       firstDashDrive,
       secondDashDrive,

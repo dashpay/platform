@@ -31,7 +31,7 @@ describe('SVObject', () => {
     it('should return user ID', () => {
       const result = svObject.getUserId();
 
-      expect(result).to.be.equal(userId);
+      expect(result).to.equal(userId);
     });
   });
 
@@ -39,7 +39,7 @@ describe('SVObject', () => {
     it('should return DP Object', () => {
       const result = svObject.getDPObject();
 
-      expect(result.toJSON()).to.be.deep.equal(dpObject.toJSON());
+      expect(result.toJSON()).to.deep.equal(dpObject.toJSON());
     });
   });
 
@@ -47,7 +47,7 @@ describe('SVObject', () => {
     it('should mark object as deleted', () => {
       const result = svObject.markAsDeleted();
 
-      expect(result).to.be.equal(svObject);
+      expect(result).to.equal(svObject);
 
       expect(svObject.deleted).to.be.true();
     });
@@ -62,7 +62,7 @@ describe('SVObject', () => {
   });
 
   describe('#toJSON', () => {
-    it('should return SVObject as plain object', () => {
+    it('should return SVObject as a plain object', () => {
       const result = svObject.toJSON();
 
       expect(result).to.deep.equal({

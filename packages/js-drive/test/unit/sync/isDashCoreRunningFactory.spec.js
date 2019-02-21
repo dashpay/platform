@@ -21,8 +21,8 @@ describe('isDashCoreRunningFactory', () => {
     const isRunning = await isDashCoreRunning(retries, retryDelay);
 
     expect(isRunning).to.be.false();
-    expect(rpcClient.ping).to.be.calledThrice();
-    expect(wait).to.be.calledTwice();
+    expect(rpcClient.ping).to.have.been.calledThrice();
+    expect(wait).to.have.been.calledTwice();
   });
 
   it('should not wait and return true if DashCore is running', async () => {
@@ -31,7 +31,7 @@ describe('isDashCoreRunningFactory', () => {
     const isRunning = await isDashCoreRunning(retries, retryDelay);
 
     expect(isRunning).to.be.true();
-    expect(rpcClient.ping).to.be.calledOnce();
-    expect(wait).have.not.been.called();
+    expect(rpcClient.ping).to.have.been.calledOnce();
+    expect(wait).to.have.not.been.called();
   });
 });

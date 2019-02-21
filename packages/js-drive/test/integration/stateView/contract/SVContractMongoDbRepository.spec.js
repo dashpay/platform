@@ -33,7 +33,7 @@ describe('SVContractMongoDbRepository', () => {
     expect(result.toJSON()).to.deep.equal(svContract.toJSON());
   });
 
-  it('should return null if not found', async () => {
+  it('should return null if SV Contract is not found', async () => {
     const result = await svContractRepository.find('unknown');
 
     expect(result).to.be.null();
@@ -46,8 +46,8 @@ describe('SVContractMongoDbRepository', () => {
       svContract.getReference().getSTHash(),
     );
 
-    expect(svContracts.length).to.be.equal(1);
-    expect(svContracts).to.be.deep.equal([svContract]);
+    expect(svContracts.length).to.equal(1);
+    expect(svContracts).to.deep.equal([svContract]);
   });
 
   it('should return null if contract was marked as deleted', async () => {
@@ -67,7 +67,7 @@ describe('SVContractMongoDbRepository', () => {
       _id: bs58.encode(Buffer.from(svContract.getContractId(), 'hex')),
     });
 
-    expect(result).not.to.be.null();
+    expect(result).to.be.not.null();
   });
 
   it('should successfuly delete a contract');

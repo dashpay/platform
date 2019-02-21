@@ -17,7 +17,7 @@ describe('Reference', () => {
   });
 
   describe('#toJSON', () => {
-    it('should return Reference as plain object', () => {
+    it('should return Reference as a plain object', () => {
       const result = reference.toJSON();
 
       expect(result).to.deep.equal(rawReference);

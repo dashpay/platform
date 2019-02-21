@@ -27,9 +27,9 @@ describe('fetchDPObjectsMethodFactory', () => {
       actualError = e;
     }
 
-    expect(actualError).to.be.instanceOf(InvalidParamsError);
+    expect(actualError).to.be.an.instanceOf(InvalidParamsError);
 
-    expect(fetchDPObjectsMock).to.be.calledOnceWith(contractId, type, options);
+    expect(fetchDPObjectsMock).to.have.been.calledOnceWith(contractId, type, options);
   }
 
   beforeEach(function beforeEach() {
@@ -49,9 +49,9 @@ describe('fetchDPObjectsMethodFactory', () => {
       error = e;
     }
 
-    expect(error).to.be.instanceOf(InvalidParamsError);
+    expect(error).to.be.an.instanceOf(InvalidParamsError);
 
-    expect(fetchDPObjectsMock).not.to.be.called();
+    expect(fetchDPObjectsMock).to.have.not.been.called();
   });
 
   it('should throw InvalidParamsError if InvalidWhereError is thrown', async () => {
@@ -90,9 +90,9 @@ describe('fetchDPObjectsMethodFactory', () => {
       error = e;
     }
 
-    expect(error).to.be.equal(fetchError);
+    expect(error).to.equal(fetchError);
 
-    expect(fetchDPObjectsMock).to.be.calledOnceWith(contractId, type, options);
+    expect(fetchDPObjectsMock).to.have.been.calledOnceWith(contractId, type, options);
   });
 
   it('should return DP Objects', async () => {
@@ -103,8 +103,8 @@ describe('fetchDPObjectsMethodFactory', () => {
 
     const result = await fetchDPObjectsMethod({ contractId, type, options });
 
-    expect(result).to.be.deep.equal(rawDPObjects);
+    expect(result).to.deep.equal(rawDPObjects);
 
-    expect(fetchDPObjectsMock).to.be.calledOnceWith(contractId, type, options);
+    expect(fetchDPObjectsMock).to.have.been.calledOnceWith(contractId, type, options);
   });
 });

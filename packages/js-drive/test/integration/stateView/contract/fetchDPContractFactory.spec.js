@@ -28,7 +28,7 @@ describe('fetchDPContractFactory', () => {
 
     const contractData = await fetchDPContract(svContract.getContractId());
 
-    expect(contractData.toJSON()).to.be.deep.equal(svContract.getDPContract().toJSON());
+    expect(contractData.toJSON()).to.deep.equal(svContract.getDPContract().toJSON());
   });
 
   it('should return null if no DP contract were stored by specific DP Contract id', async () => {

@@ -65,7 +65,7 @@ describe('getCheckSyncHttpMiddleware', () => {
       setImmediate(() => {
         middleware(request, responseMock, nextStub);
 
-        expect(nextStub).to.be.calledOnce();
+        expect(nextStub).to.have.been.calledOnce();
 
         resolve();
       });
@@ -87,9 +87,8 @@ describe('getCheckSyncHttpMiddleware', () => {
 
     middleware(request, responseMock, nextStub);
 
-    expect(nextStub).not.to.be.called();
-    expect(responseMock.end).to.be.calledOnce();
-    expect(responseMock.end).to.be.calledWith(JSON.stringify(errorResponse));
+    expect(nextStub).to.have.not.been.called();
+    expect(responseMock.end).to.have.been.calledOnceWith(JSON.stringify(errorResponse));
   });
 
   it('should throw error if inSynced threw it', async () => {
@@ -98,7 +97,7 @@ describe('getCheckSyncHttpMiddleware', () => {
 
     await new Promise((resolve) => {
       setImmediate(() => {
-        expect(middleware).to.throws(error);
+        expect(middleware).to.throw(error);
 
         resolve();
       });

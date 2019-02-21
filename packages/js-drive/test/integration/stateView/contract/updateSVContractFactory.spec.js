@@ -81,7 +81,7 @@ describe('updateSVContractFactory', () => {
 
     const thirdSVContract = await svContractRepository.find(contractId);
 
-    expect(thirdSVContract).to.be.instanceOf(SVContract);
+    expect(thirdSVContract).to.be.an.instanceOf(SVContract);
     expect(thirdSVContract.getDPContract()).to.deep.equal(thirdDPContract);
     expect(thirdSVContract.getPreviousRevisions()).to.deep.equal([
       svContract.getCurrentRevision(),
@@ -122,8 +122,8 @@ describe('updateSVContractFactory', () => {
 
     const secondSVContract = await svContractRepository.find(contractId);
 
-    expect(secondSVContract).to.be.instanceOf(SVContract);
-    expect(secondSVContract.getDPContract()).to.be.deep.equal(secondDPContract);
+    expect(secondSVContract).to.be.an.instanceOf(SVContract);
+    expect(secondSVContract.getDPContract()).to.deep.equal(secondDPContract);
     expect(secondSVContract.getPreviousRevisions()).to.deep.equal([
       firstRevision,
     ]);

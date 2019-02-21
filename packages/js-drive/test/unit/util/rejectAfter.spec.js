@@ -7,7 +7,7 @@ describe('rejectAfter', () => {
 
     const actualValue = await rejectAfter(promise, new Error(), 1000);
 
-    expect(actualValue).to.be.equal(resolvedValue);
+    expect(actualValue).to.equal(resolvedValue);
   });
 
   it('should return rejected promise', (done) => {
@@ -16,7 +16,7 @@ describe('rejectAfter', () => {
 
     const actualPromise = rejectAfter(promise, new Error(), 1000);
 
-    expect(actualPromise).to.be.eventually.rejectedWith(error).and.notify(done);
+    expect(actualPromise).to.be.rejectedWith(error).and.notify(done);
   });
 
   it('should reject unresolved promise after specified time', function it(done) {
@@ -29,6 +29,6 @@ describe('rejectAfter', () => {
 
     clock.next();
 
-    expect(rejectedPromise).to.be.eventually.rejectedWith(error).and.notify(done);
+    expect(rejectedPromise).to.be.rejectedWith(error).and.notify(done);
   });
 });

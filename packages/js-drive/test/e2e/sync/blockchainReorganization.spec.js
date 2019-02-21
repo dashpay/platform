@@ -210,8 +210,8 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveFirstObject] } = await firstDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
 
-    expect(firstDriveFirstContract).to.be.deep.equal(firstContractPacket.getDPContract().toJSON());
-    expect(firstDriveFirstObject).to.be.deep.equal(firstObjectPacket.getDPObjects()[0].toJSON());
+    expect(firstDriveFirstContract).to.deep.equal(firstContractPacket.getDPContract().toJSON());
+    expect(firstDriveFirstObject).to.deep.equal(firstObjectPacket.getDPObjects()[0].toJSON());
 
     // Check data on the second node
     const { result: secondDriveFirstContract } = await secondDashDrive.driveApi.getApi()
@@ -220,8 +220,8 @@ describe('Blockchain reorganization', function main() {
     const { result: [secondDriveFirstObject] } = await secondDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
 
-    expect(secondDriveFirstContract).to.be.deep.equal(firstContractPacket.getDPContract().toJSON());
-    expect(secondDriveFirstObject).to.be.deep.equal(firstObjectPacket.getDPObjects()[0].toJSON());
+    expect(secondDriveFirstContract).to.deep.equal(firstContractPacket.getDPContract().toJSON());
+    expect(secondDriveFirstObject).to.deep.equal(firstObjectPacket.getDPObjects()[0].toJSON());
 
     // Disconnect Core nodes
     await firstDashDrive.dashCore.disconnect(secondDashDrive.dashCore);
@@ -265,11 +265,11 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveSecondObject] } = await firstDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
 
-    expect(firstDriveSecondContract).to.be.deep.equal(
+    expect(firstDriveSecondContract).to.deep.equal(
       secondContractPacket.getDPContract().toJSON(),
     );
 
-    expect(firstDriveSecondObject).to.be.deep.equal(
+    expect(firstDriveSecondObject).to.deep.equal(
       secondObjectPacket.getDPObjects()[0].toJSON(),
     );
 
@@ -315,16 +315,16 @@ describe('Blockchain reorganization', function main() {
     const { result: [secondDriveThirdObject] } = await secondDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: thirdContractPacket.getDPContractId(), type: objectType });
 
-    expect(secondDriveThirdContract).to.be.deep.equal(
+    expect(secondDriveThirdContract).to.deep.equal(
       thirdContractPacket.getDPContract().toJSON(),
     );
 
-    expect(secondDriveThirdObject).to.be.deep.equal(
+    expect(secondDriveThirdObject).to.deep.equal(
       thirdObjectPacket.getDPObjects()[0].toJSON(),
     );
   });
 
-  it('Dash Drive should sync data after blockchain reorganization, removing missing STs. Adding them back after they reappear in the blockchain.', async () => {
+  it('Dash Drive should sync data after blockchain reorganization, removing missing STs. Adding them back after they reappear on the blockchain.', async () => {
     // Save initialSyncAt to test it later and make sure
     // There was no initial sync
     const {
@@ -356,10 +356,10 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveFirstObject] } = await firstDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
 
-    expect(firstDriveFirstContract).to.be.deep.equal(
+    expect(firstDriveFirstContract).to.deep.equal(
       firstContractPacket.getDPContract().toJSON(),
     );
-    expect(firstDriveFirstObject).to.be.deep.equal(
+    expect(firstDriveFirstObject).to.deep.equal(
       firstObjectPacket.getDPObjects()[0].toJSON(),
     );
 
@@ -370,10 +370,10 @@ describe('Blockchain reorganization', function main() {
     const { result: [secondDriveFirstObject] } = await secondDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
 
-    expect(secondDriveFirstContract).to.be.deep.equal(
+    expect(secondDriveFirstContract).to.deep.equal(
       firstContractPacket.getDPContract().toJSON(),
     );
-    expect(secondDriveFirstObject).to.be.deep.equal(
+    expect(secondDriveFirstObject).to.deep.equal(
       firstObjectPacket.getDPObjects()[0].toJSON(),
     );
 
@@ -387,10 +387,10 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveThirdObject] } = await firstDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: thirdContractPacket.getDPContractId(), type: objectType });
 
-    expect(firstDriveThirdContract).to.be.deep.equal(
+    expect(firstDriveThirdContract).to.deep.equal(
       thirdContractPacket.getDPContract().toJSON(),
     );
-    expect(firstDriveThirdObject).to.be.deep.equal(
+    expect(firstDriveThirdObject).to.deep.equal(
       thirdObjectPacket.getDPObjects()[0].toJSON(),
     );
 
@@ -401,10 +401,10 @@ describe('Blockchain reorganization', function main() {
     const { result: [secondDriveThirdObject] } = await secondDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: thirdContractPacket.getDPContractId(), type: objectType });
 
-    expect(secondDriveThirdContract).to.be.deep.equal(
+    expect(secondDriveThirdContract).to.deep.equal(
       thirdContractPacket.getDPContract().toJSON(),
     );
-    expect(secondDriveThirdObject).to.be.deep.equal(
+    expect(secondDriveThirdObject).to.deep.equal(
       thirdObjectPacket.getDPObjects()[0].toJSON(),
     );
 
@@ -456,10 +456,10 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveSecondObjectAfter] } = await firstDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
 
-    expect(firstDriveSecondContractAfter).to.be.deep.equal(
+    expect(firstDriveSecondContractAfter).to.deep.equal(
       secondContractPacket.getDPContract().toJSON(),
     );
-    expect(firstDriveSecondObjectAfter).to.be.deep.equal(
+    expect(firstDriveSecondObjectAfter).to.deep.equal(
       secondObjectPacket.getDPObjects()[0].toJSON(),
     );
 
@@ -470,10 +470,10 @@ describe('Blockchain reorganization', function main() {
     const { result: [secondDriveSecondObjectAfter] } = await secondDashDrive.driveApi.getApi()
       .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
 
-    expect(secondDriveSecondContractAfter).to.be.deep.equal(
+    expect(secondDriveSecondContractAfter).to.deep.equal(
       secondContractPacket.getDPContract().toJSON(),
     );
-    expect(secondDriveSecondObjectAfter).to.be.deep.equal(
+    expect(secondDriveSecondObjectAfter).to.deep.equal(
       secondObjectPacket.getDPObjects()[0].toJSON(),
     );
 
@@ -486,10 +486,10 @@ describe('Blockchain reorganization', function main() {
       },
     } = await firstDashDrive.driveApi.getApi().request('getSyncInfo', []);
 
-    expect(lastInitialSyncAtBefore).to.be.equal(lastInitialSyncAtAfter);
+    expect(lastInitialSyncAtBefore).to.equal(lastInitialSyncAtAfter);
   });
 
-  after('cleanup lone services', async () => {
+  after('cleanup services', async () => {
     const instances = [
       firstDashDrive,
       secondDashDrive,

@@ -32,8 +32,7 @@ describe('BlockchainReader', () => {
 
     await reader.read(blocks[2].height);
 
-    expect(setBlockHeightMock).to.be.calledOnce();
-    expect(setBlockHeightMock).to.be.calledWith(blocks[2].height);
+    expect(setBlockHeightMock).to.have.been.calledOnceWith(blocks[2].height);
   });
 
   it('should return zero of there are no blocks', async function it() {
@@ -43,7 +42,7 @@ describe('BlockchainReader', () => {
 
     const readHeight = await reader.read(1);
 
-    expect(readHeight).to.be.equal(0);
+    expect(readHeight).to.equal(0);
   });
 
   it('should iterate over the blocks and state transitions and add iterated blocks to the state', async () => {
@@ -71,23 +70,23 @@ describe('BlockchainReader', () => {
 
     const readHeight = await reader.read(blocks[0].height);
 
-    expect(readHeight).to.be.equal(lastBlock.height);
+    expect(readHeight).to.equal(lastBlock.height);
 
     let emitCallsCount = 0;
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
 
       emitCallsCount++;
-      expect(readerMediatorMock.emitSerial).to.be.calledWith(
+      expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
         ReaderMediator.EVENTS.BLOCK_BEGIN,
         block,
       );
 
-      expect(createStateTransitionsMock).to.be.calledWith(block);
+      expect(createStateTransitionsMock).to.have.been.calledWith(block);
 
       for await (const stateTransition of stPerBlocks[i]) {
         emitCallsCount++;
-        expect(readerMediatorMock.emitSerial).to.be.calledWith(
+        expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
           ReaderMediator.EVENTS.STATE_TRANSITION,
           {
             stateTransition,
@@ -96,10 +95,10 @@ describe('BlockchainReader', () => {
         );
       }
 
-      expect(readerMediatorMock.getState().addBlock).to.be.calledWith(block);
+      expect(readerMediatorMock.getState().addBlock).to.have.been.calledWith(block);
 
       emitCallsCount++;
-      expect(readerMediatorMock.emitSerial).to.be.calledWith(
+      expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
         ReaderMediator.EVENTS.BLOCK_END,
         block,
       );
@@ -122,16 +121,16 @@ describe('BlockchainReader', () => {
       expectedError = e;
     }
 
-    expect(expectedError).to.be.equal(error);
+    expect(expectedError).to.equal(error);
 
     expect(readerMediatorMock.emitSerial).to.have.callCount(4);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_BEGIN,
       blocks[0],
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.STATE_TRANSITION,
       {
         block: blocks[0],
@@ -139,7 +138,7 @@ describe('BlockchainReader', () => {
       },
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.STATE_TRANSITION_ERROR,
       {
         error,
@@ -148,7 +147,7 @@ describe('BlockchainReader', () => {
       },
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.not.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.not.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_ERROR,
       {
         error,
@@ -174,16 +173,16 @@ describe('BlockchainReader', () => {
       expectedError = e;
     }
 
-    expect(expectedError).to.be.equal(errorFromErrorHandler);
+    expect(expectedError).to.equal(errorFromErrorHandler);
 
     expect(readerMediatorMock.emitSerial).to.have.callCount(4);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_BEGIN,
       blocks[0],
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.STATE_TRANSITION,
       {
         block: blocks[0],
@@ -191,7 +190,7 @@ describe('BlockchainReader', () => {
       },
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.STATE_TRANSITION_ERROR,
       {
         error,
@@ -200,7 +199,7 @@ describe('BlockchainReader', () => {
       },
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.not.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.not.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_ERROR,
       {
         error,
@@ -210,7 +209,7 @@ describe('BlockchainReader', () => {
     );
   });
 
-  it('should continue ST iteration if IgnoreStateTransitionError thrown'
+  it('should continue ST iteration if IgnoreStateTransitionError is thrown'
     + ' from State Transition error handler', async () => {
     const stPerBlocks = [
       [
@@ -240,9 +239,9 @@ describe('BlockchainReader', () => {
 
     const readHeight = await reader.read(blocks[0].height);
 
-    expect(readHeight).to.be.equal(blocks[blocks.length - 1].height);
+    expect(readHeight).to.equal(blocks[blocks.length - 1].height);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.STATE_TRANSITION_ERROR,
       {
         error,
@@ -255,7 +254,7 @@ describe('BlockchainReader', () => {
       const block = blocks[i];
 
       for await (const stateTransition of stPerBlocks[i]) {
-        expect(readerMediatorMock.emitSerial).to.be.calledWith(
+        expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
           ReaderMediator.EVENTS.STATE_TRANSITION,
           {
             stateTransition,
@@ -266,7 +265,7 @@ describe('BlockchainReader', () => {
     }
   });
 
-  it('should throw and emit error if that error happens during block iteration', async () => {
+  it('should throw and emit error if that error is happening during block iteration', async () => {
     const error = new Error();
 
     readerMediatorMock.emitSerial.onCall(0).throws(error);
@@ -278,16 +277,16 @@ describe('BlockchainReader', () => {
       expectedError = e;
     }
 
-    expect(expectedError).to.be.equal(error);
+    expect(expectedError).to.equal(error);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledTwice();
+    expect(readerMediatorMock.emitSerial).to.have.been.calledTwice();
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_BEGIN,
       blocks[0],
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_ERROR,
       {
         error,
@@ -296,13 +295,13 @@ describe('BlockchainReader', () => {
       },
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.not.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.not.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_BEGIN,
       blocks[1],
     );
   });
 
-  it('should restart reading if RestartBlockchainReaderError thrown from the block error event handlers', async () => {
+  it('should restart reading if RestartBlockchainReaderError is thrown from the block error event handlers', async () => {
     const error = new Error();
     const restartError = new RestartBlockchainReaderError(blocks[3].height);
 
@@ -312,9 +311,9 @@ describe('BlockchainReader', () => {
 
     const readHeight = await reader.read(blocks[0].height);
 
-    expect(readHeight).to.be.equal(blocks[3].height);
+    expect(readHeight).to.equal(blocks[3].height);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_ERROR,
       {
         error,
@@ -324,7 +323,7 @@ describe('BlockchainReader', () => {
     );
   });
 
-  it('should throw error from block error handler', async () => {
+  it('should throw an error received from the block error handler', async () => {
     const error = new Error();
     const errorFromErrorHandler = new Error();
 
@@ -339,9 +338,9 @@ describe('BlockchainReader', () => {
       expectedError = e;
     }
 
-    expect(expectedError).to.be.equal(errorFromErrorHandler);
+    expect(expectedError).to.equal(errorFromErrorHandler);
 
-    expect(readerMediatorMock.emitSerial).to.be.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_ERROR,
       {
         error,
@@ -350,7 +349,7 @@ describe('BlockchainReader', () => {
       },
     );
 
-    expect(readerMediatorMock.emitSerial).to.be.not.calledWith(
+    expect(readerMediatorMock.emitSerial).to.have.not.been.calledWith(
       ReaderMediator.EVENTS.BLOCK_BEGIN,
       blocks[1],
     );

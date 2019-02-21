@@ -30,7 +30,7 @@ describe('SyncStateRepositoryChangeListener', () => {
   it('should create a proper instance using constructor');
 
   it('should return repository', () => {
-    expect(changeListener.getRepository()).to.be.equals(repositoryMock);
+    expect(changeListener.getRepository()).to.equal(repositoryMock);
   });
 
   it('should not listen if already do that', async () => {
@@ -49,10 +49,10 @@ describe('SyncStateRepositoryChangeListener', () => {
 
     timers.tick(checkInterval);
 
-    expect(repositoryMock.fetch).to.be.calledTwice();
+    expect(repositoryMock.fetch).to.have.been.calledTwice();
 
-    expect(changeHandler).not.to.be.called();
-    expect(errorHandler).not.to.be.called();
+    expect(changeHandler).to.have.not.been.called();
+    expect(errorHandler).to.have.not.been.called();
   });
 
   it('should emit "change" when repository data has changed', async function it() {
@@ -72,10 +72,9 @@ describe('SyncStateRepositoryChangeListener', () => {
 
     await new Promise((resolve) => {
       process.nextTick(() => {
-        expect(changeHandler).to.be.calledOnce();
-        expect(changeHandler).to.be.calledWith(newState);
+        expect(changeHandler).to.have.been.calledOnceWith(newState);
 
-        expect(errorHandler).not.to.be.called();
+        expect(errorHandler).to.have.not.been.called();
 
         resolve();
       });
@@ -98,10 +97,9 @@ describe('SyncStateRepositoryChangeListener', () => {
 
     await new Promise((resolve) => {
       process.nextTick(() => {
-        expect(errorHandler).to.be.calledOnce();
-        expect(errorHandler).to.be.calledWith(error);
+        expect(errorHandler).to.have.been.calledOnceWith(error);
 
-        expect(changeHandler).not.to.be.called();
+        expect(changeHandler).to.have.not.been.called();
 
         resolve();
       });
@@ -114,6 +112,6 @@ describe('SyncStateRepositoryChangeListener', () => {
 
     timers.next();
 
-    expect(repositoryMock.fetch).to.be.calledOnce();
+    expect(repositoryMock.fetch).to.have.been.calledOnce();
   });
 });

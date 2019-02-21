@@ -17,13 +17,13 @@ describe('wait', () => {
     const callback = this.sinon.stub();
 
     executeWithWait(callback).then(() => {
-      expect(callback).have.been.calledOnce();
+      expect(callback).to.have.been.calledOnce();
       done();
     }).catch(done);
 
     clock.tick(1199);
 
-    expect(callback).have.not.been.called();
+    expect(callback).to.have.not.been.called();
 
     clock.tick(1);
   });

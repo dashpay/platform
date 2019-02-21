@@ -162,13 +162,13 @@ describe('revertSVContractsForStateTransitionFactory', () => {
 
     const revertedSVContract = await svContractMongoDbRepository.find(contractId);
 
-    expect(revertedSVContract.getDPContract().getVersion()).to.be.equal(2);
+    expect(revertedSVContract.getDPContract().getVersion()).to.equal(2);
 
-    expect(revertedSVContract.getPreviousRevisions()).to.be.deep.equal([
+    expect(revertedSVContract.getPreviousRevisions()).to.deep.equal([
       previousRevisions[0],
     ]);
 
-    expect(readerMediator.emitSerial.getCall(1)).to.be.calledWith(
+    expect(readerMediator.emitSerial.getCall(1)).to.have.been.calledWith(
       ReaderMediator.EVENTS.DP_CONTRACT_REVERTED,
       {
         userId: thirdDPContractVersion.stateTransition.extraPayload.regTxId,
@@ -199,7 +199,7 @@ describe('revertSVContractsForStateTransitionFactory', () => {
 
     expect(revertedSVContract).to.not.exist();
 
-    expect(readerMediator.emitSerial).to.be.calledWith(
+    expect(readerMediator.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.DP_CONTRACT_MARKED_DELETED,
       {
         userId: stateTransition.extraPayload.regTxId,

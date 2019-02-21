@@ -13,12 +13,12 @@ describe('parseBodyFactory', () => {
     const params = { method: 'fetchDPObjects', params: ['123456'] };
 
     parseBody(request, null, () => {
-      expect(request.body).to.be.deep.equal(params);
+      expect(request.body).to.deep.equal(params);
       done();
     });
 
     request.end(JSON.stringify(params));
   });
 
-  it('should call next in case of error');
+  it('should call next in case of an error');
 });

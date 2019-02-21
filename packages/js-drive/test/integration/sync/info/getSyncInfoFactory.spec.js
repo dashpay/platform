@@ -29,9 +29,9 @@ describe('getSyncInfoFactory', () => {
     getSyncInfo = getSyncInfoFactory(syncStateRepository, getChainInfo);
   });
 
-  it('should be initialSync if there is no SyncState yet', async () => {
+  it('should have a status equal to initialSync if there is no SyncState yet', async () => {
     const syncInfo = await getSyncInfo();
-    expect(syncInfo.toJSON()).to.be.deep.equal({
+    expect(syncInfo.toJSON()).to.deep.equal({
       lastSyncedBlockHeight: undefined,
       lastSyncedBlockHash: undefined,
       lastSyncAt: null,
@@ -50,7 +50,7 @@ describe('getSyncInfoFactory', () => {
     await syncStateRepository.store(syncState);
 
     const syncInfo = await getSyncInfo();
-    expect(syncInfo.toJSON()).to.be.deep.equal({
+    expect(syncInfo.toJSON()).to.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
@@ -69,7 +69,7 @@ describe('getSyncInfoFactory', () => {
     await syncStateRepository.store(syncState);
 
     const syncInfo = await getSyncInfo();
-    expect(syncInfo.toJSON()).to.be.deep.equal({
+    expect(syncInfo.toJSON()).to.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,
@@ -91,7 +91,7 @@ describe('getSyncInfoFactory', () => {
     const lastChainBlockHash = chainBlocksHashes[chainBlocksHashes.length - 1];
 
     const syncInfo = await getSyncInfo();
-    expect(syncInfo.toJSON()).to.be.deep.equal({
+    expect(syncInfo.toJSON()).to.deep.equal({
       lastSyncedBlockHeight: lastSyncedBlock.height,
       lastSyncedBlockHash: lastSyncedBlock.hash,
       lastSyncAt,

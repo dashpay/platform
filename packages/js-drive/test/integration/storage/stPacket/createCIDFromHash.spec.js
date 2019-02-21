@@ -13,11 +13,11 @@ describe('createCIDFromHash', () => {
 
     const cid = createCIDFromHash(stPacket.hash());
 
-    expect(cid).to.be.instanceOf(CID);
+    expect(cid).to.be.an.instanceOf(CID);
 
     const { digest } = multihashes.decode(cid.multihash);
 
-    expect(digest.toString('hex')).to.be.equal(stPacket.hash());
+    expect(digest.toString('hex')).to.equal(stPacket.hash());
   });
 
   it('should throw InvalidHashError if packet hash is wrong', () => {
@@ -28,6 +28,6 @@ describe('createCIDFromHash', () => {
       error = e;
     }
 
-    expect(error).to.be.instanceOf(InvalidHashError);
+    expect(error).to.be.an.instanceOf(InvalidHashError);
   });
 });
