@@ -25,17 +25,17 @@ async function registerUser(userName, api) {
   const unspent = response.result;
   const inputs = unspent.filter(input => input.address === address);
 
+  const transactionPayload = new Transaction.Payload.SubTxRegisterPayload();
+
+  transactionPayload.setUserName(userName)
+    .setPubKeyIdFromPrivateKey(privateKey)
+    .sign(privateKey);
+
   const transaction = new Transaction({
     type: Transaction.TYPES.TRANSACTION_SUBTX_REGISTER,
-    extraPayload: {
-      version: 1,
-      userName,
-      // eslint-disable-next-line no-underscore-dangle
-      pubKeyId: privateKey.toPublicKey()._getID(),
-    },
+    version: 3,
+    extraPayload: transactionPayload.toString(),
   });
-
-  transaction.extraPayload.sign(privateKey);
 
   transaction.from(inputs)
     .addFundingOutput(10000)

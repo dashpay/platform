@@ -1,4 +1,7 @@
-const { PrivateKey, Transaction } = require('@dashevo/dashcore-lib');
+const { PrivateKey } = require('@dashevo/dashcore-lib');
+
+const createPayloadFixture = require('./fixtures/createPayloadFixture');
+const createStateTransitionFixture = require('./fixtures/createStateTransitionFixture');
 
 /**
  * Create DP Contract state transaction packet and ST
@@ -12,20 +15,14 @@ const { PrivateKey, Transaction } = require('@dashevo/dashcore-lib');
 function createStateTransition(regTxId, privateKeyString, stPacket, hashPrevSubTx = undefined) {
   const privateKey = new PrivateKey(privateKeyString);
 
-  const extraPayload = {
-    version: 1,
-    hashSTPacket: stPacket.hash(),
-    regTxId,
-    creditFee: 1001,
-    hashPrevSubTx: (hashPrevSubTx || regTxId),
-  };
-
-  const transaction = new Transaction({
-    type: Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION,
-    extraPayload,
+  const transaction = createStateTransitionFixture({
+    extraPayload: createPayloadFixture({
+      regTxId,
+      hashPrevSubTx,
+      hashSTPacket: stPacket.hash(),
+      privateKey,
+    }),
   });
-
-  transaction.extraPayload.sign(privateKey);
 
   return transaction;
 }

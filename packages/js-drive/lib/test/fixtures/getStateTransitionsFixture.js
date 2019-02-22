@@ -1,14 +1,30 @@
-const fs = require('fs');
-const path = require('path');
-
 const StateTransition = require('../../blockchain/StateTransition');
 
+const createPayloadFixture = require('./createPayloadFixture');
+const createStateTransitionFixture = require('./createStateTransitionFixture');
+
+const transitions = [];
+
 /**
+ * @param {integer} numberOfTransitions
  * @return {StateTransition[]}
  */
-module.exports = function getStateTransitionsFixture() {
-  const stateTransitionsJSON = fs.readFileSync(path.join(__dirname, '/../../../test/fixtures/stateTransitions.json'));
-  const stateTransitionsData = JSON.parse(stateTransitionsJSON.toString());
+function getStateTransitionsFixture(numberOfTransitions = 5) {
+  if (transitions.length > 0) {
+    return transitions.map(t => new StateTransition(t));
+  }
 
-  return stateTransitionsData.map(h => new StateTransition(h));
-};
+  for (let i = 0; i < numberOfTransitions; i++) {
+    transitions.push(
+      createStateTransitionFixture({
+        extraPayload: createPayloadFixture({
+          hashPrevSubTx: (i === 0 ? undefined : transitions[i - 1].hash),
+        }),
+      }),
+    );
+  }
+
+  return transitions.map(t => new StateTransition(t));
+}
+
+module.exports = getStateTransitionsFixture;

@@ -4,7 +4,7 @@ We believe in [Test Pyramid](http://verraes.net/2015/01/economy-of-tests/).
 
 ## Structure
 
- - `e2e/` - [End-to-end (e2e, system) tests](https://en.wikipedia.org/wiki/System_testing)  
+ - `e2e/` - [End-to-end (e2e, system) tests](https://en.wikipedia.org/wiki/System_testing)
  - `integration/` - [Integration tests](https://en.wikipedia.org/wiki/Integration_testing)
  - `unit/` - [Unit tests](https://en.wikipedia.org/wiki/Unit_testing)
 
@@ -60,7 +60,6 @@ We use [js-evo-services-ctl](https://github.com/dashevo/js-evo-services-ctl) lib
 
 Fixtures are located in [fixtures/](fixtures) directory:
 - [blocks.json](fixtures/blocks.json)
-- [stateTransitions.json](fixtures/stateTransitions.json)
 
 There are several helpers for loading fixtures:
 - [getBlockFixtures](../lib/test/fixtures/getBlocksFixture.js)
