@@ -46,7 +46,7 @@ module.exports = {
   async sendRawTransaction(rawTransaction) { return 'txid'; },
   async sendRawIxTransaction(rawTransaction) { return 'txid'; },
   async generate(amount) { return new Array(amount); },
-  async sendRawTransition(rawTransitionHeader) { return 'tsid'; },
+  async sendRawTransition(rawStateTransition) { return 'tsid'; },
   // Todo: not yet final spec so it may change
   async getQuorum() {
     return {

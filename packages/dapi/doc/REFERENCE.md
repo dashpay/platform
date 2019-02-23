@@ -595,8 +595,8 @@ Sends raw state transition to the network.
 
 | name                      | type               | description                |
 |---------------------------|--------------------|----------------------------|
-| args.rawTransitionHeader  | *Needs definition* | *needs definition*         |
-| args.rawTransitionPacket  | *needs definition* | *needs definition*         |
+| args.rawStateTransition  | *Needs definition* | *needs definition*         |
+| args.rawSTPacket  | *needs definition* | *needs definition*         |
 
 ##### Response
 

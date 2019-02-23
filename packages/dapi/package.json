@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "Dash Decentralized API (DAPI)",
   "scripts": {
     "start": "node index.js",
@@ -23,7 +23,6 @@
     "all": true
   },
   "dependencies": {
-    "@dashevo/dash-schema": "^3.0.0-alpha.3",
     "@dashevo/dashcore-lib": "0.16.8",
     "@dashevo/dashcore-p2p": "^1.1.9",
     "@dashevo/dashd-rpc": "^1.2.1",
@@ -43,17 +42,19 @@
     "assert": "^1.4.1",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
+    "dirty-chai": "^2.0.1",
     "eslint": "^5.12.1",
     "eslint-config-airbnb-base": "^13.1.0",
     "eslint-plugin-import": "^2.14.0",
     "istanbul": "^0.4.5",
     "mocha": "^4.1.0",
     "nodemon": "^1.18.9",
-    "nyc": "^13.1.0",
+    "nyc": "^13.3.0",
     "proxyquire": "^2.1.0",
     "rewire": "^4.0.1",
     "should": "^13.2.3",
     "sinon": "^7.2.3",
+    "sinon-chai": "^3.3.0",
     "swagger-jsdoc": "^3.2.6"
   },
   "main": "index.js",

@@ -30,11 +30,15 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
 
   /**
    * Add State Transition Packet to DashDrive storage
-   * @param {string} packet - raw data packet serialized to hex string
-   * @return {Promise<string>} - packet id
+   * @param {string} rawSTPacket - raw data packet serialized to hex string
+   * @param {string} rawStateTransition - special transaction
+   * @return {Promise<undefined>}
    */
-  addSTPacket(packet) {
-    return this.request('addSTPacket', { packet });
+  addSTPacket(rawSTPacket, rawStateTransition) {
+    return this.request('addSTPacket', {
+      stPacket: rawSTPacket,
+      stateTransition: rawStateTransition,
+    });
   }
 
   /**

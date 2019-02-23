@@ -1,16 +1,17 @@
 {
   "type": "object",
   "properties": {
-    "rawTransitionHeader": {
+    "rawStateTransition": {
       "type": "string",
       "pattern": "^(0x|0X)?[a-fA-F0-9]+$"
     },
-    "rawTransitionPacket": {
+    "rawSTPacket": {
       "type": "string",
       "pattern": "^(0x|0X)?[a-fA-F0-9]+$"
     }
   },
   "required": [
-    "rawTransitionHeader"
+    "rawStateTransition",
+    "rawSTPacket"
   ]
 }

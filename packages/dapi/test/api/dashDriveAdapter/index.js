@@ -1,10 +1,15 @@
 const chai = require('chai');
-const chaiAsPromised = require('chai-as-promised');
 const sinon = require('sinon');
+
+const chaiAsPromised = require('chai-as-promised');
+const dirtyChai = require('dirty-chai');
+
 const DashDriveAdapter = require('../../../lib/api/dashDriveAdapter');
 
-const { expect } = chai;
 chai.use(chaiAsPromised);
+chai.use(dirtyChai);
+
+const { expect } = chai;
 
 describe('DashDriveAdapter', () => {
   describe('constructor', () => {
@@ -20,21 +25,20 @@ describe('DashDriveAdapter', () => {
     it('Should call \'addStPacket\' RPC with the given parameters', async () => {
       const dashDrive = new DashDriveAdapter({ host: '127.0.0.1', port: 3000 });
 
-      const packet = 'packet';
+      const rawSTPacket = 'stPacket';
+      const rawStateTransition = 'stateTransition';
       const method = 'addSTPacket';
 
-      const expectedPacketId = 'packetid';
-
       sinon.stub(dashDrive.client, 'request')
-        .withArgs(method, { packet })
-        .returns(Promise.resolve({ result: expectedPacketId }));
+        .withArgs(method, { stPacket: rawSTPacket, stateTransition: rawStateTransition })
+        .returns(Promise.resolve({ result: undefined }));
 
       expect(dashDrive.client.request.callCount).to.be.equal(0);
 
-      const actualPacketId = await dashDrive.addSTPacket(packet);
+      const result = await dashDrive.addSTPacket(rawSTPacket, rawStateTransition);
 
       expect(dashDrive.client.request.callCount).to.be.equal(1);
-      expect(actualPacketId).to.be.equal(expectedPacketId);
+      expect(result).to.be.undefined();
     });
   });
 
