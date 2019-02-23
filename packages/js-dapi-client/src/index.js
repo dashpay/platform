@@ -246,12 +246,12 @@ class DAPIClient {
 
   /**
    * Sends serialized state transition header and data packet
-   * @param {string} rawTransitionHeader - hex string representing state transition header
-   * @param {string} rawTransitionPacket - hex string representing state transition data
+   * @param {string} rawStateTransition - hex string representing state transition header
+   * @param {string} rawSTPacket - hex string representing state transition data
    * @returns {Promise<string>} - header id
    */
-  sendRawTransition(rawTransitionHeader, rawTransitionPacket) {
-    return this.makeRequestToRandomDAPINode('sendRawTransition', { rawTransitionHeader, rawTransitionPacket });
+  sendRawTransition(rawStateTransition, rawSTPacket) {
+    return this.makeRequestToRandomDAPINode('sendRawTransition', { rawStateTransition, rawSTPacket });
   }
 
   // Here go methods that used in VMN. Most of this methods will work only in regtest mode
