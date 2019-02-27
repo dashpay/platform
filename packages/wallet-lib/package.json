@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Light wallet library for Dash",
   "main": "index.js",
   "scripts": {
@@ -25,21 +25,21 @@
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
     "@dashevo/dapi-client": "git+ssh://git@github.com/dashevo/dapi-client.git",
-    "@dashevo/dashcore-lib": "^0.16.5",
+    "@dashevo/dashcore-lib": "^0.16.9",
     "axios": "^0.18.0",
-    "localforage": "^1.7.2",
-    "lodash": "^4.17.4",
-    "socket.io-client": "^2.0.3"
+    "localforage": "^1.7.3",
+    "lodash": "^4.17.11",
+    "socket.io-client": "^2.2.0"
   },
   "devDependencies": {
-    "chai": "^4.1.2",
-    "eslint": "^4.19.1",
-    "nodeforage": "git+https://github.com/Alex-Werner/nodeForage.git",
-    "eslint-config-airbnb": "^17.0.0",
+    "chai": "^4.2.0",
+    "eslint": "^5.14.1",
+    "eslint-config-airbnb": "^17.1.0",
     "eslint-plugin-import": "^2.13.0",
     "eslint-plugin-jsx-a11y": "^6.0.3",
     "eslint-plugin-react": "^7.10.0",
     "mocha": "^5.2.0",
-    "nyc": "^11.9.0"
+    "nodeforage": "git+https://github.com/Alex-Werner/nodeForage.git",
+    "nyc": "^13.3.0"
   }
 }
