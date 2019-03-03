@@ -16,4 +16,8 @@ beforeEach(function beforeEach() {
   }
 });
 
+afterEach(function afterEach() {
+  this.sinonSandbox.restore();
+});
+
 global.expect = expect;
