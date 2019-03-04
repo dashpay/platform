@@ -181,10 +181,21 @@ class DAPIClient {
   getTransaction(txid) { return this.getTransactionById(txid); }
 
   /**
+   * Returns Transactions for a given address or multiple addresses
    * @param address
-   * @return {Promise<object[]>}
+   * @param {string|string[]} address or array of addresses
+   * @param {number} from - start of range in the ordered list of latest UTXO (optional)
+   * @param {number} to - end of range in the ordered list of latest UTXO (optional)
+   * @param {number} fromHeight - which height to start from (optional, overriding from/to)
+   * @param {number} toHeight - on which height to end (optional, overriding from/to)
+   * @returns {Promise<object>} - Object with pagination info and array of unspent outputs
    */
-  getTransactionsByAddress(address) { return this.makeRequestToRandomDAPINode('getTransactionsByAddress', { address }); }
+  getTransactionsByAddress(address, from, to, fromHeight, toHeight) {
+    return this.makeRequestToRandomDAPINode('getTransactionsByAddress',
+      {
+        address, from, to, fromHeight, toHeight,
+      });
+  }
 
   /**
    * @param {string} txid - transaction hash
