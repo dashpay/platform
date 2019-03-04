@@ -45,7 +45,12 @@ const getHashFromHeight = async (height) => {
 
 const getMnList = () => mnListGenerator.getMockMnList();
 const getMnUpdateList = () => mnListGenerator.getMockMnUpdateList();
-const getUTXO = async address => get(`/addr/${address}/utxo`);
+const getUTXO = async (address, from, to, fromHeight, toHeight) => {
+  const addresses = Array.isArray(address) ? address.join() : address;
+  const res = await get(`/addrs/${addresses}/utxopage?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
+  return res;
+};
+
 const getBalance = async address => get(`/addr/${address}/balance`);
 const getUser = async usernameOrRegTx => get(`/getuser/${usernameOrRegTx}`);
 const getMasternodesList = async () => get('/masternodes/list');

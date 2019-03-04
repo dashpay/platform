@@ -36,6 +36,15 @@ describe('getUTXO', () => {
     expect(spy.callCount).to.be.equal(1);
   });
 
+  it('Should return accept array as input', async () => {
+    const getUTXO = getUTXOFactory(coreAPIFixture);
+    expect(spy.callCount).to.be.equal(0);
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w', 'yYmrsYP3XYMZr1cGtha3QzmuNB1C7CfyhV'];
+    const UTXO = await getUTXO({ address: addressArray });
+    expect(UTXO).to.be.an('array');
+    expect(spy.callCount).to.be.equal(1);
+  });
+
   it('Should throw if arguments are not valid', async () => {
     const getUTXO = getUTXOFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
@@ -43,7 +52,7 @@ describe('getUTXO', () => {
     expect(spy.callCount).to.be.equal(0);
     await expect(getUTXO({})).to.be.rejectedWith('should have required property \'address\'');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getUTXO({ address: 1 })).to.be.rejectedWith('address should be string');
+    await expect(getUTXO({ address: 1 })).to.be.rejectedWith('params.address should be array,string');
     expect(spy.callCount).to.be.equal(0);
   });
 });
