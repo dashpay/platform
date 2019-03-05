@@ -32,7 +32,7 @@ dotenvSafe.config({
 describe('basic E2E tests', () => {
     let masterNode;
 
-    const attempts = 40;
+    const attempts = 60;
 
     let dapiClient;
     let dapId;
@@ -121,7 +121,7 @@ describe('basic E2E tests', () => {
                 .change(faucetAddress)
                 .sign(faucetPrivateKey);
 
-            ({txid: bobRegTxId} = await dapiClient.sendRawTransaction(transaction.serialize()));
+            bobRegTxId = await dapiClient.sendRawTransaction(transaction.serialize());
 
             bobPreviousST = bobRegTxId;
 
@@ -163,7 +163,7 @@ describe('basic E2E tests', () => {
             bobPreviousST = transitionHash;
 
             let dapContractFromDAPI;
-            await wait(3000);
+            await wait(5000);
             for (let i = 0; i <= attempts; i++) {
                 try {
                     // waiting for Contacts to be added
@@ -270,7 +270,7 @@ describe('basic E2E tests', () => {
                 .change(faucetAddress)
                 .sign(faucetPrivateKey);
 
-            ({txid: aliceRegTxId} = await dapiClient.sendRawTransaction(transaction.serialize()));
+            aliceRegTxId = await dapiClient.sendRawTransaction(transaction.serialize());
 
             alicePreviousST = aliceRegTxId;
 

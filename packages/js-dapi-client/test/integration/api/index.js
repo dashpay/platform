@@ -53,7 +53,8 @@ describe('basicAPIs', () => {
 
     let bobPreviousST;
 
-    before(async () => {
+    before(async function it() {
+        this.timeout(300000);
         const privKey = "cVwyvFt95dzwEqYCLd8pv9CzktajP4tWH2w9RQNPeHYA7pH35wcJ";
         faucetPrivateKey = new PrivateKey(privKey);
 
@@ -288,11 +289,11 @@ describe('basicAPIs', () => {
                 .sign(faucetPrivateKey);
 
             const result = await dapiClient.sendRawTransaction(transaction.serialize());
-            expect(result.txid).to.be.a('string');
-            expect(result.txid).to.be.not.empty();
-            bobRegTxId = result.txid;
+            expect(result).to.be.a('string');
+            expect(result).to.be.not.empty();
+            bobRegTxId = result;
 
-            bobPreviousST = result.txid;
+            bobPreviousST = result;
 
         });
 
@@ -351,7 +352,7 @@ describe('basicAPIs', () => {
             const stPacketHash = doubleSha256(serializedPacket);
 
             transaction.extraPayload
-                .setRegTxId(bobRegTxId)
+                .setRegTxId(bobPreviousST)
                 .setHashPrevSubTx(bobPreviousST)
                 .setHashSTPacket(stPacketHash)
                 .setCreditFee(1000)
