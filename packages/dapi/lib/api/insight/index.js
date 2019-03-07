@@ -1,10 +1,8 @@
 const requestPromiseNative = require('request-promise-native');
 const querystring = require('querystring');
-const MockListGenerator = require('../../mocks/dynamicMnList');
 const config = require('../../config/index');
 
 const URI = config.insightUri;
-const mnListGenerator = new MockListGenerator();
 
 const request = async (uri, method, data = {}) => {
   const fullURI = `${URI}${uri}`;
@@ -43,8 +41,6 @@ const getHashFromHeight = async (height) => {
   return res.blockHash;
 };
 
-const getMnList = () => mnListGenerator.getMockMnList();
-const getMnUpdateList = () => mnListGenerator.getMockMnUpdateList();
 const getUTXO = async (address, from, to, fromHeight, toHeight) => {
   const addresses = Array.isArray(address) ? address.join() : address;
   const res = await get(`/addrs/${addresses}/utxopage?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
@@ -149,8 +145,6 @@ const getBlockHeaders = async (offset, limit) => get(`/block-headers/${offset}/$
 module.exports = {
   getTransactionFirstInputAddress,
   getHashFromHeight,
-  getMnList,
-  getMnUpdateList,
   request,
   get,
   post,

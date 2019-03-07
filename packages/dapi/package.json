@@ -23,7 +23,7 @@
     "all": true
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "0.16.8",
+    "@dashevo/dashcore-lib": "0.16.9",
     "@dashevo/dashcore-p2p": "^1.1.9",
     "@dashevo/dashd-rpc": "^1.2.1",
     "@dashevo/quorums": "^1.0.4",
