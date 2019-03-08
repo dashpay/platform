@@ -63,24 +63,24 @@ describe('DPObjectFactory', () => {
         { name },
       );
 
-      expect(newDPObject).to.be.instanceOf(DPObject);
+      expect(newDPObject).to.be.an.instanceOf(DPObject);
 
-      expect(newDPObject.getType()).to.be.equal(rawDPObject.$type);
+      expect(newDPObject.getType()).to.equal(rawDPObject.$type);
 
-      expect(newDPObject.get('name')).to.be.equal(name);
+      expect(newDPObject.get('name')).to.equal(name);
 
-      expect(hashMock).to.be.calledOnceWith(dpContract.getId() + userId);
-      expect(newDPObject.scope).to.be.equal(scope);
+      expect(hashMock).to.have.been.calledOnceWith(dpContract.getId() + userId);
+      expect(newDPObject.scope).to.equal(scope);
 
-      expect(generateMock).to.be.calledOnce();
-      expect(newDPObject.scopeId).to.be.equal(scopeId);
+      expect(generateMock).to.have.been.calledOnce();
+      expect(newDPObject.scopeId).to.equal(scopeId);
 
-      expect(newDPObject.getAction()).to.be.equal(DPObject.DEFAULTS.ACTION);
+      expect(newDPObject.getAction()).to.equal(DPObject.DEFAULTS.ACTION);
 
-      expect(newDPObject.getRevision()).to.be.equal(DPObject.DEFAULTS.REVISION);
+      expect(newDPObject.getRevision()).to.equal(DPObject.DEFAULTS.REVISION);
     });
 
-    it('should throw error if type is not defined', () => {
+    it('should throw an error if type is not defined', () => {
       const type = 'wrong';
 
       let error;
@@ -90,11 +90,11 @@ describe('DPObjectFactory', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidDPObjectTypeError);
-      expect(error.getType()).to.be.equal(type);
-      expect(error.getDPContract()).to.be.equal(dpContract);
+      expect(error).to.be.an.instanceOf(InvalidDPObjectTypeError);
+      expect(error.getType()).to.equal(type);
+      expect(error.getDPContract()).to.equal(dpContract);
 
-      expect(hashMock).not.to.be.called();
+      expect(hashMock).to.have.not.been.called();
     });
   });
 
@@ -104,22 +104,22 @@ describe('DPObjectFactory', () => {
 
       const result = factory.createFromObject(rawDPObject);
 
-      expect(result).to.be.instanceOf(DPObject);
-      expect(result.toJSON()).to.be.deep.equal(rawDPObject);
+      expect(result).to.be.an.instanceOf(DPObject);
+      expect(result.toJSON()).to.deep.equal(rawDPObject);
 
-      expect(validateDPObjectMock).to.be.calledOnceWith(rawDPObject, dpContract);
+      expect(validateDPObjectMock).to.have.been.calledOnceWith(rawDPObject, dpContract);
     });
 
     it('should return new DPObject without validation if "skipValidation" option is passed', () => {
       const result = factory.createFromObject(rawDPObject, { skipValidation: true });
 
-      expect(result).to.be.instanceOf(DPObject);
-      expect(result.toJSON()).to.be.deep.equal(rawDPObject);
+      expect(result).to.be.an.instanceOf(DPObject);
+      expect(result.toJSON()).to.deep.equal(rawDPObject);
 
-      expect(validateDPObjectMock).not.to.be.called();
+      expect(validateDPObjectMock).to.have.not.been.called();
     });
 
-    it('should throw error if passed object is not valid', () => {
+    it('should throw an error if passed object is not valid', () => {
       const validationError = new ConsensusError('test');
 
       validateDPObjectMock.returns(new ValidationResult([validationError]));
@@ -131,15 +131,15 @@ describe('DPObjectFactory', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidDPObjectError);
+      expect(error).to.be.an.instanceOf(InvalidDPObjectError);
 
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getRawDPObject()).to.be.equal(rawDPObject);
+      expect(error.getRawDPObject()).to.equal(rawDPObject);
 
       const [consensusError] = error.getErrors();
-      expect(consensusError).to.be.equal(validationError);
+      expect(consensusError).to.equal(validationError);
 
-      expect(validateDPObjectMock).to.be.calledOnceWith(rawDPObject, dpContract);
+      expect(validateDPObjectMock).to.have.been.calledOnceWith(rawDPObject, dpContract);
     });
   });
 
@@ -157,11 +157,11 @@ describe('DPObjectFactory', () => {
 
       const result = factory.createFromSerialized(serializedDPObject);
 
-      expect(result).to.be.equal(dpObject);
+      expect(result).to.equal(dpObject);
 
-      expect(factory.createFromObject).to.be.calledOnceWith(rawDPObject);
+      expect(factory.createFromObject).to.have.been.calledOnceWith(rawDPObject);
 
-      expect(decodeMock).to.be.calledOnceWith(serializedDPObject);
+      expect(decodeMock).to.have.been.calledOnceWith(serializedDPObject);
     });
   });
 
@@ -171,8 +171,8 @@ describe('DPObjectFactory', () => {
 
       const result = factory.setUserId(userId);
 
-      expect(result).to.be.equal(factory);
-      expect(factory.userId).to.be.equal(userId);
+      expect(result).to.equal(factory);
+      expect(factory.userId).to.equal(userId);
     });
   });
 
@@ -180,7 +180,7 @@ describe('DPObjectFactory', () => {
     it('should return User ID', () => {
       const result = factory.getUserId();
 
-      expect(result).to.be.equal(userId);
+      expect(result).to.equal(userId);
     });
   });
 
@@ -190,8 +190,8 @@ describe('DPObjectFactory', () => {
 
       const result = factory.setDPContract(dpContract);
 
-      expect(result).to.be.equal(factory);
-      expect(factory.dpContract).to.be.equal(dpContract);
+      expect(result).to.equal(factory);
+      expect(factory.dpContract).to.equal(dpContract);
     });
   });
 
@@ -199,7 +199,7 @@ describe('DPObjectFactory', () => {
     it('should return DP Contract', () => {
       const result = factory.getDPContract();
 
-      expect(result).to.be.equal(dpContract);
+      expect(result).to.equal(dpContract);
     });
   });
 });

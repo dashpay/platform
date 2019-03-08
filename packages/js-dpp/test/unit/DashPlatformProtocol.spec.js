@@ -22,9 +22,9 @@ describe('DashPlatformProtocol', () => {
     it('should set User ID', () => {
       const result = dpp.setUserId(userId);
 
-      expect(result).to.be.instanceOf(DashPlatformProtocol);
+      expect(result).to.be.an.instanceOf(DashPlatformProtocol);
 
-      expect(dpp.userId).to.be.equal(userId);
+      expect(dpp.userId).to.equal(userId);
     });
   });
 
@@ -34,7 +34,7 @@ describe('DashPlatformProtocol', () => {
 
       const result = dpp.getUserId();
 
-      expect(result).to.be.equal(userId);
+      expect(result).to.equal(userId);
     });
   });
 
@@ -42,9 +42,9 @@ describe('DashPlatformProtocol', () => {
     it('should set User ID', () => {
       const result = dpp.setDPContract(dpContract);
 
-      expect(result).to.be.instanceOf(DashPlatformProtocol);
+      expect(result).to.be.an.instanceOf(DashPlatformProtocol);
 
-      expect(dpp.dpContract).to.be.equal(dpContract);
+      expect(dpp.dpContract).to.equal(dpContract);
     });
   });
 
@@ -54,7 +54,7 @@ describe('DashPlatformProtocol', () => {
 
       const result = dpp.getDPContract();
 
-      expect(result).to.be.equal(dpContract);
+      expect(result).to.equal(dpContract);
     });
   });
 
@@ -62,9 +62,9 @@ describe('DashPlatformProtocol', () => {
     it('should set Data Provider', () => {
       const result = dpp.setDataProvider(dataProvider);
 
-      expect(result).to.be.instanceOf(DashPlatformProtocol);
+      expect(result).to.be.an.instanceOf(DashPlatformProtocol);
 
-      expect(dpp.dataProvider).to.be.equal(dataProvider);
+      expect(dpp.dataProvider).to.equal(dataProvider);
     });
   });
 
@@ -74,7 +74,7 @@ describe('DashPlatformProtocol', () => {
 
       const result = dpp.getDataProvider();
 
-      expect(result).to.be.equal(dataProvider);
+      expect(result).to.equal(dataProvider);
     });
   });
 });

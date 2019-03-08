@@ -26,11 +26,11 @@ describe('STPacketHeaderFacade', () => {
         stPacketHeader.getItemsHash(),
       );
 
-      expect(result).to.be.instanceOf(STPacketHeader);
+      expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.getDPContractId()).to.be.equal(stPacketHeader.getDPContractId());
-      expect(result.getItemsMerkleRoot()).to.be.equal(stPacketHeader.getItemsMerkleRoot());
-      expect(result.getItemsHash()).to.be.equal(stPacketHeader.getItemsHash());
+      expect(result.getDPContractId()).to.equal(stPacketHeader.getDPContractId());
+      expect(result.getItemsMerkleRoot()).to.equal(stPacketHeader.getItemsMerkleRoot());
+      expect(result.getItemsHash()).to.equal(stPacketHeader.getItemsHash());
     });
   });
 
@@ -38,9 +38,9 @@ describe('STPacketHeaderFacade', () => {
     it('should create ST Packet Header from plain object', () => {
       const result = dpp.packetHeader.createFromObject(stPacketHeader.toJSON());
 
-      expect(result).to.be.instanceOf(STPacketHeader);
+      expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.toJSON()).to.be.deep.equal(stPacketHeader.toJSON());
+      expect(result.toJSON()).to.deep.equal(stPacketHeader.toJSON());
     });
   });
 
@@ -48,9 +48,9 @@ describe('STPacketHeaderFacade', () => {
     it('should create ST Packet Header from string', () => {
       const result = dpp.packetHeader.createFromSerialized(stPacketHeader.serialize());
 
-      expect(result).to.be.instanceOf(STPacketHeader);
+      expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.toJSON()).to.be.deep.equal(stPacketHeader.toJSON());
+      expect(result.toJSON()).to.deep.equal(stPacketHeader.toJSON());
     });
   });
 
@@ -58,7 +58,7 @@ describe('STPacketHeaderFacade', () => {
     it('should validate ST Packet Header', () => {
       const result = dpp.packetHeader.validate(stPacketHeader.toJSON());
 
-      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result).to.be.an.instanceOf(ValidationResult);
     });
   });
 });

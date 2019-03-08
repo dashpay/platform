@@ -23,10 +23,10 @@ describe('DPContractFacade', () => {
         dpContract.getDPObjectsDefinition(),
       );
 
-      expect(result).to.be.instanceOf(DPContract);
+      expect(result).to.be.an.instanceOf(DPContract);
 
-      expect(result.getName()).to.be.equal(dpContract.getName());
-      expect(result.getDPObjectsDefinition()).to.be.equal(dpContract.getDPObjectsDefinition());
+      expect(result.getName()).to.equal(dpContract.getName());
+      expect(result.getDPObjectsDefinition()).to.equal(dpContract.getDPObjectsDefinition());
     });
   });
 
@@ -34,9 +34,9 @@ describe('DPContractFacade', () => {
     it('should create DP Contract from plain object', () => {
       const result = dpp.contract.createFromObject(dpContract.toJSON());
 
-      expect(result).to.be.instanceOf(DPContract);
+      expect(result).to.be.an.instanceOf(DPContract);
 
-      expect(result.toJSON()).to.be.deep.equal(dpContract.toJSON());
+      expect(result.toJSON()).to.deep.equal(dpContract.toJSON());
     });
   });
 
@@ -44,9 +44,9 @@ describe('DPContractFacade', () => {
     it('should create DP Contract from string', () => {
       const result = dpp.contract.createFromSerialized(dpContract.serialize());
 
-      expect(result).to.be.instanceOf(DPContract);
+      expect(result).to.be.an.instanceOf(DPContract);
 
-      expect(result.toJSON()).to.be.deep.equal(dpContract.toJSON());
+      expect(result.toJSON()).to.deep.equal(dpContract.toJSON());
     });
   });
 
@@ -54,7 +54,7 @@ describe('DPContractFacade', () => {
     it('should validate DP Contract', () => {
       const result = dpp.contract.validate(dpContract.toJSON());
 
-      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result).to.be.an.instanceOf(ValidationResult);
     });
   });
 });

@@ -77,9 +77,9 @@ describe('STPacketFactory', () => {
     it('should return new STPacket', () => {
       const newSTPacket = factory.create(dpContractId, dpContract);
 
-      expect(newSTPacket).to.be.instanceOf(STPacket);
+      expect(newSTPacket).to.be.an.instanceOf(STPacket);
 
-      expect(newSTPacket.getDPContractId()).to.be.equal(dpContractId);
+      expect(newSTPacket.getDPContractId()).to.equal(dpContractId);
     });
   });
 
@@ -101,18 +101,18 @@ describe('STPacketFactory', () => {
 
       const result = await factory.createFromObject(rawSTPacket);
 
-      expect(result).to.be.instanceOf(STPacket);
+      expect(result).to.be.an.instanceOf(STPacket);
 
       // Solving problem described above
       const createdRawSTPacket = result.toJSON();
       createdRawSTPacket.itemsHash = rawSTPacket.itemsHash;
       createdRawSTPacket.itemsMerkleRoot = rawSTPacket.itemsMerkleRoot;
 
-      expect(createdRawSTPacket).to.be.deep.equal(rawSTPacket);
+      expect(createdRawSTPacket).to.deep.equal(rawSTPacket);
 
-      expect(dataProviderMock.fetchDPContract).to.be.calledOnceWith(rawSTPacket.contractId);
+      expect(dataProviderMock.fetchDPContract).to.have.been.calledOnceWith(rawSTPacket.contractId);
 
-      expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket, dpContract);
+      expect(validateSTPacketMock).to.have.been.calledOnceWith(rawSTPacket, dpContract);
     });
 
     it('should return new STPacket without validation if "skipValidation" option is passed', async () => {
@@ -128,21 +128,21 @@ describe('STPacketFactory', () => {
 
       const result = await factory.createFromObject(rawSTPacket, { skipValidation: true });
 
-      expect(result).to.be.instanceOf(STPacket);
+      expect(result).to.be.an.instanceOf(STPacket);
 
       // Solving problem described above
       const createdRawSTPacket = result.toJSON();
       createdRawSTPacket.itemsHash = rawSTPacket.itemsHash;
       createdRawSTPacket.itemsMerkleRoot = rawSTPacket.itemsMerkleRoot;
 
-      expect(createdRawSTPacket).to.be.deep.equal(rawSTPacket);
+      expect(createdRawSTPacket).to.deep.equal(rawSTPacket);
 
-      expect(dataProviderMock.fetchDPContract).not.to.be.called();
+      expect(dataProviderMock.fetchDPContract).to.have.not.been.called();
 
-      expect(validateSTPacketMock).not.to.be.called();
+      expect(validateSTPacketMock).to.have.not.been.called();
     });
 
-    it('should throw error if DP Contract is not present with contract ID specified in ST Packet', async () => {
+    it('should throw an error if DP Contract is not present with contract ID specified in ST Packet', async () => {
       let error;
       try {
         await factory.createFromObject(rawSTPacket);
@@ -150,17 +150,17 @@ describe('STPacketFactory', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidSTPacketError);
+      expect(error).to.be.an.instanceOf(InvalidSTPacketError);
 
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
+      expect(error.getRawSTPacket()).to.equal(rawSTPacket);
 
       const [consensusError] = error.getErrors();
-      expect(consensusError).to.be.instanceOf(DPContractNotPresentError);
-      expect(consensusError.getDPContractId()).to.be.equal(rawSTPacket.contractId);
+      expect(consensusError).to.be.an.instanceOf(DPContractNotPresentError);
+      expect(consensusError.getDPContractId()).to.equal(rawSTPacket.contractId);
 
-      expect(dataProviderMock.fetchDPContract).to.be.calledOnceWith(rawSTPacket.contractId);
-      expect(validateSTPacketMock).not.to.be.called();
+      expect(dataProviderMock.fetchDPContract).to.have.been.calledOnceWith(rawSTPacket.contractId);
+      expect(validateSTPacketMock).to.have.not.been.called();
     });
 
     it('should return new STPacket with DP Contract', async () => {
@@ -175,16 +175,16 @@ describe('STPacketFactory', () => {
 
       const result = await factory.createFromObject(rawSTPacket);
 
-      expect(result).to.be.instanceOf(STPacket);
+      expect(result).to.be.an.instanceOf(STPacket);
 
-      expect(result.toJSON()).to.be.deep.equal(rawSTPacket);
+      expect(result.toJSON()).to.deep.equal(rawSTPacket);
 
-      expect(dataProviderMock.fetchDPContract).not.to.be.called();
+      expect(dataProviderMock.fetchDPContract).to.have.not.been.called();
 
-      expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket);
+      expect(validateSTPacketMock).to.have.been.calledOnceWith(rawSTPacket);
     });
 
-    it('should throw error if passed object is not valid', async () => {
+    it('should throw an error if passed object is not valid', async () => {
       dataProviderMock.fetchDPContract.resolves(dpContract);
 
       const validationError = new ConsensusError('test');
@@ -198,16 +198,16 @@ describe('STPacketFactory', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidSTPacketError);
+      expect(error).to.be.an.instanceOf(InvalidSTPacketError);
 
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
+      expect(error.getRawSTPacket()).to.equal(rawSTPacket);
 
       const [consensusError] = error.getErrors();
 
-      expect(consensusError).to.be.equal(validationError);
+      expect(consensusError).to.equal(validationError);
 
-      expect(validateSTPacketMock).to.be.calledOnceWith(rawSTPacket);
+      expect(validateSTPacketMock).to.have.been.calledOnceWith(rawSTPacket);
     });
   });
 
@@ -225,11 +225,11 @@ describe('STPacketFactory', () => {
 
       const result = await factory.createFromSerialized(serializedSTPacket);
 
-      expect(result).to.be.equal(stPacket);
+      expect(result).to.equal(stPacket);
 
-      expect(factory.createFromObject).to.be.calledOnceWith(rawSTPacket);
+      expect(factory.createFromObject).to.have.been.calledOnceWith(rawSTPacket);
 
-      expect(decodeMock).to.be.calledOnceWith(serializedSTPacket);
+      expect(decodeMock).to.have.been.calledOnceWith(serializedSTPacket);
     });
   });
 
@@ -239,8 +239,8 @@ describe('STPacketFactory', () => {
 
       const result = factory.setDataProvider(dataProviderMock);
 
-      expect(result).to.be.equal(factory);
-      expect(factory.dataProvider).to.be.equal(dataProviderMock);
+      expect(result).to.equal(factory);
+      expect(factory.dataProvider).to.equal(dataProviderMock);
     });
   });
 
@@ -248,7 +248,7 @@ describe('STPacketFactory', () => {
     it('should return DataProvider', () => {
       const result = factory.getDataProvider();
 
-      expect(result).to.be.equal(dataProviderMock);
+      expect(result).to.equal(dataProviderMock);
     });
   });
 });

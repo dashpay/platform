@@ -41,13 +41,13 @@ describe('STPacketFacade', () => {
     it('should create ST Packet', () => {
       const result = dpp.packet.create(stPacket.getDPObjects());
 
-      expect(result).to.be.instanceOf(STPacket);
+      expect(result).to.be.an.instanceOf(STPacket);
 
-      expect(result.getDPContractId()).to.be.equal(stPacket.getDPContractId());
-      expect(result.getDPObjects()).to.be.deep.equal(stPacket.getDPObjects());
+      expect(result.getDPContractId()).to.equal(stPacket.getDPContractId());
+      expect(result.getDPObjects()).to.deep.equal(stPacket.getDPObjects());
     });
 
-    it('should throw error if DP Contract is not defined', () => {
+    it('should throw an error if DP Contract is not defined', () => {
       dpp = new DashPlatformProtocol();
 
       let error;
@@ -57,8 +57,8 @@ describe('STPacketFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dpContract');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dpContract');
     });
   });
 
@@ -66,12 +66,12 @@ describe('STPacketFacade', () => {
     it('should create ST Packet from plain object', async () => {
       const result = await dpp.packet.createFromObject(stPacket.toJSON());
 
-      expect(result).to.be.instanceOf(STPacket);
+      expect(result).to.be.an.instanceOf(STPacket);
 
-      expect(result.toJSON()).to.be.deep.equal(stPacket.toJSON());
+      expect(result.toJSON()).to.deep.equal(stPacket.toJSON());
     });
 
-    it('should throw error if DataProvider is not defined', async () => {
+    it('should throw an error if DataProvider is not defined', async () => {
       dpp = new DashPlatformProtocol();
 
       let error;
@@ -81,8 +81,8 @@ describe('STPacketFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dataProvider');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dataProvider');
     });
   });
 
@@ -90,12 +90,12 @@ describe('STPacketFacade', () => {
     it('should create ST Packet from string', async () => {
       const result = await dpp.packet.createFromSerialized(stPacket.serialize());
 
-      expect(result).to.be.instanceOf(STPacket);
+      expect(result).to.be.an.instanceOf(STPacket);
 
-      expect(result.toJSON()).to.be.deep.equal(stPacket.toJSON());
+      expect(result.toJSON()).to.deep.equal(stPacket.toJSON());
     });
 
-    it('should throw error if DataProvider is not defined', async () => {
+    it('should throw an error if DataProvider is not defined', async () => {
       dpp = new DashPlatformProtocol();
 
       let error;
@@ -105,8 +105,8 @@ describe('STPacketFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dataProvider');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dataProvider');
     });
   });
 
@@ -114,10 +114,10 @@ describe('STPacketFacade', () => {
     it('should validate ST Packet', () => {
       const result = dpp.packet.validate(stPacket);
 
-      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result).to.be.an.instanceOf(ValidationResult);
     });
 
-    it('should throw error if DP Contract is not defined', () => {
+    it('should throw an error if DP Contract is not defined', () => {
       dpp = new DashPlatformProtocol();
 
       let error;
@@ -127,8 +127,8 @@ describe('STPacketFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dpContract');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dpContract');
     });
   });
 
@@ -151,10 +151,10 @@ describe('STPacketFacade', () => {
     it('should verify ST Packet', async () => {
       const result = await dpp.packet.verify(stPacket, stateTransition);
 
-      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result).to.be.an.instanceOf(ValidationResult);
     });
 
-    it('should throw error if DataProvider is not defined', async () => {
+    it('should throw an error if DataProvider is not defined', async () => {
       dpp = new DashPlatformProtocol();
 
       let error;
@@ -164,8 +164,8 @@ describe('STPacketFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dataProvider');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dataProvider');
     });
   });
 });

@@ -47,14 +47,14 @@ describe('verifyDPObjects', () => {
 
     expectValidationError(result, InvalidDPObjectScopeError);
 
-    expect(fetchDPObjectsByObjectsMock).to.be.calledOnceWith(
+    expect(fetchDPObjectsByObjectsMock).to.have.been.calledOnceWith(
       stPacket.getDPContractId(),
       dpObjects,
     );
 
     const [error] = result.getErrors();
 
-    expect(error.getDPObject()).to.be.equal(dpObjects[0]);
+    expect(error.getDPObject()).to.equal(dpObjects[0]);
   });
 
   it('should return invalid result if DPObject with action "create" is already present', async () => {
@@ -64,15 +64,15 @@ describe('verifyDPObjects', () => {
 
     expectValidationError(result, DPObjectAlreadyPresentError);
 
-    expect(fetchDPObjectsByObjectsMock).to.be.calledOnceWith(
+    expect(fetchDPObjectsByObjectsMock).to.have.been.calledOnceWith(
       stPacket.getDPContractId(),
       dpObjects,
     );
 
     const [error] = result.getErrors();
 
-    expect(error.getDPObject()).to.be.equal(dpObjects[0]);
-    expect(error.getFetchedDPObject()).to.be.equal(dpObjects[0]);
+    expect(error.getDPObject()).to.equal(dpObjects[0]);
+    expect(error.getFetchedDPObject()).to.equal(dpObjects[0]);
   });
 
   it('should return invalid result if DPObject with action "update" is not present', async () => {
@@ -84,14 +84,14 @@ describe('verifyDPObjects', () => {
 
     expectValidationError(result, DPObjectNotFoundError);
 
-    expect(fetchDPObjectsByObjectsMock).to.be.calledOnceWith(
+    expect(fetchDPObjectsByObjectsMock).to.have.been.calledOnceWith(
       stPacket.getDPContractId(),
       dpObjects,
     );
 
     const [error] = result.getErrors();
 
-    expect(error.getDPObject()).to.be.equal(dpObjects[0]);
+    expect(error.getDPObject()).to.equal(dpObjects[0]);
   });
 
   it('should return invalid result if DPObject with action "delete" is not present', async () => {
@@ -104,14 +104,14 @@ describe('verifyDPObjects', () => {
 
     expectValidationError(result, DPObjectNotFoundError);
 
-    expect(fetchDPObjectsByObjectsMock).to.be.calledOnceWith(
+    expect(fetchDPObjectsByObjectsMock).to.have.been.calledOnceWith(
       stPacket.getDPContractId(),
       dpObjects,
     );
 
     const [error] = result.getErrors();
 
-    expect(error.getDPObject()).to.be.equal(dpObjects[0]);
+    expect(error.getDPObject()).to.equal(dpObjects[0]);
   });
 
   it('should return invalid result if DPObject with action "update" has wrong revision', async () => {
@@ -123,15 +123,15 @@ describe('verifyDPObjects', () => {
 
     expectValidationError(result, InvalidDPObjectRevisionError);
 
-    expect(fetchDPObjectsByObjectsMock).to.be.calledOnceWith(
+    expect(fetchDPObjectsByObjectsMock).to.have.been.calledOnceWith(
       stPacket.getDPContractId(),
       dpObjects,
     );
 
     const [error] = result.getErrors();
 
-    expect(error.getDPObject()).to.be.equal(dpObjects[0]);
-    expect(error.getFetchedDPObject()).to.be.equal(dpObjects[0]);
+    expect(error.getDPObject()).to.equal(dpObjects[0]);
+    expect(error.getFetchedDPObject()).to.equal(dpObjects[0]);
   });
 
   it('should return invalid result if DPObject with action "delete" has wrong revision', async () => {
@@ -144,14 +144,14 @@ describe('verifyDPObjects', () => {
 
     expectValidationError(result, InvalidDPObjectRevisionError);
 
-    expect(fetchDPObjectsByObjectsMock).to.be.calledOnceWith(
+    expect(fetchDPObjectsByObjectsMock).to.have.been.calledOnceWith(
       stPacket.getDPContractId(),
       dpObjects,
     );
 
     const [error] = result.getErrors();
 
-    expect(error.getDPObject()).to.be.equal(dpObjects[0]);
+    expect(error.getDPObject()).to.equal(dpObjects[0]);
   });
 
   it('should throw an error if DPObject has invalid action', async () => {
@@ -166,8 +166,8 @@ describe('verifyDPObjects', () => {
       error = e;
     }
 
-    expect(error).to.be.instanceOf(InvalidDPObjectActionError);
-    expect(error.getDPObject()).to.be.equal(dpObjects[0]);
+    expect(error).to.be.an.instanceOf(InvalidDPObjectActionError);
+    expect(error.getDPObject()).to.equal(dpObjects[0]);
   });
 
   it('should return valid result if DPObjects are valid', async () => {
@@ -187,7 +187,7 @@ describe('verifyDPObjects', () => {
 
     const result = await verifyDPObjects(stPacket, userId);
 
-    expect(result).to.be.instanceOf(ValidationResult);
+    expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
   });
 });

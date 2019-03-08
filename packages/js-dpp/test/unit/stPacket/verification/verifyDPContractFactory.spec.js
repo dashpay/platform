@@ -36,9 +36,9 @@ describe('verifyDPContract', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getDPContract()).to.be.equal(dpContract);
+    expect(error.getDPContract()).to.equal(dpContract);
 
-    expect(dataProviderMock.fetchDPContract).to.be.calledOnceWith(dpContract.getId());
+    expect(dataProviderMock.fetchDPContract).to.have.been.calledOnceWith(dpContract.getId());
   });
 
   it('should return valid result if DP Contract is not present', async () => {

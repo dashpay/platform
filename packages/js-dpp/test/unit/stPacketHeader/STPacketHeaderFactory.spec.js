@@ -50,11 +50,11 @@ describe('STPacketHeaderFactory', () => {
         itemsHash,
       );
 
-      expect(newSTPacketHeader).to.be.instanceOf(STPacketHeader);
+      expect(newSTPacketHeader).to.be.an.instanceOf(STPacketHeader);
 
-      expect(newSTPacketHeader.getDPContractId()).to.be.equal(dpContractId);
-      expect(newSTPacketHeader.getItemsMerkleRoot()).to.be.equal(itemsMerkleRoot);
-      expect(newSTPacketHeader.getItemsHash()).to.be.equal(itemsHash);
+      expect(newSTPacketHeader.getDPContractId()).to.equal(dpContractId);
+      expect(newSTPacketHeader.getItemsMerkleRoot()).to.equal(itemsMerkleRoot);
+      expect(newSTPacketHeader.getItemsHash()).to.equal(itemsHash);
     });
   });
 
@@ -64,14 +64,14 @@ describe('STPacketHeaderFactory', () => {
 
       const result = factory.createFromObject(rawSTPacketHeader);
 
-      expect(result).to.be.instanceOf(STPacketHeader);
+      expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.toJSON()).to.be.deep.equal(rawSTPacketHeader);
+      expect(result.toJSON()).to.deep.equal(rawSTPacketHeader);
 
-      expect(validateSTPacketHeaderMock).to.be.calledOnceWith(rawSTPacketHeader);
+      expect(validateSTPacketHeaderMock).to.have.been.calledOnceWith(rawSTPacketHeader);
     });
 
-    it('should throw error if passed object is not valid', () => {
+    it('should throw an error if passed object is not valid', () => {
       const validationError = new ConsensusError('test');
 
       validateSTPacketHeaderMock.returns(new ValidationResult([validationError]));
@@ -83,15 +83,15 @@ describe('STPacketHeaderFactory', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidSTPacketHeaderError);
+      expect(error).to.be.an.instanceOf(InvalidSTPacketHeaderError);
 
       expect(error.getErrors()).to.have.length(1);
-      expect(error.getRawSTPacketHeader()).to.be.equal(rawSTPacketHeader);
+      expect(error.getRawSTPacketHeader()).to.equal(rawSTPacketHeader);
 
       const [consensusError] = error.getErrors();
-      expect(consensusError).to.be.equal(validationError);
+      expect(consensusError).to.equal(validationError);
 
-      expect(validateSTPacketHeaderMock).to.be.calledOnceWith(rawSTPacketHeader);
+      expect(validateSTPacketHeaderMock).to.have.been.calledOnceWith(rawSTPacketHeader);
     });
   });
 
@@ -109,11 +109,11 @@ describe('STPacketHeaderFactory', () => {
 
       const result = factory.createFromSerialized(serializedSTPacket);
 
-      expect(result).to.be.equal(stPacketHeader);
+      expect(result).to.equal(stPacketHeader);
 
-      expect(factory.createFromObject).to.be.calledOnceWith(rawSTPacketHeader);
+      expect(factory.createFromObject).to.have.been.calledOnceWith(rawSTPacketHeader);
 
-      expect(decodeMock).to.be.calledOnceWith(serializedSTPacket);
+      expect(decodeMock).to.have.been.calledOnceWith(serializedSTPacket);
     });
   });
 });

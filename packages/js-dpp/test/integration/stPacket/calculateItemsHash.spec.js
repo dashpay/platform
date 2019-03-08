@@ -1,7 +1,7 @@
 const calculateItemsHash = require('../../../lib/stPacket/calculateItemsHash');
 
 describe('calculateItemsHash', () => {
-  it('should returns null if contracts and objects are empty', () => {
+  it('should return null if contracts and objects are empty', () => {
     const result = calculateItemsHash({
       contracts: [],
       objects: [],

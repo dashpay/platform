@@ -11,10 +11,10 @@ const expectError = {
    * @param {number} [count]
    */
   expectValidationError(result, errorClass = ConsensusError, count = 1) {
-    expect(result).to.be.instanceOf(ValidationResult);
-    expect(result.getErrors()).to.be.lengthOf(count);
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.getErrors()).to.have.lengthOf(count);
 
-    result.getErrors().forEach(error => expect(error).to.be.instanceOf(errorClass));
+    result.getErrors().forEach(error => expect(error).to.be.an.instanceOf(errorClass));
   },
 
   /**

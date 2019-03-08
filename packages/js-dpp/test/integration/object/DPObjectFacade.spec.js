@@ -32,13 +32,13 @@ describe('DPObjectFacade', () => {
         dpObject.getData(),
       );
 
-      expect(result).to.be.instanceOf(DPObject);
+      expect(result).to.be.an.instanceOf(DPObject);
 
-      expect(result.getType()).to.be.equal(dpObject.getType());
-      expect(result.getData()).to.be.deep.equal(dpObject.getData());
+      expect(result.getType()).to.equal(dpObject.getType());
+      expect(result.getData()).to.deep.equal(dpObject.getData());
     });
 
-    it('should throw error if User ID is not defined', () => {
+    it('should throw an error if User ID is not defined', () => {
       dpp = new DashPlatformProtocol({
         dpContract,
       });
@@ -53,11 +53,11 @@ describe('DPObjectFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('userId');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('userId');
     });
 
-    it('should throw error if DP Contract is not defined', () => {
+    it('should throw an error if DP Contract is not defined', () => {
       dpp = new DashPlatformProtocol({
         userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       });
@@ -72,8 +72,8 @@ describe('DPObjectFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dpContract');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dpContract');
     });
   });
 
@@ -81,12 +81,12 @@ describe('DPObjectFacade', () => {
     it('should create DP Object from plain object', () => {
       const result = dpp.object.createFromObject(dpObject.toJSON());
 
-      expect(result).to.be.instanceOf(DPObject);
+      expect(result).to.be.an.instanceOf(DPObject);
 
-      expect(result.toJSON()).to.be.deep.equal(dpObject.toJSON());
+      expect(result.toJSON()).to.deep.equal(dpObject.toJSON());
     });
 
-    it('should throw error if User ID is not defined', () => {
+    it('should throw an error if User ID is not defined', () => {
       dpp = new DashPlatformProtocol({
         dpContract,
       });
@@ -98,11 +98,11 @@ describe('DPObjectFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('userId');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('userId');
     });
 
-    it('should throw error if DP Contract is not defined', () => {
+    it('should throw an error if DP Contract is not defined', () => {
       dpp = new DashPlatformProtocol({
         userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       });
@@ -114,8 +114,8 @@ describe('DPObjectFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dpContract');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dpContract');
     });
   });
 
@@ -123,12 +123,12 @@ describe('DPObjectFacade', () => {
     it('should create DP Object from string', () => {
       const result = dpp.object.createFromSerialized(dpObject.serialize());
 
-      expect(result).to.be.instanceOf(DPObject);
+      expect(result).to.be.an.instanceOf(DPObject);
 
-      expect(result.toJSON()).to.be.deep.equal(dpObject.toJSON());
+      expect(result.toJSON()).to.deep.equal(dpObject.toJSON());
     });
 
-    it('should throw error if User ID is not defined', () => {
+    it('should throw an error if User ID is not defined', () => {
       dpp = new DashPlatformProtocol({
         dpContract,
       });
@@ -140,11 +140,11 @@ describe('DPObjectFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('userId');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('userId');
     });
 
-    it('should throw error if DP Contract is not defined', () => {
+    it('should throw an error if DP Contract is not defined', () => {
       dpp = new DashPlatformProtocol({
         userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       });
@@ -156,8 +156,8 @@ describe('DPObjectFacade', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.be.equal('dpContract');
+      expect(error).to.be.an.instanceOf(MissingOptionError);
+      expect(error.getOptionName()).to.equal('dpContract');
     });
   });
 
@@ -165,7 +165,7 @@ describe('DPObjectFacade', () => {
     it('should validate DP Object', () => {
       const result = dpp.object.validate(dpObject.toJSON());
 
-      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result).to.be.an.instanceOf(ValidationResult);
     });
   });
 });

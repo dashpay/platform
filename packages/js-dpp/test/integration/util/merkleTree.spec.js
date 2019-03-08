@@ -22,12 +22,12 @@ describe('merkleTree', () => {
 
       expect(tree).to.be.an('array');
       // Three leaves, two nodes and a root, 6 in total
-      expect(tree.length).to.be.equal(6);
+      expect(tree.length).to.equal(6);
       tree.forEach((node, index) => {
-        expect(node).to.be.instanceOf(Buffer);
+        expect(node).to.be.an.instanceOf(Buffer);
         // sha256 is 32 bytes
-        expect(node.length).to.be.equal(32);
-        expect(node).to.be.deep.equal(expectedTree[index]);
+        expect(node.length).to.equal(32);
+        expect(node).to.deep.equal(expectedTree[index]);
       });
     });
   });
@@ -37,10 +37,10 @@ describe('merkleTree', () => {
       const root = getMerkleRoot(tree);
 
       // Last element of the tree is root
-      expect(root).to.be.deep.equal(expectedTree[5]);
+      expect(root).to.deep.equal(expectedTree[5]);
 
       root.reverse();
-      expect(root).to.be.not.deep.equal(expectedTree[5]);
+      expect(root).to.not.deep.equal(expectedTree[5]);
     });
     it('should return undefined if tree is empty', () => {
       const root = getMerkleRoot([]);

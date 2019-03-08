@@ -53,11 +53,11 @@ describe('DPObject', () => {
 
       dpObject = new DPObject(rawDPObject);
 
-      expect(dpObject.type).to.be.equal(rawDPObject.$type);
-      expect(DPObject.prototype.setData).to.be.calledOnceWith(data);
+      expect(dpObject.type).to.equal(rawDPObject.$type);
+      expect(DPObject.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
-    it('should create DP Object with $scopeId and data  if present', () => {
+    it('should create DP Object with $scopeId and data if present', () => {
       const data = {
         test: 1,
       };
@@ -69,8 +69,8 @@ describe('DPObject', () => {
 
       dpObject = new DPObject(rawDPObject);
 
-      expect(dpObject.scopeId).to.be.equal(rawDPObject.$scopeId);
-      expect(DPObject.prototype.setData).to.be.calledOnceWith(data);
+      expect(dpObject.scopeId).to.equal(rawDPObject.$scopeId);
+      expect(DPObject.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create DP Object with $scope and data if present', () => {
@@ -85,8 +85,8 @@ describe('DPObject', () => {
 
       dpObject = new DPObject(rawDPObject);
 
-      expect(dpObject.scope).to.be.equal(rawDPObject.$scope);
-      expect(DPObject.prototype.setData).to.be.calledOnceWith(data);
+      expect(dpObject.scope).to.equal(rawDPObject.$scope);
+      expect(DPObject.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create DP Object with $action and data if present', () => {
@@ -101,8 +101,8 @@ describe('DPObject', () => {
 
       dpObject = new DPObject(rawDPObject);
 
-      expect(dpObject.action).to.be.equal(rawDPObject.$action);
-      expect(DPObject.prototype.setData).to.be.calledOnceWith(data);
+      expect(dpObject.action).to.equal(rawDPObject.$action);
+      expect(DPObject.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create DP Object with $rev and data if present', () => {
@@ -117,8 +117,8 @@ describe('DPObject', () => {
 
       dpObject = new DPObject(rawDPObject);
 
-      expect(dpObject.revision).to.be.equal(rawDPObject.$rev);
-      expect(DPObject.prototype.setData).to.be.calledOnceWith(data);
+      expect(dpObject.revision).to.equal(rawDPObject.$rev);
+      expect(DPObject.prototype.setData).to.have.been.calledOnceWith(data);
     });
   });
 
@@ -130,9 +130,9 @@ describe('DPObject', () => {
 
       const actualId = dpObject.getId();
 
-      expect(hashMock).to.be.calledOnceWith(rawDPObject.$scope + rawDPObject.$scopeId);
+      expect(hashMock).to.have.been.calledOnceWith(rawDPObject.$scope + rawDPObject.$scopeId);
 
-      expect(id).to.be.equal(actualId);
+      expect(id).to.equal(actualId);
     });
 
     it('should return already calculated ID', () => {
@@ -142,15 +142,15 @@ describe('DPObject', () => {
 
       const actualId = dpObject.getId();
 
-      expect(hashMock).not.to.be.called();
+      expect(hashMock).to.have.not.been.called();
 
-      expect(id).to.be.equal(actualId);
+      expect(id).to.equal(actualId);
     });
   });
 
   describe('#getType', () => {
     it('should return $type', () => {
-      expect(dpObject.getType()).to.be.equal(rawDPObject.$type);
+      expect(dpObject.getType()).to.equal(rawDPObject.$type);
     });
   });
 
@@ -158,9 +158,9 @@ describe('DPObject', () => {
     it('should set $action', () => {
       const result = dpObject.setAction(DPObject.ACTIONS.DELETE);
 
-      expect(result).to.be.equal(dpObject);
+      expect(result).to.equal(dpObject);
 
-      expect(dpObject.action).to.be.equal(DPObject.ACTIONS.DELETE);
+      expect(dpObject.action).to.equal(DPObject.ACTIONS.DELETE);
     });
 
     it('should throw an error if data is set and the $action is DELETE', () => {
@@ -171,8 +171,8 @@ describe('DPObject', () => {
       try {
         dpObject.setAction(DPObject.ACTIONS.DELETE);
       } catch (e) {
-        expect(e).to.be.instanceOf(DataIsNotAllowedWithActionDeleteError);
-        expect(e.getDPObject()).to.be.deep.equal(dpObject);
+        expect(e).to.be.an.instanceOf(DataIsNotAllowedWithActionDeleteError);
+        expect(e.getDPObject()).to.deep.equal(dpObject);
       }
     });
   });
@@ -181,7 +181,7 @@ describe('DPObject', () => {
     it('should return $action', () => {
       dpObject.action = DPObject.ACTIONS.DELETE;
 
-      expect(dpObject.getAction()).to.be.equal(DPObject.ACTIONS.DELETE);
+      expect(dpObject.getAction()).to.equal(DPObject.ACTIONS.DELETE);
     });
   });
 
@@ -191,9 +191,9 @@ describe('DPObject', () => {
 
       const result = dpObject.setRevision(revision);
 
-      expect(result).to.be.equal(dpObject);
+      expect(result).to.equal(dpObject);
 
-      expect(dpObject.revision).to.be.equal(revision);
+      expect(dpObject.revision).to.equal(revision);
     });
   });
 
@@ -203,7 +203,7 @@ describe('DPObject', () => {
 
       dpObject.revision = revision;
 
-      expect(dpObject.getRevision()).to.be.equal(revision);
+      expect(dpObject.getRevision()).to.equal(revision);
     });
   });
 
@@ -220,12 +220,12 @@ describe('DPObject', () => {
 
       const result = dpObject.setData(data);
 
-      expect(result).to.be.equal(dpObject);
+      expect(result).to.equal(dpObject);
 
-      expect(DPObject.prototype.set).to.be.calledTwice();
+      expect(DPObject.prototype.set).to.have.been.calledTwice();
 
-      expect(DPObject.prototype.set).to.be.calledWith('test1', 1);
-      expect(DPObject.prototype.set).to.be.calledWith('test2', 2);
+      expect(DPObject.prototype.set).to.have.been.calledWith('test1', 1);
+      expect(DPObject.prototype.set).to.have.been.calledWith('test2', 2);
     });
   });
 
@@ -238,7 +238,7 @@ describe('DPObject', () => {
 
       dpObject.data = data;
 
-      expect(dpObject.getData()).to.be.equal(data);
+      expect(dpObject.getData()).to.equal(data);
     });
   });
 
@@ -249,9 +249,9 @@ describe('DPObject', () => {
 
       const result = dpObject.set(path, value);
 
-      expect(result).to.be.equal(dpObject);
+      expect(result).to.equal(dpObject);
 
-      expect(lodashSetMock).to.be.calledOnceWith(dpObject.data, path, value);
+      expect(lodashSetMock).to.have.been.calledOnceWith(dpObject.data, path, value);
     });
 
     it('should throw an error if $action is already set to DELETE', () => {
@@ -263,8 +263,8 @@ describe('DPObject', () => {
       try {
         dpObject.set(path, value);
       } catch (e) {
-        expect(e).to.be.instanceOf(DataIsNotAllowedWithActionDeleteError);
-        expect(e.getDPObject()).to.be.deep.equal(dpObject);
+        expect(e).to.be.an.instanceOf(DataIsNotAllowedWithActionDeleteError);
+        expect(e.getDPObject()).to.deep.equal(dpObject);
       }
     });
   });
@@ -278,15 +278,15 @@ describe('DPObject', () => {
 
       const result = dpObject.get(path);
 
-      expect(result).to.be.equal(value);
+      expect(result).to.equal(value);
 
-      expect(lodashGetMock).to.be.calledOnceWith(dpObject.data, path);
+      expect(lodashGetMock).to.have.been.calledOnceWith(dpObject.data, path);
     });
   });
 
   describe('#toJSON', () => {
     it('should return DPObject as plain JS object', () => {
-      expect(dpObject.toJSON()).to.be.deep.equal(rawDPObject);
+      expect(dpObject.toJSON()).to.deep.equal(rawDPObject);
     });
   });
 
@@ -298,9 +298,9 @@ describe('DPObject', () => {
 
       const result = dpObject.serialize();
 
-      expect(result).to.be.equal(serializedObject);
+      expect(result).to.equal(serializedObject);
 
-      expect(encodeMock).to.be.calledOnceWith(rawDPObject);
+      expect(encodeMock).to.have.been.calledOnceWith(rawDPObject);
     });
   });
 
@@ -319,11 +319,11 @@ describe('DPObject', () => {
 
       const result = dpObject.hash();
 
-      expect(result).to.be.equal(hashedObject);
+      expect(result).to.equal(hashedObject);
 
-      expect(DPObject.prototype.serialize).to.be.calledOnce();
+      expect(DPObject.prototype.serialize).to.have.been.calledOnce();
 
-      expect(hashMock).to.be.calledOnceWith(serializedObject);
+      expect(hashMock).to.have.been.calledOnceWith(serializedObject);
     });
   });
 });

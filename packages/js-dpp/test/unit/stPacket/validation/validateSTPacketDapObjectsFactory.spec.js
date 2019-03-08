@@ -48,13 +48,13 @@ describe('validateSTPacketDPObjectsFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getDPContract()).to.be.equal(dpContract);
-    expect(error.getRawSTPacket()).to.be.equal(rawSTPacket);
+    expect(error.getDPContract()).to.equal(dpContract);
+    expect(error.getRawSTPacket()).to.equal(rawSTPacket);
 
-    expect(validateDPObjectMock).to.be.calledThrice();
+    expect(validateDPObjectMock).to.have.been.calledThrice();
 
     rawSTPacket.objects.forEach((rawDPObject) => {
-      expect(validateDPObjectMock).to.be.calledWith(rawDPObject, dpContract);
+      expect(validateDPObjectMock).to.have.been.calledWith(rawDPObject, dpContract);
     });
   });
 
@@ -65,16 +65,16 @@ describe('validateSTPacketDPObjectsFactory', () => {
 
     expectValidationError(result, DuplicatedDPObjectsError);
 
-    expect(findDuplicatedDPObjectsMock).to.be.calledOnceWith(rawDPObjects);
+    expect(findDuplicatedDPObjectsMock).to.have.been.calledOnceWith(rawDPObjects);
 
     const [error] = result.getErrors();
 
-    expect(error.getDuplicatedDPObjects()).to.be.deep.equal([rawDPObjects[0]]);
+    expect(error.getDuplicatedDPObjects()).to.deep.equal([rawDPObjects[0]]);
 
-    expect(validateDPObjectMock).to.be.calledThrice();
+    expect(validateDPObjectMock).to.have.been.calledThrice();
 
     rawSTPacket.objects.forEach((rawDPObject) => {
-      expect(validateDPObjectMock).to.be.calledWith(rawDPObject, dpContract);
+      expect(validateDPObjectMock).to.have.been.calledWith(rawDPObject, dpContract);
     });
   });
 
@@ -89,23 +89,23 @@ describe('validateSTPacketDPObjectsFactory', () => {
 
     expectValidationError(result, ConsensusError, 1);
 
-    expect(findDuplicatedDPObjectsMock).to.be.calledOnceWith(rawDPObjects);
+    expect(findDuplicatedDPObjectsMock).to.have.been.calledOnceWith(rawDPObjects);
 
-    expect(validateDPObjectMock).to.be.calledThrice();
+    expect(validateDPObjectMock).to.have.been.calledThrice();
 
     const [error] = result.getErrors();
 
-    expect(error).to.be.equal(dpObjectError);
+    expect(error).to.equal(dpObjectError);
   });
 
   it('should return valid result if there are no duplicate DP Objects and they are valid', () => {
     const result = validateSTPacketDPObjects(rawSTPacket, dpContract);
 
-    expect(result).to.be.instanceOf(ValidationResult);
+    expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(findDuplicatedDPObjectsMock).to.be.calledOnceWith(rawDPObjects);
+    expect(findDuplicatedDPObjectsMock).to.have.been.calledOnceWith(rawDPObjects);
 
-    expect(validateDPObjectMock).to.be.calledThrice();
+    expect(validateDPObjectMock).to.have.been.calledThrice();
   });
 });

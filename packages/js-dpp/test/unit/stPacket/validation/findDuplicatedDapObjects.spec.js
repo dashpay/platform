@@ -23,6 +23,6 @@ describe('findDuplicatedDPObjects', () => {
 
     expect(result).to.be.an('array');
     expect(result).to.have.lengthOf(1);
-    expect(result[0]).to.be.equal(rawDPObjects[0]);
+    expect(result[0]).to.equal(rawDPObjects[0]);
   });
 });

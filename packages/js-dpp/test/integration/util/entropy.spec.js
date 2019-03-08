@@ -13,7 +13,7 @@ describe('entropy', () => {
       const randomString = entropy.generate();
       const secondRandomString = entropy.generate();
 
-      expect(secondRandomString).to.be.not.equal(randomString);
+      expect(secondRandomString).to.not.equal(randomString);
     });
   });
 

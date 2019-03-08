@@ -41,10 +41,10 @@ describe('DPContract', () => {
   describe('constructor', () => {
     it('should create new DP Contract', () => {
       dpContract = new DPContract(dpContractName, dpObjectsDefinition);
-      expect(dpContract.name).to.be.equal(dpContractName);
-      expect(dpContract.version).to.be.equal(DPContract.DEFAULTS.VERSION);
-      expect(dpContract.schema).to.be.equal(DPContract.DEFAULTS.SCHEMA);
-      expect(dpContract.dpObjectsDefinition).to.be.equal(dpObjectsDefinition);
+      expect(dpContract.name).to.equal(dpContractName);
+      expect(dpContract.version).to.equal(DPContract.DEFAULTS.VERSION);
+      expect(dpContract.schema).to.equal(DPContract.DEFAULTS.SCHEMA);
+      expect(dpContract.dpObjectsDefinition).to.equal(dpObjectsDefinition);
     });
   });
 
@@ -56,8 +56,8 @@ describe('DPContract', () => {
 
       const result = dpContract.getId();
 
-      expect(result).to.be.equal(hash);
-      expect(hashMock).to.be.calledOnce();
+      expect(result).to.equal(hash);
+      expect(hashMock).to.have.been.calledOnce();
     });
   });
 
@@ -65,7 +65,7 @@ describe('DPContract', () => {
     it('should return JSON Schema $id', () => {
       const result = dpContract.getJsonSchemaId();
 
-      expect(result).to.be.equal('dp-contract');
+      expect(result).to.equal('dp-contract');
     });
   });
 
@@ -73,8 +73,8 @@ describe('DPContract', () => {
     it('should set name', () => {
       const result = dpContract.setName(dpContractName);
 
-      expect(result).to.be.equal(dpContract);
-      expect(dpContract.name).to.be.equal(dpContractName);
+      expect(result).to.equal(dpContract);
+      expect(dpContract.name).to.equal(dpContractName);
     });
   });
 
@@ -82,7 +82,7 @@ describe('DPContract', () => {
     it('should return name', () => {
       const result = dpContract.getName();
 
-      expect(result).to.be.equal(dpContract.name);
+      expect(result).to.equal(dpContract.name);
     });
   });
 
@@ -92,8 +92,8 @@ describe('DPContract', () => {
 
       const result = dpContract.setVersion(version);
 
-      expect(result).to.be.equal(dpContract);
-      expect(dpContract.version).to.be.equal(version);
+      expect(result).to.equal(dpContract);
+      expect(dpContract.version).to.equal(version);
     });
   });
 
@@ -101,7 +101,7 @@ describe('DPContract', () => {
     it('should return version', () => {
       const result = dpContract.getVersion();
 
-      expect(result).to.be.equal(dpContract.version);
+      expect(result).to.equal(dpContract.version);
     });
   });
 
@@ -111,8 +111,8 @@ describe('DPContract', () => {
 
       const result = dpContract.setJsonMetaSchema(metaSchema);
 
-      expect(result).to.be.equal(dpContract);
-      expect(dpContract.schema).to.be.equal(metaSchema);
+      expect(result).to.equal(dpContract);
+      expect(dpContract.schema).to.equal(metaSchema);
     });
   });
 
@@ -120,7 +120,7 @@ describe('DPContract', () => {
     it('should return meta schema', () => {
       const result = dpContract.getJsonMetaSchema();
 
-      expect(result).to.be.equal(dpContract.schema);
+      expect(result).to.equal(dpContract.schema);
     });
   });
 
@@ -136,8 +136,8 @@ describe('DPContract', () => {
 
       const result = dpContract.setDPObjectsDefinition(anotherDPObjectsDefinition);
 
-      expect(result).to.be.equal(dpContract);
-      expect(dpContract.dpObjectsDefinition).to.be.equal(anotherDPObjectsDefinition);
+      expect(result).to.equal(dpContract);
+      expect(dpContract.dpObjectsDefinition).to.equal(anotherDPObjectsDefinition);
     });
   });
 
@@ -145,7 +145,7 @@ describe('DPContract', () => {
     it('should return DPObjects definition', () => {
       const result = dpContract.getDPObjectsDefinition();
 
-      expect(result).to.be.equal(dpContract.dpObjectsDefinition);
+      expect(result).to.equal(dpContract.dpObjectsDefinition);
     });
   });
 
@@ -153,13 +153,13 @@ describe('DPContract', () => {
     it('should return true if DPObject schema is defined', () => {
       const result = dpContract.isDPObjectDefined('niceObject');
 
-      expect(result).to.be.equal(true);
+      expect(result).to.equal(true);
     });
 
     it('should return false if DPObject schema is not defined', () => {
       const result = dpContract.isDPObjectDefined('undefinedObject');
 
-      expect(result).to.be.equal(false);
+      expect(result).to.equal(false);
     });
   });
 
@@ -174,10 +174,10 @@ describe('DPContract', () => {
 
       const result = dpContract.setDPObjectSchema(anotherType, anotherDefinition);
 
-      expect(result).to.be.equal(dpContract);
+      expect(result).to.equal(dpContract);
 
       expect(dpContract.dpObjectsDefinition).to.have.property(anotherType);
-      expect(dpContract.dpObjectsDefinition[anotherType]).to.be.equal(anotherDefinition);
+      expect(dpContract.dpObjectsDefinition[anotherType]).to.equal(anotherDefinition);
     });
   });
 
@@ -190,13 +190,13 @@ describe('DPContract', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidDPObjectTypeError);
+      expect(error).to.be.an.instanceOf(InvalidDPObjectTypeError);
     });
 
     it('should return DPObject Schema', () => {
       const result = dpContract.getDPObjectSchema(dpObjectType);
 
-      expect(result).to.be.equal(dpObjectSchema);
+      expect(result).to.equal(dpObjectSchema);
     });
   });
 
@@ -209,13 +209,13 @@ describe('DPContract', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidDPObjectTypeError);
+      expect(error).to.be.an.instanceOf(InvalidDPObjectTypeError);
     });
 
     it('should return schema with $ref to DPObject schema', () => {
       const result = dpContract.getDPObjectSchemaRef(dpObjectType);
 
-      expect(result).to.be.deep.equal({
+      expect(result).to.deep.equal({
         $ref: 'dp-contract#/dpObjectsDefinition/niceObject',
       });
     });
@@ -227,8 +227,8 @@ describe('DPContract', () => {
 
       const result = dpContract.setDefinitions(definitions);
 
-      expect(result).to.be.equal(dpContract);
-      expect(dpContract.definitions).to.be.equal(definitions);
+      expect(result).to.equal(dpContract);
+      expect(dpContract.definitions).to.equal(definitions);
     });
   });
 
@@ -236,7 +236,7 @@ describe('DPContract', () => {
     it('should return definitions', () => {
       const result = dpContract.getDefinitions();
 
-      expect(result).to.be.equal(dpContract.definitions);
+      expect(result).to.equal(dpContract.definitions);
     });
   });
 
@@ -244,7 +244,7 @@ describe('DPContract', () => {
     it('should return DP Contract as plain object', () => {
       const result = dpContract.toJSON();
 
-      expect(result).to.be.deep.equal({
+      expect(result).to.deep.equal({
         $schema: DPContract.DEFAULTS.SCHEMA,
         name: dpContractName,
         version: DPContract.DEFAULTS.VERSION,
@@ -261,7 +261,7 @@ describe('DPContract', () => {
 
       const result = dpContract.toJSON();
 
-      expect(result).to.be.deep.equal({
+      expect(result).to.deep.equal({
         $schema: DPContract.DEFAULTS.SCHEMA,
         name: dpContractName,
         version: DPContract.DEFAULTS.VERSION,
@@ -279,9 +279,9 @@ describe('DPContract', () => {
 
       const result = dpContract.serialize();
 
-      expect(result).to.be.equal(serializedDPObject);
+      expect(result).to.equal(serializedDPObject);
 
-      expect(encodeMock).to.be.calledOnceWith(dpContract.toJSON());
+      expect(encodeMock).to.have.been.calledOnceWith(dpContract.toJSON());
     });
   });
 
@@ -300,11 +300,11 @@ describe('DPContract', () => {
 
       const result = dpContract.hash();
 
-      expect(result).to.be.equal(hashedDPObject);
+      expect(result).to.equal(hashedDPObject);
 
-      expect(DPContract.prototype.serialize).to.be.calledOnce();
+      expect(DPContract.prototype.serialize).to.have.been.calledOnce();
 
-      expect(hashMock).to.be.calledOnceWith(serializedDPContract);
+      expect(hashMock).to.have.been.calledOnceWith(serializedDPContract);
     });
   });
 });

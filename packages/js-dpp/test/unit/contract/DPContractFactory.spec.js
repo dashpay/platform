@@ -45,9 +45,9 @@ describe('DPContractFactory', () => {
         rawDPContract.dpObjectsDefinition,
       );
 
-      expect(result).to.be.equal(dpContract);
+      expect(result).to.equal(dpContract);
 
-      expect(createDPContractMock).to.be.calledOnceWith({
+      expect(createDPContractMock).to.have.been.calledOnceWith({
         name: rawDPContract.name,
         dpObjectsDefinition: rawDPContract.dpObjectsDefinition,
       });
@@ -60,24 +60,24 @@ describe('DPContractFactory', () => {
 
       const result = factory.createFromObject(rawDPContract);
 
-      expect(result).to.be.equal(dpContract);
+      expect(result).to.equal(dpContract);
 
-      expect(validateDPContractMock).to.be.calledOnceWith(rawDPContract);
+      expect(validateDPContractMock).to.have.been.calledOnceWith(rawDPContract);
 
-      expect(createDPContractMock).to.be.calledOnceWith(rawDPContract);
+      expect(createDPContractMock).to.have.been.calledOnceWith(rawDPContract);
     });
 
     it('should return new DPContract without validation if "skipValidation" option is passed', () => {
       const result = factory.createFromObject(rawDPContract, { skipValidation: true });
 
-      expect(result).to.be.equal(dpContract);
+      expect(result).to.equal(dpContract);
 
-      expect(validateDPContractMock).not.to.be.called();
+      expect(validateDPContractMock).to.have.not.been.called();
 
-      expect(createDPContractMock).to.be.calledOnceWith(rawDPContract);
+      expect(createDPContractMock).to.have.been.calledOnceWith(rawDPContract);
     });
 
-    it('should throw error if passed object is not valid', () => {
+    it('should throw an error if passed object is not valid', () => {
       const validationError = new ConsensusError('test');
 
       validateDPContractMock.returns(new ValidationResult([validationError]));
@@ -89,18 +89,18 @@ describe('DPContractFactory', () => {
         error = e;
       }
 
-      expect(error).to.be.instanceOf(InvalidDPContractError);
-      expect(error.getRawDPContract()).to.be.equal(rawDPContract);
+      expect(error).to.be.an.instanceOf(InvalidDPContractError);
+      expect(error.getRawDPContract()).to.equal(rawDPContract);
 
       expect(error.getErrors()).to.have.length(1);
 
       const [consensusError] = error.getErrors();
 
-      expect(consensusError).to.be.equal(validationError);
+      expect(consensusError).to.equal(validationError);
 
-      expect(validateDPContractMock).to.be.calledOnceWith(rawDPContract);
+      expect(validateDPContractMock).to.have.been.calledOnceWith(rawDPContract);
 
-      expect(createDPContractMock).not.to.be.called();
+      expect(createDPContractMock).to.have.not.been.called();
     });
   });
 
@@ -118,11 +118,11 @@ describe('DPContractFactory', () => {
 
       const result = factory.createFromSerialized(serializedDPContract);
 
-      expect(result).to.be.equal(dpContract);
+      expect(result).to.equal(dpContract);
 
-      expect(factory.createFromObject).to.be.calledOnceWith(rawDPContract);
+      expect(factory.createFromObject).to.have.been.calledOnceWith(rawDPContract);
 
-      expect(decodeMock).to.be.calledOnceWith(serializedDPContract);
+      expect(decodeMock).to.have.been.calledOnceWith(serializedDPContract);
     });
   });
 });

@@ -85,7 +85,7 @@ describe('verifySTPacketFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getTransaction()).to.be.equal(stateTransition);
+    expect(error.getTransaction()).to.equal(stateTransition);
   });
 
   it('should return invalid result if State Transition contains wrong ST Packet hash', async () => {
@@ -97,8 +97,8 @@ describe('verifySTPacketFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getSTPacket()).to.be.equal(stPacket);
-    expect(error.getStateTransition()).to.be.equal(stateTransition);
+    expect(error.getSTPacket()).to.equal(stPacket);
+    expect(error.getStateTransition()).to.equal(stateTransition);
   });
 
   it('should return invalid result if user not found', async () => {
@@ -108,11 +108,11 @@ describe('verifySTPacketFactory', () => {
 
     expectValidationError(result, UserNotFoundError);
 
-    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
     const [error] = result.getErrors();
 
-    expect(error.getUserId()).to.be.equal(userId);
+    expect(error.getUserId()).to.equal(userId);
   });
 
   it('should return invalid result if user has less than 6 block confirmation', async () => {
@@ -124,11 +124,11 @@ describe('verifySTPacketFactory', () => {
 
     expectValidationError(result, UnconfirmedUserError);
 
-    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
     const [error] = result.getErrors();
 
-    expect(error.getRegistrationTransaction()).to.be.equal(transaction);
+    expect(error.getRegistrationTransaction()).to.equal(transaction);
   });
 
   it('should return invalid result if DP Contract is not valid', async () => {
@@ -146,14 +146,14 @@ describe('verifySTPacketFactory', () => {
 
     expectValidationError(result);
 
-    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
-    expect(verifyDPContractMock).to.be.calledOnceWith(stPacket);
-    expect(verifyDPObjectsMock).to.be.not.called();
+    expect(verifyDPContractMock).to.have.been.calledOnceWith(stPacket);
+    expect(verifyDPObjectsMock).to.have.not.been.called();
 
     const [actualError] = result.getErrors();
 
-    expect(actualError).to.be.equal(expectedError);
+    expect(actualError).to.equal(expectedError);
   });
 
   it('should return invalid result if DPObjects are not valid', async () => {
@@ -166,25 +166,25 @@ describe('verifySTPacketFactory', () => {
 
     expectValidationError(result);
 
-    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
-    expect(verifyDPContractMock).to.be.not.called();
-    expect(verifyDPObjectsMock).to.be.calledOnceWith(stPacket, userId);
+    expect(verifyDPContractMock).to.have.not.been.called();
+    expect(verifyDPObjectsMock).to.have.been.calledOnceWith(stPacket, userId);
 
     const [actualError] = result.getErrors();
 
-    expect(actualError).to.be.equal(expectedError);
+    expect(actualError).to.equal(expectedError);
   });
 
   it('should return valid result if ST Packet is valid', async () => {
     const result = await verifySTPacket(stPacket, stateTransition);
 
-    expect(result).to.be.instanceOf(ValidationResult);
+    expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(dataProviderMock.fetchTransaction).to.be.calledOnceWith(userId);
+    expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
-    expect(verifyDPContractMock).to.be.not.called();
-    expect(verifyDPObjectsMock).to.be.calledOnceWith(stPacket, userId);
+    expect(verifyDPContractMock).to.have.not.been.called();
+    expect(verifyDPObjectsMock).to.have.been.calledOnceWith(stPacket, userId);
   });
 });

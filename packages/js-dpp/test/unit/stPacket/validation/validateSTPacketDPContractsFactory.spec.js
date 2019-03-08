@@ -46,13 +46,13 @@ describe('validateSTPacketDPContractsFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error).to.be.equal(dpContractError);
+    expect(error).to.equal(dpContractError);
   });
 
   it('should return valid result if DP Contract is valid', () => {
     const result = validateSTPacketDPContracts(rawSTPacket);
 
-    expect(result).to.be.instanceOf(ValidationResult);
+    expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
   });
 });

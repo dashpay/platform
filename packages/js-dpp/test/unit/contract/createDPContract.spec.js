@@ -17,10 +17,10 @@ describe('createDPContract', () => {
   it('should return new DP Contract with "name" and dpObjectsDefinition', () => {
     const dpContract = createDPContract(rawDPContract);
 
-    expect(dpContract).to.be.instanceOf(DPContract);
+    expect(dpContract).to.be.an.instanceOf(DPContract);
 
-    expect(dpContract.getName()).to.be.equal(rawDPContract.name);
-    expect(dpContract.getDPObjectsDefinition()).to.be.equal(rawDPContract.dpObjectsDefinition);
+    expect(dpContract.getName()).to.equal(rawDPContract.name);
+    expect(dpContract.getDPObjectsDefinition()).to.equal(rawDPContract.dpObjectsDefinition);
   });
 
   it('should return new DP Contract with "$schema" if present', () => {
@@ -28,12 +28,12 @@ describe('createDPContract', () => {
 
     const dpContract = createDPContract(rawDPContract);
 
-    expect(dpContract).to.be.instanceOf(DPContract);
+    expect(dpContract).to.be.an.instanceOf(DPContract);
 
-    expect(dpContract.getJsonMetaSchema()).to.be.equal(rawDPContract.$schema);
+    expect(dpContract.getJsonMetaSchema()).to.equal(rawDPContract.$schema);
 
-    expect(dpContract.getName()).to.be.equal(rawDPContract.name);
-    expect(dpContract.getDPObjectsDefinition()).to.be.equal(rawDPContract.dpObjectsDefinition);
+    expect(dpContract.getName()).to.equal(rawDPContract.name);
+    expect(dpContract.getDPObjectsDefinition()).to.equal(rawDPContract.dpObjectsDefinition);
   });
 
   it('should return new DP Contract with "version" if present', () => {
@@ -41,12 +41,12 @@ describe('createDPContract', () => {
 
     const dpContract = createDPContract(rawDPContract);
 
-    expect(dpContract).to.be.instanceOf(DPContract);
+    expect(dpContract).to.be.an.instanceOf(DPContract);
 
-    expect(dpContract.getVersion()).to.be.equal(rawDPContract.version);
+    expect(dpContract.getVersion()).to.equal(rawDPContract.version);
 
-    expect(dpContract.getName()).to.be.equal(rawDPContract.name);
-    expect(dpContract.getDPObjectsDefinition()).to.be.equal(rawDPContract.dpObjectsDefinition);
+    expect(dpContract.getName()).to.equal(rawDPContract.name);
+    expect(dpContract.getDPObjectsDefinition()).to.equal(rawDPContract.dpObjectsDefinition);
   });
 
   it('should return new DP Contract with "definitions" if present', () => {
@@ -56,11 +56,11 @@ describe('createDPContract', () => {
 
     const dpContract = createDPContract(rawDPContract);
 
-    expect(dpContract).to.be.instanceOf(DPContract);
+    expect(dpContract).to.be.an.instanceOf(DPContract);
 
-    expect(dpContract.getDefinitions()).to.be.equal(rawDPContract.definitions);
+    expect(dpContract.getDefinitions()).to.equal(rawDPContract.definitions);
 
-    expect(dpContract.getName()).to.be.equal(rawDPContract.name);
-    expect(dpContract.getDPObjectsDefinition()).to.be.equal(rawDPContract.dpObjectsDefinition);
+    expect(dpContract.getName()).to.equal(rawDPContract.name);
+    expect(dpContract.getDPObjectsDefinition()).to.equal(rawDPContract.dpObjectsDefinition);
   });
 });

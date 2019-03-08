@@ -43,11 +43,11 @@ describe('STPacketHeader', () => {
 
   describe('constructor', () => {
     it('should return new ST Packet Header with specified Contract ID', () => {
-      expect(stPacketHeader).to.be.instanceOf(STPacketHeader);
+      expect(stPacketHeader).to.be.an.instanceOf(STPacketHeader);
 
-      expect(stPacketHeader.contractId).to.be.equal(dpContractId);
-      expect(stPacketHeader.itemsMerkleRoot).to.be.equal(itemsMerkleRoot);
-      expect(stPacketHeader.itemsHash).to.be.equal(itemsHash);
+      expect(stPacketHeader.contractId).to.equal(dpContractId);
+      expect(stPacketHeader.itemsMerkleRoot).to.equal(itemsMerkleRoot);
+      expect(stPacketHeader.itemsHash).to.equal(itemsHash);
     });
   });
 
@@ -55,9 +55,9 @@ describe('STPacketHeader', () => {
     it('should set DP Contract ID', () => {
       const result = stPacketHeader.setDPContractId(dpContractId);
 
-      expect(result).to.be.instanceOf(STPacketHeader);
+      expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.contractId).to.be.equal(dpContractId);
+      expect(result.contractId).to.equal(dpContractId);
     });
   });
 
@@ -65,7 +65,7 @@ describe('STPacketHeader', () => {
     it('should return DP Contract ID', () => {
       const result = stPacketHeader.getDPContractId();
 
-      expect(result).to.be.equal(dpContractId);
+      expect(result).to.equal(dpContractId);
     });
   });
 
@@ -73,9 +73,9 @@ describe('STPacketHeader', () => {
     it('should set items merkle root', () => {
       const result = stPacketHeader.setItemsMerkleRoot(itemsMerkleRoot);
 
-      expect(result).to.be.instanceOf(STPacketHeader);
+      expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.itemsMerkleRoot).to.be.equal(itemsMerkleRoot);
+      expect(result.itemsMerkleRoot).to.equal(itemsMerkleRoot);
     });
   });
 
@@ -85,7 +85,7 @@ describe('STPacketHeader', () => {
 
       const result = stPacketHeader.getItemsMerkleRoot();
 
-      expect(result).to.be.equal(itemsMerkleRoot);
+      expect(result).to.equal(itemsMerkleRoot);
     });
   });
 
@@ -93,9 +93,9 @@ describe('STPacketHeader', () => {
     it('should set items hash', () => {
       const result = stPacketHeader.setItemsHash(itemsHash);
 
-      expect(result).to.be.instanceOf(STPacketHeader);
+      expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.itemsHash).to.be.equal(itemsHash);
+      expect(result.itemsHash).to.equal(itemsHash);
     });
   });
 
@@ -105,7 +105,7 @@ describe('STPacketHeader', () => {
 
       const result = stPacketHeader.getItemsHash();
 
-      expect(result).to.be.equal(itemsHash);
+      expect(result).to.equal(itemsHash);
     });
   });
 
@@ -113,7 +113,7 @@ describe('STPacketHeader', () => {
     it('should return ST Packet Header as plain object', () => {
       const result = stPacketHeader.toJSON();
 
-      expect(result).to.be.deep.equal(rawSTPacketHeader);
+      expect(result).to.deep.equal(rawSTPacketHeader);
     });
   });
 
@@ -125,9 +125,9 @@ describe('STPacketHeader', () => {
 
       const result = stPacketHeader.serialize();
 
-      expect(result).to.be.equal(serializedSTPacket);
+      expect(result).to.equal(serializedSTPacket);
 
-      expect(encodeMock).to.be.calledOnceWith(rawSTPacketHeader);
+      expect(encodeMock).to.have.been.calledOnceWith(rawSTPacketHeader);
     });
   });
 
@@ -146,11 +146,11 @@ describe('STPacketHeader', () => {
 
       const result = stPacketHeader.hash();
 
-      expect(result).to.be.equal(hashedPacket);
+      expect(result).to.equal(hashedPacket);
 
-      expect(STPacketHeader.prototype.serialize).to.be.calledOnce();
+      expect(STPacketHeader.prototype.serialize).to.have.been.calledOnce();
 
-      expect(hashMock).to.be.calledOnceWith(serializedPacket);
+      expect(hashMock).to.have.been.calledOnceWith(serializedPacket);
     });
   });
 });
