@@ -47,7 +47,7 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
    * @return {Promise<Object>} - Dap contract
    */
   fetchDapContract(dapId) {
-    return this.request('fetchDapContract', { dapId });
+    return this.request('fetchDPContract', { dapId });
   }
 
   /**
@@ -63,7 +63,7 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
    * @return {Promise<Object[]>}
    */
   fetchDapObjects(dapId, type, options) {
-    return this.request('fetchDapObjects', { dapId, type, options });
+    return this.request('fetchDPObjects', { dapId, type, options });
   }
 }
 

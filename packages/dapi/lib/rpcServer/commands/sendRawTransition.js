@@ -11,7 +11,7 @@ function sendRawTransitionFactory(coreAPI, dashDriveAPI) {
    * @typedef sendRawTransition
    * @param args
    * @param args.rawStateTransition
-   * @param args.rawSTPackett
+   * @param args.rawSTPacket
    * @return {Promise<string>}
    */
   const sendRawTransition = async (args) => {

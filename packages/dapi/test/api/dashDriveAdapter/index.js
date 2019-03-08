@@ -42,12 +42,12 @@ describe('DashDriveAdapter', () => {
     });
   });
 
-  describe('#fetchDapContract', () => {
-    it('Should call \'fetchDapContract\' RPC with the given parameters', async () => {
+  describe('#fetchDPContract', () => {
+    it('Should call \'fetchDPContract\' RPC with the given parameters', async () => {
       const dashDrive = new DashDriveAdapter({ host: '127.0.0.1', port: 3000 });
 
       const dapId = 'dapid';
-      const method = 'fetchDapContract';
+      const method = 'fetchDPContract';
 
       const expectedDapContract = { dapId };
 
@@ -65,14 +65,14 @@ describe('DashDriveAdapter', () => {
     });
   });
 
-  describe('#fetchDapObjects', () => {
-    it('Should call \'fetchDapObjects\' RPC with the given parameters', async () => {
+  describe('#fetchDPObjects', () => {
+    it('Should call \'fetchDPObjects\' RPC with the given parameters', async () => {
       const dashDrive = new DashDriveAdapter({ host: '127.0.0.1', port: 3000 });
 
       const dapId = 'dapid';
       const type = 'contact';
       const options = { where: { id: 1 } };
-      const method = 'fetchDapObjects';
+      const method = 'fetchDPObjects';
 
       const expectedDapObjects = [{ dapId, id: 1 }];
 
