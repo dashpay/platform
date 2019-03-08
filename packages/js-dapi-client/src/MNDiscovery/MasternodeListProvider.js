@@ -15,6 +15,7 @@ const {
 const sample = require('lodash/sample');
 const RPCClient = require('../RPCClient');
 const config = require('../config');
+const constants = require('../constants');
 
 const dummyHeader = '00000020306754be5d6e242258b1ab03999eaa847724718cd410c69a0a92b21300000000ba7f1c1dc4ae5c849813d36a9efa961d3b178489afd6a9bed50de43a2223246e7867335cfc64171cd152f10e';
 
@@ -104,7 +105,7 @@ class MasternodeListProvider {
     this.simplifiedMNList = new SimplifiedMNList();
     this.DAPIPort = DAPIPort;
     this.lastUpdateDate = 0;
-    this.baseBlockHash = config.nullHash;
+    this.baseBlockHash = constants.masternodeList.NULL_HASH;
   }
 
   /**
