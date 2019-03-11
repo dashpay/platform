@@ -100,8 +100,9 @@ const getRawBlock = async (blockHash) => {
   return res;
 };
 
-const getTransactionsByAddress = async (address) => {
-  const res = await get(`/addrs/${address}/txs`); // TODO addrs instead fo addr?
+const getTransactionsByAddress = async (address, from, to, fromHeight, toHeight) => {
+  const addresses = Array.isArray(address) ? address.join() : address;
+  const res = await get(`/addrs/${addresses}/txs?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
   return res;
 };
 

@@ -36,6 +36,15 @@ describe('getTransactionsByAddress', () => {
     expect(spy.callCount).to.be.equal(1);
   });
 
+  it('Should accept an array as input', async () => {
+    const getTransactionsByAddress = getTransactionsByAddressFactory(coreAPIFixture);
+    expect(spy.callCount).to.be.equal(0);
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w', 'yYmrsYP3XYMZr1cGtha3QzmuNB1C7CfyhV'];
+    const transactions = await getTransactionsByAddress({ address: addressArray });
+    expect(transactions).to.be.an('array');
+    expect(spy.callCount).to.be.equal(1);
+  });
+
   it('Should throw if arguments are not valid', async () => {
     const getTransactionsByAddress = getTransactionsByAddressFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
@@ -43,7 +52,7 @@ describe('getTransactionsByAddress', () => {
     expect(spy.callCount).to.be.equal(0);
     await expect(getTransactionsByAddress({})).to.be.rejectedWith('should have required property \'address\'');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getTransactionsByAddress({ address: 1 })).to.be.rejectedWith('address should be string');
+    await expect(getTransactionsByAddress({ address: 1 })).to.be.rejectedWith('params.address should be array,string');
     expect(spy.callCount).to.be.equal(0);
   });
 });

@@ -1,5 +1,5 @@
 const Validator = require('../../utils/Validator');
-const argsSchema = require('../schemas/address');
+const argsSchema = require('../schemas/addresses');
 
 const validator = new Validator(argsSchema);
 
@@ -13,13 +13,19 @@ const getTransactionsByAddressFactory = (coreAPI) => {
    * Returns all transaction related to the given address
    * @typedef getTransactionsByAddress
    * @param args
-   * @param {string} args.address
+   * @param {string|string[]} args.address
+   * @param {number} args.from
+   * @param {number} args.to
+   * @param {number} args.fromHeight
+   * @param {number} args.toHeight
    * @return {Promise<Array<Object>>}
    */
   async function getTransactionsByAddress(args) {
     validator.validate(args);
-    const { address } = args;
-    return coreAPI.getTransactionsByAddress(address);
+    const {
+      address, from, to, fromHeight, toHeight,
+    } = args;
+    return coreAPI.getTransactionsByAddress(address, from, to, fromHeight, toHeight);
   }
 
   return getTransactionsByAddress;
@@ -38,7 +44,7 @@ const getTransactionsByAddressFactory = (coreAPI) => {
  *        - L1
  *      responses:
  *        200:
- *          description: Successful response. Promise (object array) containing all transaction objects for the requested address.
+ *          description: Successful response. Promise (object) containing all transaction objects for the requested address.
  *      requestBody:
  *        content:
  *          application/json:
@@ -70,9 +76,29 @@ const getTransactionsByAddressFactory = (coreAPI) => {
  *                    - address
  *                  properties:
  *                    address:
- *                      type: string
- *                      default: yLp6ZJueuigiF4s9E1Pv8tEunDPEsjyQfd
- *                      description: Dash address
+ *                      oneOf:
+ *                        type: string
+ *                        type: array
+ *                        items:
+ *                          type: string
+ *                        required: true
+ *                        description: Dash address or array of addresses
+ *                    from:
+ *                      type: integer
+ *                      default: undefined
+ *                      description: start of range in the ordered list of latest UTXO
+ *                    to:
+ *                      type: integer
+ *                      default: undefined
+ *                      description: end of range in the ordered list of latest UTXO
+ *                    fromHeight:
+ *                      type: integer
+ *                      default: undefined
+ *                      description: which height to start from
+ *                    toHeight:
+ *                      type: integer
+ *                      default: undefined
+ *                      description: on which height to end
  */
 /* eslint-enable max-len */
 
