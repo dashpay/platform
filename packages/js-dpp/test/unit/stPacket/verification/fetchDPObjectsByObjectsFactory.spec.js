@@ -1,9 +1,16 @@
+const bs58 = require('bs58');
+
 const getDPObjectsFixture = require('../../../../lib/test/fixtures/getDPObjectsFixture');
 const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContractFixture');
 
 const fetchDPObjectsByObjectsFactory = require('../../../../lib/stPacket/verification/fetchDPObjectsByObjectsFactory');
 
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
+
+function encodeToBase58(id) {
+  const idBuffer = Buffer.from(id, 'hex');
+  return bs58.encode(idBuffer);
+}
 
 describe('fetchDPObjectsByObjects', () => {
   let fetchDPObjectsByObjects;
@@ -35,7 +42,13 @@ describe('fetchDPObjectsByObjects', () => {
 
     expect(dataProviderMock.fetchDPObjects).to.have.been.calledTwice();
 
-    let where = { id: { $in: [dpObjects[0].getId()] } };
+    let where = {
+      _id: {
+        $in: [
+          encodeToBase58(dpObjects[0].getId()),
+        ],
+      },
+    };
 
     expect(dataProviderMock.fetchDPObjects).to.have.been.calledWith(
       dpContract.getId(),
@@ -43,7 +56,14 @@ describe('fetchDPObjectsByObjects', () => {
       { where },
     );
 
-    where = { id: { $in: [dpObjects[1].getId(), dpObjects[2].getId()] } };
+    where = {
+      _id: {
+        $in: [
+          encodeToBase58(dpObjects[1].getId()),
+          encodeToBase58(dpObjects[2].getId()),
+        ],
+      },
+    };
 
     expect(dataProviderMock.fetchDPObjects).to.have.been.calledWith(
       dpContract.getId(),

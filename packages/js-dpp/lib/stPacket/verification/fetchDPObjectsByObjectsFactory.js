@@ -1,3 +1,5 @@
+const bs58 = require('bs58');
+
 /**
  * @param {DataProvider} dataProvider
  * @return {fetchDPObjectsByObjects}
@@ -17,7 +19,10 @@ function fetchDPObjectsByObjectsFactory(dataProvider) {
         obj[dpObject.getType()] = [];
       }
 
-      obj[dpObject.getType()].push(dpObject.getId());
+      const idBuffer = Buffer.from(dpObject.getId(), 'hex');
+      const id = bs58.encode(idBuffer);
+
+      obj[dpObject.getType()].push(id);
 
       return obj;
     }, {});
@@ -28,7 +33,7 @@ function fetchDPObjectsByObjectsFactory(dataProvider) {
     // Fetch DPObjects by IDs
     const fetchedDPObjectPromises = dpObjectsArray.map(([type, ids]) => {
       const options = {
-        where: { id: { $in: ids } },
+        where: { _id: { $in: ids } },
       };
 
       return dataProvider.fetchDPObjects(
