@@ -288,8 +288,6 @@ class DAPIClient {
   clearBloomFilter(filter) { return this.makeRequestToRandomDAPINode('clearBloomFilter', { filter }); }
 
   getSpvData(filter) { return this.makeRequestToRandomDAPINode('getSpvData', { filter }); }
-
-  requestHistoricData(blockHash) { return this.makeRequestToRandomDAPINode('requestHistoricData', { blockHash }); }
 }
 
 module.exports = DAPIClient;

@@ -460,8 +460,6 @@ describe('basicAPIs', () => {
         });
         it('getSpvData', async function it() {
         });
-        it('requestHistoricData', async function it() {
-        });
         it('getMnListDiff', async function it() {
         });
     });
