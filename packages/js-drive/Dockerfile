@@ -1,7 +1,7 @@
 FROM 103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/node:10-alpine
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="DashDrive Node.JS"
+LABEL description="Drive Node.JS"
 
 RUN apk update && \
     apk --no-cache upgrade && \

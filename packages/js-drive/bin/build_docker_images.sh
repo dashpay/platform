@@ -3,7 +3,7 @@
 set -e
 
 REPO_URL="103738324493.dkr.ecr.us-west-2.amazonaws.com"
-IMAGE_NAME="dashevo/dashdrive"
+IMAGE_NAME="dashevo/drive"
 
 DRIVE_VERSION=$(node -p "require('./package.json').version")
 

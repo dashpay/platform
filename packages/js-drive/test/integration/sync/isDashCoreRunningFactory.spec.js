@@ -1,4 +1,4 @@
-const { mocha: { startDashCore } } = require('@dashevo/js-evo-services-ctl');
+const { mocha: { startDashCore } } = require('@dashevo/dp-services-ctl');
 const isDashCoreRunningFactory = require('../../../lib/sync/isDashCoreRunningFactory');
 
 const wait = require('../../../lib/util/wait');

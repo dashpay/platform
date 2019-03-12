@@ -1,7 +1,8 @@
 {
-  "name": "dashdrive",
+  "name": "@dashevo/drive",
   "version": "0.2.0",
-  "description": "DashDrive",
+  "description": "Drive",
+  "private": true,
   "engines": {
     "node": ">=8"
   },
@@ -17,18 +18,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/dashdrive.git"
+    "url": "git+https://github.com/dashevo/drive.git"
   },
   "authors": [
     "Nathan Marley"
   ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dashevo/dashdrive/issues"
+    "url": "https://github.com/dashevo/drive/issues"
   },
-  "homepage": "https://github.com/dashevo/dashdrive",
+  "homepage": "https://github.com/dashevo/drive",
   "devDependencies": {
-    "@dashevo/js-evo-services-ctl": "0.3.0",
+    "@dashevo/dp-services-ctl": "0.5.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",

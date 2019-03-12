@@ -1,4 +1,4 @@
-const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
+const { startDrive } = require('@dashevo/dp-services-ctl');
 
 const getSTPacketsFixture = require('../../../lib/test/fixtures/getSTPacketsFixture');
 
@@ -17,7 +17,7 @@ const apiAppOptions = new ApiAppOptions(process.env);
  * @param {DriveApi} instance
  * @returns {Promise<void>}
  */
-async function dashDriveSyncToFinish(instance) {
+async function driveSyncToFinish(instance) {
   let finished = false;
   while (!finished) {
     try {
@@ -37,17 +37,17 @@ async function dashDriveSyncToFinish(instance) {
 }
 
 describe('Sync interruption and resume between Dash Drive and Dash Core', function describe() {
-  let firstDashDrive;
-  let secondDashDrive;
+  let firstDrive;
+  let secondDrive;
 
   this.timeout(900000);
 
   before('having Dash Drive node #1 up and running', async () => {
     // 1. Start first Dash Drive node
-    firstDashDrive = await startDashDrive();
+    firstDrive = await startDrive();
 
     // 1.1 Activate Special Transactions
-    await firstDashDrive.dashCore.getApi().generate(1000);
+    await firstDrive.dashCore.getApi().generate(1000);
 
     const [stPacket] = getSTPacketsFixture();
 
@@ -61,12 +61,12 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
       const {
         userId,
         privateKeyString,
-      } = await registerUser(username, firstDashDrive.dashCore.getApi());
+      } = await registerUser(username, firstDrive.dashCore.getApi());
 
       const stateTransition = await createStateTransition(userId, privateKeyString, stPacket);
 
       // 2.3 Add ST packet
-      const driveApi = firstDashDrive.driveApi.getApi();
+      const driveApi = firstDrive.driveApi.getApi();
       const { error } = await driveApi.request('addSTPacket', {
         stPacket: stPacket.serialize().toString('hex'),
         stateTransition: stateTransition.serialize(),
@@ -77,8 +77,8 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
       }
 
       // 2.4 Send ST to Dash Core and generate a block with it
-      await firstDashDrive.dashCore.getApi().sendRawTransaction(stateTransition.serialize());
-      await firstDashDrive.dashCore.getApi().generate(1);
+      await firstDrive.dashCore.getApi().sendRawTransaction(stateTransition.serialize());
+      await firstDrive.dashCore.getApi().generate(1);
     }
 
     // Note: I can't use Promise.all here due to errors with PrivateKey
@@ -90,13 +90,13 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
 
   it('Dash Drive should save sync state and continue from saved point after resume', async () => {
     // 3. Start 2nd Dash Drive node and connect to the first one
-    secondDashDrive = await startDashDrive();
+    secondDrive = await startDrive();
 
-    await secondDashDrive.ipfs.connect(firstDashDrive.ipfs);
-    await secondDashDrive.dashCore.connect(firstDashDrive.dashCore);
+    await secondDrive.ipfs.connect(firstDrive.ipfs);
+    await secondDrive.dashCore.connect(firstDrive.dashCore);
 
     // 4. Save initial list of CIDs in IPFS before Dash Drive started on 2nd node
-    let lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
+    let lsResult = await secondDrive.ipfs.getApi().pin.ls();
     const initialHashes = lsResult.map(item => item.hash);
 
     // 5. Wait for IPFS on 2nd node to have 3 packets pinned
@@ -106,7 +106,7 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
     //       getSyncStatus API method of Dash Drive
     //       possibly implemented in DD-196
     for (let i = 0; i < 60; i++) {
-      lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
+      lsResult = await secondDrive.ipfs.getApi().pin.ls();
       const pinnedHashes = lsResult
         .filter(item => initialHashes.indexOf(item.hash) === -1)
         .map(item => item.hash);
@@ -117,13 +117,13 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
     }
 
     // 6. Stop Dash Drive on 2nd node
-    await secondDashDrive.driveSync.stop();
+    await secondDrive.driveSync.stop();
 
     // 7. Save a list of CIDs pinned on 2nd node
     //    Filter out initial CIDs from step #4
     //    to have a clean list of freshly pinned CIDs
     //    as a result of sync process
-    lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
+    lsResult = await secondDrive.ipfs.getApi().pin.ls();
     const pinnedHashes = lsResult
       .filter(item => initialHashes.indexOf(item.hash) === -1)
       .map(item => item.hash);
@@ -132,18 +132,18 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
     //    This will allow us to check
     //    sync started from the point it stopped
     const rmPromises = Promise
-      .all(pinnedHashes.map(hash => secondDashDrive.ipfs.getApi().pin.rm(hash)));
+      .all(pinnedHashes.map(hash => secondDrive.ipfs.getApi().pin.rm(hash)));
     await rmPromises;
 
     // 9. Start Dash Drive on 2nd node
-    await secondDashDrive.driveSync.start();
+    await secondDrive.driveSync.start();
 
     // 10. Await Dash Drive to finish the rest of synchronisation
-    await dashDriveSyncToFinish(secondDashDrive.driveApi);
+    await driveSyncToFinish(secondDrive.driveApi);
 
     // 11. Check that CIDs pinned after sync does not contain
     //     CIDs removed in step #8
-    lsResult = await secondDashDrive.ipfs.getApi().pin.ls();
+    lsResult = await secondDrive.ipfs.getApi().pin.ls();
 
     const hashesAfterResume = lsResult.map(item => item.hash);
 
@@ -154,8 +154,8 @@ describe('Sync interruption and resume between Dash Drive and Dash Core', functi
 
   after('cleanup services', async () => {
     const instances = [
-      firstDashDrive,
-      secondDashDrive,
+      firstDrive,
+      secondDrive,
     ];
 
     await Promise.all(instances.filter(i => i)

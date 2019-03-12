@@ -1,6 +1,6 @@
-# DashDrive
+# Drive
 
-[![Build Status](https://travis-ci.com/dashevo/dashdrive.svg?token=Pzix7aqnMuGS9c6BmBz2&branch=master)](https://travis-ci.com/dashevo/dashdrive)
+[![Build Status](https://travis-ci.com/dashevo/drive.svg?token=Pzix7aqnMuGS9c6BmBz2&branch=master)](https://travis-ci.com/dashevo/drive)
 
 > Dash network data storage backend service.
 
@@ -10,7 +10,7 @@ An [event-sourced](https://martinfowler.com/eaaDev/EventSourcing.html) metadata 
 - [Install](#install)
 - [Usage](#usage)
 - [Configuration](#configuration)
-- [DashDrive API](#dashdrive-api)
+- [Drive API](#drive-api)
 - [Tests](#tests)
 - [Maintainer](#maintainer)
 - [Contributing](#contributing)
@@ -46,21 +46,21 @@ npm run api
 
 ## Configuration
 
-DashDrive uses environment variables for configuration.
+Drive uses environment variables for configuration.
 Variables are read from `.env` file and can be overwritten by variables
 defined in env or directly passed to the process.
 
 See all available settings in [.env.example](.env.example).
 
-## DashDrive API
+## Drive API
 
-DashDrive provides [JSON-RPC 2.0](https://www.jsonrpc.org/specification) API for interaction with data.
+Drive provides [JSON-RPC 2.0](https://www.jsonrpc.org/specification) API for interaction with data.
 
 ### RPC methods
 
 #### addSTPacket
 
-Add State Transition Packet to DashDrive storage
+Add State Transition Packet to Drive storage
 
 ##### Params
 
@@ -77,7 +77,7 @@ Add State Transition Packet to DashDrive storage
 
 #### removeSTPacket
 
-Remove State Transition Packet from DashDrive storage
+Remove State Transition Packet from Drive storage
 
 ##### Params
 
@@ -87,7 +87,7 @@ Remove State Transition Packet from DashDrive storage
 
 #### fetchDPContact
 
-Fetch DP Contract from DashDrive State View
+Fetch DP Contract from Drive State View
 
 ##### Params
 
@@ -103,7 +103,7 @@ Fetch DP Contract from DashDrive State View
 
 #### fetchDPObjects
 
-Fetch DP Objects from DashDrive State View
+Fetch DP Objects from Drive State View
 
 ##### Params
 
@@ -147,13 +147,13 @@ None
 
 | code | message                   | meaning                                                                  |
 |------|---------------------------|--------------------------------------------------------------------------|
-| 100  | Initial sync in progress  | DashDrive responds with error until initial sync process is not complete |
+| 100  | Initial sync in progress  | Drive responds with error until initial sync process is not complete |
 
 Standard errors listed in [JSON-RPC specification](https://www.jsonrpc.org/specification).
 
 ## Tests
 
-[Read](test/) about tests in `test/` folder. 
+[Read](test/) about tests in `test/` folder.
 
 ## Maintainer
 
@@ -161,7 +161,7 @@ Standard errors listed in [JSON-RPC specification](https://www.jsonrpc.org/speci
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/dashdrive/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/drive/issues/new) or submit PRs.
 
 ## License
 

@@ -3,7 +3,7 @@ const {
     startMongoDb,
     startIPFS,
   },
-} = require('@dashevo/js-evo-services-ctl');
+} = require('@dashevo/dp-services-ctl');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 const DPObject = require('@dashevo/dpp/lib/object/DPObject');

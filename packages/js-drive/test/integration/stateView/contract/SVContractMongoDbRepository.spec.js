@@ -1,4 +1,4 @@
-const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
+const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 
 const bs58 = require('bs58');
 

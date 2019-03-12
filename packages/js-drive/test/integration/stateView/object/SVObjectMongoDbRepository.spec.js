@@ -1,4 +1,4 @@
-const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
+const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 
 const SVObject = require('../../../../lib/stateView/object/SVObject');
 const SVObjectMongoDbRepository = require('../../../../lib/stateView/object/SVObjectMongoDbRepository');

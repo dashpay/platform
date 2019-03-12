@@ -1,4 +1,4 @@
-const { mocha: { startIPFS } } = require('@dashevo/js-evo-services-ctl');
+const { mocha: { startIPFS } } = require('@dashevo/dp-services-ctl');
 
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 

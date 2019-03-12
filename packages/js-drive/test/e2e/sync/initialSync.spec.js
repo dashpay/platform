@@ -1,6 +1,6 @@
 const DashPlatformProtocol = require('@dashevo/dpp');
 
-const { startDashDrive } = require('@dashevo/js-evo-services-ctl');
+const { startDrive } = require('@dashevo/dp-services-ctl');
 
 const ApiAppOptions = require('../../../lib/app/ApiAppOptions');
 
@@ -18,7 +18,7 @@ const apiAppOptions = new ApiAppOptions(process.env);
  * @param {DriveApi} instance
  * @returns {Promise<void>}
  */
-async function dashDriveSyncToFinish(instance) {
+async function driveSyncToFinish(instance) {
   let finished = false;
   while (!finished) {
     try {
@@ -71,8 +71,8 @@ async function sendSTPacket(
 }
 
 describe('Initial sync of Dash Drive and Dash Core', function main() {
-  let firstDashDrive;
-  let secondDashDrive;
+  let firstDrive;
+  let secondDrive;
   let users;
   let dpp;
   let dpContract;
@@ -84,10 +84,10 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     dpp = new DashPlatformProtocol();
 
     // 1. Start first Dash Drive node
-    firstDashDrive = await startDashDrive();
+    firstDrive = await startDrive();
 
     // 1.1 Activate Special Transactions
-    await firstDashDrive.dashCore.getApi().generate(1000);
+    await firstDrive.dashCore.getApi().generate(1000);
 
     // 2. Register a bunch of users on a blockchain
     users = [];
@@ -103,7 +103,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
         privateKeyString: user.privateKeyString,
       } = await registerUser(
         user.username,
-        firstDashDrive.dashCore.getApi(),
+        firstDrive.dashCore.getApi(),
       ));
 
       users.push(user);
@@ -131,14 +131,14 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       users[0].privateKeyString,
       users[0].username,
       dpContractPacket,
-      firstDashDrive,
+      firstDrive,
     );
 
     // 3.1 Await Drive to sync
-    await dashDriveSyncToFinish(firstDashDrive.driveApi);
+    await driveSyncToFinish(firstDrive.driveApi);
 
     // 3.2 Check DP Contract is in Drive and ok
-    const { result: rawDPContract } = await firstDashDrive.driveApi.getApi()
+    const { result: rawDPContract } = await firstDrive.driveApi.getApi()
       .request('fetchDPContract', { contractId: dpContract.getId() });
 
     expect(rawDPContract).to.deep.equal(dpContract.toJSON());
@@ -170,7 +170,7 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
         user.privateKeyString,
         user.username,
         stPacket,
-        firstDashDrive,
+        firstDrive,
         prevTransitionId,
       ));
     }
@@ -178,15 +178,15 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
 
   it('Dash Drive should sync the data with Dash Core upon startup', async () => {
     // 3. Start 2nd Dash Drive node and connect to the first one
-    secondDashDrive = await startDashDrive();
-    await secondDashDrive.ipfs.connect(firstDashDrive.ipfs);
-    await secondDashDrive.dashCore.connect(firstDashDrive.dashCore);
+    secondDrive = await startDrive();
+    await secondDrive.ipfs.connect(firstDrive.ipfs);
+    await secondDrive.dashCore.connect(firstDrive.dashCore);
 
     // 4. Await Dash Drive on the 2nd node to finish syncing
-    await dashDriveSyncToFinish(secondDashDrive.driveApi);
+    await driveSyncToFinish(secondDrive.driveApi);
 
     // 5. Ensure second Dash Drive have a proper data
-    const driveApi = secondDashDrive.driveApi.getApi();
+    const driveApi = secondDrive.driveApi.getApi();
 
     const { result: fetchedDPContract } = await driveApi.request('fetchDPContract', {
       contractId: dpContract.getId(),
@@ -210,8 +210,8 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
 
   after('cleanup services', async () => {
     const instances = [
-      firstDashDrive,
-      secondDashDrive,
+      firstDrive,
+      secondDrive,
     ];
 
     await Promise.all(instances.filter(i => i)

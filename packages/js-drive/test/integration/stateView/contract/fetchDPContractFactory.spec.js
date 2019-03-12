@@ -1,4 +1,4 @@
-const { mocha: { startMongoDb } } = require('@dashevo/js-evo-services-ctl');
+const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const SVContractMongoDbRepository = require('../../../../lib/stateView/contract/SVContractMongoDbRepository');

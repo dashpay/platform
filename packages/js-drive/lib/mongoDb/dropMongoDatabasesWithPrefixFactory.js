@@ -4,7 +4,7 @@
  */
 function dropMongoDatabasesWithPrefixFactory(mongoClient) {
   /**
-   * Drop all DashDrive MongoDB databases
+   * Drop all Drive MongoDB databases
    *
    * @typedef {Promise} dropMongoDatabasesWithPrefix
    * @param {string} prefix
