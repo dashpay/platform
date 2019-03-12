@@ -38,38 +38,68 @@ describe('fetchDPObjectsByObjects', () => {
       dpObjects[1].getType(),
     ).resolves([dpObjects[1], dpObjects[2]]);
 
+    dataProviderMock.fetchDPObjects.withArgs(
+      dpContract.getId(),
+      dpObjects[3].getType(),
+    ).resolves([dpObjects[3], dpObjects[4]]);
+
     const fetchedDPObjects = await fetchDPObjectsByObjects(dpContract.getId(), dpObjects);
 
-    expect(dataProviderMock.fetchDPObjects).to.have.been.calledTwice();
+    expect(dataProviderMock.fetchDPObjects).to.have.been.calledThrice();
 
-    let where = {
-      _id: {
-        $in: [
-          encodeToBase58(dpObjects[0].getId()),
-        ],
-      },
-    };
-
-    expect(dataProviderMock.fetchDPObjects).to.have.been.calledWith(
+    const callArgsOne = [
       dpContract.getId(),
       dpObjects[0].getType(),
-      { where },
-    );
-
-    where = {
-      _id: {
-        $in: [
-          encodeToBase58(dpObjects[1].getId()),
-          encodeToBase58(dpObjects[2].getId()),
-        ],
+      {
+        where: {
+          _id: {
+            $in: [encodeToBase58(dpObjects[0].getId())],
+          },
+        },
       },
-    };
+    ];
 
-    expect(dataProviderMock.fetchDPObjects).to.have.been.calledWith(
+    const callArgsTwo = [
       dpContract.getId(),
       dpObjects[1].getType(),
-      { where },
-    );
+      {
+        where: {
+          _id: {
+            $in: [
+              encodeToBase58(dpObjects[1].getId()),
+              encodeToBase58(dpObjects[2].getId()),
+            ],
+          },
+        },
+      },
+    ];
+
+    const callArgsThree = [
+      dpContract.getId(),
+      dpObjects[3].getType(),
+      {
+        where: {
+          _id: {
+            $in: [
+              encodeToBase58(dpObjects[3].getId()),
+              encodeToBase58(dpObjects[4].getId()),
+            ],
+          },
+        },
+      },
+    ];
+
+    const callsArgs = [];
+    for (let i = 0; i < dataProviderMock.fetchDPObjects.callCount; i++) {
+      const call = dataProviderMock.fetchDPObjects.getCall(i);
+      callsArgs.push(call.args);
+    }
+
+    expect(callsArgs).to.have.deep.members([
+      callArgsOne,
+      callArgsTwo,
+      callArgsThree,
+    ]);
 
     expect(fetchedDPObjects).to.deep.equal(dpObjects);
   });

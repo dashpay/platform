@@ -22,6 +22,8 @@ module.exports = function getDPObjectsFixture() {
     factory.create('niceObject', { name: 'Cutie' }),
     factory.create('prettyObject', { lastName: 'Shiny' }),
     factory.create('prettyObject', { lastName: 'Sweety' }),
+    factory.create('indexedObject', { firstName: 'William', lastName: 'Birkin' }),
+    factory.create('indexedObject', { firstName: 'Leon', lastName: 'Kennedy' }),
   ];
 };
 

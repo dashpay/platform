@@ -13,16 +13,18 @@ const hash = require('../../util/hash');
 
 /**
  * @param {fetchDPObjectsByObjects} fetchDPObjectsByObjects
+ * @param {verifyDPObjectsUniquenessByIndices} verifyDPObjectsUniquenessByIndices
  * @return {verifyDPObjects}
  */
-function verifyDPObjectsFactory(fetchDPObjectsByObjects) {
+function verifyDPObjectsFactory(fetchDPObjectsByObjects, verifyDPObjectsUniquenessByIndices) {
   /**
    * @typedef verifyDPObjects
    * @param {STPacket} stPacket
    * @param {string} userId
+   * @param {DPContract} dpContract
    * @return {ValidationResult}
    */
-  async function verifyDPObjects(stPacket, userId) {
+  async function verifyDPObjects(stPacket, userId, dpContract) {
     const result = new ValidationResult();
 
     const fetchedDPObjects = await fetchDPObjectsByObjects(
@@ -30,45 +32,50 @@ function verifyDPObjectsFactory(fetchDPObjectsByObjects) {
       stPacket.getDPObjects(),
     );
 
-    stPacket.getDPObjects().forEach((dpObject) => {
-      const fetchedDPObject = fetchedDPObjects.find(o => dpObject.getId() === o.getId());
+    stPacket.getDPObjects()
+      .forEach((dpObject) => {
+        const fetchedDPObject = fetchedDPObjects.find(o => dpObject.getId() === o.getId());
 
-      const stPacketScope = hash(stPacket.getDPContractId() + userId);
-      if (dpObject.scope !== stPacketScope) {
-        result.addError(
-          new InvalidDPObjectScopeError(dpObject),
-        );
-      }
+        const stPacketScope = hash(stPacket.getDPContractId() + userId);
+        if (dpObject.scope !== stPacketScope) {
+          result.addError(
+            new InvalidDPObjectScopeError(dpObject),
+          );
+        }
 
-      switch (dpObject.getAction()) {
-        case DPObject.ACTIONS.CREATE:
-          if (fetchedDPObject) {
-            result.addError(
-              new DPObjectAlreadyPresentError(dpObject, fetchedDPObject),
-            );
-          }
-          break;
-        case DPObject.ACTIONS.UPDATE:
-        case DPObject.ACTIONS.DELETE:
-          if (!fetchedDPObject) {
-            result.addError(
-              new DPObjectNotFoundError(dpObject),
-            );
+        switch (dpObject.getAction()) {
+          case DPObject.ACTIONS.CREATE:
+            if (fetchedDPObject) {
+              result.addError(
+                new DPObjectAlreadyPresentError(dpObject, fetchedDPObject),
+              );
+            }
+            break;
+          case DPObject.ACTIONS.UPDATE:
+          case DPObject.ACTIONS.DELETE:
+            if (!fetchedDPObject) {
+              result.addError(
+                new DPObjectNotFoundError(dpObject),
+              );
+
+              break;
+            }
+
+            if (dpObject.getRevision() !== fetchedDPObject.getRevision() + 1) {
+              result.addError(
+                new InvalidDPObjectRevisionError(dpObject, fetchedDPObject),
+              );
+            }
 
             break;
-          }
+          default:
+            throw new InvalidDPObjectActionError(dpObject);
+        }
+      });
 
-          if (dpObject.getRevision() !== fetchedDPObject.getRevision() + 1) {
-            result.addError(
-              new InvalidDPObjectRevisionError(dpObject, fetchedDPObject),
-            );
-          }
-
-          break;
-        default:
-          throw new InvalidDPObjectActionError(dpObject);
-      }
-    });
+    result.merge(
+      await verifyDPObjectsUniquenessByIndices(stPacket, userId, dpContract),
+    );
 
     return result;
   }

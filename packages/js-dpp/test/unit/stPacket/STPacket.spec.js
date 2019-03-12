@@ -202,7 +202,7 @@ describe('STPacket', () => {
     it('should add DP Object', () => {
       stPacket.addDPObject(dpObjects[0]);
 
-      const result = stPacket.addDPObject(dpObjects[1], dpObjects[2]);
+      const result = stPacket.addDPObject(dpObjects[1], dpObjects[2], dpObjects[3], dpObjects[4]);
 
       expect(result).to.be.an.instanceOf(STPacket);
 

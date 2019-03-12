@@ -22,6 +22,34 @@ module.exports = function getDPContractFixture() {
       required: ['lastName'],
       additionalProperties: false,
     },
+    indexedObject: {
+      indices: [
+        {
+          properties: {
+            $userId: 'asc',
+            firstName: 'desc',
+          },
+          unique: true,
+        },
+        {
+          properties: {
+            $userId: 'asc',
+            lastName: 'asc',
+          },
+          unique: true,
+        },
+      ],
+      properties: {
+        firstName: {
+          type: 'string',
+        },
+        lastName: {
+          type: 'string',
+        },
+      },
+      required: ['firstName'],
+      additionalProperties: false,
+    },
   };
 
   const dpContract = new DPContract('lovelyContract', dpObjectsDefinition);

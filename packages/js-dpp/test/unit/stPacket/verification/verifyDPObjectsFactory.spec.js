@@ -23,6 +23,7 @@ describe('verifyDPObjects', () => {
   let dpObjects;
   let dpContract;
   let userId;
+  let verifyDPObjectsUniquenessByIndices;
 
   beforeEach(function beforeEach() {
     ({ userId } = getDPObjectsFixture);
@@ -35,7 +36,13 @@ describe('verifyDPObjects', () => {
 
     fetchDPObjectsByObjectsMock = this.sinonSandbox.stub();
 
-    verifyDPObjects = verifyDPObjectsFactory(fetchDPObjectsByObjectsMock);
+    verifyDPObjectsUniquenessByIndices = this.sinonSandbox.stub();
+    verifyDPObjectsUniquenessByIndices.resolves(new ValidationResult());
+
+    verifyDPObjects = verifyDPObjectsFactory(
+      fetchDPObjectsByObjectsMock,
+      verifyDPObjectsUniquenessByIndices,
+    );
   });
 
   it('should return invalid result if DPObject has wrong scope', async () => {
@@ -43,7 +50,7 @@ describe('verifyDPObjects', () => {
 
     fetchDPObjectsByObjectsMock.resolves([]);
 
-    const result = await verifyDPObjects(stPacket, userId);
+    const result = await verifyDPObjects(stPacket, userId, dpContract);
 
     expectValidationError(result, InvalidDPObjectScopeError);
 
@@ -60,7 +67,7 @@ describe('verifyDPObjects', () => {
   it('should return invalid result if DPObject with action "create" is already present', async () => {
     fetchDPObjectsByObjectsMock.resolves([dpObjects[0]]);
 
-    const result = await verifyDPObjects(stPacket, userId);
+    const result = await verifyDPObjects(stPacket, userId, dpContract);
 
     expectValidationError(result, DPObjectAlreadyPresentError);
 
@@ -80,7 +87,7 @@ describe('verifyDPObjects', () => {
 
     fetchDPObjectsByObjectsMock.resolves([]);
 
-    const result = await verifyDPObjects(stPacket, userId);
+    const result = await verifyDPObjects(stPacket, userId, dpContract);
 
     expectValidationError(result, DPObjectNotFoundError);
 
@@ -100,7 +107,7 @@ describe('verifyDPObjects', () => {
 
     fetchDPObjectsByObjectsMock.resolves([]);
 
-    const result = await verifyDPObjects(stPacket, userId);
+    const result = await verifyDPObjects(stPacket, userId, dpContract);
 
     expectValidationError(result, DPObjectNotFoundError);
 
@@ -119,7 +126,7 @@ describe('verifyDPObjects', () => {
 
     fetchDPObjectsByObjectsMock.resolves([dpObjects[0]]);
 
-    const result = await verifyDPObjects(stPacket, userId);
+    const result = await verifyDPObjects(stPacket, userId, dpContract);
 
     expectValidationError(result, InvalidDPObjectRevisionError);
 
@@ -140,7 +147,7 @@ describe('verifyDPObjects', () => {
 
     fetchDPObjectsByObjectsMock.resolves([dpObjects[0]]);
 
-    const result = await verifyDPObjects(stPacket, userId);
+    const result = await verifyDPObjects(stPacket, userId, dpContract);
 
     expectValidationError(result, InvalidDPObjectRevisionError);
 
@@ -161,7 +168,7 @@ describe('verifyDPObjects', () => {
 
     let error;
     try {
-      await verifyDPObjects(stPacket, userId);
+      await verifyDPObjects(stPacket, userId, dpContract);
     } catch (e) {
       error = e;
     }
@@ -185,7 +192,7 @@ describe('verifyDPObjects', () => {
     dpObjects[2].setAction(DPObject.ACTIONS.DELETE);
     dpObjects[2].setRevision(1);
 
-    const result = await verifyDPObjects(stPacket, userId);
+    const result = await verifyDPObjects(stPacket, userId, dpContract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

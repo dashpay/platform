@@ -33,6 +33,32 @@
               "type": "string",
               "const": "object"
             },
+            "indices": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "properties": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^[a-zA-Z0-9-_$]{1,255}$": {
+                        "type": "string",
+                        "enum": ["asc", "desc"]
+                      }
+                    },
+                    "minProperties": 1,
+                    "additionalProperties": false
+                  },
+                  "unique": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": ["properties", "unique"],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            },
             "properties": {
               "type": "object",
               "propertyNames": {

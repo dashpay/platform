@@ -4,11 +4,13 @@ const validateSTPacketDPContractsFactory = require('./validation/validateSTPacke
 const validateSTPacketDPObjectsFactory = require('./validation/validateSTPacketDPObjectsFactory');
 
 const findDuplicatedDPObjects = require('./validation/findDuplicatedDPObjects');
+const findDuplicateDPObjectsByIndices = require('./validation/findDuplicateDPObjectsByIndices');
 const createDPContract = require('../contract/createDPContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
-const verifyDPContractFactory = require('./verification/verifyDPContractFactory');
+const verifyDPContract = require('./verification/verifyDPContract');
 const verifyDPObjectsFactory = require('./verification/verifyDPObjectsFactory');
+const verifyDPObjectsUniquenessByIndicesFactory = require('./verification/verifyDPObjectsUniquenessByIndicesFactory');
 const fetchDPObjectsByObjectsFactory = require('./verification/fetchDPObjectsByObjectsFactory');
 
 const STPacketFactory = require('./STPacketFactory');
@@ -30,6 +32,7 @@ class STPacketFacade {
     const validateSTPacketDPObjects = validateSTPacketDPObjectsFactory(
       dpp.object.validateDPObject,
       findDuplicatedDPObjects,
+      findDuplicateDPObjectsByIndices,
     );
 
     this.validateSTPacket = validateSTPacketFactory(
@@ -128,15 +131,19 @@ class STPacketFacade {
    * @return {verifySTPacket}
    */
   createVerifySTPacket() {
-    const verifyDPContract = verifyDPContractFactory(
-      this.dpp.getDataProvider(),
-    );
-
     const fetchDPObjectsByObjects = fetchDPObjectsByObjectsFactory(
       this.dpp.getDataProvider(),
     );
 
-    const verifyDPObjects = verifyDPObjectsFactory(fetchDPObjectsByObjects);
+    const verifyDPObjectsUniquenessByIndices = verifyDPObjectsUniquenessByIndicesFactory(
+      fetchDPObjectsByObjects,
+      this.dpp.getDataProvider(),
+    );
+
+    const verifyDPObjects = verifyDPObjectsFactory(
+      fetchDPObjectsByObjects,
+      verifyDPObjectsUniquenessByIndices,
+    );
 
     return verifySTPacketFactory(
       verifyDPContract,

@@ -6,6 +6,7 @@ const UnconfirmedUserError = require('../../errors/UnconfirmedUserError');
 const UserNotFoundError = require('../../errors/UserNotFoundError');
 const InvalidTransactionTypeError = require('../../errors/InvalidTransactionTypeError');
 const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
+const DPContractNotPresentError = require('../../errors/DPContractNotPresentError');
 
 /**
  * @param {verifyDPContract} verifyDPContract
@@ -52,15 +53,25 @@ function verifySTPacketFactory(verifyDPContract, verifyDPObjects, dataProvider) 
       );
     }
 
+    const dpContract = await dataProvider.fetchDPContract(stPacket.getDPContractId());
+
+    if (!dpContract) {
+      result.addError(
+        new DPContractNotPresentError(stPacket.getDPContractId()),
+      );
+
+      return result;
+    }
+
     if (stPacket.getDPContract()) {
       result.merge(
-        await verifyDPContract(stPacket),
+        await verifyDPContract(stPacket, dpContract),
       );
     }
 
     if (stPacket.getDPObjects().length) {
       result.merge(
-        await verifyDPObjects(stPacket, userId),
+        await verifyDPObjects(stPacket, userId, dpContract),
       );
     }
 

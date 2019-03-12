@@ -8,7 +8,11 @@ const validateDPContractFactory = require('../../../lib/contract/validateDPContr
 
 const getDPContractFixture = require('../../../lib/test/fixtures/getDPContractFixture');
 
-const { expectJsonSchemaError } = require('../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError } = require('../../../lib/test/expect/expectError');
+
+const DuplicateIndexError = require('../../../lib/errors/DuplicateIndexError');
+const UniqueIndexMustHaveUserIdPrefixError = require('../../../lib/errors/UniqueIndexMustHaveUserIdPrefixError');
+const UndefinedIndexPropertyError = require('../../../lib/errors/UndefinedIndexPropertyError');
 
 describe('validateDPContractFactory', () => {
   let rawDPContract;
@@ -438,6 +442,122 @@ describe('validateDPContractFactory', () => {
     });
   });
 
+  describe('indices', () => {
+    it('should be an array', () => {
+      rawDPContract.dpObjectsDefinition.indexedObject.indices = 'definetely not an array';
+
+      const result = validateDPContract(rawDPContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.equal('.dpObjectsDefinition[\'indexedObject\'].indices');
+      expect(error.keyword).to.equal('type');
+    });
+
+    it('should have at least one item', () => {
+      rawDPContract.dpObjectsDefinition.indexedObject.indices = [];
+
+      const result = validateDPContract(rawDPContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.equal('.dpObjectsDefinition[\'indexedObject\'].indices');
+      expect(error.keyword).to.equal('minItems');
+    });
+
+    describe('index', () => {
+      it('should be an object', () => {
+        rawDPContract.dpObjectsDefinition.indexedObject.indices = ['something else'];
+
+        const result = validateDPContract(rawDPContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.dpObjectsDefinition[\'indexedObject\'].indices[0]');
+        expect(error.keyword).to.equal('type');
+      });
+
+      it('should have property definitions', () => {
+        rawDPContract.dpObjectsDefinition.indexedObject.indices = [{}];
+
+        const result = validateDPContract(rawDPContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.dpObjectsDefinition[\'indexedObject\'].indices[0]');
+        expect(error.params.missingProperty).to.equal('properties');
+        expect(error.keyword).to.equal('required');
+      });
+
+      describe('property definition', () => {
+        it('should have at least one property', () => {
+          rawDPContract.dpObjectsDefinition.indexedObject.indices[0]
+            .properties = {};
+
+          const result = validateDPContract(rawDPContract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal(
+            '.dpObjectsDefinition[\'indexedObject\'].indices[0].properties',
+          );
+          expect(error.keyword).to.equal('minProperties');
+        });
+
+        it('should have property values only "asc" or "desc"', () => {
+          rawDPContract.dpObjectsDefinition.indexedObject.indices[0]
+            .properties.firstName = 'wrong';
+
+          const result = validateDPContract(rawDPContract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.dpObjectsDefinition[\'indexedObject\'].indices[0].properties[\'firstName\']');
+          expect(error.keyword).to.equal('enum');
+        });
+      });
+
+      it('should have "unique" flag', () => {
+        rawDPContract.dpObjectsDefinition.indexedObject.indices[0].unique = undefined;
+
+        const result = validateDPContract(rawDPContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.dpObjectsDefinition[\'indexedObject\'].indices[0]');
+        expect(error.params.missingProperty).to.equal('unique');
+        expect(error.keyword).to.equal('required');
+      });
+
+      it('should have "unqiue" flag equal "true"', () => {
+        rawDPContract.dpObjectsDefinition.indexedObject.indices[0].unique = false;
+
+        const result = validateDPContract(rawDPContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.dpObjectsDefinition[\'indexedObject\'].indices[0].unique');
+        expect(error.keyword).to.equal('const');
+      });
+    });
+  });
+
   it('should return invalid result if there are additional properties', () => {
     rawDPContract.additionalProperty = { };
 
@@ -449,6 +569,72 @@ describe('validateDPContractFactory', () => {
 
     expect(error.dataPath).to.equal('');
     expect(error.keyword).to.equal('additionalProperties');
+  });
+
+  it('should return invalid result if there are duplicated indices', () => {
+    const indexDefinition = Object.assign({},
+      rawDPContract.dpObjectsDefinition.indexedObject.indices[0]);
+
+    rawDPContract.dpObjectsDefinition.indexedObject.indices.push(indexDefinition);
+
+    const result = validateDPContract(rawDPContract);
+
+    expectValidationError(result, DuplicateIndexError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+    expect(error.getRawDPContract()).to.deep.equal(rawDPContract);
+    expect(error.getDPObjectType()).to.deep.equal('indexedObject');
+  });
+
+  it('should return invalid result if indices don\'t have $userId prefix', () => {
+    const indexDefinition = rawDPContract.dpObjectsDefinition.indexedObject.indices[0];
+
+    delete indexDefinition.properties.$userId;
+
+    const result = validateDPContract(rawDPContract);
+
+    expectValidationError(result, UniqueIndexMustHaveUserIdPrefixError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+    expect(error.getRawDPContract()).to.deep.equal(rawDPContract);
+    expect(error.getDPObjectType()).to.deep.equal('indexedObject');
+  });
+
+  it('should return invalid result if indices don\'t have $userId prefix as a first field', () => {
+    const indexDefinition = rawDPContract.dpObjectsDefinition.indexedObject.indices[0];
+
+    delete indexDefinition.properties.$userId;
+
+    indexDefinition.properties.$userId = 'asc';
+
+    const result = validateDPContract(rawDPContract);
+
+    expectValidationError(result, UniqueIndexMustHaveUserIdPrefixError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+  });
+
+  it('should return invalid result if indices has undefined property', () => {
+    const indexDefinition = rawDPContract.dpObjectsDefinition.indexedObject.indices[0];
+
+    indexDefinition.properties.missingProperty = 'asc';
+
+    const result = validateDPContract(rawDPContract);
+
+    expectValidationError(result, UndefinedIndexPropertyError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getPropertyName()).to.equal('missingProperty');
+    expect(error.getRawDPContract()).to.deep.equal(rawDPContract);
+    expect(error.getDPObjectType()).to.deep.equal('indexedObject');
+    expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
   });
 
   it('should return valid result if contract is valid', () => {

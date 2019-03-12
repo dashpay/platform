@@ -16,6 +16,7 @@ describe('validateSTPacketDPObjectsFactory', () => {
   let dpContract;
   let rawDPObjects;
   let findDuplicatedDPObjectsMock;
+  let findDuplicateDPObjectsByIndicesMock;
   let validateDPObjectMock;
   let validateSTPacketDPObjects;
 
@@ -31,11 +32,13 @@ describe('validateSTPacketDPObjectsFactory', () => {
     };
 
     findDuplicatedDPObjectsMock = this.sinonSandbox.stub().returns([]);
+    findDuplicateDPObjectsByIndicesMock = this.sinonSandbox.stub().returns([]);
     validateDPObjectMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
     validateSTPacketDPObjects = validateSTPacketDPObjectsFactory(
       validateDPObjectMock,
       findDuplicatedDPObjectsMock,
+      findDuplicateDPObjectsByIndicesMock,
     );
   });
 
@@ -51,7 +54,7 @@ describe('validateSTPacketDPObjectsFactory', () => {
     expect(error.getDPContract()).to.equal(dpContract);
     expect(error.getRawSTPacket()).to.equal(rawSTPacket);
 
-    expect(validateDPObjectMock).to.have.been.calledThrice();
+    expect(validateDPObjectMock.callCount).to.equal(5);
 
     rawSTPacket.objects.forEach((rawDPObject) => {
       expect(validateDPObjectMock).to.have.been.calledWith(rawDPObject, dpContract);
@@ -71,7 +74,7 @@ describe('validateSTPacketDPObjectsFactory', () => {
 
     expect(error.getDuplicatedDPObjects()).to.deep.equal([rawDPObjects[0]]);
 
-    expect(validateDPObjectMock).to.have.been.calledThrice();
+    expect(validateDPObjectMock.callCount).to.equal(5);
 
     rawSTPacket.objects.forEach((rawDPObject) => {
       expect(validateDPObjectMock).to.have.been.calledWith(rawDPObject, dpContract);
@@ -91,7 +94,7 @@ describe('validateSTPacketDPObjectsFactory', () => {
 
     expect(findDuplicatedDPObjectsMock).to.have.been.calledOnceWith(rawDPObjects);
 
-    expect(validateDPObjectMock).to.have.been.calledThrice();
+    expect(validateDPObjectMock.callCount).to.equal(5);
 
     const [error] = result.getErrors();
 
@@ -106,6 +109,6 @@ describe('validateSTPacketDPObjectsFactory', () => {
 
     expect(findDuplicatedDPObjectsMock).to.have.been.calledOnceWith(rawDPObjects);
 
-    expect(validateDPObjectMock).to.have.been.calledThrice();
+    expect(validateDPObjectMock.callCount).to.equal(5);
   });
 });

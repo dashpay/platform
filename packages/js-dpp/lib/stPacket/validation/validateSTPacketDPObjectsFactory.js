@@ -6,9 +6,14 @@ const InvalidDPContractError = require('../../errors/InvalidDPContractError');
 /**
  * @param {validateDPObject} validateDPObject
  * @param {findDuplicatedDPObjects} findDuplicatedDPObjects
+ * @param {findDuplicateDPObjectsByIndices} findDuplicateDPObjectsByIndices
  * @return {validateSTPacketDPObjects}
  */
-function validateSTPacketDPObjectsFactory(validateDPObject, findDuplicatedDPObjects) {
+function validateSTPacketDPObjectsFactory(
+  validateDPObject,
+  findDuplicatedDPObjects,
+  findDuplicateDPObjectsByIndices,
+) {
   /**
    * @typedef validateSTPacketDPObjects
    * @param {Object} rawSTPacket
@@ -30,6 +35,16 @@ function validateSTPacketDPObjectsFactory(validateDPObject, findDuplicatedDPObje
     if (duplicatedDPObjects.length) {
       result.addError(
         new DuplicatedDPObjectsError(duplicatedDPObjects),
+      );
+    }
+
+    const duplicateDPObjectsByIndices = findDuplicateDPObjectsByIndices(
+      rawDPObjects,
+      dpContract,
+    );
+    if (duplicateDPObjectsByIndices.length > 0) {
+      result.addError(
+        new DuplicatedDPObjectsError(duplicateDPObjectsByIndices),
       );
     }
 

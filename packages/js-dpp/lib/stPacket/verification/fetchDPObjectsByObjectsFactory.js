@@ -45,7 +45,7 @@ function fetchDPObjectsByObjectsFactory(dataProvider) {
 
     const fetchedDPObjectsByTypes = await Promise.all(fetchedDPObjectPromises);
 
-    return fetchedDPObjectsByTypes.reduce((array, objects) => array.concat(...objects), []);
+    return fetchedDPObjectsByTypes.reduce((array, objects) => array.concat(objects), []);
   }
 
   return fetchDPObjectsByObjects;
