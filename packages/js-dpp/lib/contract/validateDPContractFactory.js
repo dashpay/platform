@@ -41,7 +41,8 @@ module.exports = function validateDPContractFactory(validator) {
         const indicesFingerprints = [];
 
         dpObjectDefinition.indices.forEach((indexDefinition) => {
-          const indexPropertyNames = Object.keys(indexDefinition.properties);
+          const indexPropertyNames = indexDefinition.properties
+            .map(property => Object.keys(property)[0]);
 
           const indicesFingerprint = JSON.stringify(indexDefinition.properties);
 

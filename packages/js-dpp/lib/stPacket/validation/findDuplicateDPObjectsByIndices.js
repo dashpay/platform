@@ -12,13 +12,14 @@ function isDuplicateByIndices(originalObject, objectToCheck, typeIndices) {
     // For every index definition check if hashes match
     // accumulating overall boolean result
     .reduce((accumulator, definition) => {
-      const properties = Object.keys(definition.properties);
-
-      const [originalHash, hashToCheck] = properties
-        .reduce(([originalAcc, toCheckAcc], property) => [
-          `${originalAcc}:${originalObject.get(property)}`,
-          `${toCheckAcc}:${objectToCheck.get(property)}`,
-        ], ['', '']);
+      const [originalHash, hashToCheck] = definition.properties
+        .reduce(([originalAcc, toCheckAcc], property) => {
+          const propertyName = Object.keys(property)[0];
+          return [
+            `${originalAcc}:${originalObject.get(propertyName)}`,
+            `${toCheckAcc}:${objectToCheck.get(propertyName)}`,
+          ];
+        }, ['', '']);
 
       return accumulator || (originalHash === hashToCheck);
     }, false);

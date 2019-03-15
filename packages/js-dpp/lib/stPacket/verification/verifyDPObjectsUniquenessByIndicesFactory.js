@@ -31,8 +31,9 @@ function verifyDPObjectsUniquenessByIndicesFactory(fetchDPObjectsByObjects, data
         dpObjectSchema.indices
           .filter(index => index.unique)
           .forEach((indexDefinition) => {
-            const where = Object.keys(indexDefinition.properties)
-              .reduce((obj, propertyName) => {
+            const where = indexDefinition.properties
+              .reduce((obj, property) => {
+                const propertyName = Object.keys(property)[0];
                 // eslint-disable-next-line no-param-reassign
                 obj[`dpObject.${propertyName}`] = dpObject.get(propertyName);
 

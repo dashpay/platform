@@ -25,17 +25,17 @@ module.exports = function getDPContractFixture() {
     indexedObject: {
       indices: [
         {
-          properties: {
-            $userId: 'asc',
-            firstName: 'desc',
-          },
+          properties: [
+            { $userId: 'asc' },
+            { firstName: 'desc' },
+          ],
           unique: true,
         },
         {
-          properties: {
-            $userId: 'asc',
-            lastName: 'asc',
-          },
+          properties: [
+            { $userId: 'asc' },
+            { lastName: 'desc' },
+          ],
           unique: true,
         },
       ],

@@ -39,15 +39,21 @@
                 "type": "object",
                 "properties": {
                   "properties": {
-                    "type": "object",
-                    "patternProperties": {
-                      "^[a-zA-Z0-9-_$]{1,255}$": {
-                        "type": "string",
-                        "enum": ["asc", "desc"]
-                      }
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^[a-zA-Z0-9-_$]{1,255}$": {
+                          "type": "string",
+                          "enum": ["asc", "desc"]
+                        }
+                      },
+                      "minProperties": 1,
+                      "maxProperties": 1,
+                      "additionalProperties": false
                     },
-                    "minProperties": 1,
-                    "additionalProperties": false
+                    "minItems": 1,
+                    "maxItems": 100
                   },
                   "unique": {
                     "type": "boolean",
