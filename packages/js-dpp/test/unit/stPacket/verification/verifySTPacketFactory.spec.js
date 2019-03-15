@@ -57,15 +57,15 @@ describe('verifySTPacketFactory', () => {
     stPacket = new STPacket(dpContract.getId());
     stPacket.setDPObjects(dpObjects);
 
+    const payload = new Transaction.Payload.SubTxTransitionPayload()
+      .setRegTxId(userId)
+      .setHashPrevSubTx(userId)
+      .setHashSTPacket(stPacket.hash())
+      .setCreditFee(1001);
+
     stateTransition = new Transaction({
       type: Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION,
-      extraPayload: {
-        version: 1,
-        hashSTPacket: stPacket.hash(),
-        regTxId: userId,
-        creditFee: 1001,
-        hashPrevSubTx: userId,
-      },
+      extraPayload: payload.toString(),
     });
 
     dataProviderMock.fetchDPContract.resolves(dpContract);
@@ -79,7 +79,7 @@ describe('verifySTPacketFactory', () => {
 
     stateTransition = new Transaction({
       type: Transaction.TYPES.TRANSACTION_SUBTX_REGISTER,
-      extraPayload,
+      extraPayload: extraPayload.toString(),
     });
 
     const result = await verifySTPacket(stPacket, stateTransition);

@@ -136,15 +136,15 @@ describe('STPacketFacade', () => {
     let stateTransition;
 
     beforeEach(() => {
+      const payload = new Transaction.Payload.SubTxTransitionPayload()
+        .setRegTxId('6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288')
+        .setHashPrevSubTx('6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288')
+        .setHashSTPacket(stPacket.hash())
+        .setCreditFee(1001);
+
       stateTransition = new Transaction({
         type: Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION,
-        extraPayload: {
-          version: 1,
-          hashSTPacket: stPacket.hash(),
-          regTxId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-          creditFee: 1001,
-          hashPrevSubTx: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-        },
+        extraPayload: payload.toString(),
       });
     });
 
