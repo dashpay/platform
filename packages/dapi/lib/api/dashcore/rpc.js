@@ -184,8 +184,8 @@ const getTransactionFirstInputAddress = txId => new Promise((resolve, reject) =>
   });
 });
 
-const getUser = tx => new Promise((resolve, reject) => { // not exist?
-  client.getuser(tx, (err, r) => {
+const getUser = txId => new Promise((resolve, reject) => { // not exist?
+  client.getuser(txId, (err, r) => {
     if (err) {
       reject(err);
     } else {
