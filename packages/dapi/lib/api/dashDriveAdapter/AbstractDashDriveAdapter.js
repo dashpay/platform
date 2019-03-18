@@ -2,11 +2,11 @@
 class AbstractDashDriveAdapter {
   /**
    * Add State Transition Packet to DashDrive storage
-   * @param {string} rawSTPacket - raw data packet serialized to hex string
    * @param {string} rawStateTransition - serialized state transition header
+   * @param {string} rawSTPacket - raw data packet serialized to hex string
    * @return {Promise<string>} - packet id
    */
-  addSTPacket(rawSTPacket, rawStateTransition) {
+  addSTPacket(rawStateTransition, rawSTPacket) {
     throw new Error('Not implemented');
   }
 

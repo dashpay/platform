@@ -58,7 +58,7 @@ describe('sendRawTransition', () => {
 
     expect(txid).to.be.a('string');
 
-    expect(addSTPacketSpy).to.have.been.calledOnceWith(rawSTPacket, rawStateTransition);
+    expect(addSTPacketSpy).to.have.been.calledOnceWith(rawStateTransition, rawSTPacket);
     expect(sendRawTransactionSpy).to.have.been.calledOnceWith(rawStateTransition);
   });
 

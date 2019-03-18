@@ -30,12 +30,12 @@ describe('DashDriveAdapter', () => {
       const method = 'addSTPacket';
 
       sinon.stub(dashDrive.client, 'request')
-        .withArgs(method, { stPacket: rawSTPacket, stateTransition: rawStateTransition })
+        .withArgs(method, { stateTransition: rawStateTransition, stPacket: rawSTPacket })
         .returns(Promise.resolve({ result: undefined }));
 
       expect(dashDrive.client.request.callCount).to.be.equal(0);
 
-      const result = await dashDrive.addSTPacket(rawSTPacket, rawStateTransition);
+      const result = await dashDrive.addSTPacket(rawStateTransition, rawSTPacket);
 
       expect(dashDrive.client.request.callCount).to.be.equal(1);
       expect(result).to.be.undefined();

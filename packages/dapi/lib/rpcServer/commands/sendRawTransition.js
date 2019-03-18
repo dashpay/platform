@@ -17,9 +17,9 @@ function sendRawTransitionFactory(coreAPI, dashDriveAPI) {
   const sendRawTransition = async (args) => {
     validator.validate(args);
 
-    const { rawSTPacket, rawStateTransition } = args;
+    const { rawStateTransition, rawSTPacket } = args;
 
-    await dashDriveAPI.addSTPacket(rawSTPacket, rawStateTransition);
+    await dashDriveAPI.addSTPacket(rawStateTransition, rawSTPacket);
 
     return coreAPI.sendRawTransaction(rawStateTransition);
   };
