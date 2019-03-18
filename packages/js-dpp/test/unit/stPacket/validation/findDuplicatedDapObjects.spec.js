@@ -22,7 +22,10 @@ describe('findDuplicatedDPObjects', () => {
     const result = findDuplicatedDPObjects(rawDPObjects);
 
     expect(result).to.be.an('array');
-    expect(result).to.have.lengthOf(1);
-    expect(result[0]).to.equal(rawDPObjects[0]);
+    expect(result).to.have.lengthOf(2);
+    expect(result).to.have.deep.members([
+      rawDPObjects[0],
+      rawDPObjects[0],
+    ]);
   });
 });

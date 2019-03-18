@@ -1,12 +1,13 @@
+const DPObject = require('../../object/DPObject');
+
 /**
- * @param {Object} rawDPObject
+ * @param {DPObject} dpObject
  * @return {string}
  */
-function createFingerPrint(rawDPObject) {
+function createFingerPrint(dpObject) {
   return [
-    rawDPObject.$type,
-    rawDPObject.$scope,
-    rawDPObject.$scopeId,
+    dpObject.getType(),
+    dpObject.getId(),
   ].join(':');
 }
 
@@ -19,23 +20,25 @@ function createFingerPrint(rawDPObject) {
  */
 function findDuplicatedDPObjects(rawDPObjects) {
   const fingerprints = {};
-  const duplicates = new Set();
+  const duplicates = [];
 
-  rawDPObjects.forEach((rawDPObject) => {
-    const fingerprint = createFingerPrint(rawDPObject);
+  rawDPObjects
+    .map(o => new DPObject(o))
+    .forEach((dpObject) => {
+      const fingerprint = createFingerPrint(dpObject);
 
-    if (!fingerprints[fingerprint]) {
-      fingerprints[fingerprint] = [];
-    }
+      if (!fingerprints[fingerprint]) {
+        fingerprints[fingerprint] = [];
+      }
 
-    fingerprints[fingerprint].push(rawDPObject);
+      fingerprints[fingerprint].push(dpObject.toJSON());
 
-    if (fingerprints[fingerprint].length > 1) {
-      fingerprints[fingerprint].forEach(o => duplicates.add(o));
-    }
-  });
+      if (fingerprints[fingerprint].length > 1) {
+        duplicates.push(...fingerprints[fingerprint]);
+      }
+    });
 
-  return Array.from(duplicates);
+  return duplicates;
 }
 
 module.exports = findDuplicatedDPObjects;
