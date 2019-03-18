@@ -12,7 +12,7 @@ const fetchDapObjectsFactory = (dashDriveAPI) => {
    * Fetches user objects for a given condition
    * @typedef fetchDapObjects
    * @param args - command arguments
-   * @param {string} args.dapId
+   * @param {string} args.contractId
    * @param {string} args.type
    * @param args.options
    * @param {Object} args.options.where - Mongo-like query
@@ -24,8 +24,8 @@ const fetchDapObjectsFactory = (dashDriveAPI) => {
    */
   async function fetchDapObjects(args) {
     validator.validate(args);
-    const { dapId, type, options } = args;
-    return dashDriveAPI.fetchDapObjects(dapId, type, options);
+    const { contractId, type, options } = args;
+    return dashDriveAPI.fetchDapObjects(contractId, type, options);
   }
 
   return fetchDapObjects;
@@ -73,13 +73,13 @@ const fetchDapObjectsFactory = (dashDriveAPI) => {
  *                  title: Parameters
  *                  type: object
  *                  required:
- *                    - dapId
+ *                    - contractId
  *                    - type
  *                  properties:
- *                    dapId:
+ *                    contractId:
  *                      type: string
  *                      default: ''
- *                      description: A user's DAP ID
+ *                      description: A user's contract ID
  *                    type:
  *                      type: string
  *                      default: ''

@@ -8,7 +8,7 @@ const AbstractDashDriveAdapter = require('../../lib/api/dashDriveAdapter/Abstrac
 class DashDriveFixture extends AbstractDashDriveAdapter {
   addSTPacket(rawStateTransition, rawSTPacket) { return Promise.resolve(); }
 
-  fetchDapContract(dapId) { return Promise.resolve({}); }
+  fetchDapContract(contractId) { return Promise.resolve({}); }
 }
 
 module.exports = new DashDriveFixture();

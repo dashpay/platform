@@ -1,11 +1,11 @@
 {
   "type": "object",
   "properties": {
-    "dapId": {
+    "contractId": {
       "type": "string"
     }
   },
   "required": [
-    "dapId"
+    "contractId"
   ]
 }

@@ -12,13 +12,13 @@ const fetchDapContractFactory = (dashDriveAPI) => {
    * Returns user dap space
    * @typedef fetchDapContract
    * @param args - command arguments
-   * @param {string} args.dapId
+   * @param {string} args.contractId
    * @return {Promise<object>}
    */
   async function fetchDapContract(args) {
     validator.validate(args);
-    const { dapId } = args;
-    return dashDriveAPI.fetchDapContract(dapId);
+    const { contractId } = args;
+    return dashDriveAPI.fetchDapContract(contractId);
   }
 
   return fetchDapContract;
@@ -66,9 +66,9 @@ const fetchDapContractFactory = (dashDriveAPI) => {
  *                  title: Parameters
  *                  type: object
  *                  required:
- *                    - dapId
+ *                    - contractId
  *                  properties:
- *                    dapId:
+ *                    contractId:
  *                      type: string
  *                      default: ''
  *                      description: A user's DAP ID

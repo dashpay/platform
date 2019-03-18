@@ -46,22 +46,22 @@ describe('DashDriveAdapter', () => {
     it('Should call \'fetchDPContract\' RPC with the given parameters', async () => {
       const dashDrive = new DashDriveAdapter({ host: '127.0.0.1', port: 3000 });
 
-      const dapId = 'dapid';
+      const contractId = 'contractId';
       const method = 'fetchDPContract';
 
-      const expectedDapContract = { dapId };
+      const expectedDapContract = { contractId };
 
       sinon.stub(dashDrive.client, 'request')
-        .withArgs(method, { dapId })
+        .withArgs(method, { contractId })
         .returns(Promise.resolve({ result: expectedDapContract }));
 
       expect(dashDrive.client.request.callCount).to.be.equal(0);
 
-      const actualDapContract = await dashDrive.fetchDapContract(dapId);
+      const actualDapContract = await dashDrive.fetchDapContract(contractId);
 
       expect(dashDrive.client.request.callCount).to.be.equal(1);
       expect(actualDapContract).to.be.equal(expectedDapContract);
-      expect(actualDapContract).not.to.be.equal({ dapId: 'randomid' });
+      expect(actualDapContract).not.to.be.equal({ contractId: 'randomid' });
     });
   });
 
@@ -69,25 +69,25 @@ describe('DashDriveAdapter', () => {
     it('Should call \'fetchDPObjects\' RPC with the given parameters', async () => {
       const dashDrive = new DashDriveAdapter({ host: '127.0.0.1', port: 3000 });
 
-      const dapId = 'dapid';
+      const contractId = 'contractId';
       const type = 'contact';
       const options = { where: { id: 1 } };
       const method = 'fetchDPObjects';
 
-      const expectedDapObjects = [{ dapId, id: 1 }];
+      const expectedDapObjects = [{ contractId, id: 1 }];
 
 
       sinon.stub(dashDrive.client, 'request')
-        .withArgs(method, { dapId, type, options })
+        .withArgs(method, { contractId, type, options })
         .returns(Promise.resolve({ result: expectedDapObjects }));
 
       expect(dashDrive.client.request.callCount).to.be.equal(0);
 
-      const actualDapObjects = await dashDrive.fetchDapObjects(dapId, type, options);
+      const actualDapObjects = await dashDrive.fetchDapObjects(contractId, type, options);
 
       expect(dashDrive.client.request.callCount).to.be.equal(1);
       expect(actualDapObjects).to.be.equal(expectedDapObjects);
-      expect(actualDapObjects).not.to.be.equal([{ dapId, id: 2 }]);
+      expect(actualDapObjects).not.to.be.equal([{ contractId, id: 2 }]);
     });
   });
 });

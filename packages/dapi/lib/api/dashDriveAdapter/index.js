@@ -43,16 +43,16 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
 
   /**
    * Fetch DAP Contract from DashDrive State View
-   * @param {string} dapId
+   * @param {string} contractId
    * @return {Promise<Object>} - Dap contract
    */
-  fetchDapContract(dapId) {
-    return this.request('fetchDPContract', { dapId });
+  fetchDapContract(contractId) {
+    return this.request('fetchDPContract', { contractId });
   }
 
   /**
    * Fetch DAP Objects from DashDrive State View
-   * @param {string} dapId
+   * @param {string} contractId
    * @param {string} type - Dap objects type to fetch
    * @param options
    * @param {Object} options.where - Mongo-like query
@@ -62,8 +62,8 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
    * @param {number} options.startAfter - exclusive skip
    * @return {Promise<Object[]>}
    */
-  fetchDapObjects(dapId, type, options) {
-    return this.request('fetchDPObjects', { dapId, type, options });
+  fetchDapObjects(contractId, type, options) {
+    return this.request('fetchDPObjects', { contractId, type, options });
   }
 }
 

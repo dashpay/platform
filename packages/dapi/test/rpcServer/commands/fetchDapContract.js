@@ -31,7 +31,7 @@ describe('fetchDapContract', () => {
   it('Should return search results', async () => {
     const getDapContract = getDapContractFactory(dashDriveFixture);
     expect(spy.callCount).to.be.equal(0);
-    const contract = await getDapContract({ dapId: '123' });
+    const contract = await getDapContract({ contractId: '123' });
     expect(contract).to.be.an('object');
     expect(spy.callCount).to.be.equal(1);
   });
@@ -39,7 +39,7 @@ describe('fetchDapContract', () => {
   it('Should throw an error if arguments are not valid', async () => {
     const getDapContract = getDapContractFactory(dashDriveFixture);
     expect(spy.callCount).to.be.equal(0);
-    await expect(getDapContract({ dapId: 123 })).to.be.rejectedWith('should be string');
+    await expect(getDapContract({ contractId: 123 })).to.be.rejectedWith('should be string');
     expect(spy.callCount).to.be.equal(0);
     await expect(getDapContract({})).to.be.rejectedWith('should have required property');
     expect(spy.callCount).to.be.equal(0);

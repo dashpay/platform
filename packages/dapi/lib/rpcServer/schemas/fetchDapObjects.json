@@ -1,7 +1,7 @@
 {
   "type": "object",
   "properties": {
-    "dapId": {
+    "contractId": {
       "type": "string"
     },
     "type": {
@@ -12,6 +12,6 @@
     }
   },
   "required": [
-    "dapId", "type", "options"
+    "contractId", "type", "options"
   ]
 }

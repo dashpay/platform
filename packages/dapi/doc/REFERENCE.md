@@ -539,7 +539,7 @@ Returns user's Dap space.
 
 | name       | type   | description                            |
 |------------|--------|----------------------------------------|
-| args.dapId | string | User's dap Id                          |
+| args.contractId | string | User's contract Id                          |
 
 ##### Response
 

@@ -9,8 +9,8 @@ const dashDriveAdapter = new DashDriveAdapter({ host: 'host', port: 1 });
 chai.use(chaiAsPromised);
 const { expect } = chai;
 
-const expectedSearchParams = { dapId: '123', type: 'contact', options: { where: { userId: 1 } } };
-const expectedResult = [{ dapId: '123', type: 'contact', userId: 1 }];
+const expectedSearchParams = { contractId: '123', type: 'contact', options: { where: { userId: 1 } } };
+const expectedResult = [{ contractId: '123', type: 'contact', userId: 1 }];
 
 describe('fetchDapContract', () => {
   describe('#factory', () => {
@@ -22,8 +22,8 @@ describe('fetchDapContract', () => {
 
   before(() => {
     sinon.stub(dashDriveAdapter, 'fetchDapObjects')
-      .withArgs(expectedSearchParams.dapId, expectedSearchParams.type, expectedSearchParams.options)
-      .returns(Promise.resolve(expectedResult));
+      .withArgs(expectedSearchParams.contractId, expectedSearchParams.type,
+        expectedSearchParams.options).returns(Promise.resolve(expectedResult));
   });
 
   beforeEach(() => {
@@ -45,17 +45,17 @@ describe('fetchDapContract', () => {
   it('Should throw an error if arguments are not valid', async () => {
     const fetchDapObjects = fetchDapObjectsFactory(dashDriveAdapter);
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);
-    await expect(fetchDapObjects({ dapId: 123 })).to.be.rejectedWith('params.dapId should be string');
+    await expect(fetchDapObjects({ contractId: 123 })).to.be.rejectedWith('params.contractId should be string');
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);
-    await expect(fetchDapObjects({ dapId: '123' })).to.be.rejectedWith('params should have required property \'type\'');
+    await expect(fetchDapObjects({ contractId: '123' })).to.be.rejectedWith('params should have required property \'type\'');
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);
-    await expect(fetchDapObjects({ dapId: '123', type: 1 })).to.be.rejectedWith('params.type should be string');
+    await expect(fetchDapObjects({ contractId: '123', type: 1 })).to.be.rejectedWith('params.type should be string');
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);
-    await expect(fetchDapObjects({ dapId: '123', type: 'type' })).to.be.rejectedWith('params should have required property \'options\'');
+    await expect(fetchDapObjects({ contractId: '123', type: 'type' })).to.be.rejectedWith('params should have required property \'options\'');
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);
-    await expect(fetchDapObjects({ dapId: '123', type: 'type', options: 1 })).to.be.rejectedWith('params.options should be object');
+    await expect(fetchDapObjects({ contractId: '123', type: 'type', options: 1 })).to.be.rejectedWith('params.options should be object');
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);
-    await expect(fetchDapObjects({})).to.be.rejectedWith('params should have required property \'dapId\'');
+    await expect(fetchDapObjects({})).to.be.rejectedWith('params should have required property \'contractId\'');
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);
     await expect(fetchDapObjects()).to.be.rejectedWith('params should be object');
     expect(dashDriveAdapter.fetchDapObjects.callCount).to.be.equal(0);

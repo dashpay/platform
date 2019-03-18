@@ -12,16 +12,16 @@ class AbstractDashDriveAdapter {
 
   /**
    * Fetch DAP Contract from DashDrive State View
-   * @param {string} dapId
+   * @param {string} contractId
    * @return {Promise<Object>} - Dap contract
    */
-  fetchDapContract(dapId) {
+  fetchDapContract(contractId) {
     throw new Error('Not implemented');
   }
 
   /**
    * Fetch DAP Objects from DashDrive State View
-   * @param {string} dapId
+   * @param {string} contractId
    * @param {string} type - Dap objects type to fetch
    * @param options
    * @param {Object} options.where - Mongo-like query
@@ -31,7 +31,7 @@ class AbstractDashDriveAdapter {
    * @param {number} options.startAfter - exclusive skip
    * @return {Promise<Object[]>}
    */
-  fetchDapObjects(dapId, type, options) {
+  fetchDapObjects(contractId, type, options) {
     throw new Error('Not implemented');
   }
 }
