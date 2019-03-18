@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Client SDK for DASH DAPI.",
   "main": "index.js",
   "dependencies": {

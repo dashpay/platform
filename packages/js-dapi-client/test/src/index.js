@@ -85,14 +85,14 @@ const rawBlock = {
   'rawblock': '0000037e4114e62941af4d5c34055561917520ece2a261297df892909f635c61'
 };
 
-const dapId = '11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c';
+const contractId = '11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c';
 
 const dapContract = {
   'dapname': 'TestContacts_test',
   'dapver': 1,
   'idx': 0,
   'meta': {
-    'id': dapId
+    'id': contractId
   },
   'pver': 1,
   'dapschema': {
@@ -856,7 +856,7 @@ describe('api', () => {
   describe('.tx.fetchDapContract', () => {
     it('Should fetch dap contract', async () => {
       const dapi = new Api();
-      const dapContract = await dapi.fetchDapContract(dapId);
+      const dapContract = await dapi.fetchDapContract(contractId);
       expect(dapContract).to.be.deep.equal(dapContract);
     });
   });
@@ -864,7 +864,7 @@ describe('api', () => {
   describe('.tx.fetchDapObjects', () => {
     it('Should fetch dap objects', async () => {
       const dapi = new Api();
-      const dapContract = await dapi.fetchDapObjects(dapId, 'user', {});
+      const dapContract = await dapi.fetchDapObjects(contractId, 'user', {});
       expect(dapContract).to.be.deep.equal(dapObjects);
     });
   });

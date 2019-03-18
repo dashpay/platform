@@ -234,11 +234,11 @@ class DAPIClient {
 
   /* Layer 2 commands */
 
-  fetchDapContract(dapId) { return this.makeRequestToRandomDAPINode('fetchDapContract', { dapId }); }
+  fetchDapContract(contractId) { return this.makeRequestToRandomDAPINode('fetchDapContract', { contractId }); }
 
   /**
    * Fetch DAP Objects from DashDrive State View
-   * @param {string} dapId
+   * @param {string} contractId
    * @param {string} type - Dap objects type to fetch
    * @param options
    * @param {Object} options.where - Mongo-like query
@@ -248,7 +248,7 @@ class DAPIClient {
    * @param {number} options.startAfter - exclusive skip
    * @return {Promise<Object[]>}
    */
-  fetchDapObjects(dapId, type, options) { return this.makeRequestToRandomDAPINode('fetchDapObjects', { dapId, type, options }); }
+  fetchDapObjects(contractId, type, options) { return this.makeRequestToRandomDAPINode('fetchDapObjects', { contractId, type, options }); }
 
   /**
    * Returns blockchain user by its username or regtx id
