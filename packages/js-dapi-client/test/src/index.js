@@ -1,5 +1,5 @@
 const Schema = require('@dashevo/dash-schema/dash-schema-lib');
-const Api = require('../../src/index');
+const DAPIClient = require('../../src/index');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const sinon = require('sinon');
@@ -529,13 +529,13 @@ describe('api', () => {
 
   describe('constructor', () => {
     it('Should set seeds and port, if passed', async () => {
-      const dapi = new Api({
+      const dapi = new DAPIClient({
         seeds: [{ service: '127.1.2.3:19999' }],
         port: 1234
       });
       expect(dapi.DAPIPort).to.be.equal(1234);
       expect(dapi.MNDiscovery.masternodeListProvider.DAPIPort).to.be.equal(1234);
-      expect(dapi.MNDiscovery.masternodeListProvider.masternodeList).to.be.deep.equal([{ service: '127.1.2.3:19999' }]);
+      expect(dapi.MNDiscovery.masternodeListProvider.seeds).to.be.deep.equal([{ service: '127.1.2.3:19999' }]);
       expect(dapi.MNDiscovery.seeds).to.be.deep.equal([{ service: '127.1.2.3:19999' }]);
 
       await dapi.getBestBlockHash();
@@ -557,30 +557,30 @@ describe('api', () => {
   });
   describe('.address.getUTXO', () => {
     it('Should return list with unspent outputs for correct address, if there are any', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const utxo = await dapi.getUTXO(validAddressWithOutputs);
       expect(utxo).to.be.an('array');
       const output = utxo[0];
       expect(output).to.be.an('object');
     });
     it('Should return empty list if there is no unspent output', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const utxo = await dapi.getUTXO(validAddressWithoutOutputs);
       expect(utxo).to.be.an('array');
       expect(utxo.length).to.be.equal(0);
     });
     it('Should throw error if address is invalid', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       return expect(dapi.getUTXO(invalidAddress)).to.be.rejected;
     });
     it('Should throw error if address not existing', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       return expect(dapi.getUTXO(invalidAddress)).to.be.rejected;
     });
   });
   describe('.address.getAddressSummary', () => {
     it('Should return a summary for an address', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const summary = await dapi.getAddressSummary(validAddressWithOutputs);
       expect(summary).to.be.an('object');
       expect(summary.balanceSat).to.be.a('number');
@@ -590,14 +590,14 @@ describe('api', () => {
     });
     it('Should equal options.retries passed in', async () => {
       const options = { retries: 1 };
-      const dapi = new Api(options);
+      const dapi = new DAPIClient(options);
       const summary = await dapi.getAddressSummary(validAddressWithOutputs);
       expect(dapi.retries).to.equal(1);
     });
   });
   describe('.address.getAddressUnconfirmedBalance', () => {
     it('Should return unconfirmed balance', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const unconfirmedBalance = await dapi.getAddressUnconfirmedBalance(validAddressWithOutputs);
       expect(unconfirmedBalance).to.be.a('number');
       expect(unconfirmedBalance).to.be.equal(validAddressSummary.unconfirmedBalanceSat);
@@ -605,7 +605,7 @@ describe('api', () => {
   });
   describe('.address.getAddressTotalReceived', () => {
     it('Should return total received value', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const totalReceived = await dapi.getAddressTotalReceived(validAddressWithOutputs);
       expect(totalReceived).to.be.a('number');
       expect(totalReceived).to.be.equal(validAddressSummary.totalReceivedSat);
@@ -613,7 +613,7 @@ describe('api', () => {
   });
   describe('.address.getAddressTotalSent', () => {
     it('Should return total sent value', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const totalReceived = await dapi.getAddressTotalSent(validAddressWithOutputs);
       expect(totalReceived).to.be.a('number');
       expect(totalReceived).to.be.equal(validAddressSummary.totalSentSat);
@@ -621,69 +621,69 @@ describe('api', () => {
   });
   describe('.tx.getTransaction', () => {
     it('Should get transaction', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const transaction = await dapi.getTransaction(validAddressTransactions.items[0].txid);
       expect(transaction).to.be.deep.equal(validAddressTransactions.items[0]);
     });
   });
   describe('.address.getTransactionsByAddress', () => {
     it('Should return transactions by address', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const summary = await dapi.getTransactionsByAddress(validAddressWithOutputs);
       expect(summary).to.be.deep.equal(validAddressTransactions);
     });
   });
   describe('.address.getTransactionById', () => {
     it('Should return transaction by id', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const summary = await dapi.getTransactionById(validAddressTransactions.items[0].txid);
       expect(summary).to.be.deep.equal(validAddressTransactions.items[0]);
     });
   });
   describe('.address.getBalance', () => {
     it('Should return sum of unspent outputs for address', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const balance = await dapi.getBalance(validAddressWithOutputs);
       expect(balance).to.be.equal(validAddressSummary.balanceSat);
     });
     it('Should return 0 if there is no unspent outputs', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const balance = await dapi.getBalance(validAddressWithoutOutputs);
       expect(balance).to.be.equal(0);
     });
     it('Should throw error if address is invalid', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       return expect(dapi.getBalance(invalidAddress)).to.be.rejected;
     });
   });
   describe('.user.getUserByName', () => {
     it('Should throw error if username or regtx is incorrect', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       return expect(dapi.getUserByName(invalidUsername)).to.be.rejected;
     });
     it('Should throw error if user not found', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       return expect(dapi.getUserByName(notExistingUsername)).to.be.rejected;
     });
     it('Should return user data if user exists', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const user = await dapi.getUserByName(validUsername);
       expect(user).to.be.an('object');
     });
   });
   describe('.user.getUserById', () => {
     it('Should throw error if use id is incorrect', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const user = await dapi.getUserByName(validUsername);
       dapi.generate(10);
       return expect(dapi.getUserById(user.regtxid + 'fake')).to.be.rejected;
     });
     it('Should throw error if user id not found', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       return expect(dapi.getUserById(notExistingUsername)).to.be.rejected;
     });
     it('Should return user data if user exists', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const user = await dapi.getUserByName(validUsername);
       const userById = await dapi.getUserById(user.regtxid);
       expect(userById).to.be.an('object');
@@ -691,7 +691,7 @@ describe('api', () => {
   });
   describe('.user.searchUsers', () => {
     it('Should return users', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const pattern = '';
       const res = await dapi.searchUsers({
         pattern: 'Dash',
@@ -709,7 +709,7 @@ describe('api', () => {
   });
   describe('.getSpvData', () => {
     it('Should return getSpvData', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const filter = '';
       const res = await dapi.getSpvData(filter);
       expect(res).to.be.deep.equal({
@@ -719,7 +719,7 @@ describe('api', () => {
   });
   describe('.block.getBestBlockHash', () => {
     it('Should return chaintip hash', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const bestBlockHash = await dapi.getBestBlockHash();
       expect(bestBlockHash).to.be.a('string');
       expect(bestBlockHash).to.be.equal(validBlockHash);
@@ -727,7 +727,7 @@ describe('api', () => {
   });
   describe('.block.getBestBlockHeight', () => {
     it('Should return block height', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const bestBlockHeight = await dapi.getBestBlockHeight();
       expect(bestBlockHeight).to.be.a('number');
       expect(bestBlockHeight).to.be.equal(100);
@@ -735,13 +735,13 @@ describe('api', () => {
   });
   describe('.block.getBlockHash', () => {
     it('Should return hash for a given block height', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const blockHash = await dapi.getBlockHash(0);
       expect(blockHash).to.be.a('string');
       expect(blockHash).to.be.equal(validBaseBlockHash);
     });
     it('Should be rejected if height is invalid', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       await expect(dapi.getBlockHash(1000000)).to.be.rejected;
       await expect(dapi.getBlockHash('some string')).to.be.rejected;
       await expect(dapi.getBlockHash(1.2)).to.be.rejected;
@@ -752,7 +752,7 @@ describe('api', () => {
 
   describe('.block.getBlockHeader', () => {
     it('Should return block header by hash', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const blockHeader = await dapi.getBlockHeader(validBlockHash);
       expect(blockHeader.height).to.exist;
       expect(blockHeader.bits).to.exist;
@@ -771,7 +771,7 @@ describe('api', () => {
 
   describe('.block.getBlockHeaders', () => {
     it('Should return block headers by hash', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const blockHeaders = await dapi.getBlockHeaders(2357, 3);
       expect(blockHeaders.length).to.be.equal(1);
       expect(blockHeaders[0].height).to.exist;
@@ -791,7 +791,7 @@ describe('api', () => {
 
   describe('.block.getBlocks', () => {
     it('Should return blocks by blockDate and limit', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const blocks = await dapi.getBlocks('2018-12-24', 3);
       expect(blocks).to.be.deep.equal(blocks);
     });
@@ -799,7 +799,7 @@ describe('api', () => {
 
   describe('.block.getHistoricBlockchainDataSyncStatus', () => {
     it('Should return historic blockchain data sync status', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const dataSyncStatus = await dapi.getHistoricBlockchainDataSyncStatus();
       expect(dataSyncStatus).to.be.deep.equal(historicBlockchainDataSyncStatus);
     });
@@ -807,7 +807,7 @@ describe('api', () => {
 
   describe('.block.getRawBlock', () => {
     it('Should return raw block', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const getRawBlock = await dapi.getRawBlock();
       expect(getRawBlock).to.be.deep.equal(rawBlock);
     });
@@ -815,7 +815,7 @@ describe('api', () => {
 
   describe('.block.estimateFee', () => {
     it('Should return estimate fee', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const estimateFee = await dapi.estimateFee(2);
       expect(estimateFee).to.be.deep.equal({ '2': 6.5e-7 });
     });
@@ -841,21 +841,21 @@ describe('api', () => {
         .setCreditFee(1000)
         .sign(new PrivateKey());
 
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const transition = await dapi.sendRawTransition(transaction.serialize(),
         serializedPacket.toString('hex'),
       );
       expect(transition).to.be.deep.equal(transitionHash);
     });
     it('Should throw error when data packet is missing', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       return expect(dapi.sendRawTransition()).to.be.rejected;
     });
   });
 
   describe('.tx.fetchDapContract', () => {
     it('Should fetch dap contract', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const dapContract = await dapi.fetchDapContract(contractId);
       expect(dapContract).to.be.deep.equal(dapContract);
     });
@@ -863,7 +863,7 @@ describe('api', () => {
 
   describe('.tx.fetchDapObjects', () => {
     it('Should fetch dap objects', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const dapContract = await dapi.fetchDapObjects(contractId, 'user', {});
       expect(dapContract).to.be.deep.equal(dapObjects);
     });
@@ -871,7 +871,7 @@ describe('api', () => {
 
   describe('.tx.sendRawTransaction', () => {
     it('Should return txid', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const rawTransaction = {};
       const tx = await dapi.sendRawTransaction(rawTransaction);
       // TODO: implement real unit test
@@ -881,7 +881,7 @@ describe('api', () => {
 
   describe('.tx.sendRawIxTransaction', () => {
     it('Should return txid', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const rawIxTransaction = {};
       const tx = await dapi.sendRawIxTransaction(rawIxTransaction);
       // TODO: implement real unit test
@@ -891,7 +891,7 @@ describe('api', () => {
 
   describe('.mnlist.getMnListDiff', () => {
     it('Should return mnlistdiff', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const mnlistdiff = await dapi.getMnListDiff(validBaseBlockHash, validBlockHash);
       expect(mnlistdiff.baseBlockHash).to.be.equal(validBaseBlockHash);
       expect(mnlistdiff.blockHash).to.be.equal(validBlockHash);
@@ -902,7 +902,7 @@ describe('api', () => {
 
   describe('.mempool.getMempoolInfo', () => {
     it('Should return mempool info', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const info = await dapi.getMempoolInfo();
       expect(info.size).to.be.equal(0);
       expect(info.bytes).to.be.equal(0);
@@ -919,7 +919,7 @@ describe('api', () => {
 
   describe('.spv.loadBloomFilter', () => {
     it('Should return loadBloomFilter', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const filter = '';
       const res = await dapi.loadBloomFilter(filter);
       // TODO: implement real unit test
@@ -929,7 +929,7 @@ describe('api', () => {
 
   describe('.spv.addToBloomFilter', () => {
     it('Should return addToBloomFilter', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const filter = '';
       const res = await dapi.addToBloomFilter(filter);
       // TODO: implement real unit test
@@ -939,7 +939,7 @@ describe('api', () => {
 
   describe('.spv.clearBloomFilter', () => {
     it('Should return clearBloomFilter', async () => {
-      const dapi = new Api();
+      const dapi = new DAPIClient();
       const filter = '';
       const res = await dapi.clearBloomFilter(filter);
       // TODO: implement real unit test

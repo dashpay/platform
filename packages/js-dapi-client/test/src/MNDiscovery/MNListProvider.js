@@ -96,8 +96,8 @@ describe('MNListProvider', async () => {
     it('Should fetch MN list from seed if list has never updated', async() => {
       const mnListProvider = new MNListProvider();
       expect(mnListProvider.lastUpdateDate).to.equal(0);
-      expect(mnListProvider.masternodeList.length).to.equal(1);
-      expect(mnListProvider.masternodeList[0].ip).to.equal(config.DAPIDNSSeeds[0].ip);
+      expect(mnListProvider.masternodeList.length).to.equal(0);
+      expect(mnListProvider.seeds).to.be.deep.equal(config.DAPIDNSSeeds);
 
       const MNList = await mnListProvider.getMNList();
       const MNListItem = MNList[0];

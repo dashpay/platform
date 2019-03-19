@@ -97,15 +97,22 @@ class MasternodeListProvider {
       throw new Error('seed is not an array');
     }
     /**
-     * Deterministic simplified masternode list.
-     * Initial masternode list is DNS seed from config.
      * @type Array<SimplifiedMNListEntry>
      */
-    this.masternodeList = seedsIsArray ? seeds.slice() : config.DAPIDNSSeeds.slice();
+    this.seeds = seedsIsArray ? seeds.slice() : config.DAPIDNSSeeds.slice();
+    /**
+     * Deterministic simplified masternode list.
+     * @type Array<SimplifiedMNListEntry>
+     */
+    this.masternodeList = [];
     this.simplifiedMNList = new SimplifiedMNList();
     this.DAPIPort = DAPIPort;
     this.lastUpdateDate = 0;
     this.baseBlockHash = constants.masternodeList.NULL_HASH;
+  }
+
+  isEmptyMasternodeList() {
+    return this.masternodeList.length === 0;
   }
 
   /**
@@ -116,7 +123,7 @@ class MasternodeListProvider {
    */
   async getGenesisHash() {
     const genesisHeight = 0;
-    const node = sample(this.masternodeList);
+    const node = this.isEmptyMasternodeList() ? sample(this.seeds) : sample(this.masternodeList);
     const ipAddress = node.service.split(':')[0];
     return RPCClient.request({
       host: ipAddress,
@@ -165,7 +172,7 @@ class MasternodeListProvider {
    * @returns {Promise<SimplifiedMNListDiff>}
    */
   async getSimplifiedMNListDiff() {
-    const node = sample(this.masternodeList);
+    const node = this.isEmptyMasternodeList() ? sample(this.seeds) : sample(this.masternodeList);
     const { baseBlockHash } = this;
     const ipAddress = node.service.split(':')[0];
     const blockHash = await RPCClient.request({
