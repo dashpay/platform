@@ -11,7 +11,7 @@ module.exports = {
   'x-api-id': 'dapi',
   info: {
     title: 'DAPI',
-    version: '0.1.2',
+    version: '0.2.2',
     description: 'Dash Decentralized API (DAPI)',
   },
   servers: [

@@ -77,28 +77,26 @@ const getTransactionsByAddressFactory = (coreAPI) => {
  *                  properties:
  *                    address:
  *                      oneOf:
- *                        type: string
- *                        type: array
- *                        items:
- *                          type: string
- *                        required: true
- *                        description: Dash address or array of addresses
+ *                        - type: string
+ *                          required: true
+ *                          description: Dash address
+ *                        - type: array
+ *                          items:
+ *                            type: string
+ *                            required: true
+ *                            description: Array of Dash addresses
  *                    from:
  *                      type: integer
- *                      default: undefined
- *                      description: start of range in the ordered list of latest UTXO
+ *                      description: Start of range in the ordered list of latest UTXO
  *                    to:
  *                      type: integer
- *                      default: undefined
- *                      description: end of range in the ordered list of latest UTXO
+ *                      description: End of range in the ordered list of latest UTXO
  *                    fromHeight:
  *                      type: integer
- *                      default: undefined
- *                      description: which height to start from
+ *                      description: Lowest block height to include
  *                    toHeight:
  *                      type: integer
- *                      default: undefined
- *                      description: on which height to end
+ *                      description: Block height to end on
  */
 /* eslint-enable max-len */
 
