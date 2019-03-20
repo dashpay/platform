@@ -78,12 +78,10 @@ const getTransactionsByAddressFactory = (coreAPI) => {
  *                    address:
  *                      oneOf:
  *                        - type: string
- *                          required: true
  *                          description: Dash address
  *                        - type: array
  *                          items:
  *                            type: string
- *                            required: true
  *                            description: Array of Dash addresses
  *                    from:
  *                      type: integer
