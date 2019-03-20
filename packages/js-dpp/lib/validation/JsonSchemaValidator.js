@@ -48,7 +48,7 @@ JsonSchemaValidator.SCHEMAS = {
     DP_CONTRACT: 'https://schema.dash.org/dpp-0-4-0/meta/dp-contract',
   },
   BASE: {
-    DP_OBJECT: 'https://schema.dash.org/dpp-0-4-0/base/dp-object',
+    DP_OBJECT: 'https://schema.dash.org/dpp-0-4-0/base/document',
     ST_PACKET: 'https://schema.dash.org/dpp-0-4-0/base/st-packet',
   },
   ST_PACKET_HEADER: 'https://schema.dash.org/dpp-0-4-0/st-packet-header',

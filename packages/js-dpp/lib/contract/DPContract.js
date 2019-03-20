@@ -1,18 +1,18 @@
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
-const InvalidDPObjectTypeError = require('../errors/InvalidDPObjectTypeError');
+const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
 class DPContract {
   /**
    * @param {string} name
-   * @param {Object<string, Object>} dpObjectsDefinition
+   * @param {Object<string, Object>} documents
    */
-  constructor(name, dpObjectsDefinition) {
+  constructor(name, documents) {
     this.setName(name);
     this.setVersion(DPContract.DEFAULTS.VERSION);
     this.setJsonMetaSchema(DPContract.DEFAULTS.SCHEMA);
-    this.setDPObjectsDefinition(dpObjectsDefinition);
+    this.setDocuments(documents);
     this.setDefinitions({});
   }
 
@@ -94,11 +94,11 @@ class DPContract {
 
   /**
    *
-   * @param {Object<string, Object>} dpObjectsDefinition
+   * @param {Object<string, Object>} documents
    * @return {DPContract}
    */
-  setDPObjectsDefinition(dpObjectsDefinition) {
-    this.dpObjectsDefinition = dpObjectsDefinition;
+  setDocuments(documents) {
+    this.documents = documents;
 
     return this;
   }
@@ -107,18 +107,18 @@ class DPContract {
    *
    * @return {Object<string, Object>}
    */
-  getDPObjectsDefinition() {
-    return this.dpObjectsDefinition;
+  getDocuments() {
+    return this.documents;
   }
 
   /**
-   * Returns true if object type is defined
+   * Returns true if document type is defined
    *
    * @param {string} type
    * @return {boolean}
    */
-  isDPObjectDefined(type) {
-    return Object.prototype.hasOwnProperty.call(this.dpObjectsDefinition, type);
+  isDocumentDefined(type) {
+    return Object.prototype.hasOwnProperty.call(this.documents, type);
   }
 
   /**
@@ -127,8 +127,8 @@ class DPContract {
    * @param {object} schema
    * @return {DPContract}
    */
-  setDPObjectSchema(type, schema) {
-    this.dpObjectsDefinition[type] = schema;
+  setDocumentSchema(type, schema) {
+    this.documents[type] = schema;
 
     return this;
   }
@@ -138,24 +138,24 @@ class DPContract {
    * @param {string} type
    * @return {Object}
    */
-  getDPObjectSchema(type) {
-    if (!this.isDPObjectDefined(type)) {
-      throw new InvalidDPObjectTypeError(type, this);
+  getDocumentSchema(type) {
+    if (!this.isDocumentDefined(type)) {
+      throw new InvalidDocumentTypeError(type, this);
     }
 
-    return this.dpObjectsDefinition[type];
+    return this.documents[type];
   }
 
   /**
    * @param {string} type
    * @return {{$ref: string}}
    */
-  getDPObjectSchemaRef(type) {
-    if (!this.isDPObjectDefined(type)) {
-      throw new InvalidDPObjectTypeError(type, this);
+  getDocumentSchemaRef(type) {
+    if (!this.isDocumentDefined(type)) {
+      throw new InvalidDocumentTypeError(type, this);
     }
 
-    return { $ref: `${this.getJsonSchemaId()}#/dpObjectsDefinition/${type}` };
+    return { $ref: `${this.getJsonSchemaId()}#/documents/${type}` };
   }
 
 
@@ -182,7 +182,7 @@ class DPContract {
    * @return {{$schema: string,
    *           name: string,
    *           version: number,
-   *           dpObjectsDefinition: Object<string, Object>,
+   *           documents: Object<string, Object>,
    *           [definitions]: Object<string, Object>}}
    */
   toJSON() {
@@ -190,7 +190,7 @@ class DPContract {
       $schema: this.getJsonMetaSchema(),
       name: this.getName(),
       version: this.getVersion(),
-      dpObjectsDefinition: this.getDPObjectsDefinition(),
+      documents: this.getDocuments(),
     };
 
     const definitions = this.getDefinitions();

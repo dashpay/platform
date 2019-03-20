@@ -3,16 +3,16 @@ const AbstractIndexError = require('./AbstractIndexError');
 class DuplicateIndexError extends AbstractIndexError {
   /**
    * @param {rawDPContract} rawDPContract
-   * @param {string} dpObjectType
+   * @param {string} documentType
    * @param {Object} indexDefinition
    */
-  constructor(rawDPContract, dpObjectType, indexDefinition) {
-    const message = `Duplicate index definition for "${dpObjectType}" object`;
+  constructor(rawDPContract, documentType, indexDefinition) {
+    const message = `Duplicate index definition for "${documentType}" document`;
 
     super(
       message,
       rawDPContract,
-      dpObjectType,
+      documentType,
       indexDefinition,
     );
   }

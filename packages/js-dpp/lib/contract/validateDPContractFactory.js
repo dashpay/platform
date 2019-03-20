@@ -34,13 +34,13 @@ module.exports = function validateDPContractFactory(validator) {
     }
 
     // Validate indices
-    Object.entries(rawDPContract.dpObjectsDefinition).filter(([, dpObjectDefinition]) => (
-      Object.prototype.hasOwnProperty.call(dpObjectDefinition, 'indices')
+    Object.entries(rawDPContract.documents).filter(([, document]) => (
+      Object.prototype.hasOwnProperty.call(document, 'indices')
     ))
-      .forEach(([dpObjectType, dpObjectDefinition]) => {
+      .forEach(([documentType, document]) => {
         const indicesFingerprints = [];
 
-        dpObjectDefinition.indices.forEach((indexDefinition) => {
+        document.indices.forEach((indexDefinition) => {
           const indexPropertyNames = indexDefinition.properties
             .map(property => Object.keys(property)[0]);
 
@@ -51,7 +51,7 @@ module.exports = function validateDPContractFactory(validator) {
             result.addError(
               new DuplicateIndexError(
                 rawDPContract,
-                dpObjectType,
+                documentType,
                 indexDefinition,
               ),
             );
@@ -66,7 +66,7 @@ module.exports = function validateDPContractFactory(validator) {
             result.addError(
               new UniqueIndexMustHaveUserIdPrefixError(
                 rawDPContract,
-                dpObjectType,
+                documentType,
                 indexDefinition,
               ),
             );
@@ -78,13 +78,13 @@ module.exports = function validateDPContractFactory(validator) {
           const userDefinedProperties = indexPropertyNames.slice(1);
 
           userDefinedProperties.filter(propertyName => (
-            !Object.prototype.hasOwnProperty.call(dpObjectDefinition.properties, propertyName)
+            !Object.prototype.hasOwnProperty.call(document.properties, propertyName)
           ))
             .forEach((undefinedPropertyName) => {
               result.addError(
                 new UndefinedIndexPropertyError(
                   rawDPContract,
-                  dpObjectType,
+                  documentType,
                   indexDefinition,
                   undefinedPropertyName,
                 ),

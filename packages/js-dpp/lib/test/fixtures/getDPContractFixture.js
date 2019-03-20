@@ -4,8 +4,8 @@ const DPContract = require('../../contract/DPContract');
  * @return DPContract
  */
 module.exports = function getDPContractFixture() {
-  const dpObjectsDefinition = {
-    niceObject: {
+  const documents = {
+    niceDocument: {
       properties: {
         name: {
           type: 'string',
@@ -13,7 +13,7 @@ module.exports = function getDPContractFixture() {
       },
       additionalProperties: false,
     },
-    prettyObject: {
+    prettyDocument: {
       properties: {
         lastName: {
           $ref: '#/definitions/lastName',
@@ -22,7 +22,7 @@ module.exports = function getDPContractFixture() {
       required: ['lastName'],
       additionalProperties: false,
     },
-    indexedObject: {
+    indexedDocument: {
       indices: [
         {
           properties: [
@@ -52,7 +52,7 @@ module.exports = function getDPContractFixture() {
     },
   };
 
-  const dpContract = new DPContract('lovelyContract', dpObjectsDefinition);
+  const dpContract = new DPContract('lovelyContract', documents);
 
   dpContract.setDefinitions({
     lastName: {

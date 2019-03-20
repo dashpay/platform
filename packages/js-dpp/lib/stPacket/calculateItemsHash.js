@@ -6,14 +6,14 @@ const calculateItemsHashes = require('./calculateItemsHashes');
 /**
  * Calculate hash of ST Packet's items
  *
- * @param {{ objects: Buffer[], contracts: Buffer[] }} items
+ * @param {{ documents: Buffer[], contracts: Buffer[] }} items
  * @return {string|null}
  */
 function calculateItemsHash(items) {
   const itemsHashes = calculateItemsHashes(items);
 
   if (itemsHashes.contracts.length === 0
-    && itemsHashes.objects.length === 0) {
+    && itemsHashes.documents.length === 0) {
     return null;
   }
 

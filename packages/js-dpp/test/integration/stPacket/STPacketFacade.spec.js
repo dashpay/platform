@@ -26,7 +26,7 @@ describe('STPacketFacade', () => {
 
     dataProviderMock.fetchDPContract.resolves(dpContract);
     dataProviderMock.fetchTransaction.resolves(null);
-    dataProviderMock.fetchDPObjects.resolves([]);
+    dataProviderMock.fetchDocuments.resolves([]);
 
     stPacket = getSTPacketFixture();
 
@@ -39,12 +39,12 @@ describe('STPacketFacade', () => {
 
   describe('create', () => {
     it('should create ST Packet', () => {
-      const result = dpp.packet.create(stPacket.getDPObjects());
+      const result = dpp.packet.create(stPacket.getDocuments());
 
       expect(result).to.be.an.instanceOf(STPacket);
 
       expect(result.getDPContractId()).to.equal(stPacket.getDPContractId());
-      expect(result.getDPObjects()).to.deep.equal(stPacket.getDPObjects());
+      expect(result.getDocuments()).to.deep.equal(stPacket.getDocuments());
     });
 
     it('should throw an error if DP Contract is not defined', () => {
@@ -52,7 +52,7 @@ describe('STPacketFacade', () => {
 
       let error;
       try {
-        dpp.packet.create(stPacket.objects);
+        dpp.packet.create(stPacket.documents);
       } catch (e) {
         error = e;
       }

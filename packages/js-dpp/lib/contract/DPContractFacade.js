@@ -20,11 +20,11 @@ class DPContractFacade {
    * Create DP Contract
    *
    * @param {string} name
-   * @param {Object} dpObjectsDefinition
+   * @param {Object} documents
    * @return {DPContract}
    */
-  create(name, dpObjectsDefinition) {
-    return this.factory.create(name, dpObjectsDefinition);
+  create(name, documents) {
+    return this.factory.create(name, documents);
   }
 
   /**

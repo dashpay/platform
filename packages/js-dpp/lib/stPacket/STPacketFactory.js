@@ -5,7 +5,7 @@ const STPacket = require('./STPacket');
 const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
 const DPContractNotPresentError = require('../errors/DPContractNotPresentError');
 
-const DPObject = require('../object/DPObject');
+const Document = require('../document/Document');
 
 class STPacketFactory {
   /**
@@ -46,11 +46,11 @@ class STPacketFactory {
     if (!options.skipValidation) {
       let dpContract;
 
-      const areDPObjectsPresent = rawSTPacket.contractId
-        && Array.isArray(rawSTPacket.objects)
-        && rawSTPacket.objects.length > 0;
+      const areDocumentsPresent = rawSTPacket.contractId
+        && Array.isArray(rawSTPacket.documents)
+        && rawSTPacket.documents.length > 0;
 
-      if (areDPObjectsPresent) {
+      if (areDocumentsPresent) {
         dpContract = await this.dataProvider.fetchDPContract(rawSTPacket.contractId);
 
         if (!dpContract) {
@@ -75,10 +75,10 @@ class STPacketFactory {
       stPacket.setDPContract(packetDPContract);
     }
 
-    if (rawSTPacket.objects.length > 0) {
-      const dpObjects = rawSTPacket.objects.map(rawDPObject => new DPObject(rawDPObject));
+    if (rawSTPacket.documents.length > 0) {
+      const documents = rawSTPacket.documents.map(rawDocument => new Document(rawDocument));
 
-      stPacket.setDPObjects(dpObjects);
+      stPacket.setDocuments(documents);
     }
 
     return stPacket;

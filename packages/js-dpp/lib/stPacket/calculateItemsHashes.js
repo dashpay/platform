@@ -1,4 +1,4 @@
-const DPObject = require('../object/DPObject');
+const Document = require('../document/Document');
 const DPContract = require('../contract/DPContract');
 
 const createDPContract = require('../contract/createDPContract');
@@ -8,16 +8,16 @@ const createDPContract = require('../contract/createDPContract');
  *
  * @private
  * @returns {{
- *   objects: Buffer[],
+ *   documents: Buffer[],
  *   contracts: Buffer[]
  * }}
  */
-function calculateItemsHashes({ contracts, objects }) {
+function calculateItemsHashes({ contracts, documents }) {
   return {
-    objects: objects.map((object) => {
-      const dpObject = object instanceof DPObject ? object : new DPObject(object);
+    documents: documents.map((document) => {
+      const doc = document instanceof Document ? document : new Document(document);
 
-      return Buffer.from(dpObject.hash(), 'hex');
+      return Buffer.from(doc.hash(), 'hex');
     }),
     contracts: contracts.map((contract) => {
       const dpContract = contract instanceof DPContract

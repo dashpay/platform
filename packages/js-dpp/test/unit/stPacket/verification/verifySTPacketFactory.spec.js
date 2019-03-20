@@ -2,7 +2,7 @@ const { Transaction, PrivateKey } = require('@dashevo/dashcore-lib');
 
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
-const getDPObjectsFixture = require('../../../../lib/test/fixtures/getDPObjectsFixture');
+const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContractFixture');
 
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
@@ -22,11 +22,11 @@ const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe('verifySTPacketFactory', () => {
   let verifyDPContractMock;
-  let verifyDPObjectsMock;
+  let verifyDocumentsMock;
   let transaction;
   let dataProviderMock;
   let verifySTPacket;
-  let dpObjects;
+  let documents;
   let dpContract;
   let stPacket;
   let stateTransition;
@@ -34,7 +34,7 @@ describe('verifySTPacketFactory', () => {
 
   beforeEach(function beforeEach() {
     verifyDPContractMock = this.sinonSandbox.stub().resolves(new ValidationResult());
-    verifyDPObjectsMock = this.sinonSandbox.stub().resolves(new ValidationResult());
+    verifyDocumentsMock = this.sinonSandbox.stub().resolves(new ValidationResult());
 
     dataProviderMock = createDataProviderMock(this.sinonSandbox);
 
@@ -45,17 +45,17 @@ describe('verifySTPacketFactory', () => {
 
     verifySTPacket = verifySTPacketFactory(
       verifyDPContractMock,
-      verifyDPObjectsMock,
+      verifyDocumentsMock,
       dataProviderMock,
     );
 
-    ({ userId } = getDPObjectsFixture);
+    ({ userId } = getDocumentsFixture);
 
-    dpObjects = getDPObjectsFixture();
+    documents = getDocumentsFixture();
     dpContract = getDPContractFixture();
 
     stPacket = new STPacket(dpContract.getId());
-    stPacket.setDPObjects(dpObjects);
+    stPacket.setDocuments(documents);
 
     const payload = new Transaction.Payload.SubTxTransitionPayload()
       .setRegTxId(userId)
@@ -151,7 +151,7 @@ describe('verifySTPacketFactory', () => {
   });
 
   it('should return invalid result if DP Contract is not valid', async () => {
-    stPacket.setDPObjects([]);
+    stPacket.setDocuments([]);
     stPacket.setDPContract(dpContract);
 
     stateTransition.extraPayload.hashSTPacket = stPacket.hash();
@@ -168,16 +168,16 @@ describe('verifySTPacketFactory', () => {
     expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
     expect(verifyDPContractMock).to.have.been.calledOnceWith(stPacket);
-    expect(verifyDPObjectsMock).to.have.not.been.called();
+    expect(verifyDocumentsMock).to.have.not.been.called();
 
     const [actualError] = result.getErrors();
 
     expect(actualError).to.equal(expectedError);
   });
 
-  it('should return invalid result if DPObjects are not valid', async () => {
+  it('should return invalid result if Documents are not valid', async () => {
     const expectedError = new ConsensusError('someError');
-    verifyDPObjectsMock.resolves(
+    verifyDocumentsMock.resolves(
       new ValidationResult([expectedError]),
     );
 
@@ -188,7 +188,7 @@ describe('verifySTPacketFactory', () => {
     expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
     expect(verifyDPContractMock).to.have.not.been.called();
-    expect(verifyDPObjectsMock).to.have.been.calledOnceWith(stPacket, userId);
+    expect(verifyDocumentsMock).to.have.been.calledOnceWith(stPacket, userId);
 
     const [actualError] = result.getErrors();
 
@@ -204,6 +204,6 @@ describe('verifySTPacketFactory', () => {
     expect(dataProviderMock.fetchTransaction).to.have.been.calledOnceWith(userId);
 
     expect(verifyDPContractMock).to.have.not.been.called();
-    expect(verifyDPObjectsMock).to.have.been.calledOnceWith(stPacket, userId);
+    expect(verifyDocumentsMock).to.have.been.calledOnceWith(stPacket, userId);
   });
 });

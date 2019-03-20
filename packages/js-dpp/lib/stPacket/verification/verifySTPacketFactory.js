@@ -10,11 +10,11 @@ const DPContractNotPresentError = require('../../errors/DPContractNotPresentErro
 
 /**
  * @param {verifyDPContract} verifyDPContract
- * @param {verifyDPObjects} verifyDPObjects
+ * @param {verifyDocuments} verifyDocuments
  * @param {DataProvider} dataProvider
  * @return {verifySTPacket}
  */
-function verifySTPacketFactory(verifyDPContract, verifyDPObjects, dataProvider) {
+function verifySTPacketFactory(verifyDPContract, verifyDocuments, dataProvider) {
   /**
    * @typedef verifySTPacket
    * @param {STPacket} stPacket
@@ -69,9 +69,9 @@ function verifySTPacketFactory(verifyDPContract, verifyDPObjects, dataProvider) 
       );
     }
 
-    if (stPacket.getDPObjects().length) {
+    if (stPacket.getDocuments().length) {
       result.merge(
-        await verifyDPObjects(stPacket, userId, dpContract),
+        await verifyDocuments(stPacket, userId, dpContract),
       );
     }
 

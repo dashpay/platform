@@ -3,49 +3,9 @@ const Ajv = require('ajv');
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
 const DPContractFacade = require('./contract/DPContractFacade');
-const DPObjectFacade = require('./object/DPObjectFacade');
+const DocumentFacade = require('./document/DocumentFacade');
 const STPacketFacade = require('./stPacket/STPacketFacade');
 const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
-
-/**
- * @classdesc DataProvider interface definition
- *
- * @async
- * @name DataProvider
- * @class
- */
-
-/**
- * Fetch DP Contract by ID
- *
- * @async
- * @method
- * @name DataProvider#fetchDPContract
- * @param {string} id
- * @returns {Promise<DPContract|null>}
- */
-
-/**
- * Fetch DP Objects by contract ID and type
- *
- * @async
- * @method
- * @name DataProvider#fetchDPObjects
- * @param {string} dpContractId
- * @param {string} type
- * @param {{ where: Object }} [options]
- * @returns {Promise<DPObject[]>}
- */
-
-/**
- * Fetch transaction by ID
- *
- * @async
- * @method
- * @name DataProvider#fetchTransaction
- * @param {string} id
- * @returns {Promise<{ confirmations: number }|null>}
- */
 
 /**
  * @class DashPlatformProtocol
@@ -73,7 +33,7 @@ class DashPlatformProtocol {
   initializeFacades(validator) {
     this.contract = new DPContractFacade(validator);
 
-    this.object = new DPObjectFacade(this, validator);
+    this.document = new DocumentFacade(this, validator);
 
     this.packet = new STPacketFacade(this, validator);
 

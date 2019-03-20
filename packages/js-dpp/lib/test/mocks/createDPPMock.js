@@ -11,7 +11,7 @@ module.exports = function createDPPMock(sinonSandbox) {
     validate: sinonSandbox.stub(),
   };
 
-  const object = {
+  const document = {
     create: sinonSandbox.stub(),
     createFromObject: sinonSandbox.stub(),
     createFromSerialized: sinonSandbox.stub(),
@@ -35,7 +35,7 @@ module.exports = function createDPPMock(sinonSandbox) {
 
   return {
     contract,
-    object,
+    document,
     packet,
     packetHeader,
     getUserId: sinonSandbox.stub(),

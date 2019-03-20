@@ -8,14 +8,14 @@ class AbstractIndexError extends ConsensusError {
   /**
    * @param {string} message
    * @param {rawDPContract} rawDPContract
-   * @param {string} dpObjectType
+   * @param {string} documentType
    * @param {Object} indexDefinition
    */
-  constructor(message, rawDPContract, dpObjectType, indexDefinition) {
+  constructor(message, rawDPContract, documentType, indexDefinition) {
     super(message);
 
     this.rawDPContract = rawDPContract;
-    this.dpObjectType = dpObjectType;
+    this.documentType = documentType;
     this.indexDefintion = indexDefinition;
   }
 
@@ -29,12 +29,12 @@ class AbstractIndexError extends ConsensusError {
   }
 
   /**
-   * Get DP Object type
+   * Get Document type
    *
    * @return {Object}
    */
-  getDPObjectType() {
-    return this.dpObjectType;
+  getDocumentType() {
+    return this.documentType;
   }
 
   /**

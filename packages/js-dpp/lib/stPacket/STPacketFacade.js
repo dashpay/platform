@@ -1,17 +1,17 @@
 const validateSTPacketFactory = require('./validation/validateSTPacketFactory');
 
 const validateSTPacketDPContractsFactory = require('./validation/validateSTPacketDPContractsFactory');
-const validateSTPacketDPObjectsFactory = require('./validation/validateSTPacketDPObjectsFactory');
+const validateSTPacketDocumentsFactory = require('./validation/validateSTPacketDocumentsFactory');
 
-const findDuplicatedDPObjects = require('./validation/findDuplicatedDPObjects');
-const findDuplicateDPObjectsByIndices = require('./validation/findDuplicateDPObjectsByIndices');
+const findDuplicateDocuments = require('./validation/findDuplicateDocuments');
+const findDuplicateDocumentsByIndices = require('./validation/findDuplicateDocumentsByIndices');
 const createDPContract = require('../contract/createDPContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
 const verifyDPContract = require('./verification/verifyDPContract');
-const verifyDPObjectsFactory = require('./verification/verifyDPObjectsFactory');
-const verifyDPObjectsUniquenessByIndicesFactory = require('./verification/verifyDPObjectsUniquenessByIndicesFactory');
-const fetchDPObjectsByObjectsFactory = require('./verification/fetchDPObjectsByObjectsFactory');
+const verifyDocumentsFactory = require('./verification/verifyDocumentsFactory');
+const verifyDocumentsUniquenessByIndicesFactory = require('./verification/verifyDocumentsUniquenessByIndicesFactory');
+const fetchDocumentsByDocumentsFactory = require('./verification/fetchDocumentsByDocumentsFactory');
 
 const STPacketFactory = require('./STPacketFactory');
 
@@ -29,16 +29,16 @@ class STPacketFacade {
       dpp.contract.validateDPContract,
     );
 
-    const validateSTPacketDPObjects = validateSTPacketDPObjectsFactory(
-      dpp.object.validateDPObject,
-      findDuplicatedDPObjects,
-      findDuplicateDPObjectsByIndices,
+    const validateSTPacketDocuments = validateSTPacketDocumentsFactory(
+      dpp.document.validateDocument,
+      findDuplicateDocuments,
+      findDuplicateDocumentsByIndices,
     );
 
     this.validateSTPacket = validateSTPacketFactory(
       validator,
       validateSTPacketDPContracts,
-      validateSTPacketDPObjects,
+      validateSTPacketDocuments,
     );
 
     this.factory = new STPacketFactory(
@@ -131,23 +131,23 @@ class STPacketFacade {
    * @return {verifySTPacket}
    */
   createVerifySTPacket() {
-    const fetchDPObjectsByObjects = fetchDPObjectsByObjectsFactory(
+    const fetchDocumentsByDocuments = fetchDocumentsByDocumentsFactory(
       this.dpp.getDataProvider(),
     );
 
-    const verifyDPObjectsUniquenessByIndices = verifyDPObjectsUniquenessByIndicesFactory(
-      fetchDPObjectsByObjects,
+    const verifyDocumentsUniquenessByIndices = verifyDocumentsUniquenessByIndicesFactory(
+      fetchDocumentsByDocuments,
       this.dpp.getDataProvider(),
     );
 
-    const verifyDPObjects = verifyDPObjectsFactory(
-      fetchDPObjectsByObjects,
-      verifyDPObjectsUniquenessByIndices,
+    const verifyDocuments = verifyDocumentsFactory(
+      fetchDocumentsByDocuments,
+      verifyDocumentsUniquenessByIndices,
     );
 
     return verifySTPacketFactory(
       verifyDPContract,
-      verifyDPObjects,
+      verifyDocuments,
       this.dpp.getDataProvider(),
     );
   }

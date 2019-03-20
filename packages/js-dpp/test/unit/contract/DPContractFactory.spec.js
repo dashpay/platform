@@ -39,17 +39,17 @@ describe('DPContractFactory', () => {
   });
 
   describe('create', () => {
-    it('should return new DPContract with specified name and objects definition', () => {
+    it('should return new DPContract with specified name and documents definition', () => {
       const result = factory.create(
         rawDPContract.name,
-        rawDPContract.dpObjectsDefinition,
+        rawDPContract.documents,
       );
 
       expect(result).to.equal(dpContract);
 
       expect(createDPContractMock).to.have.been.calledOnceWith({
         name: rawDPContract.name,
-        dpObjectsDefinition: rawDPContract.dpObjectsDefinition,
+        documents: rawDPContract.documents,
       });
     });
   });

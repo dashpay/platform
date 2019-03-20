@@ -8,7 +8,7 @@ const DPContract = require('./DPContract');
 function createDPContract(rawDPContract) {
   const dpContract = new DPContract(
     rawDPContract.name,
-    rawDPContract.dpObjectsDefinition,
+    rawDPContract.documents,
   );
 
   if (rawDPContract.$schema) {

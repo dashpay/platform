@@ -6,17 +6,17 @@ const calculateItemsHash = require('./calculateItemsHash');
 
 const DPContract = require('../contract/DPContract');
 
-const ContractAndObjectsNotAllowedSamePacketError = require('./errors/ContractAndObjectsNotAllowedSamePacketError');
+const ContractAndDocumentsNotAllowedSamePacketError = require('./errors/ContractAndDocumentsNotAllowedSamePacketError');
 
 class STPacket {
   /**
    * @param {string} contractId
-   * @param {DPContract|DPObject[]} [items] DP Contract or DP Objects
+   * @param {DPContract|Document[]} [items] DP Contract or Documents
    */
   constructor(contractId, items = undefined) {
     this.setDPContractId(contractId);
 
-    this.objects = [];
+    this.documents = [];
     this.contracts = [];
 
     if (items instanceof DPContract) {
@@ -24,7 +24,7 @@ class STPacket {
     }
 
     if (Array.isArray(items)) {
-      this.setDPObjects(items);
+      this.setDocuments(items);
     }
   }
 
@@ -57,7 +57,7 @@ class STPacket {
   getItemsMerkleRoot() {
     return calculateItemsMerkleRoot({
       contracts: this.contracts,
-      objects: this.objects,
+      documents: this.documents,
     });
   }
 
@@ -69,7 +69,7 @@ class STPacket {
   getItemsHash() {
     return calculateItemsHash({
       contracts: this.contracts,
-      objects: this.objects,
+      documents: this.documents,
     });
   }
 
@@ -79,8 +79,8 @@ class STPacket {
    * @param {DPContract} dpContract
    */
   setDPContract(dpContract) {
-    if (this.objects.length > 0) {
-      throw new ContractAndObjectsNotAllowedSamePacketError(this);
+    if (this.documents.length > 0) {
+      throw new ContractAndDocumentsNotAllowedSamePacketError(this);
     }
 
     this.contracts = !dpContract ? [] : [dpContract];
@@ -102,36 +102,36 @@ class STPacket {
   }
 
   /**
-   * Set DPObjects
+   * Set Documents
    *
-   * @param {DPObject[]} dpObjects
+   * @param {Document[]} documents
    */
-  setDPObjects(dpObjects) {
+  setDocuments(documents) {
     if (this.contracts.length) {
-      throw new ContractAndObjectsNotAllowedSamePacketError(this);
+      throw new ContractAndDocumentsNotAllowedSamePacketError(this);
     }
 
-    this.objects = dpObjects;
+    this.documents = documents;
 
     return this;
   }
 
   /**
-   * Get DPObjects
+   * Get Documents
    *
-   * @return {DPObject[]}
+   * @return {Document[]}
    */
-  getDPObjects() {
-    return this.objects;
+  getDocuments() {
+    return this.documents;
   }
 
   /**
-   * Add DP Object
+   * Add Document
    *
-   * @param {DPObject...} dpObjects
+   * @param {Document...} documents
    */
-  addDPObject(...dpObjects) {
-    this.objects.push(...dpObjects);
+  addDocument(...documents) {
+    this.documents.push(...documents);
 
     return this;
   }
@@ -146,10 +146,10 @@ class STPacket {
    *               $schema: string,
    *               name: string,
    *               version: number,
-   *               dpObjectsDefinition: Object<string, Object>,
+   *               documents: Object<string, Object>,
    *               [definitions]: Object<string, Object>
    *           }[],
-   *           objects: {
+   *           documents: {
    *               $type: string,
    *               $scope: string,
    *               $scopeId: string,
@@ -163,7 +163,7 @@ class STPacket {
       itemsMerkleRoot: this.getItemsMerkleRoot(),
       itemsHash: this.getItemsHash(),
       contracts: this.contracts.map(dpContract => dpContract.toJSON()),
-      objects: this.objects.map(dpObject => dpObject.toJSON()),
+      documents: this.documents.map(document => document.toJSON()),
     };
   }
 

@@ -3,17 +3,17 @@ const AbstractIndexError = require('./AbstractIndexError');
 class UndefinedIndexPropertyError extends AbstractIndexError {
   /**
    * @param {rawDPContract} rawDPContract
-   * @param {string} dpObjectType
+   * @param {string} documentType
    * @param {Object} indexDefinition
    * @param {string} propertyName
    */
-  constructor(rawDPContract, dpObjectType, indexDefinition, propertyName) {
-    const message = `Object does not have '${propertyName}' property`;
+  constructor(rawDPContract, documentType, indexDefinition, propertyName) {
+    const message = `'${propertyName}' property is not defined in the document`;
 
     super(
       message,
       rawDPContract,
-      dpObjectType,
+      documentType,
       indexDefinition,
     );
 

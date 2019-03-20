@@ -1,15 +1,15 @@
 const rewiremock = require('rewiremock/node');
 
-const InvalidDPObjectTypeError = require('../../../lib/errors/InvalidDPObjectTypeError');
+const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 
 describe('DPContract', () => {
   let hashMock;
   let encodeMock;
   let DPContract;
   let dpContractName;
-  let dpObjectType;
-  let dpObjectSchema;
-  let dpObjectsDefinition;
+  let documentType;
+  let documentSchema;
+  let documents;
   let dpContract;
 
   beforeEach(function beforeEach() {
@@ -23,28 +23,28 @@ describe('DPContract', () => {
     });
 
     dpContractName = 'LovelyContract';
-    dpObjectType = 'niceObject';
-    dpObjectSchema = {
+    documentType = 'niceDocument';
+    documentSchema = {
       properties: {
         nice: {
           type: 'boolean',
         },
       },
     };
-    dpObjectsDefinition = {
-      [dpObjectType]: dpObjectSchema,
+    documents = {
+      [documentType]: documentSchema,
     };
 
-    dpContract = new DPContract(dpContractName, dpObjectsDefinition);
+    dpContract = new DPContract(dpContractName, documents);
   });
 
   describe('constructor', () => {
     it('should create new DP Contract', () => {
-      dpContract = new DPContract(dpContractName, dpObjectsDefinition);
+      dpContract = new DPContract(dpContractName, documents);
       expect(dpContract.name).to.equal(dpContractName);
       expect(dpContract.version).to.equal(DPContract.DEFAULTS.VERSION);
       expect(dpContract.schema).to.equal(DPContract.DEFAULTS.SCHEMA);
-      expect(dpContract.dpObjectsDefinition).to.equal(dpObjectsDefinition);
+      expect(dpContract.documents).to.equal(documents);
     });
   });
 
@@ -124,99 +124,99 @@ describe('DPContract', () => {
     });
   });
 
-  describe('#setDPObjectsDefinition', () => {
-    it('should set DPObjects definition', () => {
-      const anotherDPObjectsDefinition = {
-        anotherObject: {
+  describe('#setDocuments', () => {
+    it('should set Documents definition', () => {
+      const anotherDocuments = {
+        anotherDocument: {
           properties: {
             name: { type: 'string' },
           },
         },
       };
 
-      const result = dpContract.setDPObjectsDefinition(anotherDPObjectsDefinition);
+      const result = dpContract.setDocuments(anotherDocuments);
 
       expect(result).to.equal(dpContract);
-      expect(dpContract.dpObjectsDefinition).to.equal(anotherDPObjectsDefinition);
+      expect(dpContract.documents).to.equal(anotherDocuments);
     });
   });
 
-  describe('#getDPObjectsDefinition', () => {
-    it('should return DPObjects definition', () => {
-      const result = dpContract.getDPObjectsDefinition();
+  describe('#getDocuments', () => {
+    it('should return Documents definition', () => {
+      const result = dpContract.getDocuments();
 
-      expect(result).to.equal(dpContract.dpObjectsDefinition);
+      expect(result).to.equal(dpContract.documents);
     });
   });
 
-  describe('#isDPObjectDefined', () => {
-    it('should return true if DPObject schema is defined', () => {
-      const result = dpContract.isDPObjectDefined('niceObject');
+  describe('#isDocumentDefined', () => {
+    it('should return true if Document schema is defined', () => {
+      const result = dpContract.isDocumentDefined('niceDocument');
 
       expect(result).to.equal(true);
     });
 
-    it('should return false if DPObject schema is not defined', () => {
-      const result = dpContract.isDPObjectDefined('undefinedObject');
+    it('should return false if Document schema is not defined', () => {
+      const result = dpContract.isDocumentDefined('undefinedDocument');
 
       expect(result).to.equal(false);
     });
   });
 
-  describe('#setDPObjectSchema', () => {
-    it('should set DPObject schema', () => {
-      const anotherType = 'prettyObject';
+  describe('#setDocumentSchema', () => {
+    it('should set Document schema', () => {
+      const anotherType = 'prettyDocument';
       const anotherDefinition = {
         properties: {
           name: { type: 'string' },
         },
       };
 
-      const result = dpContract.setDPObjectSchema(anotherType, anotherDefinition);
+      const result = dpContract.setDocumentSchema(anotherType, anotherDefinition);
 
       expect(result).to.equal(dpContract);
 
-      expect(dpContract.dpObjectsDefinition).to.have.property(anotherType);
-      expect(dpContract.dpObjectsDefinition[anotherType]).to.equal(anotherDefinition);
+      expect(dpContract.documents).to.have.property(anotherType);
+      expect(dpContract.documents[anotherType]).to.equal(anotherDefinition);
     });
   });
 
-  describe('#getDPObjectSchema', () => {
-    it('should throw error if DPObject is not defined', () => {
+  describe('#getDocumentSchema', () => {
+    it('should throw error if Document is not defined', () => {
       let error;
       try {
-        dpContract.getDPObjectSchema('undefinedObject');
+        dpContract.getDocumentSchema('undefinedObject');
       } catch (e) {
         error = e;
       }
 
-      expect(error).to.be.an.instanceOf(InvalidDPObjectTypeError);
+      expect(error).to.be.an.instanceOf(InvalidDocumentTypeError);
     });
 
-    it('should return DPObject Schema', () => {
-      const result = dpContract.getDPObjectSchema(dpObjectType);
+    it('should return Document Schema', () => {
+      const result = dpContract.getDocumentSchema(documentType);
 
-      expect(result).to.equal(dpObjectSchema);
+      expect(result).to.equal(documentSchema);
     });
   });
 
-  describe('#getDPObjectSchemaRef', () => {
-    it('should throw error if DPObject is not defined', () => {
+  describe('#getDocumentSchemaRef', () => {
+    it('should throw error if Document is not defined', () => {
       let error;
       try {
-        dpContract.getDPObjectSchemaRef('undefinedObject');
+        dpContract.getDocumentSchemaRef('undefinedObject');
       } catch (e) {
         error = e;
       }
 
-      expect(error).to.be.an.instanceOf(InvalidDPObjectTypeError);
+      expect(error).to.be.an.instanceOf(InvalidDocumentTypeError);
     });
 
-    it('should return schema with $ref to DPObject schema', () => {
-      const result = dpContract.getDPObjectSchemaRef(dpObjectType);
+    it('should return schema with $ref to Document schema', () => {
+      const result = dpContract.getDocumentSchemaRef(documentType);
 
       expect(result).to.deep.equal({
-        $ref: 'dp-contract#/dpObjectsDefinition/niceObject',
+        $ref: 'dp-contract#/documents/niceDocument',
       });
     });
   });
@@ -248,7 +248,7 @@ describe('DPContract', () => {
         $schema: DPContract.DEFAULTS.SCHEMA,
         name: dpContractName,
         version: DPContract.DEFAULTS.VERSION,
-        dpObjectsDefinition,
+        documents,
       });
     });
 
@@ -265,7 +265,7 @@ describe('DPContract', () => {
         $schema: DPContract.DEFAULTS.SCHEMA,
         name: dpContractName,
         version: DPContract.DEFAULTS.VERSION,
-        dpObjectsDefinition,
+        documents,
         definitions,
       });
     });
@@ -273,13 +273,13 @@ describe('DPContract', () => {
 
   describe('#serialize', () => {
     it('should return serialized DP Contract', () => {
-      const serializedDPObject = '123';
+      const serializedDocument = '123';
 
-      encodeMock.returns(serializedDPObject);
+      encodeMock.returns(serializedDocument);
 
       const result = dpContract.serialize();
 
-      expect(result).to.equal(serializedDPObject);
+      expect(result).to.equal(serializedDocument);
 
       expect(encodeMock).to.have.been.calledOnceWith(dpContract.toJSON());
     });
@@ -292,15 +292,15 @@ describe('DPContract', () => {
 
     it('should return DP Contract hash', () => {
       const serializedDPContract = '123';
-      const hashedDPObject = '456';
+      const hashedDocument = '456';
 
       DPContract.prototype.serialize.returns(serializedDPContract);
 
-      hashMock.returns(hashedDPObject);
+      hashMock.returns(hashedDocument);
 
       const result = dpContract.hash();
 
-      expect(result).to.equal(hashedDPObject);
+      expect(result).to.equal(hashedDocument);
 
       expect(DPContract.prototype.serialize).to.have.been.calledOnce();
 

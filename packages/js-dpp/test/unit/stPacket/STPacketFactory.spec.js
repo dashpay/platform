@@ -84,7 +84,7 @@ describe('STPacketFactory', () => {
   });
 
   describe('createFromObject', () => {
-    it('should return new STPacket with DP Objects', async () => {
+    it('should return new STPacket with Documents', async () => {
       // TODO: Mocks aren't working properly for this test
       // This functionality is also tested in integration/stPacket/STPacketFacade
       // hashMock.returns('14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293');
@@ -168,7 +168,7 @@ describe('STPacketFactory', () => {
 
       createDPContractMock.returns(dpContract);
 
-      stPacket.setDPObjects([]);
+      stPacket.setDocuments([]);
       stPacket.setDPContract(dpContract);
 
       rawSTPacket = stPacket.toJSON();
