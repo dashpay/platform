@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/wallet-lib",
   "version": "1.0.1",
-  "description": "Light wallet library for Dash",
+  "description": "A pure and extensible JavaScript Wallet Library for Dash",
   "main": "index.js",
   "scripts": {
     "lint": "eslint src/*",

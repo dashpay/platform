@@ -1,27 +1,17 @@
 # Wallet Library
 
 [![NPM Package](https://img.shields.io/npm/v/@dashevo/wallet-lib.svg?style=flat-square)](https://www.npmjs.org/package/@dashevo/wallet--lib)
-[![Build Status](https://img.shields.io/travis/dashevo/wallet-lib.svg?branch=master&style=flat-square)](https://travis-ci.org/dashevo/wallet-lib)
+[![Build Status](https://img.shields.io/travis/dashevo/wallet-lib.svg?branch=master&style=flat-square)](https://travis-ci.com/dashevo/wallet-lib)
 [![Coverage Status](https://img.shields.io/coveralls/dashevo/wallet-lib.svg?style=flat-square)](https://coveralls.io/github/dashevo/wallet-lib?branch=master)
 
-A pure and extensible JavaScript Wallet Library for Dash.
-
-## State
-
-Under active development. Usage for production discouraged.  
-Help from the community is also welcomed.  
- 
-Things to look up for :
-- More complex and edge cases for testing.
-- Handling of differents transactions type + DIP002
-- Storage/memory cost on a usage over multiples days.
-- Optimisation allowing to work for a faucet priv Key (with a lot of inc/out tx)
-- Ready event expectation in a unsuccessful initialization (timeout for instance)
-- Others TODOs and FIXMEs in the code :)
+> A pure and extensible JavaScript Wallet Library for Dash
 
 ## Table of Contents
 
+- [State](#state)
 - [Principles](#principles)
+- [Install](#install)
+- [Usage](#usage)
 - [Getting Started](#getting-started)
   - [Some rules of thumb](#some-rules-of-thumb)
 - [Creating a Wallet](#creating-a-wallet)
@@ -37,23 +27,38 @@ Things to look up for :
     - [Workers](#workers)
 - [Examples](#examples)
 - [Road map](#road-map)
-- [License](#license)
 - [Credits](#credits)
+- [License](#license)
 
+## State
+
+Under active development. Usage for production discouraged. Help from the community is also welcomed.
+
+Things to look up for :
+- More complex and edge cases for testing.
+- Handling of differents transactions type + DIP002
+- Storage/memory cost on a usage over multiples days.
+- Optimisation allowing to work for a faucet priv Key (with a lot of inc/out tx)
+- Ready event expectation in a unsuccessful initialization (timeout for instance)
+- Others TODOs and FIXMEs in the code :)
 
 ## Principles
 
-Dash is a powerful new peer-to-peer platform for the next generation of financial technology.  
-The decentralized nature of the Dash network allows for highly resilient Dash infrastructure,  
-and the developer community needs reliable, open-source tools to implement Dash apps and services.    
+Dash is a powerful new peer-to-peer platform for the next generation of financial technology. The decentralized nature of the Dash network allows for highly resilient Dash infrastructure, and the developer community needs reliable, open-source tools to implement Dash apps and services.
 
-## Getting Started
+## Install
 
-In order to use this library, you will need to add it to your project as a dependency.  
+```sh
+npm install @dashevo/wallet-lib
+```
 
-Having [NodeJS](https://nodejs.org/) installed, just type : `npm install @dashevo/wallet-lib` in your terminal.  
+In order to use this library, you will need to add it to your project as a dependency.
 
-In your file, where you want to execute it : 
+Having [NodeJS](https://nodejs.org/) installed, just type : `npm install @dashevo/wallet-lib` in your terminal.
+
+## Usage
+
+In your file, where you want to execute it :
 
 ```
 const { Wallet } = require('@dashevo/wallet-lib');
@@ -64,8 +69,8 @@ const account = wallet.getAccount();
 // Do something with account.
 ```
 
-Wallet will by default connects to DAPI and use either localforage (browser based device) or a InMem adapter.  
-Account will by default be on expected BIP44 path (...0/0).  
+Wallet will by default connects to DAPI and use either localforage (browser based device) or a InMem adapter.
+Account will by default be on expected BIP44 path (...0/0).
 
 It is suggested to wait for the ready event thrown by the account to ensure every is ready to be used (in sync with plugin loaded)
 
@@ -83,15 +88,15 @@ account.events.on(EVENTS.READY, start);
 
 ## Some rules of thumb
 
-- There is multiple event listeners(socker sync,...), running intervals (service worker,...),  
-therefore a good way to quit an instance would be to call `account.disconnect()` which will care to  
-call `clearWorker(), closeSocket()` of the differents elements. You can still decide to remove them by hand if you want.  
-- Some classic examples of usage can be seen here : [Examples](/docs/examples.md)  
+- There is multiple event listeners(socker sync,...), running intervals (service worker,...),
+therefore a good way to quit an instance would be to call `account.disconnect()` which will care to
+call `clearWorker(), closeSocket()` of the differents elements. You can still decide to remove them by hand if you want.
+- Some classic examples of usage can be seen here : [Examples](/docs/examples.md)
 
 ## Creating a Wallet
 
 
-The goal of this library is to offer you all the helpers that you will need to handle a Wallet and it's logic.  
+The goal of this library is to offer you all the helpers that you will need to handle a Wallet and it's logic.
 Therefore, the only real object you want to instantiate will be a wallet object.
 
 ```
@@ -99,13 +104,13 @@ const { Wallet } = require('@dashevo/wallet-lib');
 const wallet = new Wallet()
 ```
 
-With no parameters passed as we did in the above sample, the Wallet Library will use it's defaults option,  
-in our case it mean not working with any transport layer (therefore not having the knowledge of the blockchain)  
-and only deal with address derivation, the cache options would allow to create transaction rawtx  
-(for cold-wallet/computer who does not want to connect to the network but just would love to generate some data (getUnunsedAddress),  
-and because of the absence of any mnemonic or seed, it will generate one for the user.  
+With no parameters passed as we did in the above sample, the Wallet Library will use it's defaults option,
+in our case it mean not working with any transport layer (therefore not having the knowledge of the blockchain)
+and only deal with address derivation, the cache options would allow to create transaction rawtx
+(for cold-wallet/computer who does not want to connect to the network but just would love to generate some data (getUnunsedAddress),
+and because of the absence of any mnemonic or seed, it will generate one for the user.
 
-Most of the time, here is what configuration you will be using :  
+Most of the time, here is what configuration you will be using :
 
 ```
 const { Wallet } = require('@dashevo/wallet-lib');
@@ -127,12 +132,12 @@ const opts = {
 const Wallet = new Wallet(opts);
 ```
 
-For more informations about the differents methods and options of the Wallet class, look at the [Wallet documentation](/docs/wallet.md).  
-There is several interval running in the app (as service worker), the `disconnect()` method allow to cut them off gracefully before closing.  
+For more informations about the differents methods and options of the Wallet class, look at the [Wallet documentation](/docs/wallet.md).
+There is several interval running in the app (as service worker), the `disconnect()` method allow to cut them off gracefully before closing.
 
 ## Creating an Account
 
-The Wallet object can generate multiple account for you, theses accounts follow the BIP44 account derivation.  
+The Wallet object can generate multiple account for you, theses accounts follow the BIP44 account derivation.
 
 ```
 const opts = {
@@ -141,13 +146,13 @@ const opts = {
 const account = wallet.createAccount(opts);
 ```
 
-You also can specify a label for this account, and an accountIndex if you have the wish.  
-Knowing the accountIndex (by default it will be an ordering increment)  
+You also can specify a label for this account, and an accountIndex if you have the wish.
+Knowing the accountIndex (by default it will be an ordering increment)
 
 ## Working with an Account
 
-When you create an account, depending on the options passed along to Wallet and the Account,  
-the Wallet-library might do several things in the background (prefetch, synchronize, validate,...).  
+When you create an account, depending on the options passed along to Wallet and the Account,
+the Wallet-library might do several things in the background (prefetch, synchronize, validate,...).
 
 Therefore you will want to listen to the `ready` event before starting anything.
 
@@ -221,10 +226,10 @@ Miscellaneous :
 - [ ] Account network and plugins independants from each other.
 
 
-## Plugins 
+## Plugins
 
 ##### DAP
-- [DashPay DAP](https://github.com/dashevo/dashpay-dap) : 
+- [DashPay DAP](https://github.com/dashevo/dashpay-dap) :
 
 ##### Transports :
 
@@ -262,12 +267,11 @@ Miscellaneous :
 
 You can see here, some [Examples](/docs/examples.md).
 
-## License
-
-Wallet-lib is made available under the [MIT License](LICENSE)
-
 ## Credits
 
 Wallet-Lib is maintained by the Dash Core Developers.
 We want to thanks all member of the community that have submited suggestions, issues and pull requests.
 
+## License
+
+[MIT](LICENSE) &copy; Dash Core Group, Inc.
