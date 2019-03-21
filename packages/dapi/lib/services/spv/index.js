@@ -1,6 +1,6 @@
 // temporary implementation (will likely not use p2p in future)
 const p2p = require('@dashevo/dashcore-p2p');
-const hash = require('object-hash');
+const hash = require('../../utils/jsonHash');
 const log = require('../../log');
 const Cache = require('../caching/spvSimpleCache');
 const config = require('../../config');

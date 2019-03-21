@@ -5,8 +5,9 @@
 
 const union = require('lodash/union');
 const EventEmitter = require('events');
-const dashcore = require('../api/dashcore').rpc;
-const log = require('../log');
+
+let dashcoreRpcClient;
+let logger;
 
 let usernameCache = [];
 const userCache = {};
@@ -17,14 +18,13 @@ let isUpdating = false;
 const events = new EventEmitter();
 
 async function processBlock(blockHeight) {
-  const blockHash = await dashcore.getBlockHash(blockHeight);
-  const block = await dashcore.getBlock(blockHash);
+  const blockHash = await dashcoreRpcClient.getBlockHash(blockHeight);
+  const block = await dashcoreRpcClient.getBlock(blockHash);
   let nextBlockExists = false;
   if (block) {
-    log.info(`Processing block ${block.height}`);
     nextBlockExists = !!block.nextblockhash;
     const transactionHashes = block.tx;
-    let users = await Promise.all(transactionHashes.map(transactionHash => dashcore
+    let users = await Promise.all(transactionHashes.map(transactionHash => dashcoreRpcClient
       .getUser(transactionHash)
       .catch(() => null)));
     users = users.filter(user => !!user && !!user.uname);
@@ -32,25 +32,12 @@ async function processBlock(blockHeight) {
 
     // Updating full user index
     users.forEach((user) => {
-      /*
-      { uname: 'dmau6',
-      regtxid: '3323acb1245133c63435155a8941e4a12f973358d170a4162793fec138a9b466',
-      pubkeyid: 'd7d295e04202cc652d845cc51762dc64a5fd2bdc',
-      credits: 1000000,
-      data: '0000000000000000000000000000000000000000000000000000000000000000',
-      state: 'open',
-      subtx:
-       [ '3323acb1245133c63435155a8941e4a12f973358d170a4162793fec138a9b466' ],
-      transitions: [] }
-       */
       userCache[user.regtxid] = user;
     });
 
     if (usernamesInBlock.length) {
       usernameCache = union(usernameCache, usernamesInBlock);
-      log.info(`${usernamesInBlock.length} usernames added to cache: ${usernamesInBlock.join(', ')}`);
-    } else {
-      log.info('No usernames found.');
+      logger.debug(`${usernamesInBlock.length} usernames added to cache: ${usernamesInBlock.join(', ')}`);
     }
   }
   events.emit('block_processed', nextBlockExists);
@@ -58,11 +45,11 @@ async function processBlock(blockHeight) {
 
 function updateUsernameIndex() {
   if (isUpdating) {
-    log.info('Can\'t start updating index until previous update is finished');
+    logger.info('Can\'t start updating index until previous update is finished');
     return Promise.resolve();
   }
   isUpdating = true;
-  log.info('Updating username index...');
+  logger.info('Updating username index');
   return new Promise((resolve, reject) => {
     function blockHandler(isNextBlockExists) {
       if (isNextBlockExists) {
@@ -70,7 +57,7 @@ function updateUsernameIndex() {
         processBlock(lastSeenBlock).catch(reject);
       } else {
         isUpdating = false;
-        log.info('Update finished.');
+        logger.info('Username index updated');
         events.removeListener('block_processed', blockHandler);
         resolve();
       }
@@ -81,7 +68,6 @@ function updateUsernameIndex() {
 }
 
 async function searchUsernames(pattern) {
-  // await updateUsernameIndex();
   return usernameCache.filter(username => !!username.match(pattern));
 }
 
@@ -89,23 +75,28 @@ function getUserById(userId) {
   return userCache[userId];
 }
 
-function subscribeToZmq(zmqClient) {
-  zmqClient.on(zmqClient.topics.hashblock, () => {
-    try {
-      updateUsernameIndex().catch((e) => {
-        isUpdating = false;
-        log.warn('Update finished with an error:');
-        log.error(e);
-      });
-    } catch (e) {
-      log.error(e);
-    }
-  });
+function safeUpdateUsernameIndex() {
+  try {
+    updateUsernameIndex().catch((e) => {
+      isUpdating = false;
+      logger.warn('User index update finished with an error:');
+      logger.error(e);
+    });
+  } catch (e) {
+    logger.error(e);
+  }
+}
+
+function start({ dashCoreRpcClient: rpcClient, dashCoreZmqClient, log }) {
+  dashcoreRpcClient = rpcClient;
+  logger = log;
+  safeUpdateUsernameIndex();
+  dashCoreZmqClient.on(dashCoreZmqClient.topics.hashblock, safeUpdateUsernameIndex);
 }
 
 module.exports = {
   searchUsernames,
   getUserById,
-  subscribeToZmq,
+  start,
   updateUsernameIndex,
 };

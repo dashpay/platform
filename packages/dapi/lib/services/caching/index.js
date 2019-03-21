@@ -2,11 +2,9 @@
 /* eslint-disable */
 const nodeCache = require('node-cache');
 
-const myCache = new nodeCache();
+const cache = new nodeCache();
 const ttl = 60 * 60 * 600; // 1 hour
 const listUtils = require('../../utils/listUtils');
-const qDash = require('@dashevo/quorums');
-const lastMnListKey = null;
 
 class CacheContoller {
   constructor() {
@@ -14,12 +12,12 @@ class CacheContoller {
   }
 
   set(key, value) {
-    myCache.set(key, value, ttl);
+    cache.set(key, value, ttl);
   }
 
   get(key) {
     return new Promise(((resolve, reject) => {
-      myCache.get(key, (err, res) => {
+      cache.get(key, (err, res) => {
         if (!err) {
           resolve(res);
         } else {

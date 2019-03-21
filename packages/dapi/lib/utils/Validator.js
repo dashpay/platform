@@ -1,4 +1,5 @@
 const Ajv = require('ajv');
+const ArgumentsValidationError = require('../errors/ArgumentsValidationError');
 
 class Validator {
   constructor(schema) {
@@ -7,7 +8,7 @@ class Validator {
 
   validate(args) {
     if (!this.validateArguments(args)) {
-      throw new Error(`params${this.validateArguments.errors[0].dataPath} ${this.validateArguments.errors[0].message}`);
+      throw new ArgumentsValidationError(`params${this.validateArguments.errors[0].dataPath} ${this.validateArguments.errors[0].message}`);
     }
   }
 }
