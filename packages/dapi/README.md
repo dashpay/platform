@@ -1,6 +1,6 @@
 # DAPI
 
-[![Build Status](https://travis-ci.com/dashevo/dapi.svg?token=Pzix7aqnMuGS9c6BmBz2&branch=master)](https://travis-ci.org/dashevo/dapi)
+[![Build Status](https://travis-ci.com/dashevo/dapi.svg?branch=master)](https://travis-ci.com/dashevo/dapi)
 [![NPM version](https://img.shields.io/npm/v/@dashevo/dapi.svg)](https://npmjs.org/package/@dashevo/dapi)
 [![API stability](https://img.shields.io/badge/stability-stable-green.svg)](https://nodejs.org/api/documentation.html#documentation_stability_index)
 
@@ -28,11 +28,11 @@ npm install
 
 DAPI targets the latest LTS release of Node.js. Currently, this is Node v10.13.
 
-DAPI requires [Insight-API](https://github.com/dashevo/insight-api) and the latest version of [dashcore](https://github.com/dashevo/dash/tree/evo) with evolution features.
+DAPI requires [Insight-API](https://github.com/dashevo/insight-api) and the latest version of [dashcore](https://github.com/dashevo/dash/tree/evo) with evolution features (special branch repo).
 
-1. **Install core.** You can use the docker image (`103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/dashcore:evo`) or clone code from [the repository](https://github.com/dashevo/dash/tree/evo), switch to the `evo` branch, and build it by yourself. Note: you need to build image with ZMQ and wallet support. You can follow the build instructions located [here](https://github.com/dashevo/dash/tree/evo/doc)
+1. **Install core.** You can use the docker image (`dashcore:evo`) or clone code from [the repository](https://github.com/dashevo/dash/tree/evo), switch to the `evo` branch, and build it by yourself. Note: you need to build image with ZMQ and wallet support. You can follow the build instructions located [here](https://github.com/dashevo/dash/tree/evo/doc)
 2. **Configure core.** DAPI needs dashcore's ZMQ interface to be exposed and all indexes enabled. You can find the example config for dashcore [here](/doc/dependencies_configs/dash.conf). To start dashcore process with this config, copy it somewhere to your system, and then run `./src/dashd -conf=/path/to/your/config`.
-3. **Install Insight-API.** You can use docker image (`103738324493.dkr.ecr.us-west-2.amazonaws.com/dashevo/evoinsight:latest`) or install it manually.
+3. **Install Insight-API.** You can use docker image (`evoinsight:latest`) or install it manually.
     1. To install it manually, clone the [dashcore-node repo](https://github.com/dashevo/dashcore-node). `cd` to that repo, run `npm i`
     2. Copy [config file](/doc/dependencies_configs/dashcore-node.json) to the repo directory
     3. Install Insight-API service. Run `./bin/dashcore-node install https://github.com/dashevo/insight-api/` from the repo directory

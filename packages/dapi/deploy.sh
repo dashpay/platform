@@ -1,17 +1,22 @@
 #! /bin/bash
 
+# ensure REPO_URL is set externally (e.g. via CI/CD)
+if [ "x$REPO_URL" = "x" ]; then
+  echo "error: REPO_URL is required to be set"
+  exit 1
+fi
+
 echo "Docker deploy started"
 # 0. authenticate your Docker client to your registry:
 eval $(~/.local/bin/aws ecr get-login --no-include-email)
 
 # 0.5. set the current version:
 VERSION=$(node -p "require('./package.json').version")
-REPO_URL="103738324493.dkr.ecr.us-west-2.amazonaws.com"
 IMAGE_NAME="dashevo/dapi"
 
 echo "Building docker image"
 # 1. build image:
-docker build -t "${IMAGE_NAME}:latest" -t "${IMAGE_NAME}:${VERSION}" --build-arg npm_token=$NPM_TOKEN  .
+docker build -t "${IMAGE_NAME}:latest" -t "${IMAGE_NAME}:${VERSION}" .
 echo "Image built"
 
 echo "Adding tags"

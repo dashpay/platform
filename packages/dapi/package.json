@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "version": "0.3.2",
-  "description": "Dash Decentralized API (DAPI)",
+  "description": "A Decentralized API for Dash Masternodes",
   "scripts": {
     "start": "node lib/app.js",
     "test": "nyc --check-coverage --lines=51 --branches=27 --functions=50 mocha --recursive test/unit",
@@ -60,7 +60,7 @@
     "url": "git+https://github.com/dashevo/dapi.git"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/dashevo/dapi/issues"
   },
