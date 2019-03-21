@@ -24,7 +24,7 @@ const masternodesThatReturnNull = {
       "confirmedHash": "000000237725f8fe7d78153ae9c11193ee0cda18f8b48141acff8e1ac713da5b",
       "service": "173.61.30.231:19013",
       "pubKeyOperator": "8700add55a28ef22ec042a2f28e25fb4ef04b3024a7c56ad7eed4aebc736f312d18f355370dfb6a5fec9258f464b227e",
-      "keyIDVoting": "fdb28c60e521e58cc8c5bd6582966eb654aa1e4d",
+      "votingAddress": "yTMDce5yEpiPqmgPrPmTj7yAmQPJERUSVy",
       "isValid": true
     }
   ],
@@ -106,16 +106,16 @@ describe('MNListProvider', async () => {
       expect(MNListItem.confirmedHash).to.be.a('string');
       expect(MNListItem.service).to.be.a('string');
       expect(MNListItem.pubKeyOperator).to.be.a('string');
-      expect(MNListItem.keyIDVoting).to.be.a('string');
+      expect(MNListItem.votingAddress).to.be.a('string');
       expect(MNListItem.isValid).to.be.a('boolean');
 
-      expect(mnListProvider.masternodeList.length).to.equal(114);
+      expect(mnListProvider.masternodeList.length).to.equal(95);
     });
     it('Should update MNList if needed and return updated list', async () => {
       const mnListProvider = new MNListProvider();
       let MNList = await mnListProvider.getMNList();
       expect(mnListProvider.lastUpdateDate).be.closeTo(Date.now(), 10000);
-      expect(mnListProvider.masternodeList.length).to.equal(114);
+      expect(mnListProvider.masternodeList.length).to.equal(95);
       let MNListItem = MNList[0];
       const smnList = new SimplifiedMNList(SMNListFixture.getFirstDiff());
       const SMNListFixtureItem = smnList.getValidMasternodesList()[0];
@@ -123,10 +123,11 @@ describe('MNListProvider', async () => {
 
       // Set time, so update MNList is required
       mnListProvider.lastUpdateDate -= config.MNListUpdateInterval * 2;
+      RPCClient.request.returns(SMNListFixture.getSecondDiff());
 
       MNList = await mnListProvider.getMNList();
       expect(mnListProvider.lastUpdateDate).be.closeTo(Date.now(), 10000);
-      expect(mnListProvider.masternodeList.length).to.equal(107);
+      expect(mnListProvider.masternodeList.length).to.equal(114);
       expect(MNList).to.be.an('array');
       MNListItem = MNList[0];
       smnList.applyDiff(SMNListFixture.getSecondDiff());
@@ -141,7 +142,7 @@ describe('MNListProvider', async () => {
       const networkCallCount = RPCClient.request.callCount;
 
       expect(mnListProvider.lastUpdateDate).be.closeTo(Date.now(), 10000);
-      expect(mnListProvider.masternodeList.length).to.equal(114);
+      expect(mnListProvider.masternodeList.length).to.equal(95);
       const smnList = new SimplifiedMNList(SMNListFixture.getFirstDiff());
       const SMNListFixtureItem = smnList.getValidMasternodesList()[0];
       expect(MNListItem.service).to.be.equal(SMNListFixtureItem.service);
@@ -153,7 +154,7 @@ describe('MNListProvider', async () => {
       MNListItem = MNList[0];
 
       expect(mnListProvider.lastUpdateDate).be.equal(updateDate);
-      expect(mnListProvider.masternodeList.length).to.equal(114);
+      expect(mnListProvider.masternodeList.length).to.equal(95);
       expect(MNListItem.service).to.be.equal(SMNListFixtureItem.service);
       expect(RPCClient.request.callCount).to.be.equal(networkCallCount);
     });
@@ -205,7 +206,6 @@ describe('MNListProvider', async () => {
       expect(MNList.length).to.equal(1);
 
       RPCClient.request
-        .withArgs({ host: '173.61.30.231', port: 19013 }, 'getBestBlockHash', {})
         .returns(new Promise((resolve) => {
           resolve(null);
         }));

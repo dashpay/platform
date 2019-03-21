@@ -38,8 +38,11 @@ class DAPIClient {
   async makeRequest(method, params) {
     this.makeRequest.callCount += 1;
     const randomMasternode = await this.MNDiscovery.getRandomMasternode();
+    if (!randomMasternode) {
+      throw new Error("Can't connect to DAPI: Masternode list is empty! Please try again later");
+    }
     return rpcClient.request({
-      host: randomMasternode.ip,
+      host: randomMasternode.service.split(':')[0],
       port: this.DAPIPort,
     }, method, params, { timeout: this.timeout });
   }

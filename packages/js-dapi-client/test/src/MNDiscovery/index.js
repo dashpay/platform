@@ -60,7 +60,7 @@ describe('MNDiscovery', async () => {
                 expect(MNListItem.service).to.be.equal(validNodes[i].service);
                 expect(MNListItem.proRegTxHash).to.be.a('string');
                 expect(MNListItem.confirmedHash).to.be.a('string');
-                expect(MNListItem.keyIDVoting).to.be.a('string');
+                expect(MNListItem.votingAddress).to.be.a('string');
                 expect(MNListItem.pubKeyOperator).to.be.a('string');
                 expect(MNListItem.isValid).to.be.a('boolean');
                 expect(discovery.masternodeListProvider.getMNList.callCount).to.equal(1);
@@ -98,7 +98,7 @@ describe('MNDiscovery', async () => {
                     expect(masternodeIps).to.contain(randomMasternode.service.split(':')[0]);
                     expect(randomMasternode.proRegTxHash).to.be.a('string');
                     expect(randomMasternode.confirmedHash).to.be.a('string');
-                    expect(randomMasternode.keyIDVoting).to.be.a('string');
+                    expect(randomMasternode.votingAddress).to.be.a('string');
                     expect(randomMasternode.pubKeyOperator).to.be.a('string');
                     expect(randomMasternode.service).to.be.a('string');
                     expect(randomMasternode.isValid).to.be.a('boolean');

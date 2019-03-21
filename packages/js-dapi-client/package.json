@@ -1,11 +1,11 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Client SDK for DASH DAPI.",
   "main": "index.js",
   "dependencies": {
     "@babel/polyfill": "^7.2.5",
-    "@dashevo/dashcore-lib": "^0.16.8",
+    "@dashevo/dashcore-lib": "^0.17.0",
     "@dashevo/quorums": "^1.0.2",
     "axios": "^0.18.0",
     "lodash": "^4.17.11",
@@ -28,7 +28,7 @@
     "eslint-plugin-react": "^7.12.3",
     "graceful-fs": "^4.1.15",
     "istanbul": "^0.4.5",
-    "karma": "^3.1.4",
+    "karma": "^4.0.1",
     "karma-chai": "^0.1.0",
     "karma-chrome-launcher": "^2.2.0",
     "karma-firefox-launcher": "^1.1.0",

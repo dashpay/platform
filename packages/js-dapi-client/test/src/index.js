@@ -290,8 +290,8 @@ const validUsername = 'Alice';
 const notExistingUsername = 'Bob';
 const invalidUsername = '1.2';
 
-const validBlockHash = '0000000005b3f97e0af8c72f9a96eca720237e374ca860938ba0d7a68471c4d6';
-const validBaseBlockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
+const validBlockHash = '000000000b0339e07bce8b3186a6a57a3c45d10e16c4bce18ef81b667bc822b2';
+const validBaseBlockHash = '0000047d24635e347be3aaaeb66c26be94901a2f962feccd4f95090191f208c1';
 
 const validBlockHeader =
   {
