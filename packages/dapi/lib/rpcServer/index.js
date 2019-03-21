@@ -46,7 +46,7 @@ const getQuorum = require('./commands/getQuorum');
 
 const createCommands = (insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => ({
   estimateFee: estimateFee(insightAPI),
-  getAddressSummary: getAddressSummary(insightAPI),
+  getAddressSummary: getAddressSummary(insightAPI({ maxTransactionHistory: 1000 })),
   getAddressTotalReceived: getAddressTotalReceived(insightAPI),
   getAddressTotalSent: getAddressTotalSent(insightAPI),
   getAddressUnconfirmedBalance: getAddressUnconfirmedBalance(insightAPI),

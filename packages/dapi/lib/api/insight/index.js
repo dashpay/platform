@@ -47,7 +47,11 @@ const getUTXO = async (address, from, to, fromHeight, toHeight) => {
   return res;
 };
 
-const getBalance = async address => get(`/addr/${address}/balance`);
+const getBalance = async (address) => {
+  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/balance`) : await get(`/addr/${address}/balance`);
+  return res;
+};
+
 const getUser = async usernameOrRegTx => get(`/getuser/${usernameOrRegTx}`);
 const getMasternodesList = async () => get('/masternodes/list');
 
@@ -62,7 +66,7 @@ const getBlockHash = async (blockHeight) => {
 };
 
 const getAddressTotalReceived = async (address) => {
-  const res = await get(`/addr/${address}/totalReceived`);
+  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/totalReceived`) : await get(`/addr/${address}/totalReceived`);
   return res;
 };
 
@@ -81,17 +85,17 @@ const getBlocks = async (blockDate, limit) => {
 };
 
 const getAddressTotalSent = async (address) => {
-  const res = await get(`/addr/${address}/totalSent`);
+  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/totalSent`) : await get(`/addr/${address}/totalSent`);
   return res;
 };
 
 const getAddressUnconfirmedBalance = async (address) => {
-  const res = await get(`/addr/${address}/unconfirmedBalance`);
+  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/unconfirmedBalance`) : await get(`/addr/${address}/unconfirmedBalance`);
   return res;
 };
 
-const getAddressSummary = async (address) => {
-  const res = await get(`/addr/${address}`);
+const getAddressSummary = async (address, noTxList = false, from, to, fromHeight, toHeight) => {
+  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`) : await get(`/addr/${address}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
   return res;
 };
 

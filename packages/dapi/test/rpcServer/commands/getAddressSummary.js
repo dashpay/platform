@@ -43,7 +43,7 @@ describe('getAddressSummary', () => {
     expect(spy.callCount).to.be.equal(0);
     await expect(getAddressSummary({})).to.be.rejectedWith('should have required property \'address\'');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getAddressSummary({ address: 1 })).to.be.rejectedWith('address should be string');
+    await expect(getAddressSummary({ address: 1 })).to.be.rejectedWith('params.address should be array,string');
     expect(spy.callCount).to.be.equal(0);
   });
 });

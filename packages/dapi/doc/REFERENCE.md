@@ -145,9 +145,14 @@ Returns an address summary given an address.
 
 ##### Params
 
-| name          | type   | description                            |
-|---------------|--------|----------------------------------------|
-| args.address  | string | Address                                |
+| name            | type                   | description                            |
+|-----------------|------------------------|----------------------------------------|
+| args.address    | string or string array | address or multiple addresses          |
+| args.noTxList   | boolean                | set true if no list txs needed (opt.)  |
+| args.from       | number                 | start of range (opt.)                  |
+| args.to         | number                 | end of range (opt.)                    |
+| args.fromHeight | number                 | which height to start from (opt.)      |
+| args.toHeight   | number                 | which height to end (opt.)             |
 
 ##### Response
 
@@ -163,9 +168,9 @@ Returns total amount of duffs received by an address.
 
 ##### Params
 
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| args.address | string | Address                                |
+| name            | type                   | description                     |
+|-----------------|------------------------|---------------------------------|
+| args.address    | string or string array | address or multiple addresses   |
 
 ##### Response
 
@@ -181,9 +186,9 @@ Returns total amount of duffs sent by an address.
 
 ##### Params
 
-| name          | type   | description                            |
-|---------------|--------|----------------------------------------|
-| args.address  | string | Address                                |
+| name            | type                   | description                     |
+|-----------------|------------------------|---------------------------------|
+| args.address    | string or string array | address or multiple addresses   |
 
 ##### Response
 
@@ -199,9 +204,9 @@ Returns total unconfirmed balance for a given address.
 
 ##### Params
 
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| args.address | string | Address                                |
+| name            | type                   | description                     |
+|-----------------|------------------------|---------------------------------|
+| args.address    | string or string array | address or multiple addresses   |
 
 ##### Response
 
@@ -217,9 +222,9 @@ Returns calculated balance for an address.
 
 ##### Params
 
-| name          | type   | description                            |
-|---------------|--------|----------------------------------------|
-| args.address  | string | ST Packet object serialized using CBOR |
+| name            | type                   | description                     |
+|-----------------|------------------------|---------------------------------|
+| args.address    | string or string array | address or multiple addresses   |
 
 ##### Response
 
@@ -447,9 +452,13 @@ Returns all transactions for a given address.
 
 ##### Params
 
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| args.address | string | address                                |
+| name            | type                   | description                        |
+|-----------------|------------------------|------------------------------------|
+| args.address    | string or string array | address or multiple addresses      |
+| args.from       | number                 | start of range (opt.)              |
+| args.to         | number                 | end of range (opt.)                |
+| args.fromHeight | number                 | which height to start from (opt.)  |
+| args.toHeight   | number                 | which height to end (opt.)         |
 
 ##### Response
 
@@ -465,15 +474,19 @@ Returns unspent transaction outputs for a given address.
 
 ##### Params
 
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| args.address | string | address                                |
+| name            | type                   | description                        |
+|-----------------|------------------------|------------------------------------|
+| args.address    | string or string array | address or multiple addresses      |
+| args.from       | number                 | start of range (opt.)              |
+| args.to         | number                 | end of range (opt.)                |
+| args.fromHeight | number                 | which height to start from (opt.)  |
+| args.toHeight   | number                 | which height to end (opt.)         |
 
 ##### Response
 
 | name    | type                | description                                               |
-|---------|---------------------|----------------------------------------------|
-| utxo    | promise (obj array) | an array containing unspent transaction objs |
+|---------|---------------------|-----------------------------------------------|
+| utxo    | promise (obj array) | an array containing unspent transaction objs  |
 
 ---
 

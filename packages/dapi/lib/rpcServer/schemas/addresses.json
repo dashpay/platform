@@ -4,6 +4,9 @@
     "address": {
       "type": ["array", "string"]
     },
+    "noTxList": {
+      "type": ["boolean"]
+    },
     "from": {
       "type": ["integer"],
       "minimum": 0
