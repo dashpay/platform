@@ -6,7 +6,6 @@ const UnconfirmedUserError = require('../../errors/UnconfirmedUserError');
 const UserNotFoundError = require('../../errors/UserNotFoundError');
 const InvalidTransactionTypeError = require('../../errors/InvalidTransactionTypeError');
 const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
-const ContractNotPresentError = require('../../errors/ContractNotPresentError');
 
 /**
  * @param {verifyContract} verifyContract
@@ -55,21 +54,13 @@ function verifySTPacketFactory(verifyContract, verifyDocuments, dataProvider) {
 
     const contract = await dataProvider.fetchContract(stPacket.getContractId());
 
-    if (!contract) {
-      result.addError(
-        new ContractNotPresentError(stPacket.getContractId()),
-      );
-
-      return result;
-    }
-
     if (stPacket.getContract()) {
       result.merge(
         await verifyContract(stPacket, contract),
       );
     }
 
-    if (stPacket.getDocuments().length) {
+    if (stPacket.getDocuments().length > 0) {
       result.merge(
         await verifyDocuments(stPacket, userId, contract),
       );

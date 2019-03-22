@@ -17,7 +17,6 @@ const UserNotFoundError = require('../../../../lib/errors/UserNotFoundError');
 const UnconfirmedUserError = require('../../../../lib/errors/UnconfirmedUserError');
 const InvalidSTPacketHashError = require('../../../../lib/errors/InvalidSTPacketHashError');
 const InvalidTransactionTypeError = require('../../../../lib/errors/InvalidTransactionTypeError');
-const ContractNotPresentError = require('../../../../lib/errors/ContractNotPresentError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe('verifySTPacketFactory', () => {
@@ -132,22 +131,6 @@ describe('verifySTPacketFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.getRegistrationTransaction()).to.equal(transaction);
-  });
-
-  it('should return invalid result if Contract specified in ST Packet is not found', async () => {
-    dataProviderMock.fetchContract.resolves(undefined);
-
-    const result = await verifySTPacket(stPacket, stateTransition);
-
-    expectValidationError(result, ContractNotPresentError);
-
-    expect(dataProviderMock.fetchContract).to.have.been.calledOnceWith(
-      stPacket.getContractId(),
-    );
-
-    const [error] = result.getErrors();
-
-    expect(error.getContractId()).to.equal(stPacket.getContractId());
   });
 
   it('should return invalid result if Contract is not valid', async () => {

@@ -8,6 +8,7 @@ const DocumentAlreadyPresentError = require('../../errors/DocumentAlreadyPresent
 const DocumentNotFoundError = require('../../errors/DocumentNotFoundError');
 const InvalidDocumentRevisionError = require('../../errors/InvalidDocumentRevisionError');
 const InvalidDocumentScopeError = require('../../errors/InvalidDocumentScopeError');
+const ContractNotPresentError = require('../../errors/ContractNotPresentError');
 
 const hash = require('../../util/hash');
 
@@ -26,6 +27,14 @@ function verifyDocumentsFactory(fetchDocumentsByDocuments, verifyDocumentsUnique
    */
   async function verifyDocuments(stPacket, userId, contract) {
     const result = new ValidationResult();
+
+    if (!contract) {
+      result.addError(
+        new ContractNotPresentError(stPacket.getContractId()),
+      );
+
+      return result;
+    }
 
     const fetchedDocuments = await fetchDocumentsByDocuments(
       stPacket.getContractId(),

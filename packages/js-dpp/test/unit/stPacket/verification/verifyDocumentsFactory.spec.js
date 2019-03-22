@@ -15,6 +15,7 @@ const DocumentAlreadyPresentError = require('../../../../lib/errors/DocumentAlre
 const DocumentNotFoundError = require('../../../../lib/errors/DocumentNotFoundError');
 const InvalidDocumentRevisionError = require('../../../../lib/errors/InvalidDocumentRevisionError');
 const InvalidDocumentActionError = require('../../../../lib/stPacket/errors/InvalidDocumentActionError');
+const ContractNotPresentError = require('../../../../lib/errors/ContractNotPresentError');
 
 describe('verifyDocuments', () => {
   let verifyDocuments;
@@ -43,6 +44,20 @@ describe('verifyDocuments', () => {
       fetchDocumentsByDocumentsMock,
       verifyDocumentsUniquenessByIndices,
     );
+  });
+
+  it('should return invalid result if DP Contract is not present', async () => {
+    contract = undefined;
+
+    const result = await verifyDocuments(stPacket, userId, contract);
+
+    expectValidationError(result, ContractNotPresentError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getContractId()).to.equal(stPacket.getContractId());
+
+    expect(fetchDocumentsByDocumentsMock).to.have.not.been.called();
   });
 
   it('should return invalid result if Document has wrong scope', async () => {
