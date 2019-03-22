@@ -10,6 +10,7 @@ node_js:
 branches:
   only:
     - master
+    - /v\d+\.\d+[a-z]/
 
 before_install:
   # Login to NPM registry
