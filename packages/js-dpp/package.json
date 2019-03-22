@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
