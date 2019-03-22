@@ -8,7 +8,7 @@ const { encode } = require('../util/serializer');
 
 class Document {
   /**
-   * @param {Object} rawDocument
+   * @param {RawDocument} rawDocument
    */
   constructor(rawDocument) {
     const data = Object.assign({}, rawDocument);
@@ -165,11 +165,7 @@ class Document {
   /**
    * Return Document as plain object
    *
-   * @return {{$type: string,
-   *           $scope: string,
-   *           $scopeId: string,
-   *           $rev: number,
-   *           $action: number}}
+   * @return {RawDocument}
    */
   toJSON() {
     return {

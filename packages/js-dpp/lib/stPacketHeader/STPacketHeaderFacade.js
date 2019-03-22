@@ -27,7 +27,7 @@ class STPacketHeaderFacade {
   /**
    * Create ST Packet Header from plain object
    *
-   * @param {Object} rawSTPacketHeader
+   * @param {RawSTPacket} rawSTPacketHeader
    * @return {STPacketHeader}
    */
   createFromObject(rawSTPacketHeader) {
@@ -45,8 +45,9 @@ class STPacketHeaderFacade {
   }
 
   /**
+   * Validate ST Packet Header
    *
-   * @param {STPacketHeader|Object} stPacketHeader
+   * @param {STPacketHeader|RawSTPacketHeader} stPacketHeader
    * @return {ValidationResult}
    */
   validate(stPacketHeader) {

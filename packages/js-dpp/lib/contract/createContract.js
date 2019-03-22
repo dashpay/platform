@@ -2,7 +2,7 @@ const Contract = require('./Contract');
 
 /**
  * @typedef createContract
- * @param {Object} rawContract
+ * @param {RawContract} rawContract
  * @return {Contract}
  */
 function createContract(rawContract) {

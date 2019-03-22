@@ -42,7 +42,7 @@ module.exports = function validateSTPacketFactory(
 
   /**
    * @typedef validateSTPacket
-   * @param {STPacket|Object} stPacket
+   * @param {STPacket|RawSTPacket} stPacket
    * @param {Contract} [contract]
    * @return {ValidationResult}
    */

@@ -22,7 +22,7 @@ module.exports = function validateDocumentFactory(
 ) {
   /**
    * @typedef validateDocument
-   * @param {Object|Document} document
+   * @param {Document|RawDocument} document
    * @param {Contract} contract
    * @return {ValidationResult}
    */

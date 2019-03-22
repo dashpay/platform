@@ -31,7 +31,7 @@ class STPacketHeaderFactory {
   /**
    * Create ST Packet Header from plain object
    *
-   * @param {Object} rawSTPacketHeader
+   * @param {RawSTPacket} rawSTPacketHeader
    * @return {STPacketHeader}
    */
   createFromObject(rawSTPacketHeader) {

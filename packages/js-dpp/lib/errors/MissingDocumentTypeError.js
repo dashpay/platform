@@ -10,7 +10,7 @@ class MissingDocumentTypeError extends ConsensusError {
   /**
    * Get raw Document
    *
-   * @return {Object}
+   * @return {RawDocument}
    */
   getRawDocument() {
     return this.rawDocument;

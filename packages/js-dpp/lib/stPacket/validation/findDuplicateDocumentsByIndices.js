@@ -30,10 +30,10 @@ function isDuplicateByIndices(originalDocument, documentToCheck, typeIndices) {
  *
  * @typedef findDuplicateDocumentsByIndices
  *
- * @param {Object[]} rawDocuments
+ * @param {RawDocument[]} rawDocuments
  * @param {Contract} contract
  *
- * @return {Object[]}
+ * @return {RawDocument[]}
  */
 function findDuplicateDocumentsByIndices(rawDocuments, contract) {
   // Convert raw documents to Document instances

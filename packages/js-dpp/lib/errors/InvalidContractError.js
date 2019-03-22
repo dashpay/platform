@@ -3,7 +3,7 @@ const ConsensusError = require('./ConsensusError');
 class InvalidContractError extends ConsensusError {
   /**
    * @param {Contract} contract
-   * @param {Object} rawSTPacket
+   * @param {RawSTPacket} rawSTPacket
    */
   constructor(contract, rawSTPacket) {
     super('Invalid Contract for ST Packet validation');
@@ -24,7 +24,7 @@ class InvalidContractError extends ConsensusError {
   /**
    * Get raw ST Packet
    *
-   * @return {Object}
+   * @return {RawSTPacket}
    */
   getRawSTPacket() {
     return this.rawSTPacket;

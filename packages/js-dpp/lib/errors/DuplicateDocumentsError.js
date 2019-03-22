@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class DuplicateDocumentsError extends ConsensusError {
   /**
-   * @param {Object[]} duplicatedDocuments
+   * @param {RawDocument[]} duplicatedDocuments
    */
   constructor(duplicatedDocuments) {
     super('Duplicated Document in ST Packet');
@@ -13,7 +13,7 @@ class DuplicateDocumentsError extends ConsensusError {
   /**
    * Get Duplicated Documents
    *
-   * @return {Object[]}
+   * @return {RawDocument[]}
    */
   getDuplicatedDocuments() {
     return this.duplicatedDocuments;

@@ -1,7 +1,7 @@
 class InvalidContractError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {Object} rawContract
+   * @param {RawDocument} rawContract
    */
   constructor(errors, rawContract) {
     super();
@@ -29,7 +29,7 @@ class InvalidContractError extends Error {
   /**
    * Get raw Contract
    *
-   * @return {Object}
+   * @return {RawContract}
    */
   getRawContract() {
     return this.rawContract;

@@ -1,7 +1,7 @@
 class InvalidDocumentError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {Object} rawDocument
+   * @param {RawDocument} rawDocument
    */
   constructor(errors, rawDocument) {
     super();
@@ -29,7 +29,7 @@ class InvalidDocumentError extends Error {
   /**
    * Get raw Document
    *
-   * @return {Object}
+   * @return {RawDocument}
    */
   getRawDocument() {
     return this.rawDocument;

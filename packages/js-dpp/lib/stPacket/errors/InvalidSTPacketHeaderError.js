@@ -1,7 +1,7 @@
 class InvalidSTPacketStructureError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {Object} rawSTPacketHeader
+   * @param {RawSTPacketHeader} rawSTPacketHeader
    */
   constructor(errors, rawSTPacketHeader) {
     super();
@@ -29,7 +29,7 @@ class InvalidSTPacketStructureError extends Error {
   /**
    * Get raw ST Packet Header
    *
-   * @return {Object}
+   * @return {RawSTPacketHeader}
    */
   getRawSTPacketHeader() {
     return this.rawSTPacketHeader;

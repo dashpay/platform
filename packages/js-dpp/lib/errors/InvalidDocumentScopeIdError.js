@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class InvalidDocumentScopeIdError extends ConsensusError {
   /**
-   * @param {Object} rawDocument
+   * @param {RawDocument} rawDocument
    */
   constructor(rawDocument) {
     super('Invalid Document scopeId');
@@ -13,7 +13,7 @@ class InvalidDocumentScopeIdError extends ConsensusError {
   /**
    * Get raw Document
    *
-   * @return {Object}
+   * @return {RawDocument}
    */
   getRawDocument() {
     return this.rawDocument;

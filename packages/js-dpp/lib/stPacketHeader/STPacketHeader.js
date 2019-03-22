@@ -76,7 +76,7 @@ class STPacketHeader {
   /**
    * Return ST Packet Header as plain object
    *
-   * @return {{contractId: string, itemsMerkleRoot: string, itemsHash: string}}
+   * @return {RawSTPacketHeader}
    */
   toJSON() {
     return {

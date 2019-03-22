@@ -16,7 +16,7 @@ function validateSTPacketDocumentsFactory(
 ) {
   /**
    * @typedef validateSTPacketDocuments
-   * @param {Object} rawSTPacket
+   * @param {RawSTPacket} rawSTPacket
    * @param {Contract} contract
    * @return {ValidationResult}
    */

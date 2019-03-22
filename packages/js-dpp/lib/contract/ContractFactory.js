@@ -29,7 +29,7 @@ class ContractFactory {
   /**
    * Create Contract from plain object
    *
-   * @param {Object} rawContract
+   * @param {RawContract} rawContract
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Contract}

@@ -69,7 +69,7 @@ class STPacketFacade {
 
   /**
    *
-   * @param {Object} rawSTPacket
+   * @param {RawSTPacket} rawSTPacket
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Promise<STPacket>}
@@ -91,8 +91,9 @@ class STPacketFacade {
   }
 
   /**
+   * Validate ST Packet
    *
-   * @param {STPacket|Object} stPacket
+   * @param {STPacket|RawSTPacket} stPacket
    * @return {ValidationResult}
    */
   validate(stPacket) {

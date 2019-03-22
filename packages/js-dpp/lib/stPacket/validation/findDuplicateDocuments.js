@@ -15,8 +15,8 @@ function createFingerPrint(document) {
  * Find duplicates
  *
  * @typedef findDuplicateDocuments
- * @param {Object[]} rawDocuments
- * @return {Object[]}
+ * @param {RawDocument[]} rawDocuments
+ * @return {RawDocument[]}
  */
 function findDuplicateDocuments(rawDocuments) {
   const fingerprints = {};

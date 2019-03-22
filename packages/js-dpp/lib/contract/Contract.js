@@ -179,11 +179,7 @@ class Contract {
   /**
    * Return Contract as plain object
    *
-   * @return {{$schema: string,
-   *           name: string,
-   *           version: number,
-   *           documents: Object<string, Object>,
-   *           [definitions]: Object<string, Object>}}
+   * @return {RawContract}
    */
   toJSON() {
     const json = {

@@ -40,7 +40,7 @@ class DocumentFacade {
   /**
    * Create Document from plain object
    *
-   * @param {Object} rawDocument
+   * @param {RawDocument} rawDocument
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Document}
@@ -62,8 +62,9 @@ class DocumentFacade {
   }
 
   /**
+   * Validate document
    *
-   * @param {Object|Document} document
+   * @param {Document|RawDocument} document
    * @return {ValidationResult}
    */
   validate(document) {

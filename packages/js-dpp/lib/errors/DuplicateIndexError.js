@@ -2,7 +2,7 @@ const AbstractIndexError = require('./AbstractIndexError');
 
 class DuplicateIndexError extends AbstractIndexError {
   /**
-   * @param {rawContract} rawContract
+   * @param {RawContract} rawContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    */

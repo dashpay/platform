@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class InvalidItemsHashError extends ConsensusError {
   /**
-   * @param {Object} rawSTPacket
+   * @param {RawSTPacket} rawSTPacket
    */
   constructor(rawSTPacket) {
     super('Invalid ST Packet\'s itemsHash');
@@ -13,7 +13,7 @@ class InvalidItemsHashError extends ConsensusError {
   /**
    * Get raw ST Packet
    *
-   * @return {Object}
+   * @return {RawSTPacket}
    */
   getRawSTPacket() {
     return this.rawSTPacket;

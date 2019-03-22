@@ -1,3 +1,5 @@
+const STPacketHeader = require('./STPacketHeader');
+
 const JsonSchemaValidator = require('../validation/JsonSchemaValidator');
 
 /**
@@ -7,10 +9,14 @@ const JsonSchemaValidator = require('../validation/JsonSchemaValidator');
 module.exports = function validateSTPacketHeaderFactory(validator) {
   /**
    * @typedef validateSTPacketHeader
-   * @param {Object} rawStPacketHeader
+   * @param {STPacketHeader|RawSTPacketHeader} stPacketHeader
    * @return {ValidationResult}
    */
-  function validateSTPacketHeader(rawStPacketHeader) {
+  function validateSTPacketHeader(stPacketHeader) {
+    const rawStPacketHeader = (stPacketHeader instanceof STPacketHeader)
+      ? stPacketHeader.toJSON()
+      : stPacketHeader;
+
     return validator.validate(
       JsonSchemaValidator.SCHEMAS.ST_PACKET_HEADER,
       rawStPacketHeader,

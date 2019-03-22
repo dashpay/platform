@@ -5,7 +5,7 @@
 function validateSTPacketContractsFactory(validateContract) {
   /**
    * @typedef validateSTPacketContracts
-   * @param {Object} rawSTPacket
+   * @param {RawSTPacket} rawSTPacket
    * @return {ValidationResult}
    */
   function validateSTPacketContracts(rawSTPacket) {

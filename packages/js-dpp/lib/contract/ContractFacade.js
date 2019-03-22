@@ -30,7 +30,7 @@ class ContractFacade {
   /**
    * Create Contract from plain object
    *
-   * @param {Object} rawContract
+   * @param {RawContract} rawContract
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Contract}
@@ -52,8 +52,9 @@ class ContractFacade {
   }
 
   /**
+   * Validate Contract
    *
-   * @param {Contract|Object} contract
+   * @param {Contract|RawContract} contract
    * @return {ValidationResult}
    */
   validate(contract) {

@@ -1,7 +1,7 @@
 class InvalidSTPacketError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {Object} rawSTPacket
+   * @param {RawSTPacket} rawSTPacket
    */
   constructor(errors, rawSTPacket) {
     super();
@@ -29,7 +29,7 @@ class InvalidSTPacketError extends Error {
   /**
    * Get raw ST Packet
    *
-   * @return {Object}
+   * @return {RawSTPacket}
    */
   getRawSTPacket() {
     return this.rawSTPacket;

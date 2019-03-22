@@ -37,7 +37,7 @@ class STPacketFactory {
   /**
    * Create ST Packet from plain object
    *
-   * @param {Object} rawSTPacket
+   * @param {RawSTPacket} rawSTPacket
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Promise<STPacket>}

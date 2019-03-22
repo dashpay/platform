@@ -139,23 +139,7 @@ class STPacket {
   /**
    * Return ST Packet as plain object
    *
-   * @return {{contractId: string,
-   *           itemsMerkleRoot: string,
-   *           itemsHash: string,
-   *           contracts: {
-   *               $schema: string,
-   *               name: string,
-   *               version: number,
-   *               documents: Object<string, Object>,
-   *               [definitions]: Object<string, Object>
-   *           }[],
-   *           documents: {
-   *               $type: string,
-   *               $scope: string,
-   *               $scopeId: string,
-   *               $rev: number,
-   *               $action: number
-   *           }[]}}
+   * @return {RawSTPacket}
    */
   toJSON() {
     return {

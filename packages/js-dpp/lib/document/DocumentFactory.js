@@ -47,7 +47,7 @@ class DocumentFactory {
   /**
    * Create Document from plain object
    *
-   * @param {Object} rawDocument
+   * @param {RawDocument} rawDocument
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Document}

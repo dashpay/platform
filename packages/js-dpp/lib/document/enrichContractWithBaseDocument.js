@@ -3,7 +3,7 @@ const documentBaseSchema = require('../../schema/base/document');
 /**
  * @typedef {enrichContractWithBaseDocument}
  * @param {Contract} contract
- * @return {Object}
+ * @return {RawContract}
  */
 function enrichContractWithBaseDocument(contract) {
   const rawContract = contract.toJSON();

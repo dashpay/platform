@@ -13,7 +13,7 @@ const UniqueIndexMustHaveUserIdPrefixError = require('../errors/UniqueIndexMustH
 module.exports = function validateContractFactory(validator) {
   /**
    * @typedef validateContract
-   * @param {Contract|Object} contract
+   * @param {Contract|RawContract} contract
    * @return {ValidationResult}
    */
   function validateContract(contract) {
