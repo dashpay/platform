@@ -1,4 +1,3 @@
-const Schema = require('@dashevo/dash-schema/dash-schema-lib');
 const DAPIClient = require('../../src/index');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');

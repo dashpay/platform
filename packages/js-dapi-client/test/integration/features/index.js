@@ -16,10 +16,6 @@ const {
   Address,
 } = require('@dashevo/dashcore-lib');
 
-const Schema = require('@dashevo/dash-schema/dash-schema-lib');
-const DashPay = require('@dashevo/dash-schema/dash-core-daps');
-
-const doubleSha256 = require('../../utils/doubleSha256');
 const wait = require('../../utils/wait');
 
 process.env.NODE_ENV = 'test';
@@ -66,11 +62,36 @@ describe('retry policy', () => {
     aliceUserName = Math.random()
       .toString(36)
       .substring(7);
-    dapSchema = Object.assign({}, DashPay);
-    dapSchema.title = `TestContacts_${bobUserName}`;
 
-    dapContract = Schema.create.dapcontract(dapSchema);
-    dapId = doubleSha256(Schema.serialize.encode(dapContract.dapcontract));
+    const dpContract = dpp.contract.create(entropy.generate(), {
+      user: {
+        properties: {
+          avatarUrl: {
+            type: 'string',
+            format: 'url',
+          },
+          about: {
+            type: 'string',
+          },
+        },
+        required: ['avatarUrl', 'about'],
+        additionalProperties: false,
+      },
+      contact: {
+        properties: {
+          toUserId: {
+            type: 'string',
+          },
+          publicKey: {
+            type: 'string',
+          },
+        },
+        required: ['toUserId', 'publicKey'],
+        additionalProperties: false,
+      },
+    });
+
+    dpp.setDPContract(dpContract);
 
     sinon.stub(MNDiscovery.prototype, 'getRandomMasternode')
       .returns(Promise.resolve({ ip: '127.0.0.1' }));
