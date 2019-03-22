@@ -1,16 +1,16 @@
-class InvalidDPContractError extends Error {
+class InvalidContractError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {Object} rawDPContract
+   * @param {Object} rawContract
    */
-  constructor(errors, rawDPContract) {
+  constructor(errors, rawContract) {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid DP Contract';
+    this.message = 'Invalid Contract';
 
     this.errors = errors;
-    this.rawDPContract = rawDPContract;
+    this.rawContract = rawContract;
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
@@ -27,13 +27,13 @@ class InvalidDPContractError extends Error {
   }
 
   /**
-   * Get raw DP Contract
+   * Get raw Contract
    *
    * @return {Object}
    */
-  getRawDPContract() {
-    return this.rawDPContract;
+  getRawContract() {
+    return this.rawContract;
   }
 }
 
-module.exports = InvalidDPContractError;
+module.exports = InvalidContractError;

@@ -1,14 +1,14 @@
 const validateSTPacketFactory = require('./validation/validateSTPacketFactory');
 
-const validateSTPacketDPContractsFactory = require('./validation/validateSTPacketDPContractsFactory');
+const validateSTPacketContractsFactory = require('./validation/validateSTPacketContractsFactory');
 const validateSTPacketDocumentsFactory = require('./validation/validateSTPacketDocumentsFactory');
 
 const findDuplicateDocuments = require('./validation/findDuplicateDocuments');
 const findDuplicateDocumentsByIndices = require('./validation/findDuplicateDocumentsByIndices');
-const createDPContract = require('../contract/createDPContract');
+const createContract = require('../contract/createContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
-const verifyDPContract = require('./verification/verifyDPContract');
+const verifyContract = require('./verification/verifyContract');
 const verifyDocumentsFactory = require('./verification/verifyDocumentsFactory');
 const verifyDocumentsUniquenessByIndicesFactory = require('./verification/verifyDocumentsUniquenessByIndicesFactory');
 const fetchDocumentsByDocumentsFactory = require('./verification/fetchDocumentsByDocumentsFactory');
@@ -25,8 +25,8 @@ class STPacketFacade {
   constructor(dpp, validator) {
     this.dpp = dpp;
 
-    const validateSTPacketDPContracts = validateSTPacketDPContractsFactory(
-      dpp.contract.validateDPContract,
+    const validateSTPacketContracts = validateSTPacketContractsFactory(
+      dpp.contract.validateContract,
     );
 
     const validateSTPacketDocuments = validateSTPacketDocumentsFactory(
@@ -37,34 +37,34 @@ class STPacketFacade {
 
     this.validateSTPacket = validateSTPacketFactory(
       validator,
-      validateSTPacketDPContracts,
+      validateSTPacketContracts,
       validateSTPacketDocuments,
     );
 
     this.factory = new STPacketFactory(
       dpp.getDataProvider(),
       this.validateSTPacket,
-      createDPContract,
+      createContract,
     );
   }
 
   /**
    * Create ST Packet
    *
-   * @param {DPContract|Array} items
+   * @param {Contract|Array} items
    * @return {STPacket}
    */
   create(items) {
-    const dpContract = this.dpp.getDPContract();
+    const contract = this.dpp.getContract();
 
-    if (!dpContract) {
+    if (!contract) {
       throw new MissingOptionError(
-        'dpContract',
-        'Can\'t create ST Packet because DP Contract is not set, use setDPContract method',
+        'contract',
+        'Can\'t create ST Packet because Contract is not set, use setContract method',
       );
     }
 
-    return this.factory.create(dpContract.getId(), items);
+    return this.factory.create(contract.getId(), items);
   }
 
   /**
@@ -96,16 +96,16 @@ class STPacketFacade {
    * @return {ValidationResult}
    */
   validate(stPacket) {
-    const dpContract = this.dpp.getDPContract();
+    const contract = this.dpp.getContract();
 
-    if (!dpContract) {
+    if (!contract) {
       throw new MissingOptionError(
-        'dpContract',
-        'Can\'t validate ST Packet because DP Contract is not set, use setDPContract method',
+        'contract',
+        'Can\'t validate ST Packet because Contract is not set, use setContract method',
       );
     }
 
-    return this.validateSTPacket(stPacket, dpContract);
+    return this.validateSTPacket(stPacket, contract);
   }
 
   /**
@@ -146,7 +146,7 @@ class STPacketFacade {
     );
 
     return verifySTPacketFactory(
-      verifyDPContract,
+      verifyContract,
       verifyDocuments,
       this.dpp.getDataProvider(),
     );

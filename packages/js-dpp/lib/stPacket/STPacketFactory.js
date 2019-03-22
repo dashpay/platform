@@ -3,7 +3,7 @@ const { decode } = require('../util/serializer');
 const STPacket = require('./STPacket');
 
 const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
-const DPContractNotPresentError = require('../errors/DPContractNotPresentError');
+const ContractNotPresentError = require('../errors/ContractNotPresentError');
 
 const Document = require('../document/Document');
 
@@ -11,23 +11,23 @@ class STPacketFactory {
   /**
    * @param {DataProvider} dataProvider
    * @param {validateSTPacket} validateSTPacket
-   * @param {createDPContract} createDPContract
+   * @param {createContract} createContract
    */
   constructor(
     dataProvider,
     validateSTPacket,
-    createDPContract,
+    createContract,
   ) {
     this.dataProvider = dataProvider;
     this.validateSTPacket = validateSTPacket;
-    this.createDPContract = createDPContract;
+    this.createContract = createContract;
   }
 
   /**
    * Create ST Packet
    *
    * @param {string} contractId
-   * @param {DPContract|Array} [items]
+   * @param {Contract|Array} [items]
    * @return {STPacket}
    */
   create(contractId, items = undefined) {
@@ -44,23 +44,23 @@ class STPacketFactory {
    */
   async createFromObject(rawSTPacket, options = { skipValidation: false }) {
     if (!options.skipValidation) {
-      let dpContract;
+      let contract;
 
       const areDocumentsPresent = rawSTPacket.contractId
         && Array.isArray(rawSTPacket.documents)
         && rawSTPacket.documents.length > 0;
 
       if (areDocumentsPresent) {
-        dpContract = await this.dataProvider.fetchDPContract(rawSTPacket.contractId);
+        contract = await this.dataProvider.fetchContract(rawSTPacket.contractId);
 
-        if (!dpContract) {
-          const error = new DPContractNotPresentError(rawSTPacket.contractId);
+        if (!contract) {
+          const error = new ContractNotPresentError(rawSTPacket.contractId);
 
           throw new InvalidSTPacketError([error], rawSTPacket);
         }
       }
 
-      const result = this.validateSTPacket(rawSTPacket, dpContract);
+      const result = this.validateSTPacket(rawSTPacket, contract);
 
       if (!result.isValid()) {
         throw new InvalidSTPacketError(result.getErrors(), rawSTPacket);
@@ -70,9 +70,9 @@ class STPacketFactory {
     const stPacket = this.create(rawSTPacket.contractId);
 
     if (rawSTPacket.contracts.length > 0) {
-      const packetDPContract = this.createDPContract(rawSTPacket.contracts[0]);
+      const packetContract = this.createContract(rawSTPacket.contracts[0]);
 
-      stPacket.setDPContract(packetDPContract);
+      stPacket.setContract(packetContract);
     }
 
     if (rawSTPacket.documents.length > 0) {

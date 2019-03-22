@@ -1,13 +1,13 @@
 /**
  * @param sinonSandbox
- * @return {{fetchDPContract: function(id:string) : Promise<DPContract|null>,
+ * @return {{fetchContract: function(id:string) : Promise<Contract|null>,
  *       fetchTransaction: function(id:string) : Promise<{confirmations: number}>,
- *       fetchDocuments: function(dpContractId:string, type:string, where: Object) :
+ *       fetchDocuments: function(contractId:string, type:string, where: Object) :
  *       Promise<Document[]>}}
  */
 module.exports = function createDataProviderMock(sinonSandbox) {
   return {
-    fetchDPContract: sinonSandbox.stub(),
+    fetchContract: sinonSandbox.stub(),
     fetchDocuments: sinonSandbox.stub(),
     fetchTransaction: sinonSandbox.stub(),
   };

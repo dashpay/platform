@@ -6,7 +6,7 @@ class ContractAndDocumentsNotAllowedSamePacketError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Either DP Contract Or Documents is allowed in the same packet';
+    this.message = 'Either Contract Or Documents is allowed in the same packet';
 
     this.stPacket = stPacket;
 

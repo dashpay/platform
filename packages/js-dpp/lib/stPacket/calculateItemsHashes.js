@@ -1,7 +1,7 @@
 const Document = require('../document/Document');
-const DPContract = require('../contract/DPContract');
+const Contract = require('../contract/Contract');
 
-const createDPContract = require('../contract/createDPContract');
+const createContract = require('../contract/createContract');
 
 /**
  * Get all hashes of all items in a packets as an array of buffers
@@ -20,11 +20,11 @@ function calculateItemsHashes({ contracts, documents }) {
       return Buffer.from(doc.hash(), 'hex');
     }),
     contracts: contracts.map((contract) => {
-      const dpContract = contract instanceof DPContract
+      const ct = contract instanceof Contract
         ? contract
-        : createDPContract(contract);
+        : createContract(contract);
 
-      return Buffer.from(dpContract.hash(), 'hex');
+      return Buffer.from(ct.hash(), 'hex');
     }),
   };
 }

@@ -5,9 +5,9 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const Document = require('../../../lib/document/Document');
 const validateDocumentFactory = require('../../../lib/document/validateDocumentFactory');
-const enrichDPContractWithBaseDocument = require('../../../lib/document/enrichDPContractWithBaseDocument');
+const enrichContractWithBaseDocument = require('../../../lib/document/enrichContractWithBaseDocument');
 
-const getDPContractFixture = require('../../../lib/test/fixtures/getDPContractFixture');
+const getContractFixture = require('../../../lib/test/fixtures/getContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 
 const MissingDocumentTypeError = require('../../../lib/errors/MissingDocumentTypeError');
@@ -25,7 +25,7 @@ const {
 } = require('../../../lib/test/expect/expectError');
 
 describe('validateDocumentFactory', () => {
-  let dpContract;
+  let contract;
   let rawDocuments;
   let rawDocument;
   let validateDocument;
@@ -38,11 +38,11 @@ describe('validateDocumentFactory', () => {
     validator = new JsonSchemaValidator(ajv);
     this.sinonSandbox.spy(validator, 'validate');
 
-    dpContract = getDPContractFixture();
+    contract = getContractFixture();
 
     validateDocument = validateDocumentFactory(
       validator,
-      enrichDPContractWithBaseDocument,
+      enrichContractWithBaseDocument,
     );
 
     rawDocuments = getDocumentsFixture().map(o => o.toJSON());
@@ -58,7 +58,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$type;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(
           result,
@@ -70,10 +70,10 @@ describe('validateDocumentFactory', () => {
         expect(error.getRawDocument()).to.equal(rawDocument);
       });
 
-      it('should be defined in DP Contract', () => {
+      it('should be defined in Contract', () => {
         rawDocument.$type = 'undefinedDocument';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(
           result,
@@ -88,18 +88,18 @@ describe('validateDocumentFactory', () => {
       it('should throw an error if getDocumentSchemaRef throws error', function it() {
         const someError = new Error();
 
-        this.sinonSandbox.stub(dpContract, 'getDocumentSchemaRef').throws(someError);
+        this.sinonSandbox.stub(contract, 'getDocumentSchemaRef').throws(someError);
 
         let error;
         try {
-          validateDocument(rawDocument, dpContract);
+          validateDocument(rawDocument, contract);
         } catch (e) {
           error = e;
         }
 
         expect(error).to.equal(someError);
 
-        expect(dpContract.getDocumentSchemaRef).to.have.been.calledOnce();
+        expect(contract.getDocumentSchemaRef).to.have.been.calledOnce();
       });
     });
 
@@ -107,7 +107,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$action;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(
           result,
@@ -122,7 +122,7 @@ describe('validateDocumentFactory', () => {
       it('should be a number', () => {
         rawDocument.$action = 'string';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -135,7 +135,7 @@ describe('validateDocumentFactory', () => {
       it('should be defined enum', () => {
         rawDocument.$action = 3;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -150,7 +150,7 @@ describe('validateDocumentFactory', () => {
       it('should return an error if $rev is not present', () => {
         delete rawDocument.$rev;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -164,7 +164,7 @@ describe('validateDocumentFactory', () => {
       it('should be a number', () => {
         rawDocument.$rev = 'string';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -177,7 +177,7 @@ describe('validateDocumentFactory', () => {
       it('should be an integer', () => {
         rawDocument.$rev = 1.1;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -190,7 +190,7 @@ describe('validateDocumentFactory', () => {
       it('should be greater or equal to zero', () => {
         rawDocument.$rev = -1;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -205,7 +205,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$scope;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -219,7 +219,7 @@ describe('validateDocumentFactory', () => {
       it('should be a string', () => {
         rawDocument.$scope = 1;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -232,7 +232,7 @@ describe('validateDocumentFactory', () => {
       it('should be no less than 64 chars', () => {
         rawDocument.$scope = '86b273ff';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -245,7 +245,7 @@ describe('validateDocumentFactory', () => {
       it('should be no longer than 64 chars', () => {
         rawDocument.$scope = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectJsonSchemaError(result);
 
@@ -260,7 +260,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$scopeId;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(result, ConsensusError, 2);
 
@@ -278,7 +278,7 @@ describe('validateDocumentFactory', () => {
       it('should be a string', () => {
         rawDocument.$scopeId = 1;
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(result, ConsensusError, 2);
 
@@ -295,7 +295,7 @@ describe('validateDocumentFactory', () => {
       it('should be no less than 34 chars', () => {
         rawDocument.$scopeId = '86b273ff';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(result, ConsensusError, 2);
 
@@ -312,7 +312,7 @@ describe('validateDocumentFactory', () => {
       it('should be no longer than 34 chars', () => {
         rawDocument.$scopeId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(result, ConsensusError, 2);
 
@@ -329,7 +329,7 @@ describe('validateDocumentFactory', () => {
       it('should be valid entropy', () => {
         rawDocument.$scopeId = '86b273ff86b273ff86b273ff86b273ff86';
 
-        const result = validateDocument(rawDocument, dpContract);
+        const result = validateDocument(rawDocument, contract);
 
         expectValidationError(result, InvalidDocumentScopeIdError);
 
@@ -341,11 +341,11 @@ describe('validateDocumentFactory', () => {
     });
   });
 
-  describe('DP Contract schema', () => {
-    it('should return an error if the first document is not valid against DP Contract', () => {
+  describe('Contract schema', () => {
+    it('should return an error if the first document is not valid against Contract', () => {
       rawDocuments[0].name = 1;
 
-      const result = validateDocument(rawDocuments[0], dpContract);
+      const result = validateDocument(rawDocuments[0], contract);
 
       expectJsonSchemaError(result);
 
@@ -355,10 +355,10 @@ describe('validateDocumentFactory', () => {
       expect(error.keyword).to.equal('type');
     });
 
-    it('should return an error if the second document is not valid against DP Contract', () => {
+    it('should return an error if the second document is not valid against Contract', () => {
       rawDocuments[1].undefined = 1;
 
-      const result = validateDocument(rawDocuments[1], dpContract);
+      const result = validateDocument(rawDocuments[1], contract);
 
       expectJsonSchemaError(result);
 
@@ -373,7 +373,7 @@ describe('validateDocumentFactory', () => {
     delete rawDocument.name;
     rawDocument.$action = Document.ACTIONS.DELETE;
 
-    const result = validateDocument(rawDocument, dpContract);
+    const result = validateDocument(rawDocument, contract);
 
     expect(validator.validate).to.have.been.calledOnceWith(documentBaseSchema, rawDocument);
     expect(result.getErrors().length).to.equal(0);
@@ -382,7 +382,7 @@ describe('validateDocumentFactory', () => {
   it('should throw validation error if additional fields are defined and $action is DELETE', () => {
     rawDocument.$action = Document.ACTIONS.DELETE;
 
-    const result = validateDocument(rawDocument, dpContract);
+    const result = validateDocument(rawDocument, contract);
 
     const [error] = result.getErrors();
 
@@ -391,7 +391,7 @@ describe('validateDocumentFactory', () => {
   });
 
   it('should return valid response is a document is valid', () => {
-    const result = validateDocument(rawDocument, dpContract);
+    const result = validateDocument(rawDocument, contract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

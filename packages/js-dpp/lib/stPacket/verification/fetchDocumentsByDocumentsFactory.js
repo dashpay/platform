@@ -7,11 +7,11 @@ const bs58 = require('bs58');
 function fetchDocumentsByDocumentsFactory(dataProvider) {
   /**
    * @typedef fetchDocumentsByDocuments
-   * @param {string} dpContractId
+   * @param {string} contractId
    * @param {Document[]} documents
    * @return {Document[]}
    */
-  async function fetchDocumentsByDocuments(dpContractId, documents) {
+  async function fetchDocumentsByDocuments(contractId, documents) {
     // Group Document IDs by types
     const documentIdsByTypes = documents.reduce((obj, document) => {
       if (!obj[document.getType()]) {
@@ -37,7 +37,7 @@ function fetchDocumentsByDocumentsFactory(dataProvider) {
       };
 
       return dataProvider.fetchDocuments(
-        dpContractId,
+        contractId,
         type,
         options,
       );

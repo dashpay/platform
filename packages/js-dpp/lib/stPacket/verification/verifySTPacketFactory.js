@@ -6,15 +6,15 @@ const UnconfirmedUserError = require('../../errors/UnconfirmedUserError');
 const UserNotFoundError = require('../../errors/UserNotFoundError');
 const InvalidTransactionTypeError = require('../../errors/InvalidTransactionTypeError');
 const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
-const DPContractNotPresentError = require('../../errors/DPContractNotPresentError');
+const ContractNotPresentError = require('../../errors/ContractNotPresentError');
 
 /**
- * @param {verifyDPContract} verifyDPContract
+ * @param {verifyContract} verifyContract
  * @param {verifyDocuments} verifyDocuments
  * @param {DataProvider} dataProvider
  * @return {verifySTPacket}
  */
-function verifySTPacketFactory(verifyDPContract, verifyDocuments, dataProvider) {
+function verifySTPacketFactory(verifyContract, verifyDocuments, dataProvider) {
   /**
    * @typedef verifySTPacket
    * @param {STPacket} stPacket
@@ -53,25 +53,25 @@ function verifySTPacketFactory(verifyDPContract, verifyDocuments, dataProvider) 
       );
     }
 
-    const dpContract = await dataProvider.fetchDPContract(stPacket.getDPContractId());
+    const contract = await dataProvider.fetchContract(stPacket.getContractId());
 
-    if (!dpContract) {
+    if (!contract) {
       result.addError(
-        new DPContractNotPresentError(stPacket.getDPContractId()),
+        new ContractNotPresentError(stPacket.getContractId()),
       );
 
       return result;
     }
 
-    if (stPacket.getDPContract()) {
+    if (stPacket.getContract()) {
       result.merge(
-        await verifyDPContract(stPacket, dpContract),
+        await verifyContract(stPacket, contract),
       );
     }
 
     if (stPacket.getDocuments().length) {
       result.merge(
-        await verifyDocuments(stPacket, userId, dpContract),
+        await verifyDocuments(stPacket, userId, contract),
       );
     }
 

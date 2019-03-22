@@ -4,7 +4,7 @@ const STPacket = require('../../../../lib/stPacket/STPacket');
 const Document = require('../../../../lib/document/Document');
 
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
-const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
@@ -21,7 +21,7 @@ describe('verifyDocuments', () => {
   let fetchDocumentsByDocumentsMock;
   let stPacket;
   let documents;
-  let dpContract;
+  let contract;
   let userId;
   let verifyDocumentsUniquenessByIndices;
 
@@ -29,9 +29,9 @@ describe('verifyDocuments', () => {
     ({ userId } = getDocumentsFixture);
 
     documents = getDocumentsFixture();
-    dpContract = getDPContractFixture();
+    contract = getContractFixture();
 
-    stPacket = new STPacket(dpContract.getId());
+    stPacket = new STPacket(contract.getId());
     stPacket.setDocuments(documents);
 
     fetchDocumentsByDocumentsMock = this.sinonSandbox.stub();
@@ -50,12 +50,12 @@ describe('verifyDocuments', () => {
 
     fetchDocumentsByDocumentsMock.resolves([]);
 
-    const result = await verifyDocuments(stPacket, userId, dpContract);
+    const result = await verifyDocuments(stPacket, userId, contract);
 
     expectValidationError(result, InvalidDocumentScopeError);
 
     expect(fetchDocumentsByDocumentsMock).to.have.been.calledOnceWith(
-      stPacket.getDPContractId(),
+      stPacket.getContractId(),
       documents,
     );
 
@@ -67,12 +67,12 @@ describe('verifyDocuments', () => {
   it('should return invalid result if Document with action "create" is already present', async () => {
     fetchDocumentsByDocumentsMock.resolves([documents[0]]);
 
-    const result = await verifyDocuments(stPacket, userId, dpContract);
+    const result = await verifyDocuments(stPacket, userId, contract);
 
     expectValidationError(result, DocumentAlreadyPresentError);
 
     expect(fetchDocumentsByDocumentsMock).to.have.been.calledOnceWith(
-      stPacket.getDPContractId(),
+      stPacket.getContractId(),
       documents,
     );
 
@@ -87,12 +87,12 @@ describe('verifyDocuments', () => {
 
     fetchDocumentsByDocumentsMock.resolves([]);
 
-    const result = await verifyDocuments(stPacket, userId, dpContract);
+    const result = await verifyDocuments(stPacket, userId, contract);
 
     expectValidationError(result, DocumentNotFoundError);
 
     expect(fetchDocumentsByDocumentsMock).to.have.been.calledOnceWith(
-      stPacket.getDPContractId(),
+      stPacket.getContractId(),
       documents,
     );
 
@@ -107,12 +107,12 @@ describe('verifyDocuments', () => {
 
     fetchDocumentsByDocumentsMock.resolves([]);
 
-    const result = await verifyDocuments(stPacket, userId, dpContract);
+    const result = await verifyDocuments(stPacket, userId, contract);
 
     expectValidationError(result, DocumentNotFoundError);
 
     expect(fetchDocumentsByDocumentsMock).to.have.been.calledOnceWith(
-      stPacket.getDPContractId(),
+      stPacket.getContractId(),
       documents,
     );
 
@@ -126,12 +126,12 @@ describe('verifyDocuments', () => {
 
     fetchDocumentsByDocumentsMock.resolves([documents[0]]);
 
-    const result = await verifyDocuments(stPacket, userId, dpContract);
+    const result = await verifyDocuments(stPacket, userId, contract);
 
     expectValidationError(result, InvalidDocumentRevisionError);
 
     expect(fetchDocumentsByDocumentsMock).to.have.been.calledOnceWith(
-      stPacket.getDPContractId(),
+      stPacket.getContractId(),
       documents,
     );
 
@@ -147,12 +147,12 @@ describe('verifyDocuments', () => {
 
     fetchDocumentsByDocumentsMock.resolves([documents[0]]);
 
-    const result = await verifyDocuments(stPacket, userId, dpContract);
+    const result = await verifyDocuments(stPacket, userId, contract);
 
     expectValidationError(result, InvalidDocumentRevisionError);
 
     expect(fetchDocumentsByDocumentsMock).to.have.been.calledOnceWith(
-      stPacket.getDPContractId(),
+      stPacket.getContractId(),
       documents,
     );
 
@@ -168,7 +168,7 @@ describe('verifyDocuments', () => {
 
     let error;
     try {
-      await verifyDocuments(stPacket, userId, dpContract);
+      await verifyDocuments(stPacket, userId, contract);
     } catch (e) {
       error = e;
     }
@@ -192,7 +192,7 @@ describe('verifyDocuments', () => {
     documents[2].setAction(Document.ACTIONS.DELETE);
     documents[2].setRevision(1);
 
-    const result = await verifyDocuments(stPacket, userId, dpContract);
+    const result = await verifyDocuments(stPacket, userId, contract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

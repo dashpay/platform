@@ -3,27 +3,27 @@ const { encode } = require('../util/serializer');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
-class DPContract {
+class Contract {
   /**
    * @param {string} name
    * @param {Object<string, Object>} documents
    */
   constructor(name, documents) {
     this.setName(name);
-    this.setVersion(DPContract.DEFAULTS.VERSION);
-    this.setJsonMetaSchema(DPContract.DEFAULTS.SCHEMA);
+    this.setVersion(Contract.DEFAULTS.VERSION);
+    this.setJsonMetaSchema(Contract.DEFAULTS.SCHEMA);
     this.setDocuments(documents);
     this.setDefinitions({});
   }
 
   /**
-   * Calculate DP Contract ID
+   * Calculate Contract ID
    *
    * @return {string}
    */
   getId() {
     // TODO: Id should be unique for whole network
-    //  so we need something like BUID for DP Contracts or use ST hash what is not so flexible
+    //  so we need something like BUID for Contracts or use ST hash what is not so flexible
     return this.hash();
   }
 
@@ -33,13 +33,13 @@ class DPContract {
    * @return {string}
    */
   getJsonSchemaId() {
-    return DPContract.SCHEMA_ID;
+    return Contract.SCHEMA_ID;
   }
 
   /**
    *
    * @param {string} name
-   * @return {DPContract}
+   * @return {Contract}
    */
   setName(name) {
     this.name = name;
@@ -58,7 +58,7 @@ class DPContract {
   /**
    *
    * @param {number} version
-   * @return {DPContract}
+   * @return {Contract}
    */
   setVersion(version) {
     this.version = version;
@@ -95,7 +95,7 @@ class DPContract {
   /**
    *
    * @param {Object<string, Object>} documents
-   * @return {DPContract}
+   * @return {Contract}
    */
   setDocuments(documents) {
     this.documents = documents;
@@ -125,7 +125,7 @@ class DPContract {
    *
    * @param {string} type
    * @param {object} schema
-   * @return {DPContract}
+   * @return {Contract}
    */
   setDocumentSchema(type, schema) {
     this.documents[type] = schema;
@@ -161,7 +161,7 @@ class DPContract {
 
   /**
    * @param {Object<string, Object>} definitions
-   * @return {DPContract}
+   * @return {Contract}
    */
   setDefinitions(definitions) {
     this.definitions = definitions;
@@ -177,7 +177,7 @@ class DPContract {
   }
 
   /**
-   * Return DP Contract as plain object
+   * Return Contract as plain object
    *
    * @return {{$schema: string,
    *           name: string,
@@ -203,7 +203,7 @@ class DPContract {
   }
 
   /**
-   * Return serialized DP Contract
+   * Return serialized Contract
    *
    * @return {Buffer}
    */
@@ -221,11 +221,11 @@ class DPContract {
   }
 }
 
-DPContract.DEFAULTS = {
+Contract.DEFAULTS = {
   VERSION: 1,
-  SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/dp-contract',
+  SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/contract',
 };
 
-DPContract.SCHEMA_ID = 'dp-contract';
+Contract.SCHEMA_ID = 'contract';
 
-module.exports = DPContract;
+module.exports = Contract;

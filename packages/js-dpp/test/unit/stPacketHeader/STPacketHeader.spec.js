@@ -5,7 +5,7 @@ describe('STPacketHeader', () => {
   let encodeMock;
   let STPacketHeader;
   let stPacketHeader;
-  let dpContractId;
+  let contractId;
   let itemsMerkleRoot;
   let itemsHash;
   let rawSTPacketHeader;
@@ -24,18 +24,18 @@ describe('STPacketHeader', () => {
       '../../../lib/util/serializer': serializerMock,
     });
 
-    dpContractId = '6b74011f5d2ad1a8d45b71b9702f542054535653593c3cfbba3fdadeca278288';
+    contractId = '6b74011f5d2ad1a8d45b71b9702f542054535653593c3cfbba3fdadeca278288';
     itemsMerkleRoot = '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b';
     itemsHash = 'y90b273ff34fce19d6b804eff5a3f5747ada4eaa22f86fj5jf652ddb78755642';
 
     stPacketHeader = new STPacketHeader(
-      dpContractId,
+      contractId,
       itemsMerkleRoot,
       itemsHash,
     );
 
     rawSTPacketHeader = {
-      contractId: dpContractId,
+      contractId,
       itemsMerkleRoot,
       itemsHash,
     };
@@ -45,27 +45,27 @@ describe('STPacketHeader', () => {
     it('should return new ST Packet Header with specified Contract ID', () => {
       expect(stPacketHeader).to.be.an.instanceOf(STPacketHeader);
 
-      expect(stPacketHeader.contractId).to.equal(dpContractId);
+      expect(stPacketHeader.contractId).to.equal(contractId);
       expect(stPacketHeader.itemsMerkleRoot).to.equal(itemsMerkleRoot);
       expect(stPacketHeader.itemsHash).to.equal(itemsHash);
     });
   });
 
-  describe('#setDPContractId', () => {
-    it('should set DP Contract ID', () => {
-      const result = stPacketHeader.setDPContractId(dpContractId);
+  describe('#setContractId', () => {
+    it('should set Contract ID', () => {
+      const result = stPacketHeader.setContractId(contractId);
 
       expect(result).to.be.an.instanceOf(STPacketHeader);
 
-      expect(result.contractId).to.equal(dpContractId);
+      expect(result.contractId).to.equal(contractId);
     });
   });
 
-  describe('#getDPContractId', () => {
-    it('should return DP Contract ID', () => {
-      const result = stPacketHeader.getDPContractId();
+  describe('#getContractId', () => {
+    it('should return Contract ID', () => {
+      const result = stPacketHeader.getContractId();
 
-      expect(result).to.equal(dpContractId);
+      expect(result).to.equal(contractId);
     });
   });
 

@@ -9,13 +9,13 @@ const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
 class DocumentFactory {
   /**
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @param {string} userId
    * @param {validateDocument} validateDocument
    */
-  constructor(userId, dpContract, validateDocument) {
+  constructor(userId, contract, validateDocument) {
     this.userId = userId;
-    this.dpContract = dpContract;
+    this.contract = contract;
     this.validateDocument = validateDocument;
   }
 
@@ -27,13 +27,13 @@ class DocumentFactory {
    * @return {Document}
    */
   create(type, data = {}) {
-    if (!this.dpContract.isDocumentDefined(type)) {
-      throw new InvalidDocumentTypeError(type, this.dpContract);
+    if (!this.contract.isDocumentDefined(type)) {
+      throw new InvalidDocumentTypeError(type, this.contract);
     }
 
     const rawDocument = {
       $type: type,
-      $scope: hash(this.dpContract.getId() + this.userId),
+      $scope: hash(this.contract.getId() + this.userId),
       $scopeId: entropy.generate(),
       $action: Document.DEFAULTS.ACTION,
       $rev: Document.DEFAULTS.REVISION,
@@ -54,7 +54,7 @@ class DocumentFactory {
    */
   createFromObject(rawDocument, options = { skipValidation: false }) {
     if (!options.skipValidation) {
-      const result = this.validateDocument(rawDocument, this.dpContract);
+      const result = this.validateDocument(rawDocument, this.contract);
 
       if (!result.isValid()) {
         throw new InvalidDocumentError(result.getErrors(), rawDocument);
@@ -100,24 +100,24 @@ class DocumentFactory {
   }
 
   /**
-   * Set DP Contract
+   * Set Contract
    *
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @return {DocumentFactory}
    */
-  setDPContract(dpContract) {
-    this.dpContract = dpContract;
+  setContract(contract) {
+    this.contract = contract;
 
     return this;
   }
 
   /**
-   * Get DP Contract
+   * Get Contract
    *
-   * @return {DPContract}
+   * @return {Contract}
    */
-  getDPContract() {
-    return this.dpContract;
+  getContract() {
+    return this.contract;
   }
 }
 

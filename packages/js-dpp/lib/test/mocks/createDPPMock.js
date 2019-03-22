@@ -40,8 +40,8 @@ module.exports = function createDPPMock(sinonSandbox) {
     packetHeader,
     getUserId: sinonSandbox.stub(),
     setUserId: sinonSandbox.stub(),
-    getDPContract: sinonSandbox.stub(),
-    setDPContract: sinonSandbox.stub(),
+    getContract: sinonSandbox.stub(),
+    setContract: sinonSandbox.stub(),
     getDataProvider: sinonSandbox.stub(),
     setDataProvider: sinonSandbox.stub(),
   };

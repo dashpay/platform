@@ -7,13 +7,13 @@
  */
 
 /**
- * Fetch DP Contract by ID
+ * Fetch Contract by ID
  *
  * @async
  * @method
- * @name DataProvider#fetchDPContract
+ * @name DataProvider#fetchContract
  * @param {string} id
- * @returns {Promise<DPContract|null>}
+ * @returns {Promise<Contract|null>}
  */
 
 /**
@@ -22,7 +22,7 @@
  * @async
  * @method
  * @name DataProvider#fetchDocuments
- * @param {string} dpContractId
+ * @param {string} contractId
  * @param {string} type
  * @param {{ where: Object }} [options]
  * @returns {Promise<Document[]>}

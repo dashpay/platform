@@ -1,9 +1,9 @@
-const DPContract = require('../../contract/DPContract');
+const Contract = require('../../contract/Contract');
 
 /**
- * @return DPContract
+ * @return {Contract}
  */
-module.exports = function getDPContractFixture() {
+module.exports = function getContractFixture() {
   const documents = {
     niceDocument: {
       properties: {
@@ -52,13 +52,13 @@ module.exports = function getDPContractFixture() {
     },
   };
 
-  const dpContract = new DPContract('lovelyContract', documents);
+  const contract = new Contract('lovelyContract', documents);
 
-  dpContract.setDefinitions({
+  contract.setDefinitions({
     lastName: {
       type: 'string',
     },
   });
 
-  return dpContract;
+  return contract;
 };

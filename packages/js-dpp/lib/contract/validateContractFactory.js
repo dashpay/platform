@@ -1,6 +1,6 @@
 const JsonSchemaValidator = require('../validation/JsonSchemaValidator');
 
-const DPContract = require('./DPContract');
+const Contract = require('./Contract');
 
 const DuplicateIndexError = require('../errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyError');
@@ -8,25 +8,25 @@ const UniqueIndexMustHaveUserIdPrefixError = require('../errors/UniqueIndexMustH
 
 /**
  * @param validator
- * @return {validateDPContract}
+ * @return {validateContract}
  */
-module.exports = function validateDPContractFactory(validator) {
+module.exports = function validateContractFactory(validator) {
   /**
-   * @typedef validateDPContract
-   * @param {DPContract|Object} dpContract
+   * @typedef validateContract
+   * @param {Contract|Object} contract
    * @return {ValidationResult}
    */
-  function validateDPContract(dpContract) {
-    const rawDPContract = (dpContract instanceof DPContract)
-      ? dpContract.toJSON()
-      : dpContract;
+  function validateContract(contract) {
+    const rawContract = (contract instanceof Contract)
+      ? contract.toJSON()
+      : contract;
 
     // TODO: Use validateSchema
     //  https://github.com/epoberezkin/ajv#validateschemaobject-schema---boolean
 
     const result = validator.validate(
-      JsonSchemaValidator.SCHEMAS.META.DP_CONTRACT,
-      rawDPContract,
+      JsonSchemaValidator.SCHEMAS.META.CONTRACT,
+      rawContract,
     );
 
     if (!result.isValid()) {
@@ -34,7 +34,7 @@ module.exports = function validateDPContractFactory(validator) {
     }
 
     // Validate indices
-    Object.entries(rawDPContract.documents).filter(([, document]) => (
+    Object.entries(rawContract.documents).filter(([, document]) => (
       Object.prototype.hasOwnProperty.call(document, 'indices')
     ))
       .forEach(([documentType, document]) => {
@@ -50,7 +50,7 @@ module.exports = function validateDPContractFactory(validator) {
           if (indicesFingerprints.includes(indicesFingerprint)) {
             result.addError(
               new DuplicateIndexError(
-                rawDPContract,
+                rawContract,
                 documentType,
                 indexDefinition,
               ),
@@ -65,7 +65,7 @@ module.exports = function validateDPContractFactory(validator) {
           if (indexPropertyNames[0] !== '$userId') {
             result.addError(
               new UniqueIndexMustHaveUserIdPrefixError(
-                rawDPContract,
+                rawContract,
                 documentType,
                 indexDefinition,
               ),
@@ -83,7 +83,7 @@ module.exports = function validateDPContractFactory(validator) {
             .forEach((undefinedPropertyName) => {
               result.addError(
                 new UndefinedIndexPropertyError(
-                  rawDPContract,
+                  rawContract,
                   documentType,
                   indexDefinition,
                   undefinedPropertyName,
@@ -96,5 +96,5 @@ module.exports = function validateDPContractFactory(validator) {
     return result;
   }
 
-  return validateDPContract;
+  return validateContract;
 };

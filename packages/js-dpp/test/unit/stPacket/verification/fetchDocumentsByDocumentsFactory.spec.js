@@ -1,7 +1,7 @@
 const bs58 = require('bs58');
 
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
-const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
 
 const fetchDocumentsByDocumentsFactory = require('../../../../lib/stPacket/verification/fetchDocumentsByDocumentsFactory');
 
@@ -16,7 +16,7 @@ describe('fetchDocumentsByDocuments', () => {
   let fetchDocumentsByDocuments;
   let dataProviderMock;
   let documents;
-  let dpContract;
+  let contract;
 
   beforeEach(function beforeEach() {
     dataProviderMock = createDataProviderMock(this.sinonSandbox);
@@ -24,31 +24,31 @@ describe('fetchDocumentsByDocuments', () => {
     fetchDocumentsByDocuments = fetchDocumentsByDocumentsFactory(dataProviderMock);
 
     documents = getDocumentsFixture();
-    dpContract = getDPContractFixture();
+    contract = getContractFixture();
   });
 
   it('should fetch specified Documents using DataProvider', async () => {
     dataProviderMock.fetchDocuments.withArgs(
-      dpContract.getId(),
+      contract.getId(),
       documents[0].getType(),
     ).resolves([documents[0]]);
 
     dataProviderMock.fetchDocuments.withArgs(
-      dpContract.getId(),
+      contract.getId(),
       documents[1].getType(),
     ).resolves([documents[1], documents[2]]);
 
     dataProviderMock.fetchDocuments.withArgs(
-      dpContract.getId(),
+      contract.getId(),
       documents[3].getType(),
     ).resolves([documents[3], documents[4]]);
 
-    const fetchedDocuments = await fetchDocumentsByDocuments(dpContract.getId(), documents);
+    const fetchedDocuments = await fetchDocumentsByDocuments(contract.getId(), documents);
 
     expect(dataProviderMock.fetchDocuments).to.have.been.calledThrice();
 
     const callArgsOne = [
-      dpContract.getId(),
+      contract.getId(),
       documents[0].getType(),
       {
         where: {
@@ -60,7 +60,7 @@ describe('fetchDocumentsByDocuments', () => {
     ];
 
     const callArgsTwo = [
-      dpContract.getId(),
+      contract.getId(),
       documents[1].getType(),
       {
         where: {
@@ -75,7 +75,7 @@ describe('fetchDocumentsByDocuments', () => {
     ];
 
     const callArgsThree = [
-      dpContract.getId(),
+      contract.getId(),
       documents[3].getType(),
       {
         where: {

@@ -1,19 +1,19 @@
 const documentBaseSchema = require('../../schema/base/document');
 
 /**
- * @typedef {enrichDPContractWithBaseDocument}
- * @param {DPContract} dpContract
+ * @typedef {enrichContractWithBaseDocument}
+ * @param {Contract} contract
  * @return {Object}
  */
-function enrichDPContractWithBaseDocument(dpContract) {
-  const rawDPContract = dpContract.toJSON();
+function enrichContractWithBaseDocument(contract) {
+  const rawContract = contract.toJSON();
 
-  const jsonDPContract = JSON.stringify(rawDPContract);
-  const clonedDPContract = JSON.parse(jsonDPContract);
+  const jsonContract = JSON.stringify(rawContract);
+  const clonedContract = JSON.parse(jsonContract);
 
-  delete clonedDPContract.$schema;
+  delete clonedContract.$schema;
 
-  const { documents: clonedDocuments } = clonedDPContract;
+  const { documents: clonedDocuments } = clonedContract;
 
   Object.keys(clonedDocuments).forEach((type) => {
     const clonedDocument = clonedDocuments[type];
@@ -30,7 +30,7 @@ function enrichDPContractWithBaseDocument(dpContract) {
     });
   });
 
-  return clonedDPContract;
+  return clonedContract;
 }
 
-module.exports = enrichDPContractWithBaseDocument;
+module.exports = enrichContractWithBaseDocument;

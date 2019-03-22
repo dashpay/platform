@@ -11,13 +11,13 @@ const InvalidItemsMerkleRootError = require('../../errors/InvalidItemsMerkleRoot
 
 /**
  * @param {JsonSchemaValidator} validator
- * @param {validateSTPacketDPContracts} validateSTPacketDPContracts
+ * @param {validateSTPacketContracts} validateSTPacketContracts
  * @param {validateSTPacketDocuments} validateSTPacketDocuments
  * @return {validateSTPacket}
  */
 module.exports = function validateSTPacketFactory(
   validator,
-  validateSTPacketDPContracts,
+  validateSTPacketContracts,
   validateSTPacketDocuments,
 ) {
   /**
@@ -43,10 +43,10 @@ module.exports = function validateSTPacketFactory(
   /**
    * @typedef validateSTPacket
    * @param {STPacket|Object} stPacket
-   * @param {DPContract} [dpContract]
+   * @param {Contract} [contract]
    * @return {ValidationResult}
    */
-  function validateSTPacket(stPacket, dpContract = undefined) {
+  function validateSTPacket(stPacket, contract = undefined) {
     const rawSTPacket = (stPacket instanceof STPacket)
       ? stPacket.toJSON()
       : stPacket;
@@ -62,13 +62,13 @@ module.exports = function validateSTPacketFactory(
 
     if (rawSTPacket.contracts.length > 0) {
       result.merge(
-        validateSTPacketDPContracts(rawSTPacket),
+        validateSTPacketContracts(rawSTPacket),
       );
     }
 
     if (rawSTPacket.documents.length > 0) {
       result.merge(
-        validateSTPacketDocuments(rawSTPacket, dpContract),
+        validateSTPacketDocuments(rawSTPacket, contract),
       );
     }
 

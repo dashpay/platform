@@ -15,13 +15,13 @@ class STPacketHeaderFacade {
   /**
    * Create ST Packet Header
    *
-   * @param {string} dpContractId
+   * @param {string} contractId
    * @param {string} itemsMerkleRoot
    * @param {string} itemsHash
    * @return {STPacketHeader}
    */
-  create(dpContractId, itemsMerkleRoot, itemsHash) {
-    return this.factory.create(dpContractId, itemsMerkleRoot, itemsHash);
+  create(contractId, itemsMerkleRoot, itemsHash) {
+    return this.factory.create(contractId, itemsMerkleRoot, itemsHash);
   }
 
   /**

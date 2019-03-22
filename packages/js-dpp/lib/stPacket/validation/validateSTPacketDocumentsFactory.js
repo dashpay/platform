@@ -1,7 +1,7 @@
 const ValidationResult = require('../../validation/ValidationResult');
 
 const DuplicateDocumentsError = require('../../errors/DuplicateDocumentsError');
-const InvalidDPContractError = require('../../errors/InvalidDPContractError');
+const InvalidContractError = require('../../errors/InvalidContractError');
 
 /**
  * @param {validateDocument} validateDocument
@@ -17,17 +17,17 @@ function validateSTPacketDocumentsFactory(
   /**
    * @typedef validateSTPacketDocuments
    * @param {Object} rawSTPacket
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @return {ValidationResult}
    */
-  function validateSTPacketDocuments(rawSTPacket, dpContract) {
+  function validateSTPacketDocuments(rawSTPacket, contract) {
     const { documents: rawDocuments } = rawSTPacket;
 
     const result = new ValidationResult();
 
-    if (dpContract.getId() !== rawSTPacket.contractId) {
+    if (contract.getId() !== rawSTPacket.contractId) {
       result.addError(
-        new InvalidDPContractError(dpContract, rawSTPacket),
+        new InvalidContractError(contract, rawSTPacket),
       );
     }
 
@@ -40,7 +40,7 @@ function validateSTPacketDocumentsFactory(
 
     const duplicateDocumentsByIndices = findDuplicateDocumentsByIndices(
       rawDocuments,
-      dpContract,
+      contract,
     );
     if (duplicateDocumentsByIndices.length > 0) {
       result.addError(
@@ -50,7 +50,7 @@ function validateSTPacketDocumentsFactory(
 
     rawDocuments.forEach((rawDocument) => {
       result.merge(
-        validateDocument(rawDocument, dpContract),
+        validateDocument(rawDocument, contract),
       );
     });
 

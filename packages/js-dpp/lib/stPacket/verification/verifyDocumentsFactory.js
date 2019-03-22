@@ -21,14 +21,14 @@ function verifyDocumentsFactory(fetchDocumentsByDocuments, verifyDocumentsUnique
    * @typedef verifyDocuments
    * @param {STPacket} stPacket
    * @param {string} userId
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @return {ValidationResult}
    */
-  async function verifyDocuments(stPacket, userId, dpContract) {
+  async function verifyDocuments(stPacket, userId, contract) {
     const result = new ValidationResult();
 
     const fetchedDocuments = await fetchDocumentsByDocuments(
-      stPacket.getDPContractId(),
+      stPacket.getContractId(),
       stPacket.getDocuments(),
     );
 
@@ -36,7 +36,7 @@ function verifyDocumentsFactory(fetchDocumentsByDocuments, verifyDocumentsUnique
       .forEach((document) => {
         const fetchedDocument = fetchedDocuments.find(o => document.getId() === o.getId());
 
-        const stPacketScope = hash(stPacket.getDPContractId() + userId);
+        const stPacketScope = hash(stPacket.getContractId() + userId);
         if (document.scope !== stPacketScope) {
           result.addError(
             new InvalidDocumentScopeError(document),
@@ -74,7 +74,7 @@ function verifyDocumentsFactory(fetchDocumentsByDocuments, verifyDocumentsUnique
       });
 
     result.merge(
-      await verifyDocumentsUniquenessByIndices(stPacket, userId, dpContract),
+      await verifyDocumentsUniquenessByIndices(stPacket, userId, contract),
     );
 
     return result;

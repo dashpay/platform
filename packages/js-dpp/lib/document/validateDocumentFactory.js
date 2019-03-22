@@ -13,20 +13,20 @@ const entropy = require('../util/entropy');
 
 /**
  * @param {JsonSchemaValidator} validator
- * @param {enrichDPContractWithBaseDocument} enrichDPContractWithBaseDocument
+ * @param {enrichContractWithBaseDocument} enrichContractWithBaseDocument
  * @return {validateDocument}
  */
 module.exports = function validateDocumentFactory(
   validator,
-  enrichDPContractWithBaseDocument,
+  enrichContractWithBaseDocument,
 ) {
   /**
    * @typedef validateDocument
    * @param {Object|Document} document
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @return {ValidationResult}
    */
-  function validateDocument(document, dpContract) {
+  function validateDocument(document, contract) {
     const rawDocument = (document instanceof Document) ? document.toJSON() : document;
 
     const result = new ValidationResult();
@@ -47,9 +47,9 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    if (!dpContract.isDocumentDefined(rawDocument.$type)) {
+    if (!contract.isDocumentDefined(rawDocument.$type)) {
       result.addError(
-        new InvalidDocumentTypeError(rawDocument.$type, dpContract),
+        new InvalidDocumentTypeError(rawDocument.$type, contract),
       );
 
       return result;
@@ -63,12 +63,12 @@ module.exports = function validateDocumentFactory(
 
       result.merge(schemaValidationResult);
     } else {
-      const documentSchemaRef = dpContract.getDocumentSchemaRef(rawDocument.$type);
+      const documentSchemaRef = contract.getDocumentSchemaRef(rawDocument.$type);
 
-      const enrichedDPContract = enrichDPContractWithBaseDocument(dpContract);
+      const enrichedContract = enrichContractWithBaseDocument(contract);
 
       const additionalSchemas = {
-        [dpContract.getJsonSchemaId()]: enrichedDPContract,
+        [contract.getJsonSchemaId()]: enrichedContract,
       };
 
       const schemaValidationResult = validator.validate(

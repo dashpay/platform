@@ -2,10 +2,14 @@ const Ajv = require('ajv');
 
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
-const DPContractFacade = require('./contract/DPContractFacade');
+const ContractFacade = require('./contract/ContractFacade');
 const DocumentFacade = require('./document/DocumentFacade');
 const STPacketFacade = require('./stPacket/STPacketFacade');
 const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
+
+const userIdPropertyName = Symbol('userId');
+const contractPropertyName = Symbol('contract');
+const dataProviderPropertyName = Symbol('dataProvider');
 
 /**
  * @class DashPlatformProtocol
@@ -13,13 +17,13 @@ const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 class DashPlatformProtocol {
   /**
    * @param {string} [options.userId]
-   * @param {DPContract} [options.dpContract]
+   * @param {Contract} [options.contract]
    * @param {DataProvider} [options.dataProvider]
    */
   constructor(options = {}) {
-    this.userId = options.userId;
-    this.dpContract = options.dpContract;
-    this.dataProvider = options.dataProvider;
+    this[userIdPropertyName] = options.userId;
+    this[contractPropertyName] = options.contract;
+    this[dataProviderPropertyName] = options.dataProvider;
 
     const validator = new JsonSchemaValidator(new Ajv());
 
@@ -31,7 +35,7 @@ class DashPlatformProtocol {
    * @param {JsonSchemaValidator} validator
    */
   initializeFacades(validator) {
-    this.contract = new DPContractFacade(validator);
+    this.contract = new ContractFacade(validator);
 
     this.document = new DocumentFacade(this, validator);
 
@@ -47,7 +51,7 @@ class DashPlatformProtocol {
    * @return {DashPlatformProtocol}
    */
   setUserId(userId) {
-    this.userId = userId;
+    this[userIdPropertyName] = userId;
 
     return this;
   }
@@ -58,28 +62,28 @@ class DashPlatformProtocol {
    * @return {string}
    */
   getUserId() {
-    return this.userId;
+    return this[userIdPropertyName];
   }
 
   /**
-   * Set DP Contract
+   * Set Contract
    *
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @return {DashPlatformProtocol}
    */
-  setDPContract(dpContract) {
-    this.dpContract = dpContract;
+  setContract(contract) {
+    this[contractPropertyName] = contract;
 
     return this;
   }
 
   /**
-   * Get DP Contract
+   * Get Contract
    *
-   * @return {DPContract}
+   * @return {Contract}
    */
-  getDPContract() {
-    return this.dpContract;
+  getContract() {
+    return this[contractPropertyName];
   }
 
   /**
@@ -89,7 +93,7 @@ class DashPlatformProtocol {
    * @return {DashPlatformProtocol}
    */
   setDataProvider(dataProvider) {
-    this.dataProvider = dataProvider;
+    this[dataProviderPropertyName] = dataProvider;
 
     return this;
   }
@@ -100,7 +104,7 @@ class DashPlatformProtocol {
    * @return {DataProvider}
    */
   getDataProvider() {
-    return this.dataProvider;
+    return this[dataProviderPropertyName];
   }
 }
 

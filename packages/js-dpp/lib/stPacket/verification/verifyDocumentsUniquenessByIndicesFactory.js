@@ -13,16 +13,16 @@ function verifyDocumentsUniquenessByIndicesFactory(fetchDocumentsByDocuments, da
    * @typedef verifyDocumentsUniquenessByIndices
    * @param {STPacket} stPacket
    * @param {string} userId
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @return {ValidationResult}
    */
-  async function verifyDocumentsUniquenessByIndices(stPacket, userId, dpContract) {
+  async function verifyDocumentsUniquenessByIndices(stPacket, userId, contract) {
     const result = new ValidationResult();
 
     // 1. Prepare fetchDocuments queries from indexed properties
     const documentIndexQueries = stPacket.getDocuments()
       .reduce((queries, document) => {
-        const documentSchema = dpContract.getDocumentSchema(document.getType());
+        const documentSchema = contract.getDocumentSchema(document.getType());
 
         if (!documentSchema.indices) {
           return queries;
@@ -65,7 +65,7 @@ function verifyDocumentsUniquenessByIndicesFactory(fetchDocumentsByDocuments, da
         originDocument,
       }) => (
         dataProvider.fetchDocuments(
-          stPacket.getDPContractId(),
+          stPacket.getContractId(),
           type,
           { where },
         )

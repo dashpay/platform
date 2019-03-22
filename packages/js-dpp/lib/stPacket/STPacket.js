@@ -4,23 +4,23 @@ const { encode } = require('../util/serializer');
 const calculateItemsMerkleRoot = require('./calculateItemsMerkleRoot');
 const calculateItemsHash = require('./calculateItemsHash');
 
-const DPContract = require('../contract/DPContract');
+const Contract = require('../contract/Contract');
 
 const ContractAndDocumentsNotAllowedSamePacketError = require('./errors/ContractAndDocumentsNotAllowedSamePacketError');
 
 class STPacket {
   /**
    * @param {string} contractId
-   * @param {DPContract|Document[]} [items] DP Contract or Documents
+   * @param {Contract|Document[]} [items] Contract or Documents
    */
   constructor(contractId, items = undefined) {
-    this.setDPContractId(contractId);
+    this.setContractId(contractId);
 
     this.documents = [];
     this.contracts = [];
 
-    if (items instanceof DPContract) {
-      this.setDPContract(items);
+    if (items instanceof Contract) {
+      this.setContract(items);
     }
 
     if (Array.isArray(items)) {
@@ -29,22 +29,22 @@ class STPacket {
   }
 
   /**
-   * Set DP Contract ID
+   * Set Contract ID
    *
    * @param {string} contractId
    */
-  setDPContractId(contractId) {
+  setContractId(contractId) {
     this.contractId = contractId;
 
     return this;
   }
 
   /**
-   * Get DP Contract ID
+   * Get Contract ID
    *
    * @return {string}
    */
-  getDPContractId() {
+  getContractId() {
     return this.contractId;
   }
 
@@ -74,26 +74,26 @@ class STPacket {
   }
 
   /**
-   * Set DP Contract
+   * Set Contract
    *
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    */
-  setDPContract(dpContract) {
+  setContract(contract) {
     if (this.documents.length > 0) {
       throw new ContractAndDocumentsNotAllowedSamePacketError(this);
     }
 
-    this.contracts = !dpContract ? [] : [dpContract];
+    this.contracts = !contract ? [] : [contract];
 
     return this;
   }
 
   /**
-   * Get DP Contract
+   * Get Contract
    *
-   * @return {DPContract|null}
+   * @return {Contract|null}
    */
-  getDPContract() {
+  getContract() {
     if (this.contracts.length) {
       return this.contracts[0];
     }
@@ -159,10 +159,10 @@ class STPacket {
    */
   toJSON() {
     return {
-      contractId: this.getDPContractId(),
+      contractId: this.getContractId(),
       itemsMerkleRoot: this.getItemsMerkleRoot(),
       itemsHash: this.getItemsHash(),
-      contracts: this.contracts.map(dpContract => dpContract.toJSON()),
+      contracts: this.contracts.map(contract => contract.toJSON()),
       documents: this.documents.map(document => document.toJSON()),
     };
   }
