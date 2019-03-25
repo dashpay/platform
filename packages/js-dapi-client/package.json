@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi-client",
   "version": "0.3.2",
-  "description": "Client SDK for DASH DAPI.",
+  "description": "Client library used to access Dash DAPI endpoints",
   "main": "index.js",
   "dependencies": {
     "@babel/polyfill": "^7.2.5",
@@ -52,5 +52,5 @@
     "test:integration": "mocha './test/integration/*.spec.js' --timeout 240000"
   },
   "author": "",
-  "license": "ISC"
+  "license": "MIT"
 }
