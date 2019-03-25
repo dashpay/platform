@@ -1,5 +1,3 @@
-const bs58 = require('bs58');
-
 const ValidationResult = require('../../validation/ValidationResult');
 const DuplicateDocumentError = require('../../errors/DuplicateDocumentError');
 
@@ -41,9 +39,8 @@ function verifyDocumentsUniquenessByIndicesFactory(fetchDocumentsByDocuments, da
               }, {});
 
             // Exclude origin Document
-            const idBuffer = Buffer.from(document.getId(), 'hex');
             // eslint-disable-next-line no-underscore-dangle
-            where._id = { $ne: bs58.encode(idBuffer) };
+            where._id = { $ne: document.getId() };
 
             queries.push({
               type: document.getType(),

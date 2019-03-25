@@ -45,7 +45,7 @@ function verifyDocumentsFactory(fetchDocumentsByDocuments, verifyDocumentsUnique
       .forEach((document) => {
         const fetchedDocument = fetchedDocuments.find(o => document.getId() === o.getId());
 
-        const stPacketScope = hash(stPacket.getContractId() + userId);
+        const stPacketScope = hash(stPacket.getContractId() + userId).toString('hex');
         if (document.scope !== stPacketScope) {
           result.addError(
             new InvalidDocumentScopeError(document),

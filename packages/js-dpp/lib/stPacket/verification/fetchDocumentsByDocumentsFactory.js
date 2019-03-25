@@ -1,5 +1,3 @@
-const bs58 = require('bs58');
-
 /**
  * @param {DataProvider} dataProvider
  * @return {fetchDocumentsByDocuments}
@@ -19,10 +17,7 @@ function fetchDocumentsByDocumentsFactory(dataProvider) {
         obj[document.getType()] = [];
       }
 
-      const idBuffer = Buffer.from(document.getId(), 'hex');
-      const id = bs58.encode(idBuffer);
-
-      obj[document.getType()].push(id);
+      obj[document.getType()].push(document.getId());
 
       return obj;
     }, {});

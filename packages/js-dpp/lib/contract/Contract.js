@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
@@ -24,7 +25,9 @@ class Contract {
   getId() {
     // TODO: Id should be unique for whole network
     //  so we need something like BUID for Contracts or use ST hash what is not so flexible
-    return this.hash();
+    return bs58.encode(
+      hash(this.serialize()),
+    );
   }
 
   /**
@@ -213,7 +216,7 @@ class Contract {
    * @return {string}
    */
   hash() {
-    return hash(this.serialize());
+    return hash(this.serialize()).toString('hex');
   }
 }
 

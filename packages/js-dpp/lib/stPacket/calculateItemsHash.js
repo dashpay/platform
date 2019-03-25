@@ -17,7 +17,7 @@ function calculateItemsHash(items) {
     return null;
   }
 
-  return hash(encode(itemsHashes));
+  return hash(encode(itemsHashes)).toString('hex');
 }
 
 module.exports = calculateItemsHash;

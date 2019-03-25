@@ -9,8 +9,8 @@ function sha256(payload) {
  * Serialize and hash payload using double sha256
  *
  * @param {Buffer} buffer
- * @return {string}
+ * @return {Buffer}
  */
 module.exports = function hash(buffer) {
-  return sha256(sha256(buffer)).toString('hex');
+  return sha256(sha256(buffer));
 };

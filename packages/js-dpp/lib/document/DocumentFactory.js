@@ -33,7 +33,7 @@ class DocumentFactory {
 
     const rawDocument = {
       $type: type,
-      $scope: hash(this.contract.getId() + this.userId),
+      $scope: hash(this.contract.getId() + this.userId).toString('hex'),
       $scopeId: entropy.generate(),
       $action: Document.DEFAULTS.ACTION,
       $rev: Document.DEFAULTS.REVISION,

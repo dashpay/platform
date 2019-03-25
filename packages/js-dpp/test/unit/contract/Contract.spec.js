@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const rewiremock = require('rewiremock/node');
 
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
@@ -50,13 +51,14 @@ describe('Contract', () => {
 
   describe('#getId', () => {
     it('should calculate Contract ID', () => {
-      const hash = '123';
+      const hashBuffer = Buffer.from('123');
+      const id = bs58.encode(hashBuffer);
 
-      hashMock.returns(hash);
+      hashMock.returns(hashBuffer);
 
       const result = contract.getId();
 
-      expect(result).to.equal(hash);
+      expect(result).to.equal(id);
       expect(hashMock).to.have.been.calledOnce();
     });
   });

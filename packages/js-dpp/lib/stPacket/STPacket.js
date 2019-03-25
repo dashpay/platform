@@ -166,7 +166,7 @@ class STPacket {
    * @return {string}
    */
   hash() {
-    return hash(this.serialize());
+    return hash(this.serialize()).toString('hex');
   }
 }
 

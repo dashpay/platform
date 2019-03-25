@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 
@@ -50,7 +51,9 @@ class Document {
    */
   getId() {
     if (!this.id) {
-      this.id = hash(this.scope + this.scopeId);
+      this.id = bs58.encode(
+        hash(this.scope + this.scopeId),
+      );
     }
 
     return this.id;
@@ -193,7 +196,7 @@ class Document {
    * @return {string}
    */
   hash() {
-    return hash(this.serialize());
+    return hash(this.serialize()).toString('hex');
   }
 }
 

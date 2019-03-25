@@ -1,16 +1,9 @@
-const bs58 = require('bs58');
-
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
 
 const fetchDocumentsByDocumentsFactory = require('../../../../lib/stPacket/verification/fetchDocumentsByDocumentsFactory');
 
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
-
-function encodeToBase58(id) {
-  const idBuffer = Buffer.from(id, 'hex');
-  return bs58.encode(idBuffer);
-}
 
 describe('fetchDocumentsByDocuments', () => {
   let fetchDocumentsByDocuments;
@@ -53,7 +46,7 @@ describe('fetchDocumentsByDocuments', () => {
       {
         where: {
           _id: {
-            $in: [encodeToBase58(documents[0].getId())],
+            $in: [documents[0].getId()],
           },
         },
       },
@@ -66,8 +59,8 @@ describe('fetchDocumentsByDocuments', () => {
         where: {
           _id: {
             $in: [
-              encodeToBase58(documents[1].getId()),
-              encodeToBase58(documents[2].getId()),
+              documents[1].getId(),
+              documents[2].getId(),
             ],
           },
         },
@@ -81,8 +74,8 @@ describe('fetchDocumentsByDocuments', () => {
         where: {
           _id: {
             $in: [
-              encodeToBase58(documents[3].getId()),
-              encodeToBase58(documents[4].getId()),
+              documents[3].getId(),
+              documents[4].getId(),
             ],
           },
         },

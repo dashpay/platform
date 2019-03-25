@@ -1,5 +1,3 @@
-const bs58 = require('bs58');
-
 const verifyDocumentsUniquenessByIndicesFactory = require('../../../../lib/stPacket/verification/verifyDocumentsUniquenessByIndicesFactory');
 
 const STPacket = require('../../../../lib/stPacket/STPacket');
@@ -11,11 +9,6 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
 
 const DuplicateDocumentError = require('../../../../lib/errors/DuplicateDocumentError');
-
-function encodeToBase58(id) {
-  const idBuffer = Buffer.from(id, 'hex');
-  return bs58.encode(idBuffer);
-}
 
 describe('verifyDocumentsUniquenessByIndices', () => {
   let fetchDocumentsByDocumentsMock;
@@ -61,7 +54,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
           where: {
             'document.$userId': william.get('$userId'),
             'document.firstName': william.get('firstName'),
-            _id: { $ne: encodeToBase58(william.getId()) },
+            _id: { $ne: william.getId() },
           },
         },
       )
@@ -75,7 +68,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
           where: {
             'document.$userId': william.get('$userId'),
             'document.lastName': william.get('lastName'),
-            _id: { $ne: encodeToBase58(william.getId()) },
+            _id: { $ne: william.getId() },
           },
         },
       )
@@ -89,7 +82,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
           where: {
             'document.$userId': leon.get('$userId'),
             'document.firstName': leon.get('firstName'),
-            _id: { $ne: encodeToBase58(leon.getId()) },
+            _id: { $ne: leon.getId() },
           },
         },
       )
@@ -103,7 +96,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
           where: {
             'document.$userId': leon.get('$userId'),
             'document.lastName': leon.get('lastName'),
-            _id: { $ne: encodeToBase58(leon.getId()) },
+            _id: { $ne: leon.getId() },
           },
         },
       )

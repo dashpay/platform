@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const rewiremock = require('rewiremock/node');
 
 const DataIsNotAllowedWithActionDeleteError = require('../../../lib/document/errors/DataIsNotAllowedWithActionDeleteError');
@@ -124,9 +125,10 @@ describe('Document', () => {
 
   describe('#getId', () => {
     it('should calculate and return ID', () => {
-      const id = '123';
+      const idBuffer = Buffer.from('123');
+      const id = bs58.encode(idBuffer);
 
-      hashMock.returns(id);
+      hashMock.returns(idBuffer);
 
       const actualId = document.getId();
 

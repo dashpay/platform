@@ -12,7 +12,7 @@ describe('STPacketHeaderFacade', () => {
     dpp = new DashPlatformProtocol();
 
     stPacketHeader = new STPacketHeader(
-      '4b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b75',
+      'HgKXrLhm7sMjPrRGS1UsETmmQ7nZHbaKN729zw55PUVk',
       '5b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b23',
       '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b12',
     );
