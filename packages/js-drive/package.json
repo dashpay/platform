@@ -1,8 +1,7 @@
 {
   "name": "@dashevo/drive",
   "version": "0.2.0",
-  "description": "Drive",
-  "private": true,
+  "description": "Dash network data storage backend service",
   "engines": {
     "node": ">=8"
   },

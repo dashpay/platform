@@ -31,7 +31,7 @@ before_install:
   - mkdir -p ~/.docker
   - "echo '{ \"credsStore\": \"ecr-login\" }' > ~/.docker/config.json"
   # Fix awslabs/amazon-ecr-credential-helper#9
-  - echo '103738324493.dkr.ecr.us-west-2.amazonaws.com' | docker-credential-ecr-login get
+  - echo "$REPO_URL" | docker-credential-ecr-login get
 
 install:
   - npm ci

@@ -1,8 +1,8 @@
 # Drive
 
-[![Build Status](https://travis-ci.com/dashevo/drive.svg?token=Pzix7aqnMuGS9c6BmBz2&branch=master)](https://travis-ci.com/dashevo/drive)
+[![Build Status](https://travis-ci.com/dashevo/drive.svg?branch=master)](https://travis-ci.com/dashevo/drive)
 
-> Dash network data storage backend service.
+> Dash network data storage backend service
 
 An [event-sourced](https://martinfowler.com/eaaDev/EventSourcing.html) metadata service built around the Command-Query Responsibility Segregation ([CQRS](https://martinfowler.com/bliki/CQRS.html)) pattern.
 
