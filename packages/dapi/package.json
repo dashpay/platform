@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "A Decentralized API for Dash Masternodes",
   "scripts": {
     "start": "node lib/app.js",
@@ -23,7 +23,7 @@
     "all": true
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "0.17.0",
+    "@dashevo/dashcore-lib": "0.17.1",
     "@dashevo/dashcore-p2p": "^1.1.9",
     "@dashevo/dashd-rpc": "^1.3.0",
     "ajv": "^6.4.0",
