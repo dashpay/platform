@@ -28,34 +28,37 @@ class DAPIClient {
    * @private
    * @param method
    * @param params
+   * @param {[string[]]} excludedIps
    * @returns {Promise<*>}
    */
-  async makeRequestToRandomDAPINode(method, params) {
+  async makeRequestToRandomDAPINode(method, params, excludedIps) {
     this.makeRequest.callCount = 0;
-    return this.makeRequestWithRetries(method, params, this.retries);
+    return this.makeRequestWithRetries(method, params, this.retries, excludedIps);
   }
 
-  async makeRequest(method, params) {
+  async makeRequest(method, params, excludedIps) {
     this.makeRequest.callCount += 1;
-    const randomMasternode = await this.MNDiscovery.getRandomMasternode();
-    if (!randomMasternode) {
-      throw new Error("Can't connect to DAPI: Masternode list is empty! Please try again later");
-    }
+    const randomMasternode = await this.MNDiscovery.getRandomMasternode(excludedIps);
     return rpcClient.request({
       host: randomMasternode.service.split(':')[0],
       port: this.DAPIPort,
     }, method, params, { timeout: this.timeout });
   }
 
-  async makeRequestWithRetries(method, params, retriesCount = 0) {
+  async makeRequestWithRetries(method, params, retriesCount = 0, excludedIps) {
     try {
-      return await this.makeRequest(method, params);
+      return await this.makeRequest(method, params, excludedIps);
     } catch (err) {
       if (err.code !== 'ECONNABORTED' && err.code !== 'ECONNREFUSED') {
         throw new Error(`DAPI RPC error: ${method}: ${err}`);
       }
       if (retriesCount > 0) {
-        return this.makeRequestWithRetries(method, params, retriesCount - 1);
+        let excludedOnNextTry = [];
+        if (err.address) {
+          excludedOnNextTry = excludedIps
+            ? excludedIps.slice().push(err.address) : excludedOnNextTry.push(err.address);
+        }
+        return this.makeRequestWithRetries(method, params, retriesCount - 1, excludedOnNextTry);
       }
       throw new Error('max retries to connect to DAPI node reached');
     }

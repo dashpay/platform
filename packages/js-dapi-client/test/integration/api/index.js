@@ -7,7 +7,7 @@ const sinon = require('sinon');
 
 const MNDiscovery = require('../../../src/MNDiscovery/index');
 const fetch = require('node-fetch');
-const {startDapi} = require('@dashevo/js-evo-services-ctl');
+const {startDapi} = require('@dashevo/dp-services-ctl');
 const DAPIClient = require('../../../src/index');
 
 const {

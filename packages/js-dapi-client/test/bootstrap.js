@@ -1,11 +1,11 @@
 const { expect, use } = require('chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
-const DashApiOptions = require('@dashevo/js-evo-services-ctl/lib/services/driveApi/DriveApiOptions');
-const DashSyncOptions = require('@dashevo/js-evo-services-ctl/lib/services/driveSync/DriveSyncOptions');
-const DapiOptions = require('@dashevo/js-evo-services-ctl/lib/services/dapi/DapiOptions');
-const DashCoreOptions = require('@dashevo/js-evo-services-ctl/lib/services/dashCore/DashCoreOptions');
-const InsightOptions = require('@dashevo/js-evo-services-ctl/lib/services/insight/InsightOptions');
+const DashApiOptions = require('@dashevo/dp-services-ctl/lib/services/driveApi/DriveApiOptions');
+const DashSyncOptions = require('@dashevo/dp-services-ctl/lib/services/driveSync/DriveSyncOptions');
+const DapiOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/DapiOptions');
+const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
+const InsightOptions = require('@dashevo/dp-services-ctl/lib/services/insight/InsightOptions');
 
 use(chaiAsPromised);
 use(dirtyChai);

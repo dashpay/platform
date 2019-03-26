@@ -1,11 +1,11 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "index.js",
   "dependencies": {
     "@babel/polyfill": "^7.2.5",
-    "@dashevo/dashcore-lib": "^0.17.0",
+    "@dashevo/dashcore-lib": "^0.17.1",
     "@dashevo/quorums": "^1.0.2",
     "axios": "^0.18.0",
     "lodash": "^4.17.11",
@@ -15,7 +15,7 @@
     "@babel/core": "^7.2.2",
     "@babel/preset-env": "^7.2.3",
     "@dashevo/dpp": "^v0.4.4",
-    "@dashevo/js-evo-services-ctl": "git+ssh://git@github.com/dashevo/js-evo-services-ctl#dapi_version",
+    "@dashevo/dp-services-ctl": "git+ssh://git@github.com/dashevo/js-dp-services-ctl#dapi_version",
     "babel-loader": "^8.0.5",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
@@ -47,7 +47,7 @@
     "dashboard": "node ./poc/dashboard/index.js",
     "lint": "eslint .",
     "test": "npm run build && npm run test:node && npm run test:firefox",
-    "test:node": "nyc --check-coverage --reporter=html --reporter=text --lines=84 --branches=66 --functions=70 mocha test/src --recursive",
+    "test:node": "nyc --check-coverage --reporter=html --reporter=text --lines=83 --branches=63 --functions=70 mocha test/src --recursive",
     "test:firefox": "karma start ./karma.conf.js --browsers Firefox --single-run",
     "test:integration": "mocha './test/integration/*.spec.js' --timeout 240000"
   },
