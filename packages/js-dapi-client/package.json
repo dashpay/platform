@@ -14,8 +14,8 @@
   "devDependencies": {
     "@babel/core": "^7.2.2",
     "@babel/preset-env": "^7.2.3",
-    "@dashevo/dpp": "^v0.4.4",
-    "@dashevo/dp-services-ctl": "git+ssh://git@github.com/dashevo/js-dp-services-ctl#dapi_version",
+    "@dashevo/dpp": "^v0.4.6",
+    "@dashevo/dp-services-ctl": "git+https://git@github.com/dashevo/js-dp-services-ctl#dapi_version",
     "babel-loader": "^8.0.5",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
