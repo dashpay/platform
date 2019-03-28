@@ -34,13 +34,13 @@ module.exports = function validateContractFactory(validator) {
     }
 
     // Validate indices
-    Object.entries(rawContract.documents).filter(([, document]) => (
-      Object.prototype.hasOwnProperty.call(document, 'indices')
+    Object.entries(rawContract.documents).filter(([, documentSchema]) => (
+      Object.prototype.hasOwnProperty.call(documentSchema, 'indices')
     ))
-      .forEach(([documentType, document]) => {
+      .forEach(([documentType, documentSchema]) => {
         const indicesFingerprints = [];
 
-        document.indices.forEach((indexDefinition) => {
+        documentSchema.indices.forEach((indexDefinition) => {
           const indexPropertyNames = indexDefinition.properties
             .map(property => Object.keys(property)[0]);
 
@@ -78,7 +78,7 @@ module.exports = function validateContractFactory(validator) {
           const userDefinedProperties = indexPropertyNames.slice(1);
 
           userDefinedProperties.filter(propertyName => (
-            !Object.prototype.hasOwnProperty.call(document.properties, propertyName)
+            !Object.prototype.hasOwnProperty.call(documentSchema.properties, propertyName)
           ))
             .forEach((undefinedPropertyName) => {
               result.addError(
