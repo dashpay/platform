@@ -4,7 +4,7 @@
   "properties": {
     "contractId": {
       "type": "string",
-      "minLength": 44,
+      "minLength": 32,
       "maxLength": 44
     },
     "itemsMerkleRoot": {

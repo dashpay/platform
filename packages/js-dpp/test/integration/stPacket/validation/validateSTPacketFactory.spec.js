@@ -80,7 +80,7 @@ describe('validateSTPacketFactory', () => {
       expect(validateSTPacketDocumentsMock).to.have.not.been.called();
     });
 
-    it('should be no less than 64 chars', () => {
+    it('should be no less than 32 chars', () => {
       rawSTPacket.contractId = '86b273ff';
 
       const result = validateSTPacket(rawSTPacket, contract);
@@ -96,7 +96,7 @@ describe('validateSTPacketFactory', () => {
       expect(validateSTPacketDocumentsMock).to.have.not.been.called();
     });
 
-    it('should be no longer than 64 chars', () => {
+    it('should be no longer than 44 chars', () => {
       rawSTPacket.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
       const result = validateSTPacket(rawSTPacket, contract);

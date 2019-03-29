@@ -53,7 +53,7 @@ describe('validateSTPacketHeaderStructure', () => {
       expect(error.keyword).to.equal('type');
     });
 
-    it('should be no less than 64 chars', () => {
+    it('should be no less than 32 chars', () => {
       rawStPacketHeader.contractId = '86b273ff';
 
       const result = validateSTPacketHeader(rawStPacketHeader);
@@ -66,7 +66,7 @@ describe('validateSTPacketHeaderStructure', () => {
       expect(error.keyword).to.equal('minLength');
     });
 
-    it('should be no longer than 64 chars', () => {
+    it('should be no longer than 44 chars', () => {
       rawStPacketHeader.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
       const result = validateSTPacketHeader(rawStPacketHeader);
