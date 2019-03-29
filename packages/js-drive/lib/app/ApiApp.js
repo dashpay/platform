@@ -22,13 +22,13 @@ const removeSTPacketMethodFactory = require('../../lib/api/methods/removeSTPacke
 const SVContractMongoDbRepository = require('../stateView/contract/SVContractMongoDbRepository');
 const createCIDFromHash = require('../storage/stPacket/createCIDFromHash');
 
-const fetchDPContractFactory = require('../stateView/contract/fetchDPContractFactory');
-const fetchDPContractMethodFactory = require('../api/methods/fetchDPContractMethodFactory');
+const fetchContractFactory = require('../stateView/contract/fetchContractFactory');
+const fetchContractMethodFactory = require('../api/methods/fetchContractMethodFactory');
 
-const SVObjectMongoDbRepository = require('../stateView/object/SVObjectMongoDbRepository');
-const createSVObjectMongoDbRepositoryFactory = require('../stateView/object/createSVObjectMongoDbRepositoryFactory');
-const fetchDPObjectsFactory = require('../stateView/object/fetchDPObjectsFactory');
-const fetchDPObjectsMethodFactory = require('../api/methods/fetchDPObjectsMethodFactory');
+const SVDocumentMongoDbRepository = require('../stateView/document/SVDocumentMongoDbRepository');
+const createSVDocumentMongoDbRepositoryFactory = require('../stateView/document/createSVDocumentMongoDbRepositoryFactory');
+const fetchDocumentsFactory = require('../stateView/document/fetchDocumentsFactory');
+const fetchDocumentsMethodFactory = require('../api/methods/fetchDocumentsMethodFactory');
 
 const getChainInfoFactory = require('../../lib/sync/info/chain/getChainInfoFactory');
 const getSyncInfoFactory = require('../../lib/sync/info/getSyncInfoFactory');
@@ -137,8 +137,8 @@ class ApiApp {
     return [
       this.createAddSTPacketMethod(),
       this.createRemoveSTPacketMethod(),
-      this.createFetchDPContractMethod(),
-      this.createFetchDPObjectsMethod(),
+      this.createFetchContractMethod(),
+      this.createFetchDocumentsMethod(),
       this.createGetSyncInfoMethod(),
     ];
   }
@@ -189,56 +189,56 @@ class ApiApp {
 
   /**
    * @private
-   * @return {fetchDPContract}
+   * @return {fetchContract}
    */
-  createFetchDPContract() {
-    if (!this.fetchDPContract) {
+  createFetchContract() {
+    if (!this.fetchContract) {
       const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
       const svContractMongoDbRepository = new SVContractMongoDbRepository(
         mongoDb,
         this.createDashPlatformProtocol(),
       );
 
-      this.fetchDPContract = fetchDPContractFactory(svContractMongoDbRepository);
+      this.fetchContract = fetchContractFactory(svContractMongoDbRepository);
     }
 
-    return this.fetchDPContract;
+    return this.fetchContract;
   }
 
   /**
    * @private
-   * @returns {fetchDPContractMethod}
+   * @returns {fetchContractMethod}
    */
-  createFetchDPContractMethod() {
-    return fetchDPContractMethodFactory(
-      this.createFetchDPContract(),
+  createFetchContractMethod() {
+    return fetchContractMethodFactory(
+      this.createFetchContract(),
     );
   }
 
   /**
    * @private
-   * @return {fetchDPObjects}
+   * @return {fetchDocuments}
    */
-  createFetchDPObjects() {
-    if (!this.fetchDPObjects) {
-      const createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
+  createFetchDocuments() {
+    if (!this.fetchDocuments) {
+      const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
         this.mongoClient,
-        SVObjectMongoDbRepository,
+        SVDocumentMongoDbRepository,
         sanitizer,
       );
-      this.fetchDPObjects = fetchDPObjectsFactory(createSVObjectMongoDbRepository);
+      this.fetchDocuments = fetchDocumentsFactory(createSVDocumentMongoDbRepository);
     }
 
-    return this.fetchDPObjects;
+    return this.fetchDocuments;
   }
 
   /**
    * @private
-   * @return {fetchDPObjectsMethod}
+   * @return {fetchDocumentsMethod}
    */
-  createFetchDPObjectsMethod() {
-    return fetchDPObjectsMethodFactory(
-      this.createFetchDPObjects(),
+  createFetchDocumentsMethod() {
+    return fetchDocumentsMethodFactory(
+      this.createFetchDocuments(),
     );
   }
 
@@ -269,8 +269,8 @@ class ApiApp {
   createDashPlatformProtocol() {
     if (!this.dashPlatfromProtocol) {
       const dataProvider = new DriveDataProvider(
-        this.createFetchDPObjects(),
-        this.createFetchDPContract.bind(this),
+        this.createFetchDocuments(),
+        this.createFetchContract.bind(this),
         this.rpcClient,
       );
 

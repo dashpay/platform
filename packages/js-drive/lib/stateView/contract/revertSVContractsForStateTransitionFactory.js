@@ -32,11 +32,11 @@ function revertSVContractsForStateTransitionFactory(
 
         await svContractRepository.store(svContract);
 
-        await readerMediator.emitSerial(ReaderMediator.EVENTS.DP_CONTRACT_MARKED_DELETED, {
+        await readerMediator.emitSerial(ReaderMediator.EVENTS.CONTRACT_MARKED_DELETED, {
           userId: stateTransition.extraPayload.regTxId,
           contractId: svContract.getContractId(),
           reference: svContract.getReference(),
-          contract: svContract.getDPContract().toJSON(),
+          contract: svContract.getContract().toJSON(),
         });
 
         continue;
@@ -47,11 +47,11 @@ function revertSVContractsForStateTransitionFactory(
 
       await applyStateTransitionFromReference(lastPreviousRevision.getReference(), true);
 
-      await readerMediator.emitSerial(ReaderMediator.EVENTS.DP_CONTRACT_REVERTED, {
+      await readerMediator.emitSerial(ReaderMediator.EVENTS.CONTRACT_REVERTED, {
         userId: stateTransition.extraPayload.regTxId,
         contractId: svContract.getContractId(),
         reference: svContract.getReference(),
-        contract: svContract.getDPContract().toJSON(),
+        contract: svContract.getContract().toJSON(),
         previousRevision: lastPreviousRevision,
       });
     }

@@ -10,7 +10,7 @@ const getBlockFixtures = require('../../../lib/test/fixtures/getBlocksFixture');
 describe('attachStateViewHandlers', () => {
   let readerMediatorMock;
   let applyStateTransition;
-  let revertSVObjectsForStateTransition;
+  let revertSVDocumentsForStateTransition;
   let revertSVContractsForStateTransition;
   let dropMongoDatabasesWithPrefixStub;
   let mongoDbPrefix;
@@ -18,7 +18,7 @@ describe('attachStateViewHandlers', () => {
   beforeEach(function beforeEach() {
     readerMediatorMock = new BlockchainReaderMediatorMock(this.sinon);
     applyStateTransition = this.sinon.stub();
-    revertSVObjectsForStateTransition = this.sinon.stub();
+    revertSVDocumentsForStateTransition = this.sinon.stub();
     revertSVContractsForStateTransition = this.sinon.stub();
     dropMongoDatabasesWithPrefixStub = this.sinon.stub();
     mongoDbPrefix = 'test';
@@ -26,7 +26,7 @@ describe('attachStateViewHandlers', () => {
     attachStateViewHandlers(
       readerMediatorMock,
       applyStateTransition,
-      revertSVObjectsForStateTransition,
+      revertSVDocumentsForStateTransition,
       revertSVContractsForStateTransition,
       dropMongoDatabasesWithPrefixStub,
       mongoDbPrefix,
@@ -45,7 +45,7 @@ describe('attachStateViewHandlers', () => {
     expect(applyStateTransition).to.have.been.calledOnceWith(stateTransition, block);
   });
 
-  it('should call revertSVObjectsForStateTransition on the orphaned state transition event', async () => {
+  it('should call revertSVDocumentsForStateTransition on the orphaned state transition event', async () => {
     const [stateTransition] = getStateTransitionsFixture();
     const [block] = getBlockFixtures();
 
@@ -54,7 +54,7 @@ describe('attachStateViewHandlers', () => {
       block,
     });
 
-    expect(revertSVObjectsForStateTransition).to.have.been.calledOnceWith({
+    expect(revertSVDocumentsForStateTransition).to.have.been.calledOnceWith({
       stateTransition,
       block,
     });

@@ -1,21 +1,21 @@
 const STPacket = require('@dashevo/dpp/lib/stPacket/STPacket');
 
-const getDPContractFixture = require('./getDPContractFixture');
-const getDPObjectsFixture = require('./getDPObjectsFixture');
+const getContractFixture = require('./getContractFixture');
+const getDocumentsFixture = require('./getDocumentsFixture');
 
 /**
  * @return {STPacket[]}
  */
 function getSTPacketsFixture() {
-  const dpContract = getDPContractFixture();
-  const dpObjects = getDPObjectsFixture();
+  const contract = getContractFixture();
+  const documents = getDocumentsFixture();
 
-  const contractId = dpContract.getId();
+  const contractId = contract.getId();
 
   return [
-    new STPacket(contractId, dpContract),
-    new STPacket(contractId, dpObjects.slice(0, 2)),
-    new STPacket(contractId, dpObjects.slice(2)),
+    new STPacket(contractId, contract),
+    new STPacket(contractId, documents.slice(0, 2)),
+    new STPacket(contractId, documents.slice(2)),
   ];
 }
 

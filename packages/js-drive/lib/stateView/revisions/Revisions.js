@@ -67,7 +67,7 @@ class Revisions {
   }
 
   /**
-   * Remove revisions which are higher than current object revision
+   * Remove revisions which are higher than current document revision
    *
    * @return {Revisions}
    */

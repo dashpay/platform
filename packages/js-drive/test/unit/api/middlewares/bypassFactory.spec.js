@@ -27,7 +27,7 @@ describe('bypassFactory', () => {
   it('should not bypass method call if request method is not in the whitelist', () => {
     const req = {
       body: {
-        method: 'fetchDPObjects',
+        method: 'fetchDocuments',
       },
     };
 

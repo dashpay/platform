@@ -18,10 +18,10 @@ function getReferenceFixture(blockHeight = 1) {
   const stPacket = stPackets[blockHeight - 1];
 
   let hash;
-  if (stPacket.getDPContract()) {
-    hash = stPacket.getDPContract().hash();
+  if (stPacket.getContract()) {
+    hash = stPacket.getContract().hash();
   } else {
-    hash = stPacket.getDPObjects()[0].hash();
+    hash = stPacket.getDocuments()[0].hash();
   }
 
   return new Reference({

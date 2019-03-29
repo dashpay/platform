@@ -1,8 +1,6 @@
-const bs58 = require('bs58');
+const Document = require('@dashevo/dpp/lib/document/Document');
 
-const DPObject = require('@dashevo/dpp/lib/object/DPObject');
-
-const SVObject = require('../../stateView/object/SVObject');
+const SVDocument = require('./SVDocument');
 const Reference = require('../revisions/Reference');
 
 const createRevisions = require('../revisions/createRevisions');
@@ -14,71 +12,49 @@ const InvalidStartAtError = require('./errors/InvalidStartAtError');
 const InvalidStartAfterError = require('./errors/InvalidStartAfterError');
 const AmbiguousStartError = require('./errors/AmbiguousStartError');
 
-/**
- * @param {string} id
- * @return {string}
- */
-function createDocumentIdFromObjectId(id) {
-  const svObjectIdBuffer = Buffer.from(id, 'hex');
-
-  return bs58.encode(svObjectIdBuffer);
-}
-
-/**
- * @param {SVObject} svObject
- * @return {string}
- */
-function createDocumentIdFromSVObject(svObject) {
-  const id = svObject.getDPObject().getId();
-
-  return createDocumentIdFromObjectId(id);
-}
-
-class SVObjectMongoDbRepository {
+class SVDocumentMongoDbRepository {
   /**
    * @param {Db} mongoClient
    * @param {sanitizer} sanitizer
-   * @param {string} objectType
+   * @param {string} documentType
    */
-  constructor(mongoClient, sanitizer, objectType) {
-    this.mongoClient = mongoClient.collection(`objects_${objectType}`);
+  constructor(mongoClient, sanitizer, documentType) {
+    this.mongoClient = mongoClient.collection(`documents_${documentType}`);
     this.sanitizer = sanitizer;
   }
 
   /**
-   * Find SV Object by id
+   * Find SVDocument by id
    *
    * @param {string} id
-   * @returns {Promise<SVObject>}
+   * @returns {Promise<SVDocument>}
    */
   async find(id) {
-    const documentId = createDocumentIdFromObjectId(id);
-
-    const result = await this.mongoClient.findOne({ _id: documentId });
+    const result = await this.mongoClient.findOne({ _id: id });
 
     if (!result) {
       return null;
     }
 
-    return this.createSVObject(result);
+    return this.createSVDocument(result);
   }
 
   /**
-   * Find all objects by `reference.stHash`
+   * Find all documents by `reference.stHash`
    *
    * @param {string} stHash
-   * @returns {Promise<SVObject[]>}
+   * @returns {Promise<SVDocument[]>}
    */
   async findAllBySTHash(stHash) {
     const result = await this.mongoClient
       .find({ 'reference.stHash': stHash })
       .toArray();
 
-    return result.map(rawObject => this.createSVObject(rawObject));
+    return result.map(rawDocument => this.createSVDocument(rawDocument));
   }
 
   /**
-   * Fetch SV Objects
+   * Fetch SVDocuments
    *
    * @param options
    * @param options.where
@@ -87,7 +63,7 @@ class SVObjectMongoDbRepository {
    * @param options.startAfter
    * @param options.orderBy
    *
-   * @returns {Promise<SVObject[]>}
+   * @returns {Promise<SVDocument[]>}
    */
   async fetch(options = {}) {
     let query = {};
@@ -134,51 +110,51 @@ class SVObjectMongoDbRepository {
 
     const results = await this.mongoClient.find(query, opts).toArray();
 
-    return results.map(document => this.createSVObject(document));
+    return results.map(document => this.createSVDocument(document));
   }
 
   /**
-   * Store SVObject entity
+   * Store SVDocument entity
    *
-   * @param {SVObject} svObject
+   * @param {SVDocument} svDocument
    * @returns {Promise}
    */
-  store(svObject) {
+  store(svDocument) {
     return this.mongoClient.updateOne(
-      { _id: createDocumentIdFromSVObject(svObject) },
-      { $set: this.sanitizer.sanitize(svObject.toJSON()) },
+      { _id: svDocument.getDocument().getId() },
+      { $set: this.sanitizer.sanitize(svDocument.toJSON()) },
       { upsert: true },
     );
   }
 
   /**
-   * Delete SVObject entity
+   * Delete SVDocument entity
    *
-   * @param {SVObject} svObject
+   * @param {SVDocument} svDocument
    * @returns {Promise}
    */
-  async delete(svObject) {
+  async delete(svDocument) {
     return this.mongoClient.deleteOne({
-      _id: createDocumentIdFromSVObject(svObject),
+      _id: svDocument.getDocument().getId(),
     });
   }
 
   /**
    * @private
-   * @return {SVObject}
+   * @return {SVDocument}
    */
-  createSVObject({
+  createSVDocument({
     userId,
     isDeleted,
-    dpObject: sanitizedDPObject,
+    document: sanitizedDocument,
     reference,
     previousRevisions,
   }) {
-    const rawDPObject = this.sanitizer.unsanitize(sanitizedDPObject);
+    const rawDocument = this.sanitizer.unsanitize(sanitizedDocument);
 
-    return new SVObject(
+    return new SVDocument(
       userId,
-      new DPObject(rawDPObject),
+      new Document(rawDocument),
       new Reference(reference),
       isDeleted,
       createRevisions(previousRevisions),
@@ -204,4 +180,4 @@ class SVObjectMongoDbRepository {
   }
 }
 
-module.exports = SVObjectMongoDbRepository;
+module.exports = SVDocumentMongoDbRepository;

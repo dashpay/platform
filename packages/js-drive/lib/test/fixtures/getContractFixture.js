@@ -1,11 +1,11 @@
-const DPContract = require('@dashevo/dpp/lib/contract/DPContract');
+const Contract = require('@dashevo/dpp/lib/contract/Contract');
 
 /**
- * @return DPContract
+ * @return Contract
  */
-function getDPContractFixture() {
-  const dpObjectsDefinition = {
-    niceObject: {
+function getContractFixture() {
+  const documents = {
+    niceDocument: {
       properties: {
         name: {
           type: 'string',
@@ -13,7 +13,7 @@ function getDPContractFixture() {
       },
       additionalProperties: false,
     },
-    prettyObject: {
+    prettyDocument: {
       properties: {
         lastName: {
           $ref: '#/definitions/lastName',
@@ -24,15 +24,15 @@ function getDPContractFixture() {
     },
   };
 
-  const dpContract = new DPContract('Contract', dpObjectsDefinition);
+  const contract = new Contract('Contract', documents);
 
-  dpContract.setDefinitions({
+  contract.setDefinitions({
     lastName: {
       type: 'string',
     },
   });
 
-  return dpContract;
+  return contract;
 }
 
-module.exports = getDPContractFixture;
+module.exports = getContractFixture;

@@ -75,8 +75,8 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
   let secondDrive;
   let users;
   let dpp;
-  let dpContract;
-  let objectType;
+  let contract;
+  let documentType;
 
   this.timeout(900000);
 
@@ -109,10 +109,10 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       users.push(user);
     }
 
-    // 3. Create DP Contract
-    objectType = 'user';
-    dpContract = dpp.contract.create('TestContract', {
-      [objectType]: {
+    // 3. Create Contract
+    documentType = 'user';
+    contract = dpp.contract.create('TestContract', {
+      [documentType]: {
         properties: {
           aboutMe: {
             type: 'string',
@@ -122,28 +122,28 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       },
     });
 
-    dpp.setDPContract(dpContract);
+    dpp.setContract(contract);
 
-    const dpContractPacket = dpp.packet.create(dpContract);
+    const contractPacket = dpp.packet.create(contract);
 
-    const { tsId: dpContractTsId } = await sendSTPacket(
+    const { tsId: contractTsId } = await sendSTPacket(
       users[0].userId,
       users[0].privateKeyString,
       users[0].username,
-      dpContractPacket,
+      contractPacket,
       firstDrive,
     );
 
     // 3.1 Await Drive to sync
     await driveSyncToFinish(firstDrive.driveApi);
 
-    // 3.2 Check DP Contract is in Drive and ok
-    const { result: rawDPContract } = await firstDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: dpContract.getId() });
+    // 3.2 Check Contract is in Drive and ok
+    const { result: rawContract } = await firstDrive.driveApi.getApi()
+      .request('fetchContract', { contractId: contract.getId() });
 
-    expect(rawDPContract).to.deep.equal(dpContract.toJSON());
+    expect(rawContract).to.deep.equal(contract.toJSON());
 
-    // 4. Create a bunch of `user` DP Objects (for every blockchain user)
+    // 4. Create a bunch of `user` Documents (for every blockchain user)
     let prevTransitionId;
 
     for (let i = 0; i < users.length; i++) {
@@ -152,18 +152,18 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
       // if it's the user used to register contractId, use it
       // use nothing if else
       if (i === 0) {
-        prevTransitionId = dpContractTsId;
+        prevTransitionId = contractTsId;
       } else {
         prevTransitionId = user.userId;
       }
 
       dpp.setUserId(user.userId);
 
-      const userDPObject = dpp.object.create(objectType, {
+      const userDocument = dpp.document.create(documentType, {
         aboutMe: user.aboutMe,
       });
 
-      const stPacket = dpp.packet.create([userDPObject]);
+      const stPacket = dpp.packet.create([userDocument]);
 
       ({ tsId: user.prevTransitionId } = await sendSTPacket(
         user.userId,
@@ -188,20 +188,20 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
     // 5. Ensure second Dash Drive have a proper data
     const driveApi = secondDrive.driveApi.getApi();
 
-    const { result: fetchedDPContract } = await driveApi.request('fetchDPContract', {
-      contractId: dpContract.getId(),
+    const { result: fetchedContract } = await driveApi.request('fetchContract', {
+      contractId: contract.getId(),
     });
 
-    expect(fetchedDPContract).to.deep.equal(dpContract.toJSON());
+    expect(fetchedContract).to.deep.equal(contract.toJSON());
 
-    const { result: fetchedDPObjects } = await driveApi.request('fetchDPObjects', {
-      contractId: dpContract.getId(),
-      type: objectType,
+    const { result: fetchedDocuments } = await driveApi.request('fetchDocuments', {
+      contractId: contract.getId(),
+      type: documentType,
     });
 
-    expect(fetchedDPObjects).to.have.lengthOf(users.length);
+    expect(fetchedDocuments).to.have.lengthOf(users.length);
 
-    const aboutMes = fetchedDPObjects.map(o => o.aboutMe);
+    const aboutMes = fetchedDocuments.map(d => d.aboutMe);
 
     for (let i = 0; i < users.length; i++) {
       expect(aboutMes).to.include(users[i].aboutMe);

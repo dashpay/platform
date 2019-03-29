@@ -4,7 +4,7 @@ const createPayloadFixture = require('./fixtures/createPayloadFixture');
 const createStateTransitionFixture = require('./fixtures/createStateTransitionFixture');
 
 /**
- * Create DP Contract state transaction packet and ST
+ * Create Contract state transaction packet and ST
  *
  * @param {string} regTxId Registration transaction ID (User ID)
  * @param {string} privateKeyString

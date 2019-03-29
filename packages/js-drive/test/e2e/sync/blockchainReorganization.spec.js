@@ -95,11 +95,11 @@ describe('Blockchain reorganization', function main() {
   let secondContractPacket;
   let thirdContractPacket;
 
-  let firstObjectPacket;
-  let secondObjectPacket;
-  let thirdObjectPacket;
+  let firstDocumentPacket;
+  let secondDocumentPacket;
+  let thirdDocumentPacket;
 
-  let objectType;
+  let documentType;
 
   const BLOCKS_ST_ACTIVATION = 1000;
 
@@ -108,12 +108,12 @@ describe('Blockchain reorganization', function main() {
   before('having started Dash Drive node and generated some STs', async () => {
     const dpp = new DashPlatformPlatform();
 
-    objectType = 'user';
+    documentType = 'user';
 
     const contractPackets = [];
     for (let i = 1; i <= 3; i++) {
-      const dpContract = dpp.contract.create(`contract${i}`, {
-        [objectType]: {
+      const contract = dpp.contract.create(`contract${i}`, {
+        [documentType]: {
           properties: {
             aboutMe: {
               type: 'string',
@@ -123,10 +123,10 @@ describe('Blockchain reorganization', function main() {
         },
       });
 
-      dpp.setDPContract(dpContract);
+      dpp.setContract(contract);
 
       contractPackets.push(
-        dpp.packet.create(dpContract),
+        dpp.packet.create(contract),
       );
     }
     [firstContractPacket, secondContractPacket, thirdContractPacket] = contractPackets;
@@ -175,19 +175,19 @@ describe('Blockchain reorganization', function main() {
     await driveSyncToFinish(firstDrive.driveApi);
 
     dpp.setUserId(firstUser.userId);
-    dpp.setDPContract(firstContractPacket.getDPContract());
+    dpp.setContract(firstContractPacket.getContract());
 
-    const firstObject = dpp.object.create(objectType, {
+    const firstDocument = dpp.document.create(documentType, {
       aboutMe: 'About first user',
     });
 
-    firstObjectPacket = dpp.packet.create([firstObject]);
+    firstDocumentPacket = dpp.packet.create([firstDocument]);
 
-    // Register first object
+    // Register first document
     await createAndSubmitST(
       firstUser.userId,
       firstUser.privateKeyString,
-      firstObjectPacket,
+      firstDocumentPacket,
       firstDrive,
       firstContractTxId,
     );
@@ -205,28 +205,28 @@ describe('Blockchain reorganization', function main() {
     // Check data is on both Drive nodes
     // Check data on first node
     const { result: firstDriveFirstContract } = await firstDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: firstContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: firstContractPacket.getContractId() });
 
-    const { result: [firstDriveFirstObject] } = await firstDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
+    const { result: [firstDriveFirstDocument] } = await firstDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
 
-    expect(firstDriveFirstContract).to.deep.equal(firstContractPacket.getDPContract().toJSON());
-    expect(firstDriveFirstObject).to.deep.equal(firstObjectPacket.getDPObjects()[0].toJSON());
+    expect(firstDriveFirstContract).to.deep.equal(firstContractPacket.getContract().toJSON());
+    expect(firstDriveFirstDocument).to.deep.equal(firstDocumentPacket.getDocuments()[0].toJSON());
 
     // Check data on the second node
     const { result: secondDriveFirstContract } = await secondDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: firstContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: firstContractPacket.getContractId() });
 
-    const { result: [secondDriveFirstObject] } = await secondDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
+    const { result: [secondDriveFirstDocument] } = await secondDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
 
-    expect(secondDriveFirstContract).to.deep.equal(firstContractPacket.getDPContract().toJSON());
-    expect(secondDriveFirstObject).to.deep.equal(firstObjectPacket.getDPObjects()[0].toJSON());
+    expect(secondDriveFirstContract).to.deep.equal(firstContractPacket.getContract().toJSON());
+    expect(secondDriveFirstDocument).to.deep.equal(firstDocumentPacket.getDocuments()[0].toJSON());
 
     // Disconnect Core nodes
     await firstDrive.dashCore.disconnect(secondDrive.dashCore);
 
-    // Generate 2nd contract and object on the first Drive node
+    // Generate 2nd contract and document on the first Drive node
     const secondContractTxId = await createAndSubmitST(
       secondUser.userId,
       secondUser.privateKeyString,
@@ -239,41 +239,41 @@ describe('Blockchain reorganization', function main() {
     await driveSyncToFinish(firstDrive.driveApi);
 
     dpp.setUserId(secondUser.userId);
-    dpp.setDPContract(secondContractPacket.getDPContract());
+    dpp.setContract(secondContractPacket.getContract());
 
-    const secondObject = dpp.object.create(objectType, {
+    const secondDocument = dpp.document.create(documentType, {
       aboutMe: 'About second user',
     });
 
-    secondObjectPacket = dpp.packet.create([secondObject]);
+    secondDocumentPacket = dpp.packet.create([secondDocument]);
 
-    // Register an object
+    // Register an document
     await createAndSubmitST(
       secondUser.userId,
       secondUser.privateKeyString,
-      secondObjectPacket,
+      secondDocumentPacket,
       firstDrive,
       secondContractTxId,
     );
 
     await driveSyncToFinish(firstDrive.driveApi);
 
-    // Check second contract and object is created on the first node
+    // Check second contract and document is created on the first node
     const { result: firstDriveSecondContract } = await firstDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: secondContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: secondContractPacket.getContractId() });
 
-    const { result: [firstDriveSecondObject] } = await firstDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
+    const { result: [firstDriveSecondDocument] } = await firstDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
 
     expect(firstDriveSecondContract).to.deep.equal(
-      secondContractPacket.getDPContract().toJSON(),
+      secondContractPacket.getContract().toJSON(),
     );
 
-    expect(firstDriveSecondObject).to.deep.equal(
-      secondObjectPacket.getDPObjects()[0].toJSON(),
+    expect(firstDriveSecondDocument).to.deep.equal(
+      secondDocumentPacket.getDocuments()[0].toJSON(),
     );
 
-    // Generate 2 more blocks, 3rd contract and object on the second Drive node
+    // Generate 2 more blocks, 3rd contract and document on the second Drive node
     // To introduce a slightly bigger fork
     await secondDrive.dashCore.getApi().generate(1);
 
@@ -289,38 +289,38 @@ describe('Blockchain reorganization', function main() {
     await driveSyncToFinish(firstDrive.driveApi);
 
     dpp.setUserId(thirdUser.userId);
-    dpp.setDPContract(thirdContractPacket.getDPContract());
+    dpp.setContract(thirdContractPacket.getContract());
 
-    const thirdObject = dpp.object.create(objectType, {
+    const thirdDocument = dpp.document.create(documentType, {
       aboutMe: 'About third user',
     });
 
-    thirdObjectPacket = dpp.packet.create([thirdObject]);
+    thirdDocumentPacket = dpp.packet.create([thirdDocument]);
 
-    // Register an object
+    // Register an document
     await createAndSubmitST(
       thirdUser.userId,
       thirdUser.privateKeyString,
-      thirdObjectPacket,
+      thirdDocumentPacket,
       secondDrive,
       thirdContractTxId,
     );
 
     await driveSyncToFinish(secondDrive.driveApi);
 
-    // Check third contract and object are created on the second node
+    // Check third contract and document are created on the second node
     const { result: secondDriveThirdContract } = await secondDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: thirdContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: thirdContractPacket.getContractId() });
 
-    const { result: [secondDriveThirdObject] } = await secondDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: thirdContractPacket.getDPContractId(), type: objectType });
+    const { result: [secondDriveThirdDocument] } = await secondDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: thirdContractPacket.getContractId(), type: documentType });
 
     expect(secondDriveThirdContract).to.deep.equal(
-      thirdContractPacket.getDPContract().toJSON(),
+      thirdContractPacket.getContract().toJSON(),
     );
 
-    expect(secondDriveThirdObject).to.deep.equal(
-      thirdObjectPacket.getDPObjects()[0].toJSON(),
+    expect(secondDriveThirdDocument).to.deep.equal(
+      thirdDocumentPacket.getDocuments()[0].toJSON(),
     );
   });
 
@@ -347,34 +347,34 @@ describe('Blockchain reorganization', function main() {
     await driveSyncToFinish(secondDrive.driveApi);
 
     //
-    // Check first contract and object are in place on both nodes
+    // Check first contract and document are in place on both nodes
     //
     // Check the first node
     const { result: firstDriveFirstContract } = await firstDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: firstContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: firstContractPacket.getContractId() });
 
-    const { result: [firstDriveFirstObject] } = await firstDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
+    const { result: [firstDriveFirstDocument] } = await firstDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
 
     expect(firstDriveFirstContract).to.deep.equal(
-      firstContractPacket.getDPContract().toJSON(),
+      firstContractPacket.getContract().toJSON(),
     );
-    expect(firstDriveFirstObject).to.deep.equal(
-      firstObjectPacket.getDPObjects()[0].toJSON(),
+    expect(firstDriveFirstDocument).to.deep.equal(
+      firstDocumentPacket.getDocuments()[0].toJSON(),
     );
 
     // Check the second node
     const { result: secondDriveFirstContract } = await secondDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: firstContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: firstContractPacket.getContractId() });
 
-    const { result: [secondDriveFirstObject] } = await secondDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: firstContractPacket.getDPContractId(), type: objectType });
+    const { result: [secondDriveFirstDocument] } = await secondDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
 
     expect(secondDriveFirstContract).to.deep.equal(
-      firstContractPacket.getDPContract().toJSON(),
+      firstContractPacket.getContract().toJSON(),
     );
-    expect(secondDriveFirstObject).to.deep.equal(
-      firstObjectPacket.getDPObjects()[0].toJSON(),
+    expect(secondDriveFirstDocument).to.deep.equal(
+      firstDocumentPacket.getDocuments()[0].toJSON(),
     );
 
     //
@@ -382,55 +382,55 @@ describe('Blockchain reorganization', function main() {
     //
     // Check the first node
     const { result: firstDriveThirdContract } = await firstDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: thirdContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: thirdContractPacket.getContractId() });
 
-    const { result: [firstDriveThirdObject] } = await firstDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: thirdContractPacket.getDPContractId(), type: objectType });
+    const { result: [firstDriveThirdDocument] } = await firstDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: thirdContractPacket.getContractId(), type: documentType });
 
     expect(firstDriveThirdContract).to.deep.equal(
-      thirdContractPacket.getDPContract().toJSON(),
+      thirdContractPacket.getContract().toJSON(),
     );
-    expect(firstDriveThirdObject).to.deep.equal(
-      thirdObjectPacket.getDPObjects()[0].toJSON(),
+    expect(firstDriveThirdDocument).to.deep.equal(
+      thirdDocumentPacket.getDocuments()[0].toJSON(),
     );
 
     // Check the second node
     const { result: secondDriveThirdContract } = await secondDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: thirdContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: thirdContractPacket.getContractId() });
 
-    const { result: [secondDriveThirdObject] } = await secondDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: thirdContractPacket.getDPContractId(), type: objectType });
+    const { result: [secondDriveThirdDocument] } = await secondDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: thirdContractPacket.getContractId(), type: documentType });
 
     expect(secondDriveThirdContract).to.deep.equal(
-      thirdContractPacket.getDPContract().toJSON(),
+      thirdContractPacket.getContract().toJSON(),
     );
-    expect(secondDriveThirdObject).to.deep.equal(
-      thirdObjectPacket.getDPObjects()[0].toJSON(),
+    expect(secondDriveThirdDocument).to.deep.equal(
+      thirdDocumentPacket.getDocuments()[0].toJSON(),
     );
 
     //
-    // Check second contract and object are gone from the first Drive node
+    // Check second contract and document are gone from the first Drive node
     // and they are not on the second node as well
     //
     // Check the first node
     const { result: firstDriveSecondContract } = await firstDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: secondContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: secondContractPacket.getContractId() });
 
-    const { result: [firstDriveSecondObject] } = await firstDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
+    const { result: [firstDriveSecondDocument] } = await firstDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
 
     expect(firstDriveSecondContract).to.be.undefined();
-    expect(firstDriveSecondObject).to.be.undefined();
+    expect(firstDriveSecondDocument).to.be.undefined();
 
     // Check the second node
     const { result: secondDriveSecondContract } = await secondDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: secondContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: secondContractPacket.getContractId() });
 
-    const { result: [secondDriveSecondObject] } = await secondDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
+    const { result: [secondDriveSecondDocument] } = await secondDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
 
     expect(secondDriveSecondContract).to.be.undefined();
-    expect(secondDriveSecondObject).to.be.undefined();
+    expect(secondDriveSecondDocument).to.be.undefined();
 
     // Generate more blocks so transitions are back from mempool
     await firstDrive.dashCore.getApi().generate(5);
@@ -451,30 +451,30 @@ describe('Blockchain reorganization', function main() {
     //
     // Check the first node
     const { result: firstDriveSecondContractAfter } = await firstDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: secondContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: secondContractPacket.getContractId() });
 
-    const { result: [firstDriveSecondObjectAfter] } = await firstDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
+    const { result: [firstDriveSecondDocumentAfter] } = await firstDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
 
     expect(firstDriveSecondContractAfter).to.deep.equal(
-      secondContractPacket.getDPContract().toJSON(),
+      secondContractPacket.getContract().toJSON(),
     );
-    expect(firstDriveSecondObjectAfter).to.deep.equal(
-      secondObjectPacket.getDPObjects()[0].toJSON(),
+    expect(firstDriveSecondDocumentAfter).to.deep.equal(
+      secondDocumentPacket.getDocuments()[0].toJSON(),
     );
 
     // Check the second node
     const { result: secondDriveSecondContractAfter } = await secondDrive.driveApi.getApi()
-      .request('fetchDPContract', { contractId: secondContractPacket.getDPContractId() });
+      .request('fetchContract', { contractId: secondContractPacket.getContractId() });
 
-    const { result: [secondDriveSecondObjectAfter] } = await secondDrive.driveApi.getApi()
-      .request('fetchDPObjects', { contractId: secondContractPacket.getDPContractId(), type: objectType });
+    const { result: [secondDriveSecondDocumentAfter] } = await secondDrive.driveApi.getApi()
+      .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
 
     expect(secondDriveSecondContractAfter).to.deep.equal(
-      secondContractPacket.getDPContract().toJSON(),
+      secondContractPacket.getContract().toJSON(),
     );
-    expect(secondDriveSecondObjectAfter).to.deep.equal(
-      secondObjectPacket.getDPObjects()[0].toJSON(),
+    expect(secondDriveSecondDocumentAfter).to.deep.equal(
+      secondDocumentPacket.getDocuments()[0].toJSON(),
     );
 
     //

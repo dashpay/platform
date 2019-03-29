@@ -1,22 +1,9 @@
-const bs58 = require('bs58');
 const mongo = require('mongodb');
 
 const SVContract = require('./SVContract');
 const Reference = require('../revisions/Reference');
 
 const createRevisions = require('../revisions/createRevisions');
-
-/**
- * Create Base58 Database ID from DP Contract ID
- *
- * @private
- * @param {string} contractId
- *
- * @return {string}
- */
-function createDocumentIdFromContractId(contractId) {
-  return bs58.encode(Buffer.from(contractId, 'hex'));
-}
 
 class SVContractMongoDbRepository {
   /**
@@ -35,10 +22,8 @@ class SVContractMongoDbRepository {
    * @returns {Promise<SVContract|null>}
    */
   async find(contractId) {
-    const documentId = createDocumentIdFromContractId(contractId);
-
     const result = await this.collection.findOne({
-      _id: documentId,
+      _id: contractId,
       isDeleted: false,
     });
 
@@ -71,14 +56,12 @@ class SVContractMongoDbRepository {
   async store(svContract) {
     const rawSVContract = svContract.toJSON();
 
-    rawSVContract.dpContract = mongo.Binary(
-      svContract.getDPContract().serialize(),
+    rawSVContract.contract = mongo.Binary(
+      svContract.getContract().serialize(),
     );
 
-    const documentId = createDocumentIdFromContractId(svContract.getContractId());
-
     return this.collection.updateOne(
-      { _id: documentId },
+      { _id: svContract.getContractId() },
       { $set: rawSVContract },
       { upsert: true },
     );
@@ -91,9 +74,7 @@ class SVContractMongoDbRepository {
    * @returns {Promise}
    */
   async delete(svContract) {
-    const documentId = createDocumentIdFromContractId(svContract.getContractId());
-
-    return this.collection.deleteOne({ _id: documentId });
+    return this.collection.deleteOne({ _id: svContract.getContractId() });
   }
 
   /**
@@ -104,20 +85,20 @@ class SVContractMongoDbRepository {
   createSVContract({
     contractId,
     userId,
-    dpContract: serializedRawDPContract,
+    contract: serializedRawContract,
     reference,
     isDeleted,
     previousRevisions,
   }) {
-    const dpContract = this.dpp.contract.createFromSerialized(
-      serializedRawDPContract.buffer,
+    const contract = this.dpp.contract.createFromSerialized(
+      serializedRawContract.buffer,
       { skipValidation: true },
     );
 
     return new SVContract(
       contractId,
       userId,
-      dpContract,
+      contract,
       new Reference(reference),
       isDeleted,
       createRevisions(previousRevisions),

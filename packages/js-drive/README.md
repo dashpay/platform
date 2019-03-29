@@ -85,15 +85,15 @@ Remove State Transition Packet from Drive storage
 |------------|--------|----------------------------------------------|
 | packetHash | string | ST Packet hash previously submitted to Drive |
 
-#### fetchDPContact
+#### fetchContact
 
-Fetch DP Contract from Drive State View
+Fetch Contract from Drive State View
 
 ##### Params
 
 | name    | type   | description  |
 |---------|--------|--------------|
-| contractId   | string | DP Contract ID       |
+| contractId   | string | Contract ID       |
 
 ##### Response
 
@@ -101,16 +101,16 @@ Fetch DP Contract from Drive State View
 |---------|--------|---------------------|
 | result  | object | DP Contact object  |
 
-#### fetchDPObjects
+#### fetchDocuments
 
-Fetch DP Objects from Drive State View
+Fetch Documents from Drive State View
 
 ##### Params
 
 | name    | type   | description          |
 |---------|--------|----------------------|
 | contractId   | string | DP ID               |
-| type    | string | DP Objects type     |
+| type    | string | Documents type     |
 | options | object | Options              |
 
 Fetch method options:
@@ -127,7 +127,7 @@ Fetch method options:
 
 | name    | type   | description  |
 |---------|--------|--------------|
-| result  | array  | DP objects  |
+| result  | array  | Documents  |
 
 #### getSyncInfo
 

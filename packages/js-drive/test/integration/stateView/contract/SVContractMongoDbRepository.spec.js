@@ -1,7 +1,5 @@
 const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 
-const bs58 = require('bs58');
-
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const SVContractMongoDbRepository = require('../../../../lib/stateView/contract/SVContractMongoDbRepository');
@@ -64,7 +62,7 @@ describe('SVContractMongoDbRepository', () => {
     await svContractRepository.store(svContract);
 
     const result = await mongoDatabase.collection('contracts').findOne({
-      _id: bs58.encode(Buffer.from(svContract.getContractId(), 'hex')),
+      _id: svContract.getContractId(),
     });
 
     expect(result).to.be.not.null();

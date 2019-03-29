@@ -11,11 +11,11 @@ const sanitizer = require('../mongoDb/sanitizer');
 
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
 const SVContractMongoDbRepository = require('../stateView/contract/SVContractMongoDbRepository');
-const SVObjectMongoDbRepository = require('../stateView/object/SVObjectMongoDbRepository');
-const createSVObjectMongoDbRepositoryFactory = require('../stateView/object/createSVObjectMongoDbRepositoryFactory');
+const SVDocumentMongoDbRepository = require('../stateView/document/SVDocumentMongoDbRepository');
+const createSVDocumentMongoDbRepositoryFactory = require('../stateView/document/createSVDocumentMongoDbRepositoryFactory');
 const updateSVContractFactory = require('../stateView/contract/updateSVContractFactory');
-const updateSVObjectFactory = require('../stateView/object/updateSVObjectFactory');
-const revertSVObjectsForStateTransitionFactory = require('../stateView/object/revertSVObjectsForStateTransitionFactory');
+const updateSVDocumentFactory = require('../stateView/document/updateSVDocumentFactory');
+const revertSVDocumentsForStateTransitionFactory = require('../stateView/document/revertSVDocumentsForStateTransitionFactory');
 const revertSVContractsForStateTransitionFactory = require('../stateView/contract/revertSVContractsForStateTransitionFactory');
 const applyStateTransitionFactory = require('../stateView/applyStateTransitionFactory');
 const applyStateTransitionFromReferenceFactory = require('../stateView/applyStateTransitionFromReferenceFactory');
@@ -26,8 +26,8 @@ const BlockchainReaderMediator = require('../blockchain/reader/BlockchainReaderM
 const createStateTransitionsFromBlockFactory = require('../blockchain/createStateTransitionsFromBlockFactory');
 const readBlockchainFactory = require('../blockchain/reader/readBlockchainFactory');
 
-const fetchDPContractFactory = require('../stateView/contract/fetchDPContractFactory');
-const fetchDPObjectsFactory = require('../stateView/object/fetchDPObjectsFactory');
+const fetchContractFactory = require('../stateView/contract/fetchContractFactory');
+const fetchDocumentsFactory = require('../stateView/document/fetchDocumentsFactory');
 
 const STPacketIpfsRepository = require('../storage/stPacket/STPacketIpfsRepository');
 
@@ -209,37 +209,37 @@ class SyncApp {
 
   /**
    * @private
-   * @return {fetchDPContract}
+   * @return {fetchContract}
    */
-  createFetchDPContract() {
-    if (!this.fetchDPContract) {
+  createFetchContract() {
+    if (!this.fetchContract) {
       const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
       const svContractMongoDbRepository = new SVContractMongoDbRepository(
         mongoDb,
         this.createDashPlatformProtocol(),
       );
 
-      this.fetchDPContract = fetchDPContractFactory(svContractMongoDbRepository);
+      this.fetchContract = fetchContractFactory(svContractMongoDbRepository);
     }
 
-    return this.fetchDPContract;
+    return this.fetchContract;
   }
 
   /**
    * @private
-   * @return {fetchDPObjects}
+   * @return {fetchDocuments}
    */
-  createFetchDPObjects() {
-    if (!this.fetchDPObjects) {
-      const createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
+  createFetchDocuments() {
+    if (!this.fetchDocuments) {
+      const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
         this.mongoClient,
-        SVObjectMongoDbRepository,
+        SVDocumentMongoDbRepository,
         sanitizer,
       );
-      this.fetchDPObjects = fetchDPObjectsFactory(createSVObjectMongoDbRepository);
+      this.fetchDocuments = fetchDocumentsFactory(createSVDocumentMongoDbRepository);
     }
 
-    return this.fetchDPObjects;
+    return this.fetchDocuments;
   }
 
   /**
@@ -249,8 +249,8 @@ class SyncApp {
   createDashPlatformProtocol() {
     if (!this.dashPlatfromProtocol) {
       const dataProvider = new DriveDataProvider(
-        this.createFetchDPObjects(),
-        this.createFetchDPContract.bind(this),
+        this.createFetchDocuments(),
+        this.createFetchContract.bind(this),
         this.rpcClient,
       );
 
@@ -277,19 +277,19 @@ class SyncApp {
       mongoDb,
       this.createDashPlatformProtocol(),
     );
-    const createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
+    const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       this.getMongoClient(),
-      SVObjectMongoDbRepository,
+      SVDocumentMongoDbRepository,
       sanitizer,
     );
 
     const updateSVContract = updateSVContractFactory(svContractMongoDbRepository);
-    const updateSVObject = updateSVObjectFactory(createSVObjectMongoDbRepository);
+    const updateSVDocument = updateSVDocumentFactory(createSVDocumentMongoDbRepository);
 
     this.applyStateTransition = applyStateTransitionFactory(
       this.createSTPacketRepository(),
       updateSVContract,
-      updateSVObject,
+      updateSVDocument,
       this.createBlockchainReaderMediator(),
     );
 
@@ -312,21 +312,21 @@ class SyncApp {
   }
 
   /**
-   * Create revertSVObjectsForStateTransition
+   * Create revertSVDocumentsForStateTransition
    *
-   * @returns {revertSVObjectsForStateTransition}
+   * @returns {revertSVDocumentsForStateTransition}
    */
-  createRevertSVObjectsForStateTransition() {
-    const createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
+  createRevertSVDocumentsForStateTransition() {
+    const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       this.getMongoClient(),
-      SVObjectMongoDbRepository,
+      SVDocumentMongoDbRepository,
       sanitizer,
     );
 
-    return revertSVObjectsForStateTransitionFactory(
+    return revertSVDocumentsForStateTransitionFactory(
       this.createSTPacketRepository(),
       this.getRpcClient(),
-      createSVObjectMongoDbRepository,
+      createSVDocumentMongoDbRepository,
       this.createApplyStateTransition(),
       this.createApplyStateTransitionFromReference(),
       this.createBlockchainReaderMediator(),

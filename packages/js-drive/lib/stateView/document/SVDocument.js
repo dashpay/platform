@@ -1,18 +1,18 @@
 const Revisions = require('../revisions/Revisions');
 
-class SVObject extends Revisions {
+class SVDocument extends Revisions {
   /**
    * @param {string} userId
-   * @param {DPObject} dpObject
+   * @param {Document} document
    * @param {Reference} reference
    * @param {boolean} [isDeleted]
    * @param {array} [previousRevisions]
    */
-  constructor(userId, dpObject, reference, isDeleted = false, previousRevisions = []) {
+  constructor(userId, document, reference, isDeleted = false, previousRevisions = []) {
     super(reference, previousRevisions);
 
     this.userId = userId;
-    this.dpObject = dpObject;
+    this.document = document;
     this.deleted = isDeleted;
   }
 
@@ -26,18 +26,18 @@ class SVObject extends Revisions {
   }
 
   /**
-   * Get DP Object
+   * Get Document
    *
-   * @return {DPObject}
+   * @return {Document}
    */
-  getDPObject() {
-    return this.dpObject;
+  getDocument() {
+    return this.document;
   }
 
   /**
-   * Mark object as deleted
+   * Mark document as deleted
    *
-   * @return {SVObject}
+   * @return {SVDocument}
    */
   markAsDeleted() {
     this.deleted = true;
@@ -46,7 +46,7 @@ class SVObject extends Revisions {
   }
 
   /**
-   * Is object deleted?
+   * Is document deleted?
    *
    * @return {boolean}
    */
@@ -61,11 +61,11 @@ class SVObject extends Revisions {
    * @return {number}
    */
   getRevisionNumber() {
-    return this.getDPObject().getRevision();
+    return this.getDocument().getRevision();
   }
 
   /**
-   * Return SV Object as plain object
+   * Return SVDocument as plain object
    *
    * @return {{reference: {
    *            blockHash: string,
@@ -76,7 +76,7 @@ class SVObject extends Revisions {
    *           },
    *           isDeleted: boolean,
    *           userId: string,
-   *           dpObject: { $scope, $action, $scopeId, $rev, $type },
+   *           document: RawDocument,
    *           previousRevisions: {
    *            revision: number,
    *            reference: {
@@ -92,11 +92,11 @@ class SVObject extends Revisions {
     return {
       userId: this.getUserId(),
       isDeleted: this.isDeleted(),
-      dpObject: this.getDPObject().toJSON(),
+      document: this.getDocument().toJSON(),
       reference: this.getReference().toJSON(),
       previousRevisions: this.getPreviousRevisions().map(r => r.toJSON()),
     };
   }
 }
 
-module.exports = SVObject;
+module.exports = SVDocument;

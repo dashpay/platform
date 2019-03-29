@@ -10,7 +10,7 @@ describe('parseBodyFactory', () => {
 
   it('should parse body from request stream', (done) => {
     const request = new PassThrough();
-    const params = { method: 'fetchDPObjects', params: ['123456'] };
+    const params = { method: 'fetchDocuments', params: ['123456'] };
 
     parseBody(request, null, () => {
       expect(request.body).to.deep.equal(params);

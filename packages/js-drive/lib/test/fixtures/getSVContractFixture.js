@@ -1,21 +1,21 @@
 const SVContract = require('../../stateView/contract/SVContract');
 
-const getDPContractFixture = require('./getDPContractFixture');
+const getContractFixture = require('./getContractFixture');
 const getReferenceFixture = require('./getReferenceFixture');
-const getDPObjectsFixture = require('./getDPObjectsFixture');
+const getDocumentsFixture = require('./getDocumentsFixture');
 
 function getSVContractFixture() {
-  const { userId } = getDPObjectsFixture;
+  const { userId } = getDocumentsFixture;
 
-  const dpContract = getDPContractFixture();
+  const contract = getContractFixture();
   const reference = getReferenceFixture();
 
-  const contractId = dpContract.getId();
+  const contractId = contract.getId();
 
   return new SVContract(
     contractId,
     userId,
-    dpContract,
+    contract,
     reference,
   );
 }

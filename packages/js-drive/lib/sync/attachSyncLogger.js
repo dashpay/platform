@@ -1,6 +1,6 @@
 const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 
-const SVObject = require('../stateView/object/SVObject');
+const SVDocument = require('../stateView/document/SVDocument');
 
 const WrongSequenceError = require('../blockchain/reader/eventHandlers/errors/WrongSequenceError');
 const NotAbleToValidateSequenceError = require('../blockchain/reader/eventHandlers/errors/NotAbleToValidateSequenceError');
@@ -188,21 +188,21 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DP_CONTRACT_APPLIED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.CONTRACT_APPLIED, (params) => {
     const { contractId, contract } = params;
 
     const contractAction = contract.version === 1 ? 'Created' : 'Updated';
 
     logger.info(
-      `${contractAction} DP Contract ${contractId}`,
+      `${contractAction} Contract ${contractId}`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DP_CONTRACT_APPLIED,
+        event: ReaderMediator.EVENTS.CONTRACT_APPLIED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DP_CONTRACT_REVERTED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.CONTRACT_REVERTED, (params) => {
     const {
       contractId,
       contract,
@@ -210,76 +210,76 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     } = params;
 
     logger.info(
-      `Reverted DP Contract ${contractId} from ${contract.version} to ${previousRevision.getRevision()}`,
+      `Reverted Contract ${contractId} from ${contract.version} to ${previousRevision.getRevision()}`,
       {
         ...params,
         previousRevision: previousRevision.toJSON(),
-        event: ReaderMediator.EVENTS.DP_CONTRACT_REVERTED,
+        event: ReaderMediator.EVENTS.CONTRACT_REVERTED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DP_CONTRACT_MARKED_DELETED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.CONTRACT_MARKED_DELETED, (params) => {
     const { contractId } = params;
 
     logger.info(
-      `Marked DP Contract for ${contractId} as deleted`,
+      `Marked Contract for ${contractId} as deleted`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DP_CONTRACT_MARKED_DELETED,
+        event: ReaderMediator.EVENTS.CONTRACT_MARKED_DELETED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DP_OBJECT_APPLIED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.DOCUMENT_APPLIED, (params) => {
     const {
       contractId,
-      objectId,
-      object,
+      documentId,
+      document,
     } = params;
 
     const messages = {
-      [SVObject.ACTION_CREATE]: `Created DP Object ${objectId} for ${contractId}`,
-      [SVObject.ACTION_UPDATE]: `Updated DP Object ${objectId} for ${contractId}`,
-      [SVObject.ACTION_DELETE]: `Deleted DP Object ${objectId} for ${contractId}`,
+      [SVDocument.ACTION_CREATE]: `Created Document ${documentId} for ${contractId}`,
+      [SVDocument.ACTION_UPDATE]: `Updated Document ${documentId} for ${contractId}`,
+      [SVDocument.ACTION_DELETE]: `Deleted Document ${documentId} for ${contractId}`,
     };
 
-    const message = messages[object.act];
+    const message = messages[document.act];
 
     logger.info(
       message,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DP_OBJECT_APPLIED,
+        event: ReaderMediator.EVENTS.DOCUMENT_APPLIED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DP_OBJECT_REVERTED, (params) => {
+  readerMediator.on(ReaderMediator.EVENTS.DOCUMENT_REVERTED, (params) => {
     const {
-      objectId,
-      object,
+      documentId,
+      document,
       previousRevision,
     } = params;
 
     logger.info(
-      `Reverted DP Object ${objectId} from ${object.rev} to ${previousRevision.getRevision()}`,
+      `Reverted Document ${documentId} from ${document.rev} to ${previousRevision.getRevision()}`,
       {
         ...params,
         previousRevision: previousRevision.toJSON(),
-        event: ReaderMediator.EVENTS.DP_OBJECT_REVERTED,
+        event: ReaderMediator.EVENTS.DOCUMENT_REVERTED,
       },
     );
   });
 
-  readerMediator.on(ReaderMediator.EVENTS.DP_OBJECT_MARKED_DELETED, (params) => {
-    const { objectId } = params;
+  readerMediator.on(ReaderMediator.EVENTS.DOCUMENT_MARKED_DELETED, (params) => {
+    const { documentId } = params;
 
     logger.info(
-      `DP Object ${objectId} marked as deleted`,
+      `Document ${documentId} marked as deleted`,
       {
         ...params,
-        event: ReaderMediator.EVENTS.DP_OBJECT_MARKED_DELETED,
+        event: ReaderMediator.EVENTS.DOCUMENT_MARKED_DELETED,
       },
     );
   });

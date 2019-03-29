@@ -6,7 +6,7 @@ const {
 } = require('@dashevo/dp-services-ctl');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
-const DPObject = require('@dashevo/dpp/lib/object/DPObject');
+const Document = require('@dashevo/dpp/lib/document/Document');
 
 const sanitizer = require('../../../../lib/mongoDb/sanitizer');
 
@@ -14,12 +14,12 @@ const ReaderMediator = require('../../../../lib/blockchain/reader/BlockchainRead
 
 const Revision = require('../../../../lib/stateView/revisions/Revision');
 const Reference = require('../../../../lib/stateView/revisions/Reference');
-const SVObjectMongoDbRepository = require('../../../../lib/stateView/object/SVObjectMongoDbRepository');
-const SVObject = require('../../../../lib/stateView/object/SVObject');
+const SVDocumentMongoDbRepository = require('../../../../lib/stateView/document/SVDocumentMongoDbRepository');
+const SVDocument = require('../../../../lib/stateView/document/SVDocument');
 
-const revertSVObjectsForStateTransitionFactory = require('../../../../lib/stateView/object/revertSVObjectsForStateTransitionFactory');
-const createSVObjectMongoDbRepositoryFactory = require('../../../../lib/stateView/object/createSVObjectMongoDbRepositoryFactory');
-const updateSVObjectFactory = require('../../../../lib/stateView/object/updateSVObjectFactory');
+const revertSVDocumentsForStateTransitionFactory = require('../../../../lib/stateView/document/revertSVDocumentsForStateTransitionFactory');
+const createSVDocumentMongoDbRepositoryFactory = require('../../../../lib/stateView/document/createSVDocumentMongoDbRepositoryFactory');
+const updateSVDocumentFactory = require('../../../../lib/stateView/document/updateSVDocumentFactory');
 const applyStateTransitionFactory = require('../../../../lib/stateView/applyStateTransitionFactory');
 const applyStateTransitionFromReferenceFactory = require('../../../../lib/stateView/applyStateTransitionFromReferenceFactory');
 
@@ -31,17 +31,17 @@ const ReaderMediatorMock = require('../../../../lib/test/mock/BlockchainReaderMe
 const getBlocksFixture = require('../../../../lib/test/fixtures/getBlocksFixture');
 const getStateTransitionsFixture = require('../../../../lib/test/fixtures/getStateTransitionsFixture');
 const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
-const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
 
-describe('revertSVObjectsForStateTransitionFactory', () => {
+describe('revertSVDocumentsForStateTransitionFactory', () => {
   let userId;
   let stPacketRepository;
-  let createSVObjectMongoDbRepository;
-  let updateSVObject;
+  let createSVDocumentMongoDbRepository;
+  let updateSVDocument;
   let applyStateTransition;
   let rpcClientMock;
   let readerMediatorMock;
-  let revertSVObjectsForStateTransition;
+  let revertSVDocumentsForStateTransition;
   let mongoClient;
   let ipfsAPI;
   let stPacket;
@@ -59,10 +59,10 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
 
     [, stPacket] = getSTPacketsFixture();
 
-    const dpContract = getDPContractFixture();
+    const contract = getContractFixture();
 
     const dataProviderMock = {
-      fetchDPContract: this.sinon.stub().returns(dpContract),
+      fetchContract: this.sinon.stub().returns(contract),
     };
 
     const dpp = new DashPlatformProtocol({
@@ -75,20 +75,20 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
       1000,
     );
 
-    createSVObjectMongoDbRepository = createSVObjectMongoDbRepositoryFactory(
+    createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       mongoClient,
-      SVObjectMongoDbRepository,
+      SVDocumentMongoDbRepository,
       sanitizer,
     );
 
-    updateSVObject = updateSVObjectFactory(createSVObjectMongoDbRepository);
+    updateSVDocument = updateSVDocumentFactory(createSVDocumentMongoDbRepository);
 
     readerMediatorMock = new ReaderMediatorMock(this.sinon);
 
     applyStateTransition = applyStateTransitionFactory(
       stPacketRepository,
       null,
-      updateSVObject,
+      updateSVDocument,
       readerMediatorMock,
     );
 
@@ -99,29 +99,29 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
       rpcClientMock,
     );
 
-    revertSVObjectsForStateTransition = revertSVObjectsForStateTransitionFactory(
+    revertSVDocumentsForStateTransition = revertSVDocumentsForStateTransitionFactory(
       stPacketRepository,
       rpcClientMock,
-      createSVObjectMongoDbRepository,
+      createSVDocumentMongoDbRepository,
       applyStateTransition,
       applyStateTransitionFromReference,
       readerMediatorMock,
     );
   });
 
-  it('should mark SV Objects as deleted if there is no previous version', async () => {
+  it('should mark SVDocuments as deleted if there is no previous version', async () => {
     const [block] = getBlocksFixture();
     const [stateTransition] = getStateTransitionsFixture();
-    const [dpObject] = stPacket.getDPObjects();
+    const [document] = stPacket.getDocuments();
 
     stateTransition.extraPayload.regTxId = userId;
     stateTransition.extraPayload.hashSTPacket = stPacket.hash();
 
     await stPacketRepository.store(stPacket);
 
-    const svObjectRepository = createSVObjectMongoDbRepository(
-      stPacket.getDPContractId(),
-      dpObject.getType(),
+    const svDocumentRepository = createSVDocumentMongoDbRepository(
+      stPacket.getContractId(),
+      document.getType(),
     );
 
     const reference = new Reference({
@@ -129,63 +129,63 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
       blockHeight: block.height,
       stHash: stateTransition.hash,
       stPacketHash: stPacket.hash(),
-      hash: dpObject.hash(),
+      hash: document.hash(),
     });
 
-    await updateSVObject(
-      stPacket.getDPContractId(),
+    await updateSVDocument(
+      stPacket.getContractId(),
       userId,
       reference,
-      dpObject,
+      document,
     );
 
-    const svObjects = await svObjectRepository.fetch();
+    const svDocuments = await svDocumentRepository.fetch();
 
-    expect(svObjects).to.be.not.empty();
+    expect(svDocuments).to.be.not.empty();
 
-    await revertSVObjectsForStateTransition({
+    await revertSVDocumentsForStateTransition({
       stateTransition,
     });
 
-    const svObjectsAfterReverting = await svObjectRepository.fetch();
+    const svDocumentsAfterReverting = await svDocumentRepository.fetch();
 
-    expect(svObjectsAfterReverting).to.be.empty();
+    expect(svDocumentsAfterReverting).to.be.empty();
 
     expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
-      ReaderMediator.EVENTS.DP_OBJECT_MARKED_DELETED,
+      ReaderMediator.EVENTS.DOCUMENT_MARKED_DELETED,
       {
         userId,
-        objectId: dpObject.getId(),
+        documentId: document.getId(),
         reference,
-        object: dpObject.toJSON(),
+        document: document.toJSON(),
       },
     );
   });
 
-  it('should revert SV Object to its previous revision if any', async () => {
-    // TODO Revert several objects
+  it('should revert SVDocument to its previous revision if any', async () => {
+    // TODO Revert several documents
 
-    // 1. Store 3 revisions of DP Object in IPFS
-    const dpObjectRevisions = [];
+    // 1. Store 3 revisions of Document in IPFS
+    const documentRevisions = [];
 
     const blocks = getBlocksFixture();
     const stateTransitions = getStateTransitionsFixture();
 
-    const [dpObject] = stPacket.getDPObjects();
+    const [document] = stPacket.getDocuments();
 
     for (let i = 0; i < 3; i++) {
       const block = blocks[i];
       const stateTransition = stateTransitions[i];
 
-      const updatedDPObject = new DPObject(dpObject.toJSON());
+      const updatedDocument = new Document(document.toJSON());
 
       if (i > 0) {
-        updatedDPObject.setAction(DPObject.ACTIONS.UPDATE);
+        updatedDocument.setAction(Document.ACTIONS.UPDATE);
       }
 
-      updatedDPObject.setRevision(i);
+      updatedDocument.setRevision(i);
 
-      stPacket.setDPObjects([updatedDPObject]);
+      stPacket.setDocuments([updatedDocument]);
 
       await stPacketRepository.store(stPacket);
 
@@ -197,12 +197,12 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
         blockHeight: block.height,
         stHash: stateTransition.hash,
         stPacketHash: stPacket.hash(),
-        hash: updatedDPObject.hash(),
+        hash: updatedDocument.hash(),
       });
 
-      dpObjectRevisions.push({
+      documentRevisions.push({
         revision: i,
-        dpObject: updatedDPObject,
+        document: updatedDocument,
         block,
         stateTransition,
         stPacket,
@@ -216,60 +216,60 @@ describe('revertSVObjectsForStateTransitionFactory', () => {
         });
     }
 
-    // 2. Create ans store SV Object
-    const previousRevisions = dpObjectRevisions.slice(0, 2)
+    // 2. Create ans store SVDocument
+    const previousRevisions = documentRevisions.slice(0, 2)
       .map(({ revision, reference }) => (
         new Revision(revision, reference)
       ));
 
-    const thirdDPObjectRevision = dpObjectRevisions[dpObjectRevisions.length - 1];
+    const thirdDocumentRevision = documentRevisions[documentRevisions.length - 1];
 
-    const svObject = new SVObject(
+    const svDocument = new SVDocument(
       userId,
-      thirdDPObjectRevision.dpObject,
-      thirdDPObjectRevision.reference,
+      thirdDocumentRevision.document,
+      thirdDocumentRevision.reference,
       false,
       previousRevisions,
     );
 
-    const svObjectRepository = createSVObjectMongoDbRepository(
-      stPacket.getDPContractId(),
-      dpObject.getType(),
+    const svDocumentRepository = createSVDocumentMongoDbRepository(
+      stPacket.getContractId(),
+      document.getType(),
     );
 
-    await svObjectRepository.store(svObject);
+    await svDocumentRepository.store(svDocument);
 
     // 3. Revert 3rd version of contract to 2nd
-    await revertSVObjectsForStateTransition({
-      stateTransition: thirdDPObjectRevision.stateTransition,
-      block: thirdDPObjectRevision.block,
+    await revertSVDocumentsForStateTransition({
+      stateTransition: thirdDocumentRevision.stateTransition,
+      block: thirdDocumentRevision.block,
     });
 
-    const revertedSVObjects = await svObjectRepository.fetch(dpObject.getId());
+    const revertedSVDocuments = await svDocumentRepository.fetch(document.getId());
 
-    expect(revertedSVObjects).to.be.an('array');
+    expect(revertedSVDocuments).to.be.an('array');
 
-    const [revertedSVObject] = revertedSVObjects;
+    const [revertedSVDocument] = revertedSVDocuments;
 
-    expect(revertedSVObject).to.be.an.instanceOf(SVObject);
+    expect(revertedSVDocument).to.be.an.instanceOf(SVDocument);
 
-    expect(revertedSVObject.getDPObject().getRevision()).to.equal(1);
+    expect(revertedSVDocument.getDocument().getRevision()).to.equal(1);
 
-    expect(revertedSVObject.getPreviousRevisions()).to.deep.equal([
+    expect(revertedSVDocument.getPreviousRevisions()).to.deep.equal([
       previousRevisions[0],
     ]);
 
     expect(readerMediatorMock.emitSerial.getCall(1)).to.have.been.calledWith(
-      ReaderMediator.EVENTS.DP_OBJECT_REVERTED,
+      ReaderMediator.EVENTS.DOCUMENT_REVERTED,
       {
-        userId: svObject.getUserId(),
-        objectId: svObject.getDPObject().getId(),
-        reference: svObject.getReference(),
-        object: svObject.getDPObject().toJSON(),
+        userId: svDocument.getUserId(),
+        documentId: svDocument.getDocument().getId(),
+        reference: svDocument.getReference(),
+        document: svDocument.getDocument().toJSON(),
         previousRevision: previousRevisions[1],
       },
     );
   });
 
-  it('should not do anything if packet have no DP Contract ID');
+  it('should not do anything if packet have no Contract ID');
 });

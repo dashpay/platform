@@ -6,22 +6,22 @@ const SVContract = require('./SVContract');
  */
 function updateSVContractFactory(svContractRepository) {
   /**
-   * Generate DP Contract State View
+   * Generate Contract State View
    *
    * @typedef {Promise} updateSVContract
    * @param {string} contractId
    * @param {string} userId
    * @param {Reference} reference
-   * @param {DPContract} dpContract
+   * @param {Contract} contract
    * @param {boolean} [reverting]
    *
    * @returns {Promise<void>}
    */
-  async function updateSVContract(contractId, userId, reference, dpContract, reverting = false) {
+  async function updateSVContract(contractId, userId, reference, contract, reverting = false) {
     const currentSVContract = new SVContract(
       contractId,
       userId,
-      dpContract,
+      contract,
       reference,
     );
 

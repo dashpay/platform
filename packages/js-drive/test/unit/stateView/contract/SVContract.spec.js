@@ -1,12 +1,12 @@
 const SVContract = require('../../../../lib/stateView/contract/SVContract');
 
-const getDPContractFixture = require('../../../../lib/test/fixtures/getDPContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
 const getReferenceFixture = require('../../../../lib/test/fixtures/getReferenceFixture');
-const getDPObjectsFixture = require('../../../../lib/test/fixtures/getDPObjectsFixture');
+const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
 describe('SVContract', () => {
   let svContract;
-  let dpContract;
+  let contract;
   let contractId;
   let reference;
   let isDeleted;
@@ -14,19 +14,19 @@ describe('SVContract', () => {
   let previousRevisions;
 
   beforeEach(() => {
-    ({ userId } = getDPObjectsFixture);
+    ({ userId } = getDocumentsFixture);
 
-    dpContract = getDPContractFixture();
+    contract = getContractFixture();
     reference = getReferenceFixture();
 
-    contractId = dpContract.getId();
+    contractId = contract.getId();
     isDeleted = false;
     previousRevisions = [];
 
     svContract = new SVContract(
       contractId,
       userId,
-      dpContract,
+      contract,
       reference,
       isDeleted,
       previousRevisions,
@@ -49,11 +49,11 @@ describe('SVContract', () => {
     });
   });
 
-  describe('#getDPContract', () => {
-    it('should return DP Contract', () => {
-      const result = svContract.getDPContract();
+  describe('#getContract', () => {
+    it('should return Contract', () => {
+      const result = svContract.getContract();
 
-      expect(result.toJSON()).to.deep.equal(dpContract.toJSON());
+      expect(result.toJSON()).to.deep.equal(contract.toJSON());
     });
   });
 
@@ -80,7 +80,7 @@ describe('SVContract', () => {
       svContract = new SVContract(
         contractId,
         userId,
-        dpContract,
+        contract,
         reference,
         isDeleted,
         previousRevisions,
@@ -89,7 +89,7 @@ describe('SVContract', () => {
       expect(svContract.toJSON()).to.deep.equal({
         contractId,
         userId,
-        dpContract: dpContract.toJSON(),
+        contract: contract.toJSON(),
         reference: reference.toJSON(),
         isDeleted,
         previousRevisions,
