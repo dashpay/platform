@@ -1,37 +1,37 @@
 const Validator = require('../../utils/Validator');
-const argsSchema = require('../schemas/fetchDapContract');
+const argsSchema = require('../schemas/fetchContract');
 
 const validator = new Validator(argsSchema);
 /**
- * @param {AbstractDashDriveAdapter} dashDriveAPI
- * @return {fetchDapContract}
+ * @param {AbstractDriveAdapter} driveAPI
+ * @return {fetchContract}
  */
-const fetchDapContractFactory = (dashDriveAPI) => {
+const fetchContractFactory = (driveAPI) => {
   /**
    * Layer 2 endpoint
    * Returns user dap space
-   * @typedef fetchDapContract
+   * @typedef fetchContract
    * @param args - command arguments
    * @param {string} args.contractId
    * @return {Promise<object>}
    */
-  async function fetchDapContract(args) {
+  async function fetchContract(args) {
     validator.validate(args);
     const { contractId } = args;
-    return dashDriveAPI.fetchDapContract(contractId);
+    return driveAPI.fetchContract(contractId);
   }
 
-  return fetchDapContract;
+  return fetchContract;
 };
 
 /* eslint-disable max-len */
 /**
  * @swagger
- * /fetchDapContract:
+ * /fetchContract:
  *   post:
- *      operationId: fetchDapContract
+ *      operationId: fetchContract
  *      deprecated: false
- *      summary: fetchDapContract
+ *      summary: fetchContract
  *      description: Fetch a user's DAP space
  *      tags:
  *        - L2
@@ -51,7 +51,7 @@ const fetchDapContractFactory = (dashDriveAPI) => {
  *              properties:
  *                method:
  *                  type: string
- *                  default: fetchDapContract
+ *                  default: fetchContract
  *                  description: Method name
  *                id:
  *                  type: integer
@@ -75,4 +75,4 @@ const fetchDapContractFactory = (dashDriveAPI) => {
  */
 /* eslint-enable max-len */
 
-module.exports = fetchDapContractFactory;
+module.exports = fetchContractFactory;

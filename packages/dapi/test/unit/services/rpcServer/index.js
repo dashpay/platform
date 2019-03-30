@@ -32,7 +32,7 @@
 // 'getMNList', 'getPeerDataSyncStatus', 'getRawBlock', 'getStatus',
 //       'getTransactionById', 'getTransactionsByAddress', 'getUser', 'getUTXO', 'getBlockHeaders',
 //       'sendRawTransaction', 'sendRawTransition',
-//       'fetchDapContract', 'searchUsers', 'sendRawIxTransaction'].forEach((f) => {
+//       'fetchContract', 'searchUsers', 'sendRawIxTransaction'].forEach((f) => {
 //       it('should createCommands.getAddressSummary be a promise', () => {
 //         const res = createCommands();
 //         expect(res[f]).to.be.a('function');
@@ -44,7 +44,7 @@
 //       'getMNList', 'getRawBlock',
 // 'getStatus', 'getTransactionById', 'getTransactionsByAddress', 'getUser',
 //       'getUTXO', 'getBlockHeaders', 'sendRawTransaction', 'sendRawTransition',
-//       'fetchDapContract', 'searchUsers'].forEach((f) => {
+//       'fetchContract', 'searchUsers'].forEach((f) => {
 //       it('should call items from createCommands list', () => {
 //         const res = createCommands();
 //         expect(res[f]()).to.be.a('promise');

@@ -45,8 +45,8 @@ function validateConfig(config) {
   validationResults.push(validatePort(config.dashcore.rpc.port, 'DASHCORE_RPC_PORT'));
   validationResults.push(validateHost(config.dashcore.zmq.host, 'DASHCORE_ZMQ_HOST'));
   validationResults.push(validatePort(config.dashcore.zmq.port, 'DASHCORE_ZMQ_PORT'));
-  validationResults.push(validateHost(config.dashDrive.host, 'DASHDRIVE_RPC_HOST'));
-  validationResults.push(validatePort(config.dashDrive.port, 'DASHDRIVE_RPC_PORT'));
+  validationResults.push(validateHost(config.drive.host, 'DRIVE_RPC_HOST'));
+  validationResults.push(validatePort(config.drive.port, 'DRIVE_RPC_PORT'));
   validationResults.push(validatePort(config.server.port.toString(), 'RPC_SERVER_PORT'));
 
   const validationErrors = validationResults

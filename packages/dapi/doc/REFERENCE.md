@@ -41,7 +41,7 @@
 
  - [Layer 2 endpoints](#Layer-2-endpoints)
 
-    - [fetchDapContract](#fetchdapcontract)
+    - [fetchContract](#fetchcontract)
     - [getUser](#getuser)
     - [searchUsers](#searchusers)
     - [sendRawTransition](#sendrawtransition)
@@ -544,15 +544,15 @@ Sends raw transaction to the network.
 
 ## Layer 2 endpoints
 
-### fetchDapContract
+### fetchContract
 
-Returns user's Dap space.
+Returns Data Contract
 
 ##### Params
 
-| name       | type   | description                            |
-|------------|--------|----------------------------------------|
-| args.contractId | string | User's contract Id                          |
+| name            | type   | description                            |
+|-----------------|--------|----------------------------------------|
+| args.contractId | string | User's contract ID                          |
 
 ##### Response
 

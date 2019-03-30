@@ -16,7 +16,7 @@ module.exports = {
           host: '123',
         },
       },
-      dashDrive: {
+      drive: {
         host: '123',
         port: '123',
       },

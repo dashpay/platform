@@ -8,7 +8,7 @@ const validator = new Validator(argsSchema);
  * @param userIndex
  * @return {function({pattern: string, limit: number, offset: number}): {totalCount: *, results: *}}
  */
-const searchDapContractsFactory = (userIndex) => {
+const searchSearchUsersFactory = (userIndex) => {
   /**
    * Layer 2 endpoint
    * @param args
@@ -94,4 +94,4 @@ const searchDapContractsFactory = (userIndex) => {
  */
 /* eslint-enable max-len */
 
-module.exports = searchDapContractsFactory;
+module.exports = searchSearchUsersFactory;

@@ -8,11 +8,11 @@ chai.use(chaiAsPromised);
 const { expect } = chai;
 let spy;
 
-describe('fetchDapContract', () => {
+describe('fetchContract', () => {
   describe('#factory', () => {
     it('should return a function', () => {
-      const getDapContract = getQuorumFactory(coreApiFixture);
-      expect(getDapContract).to.be.a('function');
+      const getContract = getQuorumFactory(coreApiFixture);
+      expect(getContract).to.be.a('function');
     });
   });
 
@@ -52,9 +52,9 @@ describe('fetchDapContract', () => {
   it('Should throw an error if arguments are not valid', async () => {
     // TODO: The following wasn't used. Consider removing.
     // const regTxId = 'c4ba45dcdfe2461e17a54d43ce12751c16cefd61';
-    const getDapContract = await getQuorumFactory(coreApiFixture);
+    const getContract = await getQuorumFactory(coreApiFixture);
     expect(spy.callCount).to.be.equal(0);
-    await expect(getDapContract({ regTxId: 0 })).to.be.rejectedWith('should be string');
+    await expect(getContract({ regTxId: 0 })).to.be.rejectedWith('should be string');
     expect(spy.callCount).to.be.equal(0);
   });
 });

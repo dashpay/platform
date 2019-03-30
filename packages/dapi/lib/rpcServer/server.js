@@ -29,8 +29,8 @@ const sendRawTransaction = require('./commands/sendRawTransaction');
 const sendRawIxTransaction = require('./commands/sendRawIxTransaction');
 const generate = require('./commands/generate');
 const sendRawTransition = require('./commands/sendRawTransition');
-const fetchDapContract = require('./commands/fetchDapContract');
-const fetchDapObjects = require('./commands/fetchDapObjects');
+const fetchContract = require('./commands/fetchContract');
+const fetchDocuments = require('./commands/fetchDocuments');
 const searchUsers = require('./commands/searchUsers');
 const loadBloomFilter = require('./commands/loadBloomFilter');
 const addToBloomFilter = require('./commands/addToBloomFilter');
@@ -42,7 +42,7 @@ const getQuorum = require('./commands/getQuorum');
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
 
-const createCommands = (insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => ({
+const createCommands = (insightAPI, dashcoreAPI, driveAPI, userIndex) => ({
   estimateFee: estimateFee(insightAPI),
   getAddressSummary: getAddressSummary(insightAPI),
   getAddressTotalReceived: getAddressTotalReceived(insightAPI),
@@ -70,10 +70,10 @@ const createCommands = (insightAPI, dashcoreAPI, dashDriveAPI, userIndex) => ({
   sendRawIxTransaction: sendRawIxTransaction(dashcoreAPI),
   getQuorum: getQuorum(dashcoreAPI),
 
-  // Methods that are using DashDrive
-  sendRawTransition: sendRawTransition(dashcoreAPI, dashDriveAPI),
-  fetchDapContract: fetchDapContract(dashDriveAPI),
-  fetchDapObjects: fetchDapObjects(dashDriveAPI),
+  // Methods that are using Drive
+  sendRawTransition: sendRawTransition(dashcoreAPI, driveAPI),
+  fetchContract: fetchContract(driveAPI),
+  fetchDocuments: fetchDocuments(driveAPI),
   searchUsers: searchUsers(userIndex),
 });
 
@@ -97,15 +97,15 @@ const createSpvServiceCommands = spvService => ({
   * @param {object} options.spvService
   * @param {object} options.insightAPI
   * @param {object} options.dashcoreAPI
-  * @param {AbstractDashDriveAdapter} options.dashDriveAPI - DashDrive api adapter
+  * @param {AbstractDriveAdapter} options.driveAPI - Drive api adapter
   * @param {object} options.userIndex
   * @param {object} options.log
  */
 const start = ({
-  port, networkType, spvService, insightAPI, dashcoreAPI, dashDriveAPI, userIndex, log,
+  port, networkType, spvService, insightAPI, dashcoreAPI, driveAPI, userIndex, log,
 }) => {
   const spvCommands = createSpvServiceCommands(spvService);
-  const commands = createCommands(insightAPI, dashcoreAPI, dashDriveAPI, userIndex);
+  const commands = createCommands(insightAPI, dashcoreAPI, driveAPI, userIndex);
   const areRegtestCommandsEnabled = isRegtest(networkType) || isDevnet(networkType);
 
   const allCommands = areRegtestCommandsEnabled

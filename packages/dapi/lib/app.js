@@ -10,7 +10,7 @@ const log = require('./log');
 const rpcServer = require('./rpcServer/server');
 const QuorumService = require('./services/quorum');
 const ZmqClient = require('./externalApis/dashcore/ZmqClient');
-const DashDriveAdapter = require('./externalApis/dashDriveAdapter');
+const DriveAdapter = require('./externalApis/driveAdapter');
 const { SpvService } = require('./services/spv');
 const insightAPI = require('./externalApis/insight');
 const dashCoreRpcClient = require('./externalApis/dashcore/rpc');
@@ -49,10 +49,10 @@ async function main() {
   const spvService = new SpvService();
   log.info(`SPV service running with ${spvService.clients.length} connected clients`);
 
-  log.info('Connecting to DashDrive');
-  const dashDriveAPI = new DashDriveAdapter({
-    host: config.dashDrive.host,
-    port: config.dashDrive.port,
+  log.info('Connecting to Drive');
+  const driveAPI = new DriveAdapter({
+    host: config.drive.host,
+    port: config.drive.port,
   });
 
   log.info('Starting username index service');
@@ -71,7 +71,7 @@ async function main() {
     spvService,
     insightAPI,
     dashcoreAPI: dashCoreRpcClient,
-    dashDriveAPI,
+    driveAPI,
     userIndex,
     log,
   });

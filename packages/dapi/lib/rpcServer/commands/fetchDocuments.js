@@ -1,16 +1,16 @@
 const Validator = require('../../utils/Validator');
-const argsSchema = require('../schemas/fetchDapObjects');
+const argsSchema = require('../schemas/fetchDocuments');
 
 const validator = new Validator(argsSchema);
 /**
- * @param {AbstractDashDriveAdapter} dashDriveAPI
- * @return {fetchDapObjects}
+ * @param {AbstractDriveAdapter} driveAPI
+ * @return {fetchDocuments}
  */
-const fetchDapObjectsFactory = (dashDriveAPI) => {
+const fetchDocumentsFactory = (driveAPI) => {
   /**
    * Layer 2 endpoint
    * Fetches user objects for a given condition
-   * @typedef fetchDapObjects
+   * @typedef fetchDocuments
    * @param args - command arguments
    * @param {string} args.contractId
    * @param {string} args.type
@@ -22,23 +22,23 @@ const fetchDapObjectsFactory = (dashDriveAPI) => {
    * @param {number} args.options.startAfter - exclusive skip
    * @return {Promise<object>}
    */
-  async function fetchDapObjects(args) {
+  async function fetchDocuments(args) {
     validator.validate(args);
     const { contractId, type, options } = args;
-    return dashDriveAPI.fetchDapObjects(contractId, type, options);
+    return driveAPI.fetchDocuments(contractId, type, options);
   }
 
-  return fetchDapObjects;
+  return fetchDocuments;
 };
 
 /* eslint-disable max-len */
 /**
  * @swagger
- * /fetchDapObjects:
+ * /fetchDocuments:
  *   post:
- *      operationId: fetchDapObjects
+ *      operationId: fetchDocuments
  *      deprecated: false
- *      summary: fetchDapObjects
+ *      summary: fetchDocuments
  *      description: Fetches user objects for a given condition
  *      tags:
  *        - L2
@@ -58,7 +58,7 @@ const fetchDapObjectsFactory = (dashDriveAPI) => {
  *              properties:
  *                method:
  *                  type: string
- *                  default: fetchDapObjects
+ *                  default: fetchDocuments
  *                  description: Method name
  *                id:
  *                  type: integer
@@ -111,4 +111,4 @@ const fetchDapObjectsFactory = (dashDriveAPI) => {
  */
 /* eslint-enable max-len */
 
-module.exports = fetchDapObjectsFactory;
+module.exports = fetchDocumentsFactory;

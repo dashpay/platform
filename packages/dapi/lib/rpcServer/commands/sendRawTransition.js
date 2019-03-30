@@ -3,7 +3,7 @@ const argsSchema = require('../schemas/sendRawTransition');
 
 const validator = new Validator(argsSchema);
 
-function sendRawTransitionFactory(coreAPI, dashDriveAPI) {
+function sendRawTransitionFactory(coreAPI, driveAPI) {
   /**
    * Layer 2 endpoint
    * sends raw transition to quorum relay node and ST Packet to the local Drive
@@ -19,7 +19,7 @@ function sendRawTransitionFactory(coreAPI, dashDriveAPI) {
 
     const { rawStateTransition, rawSTPacket } = args;
 
-    await dashDriveAPI.addSTPacket(rawStateTransition, rawSTPacket);
+    await driveAPI.addSTPacket(rawStateTransition, rawSTPacket);
 
     return coreAPI.sendRawTransaction(rawStateTransition);
   };

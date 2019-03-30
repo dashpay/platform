@@ -1,8 +1,8 @@
 const jayson = require('jayson/promise');
-const AbstractDashDriveAdapter = require('./AbstractDashDriveAdapter');
+const AbstractDriveAdapter = require('./AbstractDriveAdapter');
 const RPCError = require('../../rpcServer/RPCError');
 
-class DashDriveAdapter extends AbstractDashDriveAdapter {
+class DriveAdapter extends AbstractDriveAdapter {
   /**
    * @param options
    * @param {string} options.host
@@ -15,7 +15,7 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
   }
 
   /**
-   * Makes request to DashDrive and handles response
+   * Makes request to Drive and handles response
    * @param {string} method
    * @param {Object} params
    * @return {Promise<*>}
@@ -29,7 +29,7 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
   }
 
   /**
-   * Add State Transition Packet to DashDrive storage
+   * Add State Transition Packet to Drive storage
    * @param {string} rawStateTransition - special transaction
    * @param {string} rawSTPacket - raw data packet serialized to hex string
    * @return {Promise<undefined>}
@@ -42,18 +42,18 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
   }
 
   /**
-   * Fetch DAP Contract from DashDrive State View
+   * Fetch DAP Contract from Drive State View
    * @param {string} contractId
-   * @return {Promise<Object>} - Dap contract
+   * @return {Promise<Object>} - Contract
    */
-  fetchDapContract(contractId) {
-    return this.request('fetchDPContract', { contractId });
+  fetchContract(contractId) {
+    return this.request('fetchContract', { contractId });
   }
 
   /**
-   * Fetch DAP Objects from DashDrive State View
+   * Fetch DAP Objects from Drive State View
    * @param {string} contractId
-   * @param {string} type - Dap objects type to fetch
+   * @param {string} type - Documents type to fetch
    * @param options
    * @param {Object} options.where - Mongo-like query
    * @param {Object} options.orderBy - Mongo-like sort field
@@ -62,9 +62,9 @@ class DashDriveAdapter extends AbstractDashDriveAdapter {
    * @param {number} options.startAfter - exclusive skip
    * @return {Promise<Object[]>}
    */
-  fetchDapObjects(contractId, type, options) {
-    return this.request('fetchDPObjects', { contractId, type, options });
+  fetchDocuments(contractId, type, options) {
+    return this.request('fetchDocuments', { contractId, type, options });
   }
 }
 
-module.exports = DashDriveAdapter;
+module.exports = DriveAdapter;

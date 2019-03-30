@@ -8,7 +8,7 @@ const sinonChai = require('sinon-chai');
 const sendRawTransitionFactory = require('../../../../lib/rpcServer/commands/sendRawTransition');
 
 const coreAPIFixture = require('../../../mocks/coreAPIFixture');
-const dashDriveFixture = require('../../../mocks/dashDriveFixture');
+const driveFixture = require('../../../mocks/driveFixture');
 
 chai.use(chaiAsPromised);
 chai.use(dirtyChai);
@@ -22,14 +22,14 @@ describe('sendRawTransition', () => {
 
   describe('#factory', () => {
     it('should return a function', () => {
-      const sendRawTransaction = sendRawTransitionFactory(coreAPIFixture, dashDriveFixture);
+      const sendRawTransaction = sendRawTransitionFactory(coreAPIFixture, driveFixture);
       expect(sendRawTransaction).to.be.a('function');
     });
   });
 
   before(() => {
     sendRawTransactionSpy = sinon.spy(coreAPIFixture, 'sendRawTransaction');
-    addSTPacketSpy = sinon.spy(dashDriveFixture, 'addSTPacket');
+    addSTPacketSpy = sinon.spy(driveFixture, 'addSTPacket');
   });
 
   beforeEach(() => {
@@ -46,7 +46,7 @@ describe('sendRawTransition', () => {
     const rawStateTransition = '0AFF';
     const rawSTPacket = '0BFF';
 
-    const sendRawTransition = sendRawTransitionFactory(coreAPIFixture, dashDriveFixture);
+    const sendRawTransition = sendRawTransitionFactory(coreAPIFixture, driveFixture);
 
     expect(addSTPacketSpy).to.have.not.been.called();
     expect(sendRawTransactionSpy).to.have.not.been.called();
@@ -101,7 +101,7 @@ describe('sendRawTransition', () => {
       },
     ];
 
-    const sendRawTransition = sendRawTransitionFactory(coreAPIFixture, dashDriveFixture);
+    const sendRawTransition = sendRawTransitionFactory(coreAPIFixture, driveFixture);
 
     expect(addSTPacketSpy).to.have.not.been.called();
     expect(sendRawTransactionSpy).to.have.not.been.called();

@@ -1,7 +1,7 @@
 /* eslint no-unused-vars: off, class-methods-use-this: off */
-class AbstractDashDriveAdapter {
+class AbstractDriveAdapter {
   /**
-   * Add State Transition Packet to DashDrive storage
+   * Add State Transition Packet to Drive storage
    * @param {string} rawStateTransition - serialized state transition header
    * @param {string} rawSTPacket - raw data packet serialized to hex string
    * @return {Promise<string>} - packet id
@@ -11,18 +11,18 @@ class AbstractDashDriveAdapter {
   }
 
   /**
-   * Fetch DAP Contract from DashDrive State View
+   * Fetch DAP Contract from Drive State View
    * @param {string} contractId
-   * @return {Promise<Object>} - Dap contract
+   * @return {Promise<Object>} - Contract
    */
-  fetchDapContract(contractId) {
+  fetchContract(contractId) {
     throw new Error('Not implemented');
   }
 
   /**
-   * Fetch DAP Objects from DashDrive State View
+   * Fetch DAP Objects from Drive State View
    * @param {string} contractId
-   * @param {string} type - Dap objects type to fetch
+   * @param {string} type - Documents type to fetch
    * @param options
    * @param {Object} options.where - Mongo-like query
    * @param {Object} options.orderBy - Mongo-like sort field
@@ -31,9 +31,9 @@ class AbstractDashDriveAdapter {
    * @param {number} options.startAfter - exclusive skip
    * @return {Promise<Object[]>}
    */
-  fetchDapObjects(contractId, type, options) {
+  fetchDocuments(contractId, type, options) {
     throw new Error('Not implemented');
   }
 }
 
-module.exports = AbstractDashDriveAdapter;
+module.exports = AbstractDriveAdapter;
