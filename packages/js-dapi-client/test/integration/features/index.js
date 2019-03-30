@@ -37,9 +37,6 @@ describe('retry policy', () => {
   let insightURL;
 
   let dapiClient;
-  let dapId;
-  let dapSchema;
-  let dapContract;
 
   let faucetPrivateKey;
   let faucetAddress;
@@ -63,7 +60,7 @@ describe('retry policy', () => {
       .toString(36)
       .substring(7);
 
-    const dpContract = dpp.contract.create(entropy.generate(), {
+    const contract = dpp.contract.create(entropy.generate(), {
       user: {
         properties: {
           avatarUrl: {
@@ -91,7 +88,7 @@ describe('retry policy', () => {
       },
     });
 
-    dpp.setDPContract(dpContract);
+    dpp.setContract(contract);
 
     sinon.stub(MNDiscovery.prototype, 'getRandomMasternode')
       .returns(Promise.resolve({ ip: '127.0.0.1' }));
@@ -543,4 +540,3 @@ describe('retry policy', () => {
   });
 
 });
-

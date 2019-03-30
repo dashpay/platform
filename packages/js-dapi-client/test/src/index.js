@@ -86,7 +86,7 @@ const rawBlock = {
 
 const contractId = '11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c';
 
-const dapContract = {
+const contract = {
   'dapname': 'TestContacts_test',
   'dapver': 1,
   'idx': 0,
@@ -311,7 +311,7 @@ const validBlockHeader =
 
 const validMnListDiff = SMNListFixture.getFirstDiff();
 
-const dapObjects = [{
+const documents = [{
   'avatar': 'My avatar here',
   'aboutme': 'This is story about me',
   'objtype': 'user',
@@ -486,11 +486,11 @@ describe('api', () => {
           if (method === 'getRawBlock') {
             return rawBlock;
           }
-          if (method === 'fetchDapContract') {
-            return dapContract;
+          if (method === 'fetchContract') {
+            return contract;
           }
-          if (method === 'fetchDapObjects') {
-            return dapObjects;
+          if (method === 'fetchDocuments') {
+            return documents;
           }
           if (method === 'sendRawIxTransaction') {
             return {
@@ -824,7 +824,7 @@ describe('api', () => {
     xit('Should send raw transition', async () => {
       // 1. Create ST packet
       let { stpacket: stPacket } = Schema.create.stpacket();
-      stPacket = Object.assign(stPacket, dapContract);
+      stPacket = Object.assign(stPacket, contract);
 
       // 2. Create State Transition
       const transaction = new Transaction()
@@ -852,19 +852,19 @@ describe('api', () => {
     });
   });
 
-  describe('.tx.fetchDapContract', () => {
+  describe('.tx.fetchContract', () => {
     it('Should fetch dap contract', async () => {
       const dapi = new DAPIClient();
-      const dapContract = await dapi.fetchDapContract(contractId);
-      expect(dapContract).to.be.deep.equal(dapContract);
+      const contract = await dapi.fetchContract(contractId);
+      expect(contract).to.be.deep.equal(contract);
     });
   });
 
-  describe('.tx.fetchDapObjects', () => {
+  describe('.tx.fetchDocuments', () => {
     it('Should fetch dap objects', async () => {
       const dapi = new DAPIClient();
-      const dapContract = await dapi.fetchDapObjects(contractId, 'user', {});
-      expect(dapContract).to.be.deep.equal(dapObjects);
+      const contract = await dapi.fetchDocuments(contractId, 'user', {});
+      expect(contract).to.be.deep.equal(documents);
     });
   });
 

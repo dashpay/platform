@@ -19,7 +19,6 @@ const {
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 const entropy = require('@dashevo/dpp/lib/util/entropy');
-const DPObject = require('@dashevo/dpp/lib/object/DPObject');
 
 const wait = require('../../utils/wait');
 
@@ -66,7 +65,7 @@ describe('basicAPIs', () => {
 
         bobUserName = Math.random().toString(36).substring(7);
         aliceUserName = Math.random().toString(36).substring(7);
-        const dpContract = dpp.contract.create(entropy.generate().substr(0, 24), {
+        const contract = dpp.contract.create(entropy.generate().substr(0, 24), {
             user: {
                 properties: {
                     avatarUrl: {
@@ -93,7 +92,7 @@ describe('basicAPIs', () => {
                 additionalProperties: false,
             },
         });
-        dpp.setDPContract(dpContract);
+        dpp.setContract(contract);
 
         sinon.stub(MNDiscovery.prototype, 'getRandomMasternode')
             .returns(Promise.resolve({ip: '127.0.0.1'}));
@@ -368,7 +367,7 @@ describe('basicAPIs', () => {
         it('should sendRawTransition', async function it() {
 
             // 1. Create ST packet
-            const stPacket = dpp.packet.create(dpp.getDPContract());
+            const stPacket = dpp.packet.create(dpp.getContract());
 
             // 2. Create State Transition
             const transaction = new Transaction()
@@ -393,26 +392,26 @@ describe('basicAPIs', () => {
             bobPreviousST = transitionHash;
         });
 
-        it('should fetchDapContract', async function it() {
-            let dapContractFromDAPI;
+        it('should fetchContract', async function it() {
+            let contractFromDAPI;
 
             for (let i = 0; i <= attempts; i++) {
                 try {
                     // waiting for Contacts to be added
-                    dapContractFromDAPI = await dapiClient.fetchDapContract(dpp.getDPContract().getId());
+                    contractFromDAPI = await dapiClient.fetchContract(dpp.getContract().getId());
                     break;
                 } catch (e) {
                     await dapiClient.generate(1);
                 }
             }
-            let expectedContract = JSON.parse(JSON.stringify(dpp.getDPContract()));
+            let expectedContract = JSON.parse(JSON.stringify(dpp.getContract()));
             delete expectedContract['definitions'];
             delete expectedContract['schema'];
             expectedContract.$schema = 'https://schema.dash.org/dpp-0-4-0/meta/dp-contract';
-            expect(dapContractFromDAPI).to.be.deep.equal(expectedContract);
+            expect(contractFromDAPI).to.be.deep.equal(expectedContract);
         });
 
-        it('should fetchDapObjects', async function it() {
+        it('should fetchDocuments', async function it() {
             dpp.setUserId(bobRegTxId);
 
             const user = dpp.object.create('user', {
@@ -447,8 +446,8 @@ describe('basicAPIs', () => {
 
             let users;
             for (let i = 0; i <= attempts; i++) {
-                users = await dapiClient.fetchDapObjects(
-                  dpp.getDPContract().getId(),
+                users = await dapiClient.fetchDocuments(
+                  dpp.getContract().getId(),
                   'user',
                   {},
                 );
