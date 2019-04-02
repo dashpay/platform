@@ -2,6 +2,7 @@
   "name": "@dashevo/dash-network-e2e-tests",
   "version": "1.0.0",
   "description": "Dash Network end-to-end tests",
+  "private": true,
   "scripts": {
     "test": "mocha './test/**/*.spec.js'",
     "lint": "eslint ."
@@ -16,10 +17,9 @@
   },
   "homepage": "https://github.com/dashevo/dash-network-e2e-tests#readme",
   "devDependencies": {
-    "@dashevo/dapi-client": "git+ssh://git@github.com/dashevo/dapi-client.git#master",
-    "@dashevo/dash-schema": "^3.0.0-alpha.3",
-    "@dashevo/dashcore-lib": "1.0.0-alpha.15",
-    "cbor": "^4.1.1",
+    "@dashevo/dapi-client": "^0.4.1",
+    "@dashevo/dashcore-lib": "^0.17.1",
+    "@dashevo/dpp": "^0.7.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
@@ -28,8 +28,5 @@
     "eslint-config-airbnb-base": "^13.1.0",
     "eslint-plugin-import": "^2.14.0",
     "mocha": "^5.2.0"
-  },
-  "dependencies": {
-    "@dashevo/dashd-rpc": "^1.2.0"
   }
 }

@@ -1,1 +1,1 @@
---file lib/test/bootstrap.js --timeout 30000
+--file lib/test/bootstrap.js --bail --timeout 30000
