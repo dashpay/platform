@@ -52,7 +52,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
         william.getType(),
         {
           where: {
-            'document.$userId': william.get('$userId'),
+            userId,
             'document.firstName': william.get('firstName'),
             _id: { $ne: william.getId() },
           },
@@ -66,7 +66,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
         william.getType(),
         {
           where: {
-            'document.$userId': william.get('$userId'),
+            userId,
             'document.lastName': william.get('lastName'),
             _id: { $ne: william.getId() },
           },
@@ -80,7 +80,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
         leon.getType(),
         {
           where: {
-            'document.$userId': leon.get('$userId'),
+            userId,
             'document.firstName': leon.get('firstName'),
             _id: { $ne: leon.getId() },
           },
@@ -94,7 +94,7 @@ describe('verifyDocumentsUniquenessByIndices', () => {
         leon.getType(),
         {
           where: {
-            'document.$userId': leon.get('$userId'),
+            userId,
             'document.lastName': leon.get('lastName'),
             _id: { $ne: leon.getId() },
           },

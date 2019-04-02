@@ -32,8 +32,14 @@ function verifyDocumentsUniquenessByIndicesFactory(fetchDocumentsByDocuments, da
             const where = indexDefinition.properties
               .reduce((obj, property) => {
                 const propertyName = Object.keys(property)[0];
-                // eslint-disable-next-line no-param-reassign
-                obj[`document.${propertyName}`] = document.get(propertyName);
+
+                if (propertyName === '$userId') {
+                  // eslint-disable-next-line no-param-reassign
+                  obj.userId = userId;
+                } else {
+                  // eslint-disable-next-line no-param-reassign
+                  obj[`document.${propertyName}`] = document.get(propertyName);
+                }
 
                 return obj;
               }, {});
