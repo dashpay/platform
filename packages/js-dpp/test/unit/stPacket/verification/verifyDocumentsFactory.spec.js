@@ -201,11 +201,11 @@ describe('verifyDocuments', () => {
     fetchDocumentsByDocumentsMock.resolves(fetchedDocuments);
 
     documents[1].setAction(Document.ACTIONS.UPDATE);
-    documents[1].setRevision(1);
+    documents[1].setRevision(2);
 
     documents[2].setData({});
     documents[2].setAction(Document.ACTIONS.DELETE);
-    documents[2].setRevision(1);
+    documents[2].setRevision(2);
 
     const result = await verifyDocuments(stPacket, userId, contract);
 

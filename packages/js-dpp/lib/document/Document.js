@@ -207,7 +207,7 @@ Document.ACTIONS = {
 };
 
 Document.DEFAULTS = {
-  REVISION: 0,
+  REVISION: 1,
   ACTION: Document.ACTIONS.CREATE,
 };
 

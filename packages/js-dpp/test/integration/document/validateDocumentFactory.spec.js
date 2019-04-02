@@ -187,7 +187,7 @@ describe('validateDocumentFactory', () => {
         expect(error.keyword).to.equal('multipleOf');
       });
 
-      it('should be greater or equal to zero', () => {
+      it('should be greater or equal to one', () => {
         rawDocument.$rev = -1;
 
         const result = validateDocument(rawDocument, contract);
