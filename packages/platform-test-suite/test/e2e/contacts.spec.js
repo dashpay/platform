@@ -26,6 +26,7 @@ describe('Contacts app', () => {
   let bobPrivateKey;
   let bobUserName;
   let bobRegTxId;
+  let bobContactRequest;
   let alicePrivateKey;
   let aliceUserName;
   let aliceRegTxId;
@@ -400,16 +401,16 @@ describe('Contacts app', () => {
 
       dpp.setUserId(bobRegTxId);
 
-      const contactRequest = dpp.document.create('contact', {
+      bobContactRequest = dpp.document.create('contact', {
         toUserId: aliceRegTxId,
         publicKey: bobPrivateKey.toPublicKey().toString('hex'),
       });
 
-      const result = dpp.document.validate(contactRequest);
+      const result = dpp.document.validate(bobContactRequest);
       expect(result.isValid(), 'Contact request must be valid').to.be.true();
 
       // 1. Create ST contact request packet
-      const stPacket = dpp.packet.create([contactRequest]);
+      const stPacket = dpp.packet.create([bobContactRequest]);
 
       // 2. Create State Transition
       const transaction = new Transaction()
@@ -453,7 +454,7 @@ describe('Contacts app', () => {
       }
 
       expect(contacts).to.have.lengthOf(1);
-      expect(contacts[0]).to.be.deep.equal(contactRequest.toJSON());
+      expect(contacts[0]).to.be.deep.equal(bobContactRequest.toJSON());
     });
   });
 
@@ -576,7 +577,7 @@ describe('Contacts app', () => {
       }
 
       expect(contacts).to.have.lengthOf(1);
-      expect(contacts[0]).to.be.deep.equal(aliceContactAcceptance.toJSON());
+      expect(contacts[0]).to.be.deep.equal(bobContactRequest.toJSON());
     });
   });
 });
