@@ -1,19 +1,45 @@
+sudo: false
+dist: trusty
 language: node_js
+
+# Support Active LTS versions of Node.js
 node_js:
+  - '8'
   - '10'
 
+branches:
+  only:
+    - master
+    - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+
 addons:
-  firefox: "latest"
+  chrome: stable
+  firefox: latest
 
 env:
   - MOZ_HEADLESS=1
 
-script:
-  - npm test
-
-install:
-  - npm install
 before_install:
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
+
+install:
+  - npm ci
+
 before_script:
+  # Needed for Karma test runner
+  - export DISPLAY=:99.0
+  - sh -e /etc/init.d/xvfb start
+  - sleep 3 # give xvfb some time to start
+
+script:
+  - npm run check-package
   - npm run lint
+  - npm run test
+
+deploy:
+  - provider: script
+    skip_cleanup: true
+    script: bash scripts/travis-deploy.sh
+    on:
+      repo: dashevo/dapi-client
+      tags: true
