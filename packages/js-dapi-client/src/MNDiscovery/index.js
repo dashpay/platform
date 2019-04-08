@@ -37,7 +37,7 @@ class MNDiscovery {
   async getRandomMasternode(excludedIps) {
     let MNList = await this.masternodeListProvider.getMNList();
     if (Array.isArray(excludedIps)) {
-      MNList = MNList.filter(mn => excludedIps.indexOf(mn.getIp()) < 0);
+      MNList = MNList.filter(mn => excludedIps.indexOf(mn.service.split(':')[0]) < 0);
     }
     return sample(MNList);
   }

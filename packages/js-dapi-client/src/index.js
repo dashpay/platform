@@ -56,7 +56,7 @@ class DAPIClient {
       if (retriesCount > 0) {
         let excludedOnNextTry = [];
         if (err.address) {
-          excludedOnNextTry = excludedIps
+          excludedOnNextTry = Array.isArray(excludedIps)
             ? excludedIps.slice().push(err.address) : excludedOnNextTry.push(err.address);
         }
         return this.makeRequestWithRetries(method, params, retriesCount - 1, excludedOnNextTry);
