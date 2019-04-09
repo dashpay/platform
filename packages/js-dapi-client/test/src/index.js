@@ -568,13 +568,9 @@ describe('api', () => {
       expect(utxo).to.be.an('array');
       expect(utxo.length).to.be.equal(0);
     });
-    it('Should throw error if address is invalid', async () => {
+    it('Should throw error if address is invalid/not found', async () => {
       const dapi = new DAPIClient();
-      return expect(dapi.getUTXO(invalidAddress)).to.be.rejected;
-    });
-    it('Should throw error if address not existing', async () => {
-      const dapi = new DAPIClient();
-      return expect(dapi.getUTXO(invalidAddress)).to.be.rejected;
+      await expect(dapi.getUTXO(invalidAddress)).to.be.rejectedWith('DAPI RPC error: getUTXO: Error: Address not found');
     });
   });
   describe('.address.getAddressSummary', () => {
@@ -652,17 +648,17 @@ describe('api', () => {
     });
     it('Should throw error if address is invalid', async () => {
       const dapi = new DAPIClient();
-      return expect(dapi.getBalance(invalidAddress)).to.be.rejected;
+      await expect(dapi.getBalance(invalidAddress)).to.be.rejectedWith('DAPI RPC error: getBalance: Error: Address not found');
     });
   });
   describe('.user.getUserByName', () => {
     it('Should throw error if username or regtx is incorrect', async () => {
       const dapi = new DAPIClient();
-      return expect(dapi.getUserByName(invalidUsername)).to.be.rejected;
+      await expect(dapi.getUserByName(invalidUsername)).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such username not found');
     });
     it('Should throw error if user not found', async () => {
       const dapi = new DAPIClient();
-      return expect(dapi.getUserByName(notExistingUsername)).to.be.rejected;
+      await expect(dapi.getUserByName(notExistingUsername)).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such username not found');
     });
     it('Should return user data if user exists', async () => {
       const dapi = new DAPIClient();
@@ -675,11 +671,11 @@ describe('api', () => {
       const dapi = new DAPIClient();
       const user = await dapi.getUserByName(validUsername);
       dapi.generate(10);
-      return expect(dapi.getUserById(user.regtxid + 'fake')).to.be.rejected;
+      await expect(dapi.getUserById(user.regtxid + 'fake')).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such od not found');
     });
     it('Should throw error if user id not found', async () => {
       const dapi = new DAPIClient();
-      return expect(dapi.getUserById(notExistingUsername)).to.be.rejected;
+      await expect(dapi.getUserById(notExistingUsername)).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such od not found');
     });
     it('Should return user data if user exists', async () => {
       const dapi = new DAPIClient();
@@ -741,11 +737,11 @@ describe('api', () => {
     });
     it('Should be rejected if height is invalid', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.getBlockHash(1000000)).to.be.rejected;
-      await expect(dapi.getBlockHash('some string')).to.be.rejected;
-      await expect(dapi.getBlockHash(1.2)).to.be.rejected;
-      await expect(dapi.getBlockHash(-1)).to.be.rejected;
-      await expect(dapi.getBlockHash(true)).to.be.rejected;
+      await expect(dapi.getBlockHash(1000000)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash('some string')).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash(1.2)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash(-1)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash(true)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
     });
   });
 
@@ -848,7 +844,7 @@ describe('api', () => {
     });
     it('Should throw error when data packet is missing', async () => {
       const dapi = new DAPIClient();
-      return expect(dapi.sendRawTransition()).to.be.rejected;
+      await expect(dapi.sendRawTransition()).to.be.rejectedWith('DAPI RPC error: sendRawTransition: Error: Data packet is missing');
     });
   });
 

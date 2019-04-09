@@ -47,14 +47,14 @@ describe('RPCClient', async () => {
         host: 'stubbed_address',
         port: 4567
       }, 'test', ['wrong data']);
-      return expect(promise).to.be.rejected;
+      await expect(promise).to.be.rejectedWith('');
     });
     it('Should throw if there is error object in response body', async() => {
       const promise = RPCClient.request({
         host: 'stubbed_address',
         port: 4567
       }, 'test', ['invalid data']);
-      return expect(promise).to.be.rejectedWith('RPC error: test: Invalid data');
+      await expect(promise).to.be.rejectedWith('RPC error: test: Invalid data');
     });
   })
 });
