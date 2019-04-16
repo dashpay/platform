@@ -28,7 +28,7 @@ script: npm run check-package
 
 deploy:
   provider: script
-  script: bash bin/travis-deploy.sh
+  script: bash scripts/travis-deploy.sh
   on:
     tags: true
     repo: dashevo/dapi-grpc
