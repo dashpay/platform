@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package org.dash.platform.dapi;
+
+service TransactionsFilterStream {
+    rpc GetNewTransactionsByFilter (BloomFilter) returns (stream RawTransaction);
+}
+
+message BloomFilter {
+    bytes bytes = 1;
+}
+
+message RawTransaction {
+    bytes data = 1;
+}

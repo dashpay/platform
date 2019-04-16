@@ -1,0 +1,33 @@
+{
+  "name": "@dashevo/dapi-grpc",
+  "version": "0.1.0",
+  "description": "DAPI GRPC definition file and generated clients",
+  "browser": "dist/web/tx_filter_stream_grpc_web_pb",
+  "scripts": {
+    "build": "scripts/build.sh",
+    "check-package": "npm run check-package:name && npm run check-package:version",
+    "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
+    "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
+    "prepublishOnly": "npm run build"
+  },
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "shumkov@dash.org",
+      "url": "https://github.com/shumkov"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/dapi-grpc.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dashevo/dapi-grpc/issues"
+  },
+  "homepage": "https://github.com/dashevo/dapi-grpc#readme",
+  "dependencies": {
+    "google-protobuf": "^3.7.1",
+    "grpc-web": "^1.0.4"
+  }
+}

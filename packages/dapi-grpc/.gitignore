@@ -1,0 +1,8 @@
+# JetBrains project files
+.idea
+
+# NPM modules
+/node_modules
+
+# Build artifacts
+/dist
