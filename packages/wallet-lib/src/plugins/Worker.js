@@ -40,7 +40,7 @@ class Worker extends StandardPlugin {
     if (this.executeOnStart === true) {
       await this.execWorker();
     }
-    this.events.emit(`WORKER/${this.constructor.name.toUpperCase()}/STARTED`);
+    this.events.emit(`WORKER/${this.name.toUpperCase()}/STARTED`);
   }
 
   stopWorker() {
@@ -48,7 +48,7 @@ class Worker extends StandardPlugin {
     this.worker = null;
     this.workerPass = 0;
     this.isWorkerRunning = false;
-    this.events.emit(`WORKER/${this.constructor.name.toUpperCase()}/STOPPED`);
+    this.events.emit(`WORKER/${this.name.toUpperCase()}/STOPPED`);
   }
 
   async execWorker() {
@@ -68,13 +68,13 @@ class Worker extends StandardPlugin {
         console.log(e);
       }
     } else {
-      console.error(`${this.constructor.name} : Missing execute function`);
+      console.error(`${this.name} : Missing execute function`);
     }
 
     this.isWorkerRunning = false;
     this.workerPass += 1;
 
-    this.events.emit(`WORKER/${this.constructor.name.toUpperCase()}/EXECUTED`);
+    this.events.emit(`WORKER/${this.name.toUpperCase()}/EXECUTED`);
     return true;
   }
 }

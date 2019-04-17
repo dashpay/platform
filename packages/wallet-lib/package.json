@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "1.0.1",
-  "description": "A pure and extensible JavaScript Wallet Library for Dash",
+  "version": "2.0.0",
+  "description": "Light wallet library for Dash",
   "main": "index.js",
   "scripts": {
     "lint": "eslint src/*",
@@ -24,7 +24,7 @@
   },
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "git+ssh://git@github.com/dashevo/dapi-client.git",
+    "@dashevo/dapi-client": "git+https://github.com/dashevo/dapi-client.git#57a011f5124fdb04b40da5314d2eb901fa8576e2",
     "@dashevo/dashcore-lib": "^0.16.9",
     "axios": "^0.18.0",
     "localforage": "^1.7.3",
@@ -40,6 +40,6 @@
     "eslint-plugin-react": "^7.10.0",
     "mocha": "^5.2.0",
     "nodeforage": "git+https://github.com/Alex-Werner/nodeForage.git",
-    "nyc": "^13.3.0"
+    "nyc": "^14.0.0"
   }
 }

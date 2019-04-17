@@ -2,13 +2,13 @@ const { Script, Address } = require('@dashevo/dashcore-lib');
 const { DUFFS_PER_DASH } = require('../CONSTANTS');
 
 function dashToDuffs(dash) {
-  if (dash === undefined || dash.constructor.name !== 'Number') {
+  if (dash === undefined || dash.constructor.name !== Number.name) {
     throw new Error('Can only convert a number');
   }
   return parseInt((dash * DUFFS_PER_DASH).toFixed(0), 10);
 }
 function duffsToDash(duffs) {
-  if (duffs === undefined || duffs.constructor.name !== 'Number') {
+  if (duffs === undefined || duffs.constructor.name !== Number.name) {
     throw new Error('Can only convert a number');
   }
   return duffs / DUFFS_PER_DASH;

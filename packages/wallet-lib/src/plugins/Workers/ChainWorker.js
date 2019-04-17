@@ -12,6 +12,7 @@ const defaultOpts = {
 class ChainWorker extends Worker {
   constructor(opts = defaultOpts) {
     const params = Object.assign({
+      name: 'ChainWorker',
       executeOnStart: true,
       firstExecutionRequired: true,
       workerIntervalTime: defaultOpts.workerIntervalTime,

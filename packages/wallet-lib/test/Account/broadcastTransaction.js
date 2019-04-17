@@ -52,10 +52,14 @@ describe('Account - broadcastTransaction', () => {
   });
   it('should work on valid Transaction object', async () => {
     let sendCalled = +1;
+    let searchCalled = +1;
     const self = {
       transport: {
         isValid: true,
         sendRawTransaction: () => sendCalled = +1,
+      },
+      storage: {
+        searchAddressWithTx: () => { searchCalled = +1; return { type: null }; },
       },
     };
 
@@ -63,22 +67,26 @@ describe('Account - broadcastTransaction', () => {
     return broadcastTransaction
       .call(self, tx)
       .then(
-        () => expect(sendCalled).to.equal(1),
+        () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
       );
   });
   it('should work on valid rawtx', async () => {
     let sendCalled = +1;
+    let searchCalled = +1;
     const self = {
       transport: {
         isValid: true,
         sendRawTransaction: () => sendCalled = +1,
+      },
+      storage: {
+        searchAddressWithTx: () => { searchCalled = +1; return { type: null }; },
       },
     };
 
     return broadcastTransaction
       .call(self, validRawTxs.tx1to1Mainnet)
       .then(
-        () => expect(sendCalled).to.equal(1),
+        () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
       );
   });
 });

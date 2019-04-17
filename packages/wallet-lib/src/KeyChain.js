@@ -1,4 +1,4 @@
-const { PrivateKey, crypto } = require('@dashevo/dashcore-lib');
+const { PrivateKey, crypto, Transaction } = require('@dashevo/dashcore-lib');
 const { has } = require('lodash');
 
 class KeyChain {
@@ -62,11 +62,11 @@ class KeyChain {
    */
   // eslint-disable-next-line class-methods-use-this
   sign(object, privateKeys, sigType = crypto.Signature.SIGHASH_ALL) {
-    const handledTypes = ['Transaction', 'SubTxRegistrationPayload'];
+    const handledTypes = [Transaction.name, Transaction.Payload.SubTxRegisterPayload];
     if (!privateKeys) throw new Error('Require one or multiple privateKeys to sign');
     if (!object) throw new Error('Nothing to sign');
     if (!handledTypes.includes(object.constructor.name)) {
-      throw new Error(`Unhandled object of type ${object.constructor.name}`);
+      throw new Error(`Keychain sign : Unhandled object of type ${object.constructor.name}`);
     }
     const obj = object.sign(privateKeys, sigType);
 

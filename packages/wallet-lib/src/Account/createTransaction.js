@@ -18,7 +18,7 @@ const _loadStrategy = require('./_loadStrategy');
  * @param opts.deductFee - Deduct fee
  * @param opts.privateKeys - Overwrite default behavior : auto-searching local matching keys.
  * @param opts.strategy - Overwrite default strategy
- * @return {String} - rawTx
+ * @return {Transaction} - Transaction object
  */
 function createTransaction(opts) {
   const self = this;
@@ -122,10 +122,11 @@ function createTransaction(opts) {
     : this.getPrivateKeys(addressList);
   const transformedPrivateKeys = [];
   privateKeys.forEach((pk) => {
-    if (pk.constructor.name === 'PrivateKey') {
+    if (pk.constructor.name === Dashcore.PrivateKey.name) {
       transformedPrivateKeys.push(pk);
-    } else if (pk.constructor.name === 'HDPrivateKey') transformedPrivateKeys.push(pk.privateKey);
-    else {
+    } else if (pk.constructor.name === Dashcore.HDPrivateKey.name) {
+      transformedPrivateKeys.push(pk.privateKey);
+    } else {
       console.log('Unexpected pk type', pk, pk.constructor.name);
     }
   });
@@ -137,6 +138,7 @@ function createTransaction(opts) {
     );
     return signedTx;
   } catch (e) {
+    console.log('createTransaction error', e.message);
     // if (e.message === 'Not fully signed transaction') {}
     return e;
   }

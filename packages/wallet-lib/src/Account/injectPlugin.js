@@ -3,25 +3,33 @@ const {
   InjectionErrorCannotInject,
   InjectionErrorCannotInjectUnknownDependency,
 } = require('../errors/index');
+const { is } = require('../utils');
 /**
  * Will try to inject a given plugin. If needed, it will construct the object first (new).
  * @param UnsafePlugin - Either a child object, or it's parent class to inject
  * @param allowSensitiveOperations (false) - When true, force injection discarding unsafeOp checks.
+ * @param awaitOnInjection (true) - When true, wait for onInjected resolve first
  * @return {Promise<*>}
  */
-module.exports = async function injectPlugin(UnsafePlugin, allowSensitiveOperations = false) {
+module.exports = async function injectPlugin(
+  UnsafePlugin,
+  allowSensitiveOperations = false,
+  awaitOnInjection = true,
+) {
   // TODO : Only called internally, it might be worth to remove public access to it.
   // For now, it helps us on debugging
   const self = this;
   return new Promise(async (res, rej) => {
     const isInit = !(typeof UnsafePlugin === 'function');
     const plugin = (isInit) ? UnsafePlugin : new UnsafePlugin();
-    if (_.isEmpty(plugin)) rej(new InjectionErrorCannotInject('Empty plugin'));
+
+    const pluginName = plugin.name.toLowerCase();
+
+    if (_.isEmpty(plugin)) rej(new InjectionErrorCannotInject(pluginName, 'Empty plugin'));
 
     // All plugins will require the event object
     const { pluginType } = plugin;
 
-    const pluginName = plugin.constructor.name.toLowerCase();
     plugin.inject('events', self.events);
 
     // Check for dependencies
@@ -40,7 +48,7 @@ module.exports = async function injectPlugin(UnsafePlugin, allowSensitiveOperati
           plugin.inject(dependencyName, this.plugins.standard[loweredDependencyName], true);
         } else if (injectedDaps.includes(loweredDependencyName)) {
           plugin.inject(dependencyName, this.plugins.daps[loweredDependencyName], true);
-        } else rej(new InjectionErrorCannotInjectUnknownDependency(dependencyName));
+        } else rej(new InjectionErrorCannotInjectUnknownDependency(pluginName, dependencyName));
       }
     });
     switch (pluginType) {
@@ -76,6 +84,14 @@ module.exports = async function injectPlugin(UnsafePlugin, allowSensitiveOperati
         self.plugins.standard[pluginName] = plugin;
         break;
     }
-    res(plugin);
+
+
+    if (is.fn(plugin.onInjected)) {
+      if (awaitOnInjection) await plugin.onInjected();
+      else plugin.onInjected();
+    }
+
+
+    return res(plugin);
   });
 };

@@ -12,6 +12,7 @@ const defaultOpts = {
 class SyncWorker extends Worker {
   constructor(opts = defaultOpts) {
     const params = Object.assign({
+      name: 'SyncWorker',
       executeOnStart: true,
       firstExecutionRequired: true,
       workerIntervalTime: defaultOpts.workerIntervalTime,

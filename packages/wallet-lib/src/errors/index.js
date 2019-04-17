@@ -8,6 +8,7 @@ const InjectionToPluginUnallowed = require('./InjectionToPluginUnallowed');
 const InvalidAddress = require('./InvalidAddress');
 const InvalidAddressObject = require('./InvalidAddressObject');
 const InvalidOutput = require('./InvalidOutput');
+const InvalidDashcoreTransaction = require('./InvalidDashcoreTransaction');
 const InvalidRawTransaction = require('./InvalidRawTransaction');
 const InvalidStrategy = require('./InvalidStrategy');
 const InvalidStorageAdapter = require('./InvalidStorageAdapter');
@@ -34,6 +35,7 @@ module.exports = {
   InvalidAddressObject,
   InvalidOutput,
   InvalidStrategy,
+  InvalidDashcoreTransaction,
   InvalidRawTransaction,
   InvalidStorageAdapter,
   InvalidTransactionObject,

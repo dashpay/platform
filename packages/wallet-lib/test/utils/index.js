@@ -197,10 +197,17 @@ describe('Utils', () => {
     expect(is.mnemonic(mnemonic2)).to.be.equal(true);
   });
   it('should is.network work', () => {
+    const notANetwork = [];
     const network = Networks.livenet;
-    const network2 = 'testnet';
+    const networktestnet = Networks.testnet;
+    const network2 = 'livenet';
+    const network2testnet = 'testnet';
+    const notanetwork = notANetwork;
     expect(is.network(network)).to.be.equal(true);
+    expect(is.network(networktestnet)).to.be.equal(true);
     expect(is.network(network2)).to.be.equal(true);
+    expect(is.network(network2testnet)).to.be.equal(true);
+    expect(is.network(notanetwork)).to.be.equal(false);
   });
   it('should is.seed work', () => {
     const seed = new Mnemonic().toSeed();

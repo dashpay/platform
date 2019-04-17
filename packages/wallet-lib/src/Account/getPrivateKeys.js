@@ -6,7 +6,7 @@
 function getPrivateKeys(addressList) {
   let addresses = [];
   let privKeys = [];
-  if (addressList.constructor.name === 'Object') {
+  if (addressList.constructor.name === Object.name) {
     addresses = [addressList];
   } else { addresses = addressList; }
 

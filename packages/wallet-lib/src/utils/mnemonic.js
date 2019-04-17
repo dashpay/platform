@@ -15,7 +15,7 @@ function generateNewMnemonic() {
 function mnemonicToHDPrivateKey(mnemonic, network, passphrase = '') {
   if (!mnemonic) throw new Error('Expect mnemonic to be provided');
 
-  return (mnemonic.constructor.name === 'Mnemonic')
+  return (mnemonic.constructor.name === Mnemonic.name)
     ? mnemonic.toHDPrivateKey(passphrase, network)
     : new Mnemonic(mnemonic).toHDPrivateKey(passphrase, network);
 }

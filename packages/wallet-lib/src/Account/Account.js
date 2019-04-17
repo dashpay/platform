@@ -4,6 +4,7 @@ const { EventEmitter } = require('events');
 const { WALLET_TYPES } = require('../CONSTANTS');
 const { is } = require('../utils/index');
 const EVENTS = require('../EVENTS');
+const Wallet = require('../Wallet/Wallet.js');
 const { simpleTransactionOptimizedAccumulator } = require('../utils/coinSelections/strategies');
 
 const defaultOptions = {
@@ -73,7 +74,7 @@ class Account {
       sign,
       updateNetwork,
     });
-    if (!wallet || wallet.constructor.name !== 'Wallet') throw new Error('Expected wallet to be passed as param');
+    if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
 

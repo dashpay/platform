@@ -178,8 +178,8 @@ const options = {
     satoshis:100000,
     isInstantSend:false
 };
-const rawtx = account.createTransaction(options);
-const txid = account.broadcastTransaction(rawtx);
+const transaction = account.createTransaction(options);
+const txid = account.broadcastTransaction(transaction);
 ```
 
 ## Features

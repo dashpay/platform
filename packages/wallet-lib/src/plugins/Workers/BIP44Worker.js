@@ -55,6 +55,7 @@ const getMissingIndexes = (paths, fromOrigin = true) => {
 class BIP44Worker extends Worker {
   constructor() {
     super({
+      name: 'BIP44Worker',
       firstExecutionRequired: true,
       executeOnStart: true,
       dependencies: [

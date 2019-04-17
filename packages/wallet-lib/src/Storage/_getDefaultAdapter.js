@@ -13,7 +13,7 @@ module.exports = async function getDefaultAdapter() {
   }
   if (isReactNative) {
     console.warn('React Native env - Specify an adapter, fallback on inMem storage only.');
-    return InMem();
+    return InMem;
   } if (isBrowser) {
     return localForage;
   }
