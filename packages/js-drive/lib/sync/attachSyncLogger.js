@@ -1,6 +1,6 @@
-const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
+const Document = require('@dashevo/dpp/lib/document/Document');
 
-const SVDocument = require('../stateView/document/SVDocument');
+const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 
 const WrongSequenceError = require('../blockchain/reader/eventHandlers/errors/WrongSequenceError');
 const NotAbleToValidateSequenceError = require('../blockchain/reader/eventHandlers/errors/NotAbleToValidateSequenceError');
@@ -239,9 +239,9 @@ module.exports = function attachSyncLogger(readerMediator, logger) {
     } = params;
 
     const messages = {
-      [SVDocument.ACTION_CREATE]: `Created Document ${documentId} for ${contractId}`,
-      [SVDocument.ACTION_UPDATE]: `Updated Document ${documentId} for ${contractId}`,
-      [SVDocument.ACTION_DELETE]: `Deleted Document ${documentId} for ${contractId}`,
+      [Document.ACTIONS.CREATE]: `Created Document ${documentId} for ${contractId}`,
+      [Document.ACTIONS.UPDATE]: `Updated Document ${documentId} for ${contractId}`,
+      [Document.ACTIONS.DELETE]: `Deleted Document ${documentId} for ${contractId}`,
     };
 
     const message = messages[document.act];
