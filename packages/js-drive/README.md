@@ -2,9 +2,11 @@
 
 [![Build Status](https://travis-ci.com/dashevo/drive.svg?branch=master)](https://travis-ci.com/dashevo/drive)
 
-> Dash network data storage backend service
+> Decentralized application storage on the Dash network
 
-An [event-sourced](https://martinfowler.com/eaaDev/EventSourcing.html) metadata service built around the Command-Query Responsibility Segregation ([CQRS](https://martinfowler.com/bliki/CQRS.html)) pattern.
+Drive is the storage component of Dash Platform, allowing developers to store and secure their application data through Dash's masternode network. Application data structures are defined by a data contract, which is stored on Drive and used to verify/validate updates to your application data. An application's current state is stored in the State View, which is a MongoDB instance hosted on a masternode. Historical application data is stored in IPFS and propagated to other nodes, thereby, ensuring data redundancy.
+
+![Drive Architecure Diagram](architecture.png)
 
 ## Table of Contents
 - [Install](#install)
