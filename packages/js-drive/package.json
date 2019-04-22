@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/drive",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Dash network data storage backend service",
   "engines": {
     "node": ">=8"
@@ -40,7 +40,7 @@
     "eslint-plugin-import": "^2.16.0",
     "mocha": "^5.2.0",
     "mocha-sinon": "^2.1.0",
-    "nyc": "^13.3.0",
+    "nyc": "^14.0.0",
     "proxyquire": "^2.1.0",
     "sinon": "^7.3.0",
     "sinon-chai": "^3.3.0"

@@ -1,12 +1,12 @@
 class DriveDataProvider {
   /**
    * @param {fetchDocuments} fetchDocuments
-   * @param {Function} createFetchContract
+   * @param {Function} fetchContract
    * @param {RpcClient} rpcClient
    */
-  constructor(fetchDocuments, createFetchContract, rpcClient) {
+  constructor(fetchDocuments, fetchContract, rpcClient) {
     this.fetchDocumentsFromDrive = fetchDocuments;
-    this.createFetchContract = createFetchContract;
+    this.fetchContractFromDrive = fetchContract;
     this.rpcClient = rpcClient;
   }
 
@@ -17,7 +17,7 @@ class DriveDataProvider {
    * @returns {Promise<Contract|null>}
    */
   async fetchContract(id) {
-    return this.createFetchContract()(id);
+    return this.fetchContractFromDrive(id);
   }
 
   /**

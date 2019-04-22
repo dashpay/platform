@@ -11,6 +11,10 @@ function fetchContractFactory(svContractRepository) {
    * @returns {Promise<Contract|null>}
    */
   async function fetchContract(contractId) {
+    if (!contractId) {
+      throw new Error('Contract ID must be a string');
+    }
+
     const svContract = await svContractRepository.find(contractId);
 
     if (!svContract) {

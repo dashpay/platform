@@ -216,7 +216,7 @@ class SyncApp {
       const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
       const svContractMongoDbRepository = new SVContractMongoDbRepository(
         mongoDb,
-        this.createDashPlatformProtocol(),
+        new DashPlatformProtocol(),
       );
 
       this.fetchContract = fetchContractFactory(svContractMongoDbRepository);
@@ -250,7 +250,7 @@ class SyncApp {
     if (!this.dashPlatfromProtocol) {
       const dataProvider = new DriveDataProvider(
         this.createFetchDocuments(),
-        this.createFetchContract.bind(this),
+        this.createFetchContract(),
         this.rpcClient,
       );
 
