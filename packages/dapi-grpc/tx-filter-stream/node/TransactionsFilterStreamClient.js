@@ -5,11 +5,9 @@ const { RawTransaction } = require('./tx_filter_stream_pb');
 const isObject = require('./isObject');
 const convertObjectToMetadata = require('./convertObjectToMetadata');
 
-const packageDefinition = loadPackageDefinition();
-
 const {
   TransactionsFilterStream: TransactionsFilterStreamNodeJSClient,
-} = packageDefinition.org.dash.platform.dapi;
+} = loadPackageDefinition();
 
 const getTransactionsByFilterOptions = {
   interceptors: [jsonToProtobufInterceptorFactory(RawTransaction)],

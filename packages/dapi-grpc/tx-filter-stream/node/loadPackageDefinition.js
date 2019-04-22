@@ -13,7 +13,9 @@ function loadPackageDefinition() {
     defaults: true,
   });
 
-  return grpc.loadPackageDefinition(definition);
+  const packageDefinition = grpc.loadPackageDefinition(definition);
+
+  return packageDefinition.org.dash.platform.dapi;
 }
 
-module.exports = loadPackageDefinition();
+module.exports = loadPackageDefinition;
