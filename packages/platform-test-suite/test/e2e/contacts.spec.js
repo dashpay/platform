@@ -164,18 +164,20 @@ describe('Contacts app', () => {
       await dapiClient.generate(1);
 
       // 4. Fetch DAP Contract
-      let contract;
+      let actualContract;
       for (let i = 0; i <= attempts; i++) {
         try {
           // waiting for Contacts to be added
-          contract = await dapiClient.fetchContract(dpp.getContract().getId());
-          break;
+          actualContract = await dapiClient.fetchContract(dpp.getContract().getId());
+          if (actualContract) {
+            break;
+          }
         } catch (e) {
           await wait(timeout);
         }
       }
 
-      expect(contract).to.be.deep.equal(dpp.getContract().toJSON());
+      expect(actualContract).to.be.deep.equal(dpp.getContract().toJSON());
     });
 
     it('should create profile in "Contacts" app', async function it() {
@@ -219,24 +221,23 @@ describe('Contacts app', () => {
       await dapiClient.generate(1);
 
       // 4. Fetch profiles
-      let profiles;
+      let actualProfile;
       for (let i = 0; i <= attempts; i++) {
-        profiles = await dapiClient.fetchDocuments(
+        [actualProfile] = await dapiClient.fetchDocuments(
           dpp.getContract().getId(),
           'profile',
-          {},
+          { where: { _id: profile.getId() } },
         );
 
         // waiting for Bob's profile to be added
-        if (profiles.length > 0) {
+        if (actualProfile) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(profiles).to.have.lengthOf(1);
-      expect(profiles[0]).to.be.deep.equal(profile.toJSON());
+      expect(actualProfile).to.be.deep.equal(profile.toJSON());
     });
   });
 
@@ -314,24 +315,23 @@ describe('Contacts app', () => {
       await dapiClient.generate(1);
 
       // 4. Fetch profiles
-      let profiles;
+      let actualAliceProfile;
       for (let i = 0; i <= attempts; i++) {
-        profiles = await dapiClient.fetchDocuments(
+        [actualAliceProfile] = await dapiClient.fetchDocuments(
           dpp.getContract().getId(),
           'profile',
-          {},
+          { where: { _id: aliceProfile.getId() } },
         );
 
         // waiting for Alice's profile to be added
-        if (profiles.length > 1) {
+        if (actualAliceProfile) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(profiles).to.have.lengthOf(2);
-      expect(profiles[1]).to.be.deep.equal(aliceProfile.toJSON());
+      expect(actualAliceProfile).to.be.deep.equal(aliceProfile.toJSON());
     });
 
     it('should be able to update her profile', async function it() {
@@ -374,24 +374,23 @@ describe('Contacts app', () => {
       await dapiClient.generate(1);
 
       // 4. Fetch profile
-      let profiles;
+      let actualAliceProfile;
       for (let i = 0; i <= attempts; i++) {
-        profiles = await dapiClient.fetchDocuments(
+        [actualAliceProfile] = await dapiClient.fetchDocuments(
           dpp.getContract().getId(),
           'profile',
-          {},
+          { where: { _id: aliceProfile.getId() } },
         );
 
         // waiting for Alice's profile modified
-        if (profiles.length === 2 && profiles[1].$rev === 2) {
+        if (actualAliceProfile && actualAliceProfile.$rev === 2) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(profiles).to.have.lengthOf(2);
-      expect(profiles[1]).to.be.deep.equal(aliceProfile.toJSON());
+      expect(actualAliceProfile).to.be.deep.equal(aliceProfile.toJSON());
     });
   });
 
@@ -437,24 +436,23 @@ describe('Contacts app', () => {
       await dapiClient.generate(1);
 
       // 4. Fetch contacts
-      let contacts;
+      let actualBobContactRequest;
       for (let i = 0; i <= attempts; i++) {
-        contacts = await dapiClient.fetchDocuments(
+        [actualBobContactRequest] = await dapiClient.fetchDocuments(
           dpp.getContract().getId(),
           'contact',
-          {},
+          { where: { _id: bobContactRequest.getId() } },
         );
 
         // waiting for Bob's contact request to be added
-        if (contacts.length > 0) {
+        if (actualBobContactRequest) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(contacts).to.have.lengthOf(1);
-      expect(contacts[0]).to.be.deep.equal(bobContactRequest.toJSON());
+      expect(actualBobContactRequest).to.be.deep.equal(bobContactRequest.toJSON());
     });
   });
 
@@ -500,24 +498,23 @@ describe('Contacts app', () => {
       await dapiClient.generate(1);
 
       // 4. Fetch contacts
-      let contacts;
+      let actualAliceContactAcceptance;
       for (let i = 0; i <= attempts; i++) {
-        contacts = await dapiClient.fetchDocuments(
+        [actualAliceContactAcceptance] = await dapiClient.fetchDocuments(
           dpp.getContract().getId(),
           'contact',
-          {},
+          { where: { _id: aliceContactAcceptance.getId() } },
         );
 
         // waiting for Bob's contact to be approved from Alice
-        if (contacts.length > 1) {
+        if (actualAliceContactAcceptance) {
           break;
         } else {
           await wait(timeout);
         }
       }
 
-      expect(contacts).to.have.lengthOf(2);
-      expect(contacts[1]).to.be.deep.equal(aliceContactAcceptance.toJSON());
+      expect(actualAliceContactAcceptance).to.be.deep.equal(aliceContactAcceptance.toJSON());
     });
 
     it('should be able to remove contact approvement', async function it() {
