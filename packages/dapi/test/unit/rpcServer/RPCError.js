@@ -23,8 +23,16 @@ describe('lib/rpcServer/RPCError', () => {
     });
   });
   describe('#factory', () => {
-    it('should create RPCError instance with code & message & originalStack', () => {
-      const res = new RPCError(200, 'my_message', 'my_stack');
+    it('should create RPCError instance with code, message and data', () => {
+      const data = {};
+      const res = new RPCError(200, 'my_message', data);
+      expect(res).to.be.instanceof(RPCError);
+    });
+  });
+  describe('#factory', () => {
+    it('should create RPCError instance with code, message, data and originalStack', () => {
+      const data = {};
+      const res = new RPCError(200, 'my_message', data, 'my_stack');
       expect(res).to.be.instanceof(RPCError);
     });
   });

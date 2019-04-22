@@ -23,7 +23,7 @@ class DriveAdapter extends AbstractDriveAdapter {
   async request(method, params) {
     const { result, error } = await this.client.request(method, params);
     if (error) {
-      throw new RPCError(error.code || -32602, error.message || 'Internal error');
+      throw new RPCError(error.code || -32602, error.message || 'Internal error', error.data);
     }
     return result;
   }
