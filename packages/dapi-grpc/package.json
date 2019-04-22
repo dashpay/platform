@@ -1,10 +1,12 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "dist/web/tx_filter_stream_grpc_web_pb",
+  "main": "tx-filter-stream/node/index.js",
   "scripts": {
     "build": "scripts/build.sh",
+    "lint": "eslint .",
     "check-package": "npm run check-package:name && npm run check-package:version",
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
@@ -27,7 +29,14 @@
   },
   "homepage": "https://github.com/dashevo/dapi-grpc#readme",
   "dependencies": {
+    "@grpc/proto-loader": "^0.5.0",
     "google-protobuf": "^3.7.1",
+    "grpc": "^1.19.0",
     "grpc-web": "^1.0.4"
+  },
+  "devDependencies": {
+    "eslint": "^5.16.0",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-plugin-import": "^2.17.2"
   }
 }

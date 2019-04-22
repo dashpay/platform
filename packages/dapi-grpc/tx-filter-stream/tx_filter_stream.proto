@@ -3,7 +3,7 @@ syntax = "proto3";
 package org.dash.platform.dapi;
 
 service TransactionsFilterStream {
-    rpc GetNewTransactionsByFilter (BloomFilter) returns (stream RawTransaction);
+    rpc GetTransactionsByFilter (BloomFilter) returns (stream RawTransaction);
 }
 
 message BloomFilter {

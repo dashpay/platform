@@ -28,7 +28,7 @@ const client = new TransactionsFilterStreamPromiseClient('http://localhost:8080'
 const filter = new BloomFilter();
 filter.setBytes('...');
 
-const stream = client.getNewTransactionsByFilter(filter);
+const stream = client.getTransactionsByFilter(filter);
 
 stream.on('data', function(response) {
   console.log(response.getData());

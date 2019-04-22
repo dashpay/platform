@@ -5,4 +5,5 @@
 /node_modules
 
 # Build artifacts
-/dist
+/tx-filter-stream/web/*.js
+/tx-filter-stream/node/tx_filter_stream_pb.js
