@@ -1,8 +1,8 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "DAPI GRPC definition file and generated clients",
-  "browser": "dist/web/tx_filter_stream_grpc_web_pb",
+  "browser": "tx-filter-stream/web/tx_filter_stream_grpc_web_pb",
   "main": "tx-filter-stream/node/index.js",
   "scripts": {
     "build": "scripts/build.sh",
@@ -17,6 +17,11 @@
       "name": "Ivan Shumkov",
       "email": "shumkov@dash.org",
       "url": "https://github.com/shumkov"
+    },
+    {
+      "name": "Anton Suprunchuk",
+      "email": "anton.suprunchuk@dash.org",
+      "url": "https://github.com/antouhou"
     }
   ],
   "repository": {
