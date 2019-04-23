@@ -150,12 +150,13 @@ class DAPIClient {
   getBlockHeader(blockHash) { return this.makeRequestToRandomDAPINode('getBlockHeader', { blockHash }); }
 
   /**
-   * Returns block headers from [offset] with length [limit], where limit is <= 25
+   * Returns block headers from [offset] with length [limit], where limit is <= 2000
    * @param {number} offset
-   * @param {number} limit
+   * @param {number} [limit=1]
+   * @param {boolean} [verbose=false]
    * @returns {Promise<[objects]>} - array of header objects
    */
-  getBlockHeaders(offset, limit) { return this.makeRequestToRandomDAPINode('getBlockHeaders', { offset, limit }); }
+  getBlockHeaders(offset, limit = 1, verbose = false) { return this.makeRequestToRandomDAPINode('getBlockHeaders', { offset, limit, verbose }); }
 
   // TODO: Do we really need it this way?
   /**
