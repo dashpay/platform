@@ -20,7 +20,10 @@ module.exports = {
         host: '123',
         port: '123',
       },
-      server: {
+      rpcServer: {
+        port: '123',
+      },
+      grpcServer: {
         port: '123',
       },
     };

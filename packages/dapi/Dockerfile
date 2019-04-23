@@ -37,5 +37,3 @@ ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
 EXPOSE 3000
-
-CMD ["node", "/usr/src/app/lib/app.js"]
