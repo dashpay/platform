@@ -1,14 +1,15 @@
 const { expect } = require('chai');
 const generateNewWalletId = require('../../src/Wallet/generateNewWalletId');
 const knifeMnemonic = require('../fixtures/knifeeasily');
+const gatherSail = require('../fixtures/gathersail');
 const cR4t6ePrivateKey = require('../fixtures/cR4t6e_pk');
 const { WALLET_TYPES } = require('../../src/CONSTANTS');
 
 describe('Wallet - generateNewWalletId', () => {
   it('should indicate on missing data', () => {
     const mockOpts1 = { };
-    const mockOpts2 = { type: WALLET_TYPES.HDWALLET };
-    const mockOpts3 = { type: WALLET_TYPES.SINGLE_ADDRESS };
+    const mockOpts2 = { walletType: WALLET_TYPES.HDWALLET };
+    const mockOpts3 = { walletType: WALLET_TYPES.SINGLE_ADDRESS };
 
     const exceptedException1 = 'Cannot generate a walletId : No HDPrivateKey found';
     const exceptedException3 = 'Cannot generate a walletId : No privateKey found';
@@ -28,9 +29,19 @@ describe('Wallet - generateNewWalletId', () => {
     expect(walletId2).to.length(10);
     expect(walletId2).to.equal(knifeMnemonic.HDPrivateKeyTestnetWalletId);
   });
+  it('should generate a wallet id from HDPubKey', () => {
+    const mockOptsTestnet = {
+      walletType: WALLET_TYPES.HDEXTPUBLIC,
+      HDExtPublicKey: gatherSail.testnet.external.hdpubkey,
+    };
+
+    const walletId1 = generateNewWalletId.call(mockOptsTestnet);
+    expect(walletId1).to.length(10);
+    expect(walletId1).to.equal(gatherSail.testnet.external.walletId);
+  });
   it('should generate a wallet id from single pk', () => {
     const mockOpts = {
-      type: WALLET_TYPES.SINGLE_ADDRESS,
+      walletType: WALLET_TYPES.SINGLE_ADDRESS,
       privateKey: cR4t6ePrivateKey.privateKey,
     };
 

@@ -14,8 +14,8 @@ module.exports = function fromMnemonic(mnemonic) {
     throw new Error('Expected a valid mnemonic (typeof String or Mnemonic)');
   }
   const trimmedMnemonic = mnemonic.toString().trim();
-  this.type = WALLET_TYPES.HDWALLET;
+  this.walletType = WALLET_TYPES.HDWALLET;
   this.mnemonic = trimmedMnemonic; // todo : What about without this ?
   this.HDPrivateKey = mnemonicToHDPrivateKey(trimmedMnemonic, this.network, this.passphrase);
-  this.keyChain = new KeyChain({ HDRootKey: this.HDPrivateKey });
+  this.keyChain = new KeyChain({ HDPrivateKey: this.HDPrivateKey });
 };

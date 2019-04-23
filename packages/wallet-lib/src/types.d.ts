@@ -5,6 +5,9 @@ export declare type Mnemonic<T extends object = object> = T & {
 export declare type PrivateKey<T extends object = object> = T & {
     toString(): string;
 };
+export declare type HDPublicKey<T extends object = object> = T & {
+    toString(): string;
+};
 export declare type PublicKey<T extends object = object> = T & {
     toString(): string;
 };

@@ -6,10 +6,10 @@ const { WALLET_TYPES } = require('../CONSTANTS');
  * @return {Object} address - All address matching the type
  */
 function getAddresses(_type = 'external') {
-  const type = (this.type === WALLET_TYPES.SINGLE_ADDRESS)
+  const walletType = (this.walletType === WALLET_TYPES.SINGLE_ADDRESS)
     ? 'misc'
     : ((_type) || 'external');
   const store = this.storage.getStore();
-  return store.wallets[this.walletId].addresses[type];
+  return store.wallets[this.walletId].addresses[walletType];
 }
 module.exports = getAddresses;

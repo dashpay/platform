@@ -35,6 +35,7 @@ const CONSTANTS = {
   WALLET_TYPES: {
     SINGLE_ADDRESS: 'single_address',
     HDWALLET: 'hdwallet',
+    HDEXTPUBLIC: 'hdextpublic',
   },
   // List of account function and properties that can be injected in a plugin
   INJECTION_LISTS: {

@@ -6,12 +6,16 @@ const { WALLET_TYPES } = require('../CONSTANTS');
  * @return walletId
  */
 module.exports = function generateNewWalletId() {
-  const { type } = this;
+  const { walletType } = this;
   const errorMessageBase = 'Cannot generate a walletId';
-  switch (type) {
+  switch (walletType) {
     case WALLET_TYPES.SINGLE_ADDRESS:
       if (!this.privateKey) throw new Error(`${errorMessageBase} : No privateKey found`);
       this.walletId = mnemonicToWalletId(this.privateKey);
+      break;
+    case WALLET_TYPES.HDEXTPUBLIC:
+      if (!this.HDExtPublicKey) throw new Error(`${errorMessageBase} : No HDExtPublicKey found`);
+      this.walletId = mnemonicToWalletId(this.HDExtPublicKey);
       break;
     case WALLET_TYPES.HDWALLET:
     default:

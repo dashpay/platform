@@ -7,8 +7,8 @@ const knifeMnemonic = require('../fixtures/knifeeasily');
 describe('Wallet - export Wallet', () => {
   it('should indicate on missing data', () => {
     const mockOpts1 = { };
-    const mockOpts2 = { type: WALLET_TYPES.SINGLE_ADDRESS };
-    const mockOpts3 = { type: WALLET_TYPES.HDWALLET };
+    const mockOpts2 = { walletType: WALLET_TYPES.SINGLE_ADDRESS };
+    const mockOpts3 = { walletType: WALLET_TYPES.HDWALLET };
 
     const exceptedException1 = 'Trying to export from an unknown wallet type';
     const exceptedException2 = 'No privateKey to export';
@@ -19,11 +19,11 @@ describe('Wallet - export Wallet', () => {
   });
   it('should export a privateKey', () => {
     const mockOpts1 = {
-      type: WALLET_TYPES.SINGLE_ADDRESS,
+      walletType: WALLET_TYPES.SINGLE_ADDRESS,
       privateKey: cR4t6ePrivateKey.privateKey,
     };
     const mockOpts2 = {
-      type: WALLET_TYPES.HDWALLET,
+      walletType: WALLET_TYPES.HDWALLET,
       mnemonic: knifeMnemonic.mnemonic,
     };
     expect(exportWallet.call(mockOpts1)).to.equal(cR4t6ePrivateKey.privateKey);

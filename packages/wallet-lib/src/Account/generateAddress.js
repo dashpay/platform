@@ -1,22 +1,33 @@
 const Dashcore = require('@dashevo/dashcore-lib');
 const EVENTS = require('../EVENTS');
 const { WALLET_TYPES } = require('../CONSTANTS');
-
+const { is } = require('../utils');
 /**
  * Generate an address from a path and import it to the store
  * @param path
  * @return {addressObj} Address information
  * */
 function generateAddress(path) {
-  if (!path) throw new Error('Expected path to generate an address');
+  if (is.undefOrNull(path)) throw new Error('Expected path to generate an address');
   let index = 0;
-  const { network } = this;
-  if (this.type === WALLET_TYPES.HDWALLET) {
-    // eslint-disable-next-line prefer-destructuring
-    index = path.split('/')[5];
-  }
+  let privateKey;
 
-  const privateKey = this.keyChain.getKeyForPath(path);
+  const { network } = this;
+
+  switch (this.walletType) {
+    case WALLET_TYPES.HDWALLET:
+      // eslint-disable-next-line prefer-destructuring
+      index = parseInt(path.split('/')[5], 10);
+      privateKey = this.keyChain.getKeyForPath(path);
+      break;
+    case WALLET_TYPES.HDEXTPUBLIC:
+      index = parseInt(path.split('/')[5], 10);
+      privateKey = this.keyChain.getKeyForChild(index);
+      break;
+    case WALLET_TYPES.SINGLE_ADDRESS:
+    default:
+      privateKey = this.keyChain.getKeyForPath(path);
+  }
 
   const address = new Dashcore.Address(privateKey.publicKey.toAddress(network), network).toString();
 

@@ -21,8 +21,8 @@ describe('Account - getUnusedAddress', () => {
         emit: _ => (_),
       },
       keyChain: new KeyChain({
-        type: 'HDRootKey',
-        HDRootKey: Dashcore.HDPrivateKey(HDRootKeyMockedStore),
+        type: 'HDPrivateKey',
+        HDPrivateKey: Dashcore.HDPrivateKey(HDRootKeyMockedStore),
       }),
       BIP44PATH: 'm/44\'/1\'/0\'',
       walletId: '5061b8276c',

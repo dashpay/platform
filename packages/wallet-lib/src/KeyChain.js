@@ -1,12 +1,17 @@
-const { PrivateKey, crypto, Transaction } = require('@dashevo/dashcore-lib');
+const {
+  PrivateKey, HDPublicKey, crypto, Transaction,
+} = require('@dashevo/dashcore-lib');
 const { has } = require('lodash');
 
 class KeyChain {
   constructor(opts) {
     if (!opts) throw new Error('Expect some parameters to construct keychain');
-    if (has(opts, 'HDRootKey')) {
-      this.type = 'HDRootKey';
-      this.HDRootKey = opts.HDRootKey;
+    if (has(opts, 'HDPrivateKey')) {
+      this.type = 'HDPrivateKey';
+      this.HDPrivateKey = opts.HDPrivateKey;
+    } else if (has(opts, 'HDPublicKey')) {
+      this.type = 'HDPublicKey';
+      this.HDPublicKey = opts.HDPublicKey;
     } else if (has(opts, 'privateKey')) {
       this.type = 'privateKey';
       this.privateKey = opts.privateKey;
@@ -17,18 +22,42 @@ class KeyChain {
   }
 
   /**
-   * Derive from HDRootKey to a specific path
+   * Derive from HDPrivateKey to a specific path
    * @param path
+   * @param type - {HDPrivateKey|HDPublicKey} def : HDPrivateKey - set the type of returned keys
    * @return HDPrivateKey
    */
-  generateKeyForPath(path) {
-    return (this.type === 'HDRootKey') ? this.HDRootKey.derive(path) : null;
+  generateKeyForPath(path, type = 'HDPrivateKey') {
+    if (!['HDPrivateKey', 'HDPublicKey'].includes(this.type)) {
+      console.error('Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate keys');
+      return null;
+    }
+    const HDKey = this[this.type];
+    const hdPrivateKey = HDKey.derive(path);
+    if (type === 'HDPublicKey') return HDPublicKey(hdPrivateKey);
+    return hdPrivateKey;
+  }
+
+  /**
+   * Derive from HDPrivateKey to a child
+   * @param index - {Number} - Child index to derivee to
+   * @param type - {HDPrivateKey|HDPublicKey} def : HDPrivateKey - set the type of returned keys
+   * @return HDPrivateKey
+   */
+  generateKeyForChild(index, type = 'HDPrivateKey') {
+    if (!['HDPrivateKey', 'HDPublicKey'].includes(this.type)) {
+      console.error('Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate child');
+      return null;
+    }
+    const hdPublicKey = this.HDPublicKey.deriveChild(index);
+    if (type === 'HDPublicKey') return HDPublicKey(hdPublicKey);
+    return hdPublicKey;
   }
 
   getPrivateKey() {
     let pk;
-    if (this.type === 'HDRootKey') {
-      pk = PrivateKey(this.HDRootKey);
+    if (this.type === 'HDPrivateKey') {
+      pk = PrivateKey(this.HDPrivateKey);
     }
     if (this.type === 'privateKey') {
       pk = PrivateKey(this.privateKey);
@@ -39,12 +68,17 @@ class KeyChain {
   /**
    * Get a key from the cache or generate if none
    * @param path
-   * @return HDPrivateKey
+   * @param type - def : HDPrivateKey - Expected return datatype of the keys
+   * @return {HDPrivateKey | HDExtPublicKey}
    */
-  getKeyForPath(path) {
+  getKeyForPath(path, type = 'HDPrivateKey') {
+    if (type === 'HDPublicKey') {
+      // In this case, we do not generate or keep in cache.
+      return this.generateKeyForPath(path, type);
+    }
     if (!this.keys[path]) {
-      if (this.type === 'HDRootKey') {
-        this.keys[path] = this.generateKeyForPath(path);
+      if (this.type === 'HDPrivateKey') {
+        this.keys[path] = this.generateKeyForPath(path, type);
       }
       if (this.type === 'privateKey') {
         this.keys[path] = this.getPrivateKey(path);
@@ -52,6 +86,15 @@ class KeyChain {
     }
 
     return this.keys[path];
+  }
+
+  /**
+   * Generate a key by deriving it's direct child
+   * @param index - {Number}
+   * @return {HDPrivateKey | HDExtPublicKey}
+   */
+  getKeyForChild(index = 0, type = 'HDPrivateKey') {
+    return this.generateKeyForChild(index, type);
   }
 
   /**

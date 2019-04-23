@@ -24,6 +24,7 @@ const exportWallet = require('./exportWallet');
 const fromMnemonic = require('./fromMnemonic');
 const fromPrivateKey = require('./fromPrivateKey');
 const fromSeed = require('./fromSeed');
+const fromHDExtPublicKey = require('./fromHDExtPublicKey');
 const generateNewWalletId = require('./generateNewWalletId');
 const updateNetwork = require('./updateNetwork');
 
@@ -52,6 +53,7 @@ class Wallet {
       fromMnemonic,
       fromSeed,
       fromPrivateKey,
+      fromHDExtPublicKey,
       generateNewWalletId,
       updateNetwork,
       exportWallet,
@@ -73,6 +75,8 @@ class Wallet {
       this.fromSeed(opts.seed);
     } else if ('privateKey' in opts) {
       this.fromPrivateKey(opts.privateKey);
+    } else if ('HDExtPublicKey' in opts) {
+      this.fromHDExtPublicKey(opts.HDExtPublicKey);
     } else {
       this.fromMnemonic(generateNewMnemonic());
     }

@@ -114,7 +114,7 @@ describe('Account - createTransaction', () => {
       getPrivateKeys,
       strategy: simpleDescendingAccumulator ,
       generateAddress,
-      keyChain: new KeyChain({ HDRootKey: mnemonicToHDPrivateKey(duringDevelopMnemonic, 'testnet', '') }),
+      keyChain: new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(duringDevelopMnemonic, 'testnet', '') }),
       storage,
       events: { emit: _.noop },
     };
@@ -168,7 +168,7 @@ describe('Account - createTransaction', () => {
       getPrivateKeys,
       generateAddress,
       strategy: () => { throw new Error(); }, // Ensure it call the passed option
-      keyChain: new KeyChain({ HDRootKey: mnemonicToHDPrivateKey(duringDevelopMnemonic, 'testnet', '') }),
+      keyChain: new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(duringDevelopMnemonic, 'testnet', '') }),
       storage,
       events: { emit: _.noop },
     };

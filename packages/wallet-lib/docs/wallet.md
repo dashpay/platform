@@ -32,11 +32,13 @@ const Wallet = new Wallet(opts);
 
 > **passphrase** : String(def: null) : Set the passphrase to a mnemonic
 
-> **mnemonic** : String : When set will init the wallet from it.
+> **mnemonic** : String|Mnemonic : When set will init the wallet from it.
 
-> **seed** : String : When set will init the wallet from it.
+> **seed** : String|HDPrivateKey : When set will init the wallet from it.
 
-> **privateKey** : String : When set will init the wallet from it.
+> **privateKey** : String|PrivateKey : When set will init the wallet from it.
+
+> **HDExtPublicKey** : String|HDPublicKey : When set will init the wallet from it.
 
 > **network** : String(def: testnet) : Will be used to set the network for various crypto manipulation (genAddr)
 

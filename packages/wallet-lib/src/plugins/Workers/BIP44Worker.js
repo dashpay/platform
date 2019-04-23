@@ -1,5 +1,5 @@
 const { Worker } = require('../');
-const { BIP44_ADDRESS_GAP } = require('../../CONSTANTS');
+const { BIP44_ADDRESS_GAP, WALLET_TYPES } = require('../../CONSTANTS');
 const is = require('../../utils/is');
 
 const isContiguousPath = (currPath, prevPath) => {
@@ -59,7 +59,7 @@ class BIP44Worker extends Worker {
       firstExecutionRequired: true,
       executeOnStart: true,
       dependencies: [
-        'storage', 'getAddress', 'walletId', 'accountIndex',
+        'storage', 'getAddress', 'walletId', 'accountIndex', 'walletType',
       ],
     });
   }
@@ -69,7 +69,7 @@ class BIP44Worker extends Worker {
     const store = this.storage.getStore();
     const addresses = store.wallets[this.walletId].addresses.external;
     let addressesPaths = Object.keys(addresses);
-    const { accountIndex } = this;
+    const { accountIndex, walletType } = this;
     let prevPath;
 
     // Ensure that all our above paths are contiguous
@@ -77,7 +77,9 @@ class BIP44Worker extends Worker {
 
     missingIndexes.forEach((index) => {
       this.getAddress(index, 'external');
-      this.getAddress(index, 'internal');
+      if (walletType === WALLET_TYPES.HDWALLET) {
+        this.getAddress(index, 'internal');
+      }
     });
 
     const sortByIndex = (a, b) => parseInt(a.split('/')[5], 10) - parseInt(b.split('/')[5], 10);
@@ -107,7 +109,9 @@ class BIP44Worker extends Worker {
       const index = (is.def(lastElem)) ? lastElem.index + 1 : 0;
       for (let i = index; i <= addressToGenerate; i += 1) {
         this.getAddress(i, 'external');
-        this.getAddress(i, 'internal');
+        if (walletType === WALLET_TYPES.HDWALLET) {
+          this.getAddress(i, 'internal');
+        }
       }
     }
 

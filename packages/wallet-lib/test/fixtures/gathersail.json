@@ -1,0 +1,35 @@
+{
+  "mnemonic": "gather sail face invite together focus waste barely excuse slide harbor hint",
+  "testnet": {
+    "coinTypeRoothardened": {
+      "path": "m/44'/1'",
+      "walletId": "a5f693bd42",
+      "hdprivkey": "tprv8dofJF3bpqxuajWyTwnM7PyxCP28ubYAcZ9FmAUsK8mGWGtDsnVGqotKPoPYnqCrqHd5B5PkE6sX2ZX7HXrQLpKGw9EKsfN97LKQ1LMHXK2",
+      "hdpubkey": "tpubDAVhSf5qyDeaUCYmMbSwWoe4mQY54vj5Brk33gXAjQZfLm8zWBJs2JWBZy7ZZaDi2wDQDaBbtC9QAnDrHJSGBUCE9pBhdEZSbD7KqsNAewG"
+    },
+    "accountRootUnhardened": {
+      "walletId": "c8bfa6aece",
+      "path": "m/44'/1'/0",
+      "hdprivkey": "tprv8fPaucpz8koz1x6d1EjuBXaDJqyUknWb2PwPFWXzoL3LUCDbWtw451fCxMBvpYcawck4ER6GJPRyhMapoYD3p5p6gY71uLsYiTJ4Lq7NBSf",
+      "hdpubkey": "tpubDC5d42sEH8VeuR8QttQVawEKssVQv7hVbhYAY2aJDbqjJgUN9HkeFWH58VX5xc5QUW2JDm4ActaFS6NVZUZu6pfijnvPVmUwF84ryPkBSi5"
+    },
+    "accountRootHardened": {
+      "walletId": "84191f1b0d",
+      "path": "m/44'/1'/0'",
+      "hdprivkey": "tprv8fPaucq8URLxAntBgc3dJQ7A9gSZmGCEkfDjiUKqrfxb5hvLhMH2xE9FPxhBmpEdSYbZ7WgV1mVP6Q6CzFbiz3qfRs7pR3QT2ALCWGeVoWn",
+      "hdpubkey": "tpubDC5d42sNco2d4FuyaFiDhomGihxVvbP9KxpWzzN9GwkyvCB7Kk6d8im7a86EzYetBJ3fVywD3TtkD676HEtHEYNZhjRfbEuDPeUQwgxddFZ"
+    },
+    "external": {
+      "walletId": "58a78501c1",
+      "path": "m/44'/1'/0'/0",
+      "hdprivkey": "tprv8hV43GTuAYskd2ZTtJGgVtNp9e4ozrj3qD2ksTVHpvETmZjp4KpRFG65J7wK6WhB3z8ixcGgFowtdrXtAorza6LT4aRMUK3NdPHW5bqFUVt",
+      "hdpubkey": "tpubDEB6BgW9JvZRWVbFmwwGuJ2vifakABuxQWdY9yXbFC2rc3zagie1RkhwUEnahb1dzaapchEVeKqKcx99TzkjNvjXcmoQkLJwsYnA1J5bGNj"
+    },
+    "internal": {
+      "walletId": "e1ae985d2d",
+      "path": "m/44'/1'/0'/1",
+      "hdprivkey": "tprv8hV43GTuAYskeXZaJuuZw5kJS8whKashCoDAyr7wNJfC5LM73mfgUsJno7Uy7Db148R9bCgKGPPqWMyU8HhzVi73uwR1RsYF4ietJXpVAvW",
+      "hdpubkey": "tpubDEB6BgW9JvZRXzbNCZaALVQR1ATdUv4bn6oxGNAEnaTaupbsgAVGfMveyF8jkr6MzEWaUFDwUgKy41LaQbPofVpzCxpuwGMze4dvg2KU5f6"
+    }
+  }
+}

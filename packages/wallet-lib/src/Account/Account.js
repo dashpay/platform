@@ -62,6 +62,7 @@ class Account {
       getAddress,
       getAddresses,
       getBalance,
+      getBIP44Path,
       getDAP,
       getPlugin,
       getPrivateKeys,
@@ -83,7 +84,7 @@ class Account {
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
 
-    this.type = wallet.type;
+    this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
 
     const accountIndex = _.has(opts, 'accountIndex') ? opts.accountIndex : wallet.accounts.length;
@@ -103,14 +104,21 @@ class Account {
     this.store = wallet.storage.store;
     this.storage = wallet.storage;
 
-    if (this.type === WALLET_TYPES.HDWALLET) {
+    if (this.walletType === WALLET_TYPES.HDWALLET) {
       this.storage.importAccounts({
         label: this.label,
         path: this.BIP44PATH,
         network: this.network,
       }, this.walletId);
     }
-    if (this.type === WALLET_TYPES.SINGLE_ADDRESS) {
+    if (this.walletType === WALLET_TYPES.HDEXTPUBLIC) {
+      this.storage.importSingleAddress({
+        label: this.label,
+        path: '/0',
+        network: this.network,
+      }, this.walletId);
+    }
+    if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
       this.storage.importSingleAddress({
         label: this.label,
         path: '0',

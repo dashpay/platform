@@ -13,23 +13,23 @@ describe('Wallet - fromMnemonic', () => {
   it('should set wallet from mnemonic', () => {
     const self1 = {};
     fromMnemonic.call(self1, knifeFixture.mnemonic);
-    expect(self1.type).to.equal(WALLET_TYPES.HDWALLET);
+    expect(self1.walletType).to.equal(WALLET_TYPES.HDWALLET);
     expect(self1.mnemonic).to.equal(knifeFixture.mnemonic);
     expect(self1.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
     expect(new Dashcore.HDPrivateKey(self1.HDPrivateKey)).to.equal(self1.HDPrivateKey);
-    expect(self1.keyChain.type).to.equal('HDRootKey');
-    expect(self1.keyChain.HDRootKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
+    expect(self1.keyChain.type).to.equal('HDPrivateKey');
+    expect(self1.keyChain.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
     expect(self1.keyChain.keys).to.deep.equal({});
 
 
     const self2 = { network: Dashcore.Networks.testnet };
     fromMnemonic.call(self2, knifeFixture.mnemonic);
-    expect(self2.type).to.equal(WALLET_TYPES.HDWALLET);
+    expect(self2.walletType).to.equal(WALLET_TYPES.HDWALLET);
     expect(self2.mnemonic).to.equal(knifeFixture.mnemonic);
     expect(self2.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyTestnet);
     expect(new Dashcore.HDPrivateKey(self1.HDPrivateKey)).to.equal(self1.HDPrivateKey);
-    expect(self2.keyChain.type).to.equal('HDRootKey');
-    expect(self2.keyChain.HDRootKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyTestnet);
+    expect(self2.keyChain.type).to.equal('HDPrivateKey');
+    expect(self2.keyChain.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyTestnet);
     expect(self2.keyChain.keys).to.deep.equal({});
   });
   it('should reject invalid mnemonic', () => {

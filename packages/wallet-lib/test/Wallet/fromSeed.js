@@ -12,20 +12,20 @@ describe('Wallet - fromSeed', () => {
   it('should set wallet from a HDPrivateKey', () => {
     const self1 = {};
     fromSeed.call(self1, knifeFixture.HDRootPrivateKeyMainnet);
-    expect(self1.type).to.equal(WALLET_TYPES.HDWALLET);
+    expect(self1.walletType).to.equal(WALLET_TYPES.HDWALLET);
     expect(self1.mnemonic).to.equal(null);
     expect(self1.HDPrivateKey).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
-    expect(self1.keyChain.type).to.equal('HDRootKey');
-    expect(self1.keyChain.HDRootKey).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
+    expect(self1.keyChain.type).to.equal('HDPrivateKey');
+    expect(self1.keyChain.HDPrivateKey).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
     expect(self1.keyChain.keys).to.deep.equal({});
 
     const self2 = {};
     fromSeed.call(self2, knifeFixture.HDRootPrivateKeyMainnet);
-    expect(self2.type).to.equal(WALLET_TYPES.HDWALLET);
+    expect(self2.walletType).to.equal(WALLET_TYPES.HDWALLET);
     expect(self2.mnemonic).to.equal(null);
     expect(self2.HDPrivateKey).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
-    expect(self2.keyChain.type).to.equal('HDRootKey');
-    expect(self2.keyChain.HDRootKey).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
+    expect(self2.keyChain.type).to.equal('HDPrivateKey');
+    expect(self2.keyChain.HDPrivateKey).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
     expect(self2.keyChain.keys).to.deep.equal({});
   });
   it('should reject invalid mnemonic', () => {

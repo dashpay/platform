@@ -9,7 +9,7 @@ const { WALLET_TYPES } = require('../CONSTANTS');
  */
 module.exports = function fromPrivateKey(privateKey) {
   if (!is.privateKey(privateKey)) throw new Error('Expected a valid private key (typeof PrivateKey or String)');
-  this.type = WALLET_TYPES.SINGLE_ADDRESS;
+  this.walletType = WALLET_TYPES.SINGLE_ADDRESS;
   this.mnemonic = null;
   this.privateKey = privateKey;
   this.keyChain = new KeyChain({ privateKey });

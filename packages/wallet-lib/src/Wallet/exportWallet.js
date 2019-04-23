@@ -14,10 +14,13 @@ module.exports = function exportWallet(toHDPrivateKey = false) {
   if (toHDPrivateKey) {
     return this.HDPrivateKey;
   }
-  switch (this.type) {
+  switch (this.walletType) {
     case WALLET_TYPES.SINGLE_ADDRESS:
       if (!this.privateKey) throw new Error('No privateKey to export');
       return this.privateKey;
+    case WALLET_TYPES.HDEXTPUBLIC:
+      if (!this.HDExtPublicKey) throw new Error('No publicKey to export');
+      return this.HDExtPublicKey.toString();
     case WALLET_TYPES.HDWALLET:
       return exportMnemonic(this.mnemonic);
     default:

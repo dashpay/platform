@@ -12,7 +12,7 @@ describe('Wallet - fromPrivateKey', () => {
   it('should set wallet from private Key', () => {
     const self1 = {};
     fromPrivateKey.call(self1, cR4t6eFixture.privateKey);
-    expect(self1.type).to.equal(WALLET_TYPES.SINGLE_ADDRESS);
+    expect(self1.walletType).to.equal(WALLET_TYPES.SINGLE_ADDRESS);
     expect(self1.mnemonic).to.equal(null);
     expect(self1.privateKey).to.equal(cR4t6eFixture.privateKey);
     expect(self1.keyChain.type).to.equal('privateKey');
@@ -21,7 +21,7 @@ describe('Wallet - fromPrivateKey', () => {
 
     const self2 = {};
     fromPrivateKey.call(self2, cR4t6eFixture.privateKey);
-    expect(self2.type).to.equal(WALLET_TYPES.SINGLE_ADDRESS);
+    expect(self2.walletType).to.equal(WALLET_TYPES.SINGLE_ADDRESS);
     expect(self2.mnemonic).to.equal(null);
     expect(self2.privateKey).to.equal(cR4t6eFixture.privateKey);
     expect(self2.keyChain.type).to.equal('privateKey');

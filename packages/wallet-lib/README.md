@@ -199,6 +199,7 @@ Miscellaneous :
 - [x] Persistance interface
     - [x] In-mem support
     - [ ] DB support
+- [x] HDWallet : Create from a HDPublicKey
 - [x] HDWallet : Create a wallet / generate a new mnemonic
 - [x] HDWallet : Validate mnemonic (BIP39)
 - [x] HDWallet : Create an account

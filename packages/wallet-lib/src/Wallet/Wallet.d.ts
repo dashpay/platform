@@ -1,4 +1,4 @@
-import {Mnemonic,PrivateKey,Strategy, Network, Plugins} from "../types";
+import {Mnemonic,PrivateKey, HDPublicKey, Strategy, Network, Plugins} from "../types";
 import {Account} from "../Account/Account";
 
 export declare class Wallet {
@@ -9,6 +9,7 @@ export declare class Wallet {
     exportWallet():Mnemonic["toString"];
     fromMnemonic(Mnemonic):void;
     fromPrivateKey(PrivateKey):void;
+    fromHDPubKey(HDPublicKey):void;
     fromSeed(seed):void;
     generateNewWalletId():void;
     getAccount(accOptions: Wallet.getAccOptions): Account;

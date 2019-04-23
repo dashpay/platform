@@ -15,7 +15,7 @@ function createAccount(accountOpts) {
 
   const { injectDefaultPlugins, plugins, allowSensitiveOperations } = this;
   const baseOpts = { injectDefaultPlugins, allowSensitiveOperations, plugins };
-  if (this.type === WALLET_TYPES.SINGLE_ADDRESS) { baseOpts.privateKey = this.privateKey; }
+  if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) { baseOpts.privateKey = this.privateKey; }
   const opts = Object.assign(baseOpts, accountOpts);
   return new Account(this, opts);
 }
