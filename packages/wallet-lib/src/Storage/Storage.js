@@ -38,6 +38,7 @@ const defaultOpts = {
   rehydrate: true,
   autosave: true,
   autosaveIntervalTime: CONSTANTS.STORAGE.autosaveIntervalTime,
+  network: 'testnet',
 };
 /**
  * Handle all the storage logic, it's a wrapper around the adapters
@@ -85,7 +86,7 @@ class Storage {
     this.lastRehydrate = null;
     this.lastSave = null;
     this.lastModified = null;
-
+    this.network = has(opts, 'network') ? opts.network : defaultOpts.network;
     // // Map an address to it's walletid/path/type schema (used by searchAddress for speedup)
     this.mappedAddress = {};
   }

@@ -10,7 +10,7 @@ const { is } = require('../utils');
 async function fetchAddressInfo(addressObj, fetchUtxo = true) {
   if (!this.transport.isValid) throw new ValidTransportLayerRequired('fetchAddressInfo');
   const self = this;
-  const { address, path } = addressObj;
+  const { address, path, index } = addressObj;
 
   try {
     const addrSum = await this.transport.getAddressSummary(address);
@@ -28,6 +28,7 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
     const addrInfo = {
       address,
       path,
+      index,
       balanceSat,
       unconfirmedBalanceSat,
       transactions,

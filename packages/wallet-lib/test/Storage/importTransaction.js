@@ -25,21 +25,30 @@ describe('Storage - importTransaction', () => {
   it('should import a transaction', () => {
     const mockOpts = { txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23', vin: [], vout: [] };
     const mockedSearchAddress = () => ({ found: false });
+    let announceCalled = 0;
     const self = {
       store: {
         transactions: {},
+        chains: { testnet: { blockheight: 50000 } },
       },
+      network: 'testnet',
       lastModified: 0,
       searchAddress: mockedSearchAddress,
+      announce: (annType) => {
+        announceCalled += 1;
+        expect(annType).to.equal('FETCHED/UNCONFIRMED_TRANSACTION');
+      },
     };
     importTransaction.call(self, mockOpts);
 
     const expectedStore = {
       transactions: { '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23': { txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23', vin: [], vout: [] } },
+      chains: { testnet: { blockheight: 50000 } },
     };
 
     expect(self.store).to.be.deep.equal(expectedStore);
     expect(self.lastModified).to.be.not.equal(0);
+    expect(announceCalled).to.be.equal(1);
 
     importTransaction.call(self, fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e);
     expect(self.store.transactions.fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e).to.deep.equal(fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e);

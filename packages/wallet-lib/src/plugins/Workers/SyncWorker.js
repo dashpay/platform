@@ -2,7 +2,7 @@ const _ = require('lodash');
 const { Worker } = require('../');
 const { ValidTransportLayerRequired, InvalidTransactionObject } = require('../../errors');
 const EVENTS = require('../../EVENTS');
-const { UNCONFIRMED_TRANSACTION_STATUS_CODE } = require('../../CONSTANTS');
+const { UNCONFIRMED_TRANSACTION_STATUS_CODE, SECURE_TRANSACTION_CONFIRMATIONS_NB } = require('../../CONSTANTS');
 
 const defaultOpts = {
   fetchThreshold: 10 * 60 * 1000,
@@ -104,6 +104,7 @@ class SyncWorker extends Worker {
 
     const toFetchAddresses = [];
 
+    let prevWasUsed = false;
     Object.keys(addresses).forEach((walletType) => {
       const walletAddresses = addresses[walletType];
       const walletPaths = Object.keys(walletAddresses);
@@ -111,15 +112,27 @@ class SyncWorker extends Worker {
       if (walletPaths.length > 0) {
         walletPaths.forEach((path) => {
           const address = walletAddresses[path];
-          if (address.unconfirmedBalanceSat > 0
-            || address.fetchedLast < Date.now() - self.fetchThreshold) {
+
+
+          const hasUnconfirmedBalance = address.unconfirmedBalanceSat > 0;
+          // This will make all last address (the one we got from unconfirmedAddress)
+          // to basically check each time
+          const isFirstAndUnused = address.used === false && address.index === 0;
+          const hasMostChanceToReceiveTx = prevWasUsed === true && address.used === false;
+          const hasReachRefreshThreshold = address.fetchedLast < (Date.now() - self.fetchThreshold);
+          if (
+            isFirstAndUnused
+            || hasUnconfirmedBalance
+            || hasReachRefreshThreshold
+            || hasMostChanceToReceiveTx
+          ) {
             toFetchAddresses.push(address);
           }
+          prevWasUsed = address.used;
         });
       }
     });
     const promises = [];
-
     toFetchAddresses.forEach((addressObj) => {
       // We set at false so we don't autofetch utxos. This part will be done in the tx fetching time
       // const p = fetchAddressInfo(addressObj, false)
@@ -158,7 +171,7 @@ class SyncWorker extends Worker {
     const { fetchTransactionInfo } = this;
 
     const toFetchTransactions = [];
-    const unconfirmedThreshold = 6;
+    const unconfirmedThreshold = SECURE_TRANSACTION_CONFIRMATIONS_NB;
 
     // Parse all addresses and will check if some transaction need to be fetch.
     // This could happen if a tx is yet unconfirmed or if unknown yet.

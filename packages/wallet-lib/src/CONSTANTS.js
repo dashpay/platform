@@ -3,6 +3,8 @@ const CONSTANTS = {
   BIP44: 'BIP44',
   DUFFS_PER_DASH: 100000000,
   BIP44_ADDRESS_GAP: 20,
+  // TODO : When chainlock is launched in mainnet, reduce this to 1 \0/
+  SECURE_TRANSACTION_CONFIRMATIONS_NB: 6,
   BIP32__ROOT_PATH: 'm',
   // Livenet is 5 for Dash.
   BIP44_LIVENET_ROOT_PATH: "m/44'/5'",

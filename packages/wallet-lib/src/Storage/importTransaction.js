@@ -1,23 +1,26 @@
 const { cloneDeep } = require('lodash');
 const { InvalidTransactionObject } = require('../errors');
 const { is, dashToDuffs } = require('../utils');
-
+const { SECURE_TRANSACTION_CONFIRMATIONS_NB, UNCONFIRMED_TRANSACTION_STATUS_CODE } = require('../CONSTANTS');
+const { FETCHED_UNCONFIRMED_TRANSACTION, FETCHED_CONFIRMED_TRANSACTION } = require('../EVENTS');
 /**
  * This method is used to import a transaction in Store.
  * @param transaction - A valid Transaction
  */
-const importTransaction = function (transaction) {
+const importTransaction = function importTransaction(transaction) {
   const self = this;
   if (!is.transactionObj(transaction)) throw new InvalidTransactionObject(transaction);
-  const transactionStore = this.store.transactions;
+  const { store, network } = this;
+
+  const transactionStore = store.transactions;
+  const currBlockheight = store.chains[network].blockheight;
   const transactionsIds = Object.keys(transactionStore);
 
-  if (!transactionsIds.includes[transaction.txid]) {
+  if (!transactionsIds.includes(transaction.txid)) {
     // eslint-disable-next-line no-param-reassign
     transactionStore[transaction.txid] = transaction;
 
     // We should now also check if it concern one of our address
-
     // VIN
     const vins = transaction.vin;
     vins.forEach((vin) => {
@@ -54,8 +57,21 @@ const importTransaction = function (transaction) {
       }
     });
     this.lastModified = +new Date();
+
+
+    const secureBlockheight = transaction.blockheight + SECURE_TRANSACTION_CONFIRMATIONS_NB;
+    const isSecureTx = (
+      transaction.blockheight !== UNCONFIRMED_TRANSACTION_STATUS_CODE
+      && currBlockheight >= secureBlockheight
+    );
+
+    const eventName = (isSecureTx)
+      ? FETCHED_CONFIRMED_TRANSACTION
+      : FETCHED_UNCONFIRMED_TRANSACTION;
+
+    self.announce(eventName, { transaction });
   } else {
-    throw new Error('Tx already exist');
+    this.updateTransaction(transaction);
   }
 };
 module.exports = importTransaction;

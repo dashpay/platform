@@ -87,6 +87,7 @@ class Wallet {
     this.storage = new Storage({
       rehydrate: true,
       autosave: true,
+      network,
     });
 
     this.storage.configure({

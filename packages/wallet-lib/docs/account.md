@@ -3,6 +3,7 @@
 In Wallet-Lib, an Account represent in an ideal condition (HDWallet) a specific BIP44 path instance (in case of a singleAddress - fromPrivateKey, the concept of multiple account vanish).
 This Account hold all the method that one might want to use, from creating a transaction to getting the transaction history. 
 
+Account will also emit differents [events](#Events) that you can listen for.
 ## Create an Account
 
 ```
@@ -41,6 +42,7 @@ const account = new Account(wallet, [opts]);
 ##### params
 
 > **rawtx** : {String|Transaction} - A valid hexadecimal represation of a transaction or Transaction object.
+
 
 ---
 
@@ -171,3 +173,51 @@ const txHistory = account.getTransactionHistory();
 ```
 account.disconnect();
 ```
+
+### Events 
+
+```javascript
+const {EVENTS} = require('@dashevo/wallet-lib');
+const {READY} = EVENTS;
+const doSomethingWhenReady = (info) => {...}
+account.events.on(READY, doSomethingWhenReady);
+
+```
+
+Events types : 
+
+
+### Storage
+
+| Event Name                 | Description                                             | 
+| -------------------------- |:-------------------------------------------------------:|
+| CONFIGURED                 |  throwed when Storage has configured the adapter.       |
+| REHYDRATE_STATE_FAILED     | onFailedRehydrateState                                  |
+| REHYDRATE_STATE_SUCCESS    | throwed when Storage has succesfully rehydrated the data|
+
+### General 
+
+| Event Name                 | Description                          | 
+| -------------------------- |:------------------------------------:|
+| READY                      |  throwed when ready to be used       |
+
+
+
+### Sync Info
+
+| Event Name                       | Description                                                          | 
+| -------------------------------- |:--------------------------------------------------------------------:|
+| BLOCKHEIGHT_CHANGED              |  When the chain has moved from one block forward                     |
+| FETCHED_UNCONFIRMED_TRANSACTION  | When we got to fetch an unconfirmed transaction, we throw this event |
+| FETCHED_CONFIRMED_TRANSACTION    | This one is if the transaction is confirmed                          |
+| FETCHED_TRANSACTIONS             | In both case, we throw that event                                    |
+
+
+### Balance
+
+| Event Name                   | Description                                                            | 
+| ---------------------------- |:----------------------------------------------------------------------:|
+| UNCONFIRMED_BALANCE_CHANGED  | When unconfirmed balance change, we gives the delta + totalValue       |
+| BALANCE_CHANGED              | When the balance change, we gives the delta + totalValue               |
+
+
