@@ -36,7 +36,7 @@ class TransactionsFilterStreamClient {
 
     const message = bloomFilter.toObject();
 
-    this.client.getTransactionsByFilter(
+    return this.client.getTransactionsByFilter(
       message,
       convertObjectToMetadata(metadata),
       getTransactionsByFilterOptions,
