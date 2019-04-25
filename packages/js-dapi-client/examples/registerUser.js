@@ -29,7 +29,7 @@ async function registerUser(user, userKey, feeKey) {
   const transaction = Transaction()
     .setType(Transaction.TYPES.TRANSACTION_SUBTX_REGISTER)
     .setExtraPayload(validPayload)
-    .from(inputs.slice(-1)[0])
+    .from(inputs.items[0])
     .addFundingOutput(10000)
     .change(feeAddress)
     .sign(feeKey);
