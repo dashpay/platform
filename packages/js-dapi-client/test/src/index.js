@@ -1,7 +1,9 @@
-const DAPIClient = require('../../src/index');
-const chai = require('chai');
-const chaiAsPromised = require('chai-as-promised');
 const sinon = require('sinon');
+const TxFilterGrpcClient = require('@dashevo/dapi-grpc');
+const chai = require('chai');
+const { EventEmitter } = require('events');
+const DAPIClient = require('../../src/index');
+const chaiAsPromised = require('chai-as-promised');
 const rpcClient = require('../../src/RPCClient');
 const config = require('../../src/config');
 const SMNListFixture = require('../fixtures/mnList');
@@ -939,6 +941,28 @@ describe('api', () => {
       const res = await dapi.clearBloomFilter(filter);
       // TODO: implement real unit test
       expect(res).to.be.deep.equal([]);
+    });
+  });
+
+  describe('.subscribeToTransactionsByFilter', () => {
+    let stream;
+    beforeEach(() => {
+      stream = new EventEmitter();
+      sinon
+        .stub(TxFilterGrpcClient.TransactionsFilterStreamClient.prototype, 'getTransactionsByFilter')
+        .returns(stream);
+    });
+
+    afterEach(() => {
+      TxFilterGrpcClient.TransactionsFilterStreamClient.prototype.getTransactionsByFilter.restore();
+    });
+
+    it('should return a stream', async () => {
+      const client = new DAPIClient();
+      const filter = new Uint8Array([1]);
+      const actualStream = await client.subsribeToTransactionsByFilter(filter);
+
+      expect(actualStream).to.be.equal(stream);
     });
   });
 });
