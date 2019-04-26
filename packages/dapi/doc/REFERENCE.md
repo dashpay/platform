@@ -6,10 +6,7 @@
 
 - [Layer 1 endpoints](#layer-1-endpoints)
 
-    - [addToBloomFilter](#addtobloomfilter)
-    - [clearBloomFilter](#clearbloomfilter)
     - [estimateFee](#estimatefee)
-    - [findDataForBlock](#finddataforblock)
     - [generate](#generate)
     - [getAddressSummary](#getaddresssummary)
     - [getAddressTotalReceived](#getaddresstotalreceived)
@@ -30,13 +27,11 @@
     - [getMNUpdateList](#getmnupdatelist)
     - [getPeerDataSyncStatus](#getpeerdatasyncstatus)
     - [getRawBlock](#getrawblock)
-    - [getSpvData](#getspvdata)
     - [getStatus](#getstatus)
     - [getTransactionById](#gettransactionbyid)
     - [getTransactionsByAddress](#gettransactionsbyaddress)
     - [getUTXO](#getutxo)
     - [getVersion](#getversion)
-    - [loadBloomFilter](#loadbloomfilter)
     - [sendRawTransaction](#sendrawtransaction)
 
  - [Layer 2 endpoints](#Layer-2-endpoints)
@@ -48,42 +43,6 @@
 
 
 ## Layer 1 endpoints
-### addToBloomFilter
-
-Adds something to bloom filter
-
-##### Params
-
-| name                 | type   | description                            |
-|----------------------|--------|----------------------------------------|
-| args.originalFilter  | string | Original bloom filter                  |
-| args.element         | string | Element to add to bloom filter         |
-
-##### Response
-
-| name     | type              | description                                                      |
-|----------|-------------------|------------------------------------------------------------------|
-| headers  | promise (boolean) | Returns a boolean promise indicating whether it was added or not |
-
----
-
-### clearBloomFilter
-
-Clears bloom filter
-
-##### Params
-
-| name         | type   | description                                 |
-|--------------|--------|---------------------------------------------|
-| args.filter  | string | Bloom filter that you want to clear         |
-
-##### Response
-
-| name    | type              | description                                                                  |
-|---------|-------------------|------------------------------------------------------------------------------|
-| headers | promise (boolean) | Returns a boolean promise indicating whether it was cleared or not           |
-
----
 
 ### estimateFee
 
@@ -100,24 +59,6 @@ Estimates transaction fee based on the size of number of blocks.
 | name         | type             | description                                  |
 |--------------|------------------|----------------------------------------------|
 | estimatedFee | promise (number) | Promise containing fee in duffs per kilobyte |
-
----
-
-### findDataForBlock
-
-Finds data for blocks given a bloom filter.
-
-##### Params
-
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| args.filter  | string | A bloom filter                         |
-
-##### Response
-
-| name    | type   | description                             |
-|---------|--------|-----------------------------------------|
-| headers | object | Returns an obj containing block headers |
 
 ---
 
@@ -410,24 +351,6 @@ Returns raw block given block hash.
 
 ---
 
-### getSpvData
-
-Returns block headers.
-
-##### Params
-
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| args.filter  | string | bloom filter                           |
-
-##### Response
-
-| name         | type   | description                            |
-|--------------|--------|----------------------------------------|
-| blockHeaders | object | object containing block headers        |
-
----
-
 ### getTransactionById
 
 Returns tranasction for the given hash.
@@ -487,24 +410,6 @@ Returns unspent transaction outputs for a given address.
 | name    | type                | description                                               |
 |---------|---------------------|-----------------------------------------------|
 | utxo    | promise (obj array) | an array containing unspent transaction objs  |
-
----
-
-### loadBloomFilter
-
-Loads bloom filter.
-
-##### Params
-
-| name        | type   | description                            |
-|-------------|--------|----------------------------------------|
-| args.filter | string | bloom filter                           |
-
-##### Response
-
-| name          | type              | description                            |
-|---------------|-------------------|----------------------------------------|
-| filterLoaded? | promise (boolean) | returns boolean depending on load status |
 
 ---
 

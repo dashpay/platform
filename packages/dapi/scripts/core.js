@@ -11,7 +11,6 @@ const rpcServer = require('../lib/rpcServer/server');
 const QuorumService = require('../lib/services/quorum');
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
 const DriveAdapter = require('../lib/externalApis/driveAdapter');
-const { SpvService } = require('../lib/services/spv');
 const insightAPI = require('../lib/externalApis/insight');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const userIndex = require('../lib/services/userIndex');
@@ -45,10 +44,6 @@ async function main() {
   quorumService.start(dashCoreZmqClient);
   log.info('Quorum service started');
 
-  log.info('Starting SPV service');
-  const spvService = new SpvService();
-  log.info(`SPV service running with ${spvService.clients.length} connected clients`);
-
   log.info('Connecting to Drive');
   const driveAPI = new DriveAdapter({
     host: config.drive.host,
@@ -68,7 +63,6 @@ async function main() {
   rpcServer.start({
     port: config.rpcServer.port,
     networkType: config.network,
-    spvService,
     insightAPI,
     dashcoreAPI: dashCoreRpcClient,
     driveAPI,

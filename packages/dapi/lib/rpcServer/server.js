@@ -32,11 +32,6 @@ const sendRawTransition = require('./commands/sendRawTransition');
 const fetchContract = require('./commands/fetchContract');
 const fetchDocuments = require('./commands/fetchDocuments');
 const searchUsers = require('./commands/searchUsers');
-const loadBloomFilter = require('./commands/loadBloomFilter');
-const addToBloomFilter = require('./commands/addToBloomFilter');
-const clearBloomFilter = require('./commands/clearBloomFilter');
-const getSpvData = require('./commands/getSpvData');
-const findDataForBlock = require('./commands/findDataForBlock');
 const getQuorum = require('./commands/getQuorum');
 
 // Following commands are not implemented yet:
@@ -81,20 +76,11 @@ const createRegtestCommands = dashcoreAPI => ({
   generate: generate(dashcoreAPI),
 });
 
-const createSpvServiceCommands = spvService => ({
-  loadBloomFilter: loadBloomFilter(spvService),
-  addToBloomFilter: addToBloomFilter(spvService),
-  clearBloomFilter: clearBloomFilter(spvService),
-  getSpvData: getSpvData(spvService),
-  findDataForBlock: findDataForBlock(spvService),
-});
-
 /**
   * Starts RPC server
  *  @param options
   * @param {number} options.port - port to listen for incoming RPC connections
   * @param {string} options.networkType
-  * @param {object} options.spvService
   * @param {object} options.insightAPI
   * @param {object} options.dashcoreAPI
   * @param {AbstractDriveAdapter} options.driveAPI - Drive api adapter
@@ -102,15 +88,14 @@ const createSpvServiceCommands = spvService => ({
   * @param {object} options.log
  */
 const start = ({
-  port, networkType, spvService, insightAPI, dashcoreAPI, driveAPI, userIndex, log,
+  port, networkType, insightAPI, dashcoreAPI, driveAPI, userIndex, log,
 }) => {
-  const spvCommands = createSpvServiceCommands(spvService);
   const commands = createCommands(insightAPI, dashcoreAPI, driveAPI, userIndex);
   const areRegtestCommandsEnabled = isRegtest(networkType) || isDevnet(networkType);
 
   const allCommands = areRegtestCommandsEnabled
-    ? Object.assign(commands, spvCommands, createRegtestCommands(dashcoreAPI))
-    : Object.assign(commands, spvCommands);
+    ? Object.assign(commands, createRegtestCommands(dashcoreAPI))
+    : commands;
 
   /*
   Decorate all commands with decorator that will intercept errors and format
