@@ -28,6 +28,18 @@
       "type": "string",
       "minLength": 34,
       "maxLength": 34
+    },
+    "$meta": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      },
+      "required": ["userId"],
+      "additionalProperties": false
     }
   },
   "required": [

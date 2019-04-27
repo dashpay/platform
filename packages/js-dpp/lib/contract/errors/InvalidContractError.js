@@ -1,7 +1,7 @@
 class InvalidContractError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {RawDocument} rawContract
+   * @param {RawContract} rawContract
    */
   constructor(errors, rawContract) {
     super();

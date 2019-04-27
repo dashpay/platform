@@ -5,11 +5,11 @@ const calculateItemsHashes = require('./calculateItemsHashes');
 /**
  * Calculate merkle root of ST Packet's items
  *
- * @param {{ documents: Buffer[], contracts: Buffer[] }} items
+ * @param {RawSTPacket} rawSTPacket
  * @return {string|null}
  */
-function calculateItemsMerkleRoot(items) {
-  const { contracts, documents } = calculateItemsHashes(items);
+function calculateItemsMerkleRoot(rawSTPacket) {
+  const { contracts, documents } = calculateItemsHashes(rawSTPacket);
 
   // Always concatenate arrays in bitwise order of their names
   const itemsHashes = contracts.concat(documents);

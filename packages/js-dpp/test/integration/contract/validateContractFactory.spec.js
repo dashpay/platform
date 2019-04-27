@@ -444,7 +444,7 @@ describe('validateContractFactory', () => {
 
   describe('indices', () => {
     it('should be an array', () => {
-      rawContract.documents.indexedDocument.indices = 'definetely not an array';
+      rawContract.documents.indexedDocument.indices = 'definitely not an array';
 
       const result = validateContract(rawContract);
 
@@ -633,7 +633,7 @@ describe('validateContractFactory', () => {
         expect(error.keyword).to.equal('required');
       });
 
-      it('should have "unqiue" flag equal "true"', () => {
+      it('should have "unique" flag equal "true"', () => {
         rawContract.documents.indexedDocument.indices[0].unique = false;
 
         const result = validateContract(rawContract);

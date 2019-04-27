@@ -87,6 +87,8 @@ describe('verifySTPacket', function main() {
       email: 'w.birkin@umbrella.co',
     });
 
+    firstUserDocument.removeMetadata();
+
     const firstUserPacket = dpp.packet.create([firstUserDocument]);
     const firstUserTransaction = createStateTransition(
       user,
@@ -109,6 +111,8 @@ describe('verifySTPacket', function main() {
       email: 'a.birkin@umbrella.co',
     });
 
+    secondUserDocument.removeMetadata();
+
     const secondUserPacket = dpp.packet.create([secondUserDocument]);
     const secondUserTransaction = createStateTransition(
       user,
@@ -130,6 +134,8 @@ describe('verifySTPacket', function main() {
       firstName: 'Leon',
       email: 'a.birkin@umbrella.co',
     });
+
+    thirdUserDocument.removeMetadata();
 
     const thirdUserPacket = dpp.packet.create([thirdUserDocument]);
     const thirdUserTransaction = createStateTransition(

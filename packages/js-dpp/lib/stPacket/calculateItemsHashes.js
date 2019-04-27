@@ -6,7 +6,7 @@ const createContract = require('../contract/createContract');
 /**
  * Get all hashes of all items in a packets as an array of buffers
  *
- * @private
+ * @param {RawSTPacket}
  * @returns {{
  *   documents: Buffer[],
  *   contracts: Buffer[]

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -22,7 +22,7 @@
     "@babel/core": "^7.2.0",
     "@babel/polyfill": "^7.0.0",
     "@babel/preset-env": "^7.2.0",
-    "@dashevo/dp-services-ctl": "^0.6.0",
+    "@dashevo/dp-services-ctl": "^0.7.0",
     "babel-loader": "^8.0.4",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
@@ -40,7 +40,7 @@
     "karma-webpack": "^3.0.5",
     "mocha": "^5.2.0",
     "mocha-sinon": "^2.1.0",
-    "nyc": "^13.3.0",
+    "nyc": "^14.1.0",
     "rewiremock": "^3.12.3",
     "sinon": "^7.2.7",
     "sinon-chai": "^3.2.0",

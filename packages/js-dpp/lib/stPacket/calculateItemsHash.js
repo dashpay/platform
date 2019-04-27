@@ -6,11 +6,11 @@ const calculateItemsHashes = require('./calculateItemsHashes');
 /**
  * Calculate hash of ST Packet's items
  *
- * @param {{ documents: Buffer[], contracts: Buffer[] }} items
+ * @param {RawSTPacket} rawSTPacket
  * @return {string|null}
  */
-function calculateItemsHash(items) {
-  const itemsHashes = calculateItemsHashes(items);
+function calculateItemsHash(rawSTPacket) {
+  const itemsHashes = calculateItemsHashes(rawSTPacket);
 
   if (itemsHashes.contracts.length === 0
     && itemsHashes.documents.length === 0) {

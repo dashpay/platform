@@ -37,6 +37,9 @@ class DocumentFactory {
       $scopeId: entropy.generate(),
       $action: Document.DEFAULTS.ACTION,
       $rev: Document.DEFAULTS.REVISION,
+      $meta: {
+        userId: this.getUserId(),
+      },
       ...data,
     };
 

@@ -147,7 +147,7 @@ describe('validateDocumentFactory', () => {
     });
 
     describe('$rev', () => {
-      it('should return an error if $rev is not present', () => {
+      it('should be present', () => {
         delete rawDocument.$rev;
 
         const result = validateDocument(rawDocument, contract);
@@ -339,6 +339,84 @@ describe('validateDocumentFactory', () => {
         expect(error.getRawDocument()).to.equal(rawDocument);
       });
     });
+
+    describe('$meta', () => {
+      it('should not be required', () => {
+        delete rawDocument.$meta;
+
+        const result = validateDocument(rawDocument, contract);
+
+        expectJsonSchemaError(result, 0);
+      });
+
+      it('should not have additional properties', () => {
+        rawDocument.$meta.test = 1;
+
+        const result = validateDocument(rawDocument, contract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.$meta');
+        expect(error.keyword).to.equal('additionalProperties');
+      });
+
+      describe('userId', () => {
+        it('should be present', () => {
+          delete rawDocument.$meta.userId;
+
+          const result = validateDocument(rawDocument, contract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.$meta');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('userId');
+        });
+
+        it('should be a string', () => {
+          rawDocument.$meta.userId = 1;
+
+          const result = validateDocument(rawDocument, contract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.$meta.userId');
+          expect(error.keyword).to.equal('type');
+        });
+
+        it('should be no less than 64 chars', () => {
+          rawDocument.$meta.userId = '86b273ff';
+
+          const result = validateDocument(rawDocument, contract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.$meta.userId');
+          expect(error.keyword).to.equal('minLength');
+        });
+
+        it('should be no longer than 64 chars', () => {
+          rawDocument.$meta.userId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+
+          const result = validateDocument(rawDocument, contract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.$meta.userId');
+          expect(error.keyword).to.equal('maxLength');
+        });
+      });
+    });
   });
 
   describe('Contract schema', () => {
@@ -383,6 +461,17 @@ describe('validateDocumentFactory', () => {
     rawDocument.$action = Document.ACTIONS.DELETE;
 
     const result = validateDocument(rawDocument, contract);
+
+    const [error] = result.getErrors();
+
+    expect(error.dataPath).to.equal('');
+    expect(error.keyword).to.equal('additionalProperties');
+  });
+
+  it('should throw validation error if allowMeta is false while $meta is set', () => {
+    rawDocument.$meta = {};
+
+    const result = validateDocument(rawDocument, contract, { allowMeta: false });
 
     const [error] = result.getErrors();
 

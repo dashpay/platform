@@ -50,7 +50,7 @@ function validateSTPacketDocumentsFactory(
 
     rawDocuments.forEach((rawDocument) => {
       result.merge(
-        validateDocument(rawDocument, contract),
+        validateDocument(rawDocument, contract, { allowMeta: false }),
       );
     });
 

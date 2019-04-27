@@ -7,6 +7,8 @@ const DataIsNotAllowedWithActionDeleteError = require('./errors/DataIsNotAllowed
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
+const DocumentMetadata = require('./DocumentMetadata');
+
 class Document {
   /**
    * @param {RawDocument} rawDocument
@@ -39,6 +41,11 @@ class Document {
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$rev')) {
       this.revision = rawDocument.$rev;
       delete data.$rev;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawDocument, '$meta')) {
+      this.metadata = new DocumentMetadata(rawDocument.$meta);
+      delete data.$meta;
     }
 
     this.setData(data);
@@ -166,12 +173,32 @@ class Document {
   }
 
   /**
+   * Get metadata
+   *
+   * @return {DocumentMetadata}
+   */
+  getMetadata() {
+    return this.metadata;
+  }
+
+  /**
+   * Remove metadata from document
+   *
+   * @return {Document}
+   */
+  removeMetadata() {
+    this.metadata = undefined;
+
+    return this;
+  }
+
+  /**
    * Return Document as plain object
    *
    * @return {RawDocument}
    */
   toJSON() {
-    return {
+    const json = {
       $type: this.getType(),
       $scope: this.scope,
       $scopeId: this.scopeId,
@@ -179,15 +206,30 @@ class Document {
       $action: this.getAction(),
       ...this.getData(),
     };
+
+    if (this.metadata) {
+      json.$meta = this.metadata.toJSON();
+    }
+
+    return json;
   }
 
   /**
    * Return serialized Document
    *
+   * @param {Object} [options]
+   * @param {boolean} [options.skipMeta = false]
+   *
    * @return {Buffer}
    */
-  serialize() {
-    return encode(this.toJSON());
+  serialize(options = { skipMeta: false }) {
+    const json = this.toJSON();
+
+    if (options.skipMeta) {
+      delete json.$meta;
+    }
+
+    return encode(json);
   }
 
   /**
@@ -196,7 +238,7 @@ class Document {
    * @return {string}
    */
   hash() {
-    return hash(this.serialize()).toString('hex');
+    return hash(this.serialize({ skipMeta: true })).toString('hex');
   }
 }
 

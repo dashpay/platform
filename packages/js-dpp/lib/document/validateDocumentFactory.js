@@ -24,9 +24,11 @@ module.exports = function validateDocumentFactory(
    * @typedef validateDocument
    * @param {Document|RawDocument} document
    * @param {Contract} contract
+   * @param {Object} [options]
+   * @param {boolean} [options.allowMeta=true]
    * @return {ValidationResult}
    */
-  function validateDocument(document, contract) {
+  function validateDocument(document, contract, options = { allowMeta: true }) {
     const rawDocument = (document instanceof Document) ? document.toJSON() : document;
 
     const result = new ValidationResult();
@@ -65,7 +67,10 @@ module.exports = function validateDocumentFactory(
     } else {
       const documentSchemaRef = contract.getDocumentSchemaRef(rawDocument.$type);
 
-      const enrichedContract = enrichContractWithBaseDocument(contract);
+      const enrichedContract = enrichContractWithBaseDocument(
+        contract,
+        options.allowMeta ? [] : ['$meta'],
+      );
 
       const additionalSchemas = {
         [contract.getJsonSchemaId()]: enrichedContract,
