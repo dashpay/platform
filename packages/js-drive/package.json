@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/drive",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Dash network data storage backend service",
   "engines": {
     "node": ">=8"
@@ -31,7 +31,7 @@
   },
   "homepage": "https://github.com/dashevo/drive",
   "devDependencies": {
-    "@dashevo/dp-services-ctl": "^0.6.0",
+    "@dashevo/dp-services-ctl": "^0.7.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
@@ -40,15 +40,15 @@
     "eslint-plugin-import": "^2.16.0",
     "mocha": "^5.2.0",
     "mocha-sinon": "^2.1.0",
-    "nyc": "^14.0.0",
+    "nyc": "^14.1.0",
     "proxyquire": "^2.1.0",
     "sinon": "^7.3.0",
     "sinon-chai": "^3.3.0"
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "0.17.1",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#fix-script",
     "@dashevo/dashd-rpc": "^1.3.0",
-    "@dashevo/dpp": "^0.7.0",
+    "@dashevo/dpp": "^0.7.1",
     "bs58": "^4.0.1",
     "cids": "^0.5.8",
     "connect": "^3.6.6",

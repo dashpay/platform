@@ -8,9 +8,10 @@ const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const DashApiOptions = require('@dashevo/dp-services-ctl/lib/services/driveApi/DriveApiOptions');
 const DashSyncOptions = require('@dashevo/dp-services-ctl/lib/services/driveSync/DriveSyncOptions');
-const DapiOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/DapiOptions');
+const DapiCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/core/DapiCoreOptions');
+const DapiTxFilterStreamOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/txFilterStream/DapiTxFilterStreamOptions');
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
-const InsightOptions = require('@dashevo/dp-services-ctl/lib/services/insight/InsightOptions');
+const InsightApiOptions = require('@dashevo/dp-services-ctl/lib/services/insightApi/InsightApiOptions');
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -59,7 +60,13 @@ if (process.env.SERVICE_IMAGE_CORE) {
 }
 
 if (process.env.SERVICE_IMAGE_DAPI) {
-  DapiOptions.setDefaultCustomOptions({
+  DapiCoreOptions.setDefaultCustomOptions({
+    container: {
+      image: process.env.SERVICE_IMAGE_DAPI,
+    },
+  });
+
+  DapiTxFilterStreamOptions.setDefaultCustomOptions({
     container: {
       image: process.env.SERVICE_IMAGE_DAPI,
     },
@@ -67,7 +74,7 @@ if (process.env.SERVICE_IMAGE_DAPI) {
 }
 
 if (process.env.SERVICE_IMAGE_INSIGHT) {
-  InsightOptions.setDefaultCustomOptions({
+  InsightApiOptions.setDefaultCustomOptions({
     container: {
       image: process.env.SERVICE_IMAGE_INSIGHT,
     },

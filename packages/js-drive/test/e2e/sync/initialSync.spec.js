@@ -163,6 +163,8 @@ describe('Initial sync of Dash Drive and Dash Core', function main() {
         aboutMe: user.aboutMe,
       });
 
+      userDocument.removeMetadata();
+
       const stPacket = dpp.packet.create([userDocument]);
 
       ({ tsId: user.prevTransitionId } = await sendSTPacket(

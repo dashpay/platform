@@ -181,6 +181,8 @@ describe('Blockchain reorganization', function main() {
       aboutMe: 'About first user',
     });
 
+    firstDocument.removeMetadata();
+
     firstDocumentPacket = dpp.packet.create([firstDocument]);
 
     // Register first document
@@ -210,6 +212,8 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveFirstDocument] } = await firstDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
 
+    delete firstDriveFirstDocument.$meta;
+
     expect(firstDriveFirstContract).to.deep.equal(firstContractPacket.getContract().toJSON());
     expect(firstDriveFirstDocument).to.deep.equal(firstDocumentPacket.getDocuments()[0].toJSON());
 
@@ -219,6 +223,8 @@ describe('Blockchain reorganization', function main() {
 
     const { result: [secondDriveFirstDocument] } = await secondDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
+
+    delete secondDriveFirstDocument.$meta;
 
     expect(secondDriveFirstContract).to.deep.equal(firstContractPacket.getContract().toJSON());
     expect(secondDriveFirstDocument).to.deep.equal(firstDocumentPacket.getDocuments()[0].toJSON());
@@ -245,6 +251,8 @@ describe('Blockchain reorganization', function main() {
       aboutMe: 'About second user',
     });
 
+    secondDocument.removeMetadata();
+
     secondDocumentPacket = dpp.packet.create([secondDocument]);
 
     // Register an document
@@ -265,10 +273,11 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveSecondDocument] } = await firstDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
 
+    delete firstDriveSecondDocument.$meta;
+
     expect(firstDriveSecondContract).to.deep.equal(
       secondContractPacket.getContract().toJSON(),
     );
-
     expect(firstDriveSecondDocument).to.deep.equal(
       secondDocumentPacket.getDocuments()[0].toJSON(),
     );
@@ -295,6 +304,8 @@ describe('Blockchain reorganization', function main() {
       aboutMe: 'About third user',
     });
 
+    thirdDocument.removeMetadata();
+
     thirdDocumentPacket = dpp.packet.create([thirdDocument]);
 
     // Register an document
@@ -315,10 +326,11 @@ describe('Blockchain reorganization', function main() {
     const { result: [secondDriveThirdDocument] } = await secondDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: thirdContractPacket.getContractId(), type: documentType });
 
+    delete secondDriveThirdDocument.$meta;
+
     expect(secondDriveThirdContract).to.deep.equal(
       thirdContractPacket.getContract().toJSON(),
     );
-
     expect(secondDriveThirdDocument).to.deep.equal(
       thirdDocumentPacket.getDocuments()[0].toJSON(),
     );
@@ -356,6 +368,8 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveFirstDocument] } = await firstDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
 
+    delete firstDriveFirstDocument.$meta;
+
     expect(firstDriveFirstContract).to.deep.equal(
       firstContractPacket.getContract().toJSON(),
     );
@@ -369,6 +383,8 @@ describe('Blockchain reorganization', function main() {
 
     const { result: [secondDriveFirstDocument] } = await secondDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: firstContractPacket.getContractId(), type: documentType });
+
+    delete secondDriveFirstDocument.$meta;
 
     expect(secondDriveFirstContract).to.deep.equal(
       firstContractPacket.getContract().toJSON(),
@@ -387,6 +403,8 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveThirdDocument] } = await firstDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: thirdContractPacket.getContractId(), type: documentType });
 
+    delete firstDriveThirdDocument.$meta;
+
     expect(firstDriveThirdContract).to.deep.equal(
       thirdContractPacket.getContract().toJSON(),
     );
@@ -400,6 +418,8 @@ describe('Blockchain reorganization', function main() {
 
     const { result: [secondDriveThirdDocument] } = await secondDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: thirdContractPacket.getContractId(), type: documentType });
+
+    delete secondDriveThirdDocument.$meta;
 
     expect(secondDriveThirdContract).to.deep.equal(
       thirdContractPacket.getContract().toJSON(),
@@ -456,6 +476,8 @@ describe('Blockchain reorganization', function main() {
     const { result: [firstDriveSecondDocumentAfter] } = await firstDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
 
+    delete firstDriveSecondDocumentAfter.$meta;
+
     expect(firstDriveSecondContractAfter).to.deep.equal(
       secondContractPacket.getContract().toJSON(),
     );
@@ -469,6 +491,8 @@ describe('Blockchain reorganization', function main() {
 
     const { result: [secondDriveSecondDocumentAfter] } = await secondDrive.driveApi.getApi()
       .request('fetchDocuments', { contractId: secondContractPacket.getContractId(), type: documentType });
+
+    delete secondDriveSecondDocumentAfter.$meta;
 
     expect(secondDriveSecondContractAfter).to.deep.equal(
       secondContractPacket.getContract().toJSON(),

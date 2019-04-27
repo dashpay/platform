@@ -151,13 +151,16 @@ describe('revertSVDocumentsForStateTransitionFactory', () => {
 
     expect(svDocumentsAfterReverting).to.be.empty();
 
+    const documentJson = document.toJSON();
+    documentJson.$meta = { userId };
+
     expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.DOCUMENT_MARKED_DELETED,
       {
         userId,
         documentId: document.getId(),
         reference,
-        document: document.toJSON(),
+        document: documentJson,
       },
     );
   });
@@ -259,13 +262,16 @@ describe('revertSVDocumentsForStateTransitionFactory', () => {
       previousRevisions[0],
     ]);
 
+    const documentJson = svDocument.getDocument().toJSON();
+    documentJson.$meta = { userId: svDocument.getUserId() };
+
     expect(readerMediatorMock.emitSerial.getCall(1)).to.have.been.calledWith(
       ReaderMediator.EVENTS.DOCUMENT_REVERTED,
       {
         userId: svDocument.getUserId(),
         documentId: svDocument.getDocument().getId(),
         reference: svDocument.getReference(),
-        document: svDocument.getDocument().toJSON(),
+        document: documentJson,
         previousRevision: previousRevisions[1],
       },
     );

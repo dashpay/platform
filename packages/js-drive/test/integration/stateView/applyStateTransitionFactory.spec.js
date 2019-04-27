@@ -154,8 +154,9 @@ describe('applyStateTransitionFactory', () => {
       expect(svDocuments).to.have.lengthOf(1);
 
       const [svDocument] = svDocuments;
+      const actualDocument = svDocument.getDocument();
 
-      expect(svDocument.getDocument().toJSON()).to.deep.equal(document.toJSON());
+      expect(actualDocument.removeMetadata().toJSON()).to.deep.equal(document.toJSON());
 
       const reference = new Reference({
         blockHash: block.hash,

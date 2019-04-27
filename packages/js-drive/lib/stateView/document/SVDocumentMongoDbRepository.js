@@ -152,6 +152,10 @@ class SVDocumentMongoDbRepository {
   }) {
     const rawDocument = this.sanitizer.unsanitize(sanitizedDocument);
 
+    rawDocument.$meta = {
+      userId,
+    };
+
     return new SVDocument(
       userId,
       new Document(rawDocument),
