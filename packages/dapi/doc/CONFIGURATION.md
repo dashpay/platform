@@ -6,7 +6,7 @@ DAPI is configured via environment variables. So, for example, in order to chang
 
 ## Full list of available options
 
-* `INSIGHT_URI` - string, Insight-API address, default value is `http://127.0.0.1:3001/insight-api-dash`
+* `INSIGHT_URI` - string, Insight-API address, default value is `http://127.0.0.1:3001/insight-api`
 * `LIVENET` - boolean. Set to true if you are going to run DAPI on the livenet. Defaults to `false`.
 * `RPC_SERVER_PORT` - integer. Port on which DAPI server will listen. Defaults to `3000`
 * `DASHCORE_RPC_PROTOCOL` string. Protocol for connecting to dashcore RPC. Defaults to `http`
