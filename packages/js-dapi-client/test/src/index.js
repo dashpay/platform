@@ -704,16 +704,6 @@ describe('api', () => {
         });
     });
   });
-  describe('.getSpvData', () => {
-    it('Should return getSpvData', async () => {
-      const dapi = new DAPIClient();
-      const filter = '';
-      const res = await dapi.getSpvData(filter);
-      expect(res).to.be.deep.equal({
-          "hash": validBlockHash
-        });
-    });
-  });
   describe('.block.getBestBlockHash', () => {
     it('Should return chaintip hash', async () => {
       const dapi = new DAPIClient();
@@ -911,36 +901,6 @@ describe('api', () => {
       expect(info.usage).to.be.a('number');
       expect(info.maxmempool).to.be.a('number');
       expect(info.mempoolminfee).to.be.a('number');
-    });
-  });
-
-  describe('.spv.loadBloomFilter', () => {
-    it('Should return loadBloomFilter', async () => {
-      const dapi = new DAPIClient();
-      const filter = '';
-      const res = await dapi.loadBloomFilter(filter);
-      // TODO: implement real unit test
-      expect(res).to.be.deep.equal([]);
-    });
-  });
-
-  describe('.spv.addToBloomFilter', () => {
-    it('Should return addToBloomFilter', async () => {
-      const dapi = new DAPIClient();
-      const filter = '';
-      const res = await dapi.addToBloomFilter(filter);
-      // TODO: implement real unit test
-      expect(res).to.be.deep.equal([]);
-    });
-  });
-
-  describe('.spv.clearBloomFilter', () => {
-    it('Should return clearBloomFilter', async () => {
-      const dapi = new DAPIClient();
-      const filter = '';
-      const res = await dapi.clearBloomFilter(filter);
-      // TODO: implement real unit test
-      expect(res).to.be.deep.equal([]);
     });
   });
 

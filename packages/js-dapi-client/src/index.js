@@ -299,18 +299,6 @@ class DAPIClient {
   // Here go methods that used in VMN. Most of this methods will work only in regtest mode
   searchUsers(pattern, limit = 10, offset = 0) { return this.makeRequestToRandomDAPINode('searchUsers', { pattern, limit, offset }); }
 
-
-  // Temp methods for SPV testing/POC
-  // In future SPV will choose a specific node and stick with
-  // the node for as long as possible for SPV interaction (to prevent dapi chain rescans)
-  loadBloomFilter(filter) { return this.makeRequestToRandomDAPINode('loadBloomFilter', { filter }); }
-
-  addToBloomFilter(originalFilter, element) { return this.makeRequestToRandomDAPINode('addToBloomFilter', { originalFilter, element }); }
-
-  clearBloomFilter(filter) { return this.makeRequestToRandomDAPINode('clearBloomFilter', { filter }); }
-
-  getSpvData(filter) { return this.makeRequestToRandomDAPINode('getSpvData', { filter }); }
-
   /**
    * @param {Uint8Array} filter
    * @returns {Promise<EventEmitter>|!grpc.web.ClientReadableStream<!RawTransaction>|undefined}
