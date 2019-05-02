@@ -237,6 +237,8 @@ describe('Contacts app', () => {
         }
       }
 
+      delete actualProfile.$meta;
+
       expect(actualProfile).to.be.deep.equal(profile.toJSON());
     });
   });
@@ -331,6 +333,11 @@ describe('Contacts app', () => {
         }
       }
 
+      expect(actualAliceProfile).to.not.be.null();
+      expect(actualAliceProfile.$meta).to.equal(aliceRegTxId);
+
+      delete actualAliceProfile.$meta;
+
       expect(actualAliceProfile).to.be.deep.equal(aliceProfile.toJSON());
     });
 
@@ -389,6 +396,8 @@ describe('Contacts app', () => {
           await wait(timeout);
         }
       }
+
+      delete actualAliceProfile.$meta;
 
       expect(actualAliceProfile).to.be.deep.equal(aliceProfile.toJSON());
     });
@@ -452,6 +461,8 @@ describe('Contacts app', () => {
         }
       }
 
+      delete actualBobContactRequest.$meta;
+
       expect(actualBobContactRequest).to.be.deep.equal(bobContactRequest.toJSON());
     });
   });
@@ -514,6 +525,8 @@ describe('Contacts app', () => {
         }
       }
 
+      delete actualAliceContactAcceptance.$meta;
+
       expect(actualAliceContactAcceptance).to.be.deep.equal(aliceContactAcceptance.toJSON());
     });
 
@@ -574,7 +587,12 @@ describe('Contacts app', () => {
       }
 
       expect(contacts).to.have.lengthOf(1);
-      expect(contacts[0]).to.be.deep.equal(bobContactRequest.toJSON());
+
+      const [actualBobContactRequest] = contacts[0];
+
+      delete actualBobContactRequest.$meta;
+
+      expect(actualBobContactRequest).to.be.deep.equal(bobContactRequest.toJSON());
     });
   });
 });
