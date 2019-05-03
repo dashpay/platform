@@ -10,13 +10,15 @@ class DAPIClient {
    * @param options
    * @param {Array<Object>} [options.seeds] - seeds. If no seeds provided
    * default seed will be used.
-   * @param {number} [options.port] - default port for connection to the DAPI
-   * @param {number} [options.timeout] - timeout for connection to the DAPI
-   * @param {number} [options.retries] - num of retries if there is no response from DAPI node
+   * @param {number} [options.port=3000] - default port for connection to the DAPI
+   * @param {number} [options.nativeGrpcPort=3010] - Native GRPC port for connection to the DAPI
+   * @param {number} [options.timeout=2000] - timeout for connection to the DAPI
+   * @param {number} [options.retries=3] - num of retries if there is no response from DAPI node
    */
   constructor(options = {}) {
     this.MNDiscovery = new MNDiscovery(options.seeds, options.port);
     this.DAPIPort = options.port || config.Api.port;
+    this.nativeGrpcPort = options.nativeGrpcPort || config.grpc.nativePort;
     this.timeout = options.timeout || 2000;
     preconditionsUtil.checkArgument(jsutil.isUnsignedInteger(this.timeout),
       'Expect timeout to be an unsigned integer');
@@ -303,15 +305,29 @@ class DAPIClient {
    * @param {Uint8Array} filter
    * @returns {Promise<EventEmitter>|!grpc.web.ClientReadableStream<!RawTransaction>|undefined}
    */
-  async subsribeToTransactionsByFilter(filter) {
+  async subscribeToTransactionsByFilter(filter) {
     const bloomFilter = new BloomFilter();
     bloomFilter.setBytes(filter);
 
     const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
 
-    const client = new TransactionsFilterStreamClient(`${nodeToConnect.getIp()}:${this.DAPIPort}`);
+    const client = new TransactionsFilterStreamClient(`${nodeToConnect.getIp()}:${this.getGrpcPort()}`);
 
     return client.getTransactionsByFilter(bloomFilter);
+  }
+
+  /**
+   * @private
+   * @return {number}
+   */
+  getGrpcPort() {
+    if (typeof process !== 'undefined'
+      && process.versions != null
+      && process.versions.node != null) {
+      return this.nativeGrpcPort;
+    }
+
+    return this.DAPIPort;
   }
 }
 
