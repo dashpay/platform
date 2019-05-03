@@ -1,1 +1,1 @@
---file test/bootstrap.js --timeout 120000
+--file test/bootstrap.js --timeout 300000
