@@ -8,14 +8,14 @@ service TransactionsFilterStream {
 
 message BloomFilter {
     bytes filter = 1;
-    uint32 hashFunctionsCount = 2;
+    uint32 hash_functions_count = 2;
     uint32 tweak = 3;
     uint32 flags = 4;
 }
 
 message RawTransaction {
     bytes data = 1;
-    bool isInstantSend = 2;
+    bool is_instant_send = 2;
 }
 
 message RawMerkleBlock {
@@ -25,6 +25,6 @@ message RawMerkleBlock {
 message TransactionFilterResponse {
   oneof responses {
     RawTransaction transaction = 1;
-    RawMerkleBlock merkleBlock = 2;
+    RawMerkleBlock merkle_block = 2;
   }
 }
