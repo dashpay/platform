@@ -3,13 +3,28 @@ syntax = "proto3";
 package org.dash.platform.dapi;
 
 service TransactionsFilterStream {
-    rpc GetTransactionsByFilter (BloomFilter) returns (stream RawTransaction);
+    rpc GetTransactionsByFilter (BloomFilter) returns (stream TransactionFilterResponse);
 }
 
 message BloomFilter {
-    bytes bytes = 1;
+    bytes filter = 1;
+    uint32 hashFunctionsCount = 2;
+    uint32 tweak = 3;
+    uint32 flags = 4;
 }
 
 message RawTransaction {
     bytes data = 1;
+    bool isInstantSend = 2;
+}
+
+message RawMerkleBlock {
+    bytes data = 1;
+}
+
+message TransactionFilterResponse {
+  oneof responses {
+    RawTransaction transaction = 1;
+    RawMerkleBlock merkleBlock = 2;
+  }
 }
