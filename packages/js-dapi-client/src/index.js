@@ -302,18 +302,29 @@ class DAPIClient {
   searchUsers(pattern, limit = 10, offset = 0) { return this.makeRequestToRandomDAPINode('searchUsers', { pattern, limit, offset }); }
 
   /**
-   * @param {Uint8Array} filter
+   * @param {Object} bloomFilter
+   * @param {Array} bloomFilter.vData - The filter itself is simply a bit field of arbitrary
+   * byte-aligned size. The maximum size is 36,000 bytes.
+   * @param {number} bloomFilter.nHashFuncs - The number of hash functions to use in this filter.
+   * The maximum value allowed in this field is 50.
+   * @param {number} bloomFilter.nTweak - A random value to add to the seed value in the
+   * hash function used by the bloom filter.
+   * @param {number} bloomFilter.nFlags - A set of flags that control how matched items
+   * are added to the filter.
    * @returns {Promise<EventEmitter>|!grpc.web.ClientReadableStream<!RawTransaction>|undefined}
    */
-  async subscribeToTransactionsByFilter(filter) {
-    const bloomFilter = new BloomFilter();
-    bloomFilter.setBytes(filter);
+  async subscribeToTransactionsByFilter(bloomFilter) {
+    const filter = new BloomFilter();
+    filter.setFilter(bloomFilter.vData);
+    filter.setHashFunctionsCount(bloomFilter.nHashFuncs);
+    filter.setTweak(bloomFilter.nTweak);
+    filter.setFlags(bloomFilter.nFlags);
 
     const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
 
     const client = new TransactionsFilterStreamClient(`${nodeToConnect.getIp()}:${this.getGrpcPort()}`);
 
-    return client.getTransactionsByFilter(bloomFilter);
+    return client.getTransactionsByFilter(filter);
   }
 
   /**

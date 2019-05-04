@@ -458,15 +458,7 @@ describe('basicAPIs', () => {
 
 
   xdescribe('TODO', () => {
-    it('loadBloomFilter', async () => {
-    });
     it('sendRawIxTransaction', async () => {
-    });
-    it('addToBloomFilter', async () => {
-    });
-    it('clearBloomFilter', async () => {
-    });
-    it('getSpvData', async () => {
     });
     it('getMnListDiff', async () => {
     });

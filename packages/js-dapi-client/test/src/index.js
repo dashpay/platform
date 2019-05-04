@@ -919,8 +919,15 @@ describe('api', () => {
 
     it('should return a stream', async () => {
       const client = new DAPIClient();
-      const filter = new Uint8Array([1]);
-      const actualStream = await client.subscribeToTransactionsByFilter(filter);
+
+      const bloomFilter = {
+        vData: new Array([1]),
+        nHashFuncs: 10,
+        nTweak: Math.floor(Math.random() * 1000),
+        nFlags: 1,
+      };
+
+      const actualStream = await client.subscribeToTransactionsByFilter(bloomFilter);
 
       expect(actualStream).to.be.equal(stream);
     });

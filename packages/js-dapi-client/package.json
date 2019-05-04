@@ -1,11 +1,11 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "index.js",
   "dependencies": {
     "@babel/polyfill": "^7.2.5",
-    "@dashevo/dapi-grpc": "^0.1.5",
+    "@dashevo/dapi-grpc": "^0.3.0",
     "@dashevo/dashcore-lib": "^0.17.1",
     "@dashevo/quorums": "^1.0.2",
     "axios": "^0.18.0",
