@@ -36,6 +36,24 @@ async function _initializeAccount(account, userUnsafePlugins) {
       account.injectPlugin(UnsafePlugin, account.allowSensitiveOperations);
     });
 
+
+    const sendReady = () => {
+      if (!self.isReady) {
+        self.events.emit(EVENTS.READY);
+        self.isReady = true;
+      }
+    };
+    const recursivelyGenerateAddresses = async () => {
+      const bip44worker = account.getWorker('BIP44Worker');
+      const syncWorker = account.getWorker('syncWorker');
+      const exec = async () => {
+        await syncWorker.execute();
+        return bip44worker.ensureEnoughAddress();
+      };
+      if (await exec() !== 0) return recursivelyGenerateAddresses();
+      return true;
+    };
+
     // eslint-disable-next-line no-param-reassign,consistent-return
     account.readinessInterval = setInterval(() => {
       const watchedWorkers = Object.keys(account.plugins.watchers);
@@ -46,14 +64,30 @@ async function _initializeAccount(account, userUnsafePlugins) {
         }
       });
       if (readyWorkers === watchedWorkers.length) {
-        self.events.emit(EVENTS.READY);
-        self.isReady = true;
+        // If both of the plugins are present
+        // We need to tweak it a little bit to have BIP44 ensuring address
+        // while SyncWorker fetch'em on network
         clearInterval(self.readinessInterval);
-        return res(true);
+        if (account.hasPlugins([BIP44Worker, SyncWorker])) {
+          recursivelyGenerateAddresses()
+            .then(() => {
+              sendReady();
+              return res(true);
+            })
+            .catch(() => {
+              console.error('Unable to generate addresses');
+              sendReady();
+              return res(true);
+            });
+        } else {
+          sendReady();
+          return res(true);
+        }
       }
     }, 600);
 
     self.events.emit(EVENTS.STARTED);
   });
 }
+
 module.exports = _initializeAccount;

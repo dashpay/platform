@@ -52,6 +52,8 @@ const getMissingIndexes = (paths, fromOrigin = true) => {
   missingIndex = missingIndex.sort((a, b) => a - b);
   return missingIndex;
 };
+
+// TODO : REfacto
 class BIP44Worker extends Worker {
   constructor() {
     super({
@@ -65,6 +67,7 @@ class BIP44Worker extends Worker {
   }
 
   ensureEnoughAddress() {
+    let generated = 0;
     let unusedAddress = 0;
     const store = this.storage.getStore();
     const addresses = store.wallets[this.walletId].addresses.external;
@@ -86,7 +89,7 @@ class BIP44Worker extends Worker {
     addressesPaths = Object
       .keys(store.wallets[this.walletId].addresses.external)
       .filter(el => parseInt(el.split('/')[3], 10) === accountIndex)
-      // sort by index
+    // sort by index
       .sort(sortByIndex);
 
     // Scan already generated addresse and count how many are unused
@@ -105,18 +108,27 @@ class BIP44Worker extends Worker {
 
     const addressToGenerate = BIP44_ADDRESS_GAP - unusedAddress;
     if (addressToGenerate > 0) {
-      const lastElem = addresses[addressesPaths[addressesPaths.length - 1]];
+      const lastElemPath = addressesPaths[addressesPaths.length - 1];
+      const lastElem = addresses[lastElemPath];
+
       const index = (is.def(lastElem)) ? lastElem.index + 1 : 0;
-      for (let i = index; i <= addressToGenerate; i += 1) {
-        this.getAddress(i, 'external');
-        if (walletType === WALLET_TYPES.HDWALLET) {
-          this.getAddress(i, 'internal');
+
+      const startingIndex = index;
+      const lastIndex = addressToGenerate + startingIndex;
+      if (lastIndex > startingIndex) {
+        for (let i = startingIndex; i <= lastIndex; i += 1) {
+          this.getAddress(i, 'external');
+          generated += 1;
+          if (walletType === WALLET_TYPES.HDWALLET) {
+            this.getAddress(i, 'internal');
+          }
         }
       }
     }
 
-    return true;
+    return generated;
   }
+
 
   execute() {
     // Following BIP44 Account Discovery section, we will scan the external chain of this account.
@@ -125,4 +137,5 @@ class BIP44Worker extends Worker {
     this.ensureEnoughAddress();
   }
 }
+
 module.exports = BIP44Worker;
