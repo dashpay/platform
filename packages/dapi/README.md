@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.com/dashevo/dapi.svg?branch=master)](https://travis-ci.com/dashevo/dapi)
 [![API stability](https://img.shields.io/badge/stability-stable-green.svg)](https://nodejs.org/api/documentation.html#documentation_stability_index)
 
-> A Decentralized API for Dash Masternodes
+> A decentralized API for the Dash network
 
 ## Table of Contents
 - [Install](#install)
@@ -49,15 +49,15 @@ DAPI is configured via environment variables either explicitly passed or present
 
 ## Making basic requests
 
-DAPI uses [JSON-RPC 2.0](https://www.jsonrpc.org/specification) as the main interface. If you want to confirm that DAPI is functioning and synced, you can request the best block height. 
+DAPI uses [JSON-RPC 2.0](https://www.jsonrpc.org/specification) as the main interface. If you want to confirm that DAPI is functioning and synced, you can request the best block height.
 
-Send the following json to your DAPI instance: 
+Send the following json to your DAPI instance:
 
 ```json
 {"jsonrpc": "2.0","method": "getBestBlockHeight", "id": 1}
 ```
 
-Note that you always need to specify an id, otherwise the server will respond with an empty body, as mentioned in the [spec](https://www.jsonrpc.org/specification#notification). 
+Note that you always need to specify an id, otherwise the server will respond with an empty body, as mentioned in the [spec](https://www.jsonrpc.org/specification#notification).
 
 ## API Reference
 

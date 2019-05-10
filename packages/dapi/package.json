@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "version": "0.5.0",
-  "description": "A Decentralized API for Dash Masternodes",
+  "description": "A decentralized API for the Dash network",
   "scripts": {
     "core": "node scripts/core.js",
     "tx-filter-stream": "node scripts/tx-filter-stream.js",
