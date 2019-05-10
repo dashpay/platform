@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "tx-filter-stream/web/tx_filter_stream_grpc_web_pb",
   "main": "tx-filter-stream/node/index.js",
