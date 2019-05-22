@@ -38,19 +38,19 @@ describe('generate', () => {
   });
 
   it('Should throw an error if arguments are not valid', async () => {
-    const getBlockHash = generateFactory(coreAPIFixture);
+    const generate = generateFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({ amount: -1 })).to.be.rejectedWith('should be >= 0');
+    await expect(generate({ amount: -1 })).to.be.rejectedWith('should be >= 0');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({ amount: 0.5 })).to.be.rejectedWith('should be integer');
+    await expect(generate({ amount: 0.5 })).to.be.rejectedWith('should be integer');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({})).to.be.rejectedWith('should have required property');
+    await expect(generate({})).to.be.rejectedWith('should have required property');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash()).to.be.rejectedWith('should be object');
+    await expect(generate()).to.be.rejectedWith('should be object');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({ amount: 'string' })).to.be.rejectedWith('should be integer');
+    await expect(generate({ amount: 'string' })).to.be.rejectedWith('should be integer');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash([-1])).to.be.rejected;
+    await expect(generate([-1])).to.be.rejected;
     expect(spy.callCount).to.be.equal(0);
   });
 });

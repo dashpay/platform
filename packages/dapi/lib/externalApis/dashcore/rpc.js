@@ -83,16 +83,6 @@ const getBlockHeaders = (offset, limit) => new Promise((resolve, reject) => {
   });
 });
 
-const getHashFromHeight = height => new Promise((resolve, reject) => {
-  client.getblockhash(height, (err, r) => {
-    if (err) {
-      reject(new DashCoreRpcError(err.message));
-    } else {
-      resolve(r.result);
-    }
-  });
-});
-
 const getMasternodesList = () => new Promise((resolve, reject) => {
   client.masternodelist((err, r) => {
     if (err) {
@@ -252,7 +242,6 @@ module.exports = {
   getBlock,
   getBlockHeader,
   getBlockHeaders,
-  getHashFromHeight,
   getMasternodesList,
   getMempoolInfo,
   getMnListDiff,

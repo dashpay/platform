@@ -36,11 +36,6 @@ const getTransactionFirstInputAddress = async (txHash) => {
   return res.vin[0].addr;
 };
 
-const getHashFromHeight = async (height) => {
-  const res = await get(`/block-index/${height}`);
-  return res.blockHash;
-};
-
 const getUTXO = async (address, from, to, fromHeight, toHeight) => {
   const addresses = Array.isArray(address) ? address.join() : address;
   const res = await get(`/addrs/${addresses}/utxopage?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
@@ -58,11 +53,6 @@ const getMasternodesList = async () => get('/masternodes/list');
 const getBestBlockHeight = async () => {
   const res = await get('/status');
   return res.info.blocks;
-};
-
-const getBlockHash = async (blockHeight) => {
-  const res = await get(`/block-index/${blockHeight}`);
-  return res.blockHash;
 };
 
 const getAddressTotalReceived = async (address) => {
@@ -149,7 +139,6 @@ const getBlockHeaders = async (offset, limit) => get(`/block-headers/${offset}/$
 
 module.exports = {
   getTransactionFirstInputAddress,
-  getHashFromHeight,
   request,
   get,
   post,
@@ -157,7 +146,6 @@ module.exports = {
   getBalance,
   getUser,
   getBestBlockHeight,
-  getBlockHash,
   getMasternodesList,
   getAddressTotalReceived,
   getBlocks,

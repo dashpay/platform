@@ -571,53 +571,6 @@
 //     });
 //   });
 //
-//   describe('#getHashFromHeight', () => {
-//     beforeEach(() => {
-//       requestStub = sinon.stub(request, 'get');
-//       requestStub.rejects(new Error('Invalid address: Checksum mismatch. Code:1'));
-//       requestStub
-//         .withArgs(`${URI}/block-index/${testBlockHeight}`)
-//         .returns(new Promise(resolve => resolve(testHashFromHeight)));
-//     });
-//
-//     it('Should return getBalance', async () => {
-//       const hashFromHeight = await insight.getHashFromHeight(testBlockHeight);
-//       expect(hashFromHeight).to.be.equal(testHashFromHeight.blockHash);
-//     });
-//
-//     // https://dashpay.atlassian.net/browse/EV-950
-//     // we can set any value like:
-//     //42c56c8ec8e2cdf97a56bf6290c43811ff59181a184b70ebbe3cb66b2970ced2
-//     // and results for 42 will be set
-//     [testAddress.addrStr.substring(0, testAddress.addrStr.length - 1),
-//       testAddress.addrStr.substring(1, testAddress.addrStr.length), 123456789].forEach((ad) => {
-//       it('Should return error if Invalid address: Checksum mismatch',
-// () => expect(insight.getHashFromHeight(ad))
-//         .to.be.rejectedWith('Invalid address: Checksum mismatch. Code:1'));
-//     });
-//
-//     [23498217349279, false, 'fakjfndkjlanmfdas', '0x'].forEach((ad) => {
-//       it(
-//         'Should return error if JSON value is not an integer as expected. Code:-1',
-//         () => {
-//           requestStub.rejects(new Error('JSON value is not an integer as expected. Code:-1'));
-//           expect(insight.getHashFromHeight(ad))
-// .to.be.rejectedWith('JSON value is not an integer as expected. Code:-1');
-//         },
-//       );
-//     });
-//
-//     ['1396bc62950f8b3a3811f1134b64816273c72d19d9641d747cfd55bea9e120bd'].forEach((ad) => {
-//       it(
-//         'Should return error if Block height out of range. Code:-8',
-//         () => {
-//           requestStub.rejects(new Error('Block height out of range. Code:-8'));
-//           expect(insight.getHashFromHeight(ad))
-// .to.be.rejectedWith('Block height out of range. Code:-8');
-//         },
-//       );
-//     });
-//   });
 //
 //   describe('#getHistoricBlockchainDataSyncStatus', () => {
 //     beforeEach(() => {

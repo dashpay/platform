@@ -8,44 +8,10 @@ const coreAPIFixture = require('../../../mocks/coreAPIFixture');
 
 const { expect } = chai;
 chai.use(chaiAsPromised);
-let spy;
 let stub;
 
 describe('externalApis/dashcore/rpc', async () => {
   const rpc = require('../../../../lib/externalApis/dashcore/rpc');
-
-  describe('getHashFromHeight', () => {
-    describe('#factory', () => {
-      it('should return a promise', async () => {
-        const getHashFromHeight = rpc.getHashFromHeight();
-        expect(getHashFromHeight).to.be.a('promise');
-      });
-      it('should return error with invalid height', async () => {
-        const getHashFromHeight = rpc.getHashFromHeight('1');
-        await expect(getHashFromHeight).to.be.rejectedWith('JSON');
-        expect(spy.callCount).to.be.equal(1);
-      });
-      it('should return error with invalid height', async () => {
-        const getHashFromHeight = rpc.getHashFromHeight('str');
-        await expect(getHashFromHeight).to.be.rejectedWith('JSON');
-        expect(spy.callCount).to.be.equal(1);
-      });
-      it('Should return a hash', async () => {
-        expect(spy.callCount).to.be.equal(0);
-        await expect(rpc.getHashFromHeight(1)).to.be.rejectedWith('JSON');
-        expect(spy.callCount).to.be.equal(1);
-      });
-    });
-    before(() => {
-      spy = sinon.spy(rpc, 'getHashFromHeight');
-    });
-    beforeEach(() => {
-      spy.resetHistory();
-    });
-    after(() => {
-      spy.restore();
-    });
-  });
 
   describe('getTransaction', () => {
     const txHash = '50622f66236671501c0e80f388d6cf1e81158de8526f4acc9db00adf3c524077';
@@ -54,10 +20,6 @@ describe('externalApis/dashcore/rpc', async () => {
       it('should return a promise', () => {
         const getTransaction = rpc.getTransaction();
         expect(getTransaction).to.be.a('promise');
-      });
-      it('should return error with invalid transaction', async () => {
-        const getHashFromHeight = rpc.getTransaction(1);
-        await expect(getHashFromHeight).to.be.rejectedWith('JSON');
       });
     });
     describe('#stub', () => {
