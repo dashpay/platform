@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "version": "0.4.4",
-  "description": "Dash network data storage backend service",
+  "description": "Decentralized application storage on the Dash network",
   "engines": {
     "node": ">=8"
   },
