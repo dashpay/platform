@@ -5,7 +5,6 @@
 * [Python](https://www.python.org/downloads/)
 * [docker](https://docs.docker.com/engine/installation/) (version 17.04.0+)
 * docker-compose (`pip install -U docker-compose`)
-* awscli - for private Docker registry aka "ECR" (`pip install -U awscli`)
 
 ### Setup
 
@@ -15,15 +14,6 @@
 git clone git@github.com:dashevo/mn-bootstrap.git ./mn-bootstrap
 cd mn-bootstrap
 ```
-
-1. set AWS key vars & login to AWS ECR
-
-```
-. ./.env
-$(aws ecr get-login --no-include-email)
-```
-
-You can ignore the warning that states: `WARNING! Using --password via the CLI is insecure. Use --password-stdin.`
 
 ### Using mn-bootstrap.sh for regtest
 
