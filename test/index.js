@@ -3,17 +3,18 @@ const Blockchain = require('../lib/spvchain');
 const utils = require('../lib/utils');
 const merkleProofs = require('../lib/merkleproofs');
 
+const {
+  mainnet, badRawHeaders,
+} = require('./data/rawHeaders');
 const headers = require('./data/headers');
 const merkleData = require('./data/merkleproofs');
-// disable for now until dashcore-lib can parse it
-// const mnListDiff = require('./data/mnlistdiff');
 
 let chain = null;
 require('should');
 
-describe('SPV-DASH (forks & re-orgs)', () => {
+describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
   before(() => {
-    chain = new Blockchain('testnet');
+    chain = new Blockchain('devnet');
   });
 
   it('should get 26 testnet headers', () => {
@@ -35,40 +36,126 @@ describe('SPV-DASH (forks & re-orgs)', () => {
     chain.getLongestChain().length.should.equal(2);
   });
 
-  it('should discard addding of duplicate block', () => {
+  it('should discard adding of duplicate block', () => {
     chain.addHeader(headers[0]);
     chain.getOrphans().length.should.equal(0);
     chain.getLongestChain().length.should.equal(2);
   });
 
-  it('create 1 orphan', () => {
+  it('should create 1 orphan', () => {
     chain.addHeader(headers[2]);
     chain.getOrphans().length.should.equal(1);
     chain.getLongestChain().length.should.equal(2);
   });
 
-  it('connect the orphan by adding its parent', () => {
+  it('should connect the orphan by adding its parent', () => {
     chain.addHeader(headers[1]);
     chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(4);
   });
 
-  it('add remaining test headers', () => {
-    chain.addHeaders(headers.slice(3, 25));
+  it('should add remaining test headers', () => {
+    chain.addHeaders(headers.slice(3, 24));
     chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
-    chain.getLongestChain().length.should.equal(26);
+    chain.getLongestChain().length.should.equal(25);
   });
 
   it('not add an invalid header', () => {
     chain.addHeader(headers[25]);
-    chain.getLongestChain().length.should.equal(26);
+    chain.getLongestChain().length.should.equal(25);
   });
 
   it('should throw an error if some of the headers is invalid', (done) => {
     try {
       chain.addHeaders([headers[25], headers[10]]);
+      done(new Error('SPV chain failed to throw an error on invalid block'));
+    } catch (e) {
+      e.message.should.equal('Some headers are invalid');
+      done();
+    }
+  });
+});
+
+describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => {
+  before(() => {
+    chain = new Blockchain('mainnet', 10000, utils.normalizeHeader(mainnet[0]));
+  });
+
+  it('should get 2000 mainnet headers', () => {
+    mainnet.length.should.equal(2000);
+  });
+
+  it('should contain 1 branch when chain is initialised with genesis block', () => {
+    chain.getAllBranches().length.should.equal(1);
+  });
+
+  it('should contain start hash', () => {
+    chain.getTipHash().should.equal('000000000000002b8a8363ce87b4c48087ff8a997a8102097102bed001ebc531');
+    chain.getLongestChain().length.should.equal(1);
+  });
+
+  it('should still contain a branch of 1 when first header is added', () => {
+    chain.addHeader(mainnet[1]);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(2);
+  });
+
+  it('should discard addding of duplicate block', () => {
+    chain.addHeader(mainnet[1]);
+    chain.getOrphans().length.should.equal(0);
+    chain.getLongestChain().length.should.equal(2);
+  });
+
+  it('should create 1 orphan', () => {
+    chain.addHeader(mainnet[3]);
+    chain.getOrphans().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(2);
+  });
+
+  it('should connect the orphan by adding its parent', () => {
+    chain.addHeader(mainnet[2]);
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(4);
+  });
+});
+
+describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
+  before(() => {
+    chain = new Blockchain('mainnet', 10000, utils.normalizeHeader(mainnet[0]));
+  });
+
+  it('should add the 1st 500 mainnet headers', () => {
+    chain.addHeaders(mainnet.slice(1, 500));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(500);
+  });
+
+  it('should add the next 500 (500 - 1000) mainnet headers', () => {
+    chain.addHeaders(mainnet.slice(500, 1000));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(1000);
+  });
+
+  it('should add the next 500 (1000 - 1500) mainnet headers', () => {
+    chain.addHeaders(mainnet.slice(1000, 1500));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(1500);
+  });
+
+  it('should not add an invalid header', () => {
+    chain.addHeader(mainnet[499]);
+    chain.getLongestChain().length.should.equal(1500);
+  });
+
+  it('should throw an error if some of the headers is invalid', (done) => {
+    try {
+      chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
       done(new Error('SPV chain failed to throw an error on invalid block'));
     } catch (e) {
       e.message.should.equal('Some headers are invalid');
@@ -95,7 +182,7 @@ describe('Blockstore', () => {
       });
   });
 
-  it('should move 1 block to  the blockstore', (done) => {
+  it('should move 1 block to the blockstore', (done) => {
     chain.addHeaders(headers.slice(9, 10));
     chain.getLongestChain().length.should.equal(10);
     chain.getHeader(genesisHash)
@@ -112,18 +199,6 @@ describe('Blockstore', () => {
 // Difficult with current chain provided by chainmanager as this is actual hardcoded
 // Dash testnet headers which requires significant CPU power to create forked chains from
 
-describe('Difficulty Calculation', () => {
-  it('should have difficulty of 1 when target is max', () => {
-    const testnetMaxTarget = 0x1e0ffff0;
-    utils.getDifficulty(testnetMaxTarget).should.equal(1);
-  });
-
-  it('should have difficulty higher than 1 when target is lower than max', () => {
-    const testnetMaxTarget = 0x1e0fffef;
-    utils.getDifficulty(testnetMaxTarget).should.be.greaterThan(1);
-  });
-});
-
 describe('MerkleProofs', () => {
   it('should validate tx inclusion in merkleblock', () => {
     const merkleBlock = new dashcore.MerkleBlock(merkleData.merkleBlock);
@@ -133,40 +208,4 @@ describe('MerkleProofs', () => {
     merkleProofs.validateTxProofs(merkleBlock, [validTx]).should.equal(true);
     merkleProofs.validateTxProofs(merkleBlock, [invalidTx]).should.equal(false);
   });
-
-  it('validate tx by constucting new merkleblock (mnlistdiffs)', () => {
-    const { mnProof } = merkleData;
-    const validTx = '45afbfe270014d5593cb065562f1fed726f767fe334d8b3f4379025cfa5be8c5';
-    const invalidTx = `${validTx.substring(0, validTx.length - 1)}0`;
-
-    merkleProofs.validateMnProofs(
-      mnProof.header,
-      mnProof.flags,
-      mnProof.hashes,
-      mnProof.numTransactions,
-      validTx,
-    ).should.equal(true);
-
-    merkleProofs.validateMnProofs(
-      mnProof.header,
-      mnProof.flags,
-      mnProof.hashes,
-      mnProof.numTransactions,
-      invalidTx,
-    ).should.equal(false);
-  });
 });
-/*
-describe('MnList Merkleroot validation', () => {
-  it('should validate correct mnlistmerkleroot', () => {
-    // not working yet
-    merkleProofs.validateMnListMerkleRoot(mnListDiff.merkleRootMNList, mnListDiff.mnList)
-      .should.equal(true);
-  });
-  it('should invalidate incorrect mnlistmerkleroot', () => {
-    const randommerkleroot = '1dbb061b19bdcd582b50fae5a29c857e34058d23db79e6defdc8a3498cc29691';
-    merkleProofs.validateMnListMerkleRoot(randommerkleroot, mnListDiff.mnList)
-      .should.equal(false);
-  });
-});
-*/
