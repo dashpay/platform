@@ -4,12 +4,13 @@ const utils = require('../lib/utils');
 const merkleProofs = require('../lib/merkleproofs');
 
 const {
-  mainnet, badRawHeaders,
+  testnet, testnet2, testnet3, mainnet, badRawHeaders,
 } = require('./data/rawHeaders');
 const headers = require('./data/headers');
 const merkleData = require('./data/merkleproofs');
 
 let chain = null;
+
 require('should');
 
 describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
@@ -119,6 +120,71 @@ describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => 
     chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(4);
+  });
+});
+
+describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
+  before(() => {
+    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet[0]));
+  });
+
+  it('should add the 1st 250 testnet headers', () => {
+    chain.addHeaders(testnet.slice(1, 250));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(250);
+  });
+
+  it('should add the next 250 (250 - 500) testnet headers', () => {
+    chain.addHeaders(testnet.slice(250, 500));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(500);
+  });
+
+  it('should add the 1st 250 testnet2 headers', () => {
+    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet2[0]));
+    chain.addHeaders(testnet2.slice(1, 250));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(250);
+  });
+
+  it('should add the next 250 (250 - 500) testnet2 headers', () => {
+    chain.addHeaders(testnet2.slice(250, 500));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(500);
+  });
+
+  it('should add the 1st 250 testnet3 headers', () => {
+    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet3[0]));
+    chain.addHeaders(testnet3.slice(1, 250));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(250);
+  });
+
+  it('should add the next 250 (250 - 500) testnet3 headers', () => {
+    chain.addHeaders(testnet3.slice(250, 500));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(500);
+  });
+
+  it('should not add an invalid header', () => {
+    chain.addHeader(testnet[499]);
+    chain.getLongestChain().length.should.equal(500);
+  });
+
+  it('should throw an error if some of the headers is invalid', (done) => {
+    try {
+      chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
+      done(new Error('SPV chain failed to throw an error on invalid block'));
+    } catch (e) {
+      e.message.should.equal('Some headers are invalid');
+      done();
+    }
   });
 });
 
