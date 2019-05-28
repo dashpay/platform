@@ -89,11 +89,6 @@ const getAddressSummary = async (address, noTxList = false, from, to, fromHeight
   return res;
 };
 
-const getRawBlock = async (blockHash) => {
-  const res = await get(`/rawblock/${blockHash}`);
-  return res;
-};
-
 const getTransactionsByAddress = async (address, from, to, fromHeight, toHeight) => {
   const addresses = Array.isArray(address) ? address.join() : address;
   const res = await get(`/addrs/${addresses}/txs?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
@@ -152,7 +147,6 @@ module.exports = {
   getAddressTotalSent,
   getAddressUnconfirmedBalance,
   getAddressSummary,
-  getRawBlock,
   getTransactionsByAddress,
   getHistoricBlockchainDataSyncStatus,
   getStatus,

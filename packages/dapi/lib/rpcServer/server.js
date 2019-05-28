@@ -53,7 +53,7 @@ const createCommands = (insightAPI, dashcoreAPI, driveAPI, userIndex) => ({
   getMNList: getMNList(insightAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
   getPeerDataSyncStatus: getPeerDataSyncStatus(insightAPI),
-  getRawBlock: getRawBlock(insightAPI),
+  getRawBlock: getRawBlock(dashcoreAPI),
   getStatus: getStatus(insightAPI),
   getTransactionById: getTransactionById(insightAPI),
   getTransactionsByAddress: getTransactionsByAddress(insightAPI),
