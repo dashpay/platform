@@ -1,7 +1,9 @@
 const Validator = require('../../utils/Validator');
 const argsSchema = require('../schemas/addresses');
+const ArgumentsValidationError = require('../../errors/ArgumentsValidationError');
 
 const validator = new Validator(argsSchema);
+
 
 /**
  * @param coreAPI
@@ -25,6 +27,9 @@ const getUTXOFactory = (coreAPI) => {
     const {
       address, from, to, fromHeight, toHeight,
     } = args;
+    if (from !== undefined && to !== undefined && to - from > 1000) {
+      throw new ArgumentsValidationError(`"from" (${from}) and "to" (${to}) range should be less than or equal to 1000`);
+    }
     return coreAPI.getUTXO(address, from, to, fromHeight, toHeight);
   }
 

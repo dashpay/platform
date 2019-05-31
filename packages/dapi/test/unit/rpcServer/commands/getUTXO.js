@@ -45,6 +45,23 @@ describe('getUTXO', () => {
     expect(spy.callCount).to.be.equal(1);
   });
 
+  it('Should from-to range be equal to 1000', async () => {
+    const getUTXO = getUTXOFactory(coreAPIFixture);
+    expect(spy.callCount).to.be.equal(0);
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w'];
+    const UTXO = await getUTXO({ address: addressArray, from: 1, to: 1001 });
+    expect(UTXO).to.be.an('array');
+    expect(spy.callCount).to.be.equal(1);
+  });
+
+  it('Should from-to range be less than 1000', async () => {
+    const getUTXO = getUTXOFactory(coreAPIFixture);
+    expect(spy.callCount).to.be.equal(0);
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w'];
+    await expect(getUTXO({ address: addressArray, from: 0, to: 1001 })).to.be.rejectedWith('"from" (0) and "to" (1001) range should be less than or equal to 1000');
+    expect(spy.callCount).to.be.equal(0);
+  });
+
   it('Should throw if arguments are not valid', async () => {
     const getUTXO = getUTXOFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);

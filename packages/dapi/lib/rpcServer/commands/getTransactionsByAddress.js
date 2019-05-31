@@ -1,5 +1,6 @@
 const Validator = require('../../utils/Validator');
 const argsSchema = require('../schemas/addresses');
+const ArgumentsValidationError = require('../../errors/ArgumentsValidationError');
 
 const validator = new Validator(argsSchema);
 
@@ -25,6 +26,9 @@ const getTransactionsByAddressFactory = (coreAPI) => {
     const {
       address, from, to, fromHeight, toHeight,
     } = args;
+    if (from !== undefined && to !== undefined && to - from > 50) {
+      throw new ArgumentsValidationError(`"from" (${from}) and "to" (${to}) range should be less than or equal to 50`);
+    }
     return coreAPI.getTransactionsByAddress(address, from, to, fromHeight, toHeight);
   }
 

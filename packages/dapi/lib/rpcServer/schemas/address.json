@@ -2,7 +2,9 @@
   "type": "object",
   "properties": {
     "address": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 34,
+      "minLength": 26
     }
   },
   "required": [

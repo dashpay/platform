@@ -45,6 +45,23 @@ describe('getTransactionsByAddress', () => {
     expect(spy.callCount).to.be.equal(1);
   });
 
+  it('Should from-to range be equal to 50', async () => {
+    const getTransactionsByAddress = getTransactionsByAddressFactory(coreAPIFixture);
+    expect(spy.callCount).to.be.equal(0);
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w'];
+    const UTXO = await getTransactionsByAddress({ address: addressArray, from: 1, to: 51 });
+    expect(UTXO).to.be.an('array');
+    expect(spy.callCount).to.be.equal(1);
+  });
+
+  it('Should from-to range be less than 1000', async () => {
+    const getTransactionsByAddress = getTransactionsByAddressFactory(coreAPIFixture);
+    expect(spy.callCount).to.be.equal(0);
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w'];
+    await expect(getTransactionsByAddress({ address: addressArray, from: 0, to: 51 })).to.be.rejectedWith('"from" (0) and "to" (51) range should be less than or equal to 50');
+    expect(spy.callCount).to.be.equal(0);
+  });
+
   it('Should throw if arguments are not valid', async () => {
     const getTransactionsByAddress = getTransactionsByAddressFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
