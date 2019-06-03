@@ -196,12 +196,6 @@ class DAPIClient {
   getRawBlock(blockHash) { return this.makeRequestToRandomDAPINode('getRawBlock', { blockHash }); }
 
   /**
-   * @param {string} txid - transaction hash
-   * @return {Promise<object>}
-   */
-  getTransaction(txid) { return this.getTransactionById(txid); }
-
-  /**
    * Returns Transactions for a given address or multiple addresses
    * @param address
    * @param {string|string[]} address or array of addresses

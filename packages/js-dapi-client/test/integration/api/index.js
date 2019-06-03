@@ -272,14 +272,6 @@ describe('basicAPIs', () => {
   });
 
   describe('Transaction', () => {
-    it('should return correct getTransaction', async () => {
-      const dapiOutput = await dapiClient.getTransaction(transactionIdSendToAddress.result);
-      const url = `${insightURL}/tx/${transactionIdSendToAddress.result}`;
-      const response = await fetch(url);
-      const value = await response.json();
-      expect(dapiOutput).to.be.deep.equal(value);
-    });
-
     it('should return correct getTransactionById', async () => {
       const dapiOutput = await dapiClient.getTransactionById(transactionIdSendToAddress.result);
       const url = `${insightURL}/tx/${transactionIdSendToAddress.result}`;

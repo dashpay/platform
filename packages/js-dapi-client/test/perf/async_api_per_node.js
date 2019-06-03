@@ -366,30 +366,6 @@ describe("Performance", function () {
     });
 
     describe('Transaction', () => {
-        it("getTransaction", async function it() {
-            this.timeout(timeoutTest);
-            const trxs = await dapiClient.getTransactionsByAddress(faucetAddress);
-            let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
-                const queries = new Array(numRequests);
-                for (let index = 0; index < numRequests; ++index) {
-                    queries[index] = dapiClient.getTransaction(trxs.items[i % trxs.items.length].txid);
-                }
-                await runPromise(queries).then(function (result) {
-                    results.push(result.time);
-                }, function (failure) {
-                    expect(failure, 'Errors found').to.be.undefined;
-                });
-            }
-            expect(spy.callCount).to.be.equal(numLoops * numRequests + 1);
-            expect(results).to.have.lengthOf(numLoops);
-            const result = average(results);
-            expect(result).to.not.be.NaN;
-            expect(result).to.be.a('number');
-            console.log("average:", result);
-
-        });
-
         it("getTransactionById", async function it() {
             this.timeout(timeoutTest);
             const trxs = await dapiClient.getTransactionsByAddress(faucetAddress);

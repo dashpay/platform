@@ -468,9 +468,6 @@ describe('api', () => {
           if (method === 'getTransactionById') {
             return validAddressTransactions.items[0];
           }
-          if (method === 'getTransaction') {
-            return validAddressTransactions.items[0];
-          }
           if (method === 'getBlockHeaders') {
             return [validBlockHeader];
           }
@@ -614,13 +611,6 @@ describe('api', () => {
       const totalReceived = await dapi.getAddressTotalSent(validAddressWithOutputs);
       expect(totalReceived).to.be.a('number');
       expect(totalReceived).to.be.equal(validAddressSummary.totalSentSat);
-    });
-  });
-  describe('.tx.getTransaction', () => {
-    it('Should get transaction', async () => {
-      const dapi = new DAPIClient();
-      const transaction = await dapi.getTransaction(validAddressTransactions.items[0].txid);
-      expect(transaction).to.be.deep.equal(validAddressTransactions.items[0]);
     });
   });
   describe('.address.getTransactionsByAddress', () => {
