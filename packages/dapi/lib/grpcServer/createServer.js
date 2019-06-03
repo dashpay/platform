@@ -11,6 +11,10 @@ const {
 
 const { loadPackageDefinition } = require('@dashevo/dapi-grpc');
 
+const wrapInErrorHandlerFactory = require('./error/wrapInErrorHandlerFactory');
+
+const wrapInErrorHandler = wrapInErrorHandlerFactory(console);
+
 const getTransactionsByFilterHandlerFactory = require('./handlers/getTransactionsByFilterHandlerFactory');
 
 function createServer() {
@@ -31,8 +35,10 @@ function createServer() {
     TransactionsFilterStream,
   } = loadPackageDefinition();
 
+  const getTransactionsByFilterHandler = getTransactionsByFilterHandlerFactory();
+
   server.addService(TransactionsFilterStream.service, {
-    getTransactionsByFilter: getTransactionsByFilterHandlerFactory(),
+    getTransactionsByFilter: wrapInErrorHandler(getTransactionsByFilterHandler),
   });
 
   return server;
