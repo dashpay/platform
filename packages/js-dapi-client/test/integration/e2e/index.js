@@ -8,6 +8,7 @@ const sinon = require('sinon');
 const { startDapi } = require('@dashevo/dp-services-ctl');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
+const STPacketFactory = require('@dashevo/dpp/lib/stPacket/STPacketFactory');
 const entropy = require('@dashevo/dpp/lib/util/entropy');
 const Document = require('@dashevo/dpp/lib/document/Document');
 
@@ -28,6 +29,8 @@ dotenvSafe.config({
   sample: path.resolve(__dirname, '../.env'),
   path: path.resolve(__dirname, '../.env'),
 });
+
+
 
 describe('basic E2E tests', () => {
   let masterNode;
@@ -56,6 +59,7 @@ describe('basic E2E tests', () => {
   let alicePreviousST;
 
   before(async () => {
+
     dpp = new DashPlatformProtocol();
     const privKey = 'cVwyvFt95dzwEqYCLd8pv9CzktajP4tWH2w9RQNPeHYA7pH35wcJ';
     faucetPrivateKey = new PrivateKey(privKey);
@@ -69,7 +73,8 @@ describe('basic E2E tests', () => {
     bobUserName = Math.random().toString(36).substring(7);
     aliceUserName = Math.random().toString(36).substring(7);
 
-    const contract = dpp.contract.create(entropy.generate().substr(0, 24), {
+    const contractName = Math.random().toString(36).substring(7);
+    const contract = dpp.contract.create(contractName, {
       profile: {
         indices: [
           { properties: [{ $userId: 'asc' }], unique: true },
@@ -102,6 +107,9 @@ describe('basic E2E tests', () => {
         additionalProperties: false,
       },
     });
+
+    const result = dpp.contract.validate(contract);
+    expect(result.isValid(), 'Contract must be valid').to.be.true();
 
     dpp.setContract(contract);
 
@@ -145,7 +153,6 @@ describe('basic E2E tests', () => {
         .setUserName(bobUserName)
         .setPubKeyIdFromPrivateKey(bobPrivateKey).sign(bobPrivateKey);
 
-
       const inputs = await dapiClient.getUTXO(faucetAddress);
 
       const transaction = Transaction()
@@ -176,7 +183,7 @@ describe('basic E2E tests', () => {
         .setType(Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION);
 
       transaction.extraPayload
-        .setRegTxId(bobPreviousST)
+        .setRegTxId(bobRegTxId)
         .setHashPrevSubTx(bobPreviousST)
         .setHashSTPacket(stPacket.hash())
         .setCreditFee(1000)
@@ -218,6 +225,8 @@ describe('basic E2E tests', () => {
         avatarUrl: 'http://test.com/bob.jpg',
         about: 'This is story about me',
       });
+
+      profile.removeMetadata();
 
       const result = dpp.document.validate(profile);
       expect(result.isValid(), 'Profile must be valid').to.be.true();
@@ -261,8 +270,12 @@ describe('basic E2E tests', () => {
         }
       }
       expect(profiles).to.have.lengthOf(1);
+      expect(profiles[0].$meta).to.be.deep.equal({"userId": bobRegTxId});
+
+      delete profiles[0].$meta;
       expect(profiles[0]).to.be.deep.equal(profile.toJSON());
     });
+
   });
 
   describe('Alice', () => {
@@ -302,6 +315,8 @@ describe('basic E2E tests', () => {
         avatarUrl: 'http://test.com/alice.jpg',
         about: 'I am Alice',
       });
+
+      aliceProfile.removeMetadata();
 
       // 1. Create ST user packet
       const stPacket = dpp.packet.create([aliceProfile]);
@@ -343,6 +358,9 @@ describe('basic E2E tests', () => {
       }
 
       expect(profiles).to.have.lengthOf(2);
+      expect(profiles[1].$meta).to.be.deep.equal({"userId": aliceRegTxId});
+
+      delete profiles[1].$meta;
       expect(profiles[1]).to.be.deep.equal(aliceProfile.toJSON());
     });
 
@@ -396,6 +414,9 @@ describe('basic E2E tests', () => {
       }
 
       expect(profiles).to.have.lengthOf(2);
+      expect(profiles[1].$meta).to.be.deep.equal({"userId": aliceRegTxId});
+
+      delete profiles[1].$meta;
       expect(profiles[1]).to.be.deep.equal(aliceProfile.toJSON());
     });
   });
@@ -408,6 +429,8 @@ describe('basic E2E tests', () => {
         toUserId: aliceRegTxId,
         publicKey: bobPrivateKey.toPublicKey().toString('hex'),
       });
+
+      bobContactRequest.removeMetadata();
 
       // 1. Create ST contact request packet
       const stPacket = dpp.packet.create([bobContactRequest]);
@@ -449,6 +472,9 @@ describe('basic E2E tests', () => {
       }
 
       expect(contacts).to.have.lengthOf(1);
+      expect(contacts[0].$meta).to.be.deep.equal({"userId": bobRegTxId});
+
+      delete contacts[0].$meta;
       expect(contacts[0]).to.be.deep.equal(bobContactRequest.toJSON());
     });
   });
@@ -461,6 +487,8 @@ describe('basic E2E tests', () => {
         toUserId: bobRegTxId,
         publicKey: alicePrivateKey.toPublicKey().toString('hex'),
       });
+
+      aliceContactAcceptance.removeMetadata();
 
       // 1. Create ST approve contact packet
       const stPacket = dpp.packet.create([aliceContactAcceptance]);
@@ -503,6 +531,9 @@ describe('basic E2E tests', () => {
       }
 
       expect(contacts).to.have.lengthOf(2);
+      expect(contacts[1].$meta).to.be.deep.equal({"userId": aliceRegTxId});
+
+      delete contacts[1].$meta;
       expect(contacts[1]).to.be.deep.equal(aliceContactAcceptance.toJSON());
     });
 
@@ -512,6 +543,8 @@ describe('basic E2E tests', () => {
       aliceContactAcceptance.setData({});
       aliceContactAcceptance.setAction(Document.ACTIONS.DELETE);
       aliceContactAcceptance.setRevision(aliceContactAcceptance.revision + 1);
+
+      aliceContactAcceptance.removeMetadata();
 
       const result = dpp.document.validate(aliceContactAcceptance);
       expect(result.isValid(), 'Contact acceptance must be valid').to.be.true();
@@ -559,6 +592,9 @@ describe('basic E2E tests', () => {
       }
 
       expect(contacts).to.have.lengthOf(1);
+      expect(contacts[0].$meta).to.be.deep.equal({"userId": bobRegTxId});
+
+      delete contacts[0].$meta;
       expect(contacts[0]).to.be.deep.equal(bobContactRequest.toJSON());
     });
   });

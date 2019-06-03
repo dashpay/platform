@@ -1052,8 +1052,9 @@ describe('features', () => {
           .sign('cVwyvFt95dzwEqYCLd8pv9CzktajP4tWH2w9RQNPeHYA7pH35wcJ');
         await dapiClient.sendRawTransaction(transaction.serialize());
         await dapiClient.generate(20);
-
+        await dapiClient.generate(1)
         for (let i = 0; i < 990; i++) {
+          console.log(i);
           const inputTo = await dapiClient.getUTXO(address);
           transaction = new Transaction()
             .from(inputTo.items.slice(-1)[0]) // Feed information about what unspent outputs one can use
@@ -1065,7 +1066,7 @@ describe('features', () => {
           await dapiClient.generate(1);
           await wait(1000);
         }
-        await dapiClient.generate(11);
+        await dapiClient.generate(1);
         const utxo = await dapiClient.getUTXO(faucetAddress);
         expect(utxo.items).to.have.lengthOf(991);
       });
@@ -1083,18 +1084,20 @@ describe('features', () => {
         let transaction = Transaction()
           .setType(Transaction.TYPES.TRANSACTION_SUBTX_REGISTER)
           .setExtraPayload(validPayload)
-          .from(inputs.items.slice(-15))
-          .addFundingOutput(1000000)
+          .from(inputs.items.slice(-50))
+          .addFundingOutput(3000000)
           .change(faucetAddress)
           .sign(faucetPrivateKey);
-        // we can't send trxs with last 15 inputs
+        // we can't send trxs with last x*10(enough big kB amount) inputs without fee
         await expect(dapiClient.sendRawTransaction(transaction.serialize())).to.be.rejectedWith('rate limited free transaction');
 
+        // but with fee we can send transaction with x*10 inputs
         transaction = Transaction()
           .setType(Transaction.TYPES.TRANSACTION_SUBTX_REGISTER)
           .setExtraPayload(validPayload)
-          .from(inputs.items.slice(-10))
+          .from(inputs.items.slice(-50))
           .addFundingOutput(1000000)
+          .fee(400000)
           .change(faucetAddress)
           .sign(faucetPrivateKey);
         // and everything is fine with 10 last trxs
@@ -1104,9 +1107,9 @@ describe('features', () => {
         expect(result).to.be.not.empty();
 
         // now we verify that getUTXO.items not empty when no new block generated
-        const utxo = await dapiClient.getUTXO(faucetAddress);
+        let utxo = await dapiClient.getUTXO(faucetAddress);
         expect(utxo).to.have.property('items');
-        expect(utxo.items).to.have.lengthOf(982);
+        expect(utxo.items).to.have.lengthOf(942);
       });
 
       it('should getUTXO by address 0', async () => {
@@ -1117,7 +1120,7 @@ describe('features', () => {
 
         expect(spy.callCount).to.be.equal(1);
 
-        expect(utxo.items).to.have.lengthOf(991);
+        expect(utxo.items).to.have.lengthOf(942);
       });
 
       it('should getUTXO by address 1000', async () => {
@@ -1136,7 +1139,7 @@ describe('features', () => {
         const utxo = await dapiClient.getUTXO(faucetAddress, from, to, fromHeight, toHeight);
 
         expect(spy.callCount).to.be.equal(1);
-        expect(utxo.items).to.have.lengthOf(530);
+        expect(utxo.items).to.have.lengthOf(531);
       });
 
       it('should getUTXO with params: 0 100 1 3000', async () => {
@@ -1158,7 +1161,7 @@ describe('features', () => {
         const utxo = await dapiClient.getUTXO(faucetAddress, from, to, fromHeight, toHeight);
 
         expect(spy.callCount).to.be.equal(1);
-        expect(utxo.items).to.have.lengthOf(491);
+        expect(utxo.items).to.have.lengthOf(442);
       });
 
       it('should getUTXO with params: 0 0 2000 3000', async () => {
@@ -1169,7 +1172,7 @@ describe('features', () => {
         const utxo = await dapiClient.getUTXO(faucetAddress, from, to, fromHeight, toHeight);
 
         expect(spy.callCount).to.be.equal(1);
-        expect(utxo.items).to.have.lengthOf(531);
+        expect(utxo.items).to.have.lengthOf(532);
       });
 
       it('should getTransactionsByAddress with params: 0', async () => {

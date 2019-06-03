@@ -65,7 +65,10 @@ describe('basicAPIs', () => {
 
     bobUserName = Math.random().toString(36).substring(7);
     const contract = dpp.contract.create(entropy.generate().substr(0, 24), {
-      user: {
+      profile: {
+        indices: [
+          { properties: [{ $userId: 'asc' }], unique: true },
+        ],
         properties: {
           avatarUrl: {
             type: 'string',
@@ -79,6 +82,9 @@ describe('basicAPIs', () => {
         additionalProperties: false,
       },
       contact: {
+        indices: [
+          { properties: [{ $userId: 'asc' }, { toUserId: 'asc' }], unique: true },
+        ],
         properties: {
           toUserId: {
             type: 'string',
@@ -91,6 +97,7 @@ describe('basicAPIs', () => {
         additionalProperties: false,
       },
     });
+
     dpp.setContract(contract);
 
     sinon.stub(MNDiscovery.prototype, 'getRandomMasternode')
@@ -235,6 +242,15 @@ describe('basicAPIs', () => {
       expect(dapiOutput).to.be.deep.equal([coreOutput.result[0]]);
     });
 
+    it('should return correct getBlockHash', async () => {
+      const blockHeight = 123;
+      const dapiOutput = await dapiClient.getBlockHash(blockHeight);
+      const url = `${insightURL}/block-index/${blockHeight}`;
+      const response = await fetch(url);
+      const {blockHash} = await response.json();
+      expect(dapiOutput).to.be.deep.equal(blockHash);
+    });
+
     it('should return correct getBlocks', async () => {
       const today = new Date().toISOString().substring(0, 10);
       const dapiOutput = await dapiClient.getBlocks(today, 1);
@@ -250,7 +266,7 @@ describe('basicAPIs', () => {
       const dapiOutput = await dapiClient.getRawBlock(blockHash);
       const url = `${insightURL}/rawblock/${blockHash}`;
       const response = await fetch(url);
-      const value = await response.json();
+      const {rawblock: value} = await response.json();
       expect(dapiOutput).to.be.deep.equal(value);
     });
 
@@ -341,9 +357,17 @@ describe('basicAPIs', () => {
     });
 
     it('should searchUsers', async () => {
-      dapiClient.generate(2);
-      await wait(10000);
-      const dapiOutput = await dapiClient.searchUsers(bobUserName);
+      let dapiOutput;
+      for (let i = 0; i <= 20; i++) {
+        console.log(i);
+        dapiOutput = await dapiClient.searchUsers(bobUserName);
+        if (dapiOutput.totalCount > 0) {
+          break;
+        } else {
+          await dapiClient.generate(2);
+          await wait(10000);
+        }
+      }
       expect(dapiOutput).to.be.deep.equal({
         totalCount: 1,
         results: [bobUserName],
@@ -398,13 +422,17 @@ describe('basicAPIs', () => {
     it('should fetchDocuments', async () => {
       dpp.setUserId(bobRegTxId);
 
-      const user = dpp.document.create('user', {
+      const profile = dpp.document.create('profile', {
         avatarUrl: 'http://test.com/bob.jpg',
         about: 'This is story about me',
       });
+      profile.removeMetadata();
+
+      const result = dpp.document.validate(profile);
+      expect(result.isValid(), 'Profile must be valid').to.be.true();
 
       // 1. Create ST profile packet
-      const stPacket = dpp.packet.create([user]);
+      const stPacket = dpp.packet.create([profile]);
 
       // 2. Create State Transition
       const transaction = new Transaction()
@@ -420,7 +448,6 @@ describe('basicAPIs', () => {
       const transitionHash = await dapiClient.sendRawTransition(
         transaction.serialize(),
         stPacket.serialize().toString('hex')
-        ,
       );
 
       expect(transitionHash).to.be.a('string');
@@ -432,7 +459,7 @@ describe('basicAPIs', () => {
       for (let i = 0; i <= attempts; i++) {
         users = await dapiClient.fetchDocuments(
           dpp.getContract().getId(),
-          'user',
+          'profile',
           {},
         );
         // waiting for Bob's profile to be added
@@ -444,7 +471,10 @@ describe('basicAPIs', () => {
       }
 
       expect(users).to.have.lengthOf(1);
-      expect(users[0]).to.be.deep.equal(user.toJSON());
+      expect(users[0].$meta).to.be.deep.equal({"userId": bobRegTxId});
+
+      delete users[0].$meta;
+      expect(users[0]).to.be.deep.equal(profile.toJSON());
     });
   });
 
