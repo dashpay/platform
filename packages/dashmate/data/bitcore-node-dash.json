@@ -2,12 +2,12 @@
   "network": "testnet",
   "port": 3001,
   "services": [
-    "bitcoind",
-    "insight-api-dash",
+    "dashd",
+    "@dashevo/insight-api",
     "web"
   ],
   "servicesConfig": {
-    "bitcoind": {
+    "dashd": {
       "connect": [{
         "rpchost": "dashcore",
         "rpcport": 20002,
