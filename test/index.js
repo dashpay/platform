@@ -177,14 +177,66 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
     chain.getLongestChain().length.should.equal(500);
   });
 
-  it('should throw an error if some of the headers is invalid', (done) => {
+  it('should orphan and not add invalid but consistent headers', () => {
+    chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
+    chain.getOrphanChunks().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(500);
+  });
+
+  it('should throw an error if some of the headers are inconsistent', (done) => {
     try {
-      chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
+      chain.addHeaders([badRawHeaders[0], badRawHeaders[2]]);
       done(new Error('SPV chain failed to throw an error on invalid block'));
     } catch (e) {
       e.message.should.equal('Some headers are invalid');
       done();
     }
+  });
+});
+
+describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
+  before(() => {
+    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet[0]));
+  });
+
+  it('should add the 1st 100 testnet headers', () => {
+    chain.addHeaders(testnet.slice(1, 100));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(0);
+    chain.getLongestChain().length.should.equal(100);
+  });
+
+  it('should orphan testnet headers 200 - 300', () => {
+    chain.addHeaders(testnet.slice(200, 300));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(100);
+  });
+
+  it('should orphan testnet headers 400 - 500', () => {
+    chain.addHeaders(testnet.slice(400, 500));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(2);
+    chain.getLongestChain().length.should.equal(100);
+  });
+
+  it('should reconnect orphaned chunks (testnet headers 1 - 100 and 200 - 300)', () => {
+    chain.addHeaders(testnet.slice(100, 200));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(300);
+  });
+
+  it('should reconnect orphaned chunks (testnet headers 1 - 300 and 400 - 500)', () => {
+    chain.addHeaders(testnet.slice(300, 400));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(0);
+    chain.getLongestChain().length.should.equal(500);
   });
 });
 
@@ -219,14 +271,66 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
     chain.getLongestChain().length.should.equal(1500);
   });
 
-  it('should throw an error if some of the headers is invalid', (done) => {
+  it('should orphan and not add invalid but consistent headers', () => {
+    chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
+    chain.getOrphanChunks().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(1500);
+  });
+
+  it('should throw an error if some of the headers are inconsistent', (done) => {
     try {
-      chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
+      chain.addHeaders([badRawHeaders[0], badRawHeaders[2]]);
       done(new Error('SPV chain failed to throw an error on invalid block'));
     } catch (e) {
       e.message.should.equal('Some headers are invalid');
       done();
     }
+  });
+});
+
+describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
+  before(() => {
+    chain = new Blockchain('mainnet', 10000, utils.normalizeHeader(mainnet[0]));
+  });
+
+  it('should add the 1st 100 mainnet headers', () => {
+    chain.addHeaders(mainnet.slice(1, 100));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(0);
+    chain.getLongestChain().length.should.equal(100);
+  });
+
+  it('should orphan mainnet headers 200 - 300', () => {
+    chain.addHeaders(mainnet.slice(200, 300));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(100);
+  });
+
+  it('should orphan mainnet headers 400 - 500', () => {
+    chain.addHeaders(mainnet.slice(400, 500));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(2);
+    chain.getLongestChain().length.should.equal(100);
+  });
+
+  it('should reconnect orphaned chunks (mainnet headers 1 - 100 and 200 - 300)', () => {
+    chain.addHeaders(mainnet.slice(100, 200));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(1);
+    chain.getLongestChain().length.should.equal(300);
+  });
+
+  it('should reconnect orphaned chunks (mainnet headers 1 - 300 and 400 - 500)', () => {
+    chain.addHeaders(mainnet.slice(300, 400));
+    chain.getOrphans().length.should.equal(0);
+    chain.getAllBranches().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(0);
+    chain.getLongestChain().length.should.equal(500);
   });
 });
 
