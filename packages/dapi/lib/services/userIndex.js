@@ -11,7 +11,7 @@ let logger;
 
 let usernameCache = [];
 const userCache = {};
-let lastSeenBlock = 0;
+let lastProcessedBlock = 1;
 
 let isUpdating = false;
 
@@ -87,8 +87,8 @@ function updateUsernameIndex() {
   return new Promise((resolve, reject) => {
     function blockHandler(isNextBlockExists) {
       if (isNextBlockExists) {
-        lastSeenBlock += 1;
-        processBlock(lastSeenBlock).catch(reject);
+        lastProcessedBlock += 1;
+        processBlock(lastProcessedBlock).catch(reject);
       } else {
         logger.info('Username index updated');
         events.removeListener('block_processed', blockHandler);
@@ -97,7 +97,7 @@ function updateUsernameIndex() {
       }
     }
     events.on('block_processed', blockHandler);
-    processBlock(lastSeenBlock).catch(reject);
+    processBlock(lastProcessedBlock).catch(reject);
   });
 }
 
@@ -114,7 +114,7 @@ function safeUpdateUsernameIndex() {
     updateUsernameIndex().catch((e) => {
       logger.warn('User index update finished with an error:');
       logger.error(e);
-      lastSeenBlock -= 1;
+      lastProcessedBlock -= 1;
       isUpdating = false;
       (async () => {
         try {
