@@ -3,7 +3,18 @@ syntax = "proto3";
 package org.dash.platform.dapi;
 
 service TransactionsFilterStream {
-  rpc GetTransactionsByFilter (BloomFilter) returns (stream TransactionFilterResponse);
+  rpc subscribeToTransactionsWithProofs (TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse);
+}
+
+message TransactionsWithProofsRequest {
+  BloomFilter bloom_filter = 1;
+
+  oneof from_block {
+    bytes from_block_hash = 2;
+    uint32 from_block_height = 3;
+  }
+
+  uint32 count = 4;
 }
 
 message BloomFilter {
@@ -13,10 +24,18 @@ message BloomFilter {
   uint32 n_flags = 4;
 }
 
-message TransactionFilterResponse {
+message TransactionsWithProofsResponse {
   oneof responses {
-    bytes raw_transaction = 1;
-    bytes raw_merkle_block = 2;
-    bytes locked_transaction_hash = 3;
+    RawTransactions raw_transactions = 1;
+    InstantSendLockMessages instant_send_lock_messages = 2;
+    bytes raw_merkle_block = 3;
   }
+}
+
+message RawTransactions {
+  repeated bytes transactions = 1;
+}
+
+message InstantSendLockMessages {
+  repeated bytes messages = 1;
 }
