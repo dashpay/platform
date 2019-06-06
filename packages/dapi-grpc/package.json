@@ -1,9 +1,9 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "DAPI GRPC definition file and generated clients",
-  "browser": "tx-filter-stream/web/tx_filter_stream_grpc_web_pb",
-  "main": "tx-filter-stream/node/index.js",
+  "browser": "browser.js",
+  "main": "node.js",
   "scripts": {
     "build": "scripts/build.sh",
     "lint": "eslint .",
@@ -37,7 +37,9 @@
     "@grpc/proto-loader": "^0.5.0",
     "google-protobuf": "^3.7.1",
     "grpc": "^1.19.0",
-    "grpc-web": "^1.0.4"
+    "grpc-web": "^1.0.4",
+    "lodash.kebabcase": "^4.1.1",
+    "lodash.snakecase": "^4.1.1"
   },
   "devDependencies": {
     "eslint": "^5.16.0",

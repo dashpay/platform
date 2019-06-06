@@ -1,2 +1,4 @@
-tx-filter-stream/web
-tx-filter-stream/node/tx_filter_stream_pb.js
+core/web
+core/node/core_pb.js
+transactions-filter-stream/web
+transactions-filter-stream/node/transactions_filter_stream_pb.js

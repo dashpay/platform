@@ -1,10 +1,15 @@
 const path = require('path');
 const grpc = require('grpc');
 const protoLoader = require('@grpc/proto-loader');
+const kebabCase = require('lodash.kebabcase');
+const snakeCase = require('lodash.snakecase');
 
-const protoPath = path.join(__dirname, '../tx_filter_stream.proto');
+function loadPackageDefinition(serviceName) {
+  const dirName = kebabCase(serviceName);
+  const protoName = snakeCase(serviceName);
 
-function loadPackageDefinition() {
+  const protoPath = path.join(__dirname, `../${dirName}/${protoName}.proto`);
+
   const definition = protoLoader.loadSync(protoPath, {
     keepCase: true,
     longs: String,

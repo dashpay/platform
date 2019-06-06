@@ -1,19 +1,19 @@
 const grpc = require('grpc');
-const jsonToProtobufInterceptorFactory = require('./jsonToProtobufInterceptorFactory');
-const loadPackageDefinition = require('./loadPackageDefinition');
-const { RawTransaction } = require('./tx_filter_stream_pb');
-const isObject = require('./isObject');
-const convertObjectToMetadata = require('./convertObjectToMetadata');
+const jsonToProtobufInterceptorFactory = require('../../src/jsonToProtobufInterceptorFactory');
+const loadPackageDefinition = require('../../src/loadPackageDefinition');
+const { RawTransaction } = require('./transactions_filter_stream_pb');
+const isObject = require('../../src/isObject');
+const convertObjectToMetadata = require('../../src/convertObjectToMetadata');
 
 const {
   TransactionsFilterStream: TransactionsFilterStreamNodeJSClient,
-} = loadPackageDefinition();
+} = loadPackageDefinition('TransactionsFilterStream');
 
 const getTransactionsByFilterOptions = {
   interceptors: [jsonToProtobufInterceptorFactory(RawTransaction)],
 };
 
-class TransactionsFilterStreamClient {
+class TransactionsFilterStreamPromiseClient {
   /**
    * @param {string} hostname
    * @param {?Object} credentials
@@ -44,4 +44,4 @@ class TransactionsFilterStreamClient {
   }
 }
 
-module.exports = TransactionsFilterStreamClient;
+module.exports = TransactionsFilterStreamPromiseClient;
