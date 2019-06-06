@@ -48,7 +48,8 @@ function validateConfig(config) {
   validationResults.push(validateHost(config.drive.host, 'DRIVE_RPC_HOST'));
   validationResults.push(validatePort(config.drive.port, 'DRIVE_RPC_PORT'));
   validationResults.push(validatePort(config.rpcServer.port.toString(), 'RPC_SERVER_PORT'));
-  validationResults.push(validatePort(config.grpcServer.port.toString(), 'GRPC_SERVER_PORT'));
+  validationResults.push(validatePort(config.core.grpcServer.port.toString(), 'CORE_GRPC_PORT'));
+  validationResults.push(validatePort(config.txFilterStream.grpcServer.port.toString(), 'TX_FILTER_STREAM_GRPC_PORT'));
 
   const validationErrors = validationResults
     .filter(validationResult => !validationResult.isValid)

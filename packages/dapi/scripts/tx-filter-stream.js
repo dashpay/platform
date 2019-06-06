@@ -7,7 +7,7 @@ const log = require('../lib/log');
 
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
 
-const createServerFactory = require('../lib/grpcServer/createServerFactory');
+const createServer = require('../lib/grpcServer/createServer');
 const wrapInErrorHandlerFactory = require('../lib/grpcServer/error/wrapInErrorHandlerFactory');
 
 const BloomFilterEmitterCollection = require('../lib/bloomFilter/emitter/BloomFilterEmitterCollection');
@@ -15,7 +15,7 @@ const BloomFilterEmitterCollection = require('../lib/bloomFilter/emitter/BloomFi
 const testTransactionAgainstFilterCollectionFactory = require('../lib/transactionsFilter/testRawTransactionAgainstFilterCollectionFactory');
 const emitBlockEventToFilterCollectionFactory = require('../lib/transactionsFilter/emitBlockEventToFilterCollectionFactory');
 const testTransactionsAgainstFilter = require('../lib/transactionsFilter/testTransactionAgainstFilter');
-const getTransactionsByFilterHandlerFactory = require('../lib/grpcServer/handlers/getTransactionsByFilterHandlerFactory');
+const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServer/handlers/tx-filter-stream/subscribeToTransactionsWithProofsHandlerFactory');
 
 async function main() {
   dotenv.config();
@@ -52,13 +52,13 @@ async function main() {
     bloomFilterEmitterCollection,
   );
 
-  // Send raw transactions via getTransactionsByFilter stream if matched
+  // Send raw transactions via `subscribeToTransactionsWithProofs` stream if matched
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawtx,
     testRawTransactionAgainstFilterCollection,
   );
 
-  // Send merkle blocks via getTransactionsByFilter stream
+  // Send merkle blocks via `subscribeToTransactionsWithProofs` stream
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawblock,
     emitBlockEventToFilterCollection,
@@ -69,25 +69,27 @@ async function main() {
 
   const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
 
-  const getTransactionsByFilterHandler = getTransactionsByFilterHandlerFactory(
+  const subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
     bloomFilterEmitterCollection,
     testTransactionsAgainstFilter,
   );
 
-  const createServer = createServerFactory(
-    wrapInErrorHandler(getTransactionsByFilterHandler),
+  const grpcServer = createServer(
+    'TransactionsFilterStream',
+    {
+      subscribeToTransactionsWithProofs:
+        wrapInErrorHandler(subscribeToTransactionsWithProofsHandler),
+    },
   );
 
-  const grpcServer = createServer();
-
   grpcServer.bind(
-    `0.0.0.0:${config.grpcServer.port}`,
+    `0.0.0.0:${config.txFilterStream.grpcServer.port}`,
     grpc.ServerCredentials.createInsecure(),
   );
 
   grpcServer.start();
 
-  log.info(`GRPC server is listening on port ${config.grpcServer.port}`);
+  log.info(`GRPC server is listening on port ${config.txFilterStream.grpcServer.port}`);
 
 
   // Display message that everything is ok

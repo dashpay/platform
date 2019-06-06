@@ -2,27 +2,27 @@ const BloomFilter = require('bloom-filter');
 const { MerkleBlock } = require('@dashevo/dashcore-lib');
 const { TransactionFilterResponse } = require('@dashevo/dapi-grpc');
 
-const TransactionHashesCache = require('../../transactionsFilter/TransactionHashesCache');
-const BloomFilterEmitter = require('../../bloomFilter/emitter/BloomFilterEmitter');
+const TransactionHashesCache = require('../../../transactionsFilter/TransactionHashesCache');
+const BloomFilterEmitter = require('../../../bloomFilter/emitter/BloomFilterEmitter');
 
-const InvalidArgumentError = require('../error/InvalidArgumentError');
+const InvalidArgumentError = require('../../error/InvalidArgumentError');
 
 /**
  *
  * @param {BloomFilterEmitterCollection} bloomFilterEmitterCollection
  * @param {testFunction} testTransactionAgainstFilter
- * @return {getTransactionsByFilterHandler}
+ * @return {subscribeToTransactionsWithProofsHandler}
  */
-function getTransactionsByFilterHandlerFactory(
+function subscribeToTransactionsWithProofsHandlerFactory(
   bloomFilterEmitterCollection,
   testTransactionAgainstFilter,
 ) {
   /**
-   * @typedef getTransactionsByFilterHandler
+   * @typedef subscribeToTransactionsWithProofsHandler
    * @param {Object} call
    * @param {function(Error, Object)} callback
    */
-  function getTransactionsByFilterHandler(call, callback) {
+  function subscribeToTransactionsWithProofsHandler(call, callback) {
     // Create a new bloom filter emitter when client connects
 
     let filter;
@@ -103,7 +103,7 @@ function getTransactionsByFilterHandlerFactory(
     });
   }
 
-  return getTransactionsByFilterHandler;
+  return subscribeToTransactionsWithProofsHandler;
 }
 
-module.exports = getTransactionsByFilterHandlerFactory;
+module.exports = subscribeToTransactionsWithProofsHandlerFactory;

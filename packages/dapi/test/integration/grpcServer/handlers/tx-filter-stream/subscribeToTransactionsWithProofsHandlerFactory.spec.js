@@ -15,20 +15,20 @@ const {
 const BloomFilter = require('bloom-filter');
 const { TransactionFilterResponse } = require('@dashevo/dapi-grpc');
 
-const GrpcCallMock = require('../../../../lib/test/mock/GrpcCallMock');
-const BloomFilterEmitterCollection = require('../../../../lib/bloomFilter/emitter/BloomFilterEmitterCollection');
-const testTransactionAgainstFilterCollectionFactory = require('../../../../lib/transactionsFilter/testRawTransactionAgainstFilterCollectionFactory');
-const emitBlockEventToFilterCollectionFactory = require('../../../../lib/transactionsFilter/emitBlockEventToFilterCollectionFactory');
-const testTransactionsAgainstFilter = require('../../../../lib/transactionsFilter/testTransactionAgainstFilter');
-const getTransactionsByFilterHandlerFactory = require('../../../../lib/grpcServer/handlers/getTransactionsByFilterHandlerFactory');
+const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
+const BloomFilterEmitterCollection = require('../../../../../lib/bloomFilter/emitter/BloomFilterEmitterCollection');
+const testTransactionAgainstFilterCollectionFactory = require('../../../../../lib/transactionsFilter/testRawTransactionAgainstFilterCollectionFactory');
+const emitBlockEventToFilterCollectionFactory = require('../../../../../lib/transactionsFilter/emitBlockEventToFilterCollectionFactory');
+const testTransactionsAgainstFilter = require('../../../../../lib/transactionsFilter/testTransactionAgainstFilter');
+const subscribeToTransactionsWithProofsHandlerFactory = require('../../../../../lib/grpcServer/handlers/tx-filter-stream/subscribeToTransactionsWithProofsHandlerFactory');
 
-const InvalidArgumentError = require('../../../../lib/grpcServer/error/InvalidArgumentError');
+const InvalidArgumentError = require('../../../../../lib/grpcServer/error/InvalidArgumentError');
 
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
 
-describe('getTransactionsByFilterHandlerFactory', () => {
+describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   beforeEach(function beforeEach() {
     if (!this.sinon) {
       this.sinon = sinon.createSandbox();
@@ -42,7 +42,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
   });
 
   let call;
-  let getTransactionsByFilterHandler;
+  let subscribeToTransactionsWithProofsHandler;
   let bloomFilterEmitterCollection;
   let emitBlockEventToFilterCollection;
   let testRawTransactionAgainstFilterCollection;
@@ -62,7 +62,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
       bloomFilterEmitterCollection,
     );
 
-    getTransactionsByFilterHandler = getTransactionsByFilterHandlerFactory(
+    subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
       bloomFilterEmitterCollection,
       testTransactionsAgainstFilter,
     );
@@ -80,7 +80,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
     const callback = this.sinon.stub();
 
     // Get the bloom filter from a client
-    getTransactionsByFilterHandler(call, callback);
+    subscribeToTransactionsWithProofsHandler(call, callback);
 
     // Call listener when new transaction appears
     testRawTransactionAgainstFilterCollection(transaction.toBuffer());
@@ -113,7 +113,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
     const callback = this.sinon.stub();
 
     // Get the bloom filter from client
-    getTransactionsByFilterHandler(call, callback);
+    subscribeToTransactionsWithProofsHandler(call, callback);
 
     // Call listener when a new transaction appears
     testRawTransactionAgainstFilterCollection(transaction.toBuffer());
@@ -135,7 +135,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
     const callback = this.sinon.stub();
 
     // Get the bloom filter from client
-    getTransactionsByFilterHandler(call, callback);
+    subscribeToTransactionsWithProofsHandler(call, callback);
 
     // Call listener when new transaction appears
     testRawTransactionAgainstFilterCollection(transaction.toBuffer());
@@ -158,7 +158,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
     const callback = this.sinon.stub();
 
     // Get the bloom filter from client
-    getTransactionsByFilterHandler(call, callback);
+    subscribeToTransactionsWithProofsHandler(call, callback);
 
     // Call listener when a new transaction appears
     testRawTransactionAgainstFilterCollection(transaction.toBuffer());
@@ -228,7 +228,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
     const callback = this.sinon.stub();
 
     // Get the bloom filter from client
-    getTransactionsByFilterHandler(call, callback);
+    subscribeToTransactionsWithProofsHandler(call, callback);
 
     // Call listener when new transaction appears
     testRawTransactionAgainstFilterCollection(transaction.toBuffer());
@@ -278,7 +278,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
     const callback = this.sinon.stub();
 
     // Get the bloom filter from client
-    getTransactionsByFilterHandler(call, callback);
+    subscribeToTransactionsWithProofsHandler(call, callback);
 
     // Create one more transaction which will not match the bloom filter
     const address = new PrivateKey().toAddress();
@@ -324,7 +324,7 @@ describe('getTransactionsByFilterHandlerFactory', () => {
     const callback = this.sinon.stub();
 
     // Get the bloom filter from client
-    getTransactionsByFilterHandler(call, callback);
+    subscribeToTransactionsWithProofsHandler(call, callback);
 
     // The new bloom filter was added
     expect(bloomFilterEmitterCollection.filters).to.have.lengthOf(1);

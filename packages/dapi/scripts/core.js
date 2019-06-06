@@ -1,5 +1,6 @@
 // Entry point for DAPI.
 const dotenv = require('dotenv');
+const grpc = require('grpc');
 
 // Load config from .env
 dotenv.config();
@@ -14,6 +15,8 @@ const DriveAdapter = require('../lib/externalApis/driveAdapter');
 const insightAPI = require('../lib/externalApis/insight');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const userIndex = require('../lib/services/userIndex');
+
+const createServer = require('../lib/grpcServer/createServer');
 
 async function main() {
   /* Application start */
@@ -58,8 +61,8 @@ async function main() {
   });
   log.info('Username index service started');
 
-  // Start RPC server
-  log.info('Starting RPC server');
+  // Start JSON RPC server
+  log.info('Starting JSON RPC server');
   rpcServer.start({
     port: config.rpcServer.port,
     networkType: config.network,
@@ -69,7 +72,21 @@ async function main() {
     userIndex,
     log,
   });
-  log.info(`RPC server is listening on port ${config.rpcServer.port}`);
+  log.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
+
+  // Start GRPC server
+  log.info('Starting GRPC server');
+
+  const grpcServer = createServer('Core', { });
+
+  grpcServer.bind(
+    `0.0.0.0:${config.txFilterStream.grpcServer.port}`,
+    grpc.ServerCredentials.createInsecure(),
+  );
+
+  grpcServer.start();
+
+  log.info(`GRPC RPC server is listening on port ${config.txFilterStream.grpcServer.port}`);
 
   // Display message that everything is ok
   log.info(`Insight uri is ${config.insightUri}`);
