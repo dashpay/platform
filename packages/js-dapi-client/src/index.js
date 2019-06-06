@@ -1,6 +1,10 @@
 const jsutil = require('@dashevo/dashcore-lib').util.js;
 const preconditionsUtil = require('@dashevo/dashcore-lib').util.preconditions;
-const { BloomFilter, TransactionsFilterStreamClient } = require('@dashevo/dapi-grpc');
+const {
+  TransactionsFilterStreamPromiseClient,
+  TransactionsWithProofsRequest,
+  BloomFilter,
+} = require('@dashevo/dapi-grpc');
 const MNDiscovery = require('./MNDiscovery/index');
 const rpcClient = require('./RPCClient');
 const config = require('./config');
@@ -305,20 +309,25 @@ class DAPIClient {
    * hash function used by the bloom filter.
    * @param {number} bloomFilter.nFlags - A set of flags that control how matched items
    * are added to the filter.
-   * @returns {Promise<EventEmitter>|!grpc.web.ClientReadableStream<!RawTransaction>|undefined}
+   * @returns {
+   *    Promise<EventEmitter>|!grpc.web.ClientReadableStream<!TransactionsWithProofsResponse>
+   * }
    */
-  async subscribeToTransactionsByFilter(bloomFilter) {
+  async subscribeToTransactionsWithProofs(bloomFilter) {
     const filter = new BloomFilter();
-    filter.setFilter(bloomFilter.vData);
-    filter.setHashFunctionsCount(bloomFilter.nHashFuncs);
-    filter.setTweak(bloomFilter.nTweak);
-    filter.setFlags(bloomFilter.nFlags);
+    filter.setVData(bloomFilter.vData);
+    filter.setNHashFuncs(bloomFilter.nHashFuncs);
+    filter.setNTweak(bloomFilter.nTweak);
+    filter.setNFlags(bloomFilter.nFlags);
+
+    const request = new TransactionsWithProofsRequest();
+    request.setBloomFilter(filter);
 
     const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
 
-    const client = new TransactionsFilterStreamClient(`${nodeToConnect.getIp()}:${this.getGrpcPort()}`);
+    const client = new TransactionsFilterStreamPromiseClient(`${nodeToConnect.getIp()}:${this.getGrpcPort()}`);
 
-    return client.getTransactionsByFilter(filter);
+    return client.subscribeToTransactionsWithProofs(request);
   }
 
   /**
