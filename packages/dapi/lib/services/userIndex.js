@@ -11,13 +11,45 @@ let logger;
 
 let usernameCache = [];
 const userCache = {};
-let lastSeenBlock = 1;
+let lastSeenBlock = 0;
 
 let isUpdating = false;
 
 const events = new EventEmitter();
 
+let lockProcessBlock;
+
+class Lock {
+  constructor() {
+    this.locked = false;
+    this.waiting = [];
+  }
+
+  lock() {
+    const unlock = () => {
+      let nextResolve;
+      if (this.waiting.length > 0) {
+        nextResolve = this.waiting.pop(0);
+        nextResolve(unlock);
+      } else {
+        this.locked = false;
+      }
+    };
+    if (this.locked) {
+      return new Promise((resolve) => {
+        this.waiting.push(resolve);
+      });
+    }
+    this.locked = true;
+    return new Promise((resolve) => {
+      resolve(unlock);
+    });
+  }
+}
+
+
 async function processBlock(blockHeight) {
+  lockProcessBlock = await new Lock().lock();
   const blockHash = await dashcoreRpcClient.getBlockHash(blockHeight);
   const block = await dashcoreRpcClient.getBlock(blockHash);
   let nextBlockExists = false;
@@ -39,7 +71,9 @@ async function processBlock(blockHeight) {
       usernameCache = union(usernameCache, usernamesInBlock);
       logger.debug(`${usernamesInBlock.length} usernames added to cache: ${usernamesInBlock.join(', ')}`);
     }
+    await lockProcessBlock();
   }
+
   events.emit('block_processed', nextBlockExists);
 }
 
@@ -56,9 +90,9 @@ function updateUsernameIndex() {
         lastSeenBlock += 1;
         processBlock(lastSeenBlock).catch(reject);
       } else {
-        isUpdating = false;
         logger.info('Username index updated');
         events.removeListener('block_processed', blockHandler);
+        isUpdating = false;
         resolve();
       }
     }
@@ -78,9 +112,17 @@ function getUserById(userId) {
 function safeUpdateUsernameIndex() {
   try {
     updateUsernameIndex().catch((e) => {
-      isUpdating = false;
       logger.warn('User index update finished with an error:');
       logger.error(e);
+      lastSeenBlock -= 1;
+      isUpdating = false;
+      (async () => {
+        try {
+          await lockProcessBlock();
+        } catch (err) {
+          logger.debug(err);
+        }
+      })();
     });
   } catch (e) {
     logger.error(e);
