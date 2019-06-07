@@ -1,2 +1,3 @@
 # Ignore build artifacts
+transactions_filter_stream_pb.js
 core_pb.js

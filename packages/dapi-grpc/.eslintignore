@@ -1,4 +1,2 @@
-core/web
-core/node/core_pb.js
-transactions-filter-stream/web
-transactions-filter-stream/node/transactions_filter_stream_pb.js
+clients/web/
+clients/nodejs/*_pb.js

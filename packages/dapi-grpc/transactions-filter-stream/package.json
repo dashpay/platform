@@ -1,6 +1,0 @@
-{
-  "name": "tx-filter-stream",
-  "private": true,
-  "browser": "web/tx_filter_stream_grpc_web_pb",
-  "main": "node"
-}
