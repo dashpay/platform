@@ -11,7 +11,8 @@ const transportList = {
 function isValidTransport(transport) {
   if (is.string(transport)) {
     return hasProp(transportList, transport);
-  } if (is.obj(transport)) {
+  }
+  if (is.obj(transport)) {
     let valid = true;
     const expectedKeys = [
       'getAddressSummary',
@@ -48,7 +49,11 @@ class Transporter {
         if (Object.keys(transportList).includes(loweredTransportName)) {
           // TODO : Remove me toward release
           if (transportArg === 'dapi') {
-            transport = new DAPIClient({ seeds: [{ ip: '54.218.19.16', port: 3000 }] });
+            transport = new DAPIClient({
+              seeds: [{ service: '18.237.69.61:3000' }],
+              timeout: 20000,
+              retries: 5,
+            });
           } else {
             transport = new transportList[loweredTransportName]();
           }
@@ -180,4 +185,5 @@ class Transporter {
     return this.transport.sendRawTransaction(rawtx, isIs);
   }
 }
+
 module.exports = Transporter;

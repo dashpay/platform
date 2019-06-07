@@ -20,8 +20,8 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
     } = addrSum;
 
     if (is.undef(balanceSat)
-      || is.undef(unconfirmedBalanceSat)
-      || !is.arr(transactions)) {
+        || is.undef(unconfirmedBalanceSat)
+        || !is.arr(transactions)) {
       return false;
     }
 
@@ -53,29 +53,33 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
       }
     }
     if (fetchUtxo) {
-      const fetchedUtxo = (await self.transport.getUTXO(address));
-      const utxos = [];
-      if (balanceSat > 0) {
-        fetchedUtxo.forEach((utxo) => {
-          utxos.push({
-            satoshis: utxo.satoshis,
-            txid: utxo.txid,
-            address: utxo.address,
-            outputIndex: utxo.vout,
-            scriptPubKey: utxo.scriptPubKey,
-            // scriptSig: utxo.scriptSig,
+      const fetchedUtxoReq = await self.transport.getUTXO(address);
+      if (fetchedUtxoReq && fetchedUtxoReq.totalItems) {
+        const fetchedUtxo = fetchedUtxoReq.items;
+
+        const utxos = [];
+        if (balanceSat > 0) {
+          fetchedUtxo.forEach((utxo) => {
+            utxos.push({
+              satoshis: utxo.satoshis,
+              txid: utxo.txid,
+              address: utxo.address,
+              outputIndex: utxo.outputIndex,
+              scriptPubKey: utxo.script,
+              // scriptSig: utxo.scriptSig,
+            });
           });
-        });
-      }
-      if (utxos.length > 0) {
-        self.storage.addUTXOToAddress(utxos, addressObj.address);
+        }
+        if (utxos.length > 0) {
+          self.storage.addUTXOToAddress(utxos, addressObj.address);
+        }
       }
     }
-
     return addrInfo;
   } catch (e) {
     console.log(e);
     return false;
   }
 }
+
 module.exports = fetchAddressInfo;

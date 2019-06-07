@@ -232,10 +232,12 @@ Miscellaneous :
 ##### DAP
 - [DashPay DAP](https://github.com/dashevo/dashpay-dap) :
 
-##### Transports :
+##### Transports (help from community welcomed):
+
+Insight-Client has been removed from MVP and is not working since Wallet-lib v3.0.
 
 - [X] DAPI-Client : [https://github.com/dashevo/dapi-client]
-- [x] Insight- Client : [src/transports/Insight/insightClient.js]
+- [ ] Insight- Client : [src/transports/Insight/insightClient.js]
 - [ ] Dash-P2P : [src/transports/Protocol/protocolClient.js]
 - [ ] DashcoreRPC : [src/transports/RPC/rpcClient.js]
 
