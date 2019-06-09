@@ -73,8 +73,8 @@ const getBlockHeader = blockHash => new Promise((resolve, reject) => {
   });
 });
 
-const getBlockHeaders = (offset, limit) => new Promise((resolve, reject) => {
-  client.getblockheaders(offset, limit, (err, r) => {
+const getBlockHeaders = (offset, limit = 1, verbose = false) => new Promise((resolve, reject) => {
+  client.getblockheaders(offset, limit, verbose, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message));
     } else {

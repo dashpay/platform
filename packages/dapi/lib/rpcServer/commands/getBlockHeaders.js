@@ -12,14 +12,16 @@ const getBlockHeadersFactory = (coreAPI) => {
    * Returns block headers
    * @typedef getBlockHeaders
    * @param args - command arguments
-   * @param {number} args.offset - block height starting point
-   * @param {number} args.limit - number of block headers to return
+   * @param {number|string}  args.offset - block height/hash starting point
+   * @param {number} [args.limit=1] - number of block headers to return
+   * @param {boolean} [args.verbose=false] - set true to get headers as deserialized json
    * @return {Promise<Array<Object>>}
    */
   async function getBlockHeaders(args) {
     validator.validate(args);
-    const { offset, limit } = args;
-    return coreAPI.getBlockHeaders(typeof offset === 'number' ? await coreAPI.getBlockHash(offset) : offset, limit);
+    const { offset, limit, verbose } = args;
+    const hash = typeof offset === 'number' ? await coreAPI.getBlockHash(offset) : offset;
+    return coreAPI.getBlockHeaders(hash, limit, verbose);
   }
 
   return getBlockHeaders;
@@ -71,16 +73,21 @@ const getBlockHeadersFactory = (coreAPI) => {
  *                    - limit
  *                  properties:
  *                    offset:
- *                      type: integer
- *                      default: 1
- *                      description: Lowest block height to include
- *                      minimum: 0
+ *                      oneOf:
+ *                        - type: integer
+ *                          description: Lowest block height to include
+ *                        - type: string
+ *                          description: Lowest block hash to include
  *                    limit:
  *                      type: integer
  *                      default: 1
- *                      description: The number of headers to return (0 < limit <=25)
+ *                      description: The number of headers to return (0 < limit <=2000)
  *                      minimum: 1
- *                      maximum: 25
+ *                      maximum: 2000
+ *                    verbose:
+ *                      type: boolean
+ *                      default: false
+ *                      description: set true to get headers as deserialized json
  */
 /* eslint-enable max-len */
 
