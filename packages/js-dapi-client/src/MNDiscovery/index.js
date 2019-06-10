@@ -1,5 +1,5 @@
 /**
- * This module responsibility is to obtain masternode IPs in order to
+ * This module's responsibility is to obtain masternode IPs in order to
  * provide those IPs for DAPIService, which provides an interface for making
  * requests to DAPI.
  *  @module MNDiscoveryService
