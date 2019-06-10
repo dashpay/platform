@@ -11,7 +11,7 @@ let logger;
 
 let usernameCache = [];
 const userCache = {};
-let lastProcessedBlock = 1;
+let lastProcessedBlock = 0;
 
 let isUpdating = false;
 
