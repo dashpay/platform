@@ -43,6 +43,92 @@ static GPBFileDescriptor *CoreRoot_FileDescriptor(void) {
   return descriptor;
 }
 
+#pragma mark - LastUserStateTransitionHashRequest
+
+@implementation LastUserStateTransitionHashRequest
+
+@dynamic userId;
+
+typedef struct LastUserStateTransitionHashRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *userId;
+} LastUserStateTransitionHashRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "userId",
+        .dataTypeSpecific.className = NULL,
+        .number = LastUserStateTransitionHashRequest_FieldNumber_UserId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(LastUserStateTransitionHashRequest__storage_, userId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[LastUserStateTransitionHashRequest class]
+                                     rootClass:[CoreRoot class]
+                                          file:CoreRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(LastUserStateTransitionHashRequest__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - LastUserStateTransitionHashResponse
+
+@implementation LastUserStateTransitionHashResponse
+
+@dynamic hash_p;
+
+typedef struct LastUserStateTransitionHashResponse__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *hash_p;
+} LastUserStateTransitionHashResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "hash_p",
+        .dataTypeSpecific.className = NULL,
+        .number = LastUserStateTransitionHashResponse_FieldNumber_Hash_p,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(LastUserStateTransitionHashResponse__storage_, hash_p),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[LastUserStateTransitionHashResponse class]
+                                     rootClass:[CoreRoot class]
+                                          file:CoreRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(LastUserStateTransitionHashResponse__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - BlockHeadersWithChainLocksRequest
 
 @implementation BlockHeadersWithChainLocksRequest

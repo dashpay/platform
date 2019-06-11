@@ -11,6 +11,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 @protocol Core <NSObject>
 
+#pragma mark getLastUserStateTransitionHash(LastUserStateTransitionHashRequest) returns (LastUserStateTransitionHashResponse)
+
+- (void)getLastUserStateTransitionHashWithRequest:(LastUserStateTransitionHashRequest *)request handler:(void(^)(LastUserStateTransitionHashResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetLastUserStateTransitionHashWithRequest:(LastUserStateTransitionHashRequest *)request handler:(void(^)(LastUserStateTransitionHashResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark subscribeToBlockHeadersWithChainLocks(BlockHeadersWithChainLocksRequest) returns (stream BlockHeadersWithChainLocksResponse)
 
 - (void)subscribeToBlockHeadersWithChainLocksWithRequest:(BlockHeadersWithChainLocksRequest *)request eventHandler:(void(^)(BOOL done, BlockHeadersWithChainLocksResponse *_Nullable response, NSError *_Nullable error))eventHandler;

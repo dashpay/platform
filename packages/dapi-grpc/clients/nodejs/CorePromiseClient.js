@@ -1,13 +1,20 @@
 const grpc = require('grpc');
 const jsonToProtobufInterceptorFactory = require('../../src/jsonToProtobufInterceptorFactory');
 const loadPackageDefinition = require('../../src/loadPackageDefinition');
-const { BlockHeadersWithChainLocksResponse } = require('./core_pb');
+const {
+  LastUserStateTransitionHashResponse,
+  BlockHeadersWithChainLocksResponse,
+} = require('./core_pb');
 const isObject = require('../../src/isObject');
 const convertObjectToMetadata = require('../../src/convertObjectToMetadata');
 
 const {
   Core: CoreNodeJSClient,
 } = loadPackageDefinition('Core');
+
+const getLastUserStateTransitionHashOptions = {
+  interceptors: [jsonToProtobufInterceptorFactory(LastUserStateTransitionHashResponse)],
+};
 
 const subscribeToBlockHeadersWithChainLocksOptions = {
   interceptors: [jsonToProtobufInterceptorFactory(BlockHeadersWithChainLocksResponse)],
@@ -21,6 +28,25 @@ class CorePromiseClient {
    */
   constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
     this.client = new CoreNodeJSClient(hostname, credentials, options);
+  }
+
+  /**
+   * @param {!LastUserStateTransitionHashRequest} lastUserStateTransitionHashRequest
+   * @param {?Object<string, string>} metadata
+   * @return {!LastUserStateTransitionHashResponse}
+   */
+  getLastUserStateTransitionHash(lastUserStateTransitionHashRequest, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    const message = lastUserStateTransitionHashRequest.toObject();
+
+    return this.client.getLastUserStateTransitionHash(
+      message,
+      convertObjectToMetadata(metadata),
+      getLastUserStateTransitionHashOptions,
+    );
   }
 
   /**

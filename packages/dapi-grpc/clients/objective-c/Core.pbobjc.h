@@ -47,6 +47,30 @@ NS_ASSUME_NONNULL_BEGIN
 @interface CoreRoot : GPBRootObject
 @end
 
+#pragma mark - LastUserStateTransitionHashRequest
+
+typedef GPB_ENUM(LastUserStateTransitionHashRequest_FieldNumber) {
+  LastUserStateTransitionHashRequest_FieldNumber_UserId = 1,
+};
+
+@interface LastUserStateTransitionHashRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *userId;
+
+@end
+
+#pragma mark - LastUserStateTransitionHashResponse
+
+typedef GPB_ENUM(LastUserStateTransitionHashResponse_FieldNumber) {
+  LastUserStateTransitionHashResponse_FieldNumber_Hash_p = 1,
+};
+
+@interface LastUserStateTransitionHashResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *hash_p;
+
+@end
+
 #pragma mark - BlockHeadersWithChainLocksRequest
 
 typedef GPB_ENUM(BlockHeadersWithChainLocksRequest_FieldNumber) {

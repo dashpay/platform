@@ -22,6 +22,18 @@
 }
 
 
+#pragma mark getLastUserStateTransitionHash(LastUserStateTransitionHashRequest) returns (LastUserStateTransitionHashResponse)
+
+- (void)getLastUserStateTransitionHashWithRequest:(LastUserStateTransitionHashRequest *)request handler:(void(^)(LastUserStateTransitionHashResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetLastUserStateTransitionHashWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetLastUserStateTransitionHashWithRequest:(LastUserStateTransitionHashRequest *)request handler:(void(^)(LastUserStateTransitionHashResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getLastUserStateTransitionHash"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[LastUserStateTransitionHashResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
 #pragma mark subscribeToBlockHeadersWithChainLocks(BlockHeadersWithChainLocksRequest) returns (stream BlockHeadersWithChainLocksResponse)
 
 - (void)subscribeToBlockHeadersWithChainLocksWithRequest:(BlockHeadersWithChainLocksRequest *)request eventHandler:(void(^)(BOOL done, BlockHeadersWithChainLocksResponse *_Nullable response, NSError *_Nullable error))eventHandler{
