@@ -62,12 +62,12 @@ typedef GPB_ENUM(LastUserStateTransitionHashRequest_FieldNumber) {
 #pragma mark - LastUserStateTransitionHashResponse
 
 typedef GPB_ENUM(LastUserStateTransitionHashResponse_FieldNumber) {
-  LastUserStateTransitionHashResponse_FieldNumber_Hash_p = 1,
+  LastUserStateTransitionHashResponse_FieldNumber_StateTransitionHash = 1,
 };
 
 @interface LastUserStateTransitionHashResponse : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSData *hash_p;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransitionHash;
 
 @end
 
