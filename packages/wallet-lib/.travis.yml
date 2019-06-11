@@ -13,3 +13,12 @@ install:
 
 before_script:
   - npm run lint
+
+jobs:
+  include:
+    - stage: eslint
+      script: npm run lint
+    - stage: size
+      script: npm run size
+    - stage: test
+      script: npm test
