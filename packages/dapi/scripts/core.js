@@ -80,13 +80,13 @@ async function main() {
   const grpcServer = createServer('Core', { });
 
   grpcServer.bind(
-    `0.0.0.0:${config.txFilterStream.grpcServer.port}`,
+    `0.0.0.0:${config.core.grpcServer.port}`,
     grpc.ServerCredentials.createInsecure(),
   );
 
   grpcServer.start();
 
-  log.info(`GRPC RPC server is listening on port ${config.txFilterStream.grpcServer.port}`);
+  log.info(`GRPC RPC server is listening on port ${config.core.grpcServer.port}`);
 
   // Display message that everything is ok
   log.info(`Insight uri is ${config.insightUri}`);
