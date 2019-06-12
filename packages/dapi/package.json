@@ -27,7 +27,7 @@
     "all": true
   },
   "dependencies": {
-    "@dashevo/dapi-grpc": "^0.7.0",
+    "@dashevo/dapi-grpc": "^0.8.3",
     "@dashevo/dashcore-lib": "0.17.5",
     "@dashevo/dashcore-p2p": "^1.1.9",
     "@dashevo/dashd-rpc": "^1.3.1",

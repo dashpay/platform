@@ -17,6 +17,8 @@ const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const userIndex = require('../lib/services/userIndex');
 
 const createServer = require('../lib/grpcServer/createServer');
+const wrapInErrorHandlerFactory = require('../lib/grpcServer/error/wrapInErrorHandlerFactory');
+const getLastUserStateTransitionHashHandlerFactory = require('../lib/grpcServer/handlers/core/getLastUserStateTransitionHashHandlerFactory');
 
 async function main() {
   /* Application start */
@@ -77,7 +79,15 @@ async function main() {
   // Start GRPC server
   log.info('Starting GRPC server');
 
-  const grpcServer = createServer('Core', { });
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
+
+  const getLastUserStateTransitionHashHandler = getLastUserStateTransitionHashHandlerFactory(
+    dashCoreRpcClient,
+  );
+
+  const grpcServer = createServer('Core', {
+    getLastUserStateTransitionHash: wrapInErrorHandler(getLastUserStateTransitionHashHandler),
+  });
 
   grpcServer.bind(
     `0.0.0.0:${config.core.grpcServer.port}`,
