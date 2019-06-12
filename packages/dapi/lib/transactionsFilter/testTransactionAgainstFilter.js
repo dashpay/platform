@@ -1,4 +1,4 @@
-const Filter = require('bloom-filter');
+const { BloomFilter } = require('@dashevo/dashcore-lib');
 
 /**
  * @param {string} transactionHash
@@ -15,7 +15,7 @@ function inputIndexToBuffer(transactionHash, inputIndex) {
 }
 
 /**
- * @param {Filter} filter
+ * @param {BloomFilter} filter
  * @param {Script} script
  * @returns {boolean}
  */
@@ -32,7 +32,7 @@ function filterContainsScript(filter, script) {
 }
 
 /**
- * @param {Filter} filter
+ * @param {BloomFilter} filter
  * @param {Transaction} transaction
  * @returns {boolean}
  */
@@ -44,8 +44,8 @@ function checkOutputs(filter, transaction) {
   const matchedOutput = transaction.outputs.find((output, index) => {
     const isMatchFound = filterContainsScript(filter, output.script);
 
-    const alwaysUpdateFilterOnMatch = filter.nFlags === Filter.BLOOM_UPDATE_ALL;
-    const updateFilterOnPubKeyMatch = filter.nFlags === Filter.BLOOM_UPDATE_P2PUBKEY_ONLY;
+    const alwaysUpdateFilterOnMatch = filter.nFlags === BloomFilter.BLOOM_UPDATE_ALL;
+    const updateFilterOnPubKeyMatch = filter.nFlags === BloomFilter.BLOOM_UPDATE_P2PUBKEY_ONLY;
 
     const isScriptPubKeyOut = output.script.isPublicKeyOut() || output.script.isMultisigOut();
 
@@ -63,7 +63,7 @@ function checkOutputs(filter, transaction) {
 }
 
 /**
- * @param {Filter} filter
+ * @param {BloomFilter} filter
  * @param {Transaction} transaction
  * @return boolean
  */
@@ -85,7 +85,7 @@ function checkInputs(filter, transaction) {
 }
 
 /**
- * @param {Filter} filter
+ * @param {BloomFilter} filter
  * @param {Transaction} transaction
  * @return boolean
  */
@@ -99,7 +99,7 @@ function checkHash(filter, transaction) {
  * BIP37 transaction filtering
  *
  * @type testFunction
- * @param {Filter} filter
+ * @param {BloomFilter} filter
  * @param {Transaction} data
  * @return boolean
  */

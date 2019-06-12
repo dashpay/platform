@@ -186,6 +186,16 @@ const getUTXO = addr => new Promise((resolve, reject) => {
   });
 });
 
+const getMerkleBlocks = (bloomFilter, fromBlockHash, count) => new Promise((resolve, reject) => {
+  client.getMerkleBlocks(bloomFilter, fromBlockHash, count, (error, response) => {
+    if (error) {
+      reject(new DashCoreRpcError(error.message));
+    } else {
+      resolve(response.result);
+    }
+  });
+});
+
 /**
  *  Layer 2 endpoints
  *  These functions represent endpoints on the data layer
@@ -255,4 +265,5 @@ module.exports = {
   getTransactionFirstInputAddress,
   getUser,
   getUTXO,
+  getMerkleBlocks,
 };

@@ -1,12 +1,16 @@
 const chai = require('chai');
 const dirtyChai = require('dirty-chai');
-const BloomFilter = require('bloom-filter');
 const {
-  Transaction, PrivateKey, Script, Address,
+  Transaction,
+  PrivateKey,
+  Script,
+  Address,
+  BloomFilter,
 } = require('@dashevo/dashcore-lib');
 
 const { Output, Input } = Transaction;
 const { expect } = chai;
+
 chai.use(dirtyChai);
 
 const testTransactionAgainstFilter = require('../../../lib/transactionsFilter/testTransactionAgainstFilter');
@@ -37,6 +41,7 @@ describe('testTransactionAgainstFilter', () => {
     const filter = BloomFilter.create(1, 0.0001);
     const address = new PrivateKey().toAddress();
     const tx = new Transaction().to(address, 10);
+
     filter.insert(address.hashBuffer);
 
     const vout = 0;
@@ -58,6 +63,7 @@ describe('testTransactionAgainstFilter', () => {
     const addressInFilter = new PrivateKey().toAddress();
     const addressInTransaction = new PrivateKey().toAddress();
     const tx = new Transaction().to(addressInTransaction, 10);
+
     filter.insert(addressInFilter.hashBuffer);
 
     const vout = 0;
@@ -79,10 +85,12 @@ describe('testTransactionAgainstFilter', () => {
     const filter = BloomFilter.create(1, 0.0001);
     const address = new PrivateKey().toAddress();
     const tx = new Transaction().to(address, 10);
+
     filter.nFlags = BloomFilter.BLOOM_UPDATE_ALL;
     filter.insert(address.hashBuffer);
 
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    let result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     const vout = 0;
     const txWIthInput = new Transaction().from({
@@ -92,7 +100,8 @@ describe('testTransactionAgainstFilter', () => {
       satoshis: tx.outputs[vout].satoshis,
     });
 
-    expect(testTransactionAgainstFilter(filter, txWIthInput)).to.be.true();
+    result = testTransactionAgainstFilter(filter, txWIthInput);
+    expect(result).to.be.true();
   });
 
   it('should not add outpoint to the filter if BLOOM_UPDATE_NONE flag is'
@@ -100,10 +109,12 @@ describe('testTransactionAgainstFilter', () => {
     const filter = BloomFilter.create(1, 0.0001);
     const address = new PrivateKey().toAddress();
     const tx = new Transaction().to(address, 10);
+
     filter.nFlags = BloomFilter.BLOOM_UPDATE_NONE;
     filter.insert(address.hashBuffer);
 
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    let result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     const vout = 0;
     const txWIthInput = new Transaction().from({
@@ -113,7 +124,8 @@ describe('testTransactionAgainstFilter', () => {
       satoshis: tx.outputs[vout].satoshis,
     });
 
-    expect(testTransactionAgainstFilter(filter, txWIthInput)).to.be.false();
+    result = testTransactionAgainstFilter(filter, txWIthInput);
+    expect(result).to.be.false();
   });
 
   it('should add outpoint to the filter if BLOOM_UPDATE_P2PUBKEY_ONLY,'
@@ -125,10 +137,12 @@ describe('testTransactionAgainstFilter', () => {
       script: Script.buildPublicKeyOut(pubKey),
     });
     const tx = new Transaction().addOutput(output);
+
     filter.nFlags = BloomFilter.BLOOM_UPDATE_P2PUBKEY_ONLY;
     filter.insert(pubKey.toBuffer());
 
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    let result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     const vout = 0;
     const txWIthInput = new Transaction().from({
@@ -138,7 +152,8 @@ describe('testTransactionAgainstFilter', () => {
       satoshis: tx.outputs[vout].satoshis,
     });
 
-    expect(testTransactionAgainstFilter(filter, txWIthInput)).to.be.true();
+    result = testTransactionAgainstFilter(filter, txWIthInput);
+    expect(result).to.be.true();
   });
 
   it('should not add outpoint to the filter if BLOOM_UPDATE_P2PUBKEY_ONLY,'
@@ -146,10 +161,12 @@ describe('testTransactionAgainstFilter', () => {
     const filter = BloomFilter.create(1, 0.0001);
     const address = new PrivateKey().toAddress();
     const tx = new Transaction().to(address, 10);
+
     filter.nFlags = BloomFilter.BLOOM_UPDATE_P2PUBKEY_ONLY;
     filter.insert(address.hashBuffer);
 
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    let result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     const vout = 0;
     const txWIthInput = new Transaction().from({
@@ -159,7 +176,8 @@ describe('testTransactionAgainstFilter', () => {
       satoshis: tx.outputs[vout].satoshis,
     });
 
-    expect(testTransactionAgainstFilter(filter, txWIthInput)).to.be.false();
+    result = testTransactionAgainstFilter(filter, txWIthInput);
+    expect(result).to.be.false();
   });
 
   it('should add outpoint to the filter if BLOOM_UPDATE_P2PUBKEY_ONLY'
@@ -175,10 +193,12 @@ describe('testTransactionAgainstFilter', () => {
       script: Script.buildMultisigOut(pubKeys, 2),
     });
     const tx = new Transaction().addOutput(output);
+
     filter.nFlags = BloomFilter.BLOOM_UPDATE_P2PUBKEY_ONLY;
     pubKeys.forEach(pubKey => filter.insert(pubKey.toBuffer()));
 
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    let result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     const vout = 0;
     const txWIthInput = new Transaction().from({
@@ -188,7 +208,8 @@ describe('testTransactionAgainstFilter', () => {
       satoshis: tx.outputs[vout].satoshis,
     });
 
-    expect(testTransactionAgainstFilter(filter, txWIthInput)).to.be.true();
+    result = testTransactionAgainstFilter(filter, txWIthInput);
+    expect(result).to.be.true();
   });
 
   it('should not add outpoint to the filter if output is multisig and '
@@ -204,10 +225,12 @@ describe('testTransactionAgainstFilter', () => {
       script: Script.buildMultisigOut(pubKeys, 2),
     });
     const tx = new Transaction().addOutput(output);
+
     filter.nFlags = BloomFilter.BLOOM_UPDATE_NONE;
     pubKeys.forEach(pubKey => filter.insert(pubKey.toBuffer()));
 
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    let result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     const vout = 0;
     const txWIthInput = new Transaction().from({
@@ -217,7 +240,8 @@ describe('testTransactionAgainstFilter', () => {
       satoshis: tx.outputs[vout].satoshis,
     });
 
-    expect(testTransactionAgainstFilter(filter, txWIthInput)).to.be.false();
+    result = testTransactionAgainstFilter(filter, txWIthInput);
+    expect(result).to.be.false();
   });
 
   it('should pass the same test vector as dashcore implementation does', () => {
@@ -237,43 +261,53 @@ describe('testTransactionAgainstFilter', () => {
 
     let filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(txHash, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    let result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(inputSignature, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(inputPubKey, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(outputAddress, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(outputAddress2, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(outputIndex, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(randomHash, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.false();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.false();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(randomAddress, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.false();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.false();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(irrelevantOutputIndex, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.false();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.false();
 
     filter = BloomFilter.create(1, 0.0001, 0, BloomFilter.BLOOM_UPDATE_ALL);
     filter.insert(Buffer.from(irrelevantOutputIndex2, 'hex'));
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.false();
+    result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.false();
   });
 
   it('should be able to handle coinbase tx', () => {
@@ -283,6 +317,7 @@ describe('testTransactionAgainstFilter', () => {
     const filter = BloomFilter.create(1, 0.0001);
     filter.insert(address.hashBuffer);
 
-    expect(testTransactionAgainstFilter(filter, tx)).to.be.true();
+    const result = testTransactionAgainstFilter(filter, tx);
+    expect(result).to.be.true();
   });
 });

@@ -12,7 +12,7 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
-const BloomFilter = require('bloom-filter');
+const { BloomFilter } = require('@dashevo/dashcore-lib');
 const { TransactionFilterResponse } = require('@dashevo/dapi-grpc');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');

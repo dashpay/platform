@@ -1,5 +1,4 @@
-const BloomFilter = require('bloom-filter');
-const { MerkleBlock } = require('@dashevo/dashcore-lib');
+const { MerkleBlock, BloomFilter } = require('@dashevo/dashcore-lib');
 const { TransactionFilterResponse } = require('@dashevo/dapi-grpc');
 
 const TransactionHashesCache = require('../../../transactionsFilter/TransactionHashesCache');
