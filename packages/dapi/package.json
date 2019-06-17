@@ -10,7 +10,8 @@
     "test:integration": "node test/integration/",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "oas:generate": "swagger-jsdoc -d doc/swaggerDef.js lib/rpcServer/**/*.js -o doc/swagger.json",
+    "oas:setversion": "jq -r .version package.json | xargs -I{} sed -i \"s/version:.*/version: '{}',/\" doc/swaggerDef.js",
+    "oas:generate": "npm run oas:setversion && swagger-jsdoc -d doc/swaggerDef.js lib/rpcServer/**/*.js -o doc/swagger.json",
     "check-package": "npm run check-package:name && npm run check-package:version",
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)"
