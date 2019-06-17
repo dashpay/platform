@@ -51,6 +51,7 @@ module.exports = async function injectPlugin(
         } else rej(new InjectionErrorCannotInjectUnknownDependency(pluginName, dependencyName));
       }
     });
+
     switch (pluginType) {
       case 'Worker':
         self.plugins.workers[pluginName] = plugin;
@@ -85,12 +86,14 @@ module.exports = async function injectPlugin(
         break;
     }
 
-
     if (is.fn(plugin.onInjected)) {
       if (awaitOnInjection) await plugin.onInjected();
       else plugin.onInjected();
     }
 
+    if (pluginType === 'DAP' && plugin.verifyOnInjected) {
+      await plugin.verifyDAP(this.transport.transport);
+    }
 
     return res(plugin);
   });
