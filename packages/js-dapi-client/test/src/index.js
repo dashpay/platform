@@ -1,5 +1,9 @@
 const sinon = require('sinon');
-const { TransactionsFilterStreamPromiseClient } = require('@dashevo/dapi-grpc');
+const {
+  CorePromiseClient,
+  LastUserStateTransitionHashResponse,
+  TransactionsFilterStreamPromiseClient,
+} = require('@dashevo/dapi-grpc');
 const chai = require('chai');
 const { EventEmitter } = require('events');
 const DAPIClient = require('../../src/index');
@@ -922,6 +926,49 @@ describe('api', () => {
       const actualStream = await client.subscribeToTransactionsWithProofs(bloomFilter);
 
       expect(actualStream).to.be.equal(stream);
+    });
+  });
+
+  describe('#getLastUserStateTransitionHash', () => {
+    let userId;
+    let getLastUserStateTransitionHashStub;
+
+    beforeEach(() => {
+      userId = Buffer.alloc(256);
+
+      getLastUserStateTransitionHashStub = sinon
+        .stub(CorePromiseClient.prototype, 'getLastUserStateTransitionHash');
+    });
+
+    afterEach(() => {
+      getLastUserStateTransitionHashStub.restore();
+    });
+
+    it('should return a hex string if the last ST is present', async () => {
+      const subTxHash = Buffer.from('536f6d65537562547848617368', 'hex');
+
+      const response = new LastUserStateTransitionHashResponse();
+      response.setStateTransitionHash(subTxHash);
+
+      getLastUserStateTransitionHashStub.resolves(response);
+
+      const client = new DAPIClient();
+
+      const result = await client.getLastUserStateTransitionHash(userId);
+
+      expect(result).to.equal(subTxHash.toString('hex'));
+    });
+
+    it('should return null if the last ST is not present', async () => {
+      const response = new LastUserStateTransitionHashResponse();
+
+      getLastUserStateTransitionHashStub.resolves(response);
+
+      const client = new DAPIClient();
+
+      const result = await client.getLastUserStateTransitionHash(userId);
+
+      expect(result).to.equal(null);
     });
   });
 });
