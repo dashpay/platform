@@ -256,6 +256,7 @@ Insight-Client has been removed from MVP and is not working since Wallet-lib v3.
 
 - [Wallet](/docs/wallet.md)
 - [Account](/docs/account.md)
+- [Events](/docs/events.md)
 - [KeyChain](/docs/keychain.md)
 - [Plugins](/docs/plugins.md)
 - [Storage](/docs/storage.md)
