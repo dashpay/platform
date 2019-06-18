@@ -2,6 +2,7 @@ const sinon = require('sinon');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const RPCClient = require('../../src/RPCClient');
+const RPCError = require("../../src/errors/RPCError");
 const axios = require('axios');
 
 chai.use(chaiAsPromised);
@@ -23,6 +24,9 @@ describe('RPCClient', async () => {
     }));
     axiosStub.withArgs(testPath, {jsonrpc: '2.0', method: 'test', params:['invalid data'], id: 1}).returns(new Promise((resolve) => {
       resolve({ status: 200, data: {result: 'passed', error: { message: 'Invalid data' }} });
+    }));
+    axiosStub.withArgs(testPath, {jsonrpc: '2.0', method: 'test', params:['invalid data for error.data'], id: 1}).returns(new Promise((resolve) => {
+      resolve({ status: 200, data: {result: 'passed', error: { message: 'Invalid data for error.data', data: "additional data here" }} });
     }));
   });
 
@@ -47,14 +51,34 @@ describe('RPCClient', async () => {
         host: 'stubbed_address',
         port: 4567
       }, 'test', ['wrong data']);
-      await expect(promise).to.be.rejectedWith('');
+      await expect(promise).to.be.rejectedWith(Error, '');
     });
     it('Should throw if there is error object in response body', async() => {
       const promise = RPCClient.request({
         host: 'stubbed_address',
         port: 4567
       }, 'test', ['invalid data']);
-      await expect(promise).to.be.rejectedWith('RPC error: test: Invalid data');
+      try{
+        await promise;
+      } catch (err) {
+        expect(err).to.be.an.instanceof(RPCError);
+        expect(err.message).to.equal('DAPI RPC error: test: Invalid data');
+        expect(err.getData()).to.equal(undefined);
+      }
     });
+    it('Should throw if there is error object with data in response body', async() => {
+      const promise = RPCClient.request({
+        host: 'stubbed_address',
+        port: 4567
+      }, 'test', ['invalid data for error.data']);
+      try{
+        await promise;
+      } catch (err) {
+        expect(err).to.be.an.instanceof(RPCError);
+        expect(err.message).to.equal('DAPI RPC error: test: Invalid data for error.data');
+        expect(err.getData()).to.equal('additional data here');
+      }
+    });
+
   })
 });

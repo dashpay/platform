@@ -8,6 +8,8 @@ const rpcClient = require('../../src/RPCClient');
 const config = require('../../src/config');
 const SMNListFixture = require('../fixtures/mnList');
 
+const RPCError = require("../../src/errors/RPCError");
+
 const {
   Transaction,
   PrivateKey,
@@ -368,7 +370,7 @@ describe('api', () => {
             if (address === validAddressWithoutOutputs) {
               return [];
             }
-            throw new Error('Address not found');
+            throw new RPCError('DAPI RPC error: getBlockHash: Error: Address not found');
           }
           if (method === 'getBalance') {
             if (address === validAddressWithOutputs) {
@@ -377,7 +379,7 @@ describe('api', () => {
             if (address === validAddressWithoutOutputs) {
               return 0;
             }
-            throw new Error('Address not found');
+            throw new RPCError('DAPI RPC error: getBlockHash: Error: Address not found');
           }
           if (method === 'getUser') {
             /*
@@ -391,18 +393,18 @@ describe('api', () => {
                   return validBlockchainUserObject;
                 }
               }
-              throw new Error('User with such username not found');
+              throw new RPCError('DAPI RPC error: getBlockHash: Error: User with such username not found');
             } else {
               if (userId === validBlockchainUserObject.regtxid) {
                 return validBlockchainUserObject;
               }
-              throw new Error('User with such od not found');
+              throw new RPCError('DAPI RPC error: getBlockHash: Error: User with such od not found');
             }
-            throw new Error('Not found');
+            throw new RPCError('Not found');
           }
           if (method === 'sendRawTransition') {
             if (!rawTransitionHeader) {
-              throw new Error('Data packet is missing');
+              throw new RPCError('DAPI RPC error: getBlockHash: Error: Data packet is missing');
             }
             return transitionHash;
           }
@@ -421,7 +423,7 @@ describe('api', () => {
             if (height === 0) {
               return validBaseBlockHash;
             }
-            throw new Error('Invalid block height');
+            throw new RPCError('DAPI RPC error: getBlockHash: Error: Invalid block height');
           }
           if (method === 'getMNList') {
             return [];
@@ -569,7 +571,7 @@ describe('api', () => {
     });
     it('Should throw error if address is invalid/not found', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.getUTXO(invalidAddress)).to.be.rejectedWith('DAPI RPC error: getUTXO: Error: Address not found');
+      await expect(dapi.getUTXO(invalidAddress)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: Address not found');
     });
   });
   describe('.address.getAddressSummary', () => {
@@ -585,7 +587,7 @@ describe('api', () => {
     it('Should equal options.retries passed in', async () => {
       const options = { retries: 1 };
       const dapi = new DAPIClient(options);
-      const summary = await dapi.getAddressSummary(validAddressWithOutputs);
+      await dapi.getAddressSummary(validAddressWithOutputs);
       expect(dapi.retries).to.equal(1);
     });
   });
@@ -640,17 +642,17 @@ describe('api', () => {
     });
     it('Should throw error if address is invalid', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.getBalance(invalidAddress)).to.be.rejectedWith('DAPI RPC error: getBalance: Error: Address not found');
+      await expect(dapi.getBalance(invalidAddress)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: Address not found');
     });
   });
   describe('.user.getUserByName', () => {
     it('Should throw error if username or regtx is incorrect', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.getUserByName(invalidUsername)).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such username not found');
+      await expect(dapi.getUserByName(invalidUsername)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: User with such username not found');
     });
     it('Should throw error if user not found', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.getUserByName(notExistingUsername)).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such username not found');
+      await expect(dapi.getUserByName(notExistingUsername)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: User with such username not found');
     });
     it('Should return user data if user exists', async () => {
       const dapi = new DAPIClient();
@@ -663,11 +665,11 @@ describe('api', () => {
       const dapi = new DAPIClient();
       const user = await dapi.getUserByName(validUsername);
       dapi.generate(10);
-      await expect(dapi.getUserById(user.regtxid + 'fake')).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such od not found');
+      await expect(dapi.getUserById(user.regtxid + 'fake')).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: User with such od not found');
     });
     it('Should throw error if user id not found', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.getUserById(notExistingUsername)).to.be.rejectedWith('DAPI RPC error: getUser: Error: User with such od not found');
+      await expect(dapi.getUserById(notExistingUsername)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: User with such od not found');
     });
     it('Should return user data if user exists', async () => {
       const dapi = new DAPIClient();
@@ -719,11 +721,11 @@ describe('api', () => {
     });
     it('Should be rejected if height is invalid', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.getBlockHash(1000000)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
-      await expect(dapi.getBlockHash('some string')).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
-      await expect(dapi.getBlockHash(1.2)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
-      await expect(dapi.getBlockHash(-1)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
-      await expect(dapi.getBlockHash(true)).to.be.rejectedWith('DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash(1000000)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash('some string')).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash(1.2)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash(-1)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: Invalid block height');
+      await expect(dapi.getBlockHash(true)).to.be.rejectedWith(RPCError, 'DAPI RPC error: getBlockHash: Error: Invalid block height');
     });
   });
 
@@ -826,7 +828,7 @@ describe('api', () => {
     });
     it('Should throw error when data packet is missing', async () => {
       const dapi = new DAPIClient();
-      await expect(dapi.sendRawTransition()).to.be.rejectedWith('DAPI RPC error: sendRawTransition: Error: Data packet is missing');
+      await expect(dapi.sendRawTransition()).to.be.rejectedWith(RPCError, 'Data packet is missing');
     });
   });
 

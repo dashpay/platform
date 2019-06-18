@@ -1,5 +1,7 @@
 const axios = require('axios');
 
+const RPCError = require('./errors/RPCError');
+
 const defaultHost = '127.0.0.1';
 
 /**
@@ -29,7 +31,7 @@ async function request(url, method, params, options = {}) {
   }
   const { data } = res;
   if (data.error) {
-    throw new Error(`DAPI RPC error: ${method}: ${data.error.message}`);
+    throw new RPCError(`DAPI RPC error: ${method}: ${data.error.message}`, data.error.data);
   }
   return data.result;
 }

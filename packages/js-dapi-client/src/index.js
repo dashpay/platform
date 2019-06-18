@@ -58,7 +58,7 @@ class DAPIClient {
       return await this.makeRequest(method, params, excludedIps);
     } catch (err) {
       if (err.code !== 'ECONNABORTED' && err.code !== 'ECONNREFUSED') {
-        throw new Error(`DAPI RPC error: ${method}: ${err}`);
+        throw err;
       }
       if (retriesCount > 0) {
         let excludedOnNextTry = [];

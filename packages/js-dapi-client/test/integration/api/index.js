@@ -19,6 +19,7 @@ const DashPlatformProtocol = require('@dashevo/dpp');
 const entropy = require('@dashevo/dpp/lib/util/entropy');
 const DAPIClient = require('../../../src/index');
 const MNDiscovery = require('../../../src/MNDiscovery/index');
+const RPCError = require("../../../src/errors/RPCError");
 
 const wait = require('../../utils/wait');
 
@@ -39,7 +40,6 @@ describe('basicAPIs', () => {
   let insightURL;
 
   let dpp;
-
   let dapiClient;
 
   let faucetPrivateKey;
@@ -64,10 +64,14 @@ describe('basicAPIs', () => {
       .toString();
 
     bobUserName = Math.random().toString(36).substring(7);
+
     const contract = dpp.contract.create(entropy.generate().substr(0, 24), {
       profile: {
         indices: [
-          { properties: [{ $userId: 'asc' }], unique: true },
+          {
+            properties: [{ $userId: 'asc' }],
+            unique: true
+          },
         ],
         properties: {
           avatarUrl: {
@@ -83,7 +87,10 @@ describe('basicAPIs', () => {
       },
       contact: {
         indices: [
-          { properties: [{ $userId: 'asc' }, { toUserId: 'asc' }], unique: true },
+          {
+            properties: [{ $userId: 'asc' }, { toUserId: 'asc' }],
+            unique: true
+          },
         ],
         properties: {
           toUserId: {
@@ -95,7 +102,7 @@ describe('basicAPIs', () => {
         },
         required: ['toUserId', 'publicKey'],
         additionalProperties: false,
-      },
+      }
     });
 
     dpp.setContract(contract);
@@ -238,8 +245,8 @@ describe('basicAPIs', () => {
       const height = await dapiClient.getBestBlockHeight();
       const dapiOutput = await dapiClient.getBlockHeaders(height, 1);
       const blockHash = await dapiClient.getBlockHash(height);
-      const coreOutput = await masterNode.dashCore.getApi().getblockheaders(blockHash);
-      expect(dapiOutput).to.be.deep.equal([coreOutput.result[0]]);
+      const coreOutput = await masterNode.dashCore.getApi().getblockheader(blockHash, false);
+      expect(dapiOutput).to.be.deep.equal([coreOutput.result]);
     });
 
     it('should return correct getBlockHash', async () => {
@@ -359,7 +366,6 @@ describe('basicAPIs', () => {
     it('should searchUsers', async () => {
       let dapiOutput;
       for (let i = 0; i <= 20; i++) {
-        console.log(i);
         dapiOutput = await dapiClient.searchUsers(bobUserName);
         if (dapiOutput.totalCount > 0) {
           break;
@@ -383,7 +389,7 @@ describe('basicAPIs', () => {
         .setType(Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION);
 
       transaction.extraPayload
-        .setRegTxId(bobPreviousST)
+        .setRegTxId(bobRegTxId)
         .setHashPrevSubTx(bobPreviousST)
         .setHashSTPacket(stPacket.hash())
         .setCreditFee(1000)
@@ -478,6 +484,54 @@ describe('basicAPIs', () => {
     });
   });
 
+  describe('Errors handling', () => {
+    it('should fetch errors from core', async function it() {
+      this.timeout(50000);
+
+      bobPrivateKey = new PrivateKey();
+      const validPayload = new Transaction.Payload.SubTxRegisterPayload()
+        .setUserName(bobUserName)
+        .setPubKeyIdFromPrivateKey(bobPrivateKey).sign(bobPrivateKey);
+
+      const inputs = await dapiClient.getUTXO(faucetAddress);
+
+      const transaction = Transaction()
+        .setType(Transaction.TYPES.TRANSACTION_SUBTX_REGISTER)
+        .setExtraPayload(validPayload)
+        .from(inputs.items)
+        .addFundingOutput(10000)
+        .change(faucetAddress)
+        .sign(faucetPrivateKey);
+
+      await expect(dapiClient.sendRawTransaction(transaction.serialize())).to.be.rejectedWith(RPCError,
+        'DAPI RPC error: sendRawTransaction: 16: bad-subtx-dupusername');
+    });
+
+    it('should fetch errors from drive' , async () => {
+      // 1. Create ST packet
+      const stPacket = dpp.packet.create(dpp.getContract());
+
+      // 2. Create State Transition
+      const transaction = new Transaction()
+        .setType(Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION);
+
+      transaction.extraPayload
+        .setRegTxId(bobRegTxId)
+        .setHashPrevSubTx(bobPreviousST)
+        .setHashSTPacket(stPacket.hash())
+        .setCreditFee(1000)
+        .sign(bobPrivateKey);
+
+      const transitionHash = dapiClient.sendRawTransition(
+        transaction.serialize(),
+        stPacket.serialize().toString('hex'),
+      );
+      await expect(transitionHash).to.be.rejectedWith(RPCError,
+        'DAPI RPC error: sendRawTransition: Invalid "stPacket" and "stateTransition" params: Invalid ST Packet data',
+        '[{"name":"ContractAlreadyPresentError"');
+    });
+
+  });
 
   xdescribe('TODO', () => {
     it('sendRawIxTransaction', async () => {

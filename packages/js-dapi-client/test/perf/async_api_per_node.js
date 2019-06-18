@@ -74,7 +74,7 @@ describe("Performance", function () {
         it("getUTXO", async function it() {
             this.timeout(timeoutTest * 2);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numPartRequests);
                 for (let index = 0; index < numPartRequests; ++index) {
                     queries[index] = dapiClient.getUTXO(faucetAddress);
@@ -97,7 +97,7 @@ describe("Performance", function () {
         it("getAddressSummary", async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getAddressSummary(faucetAddress);
@@ -121,7 +121,7 @@ describe("Performance", function () {
         it("getAddressUnconfirmedBalance", async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getAddressUnconfirmedBalance(faucetAddress);
@@ -145,7 +145,7 @@ describe("Performance", function () {
         it("getAddressTotalReceived", async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getAddressTotalReceived(faucetAddress);
@@ -168,7 +168,7 @@ describe("Performance", function () {
         it("getAddressTotalSent", async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getAddressTotalSent(faucetAddress);
@@ -192,7 +192,7 @@ describe("Performance", function () {
         it("getTransactionsByAddress", async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getTransactionsByAddress(faucetAddress);
@@ -217,7 +217,7 @@ describe("Performance", function () {
         it("getBestBlockHeight", async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getBestBlockHeight();
@@ -241,7 +241,7 @@ describe("Performance", function () {
             this.timeout(timeoutTest);
             const height = await dapiClient.getBestBlockHeight();
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getBlockHash(height);
@@ -266,7 +266,7 @@ describe("Performance", function () {
             this.timeout(timeoutTest);
             const height = await dapiClient.getBestBlockHeight();
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getBlockHeaders(height, 3);
@@ -291,7 +291,7 @@ describe("Performance", function () {
             this.timeout(timeoutTest);
             const today = new Date().toISOString().substring(0, 10);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getBlocks(today, 1);
@@ -342,7 +342,7 @@ describe("Performance", function () {
         it("getHistoricBlockchainDataSyncStatus", async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getHistoricBlockchainDataSyncStatus();
@@ -401,7 +401,7 @@ describe("Performance", function () {
         it('sendRawTransaction', async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const inputs = await dapiClient.getUTXO(faucetAddress);
                 const queries = new Array(1);
                 const bobUserName = Math.random().toString(36).substring(7);
@@ -446,7 +446,7 @@ describe("Performance", function () {
         it('estimateFee', async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.estimateFee(Math.floor(Math.random() * 100) + 1);
@@ -469,7 +469,7 @@ describe("Performance", function () {
         it('getUserByName', async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.getUserByName(bobUserNames[Math.floor(Math.random() * bobUserNames.length)]);
@@ -519,7 +519,7 @@ describe("Performance", function () {
         it('sendRawTransition', async function it() {
             this.timeout(timeoutTest);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const contract = dpp.contract.create(entropy.generate().substr(0, 24), {
                     user: {
                         properties: {
@@ -626,7 +626,7 @@ describe("Performance", function () {
             this.timeout(timeoutTest);
             expect(dapIds).to.have.lengthOf.above(0);
             let results = [];
-            for (var i = 0; i < numLoops; i += 1) {
+            for (let i = 0; i < numLoops; i += 1) {
                 const queries = new Array(numRequests);
                 for (let index = 0; index < numRequests; ++index) {
                     queries[index] = dapiClient.fetchDocuments(dapIds[Math.floor(Math.random() * dapIds.length)], 'user', {});
