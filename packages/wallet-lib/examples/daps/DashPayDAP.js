@@ -2,7 +2,7 @@ const { utils, plugins, CONSTANTS } = require('../../src');
 const Dashcore = require('@dashevo/dashcore-lib');
 const dashPaySchema = require('./dashPaySchema.json');
 
-const DAP = plugins.DAP;
+const { DAP } = plugins;
 
 class DashPayDAP extends DAP {
   constructor(props) {

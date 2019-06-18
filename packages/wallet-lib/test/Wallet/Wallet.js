@@ -7,6 +7,8 @@ const { WALLET_TYPES } = require('../../src/CONSTANTS');
 const { Wallet } = require('../../src');
 const inMem = require('../../src/adapters/InMem');
 const Dashcore = require('@dashevo/dashcore-lib');
+const fromHDPublicKey = require('../../src/Wallet/fromHDExtPublicKey');
+const gatherSail = require('../fixtures/gathersail');
 
 const mocks = {
   adapter: inMem,
@@ -167,7 +169,7 @@ describe('Wallet - Get/Create Account', () => {
       walletTestnet.disconnect();
     });
   });
-  it('should be able to create an account at a specific index', () => {
+  it('should be able to create an account at a specific index', (done) => {
     const network = Dashcore.Networks.testnet;
     const passphrase = 'Evolution';
     const config = {
@@ -189,9 +191,12 @@ describe('Wallet - Get/Create Account', () => {
     expect(accountSpecificIndex.accountIndex).to.equal(42);
     walletTestnet.storage.events.on('CONFIGURED', () => {
       walletTestnet.disconnect();
+      done();
     });
   });
-  it('should stop the wallet', () => {
-
+  it('should not leak', () => {
+    const mockOpts1 = { };
+    fromHDPublicKey.call(mockOpts1, gatherSail.testnet.external.hdpubkey);
+    expect(mockOpts1.keyChain.keys).to.deep.equal({});
   });
 });

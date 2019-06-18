@@ -34,7 +34,8 @@ const initialStore = {
   transactions: {},
   chains: {},
 };
-const defaultOpts = {
+// eslint-disable-next-line no-underscore-dangle
+const _defaultOpts = {
   rehydrate: true,
   autosave: true,
   autosaveIntervalTime: CONSTANTS.STORAGE.autosaveIntervalTime,
@@ -46,7 +47,8 @@ const defaultOpts = {
  * should be limited.
  * */
 class Storage {
-  constructor(opts = defaultOpts) {
+  constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     Object.assign(Storage.prototype, {
       addNewTxToAddress,
       addUTXOToAddress,

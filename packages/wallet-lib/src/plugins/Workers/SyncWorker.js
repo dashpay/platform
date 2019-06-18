@@ -4,13 +4,15 @@ const { ValidTransportLayerRequired, InvalidTransactionObject } = require('../..
 const EVENTS = require('../../EVENTS');
 const { UNCONFIRMED_TRANSACTION_STATUS_CODE, SECURE_TRANSACTION_CONFIRMATIONS_NB } = require('../../CONSTANTS');
 
-const defaultOpts = {
+// eslint-disable-next-line no-underscore-dangle
+const _defaultOpts = {
   fetchThreshold: 10 * 60 * 1000,
   workerIntervalTime: 1 * 10 * 1000,
 };
 
 class SyncWorker extends Worker {
-  constructor(opts = defaultOpts) {
+  constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     const params = Object.assign({
       name: 'SyncWorker',
       executeOnStart: true,
@@ -122,9 +124,9 @@ class SyncWorker extends Worker {
           const hasReachRefreshThreshold = address.fetchedLast < (Date.now() - self.fetchThreshold);
           if (
             isFirstAndUnused
-            || hasUnconfirmedBalance
-            || hasReachRefreshThreshold
-            || hasMostChanceToReceiveTx
+              || hasUnconfirmedBalance
+              || hasReachRefreshThreshold
+              || hasMostChanceToReceiveTx
           ) {
             toFetchAddresses.push(address);
           }
@@ -246,4 +248,5 @@ class SyncWorker extends Worker {
     }
   }
 }
+
 module.exports = SyncWorker;

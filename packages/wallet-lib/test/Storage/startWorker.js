@@ -3,7 +3,7 @@ const startWorker = require('../../src/Storage/startWorker');
 
 const noop = () => {};
 
-describe('Storage - startWorker', function suite() {
+describe('Storage - startWorker', () => {
   it('should set an interval', () => {
     const defaultIntervalValue = 10000;
     const self = {

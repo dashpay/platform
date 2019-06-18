@@ -1,5 +1,5 @@
-const crypto = require('crypto'),
-  fs = require('fs');
+const crypto = require('crypto');
+const fs = require('fs');
 const { DAP } = require('../../src/plugins');
 
 const registerDAP = () => {

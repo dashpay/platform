@@ -21,7 +21,7 @@ describe('Storage - getTransaction', () => {
       },
     };
     self.store.transactions[validTx.txid] = validTx;
-    const txid = validTx.txid;
+    const { txid } = validTx;
     expect(getTransaction.call(self, txid)).to.deep.equal(validTx);
   });
 });

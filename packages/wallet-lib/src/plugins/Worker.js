@@ -1,7 +1,8 @@
 const _ = require('lodash');
 const StandardPlugin = require('./StandardPlugin');
 
-const defaultOpts = {
+// eslint-disable-next-line no-underscore-dangle
+const _defaultOpts = {
   workerIntervalTime: 10 * 1000,
   executeOnStart: false,
   firstExecutionRequired: false,
@@ -9,7 +10,8 @@ const defaultOpts = {
 };
 
 class Worker extends StandardPlugin {
-  constructor(opts = defaultOpts) {
+  constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     super(Object.assign({ type: 'Worker' }, opts));
     this.worker = null;
     this.workerPass = 0;

@@ -2,7 +2,8 @@ const { Worker } = require('../');
 const { ValidTransportLayerRequired } = require('../../errors');
 const EVENTS = require('../../EVENTS');
 
-const defaultOpts = {
+// eslint-disable-next-line no-underscore-dangle
+const _defaultOpts = {
   workerIntervalTime: 0,
   workerMaxPass: 1, // Unique execution on start
   firstExecutionRequired: true,
@@ -10,7 +11,8 @@ const defaultOpts = {
 };
 
 class ChainWorker extends Worker {
-  constructor(opts = defaultOpts) {
+  constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     const params = Object.assign({
       name: 'ChainWorker',
       executeOnStart: true,
@@ -84,4 +86,5 @@ class ChainWorker extends Worker {
     }
   }
 }
+
 module.exports = ChainWorker;

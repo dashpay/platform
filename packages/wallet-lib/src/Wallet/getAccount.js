@@ -1,7 +1,8 @@
 const _ = require('lodash');
 const { is } = require('../utils');
 
-const defaultOpts = {
+// eslint-disable-next-line no-underscore-dangle
+const _defaultOpts = {
   index: 0,
 };
 /**
@@ -10,7 +11,9 @@ const defaultOpts = {
  * @param accountOpts.index - Default: 0, set a specific index to get
  * @return {*|account}
  */
-function getAccount(accountOpts = defaultOpts) {
+
+function getAccount(accountOpts = JSON.parse(JSON.stringify(_defaultOpts))) {
+  const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
   const accountIndex = (_.has(accountOpts, 'index') && is.num(accountOpts.index))
     ? accountOpts.index
     : defaultOpts.index;

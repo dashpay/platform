@@ -1,24 +1,41 @@
 const {
-  PrivateKey, HDPublicKey, crypto, Transaction,
+  PrivateKey, HDPublicKey, HDPrivateKey, crypto, Transaction, Networks,
 } = require('@dashevo/dashcore-lib');
 const { has } = require('lodash');
+const { BIP44_TESTNET_ROOT_PATH, BIP44_LIVENET_ROOT_PATH } = require('./CONSTANTS');
+
+// eslint-disable-next-line no-underscore-dangle
+const _defaultOpts = {
+  network: Networks.testnet.toString(),
+  keys: {},
+};
 
 class KeyChain {
-  constructor(opts) {
-    if (!opts) throw new Error('Expect some parameters to construct keychain');
+  constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
+    this.network = defaultOpts.network;
+    this.keys = Object.assign({}, defaultOpts.keys);
+
     if (has(opts, 'HDPrivateKey')) {
       this.type = 'HDPrivateKey';
       this.HDPrivateKey = opts.HDPrivateKey;
+      this.network = this.HDPrivateKey.network;
     } else if (has(opts, 'HDPublicKey')) {
       this.type = 'HDPublicKey';
       this.HDPublicKey = opts.HDPublicKey;
+      this.network = this.HDPublicKey.network;
     } else if (has(opts, 'privateKey')) {
       this.type = 'privateKey';
       this.privateKey = opts.privateKey;
+    } else {
+      throw new Error('Expect privateKey, HDPublicKey or HDPrivateKey');
     }
-    this.keys = {
+    if (opts.network) this.network = opts.network;
+    if (opts.keys) this.keys = Object.assign({}, opts.keys);
+  }
 
-    };
+  updateNetwork(network = JSON.parse(JSON.stringify(_defaultOpts.network.toString()))) {
+    this.network = network;
   }
 
   /**
@@ -57,7 +74,7 @@ class KeyChain {
   getPrivateKey() {
     let pk;
     if (this.type === 'HDPrivateKey') {
-      pk = PrivateKey(this.HDPrivateKey);
+      pk = PrivateKey(this.HDPrivateKey.privateKey);
     }
     if (this.type === 'privateKey') {
       pk = PrivateKey(this.privateKey);
@@ -78,14 +95,23 @@ class KeyChain {
     }
     if (!this.keys[path]) {
       if (this.type === 'HDPrivateKey') {
-        this.keys[path] = this.generateKeyForPath(path, type);
+        this.keys[path] = this.generateKeyForPath(path, type).toString();
       }
       if (this.type === 'privateKey') {
-        this.keys[path] = this.getPrivateKey(path);
+        this.keys[path] = this.getPrivateKey(path).toString();
       }
     }
 
-    return this.keys[path];
+    return new HDPrivateKey(this.keys[path]);
+  }
+
+  /**
+   * Return a safier root path to derivate from
+   *
+   */
+  getHardenedFeaturePath() {
+    const pathRoot = (this.network.toString() === 'testnet') ? BIP44_TESTNET_ROOT_PATH : BIP44_LIVENET_ROOT_PATH;
+    return this.generateKeyForPath(pathRoot);
   }
 
   /**
@@ -119,4 +145,5 @@ class KeyChain {
     return obj;
   }
 }
+
 module.exports = KeyChain;

@@ -1,8 +1,8 @@
 const { StandardPlugin } = require('../../src/plugins/index');
 const Dashcore = require('@dashevo/dashcore-lib');
 
-const Payload = Dashcore.Transaction.Payload;
-const ProUpRevTxPayload = Payload.ProUpRevTxPayload;
+const { Payload } = Dashcore.Transaction;
+const { ProUpRevTxPayload } = Payload;
 
 class MasternodeUpdater extends StandardPlugin {
   updateMasternode() {

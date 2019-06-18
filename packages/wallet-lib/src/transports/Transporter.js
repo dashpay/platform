@@ -177,7 +177,15 @@ class Transporter {
   }
 
   getNetwork() {
-    return this.transport.network;
+    if (this.transport) {
+      if (this.transport.network) {
+        return this.transport.network;
+      }
+      if (this.transport.getNetwork) {
+        return this.transport.getNetwork();
+      }
+    }
+    return null;
   }
 
   async sendRawTransaction(rawtx, isIs) {

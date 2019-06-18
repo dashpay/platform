@@ -112,7 +112,7 @@ describe('Account - createTransaction', () => {
       accountIndex: 0,
       BIP44PATH: 'm/44\'/1\'/0\'',
       getPrivateKeys,
-      strategy: simpleDescendingAccumulator ,
+      strategy: simpleDescendingAccumulator,
       generateAddress,
       keyChain: new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(duringDevelopMnemonic, 'testnet', '') }),
       storage,

@@ -1,14 +1,14 @@
 const DAPIClient = require('@dashevo/dapi-client');
-const {Wallet, EVENTS} = require('../src');
+const { Wallet, EVENTS } = require('../src');
 
 const transport = new DAPIClient({
-  seeds: [{service: '18.237.69.61:3000'}],
+  seeds: [{ service: '18.237.69.61:3000' }],
   timeout: 20000,
   retries: 5,
 });
 
 const wallet = new Wallet({
-  mnemonic: "hurdle rebel rebuild skull add sustain local curious click industry illegal joy",
+  mnemonic: 'hurdle rebel rebuild skull add sustain local curious click industry illegal joy',
   network: 'testnet',
   transport,
 });
@@ -17,7 +17,6 @@ const account = wallet.getAccount();
 console.log(wallet.exportWallet());
 
 const start = async () => {
-
   // const HDExtPubKey = account.keyChain.getKeyForPath('m/44\'/1\'/0\'/0', 'HDPublicKey');
   // console.log(HDExtPubKey.toString());
 
@@ -26,7 +25,7 @@ const start = async () => {
   console.log(account.getUnusedAddress());
 };
 
-;
+
 account.events.on(EVENTS.PREFETCHED, (info) => {
   console.log('PREFETCHED');
 });
@@ -91,4 +90,3 @@ account.events.on(EVENTS.REHYDRATE_STATE_FAILED, (info) => {
 account.events.on(EVENTS.REHYDRATE_STATE_SUCCESS, (info) => {
   console.log('REHYDRATE_STATE_SUCCESS');
 });
-

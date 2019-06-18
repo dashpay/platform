@@ -12,7 +12,7 @@ function generateNewMnemonic() {
  * @param {String} passphrase
  * @return {HDPrivateKey}
  */
-function mnemonicToHDPrivateKey(mnemonic, network, passphrase = '') {
+function mnemonicToHDPrivateKey(mnemonic, network = 'testnet', passphrase = '') {
   if (!mnemonic) throw new Error('Expect mnemonic to be provided');
 
   return (mnemonic.constructor.name === Mnemonic.name)

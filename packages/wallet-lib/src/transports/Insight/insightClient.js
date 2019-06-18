@@ -5,7 +5,8 @@ const { is, dashToDuffs } = require('../../utils/index');
 // Here to avoid asking to much to the network when doing a nodemon for the tests.
 // Probably will require to mock the test part.
 
-const defaultOpts = {
+// eslint-disable-next-line no-underscore-dangle
+const _defaultOpts = {
   uris: {
     insight: {
       livenet: 'https://insight.dashevo.org/insight-api-dash',
@@ -23,7 +24,8 @@ const defaultOpts = {
  * Temporary class to perform request on insight instead of DAPI
  */
 class InsightClient {
-  constructor(opts = defaultOpts) {
+  constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     this.listeners = {};
     this.type = this.constructor.name;
     this.useSocket = (opts.useSocket) ? opts.useSocket : defaultOpts.useSocket;
@@ -39,6 +41,8 @@ class InsightClient {
   }
 
   setSocketURI(uri) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
+
     this.socketUri = (uri) || (defaultOpts.uris.sockets[this.network]);
     if (this.useSocket) {
       if (this.socket) {
@@ -59,6 +63,7 @@ class InsightClient {
   }
 
   setInsightURI(uri) {
+    const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     this.insightUri = (uri) || defaultOpts.uris.insight[this.network];
     return true;
   }

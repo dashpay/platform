@@ -21,7 +21,6 @@ const start = async () => {
   // console.log(tx.toString());
   // const bdc = await account.broadcastTransaction(tx.toString());
   // console.log(bdc)
-
 };
 
 account.events.on(EVENTS.GENERATED_ADDRESS, (info) => { console.log('GENERATED_ADDRESS'); });
