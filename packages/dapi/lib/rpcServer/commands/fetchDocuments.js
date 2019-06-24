@@ -98,15 +98,15 @@ const fetchDocumentsFactory = (driveAPI) => {
  *                          description: Mongo-like sort field
  *                        limit:
  *                          type: integer
- *                          default: ''
+ *                          default: 100
  *                          description: How many objects to fetch
  *                        startAt:
  *                          type: integer
- *                          default: ''
+ *                          default: 0
  *                          description: Number of objects to skip
  *                        startAfter:
  *                          type: integer
- *                          default: ''
+ *                          default: 0
  *                          description: Exlusive skip
  */
 /* eslint-enable max-len */
