@@ -1,4 +1,5 @@
 const grpc = require('grpc');
+const { promisify } = require('util');
 const jsonToProtobufInterceptorFactory = require('../../src/jsonToProtobufInterceptorFactory');
 const loadPackageDefinition = require('../../src/loadPackageDefinition');
 const {
@@ -28,12 +29,16 @@ class CorePromiseClient {
    */
   constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
     this.client = new CoreNodeJSClient(hostname, credentials, options);
+
+    this.client.getLastUserStateTransitionHash = promisify(
+      this.client.getLastUserStateTransitionHash.bind(this.client),
+    );
   }
 
   /**
    * @param {!LastUserStateTransitionHashRequest} lastUserStateTransitionHashRequest
    * @param {?Object<string, string>} metadata
-   * @return {!LastUserStateTransitionHashResponse}
+   * @return {Promise<!LastUserStateTransitionHashResponse>}
    */
   getLastUserStateTransitionHash(lastUserStateTransitionHashRequest, metadata = {}) {
     if (!isObject(metadata)) {
