@@ -3,6 +3,7 @@ const {
   CorePromiseClient,
   LastUserStateTransitionHashResponse,
   TransactionsFilterStreamPromiseClient,
+  TransactionsWithProofsRequest,
 } = require('@dashevo/dapi-grpc');
 const chai = require('chai');
 const { EventEmitter } = require('events');
@@ -22,6 +23,7 @@ const {
 const doubleSha256 = require('../utils/doubleSha256');
 
 chai.use(chaiAsPromised);
+
 const { expect } = chai;
 
 const validAddressWithOutputs = 'yXdxAYfK8eJgQmHpUzMaKEBhqwKQWKSezS';
@@ -692,12 +694,12 @@ describe('api', () => {
         limit: 10
       });
       expect(res).to.be.deep.equal({
-          "results": [
-            "dash",
-            "dash2"
-          ],
-          "totalCount": 2
-        });
+        "results": [
+          "dash",
+          "dash2"
+        ],
+        "totalCount": 2
+      });
     });
   });
   describe('.block.getBestBlockHash', () => {
@@ -902,28 +904,49 @@ describe('api', () => {
 
   describe('#subscribeToTransactionsWithProofs', () => {
     let stream;
+    let grpcClientSubscribeMock;
     beforeEach(() => {
       stream = new EventEmitter();
-      sinon
+      grpcClientSubscribeMock = sinon
         .stub(TransactionsFilterStreamPromiseClient.prototype, 'subscribeToTransactionsWithProofs')
         .returns(stream);
     });
 
     afterEach(() => {
-      TransactionsFilterStreamPromiseClient.prototype.subscribeToTransactionsWithProofs.restore();
+      grpcClientSubscribeMock.restore();
     });
 
     it('should return a stream', async () => {
       const client = new DAPIClient();
 
+      const fromBlockHeight = 1;
+      const count = 2;
+      const vData = Buffer.from([1]);
+
       const bloomFilter = {
-        vData: new Array([1]),
+        vData: vData.toString('base64'),
         nHashFuncs: 10,
         nTweak: Math.floor(Math.random() * 1000),
         nFlags: 1,
       };
 
-      const actualStream = await client.subscribeToTransactionsWithProofs(bloomFilter);
+      const actualStream = await client.subscribeToTransactionsWithProofs(
+        bloomFilter,
+        { fromBlockHeight, count }
+      );
+
+      expect(grpcClientSubscribeMock.callCount).to.equal(1);
+
+      const request = grpcClientSubscribeMock.getCall(0).args[0];
+
+      expect(request).to.be.an.instanceOf(TransactionsWithProofsRequest);
+
+      const actualBloomFilter = request.getBloomFilter();
+      expect(actualBloomFilter.toObject()).to.be.deep.equal(bloomFilter);
+
+      expect(request.getFromBlockHash()).to.equal('');
+      expect(request.getFromBlockHeight()).to.equal(fromBlockHeight);
+      expect(request.getCount()).to.equal(count);
 
       expect(actualStream).to.be.equal(stream);
     });
