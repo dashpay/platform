@@ -16,24 +16,34 @@ async function _initializeAccount(account, userUnsafePlugins) {
       // if not, then is it marked as requiring a first exec
       // if yes add to watcher list.
 
-      if (!account.offlineMode) {
-        account.injectPlugin(ChainWorker, true);
-      }
+      try {
+        if (!account.offlineMode) {
+          account.injectPlugin(ChainWorker, true);
+        }
 
-      if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDEXTPUBLIC].includes(account.walletType)) {
-        // Ideally we should move out from worker to event based
-        account.injectPlugin(BIP44Worker, true);
-      }
-      if (account.type === WALLET_TYPES.SINGLE_ADDRESS) {
-        account.getAddress('0'); // We force what is usually done by the BIP44Worker.
-      }
-      if (!account.offlineMode) {
-        account.injectPlugin(SyncWorker, true);
+        if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDEXTPUBLIC].includes(account.walletType)) {
+          // Ideally we should move out from worker to event based
+          account.injectPlugin(BIP44Worker, true);
+        }
+        if (account.type === WALLET_TYPES.SINGLE_ADDRESS) {
+          account.getAddress('0'); // We force what is usually done by the BIP44Worker.
+        }
+        if (!account.offlineMode) {
+          account.injectPlugin(SyncWorker, true);
+        }
+      } catch (e) {
+        console.error('Failed to perform standard injections');
+        console.error(e);
       }
     }
 
     _.each(userUnsafePlugins, (UnsafePlugin) => {
-      account.injectPlugin(UnsafePlugin, account.allowSensitiveOperations);
+      try {
+        account.injectPlugin(UnsafePlugin, account.allowSensitiveOperations);
+      } catch (e) {
+        console.error('Failed to inject plugin:', UnsafePlugin.name);
+        console.error(e);
+      }
     });
 
 

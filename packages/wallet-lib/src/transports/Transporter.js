@@ -16,14 +16,14 @@ function isValidTransport(transport) {
     let valid = true;
     const expectedKeys = [
       'getAddressSummary',
-      'getTransaction',
+      'getTransactionById',
       'getUTXO',
       'sendRawTransaction',
     ];
     expectedKeys.forEach((key) => {
       if (!transport[key]) {
-        console.log('missing', key);
         valid = false;
+        console.error(`Invalid Transporter. Expected key :${key}`);
       }
     });
     return valid;
@@ -134,7 +134,7 @@ class Transporter {
 
   async getTransaction(txid) {
     if (!is.txid(txid)) throw new Error(`Received an invalid txid to fetch : ${txid}`);
-    const data = await this.fetchAndReturn('getTransaction', txid);
+    const data = await this.fetchAndReturn('getTransactionById', txid);
     if (!data) {
       return false;
     }
