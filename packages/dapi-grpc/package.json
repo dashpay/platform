@@ -40,7 +40,8 @@
     "grpc-web": "^1.0.4",
     "lodash.camelcase": "^4.3.0",
     "lodash.isplainobject": "^4.0.6",
-    "lodash.snakecase": "^4.1.1"
+    "lodash.snakecase": "^4.1.1",
+    "protobufjs": "^6.8.8"
   },
   "devDependencies": {
     "eslint": "^5.16.0",
