@@ -1,24 +1,64 @@
 const grpc = require('grpc');
 const { promisify } = require('util');
-const jsonToProtobufInterceptorFactory = require('../../src/jsonToProtobufInterceptorFactory');
+const jsonToProtobufInterceptorFactory = require('../../src/interceptors/client/jsonToProtobufInterceptorFactory');
 const loadPackageDefinition = require('../../src/loadPackageDefinition');
+
 const {
-  LastUserStateTransitionHashResponse,
-  BlockHeadersWithChainLocksResponse,
-} = require('./core_pb');
+  org: {
+    dash: {
+      platform: {
+        dapi: {
+          LastUserStateTransitionHashRequest: PBJSLastUserStateTransitionHashRequest,
+          LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
+          BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
+          BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
+        },
+      },
+    },
+  },
+} = require('./core_pbjs');
+
+const {
+  LastUserStateTransitionHashResponse: ProtocLastUserStateTransitionHashResponse,
+  BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
+} = require('./core_protoc');
+
 const isObject = require('../../src/isObject');
 const convertObjectToMetadata = require('../../src/convertObjectToMetadata');
+
+const jsonToProtobufFactory = require('../../src/converters/jsonToProtobufFactory');
+const protobufToJsonFactory = require('../../src/converters/protobufToJsonFactory');
 
 const {
   Core: CoreNodeJSClient,
 } = loadPackageDefinition('Core');
 
 const getLastUserStateTransitionHashOptions = {
-  interceptors: [jsonToProtobufInterceptorFactory(LastUserStateTransitionHashResponse)],
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocLastUserStateTransitionHashResponse,
+        PBJSLastUserStateTransitionHashResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSLastUserStateTransitionHashRequest,
+      ),
+    ),
+  ],
 };
 
 const subscribeToBlockHeadersWithChainLocksOptions = {
-  interceptors: [jsonToProtobufInterceptorFactory(BlockHeadersWithChainLocksResponse)],
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocBlockHeadersWithChainLocksResponse,
+        PBJSBlockHeadersWithChainLocksResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSBlockHeadersWithChainLocksRequest,
+      ),
+    ),
+  ],
 };
 
 class CorePromiseClient {
@@ -45,10 +85,8 @@ class CorePromiseClient {
       throw new Error('metadata must be an object');
     }
 
-    const message = lastUserStateTransitionHashRequest.toObject();
-
     return this.client.getLastUserStateTransitionHash(
-      message,
+      lastUserStateTransitionHashRequest,
       convertObjectToMetadata(metadata),
       getLastUserStateTransitionHashOptions,
     );
@@ -65,10 +103,8 @@ class CorePromiseClient {
       throw new Error('metadata must be an object');
     }
 
-    const message = blockHeadersWithChainLocksRequest.toObject();
-
     return this.client.subscribeToBlockHeadersWithChainLocks(
-      message,
+      blockHeadersWithChainLocksRequest,
       convertObjectToMetadata(metadata),
       subscribeToBlockHeadersWithChainLocksOptions,
     );

@@ -157,7 +157,7 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
         .number = BlockHeadersWithChainLocksRequest_FieldNumber_FromBlockHash,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksRequest__storage_, fromBlockHash),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldTextFormatNameCustom),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
       },
       {
@@ -166,7 +166,7 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
         .number = BlockHeadersWithChainLocksRequest_FieldNumber_FromBlockHeight,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksRequest__storage_, fromBlockHeight),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldTextFormatNameCustom),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
       },
       {
@@ -193,11 +193,6 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-#if !GPBOBJC_SKIP_MESSAGE_TEXTFORMAT_EXTRAS
-    static const char *extraTextFormatInfo =
-        "\002\001\r\000\002\017\000";
-    [localDescriptor setupExtraTextInfo:extraTextFormatInfo];
-#endif  // !GPBOBJC_SKIP_MESSAGE_TEXTFORMAT_EXTRAS
     NSAssert(descriptor == nil, @"Startup recursed!");
     descriptor = localDescriptor;
   }

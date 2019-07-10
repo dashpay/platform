@@ -16,9 +16,9 @@ message LastUserStateTransitionHashResponse {
 }
 
 message BlockHeadersWithChainLocksRequest {
-  oneof fromBlock {
-    bytes fromBlockHash = 1;
-    uint32 fromBlockHeight = 2;
+  oneof from_block {
+    bytes from_block_hash = 1;
+    uint32 from_block_height = 2;
   }
 
   uint32 count = 3;

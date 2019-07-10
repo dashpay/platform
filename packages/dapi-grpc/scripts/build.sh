@@ -31,11 +31,30 @@ docker run -v "$PROTO_PATH:$PROTO_PATH" \
                    --js_out="import_style=commonjs:$WEB_OUT_PATH" \
                    --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$WEB_OUT_PATH"
 
-# Copy generated messages for Node.JS client
+# Clean node message classes
 
-rm -rf "$CLIENTS_PATH/node/*_pb.proto"
-cp "$WEB_OUT_PATH/core_pb.js" "$CLIENTS_PATH/nodejs/"
-cp "$WEB_OUT_PATH/transactions_filter_stream_pb.js" "$CLIENTS_PATH/nodejs/"
+rm -rf "$CLIENTS_PATH/nodejs/*_protoc.js"
+rm -rf "$CLIENTS_PATH/nodejs/*_pbjs.js"
+
+# Copy compiled modules with message classes
+
+cp "$WEB_OUT_PATH/core_pb.js" "$CLIENTS_PATH/nodejs/core_protoc.js"
+cp "$WEB_OUT_PATH/transactions_filter_stream_pb.js" "$CLIENTS_PATH/nodejs/transactions_filter_stream_protoc.js"
+
+# Generate node message classes
+
+docker run -v "$PROTO_PATH:$PROTO_PATH" \
+           -v "$CLIENTS_PATH:$CLIENTS_PATH" \
+           --rm \
+           grpcweb/common \
+           pbjs -t static-module -w commonjs -r core_root -o "$CLIENTS_PATH/nodejs/core_pbjs.js" "$PROTO_PATH/core.proto"
+
+docker run -v "$PROTO_PATH:$PROTO_PATH" \
+           -v "$CLIENTS_PATH:$CLIENTS_PATH" \
+           --rm \
+           grpcweb/common \
+           pbjs -t static-module -w commonjs -r transactions_filter_stream_root \
+           -o "$CLIENTS_PATH/nodejs/transactions_filter_stream_pbjs.js" "$PROTO_PATH/transactions_filter_stream.proto"
 
 # Generate GRPC Java client for `Core`
 

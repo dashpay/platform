@@ -14,3 +14,5 @@ protoc-3.6.1-linux-x86_64.zip -o /tmp/protoc.zip && \
 RUN curl -sSL https://github.com/grpc/grpc-web/releases/download/1.0.4/\
 protoc-gen-grpc-web-1.0.4-linux-x86_64 -o /usr/local/bin/protoc-gen-grpc-web && \
   chmod +x /usr/local/bin/protoc-gen-grpc-web
+
+RUN npm i -g protobufjs

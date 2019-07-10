@@ -1,16 +1,46 @@
 const grpc = require('grpc');
-const jsonToProtobufInterceptorFactory = require('../../src/jsonToProtobufInterceptorFactory');
+const jsonToProtobufInterceptorFactory = require('../../src/interceptors/client/jsonToProtobufInterceptorFactory');
 const loadPackageDefinition = require('../../src/loadPackageDefinition');
-const { TransactionsWithProofsResponse } = require('./transactions_filter_stream_pb');
+
+const {
+  org: {
+    dash: {
+      platform: {
+        dapi: {
+          TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
+          TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+        },
+      },
+    },
+  },
+} = require('./transactions_filter_stream_pbjs');
+
+const {
+  TransactionsWithProofsResponse: ProtocTransactionsWithProofsResponse,
+} = require('./transactions_filter_stream_protoc');
+
 const isObject = require('../../src/isObject');
 const convertObjectToMetadata = require('../../src/convertObjectToMetadata');
+
+const jsonToProtobufFactory = require('../../src/converters/jsonToProtobufFactory');
+const protobufToJsonFactory = require('../../src/converters/protobufToJsonFactory');
 
 const {
   TransactionsFilterStream: TransactionsFilterStreamNodeJSClient,
 } = loadPackageDefinition('TransactionsFilterStream');
 
 const subscribeToTransactionsWithProofsOptions = {
-  interceptors: [jsonToProtobufInterceptorFactory(TransactionsWithProofsResponse)],
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocTransactionsWithProofsResponse,
+        PBJSTransactionsWithProofsResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSTransactionsWithProofsRequest,
+      ),
+    ),
+  ],
 };
 
 class TransactionsFilterStreamPromiseClient {
@@ -34,10 +64,8 @@ class TransactionsFilterStreamPromiseClient {
       throw new Error('metadata must be an object');
     }
 
-    const message = transactionsWithProofsRequest.toObject();
-
     return this.client.subscribeToTransactionsWithProofs(
-      message,
+      transactionsWithProofsRequest,
       convertObjectToMetadata(metadata),
       subscribeToTransactionsWithProofsOptions,
     );
