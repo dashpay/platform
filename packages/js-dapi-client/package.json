@@ -1,11 +1,11 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "index.js",
   "dependencies": {
     "@babel/polyfill": "^7.2.5",
-    "@dashevo/dapi-grpc": "^0.8.4",
+    "@dashevo/dapi-grpc": "^0.9.4",
     "@dashevo/dashcore-lib": "^0.17.1",
     "@dashevo/dash-spv": "^1.1.5",
     "axios": "^0.19.0",
@@ -15,7 +15,7 @@
   "devDependencies": {
     "@babel/core": "^7.2.2",
     "@babel/preset-env": "^7.2.3",
-    "@dashevo/dp-services-ctl": "^0.7.1",
+    "@dashevo/dp-services-ctl": "^0.7.2",
     "@dashevo/dpp": "^v0.7.1",
     "babel-loader": "^8.0.5",
     "chai": "^4.2.0",

@@ -957,7 +957,7 @@ describe('api', () => {
     let getLastUserStateTransitionHashStub;
 
     beforeEach(() => {
-      userId = Buffer.alloc(256);
+      userId = Buffer.alloc(256).toString('hex');
 
       getLastUserStateTransitionHashStub = sinon
         .stub(CorePromiseClient.prototype, 'getLastUserStateTransitionHash');

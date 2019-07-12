@@ -189,7 +189,7 @@ class DAPIClient {
    */
   async getLastUserStateTransitionHash(userId) {
     const request = new LastUserStateTransitionHashRequest();
-    request.setUserId(userId);
+    request.setUserId(Buffer.from(userId, 'hex'));
 
     const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
 
@@ -346,16 +346,25 @@ class DAPIClient {
    * }
    */
   async subscribeToTransactionsWithProofs(bloomFilter, options = { count: 0 }) {
-    const filter = new BloomFilter();
-    filter.setVData(bloomFilter.vData);
-    filter.setNHashFuncs(bloomFilter.nHashFuncs);
-    filter.setNTweak(bloomFilter.nTweak);
-    filter.setNFlags(bloomFilter.nFlags);
+    const bloomFilterMessage = new BloomFilter();
+    bloomFilterMessage.setVData(bloomFilter.vData);
+    bloomFilterMessage.setNHashFuncs(bloomFilter.nHashFuncs);
+    bloomFilterMessage.setNTweak(bloomFilter.nTweak);
+    bloomFilterMessage.setNFlags(bloomFilter.nFlags);
 
     const request = new TransactionsWithProofsRequest();
-    request.setBloomFilter(filter);
-    request.setFromBlockHash(options.fromBlockHash);
-    request.setFromBlockHeight(options.fromBlockHeight);
+    request.setBloomFilter(bloomFilterMessage);
+
+    if (options.fromBlockHeight) {
+      request.setFromBlockHeight(options.fromBlockHeight);
+    }
+
+    if (options.fromBlockHash) {
+      request.setFromBlockHash(
+        Buffer.from(options.fromBlockHash, 'hex'),
+      );
+    }
+
     request.setCount(options.count);
 
     const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
