@@ -36,3 +36,4 @@ deploy:
   on:
     tags: true
     repo: dashevo/dapi-grpc
+  skip_cleanup: true
