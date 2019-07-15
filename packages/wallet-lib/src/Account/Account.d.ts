@@ -17,7 +17,7 @@ export declare class Account {
     getBalance(unconfirmed?: boolean, displayDuffs?:boolean): number;
     getBIP44Path(network?:Network, index?:number): string;
 
-    getDAP(name: string): object;
+    getDPA(name: string): object;
 
     getNetwork(): Network;
 

@@ -9,10 +9,10 @@ const _defaultOpts = {
   isValid: false,
 };
 
-class DAP extends StandardPlugin {
+class DPA extends StandardPlugin {
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
-    super(Object.assign({ type: 'DAP' }, opts));
+    super(Object.assign({ type: 'DPA' }, opts));
     this.schema = (opts.schema !== undefined) ? opts.schema : defaultOpts.schema;
     this.verifyOnInjected = opts.verifyOnInjected !== undefined
       ? opts.verifyOnInjected
@@ -22,32 +22,32 @@ class DAP extends StandardPlugin {
 
   initDPP() {
     const dpp = new DashPlatformProtocol();
-    const dapName = this.name.toLowerCase();
+    const dpaName = this.name.toLowerCase();
     const { schema } = this;
     if (!schema) {
-      throw new Error('Missing DAP Schema. Cannot init DPP');
+      throw new Error('Missing DPA Schema. Cannot init DPP');
     }
-    const contract = dpp.contract.create(dapName, schema);
+    const contract = dpp.contract.create(dpaName, schema);
     if (!dpp.contract.validate(contract)
       .isValid()) {
-      throw new Error('Invalid DAP Contract');
+      throw new Error('Invalid DPA Contract');
     }
     dpp.setContract(contract);
     this.dpp = dpp;
   }
 
-  async verifyDAP(transporter) {
+  async verifyDPA(transporter) {
     if (!this.schema) {
-      throw new Error('Missing DAP Schema. Cannot verify');
+      throw new Error('Missing DPA Schema. Cannot verify');
     }
     if (!this.dpp) {
       this.initDPP();
     }
     const contractId = this.dpp.getContract().getId();
-    console.log('Verifying DAP ID', contractId);
+    console.log('Verifying DPA ID', contractId);
 
     if (!transporter || !transporter.fetchContract) {
-      throw new Error('Require transporter to have a fetchContract method to verify DAP Contract');
+      throw new Error('Require transporter to have a fetchContract method to verify DPA Contract');
     }
     try {
       await transporter.fetchContract(contractId);
@@ -64,7 +64,7 @@ class DAP extends StandardPlugin {
   }
 
   async register(buser, privateKey = null) {
-    console.log(`Registering DAP : ${this.name}`);
+    console.log(`Registering DPA : ${this.name}`);
     const creditFeeSet = 1000;
     if (!this.dpp) {
       this.initDPP();
@@ -74,7 +74,7 @@ class DAP extends StandardPlugin {
       throw new Error('A BUser Object is required to register (see @dashevo/dashpay-dpa)');
     }
     if (!buser.regtxid) {
-      console.log(`'Registering DAP : ${this.name} - Missing regtxid, trying synchronize...`);
+      console.log(`'Registering DPA : ${this.name} - Missing regtxid, trying synchronize...`);
       try {
         await buser.synchronize();
       } catch (e) {
@@ -113,9 +113,9 @@ class DAP extends StandardPlugin {
         .toString('hex'),
     );
 
-    console.log(`DAP ${dppContract.name} Registered (txid ${txid}.)`);
+    console.log(`DPA ${dppContract.name} Registered (txid ${txid}.)`);
     return txid;
   }
 }
 
-module.exports = DAP;
+module.exports = DPA;

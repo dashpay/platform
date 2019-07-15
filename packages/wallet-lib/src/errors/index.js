@@ -18,7 +18,7 @@ const InvalidUTXO = require('./InvalidUTXO');
 const StorageUnableToAddTransaction = require('./StorageUnableToAddTransaction');
 const TransactionNotInStore = require('./TransactionNotInStore');
 
-const UnknownDAP = require('./UnknownDAP');
+const UnknownDPA = require('./UnknownDPA');
 
 const UnknownPlugin = require('./UnknownPlugin');
 const ValidTransportLayerRequired = require('./ValidTransportLayerRequired');
@@ -42,7 +42,7 @@ module.exports = {
   InvalidUTXO,
   StorageUnableToAddTransaction,
   TransactionNotInStore,
-  UnknownDAP,
+  UnknownDPA,
   UnknownPlugin,
   ValidTransportLayerRequired,
   WalletLibError,

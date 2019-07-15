@@ -11,7 +11,7 @@ module.exports = function hasPlugins(searchedPlugins) {
   const { plugins } = this;
   _.each(searchedPlugins, (searchedPlugin) => {
     const result = {};
-    _.each(['workers', 'daps', 'standard'], (pluginTypeName) => {
+    _.each(['workers', 'DPAs', 'standard'], (pluginTypeName) => {
       const pluginType = plugins[pluginTypeName];
       _.each(pluginType, (plugin) => {
         if (searchedPlugin.name === plugin.constructor.name) {

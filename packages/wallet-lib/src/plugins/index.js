@@ -1,7 +1,7 @@
 const Worker = require('./Worker');
-const DAP = require('./DAP');
+const DPA = require('./DPA');
 const StandardPlugin = require('./StandardPlugin');
 
 module.exports = {
-  StandardPlugin, Worker, DAP,
+  StandardPlugin, Worker, DPA,
 };

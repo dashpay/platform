@@ -1,11 +1,11 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const { DAP } = require('../../src/plugins');
+const { DPA } = require('../../src/plugins');
 
-const registerDAP = () => {
+const registerDPA = () => {
 
 };
-class DAPDoc extends DAP {
+class DPADoc extends DPA {
   async notarizeDocument(path) {
     const buffer = await this.getBufferFromPath(path);
     const notarizedHash = this.getHashFromBuffer(buffer);
@@ -49,4 +49,4 @@ class DAPDoc extends DAP {
   }
 }
 
-module.exports = DAPDoc;
+module.exports = DPADoc;

@@ -34,7 +34,7 @@ const getAddress = require('./getAddress');
 const getAddresses = require('./getAddresses');
 const getBalance = require('./getBalance');
 const getBIP44Path = require('./getBIP44Path');
-const getDAP = require('./getDAP');
+const getDPA = require('./getDPA');
 const getNetwork = require('./getNetwork');
 const getPlugin = require('./getPlugin');
 const getWorker = require('./getWorker');
@@ -65,7 +65,7 @@ class Account {
       getAddresses,
       getBalance,
       getBIP44Path,
-      getDAP,
+      getDPA,
       getPlugin,
       getWorker,
       getPrivateKeys,
@@ -136,7 +136,7 @@ class Account {
 
     this.plugins = {
       workers: {},
-      daps: {},
+      DPAs: {},
       standard: {},
       watchers: {},
     };

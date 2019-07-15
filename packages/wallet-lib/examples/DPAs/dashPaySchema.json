@@ -1,12 +1,12 @@
 {
-  "$id": "http://dash.org/schemas/sys/dapschema",
+  "$id": "http://dash.org/schemas/sys/dpaschema",
   "title": "DashPay",
   "user": {
-    "$id": "http://dash.org/schemas/sys/dapobject",
+    "$id": "http://dash.org/schemas/sys/dpaobject",
     "_isrole": true,
     "allOf": [
       {
-        "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
+        "$ref": "http://dash.org/schemas/sys#/definitions/dpaobjectbase"
       }
     ],
     "properties": {
@@ -19,10 +19,10 @@
     }
   },
   "contact": {
-    "$id": "http://dash.org/schemas/sys/dapobject",
+    "$id": "http://dash.org/schemas/sys/dpaobject",
     "allOf": [
       {
-        "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
+        "$ref": "http://dash.org/schemas/sys#/definitions/dpaobjectbase"
       }
     ],
     "properties": {
@@ -42,11 +42,11 @@
     ]
   },
   "store": {
-    "$id": "http://dash.org/schemas/sys/dapobject",
+    "$id": "http://dash.org/schemas/sys/dpaobject",
     "_isrole": true,
     "allOf": [
       {
-        "$ref": "http://dash.org/schemas/sys#/definitions/dapobjectbase"
+        "$ref": "http://dash.org/schemas/sys#/definitions/dpaobjectbase"
       }
     ],
     "properties": {

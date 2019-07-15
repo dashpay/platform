@@ -2,8 +2,8 @@ const { Wallet } = require('../index');
 // This is a ColdStorage worker. It ran each X, verify a condition (execute function), and
 const ColdStorageWorker = require('./workers/ColdStorageWorker');
 
-// This is a DAP showcasing a DOC notarization
-const DAPDoc = require('./daps/DAPDoc');
+// This is a DPA showcasing a DOC notarization
+const DPADoc = require('./DPAs/DPADoc');
 
 // Wallet Consolidator is a standard plugin, when added it will offer new
 // functionnalities to the account. Such as 'consolidateWallet' method.
@@ -19,7 +19,7 @@ const wallet = new Wallet({
   injectDefaultPlugins: false, // Will not inject default plugins (BIP44, SyncWorker)
   // Will add these plugin instead, one is already init to show that both are fine to used.
   // The order has it's importance, here ColdStorageWorker will use WalletConsolidator as a depts.
-  plugins: [WalletConsolidator, DAPDoc, new ColdStorageWorker({ address: coldStorageAddress })],
+  plugins: [WalletConsolidator, DPADoc, new ColdStorageWorker({ address: coldStorageAddress })],
 });
 
 const account = wallet.getAccount(0);
@@ -29,7 +29,7 @@ const start = async () => {
   console.log('Funding address', account.getUnusedAddress().address);
 
   // await showcasePlugin();
-  // await showcaseDAP();
+  // await showcaseDPA();
 };
 
 
@@ -42,10 +42,10 @@ const showcasePlugin = async () => {
   // console.log('Broadcast', await preparedTransaction.broadcast());
 };
 
-const showcaseDAP = async () => {
-  const dapDoc = account.getDAP('DAPDoc');
+const showcaseDPA = async () => {
+  const dpaDoc = account.getDPA('DPADoc');
   const documentPath = `${__dirname}/document.txt`;
-  const notarize = await dapDoc.notarizeDocument(documentPath);
+  const notarize = await dpaDoc.notarizeDocument(documentPath);
 
   console.log('Notarized ?', notarize);
 };

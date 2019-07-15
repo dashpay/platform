@@ -2,9 +2,9 @@ const { utils, plugins, CONSTANTS } = require('../../src');
 const Dashcore = require('@dashevo/dashcore-lib');
 const dashPaySchema = require('./dashPaySchema.json');
 
-const { DAP } = plugins;
+const { DPA } = plugins;
 
-class DashPayDAP extends DAP {
+class DashPayDPA extends DPA {
   constructor(props) {
     super({
       dependencies: [
@@ -112,4 +112,4 @@ class DashPayDAP extends DAP {
   async removeContact(blockchainUsername) { throw new Error('Not implemented.'); }
 }
 
-module.exports = DashPayDAP;
+module.exports = DashPayDPA;

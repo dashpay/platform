@@ -41,7 +41,7 @@ describe('Account - class', () => {
     expect(account.transport).to.be.deep.equal(undefined);
     expect(account.cacheTx).to.be.deep.equal(true);
     expect(account.plugins).to.be.deep.equal({
-      workers: {}, daps: {}, standard: {}, watchers: {},
+      workers: {}, DPAs: {}, standard: {}, watchers: {},
     });
     expect(account.readinessInterval.constructor.name).to.be.equal('Timeout');
     expect(account.readinessInterval._idleTimeout).to.be.equal(600);

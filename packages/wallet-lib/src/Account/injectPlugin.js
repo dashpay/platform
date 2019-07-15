@@ -36,7 +36,7 @@ module.exports = async function injectPlugin(
     const deps = plugin.dependencies || [];
 
     const injectedPlugins = Object.keys(this.plugins.standard).map(key => key.toLowerCase());
-    const injectedDaps = Object.keys(this.plugins.daps).map(key => key.toLowerCase());
+    const injectedDPAs = Object.keys(this.plugins.DPAs).map(key => key.toLowerCase());
     deps.forEach((dependencyName) => {
       if (_.has(self, dependencyName)) {
         plugin.inject(dependencyName, self[dependencyName], allowSensitiveOperations);
@@ -46,8 +46,8 @@ module.exports = async function injectPlugin(
         const loweredDependencyName = dependencyName.toLowerCase();
         if (injectedPlugins.includes(loweredDependencyName)) {
           plugin.inject(dependencyName, this.plugins.standard[loweredDependencyName], true);
-        } else if (injectedDaps.includes(loweredDependencyName)) {
-          plugin.inject(dependencyName, this.plugins.daps[loweredDependencyName], true);
+        } else if (injectedDPAs.includes(loweredDependencyName)) {
+          plugin.inject(dependencyName, this.plugins.DPAs[loweredDependencyName], true);
         } else rej(new InjectionErrorCannotInjectUnknownDependency(pluginName, dependencyName));
       }
     });
@@ -77,8 +77,8 @@ module.exports = async function injectPlugin(
           await plugin.startWorker();
         }
         break;
-      case 'DAP':
-        self.plugins.daps[pluginName] = plugin;
+      case 'DPA':
+        self.plugins.DPAs[pluginName] = plugin;
         break;
       case 'StandardPlugin':
       default:
@@ -91,8 +91,8 @@ module.exports = async function injectPlugin(
       else plugin.onInjected();
     }
 
-    if (pluginType === 'DAP' && plugin.verifyOnInjected) {
-      await plugin.verifyDAP(this.transport.transport);
+    if (pluginType === 'DPA' && plugin.verifyOnInjected) {
+      await plugin.verifyDPA(this.transport.transport);
     }
 
     return res(plugin);

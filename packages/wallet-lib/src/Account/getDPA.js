@@ -2,15 +2,15 @@ const {
   UnknownDPA,
 } = require('../errors/index');
 /**
- * Get a worker by it's name
+ * Get a DPA by it's name
  * @param dpaName
  * @return {*}
  */
 function getDPA(dpaName) {
   const loweredDPAName = dpaName.toLowerCase();
-  const dpaList = Object.keys(this.plugins.workers).map(key => key.toLowerCase());
-  if (dpaList.includes(loweredDPAName)) {
-    return this.plugins.workers[loweredDPAName];
+  const DpaList = Object.keys(this.plugins.DPAs).map(key => key.toLowerCase());
+  if (DpaList.includes(loweredDPAName)) {
+    return this.plugins.DPAs[loweredDPAName];
   }
   throw new UnknownDPA(loweredDPAName);
 }

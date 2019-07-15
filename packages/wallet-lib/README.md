@@ -222,15 +222,15 @@ Miscellaneous :
 - [ ] Compatibility with old format (BIP32)
 - [ ] Paper-sweep wallet
 - [ ] Log tool to be able to help for decentralized debugging
-- [X] [docs/plugins](Plugins.md) support (Worker, DAP)
+- [X] [docs/plugins](Plugins.md) support (Worker, DPA)
 - [ ] CoinSelection strategy as a plugins.
 - [ ] Account network and plugins independants from each other.
 
 
 ## Plugins
 
-##### DAP
-- [DashPay DAP](https://github.com/dashevo/dashpay-dap) :
+##### DPA
+- [DashPay DPA](https://github.com/dashevo/dashpay-dpa) :
 
 ##### Transports (help from community welcomed):
 
