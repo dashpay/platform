@@ -1,10 +1,8 @@
 const DAPIClient = require('@dashevo/dapi-client');
 const { is, hasProp } = require('../utils/index');
-const InsightClient = require('../transports/Insight/insightClient');
 
 
 const transportList = {
-  insight: InsightClient,
   dapi: DAPIClient,
 };
 
