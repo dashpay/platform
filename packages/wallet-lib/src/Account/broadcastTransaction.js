@@ -5,43 +5,34 @@ const {
   InvalidRawTransaction,
   InvalidDashcoreTransaction,
 } = require('../errors/index');
-const EVENTS = require('../EVENTS');
 
-const impactAffectedInputs = function ({
-  inputs,
-}) {
+function impactAffectedInputs({ inputs }) {
   const {
-    storage, walletId, events,
+    storage, walletId,
   } = this;
-  // let totalSatoshis = outputs.reduce((ac, cur) => acc + cur.satoshis, 0);
-  const affectedTxs = inputs.reduce((acc, curr) => acc.push(curr.prevTxId) && acc, []);
 
-  let sumSpent = 0;
-  affectedTxs.forEach((affectedTxId) => {
-    const { path, type } = storage.searchAddressWithTx(affectedTxId);
-
-    if (type !== null) {
-      const address = storage.store.wallets[walletId].addresses[type][path];
-      const cleanedUtxos = {};
-      Object.keys(address.utxos).forEach((utxoTxId) => {
-        const utxo = address.utxos[utxoTxId];
-        if (utxo.txid === affectedTxId) {
-          sumSpent += utxo.satoshis;
-          address.balanceSat -= utxo.satoshis;
-        } else {
-          cleanedUtxos[utxoTxId] = (utxo);
-        }
-      });
-
-      const currentValue = this.getBalance();
-      events.emit(EVENTS.UNCONFIRMED_BALANCE_CHANGED, { delta: -sumSpent, currentValue });
-
-      address.utxos = cleanedUtxos;
-      // this.storage.store.addresses[type][path].fetchedLast = 0;// In order to trigger a refresh
-    }
+  // We iterate out input to substract their balance.
+  inputs.forEach((input) => {
+    const potentiallySelectedAddresses = storage.searchAddressesWithTx(input.prevTxId);
+    // Fixme : If you want this check, you will need to modify fixtures of our tests.
+    // if (!potentiallySelectedAddresses.found) {
+    //   throw new Error('Input is not part of that Wallet.');
+    // }
+    potentiallySelectedAddresses.results.forEach((potentiallySelectedAddress) => {
+      const { type, path } = potentiallySelectedAddress;
+      if (potentiallySelectedAddress.utxos[`${input.prevTxId}-${input.outputIndex}`]) {
+        const inputUTXO = potentiallySelectedAddress.utxos[`${input.prevTxId}-${input.outputIndex}`];
+        const address = storage.store.wallets[walletId].addresses[type][path];
+        // Todo: This modify the balance of an address, we need a std method to do that instead.
+        address.balanceSat -= inputUTXO.satoshis;
+        delete address.utxos[`${input.prevTxId}-${input.outputIndex}`];
+      }
+    });
   });
+
   return true;
-};
+}
+
 /**
  * Broadcast a Transaction to the transport layer
  * @param transaction {Transaction|RawTransaction} - A txobject or it's hexadecimal representation
@@ -69,11 +60,12 @@ async function broadcastTransaction(transaction, isIs = false) {
   }
   // We now need to impact/update our affected inputs
   // so we clear them out from UTXOset.
-  const { inputs, outputs } = new Dashcore.Transaction(transaction).toObject();
+  const { inputs } = new Dashcore.Transaction(transaction).toObject();
   impactAffectedInputs.call(this, {
-    inputs, outputs, txid,
+    inputs,
   });
 
   return txid;
 }
+
 module.exports = broadcastTransaction;

@@ -159,7 +159,7 @@ Therefore you will want to listen to the `ready` event before starting anything.
 ```
 
 function doFancyStuff(){
-    const balance = account.getBalance();
+    const balance = account.getTotalBalance();
     const history = account.getTransactionHistory()
     const utxo = account.getUTXO();
     const unusedAddress = account.getUnusedAddress();

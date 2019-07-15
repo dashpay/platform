@@ -18,7 +18,7 @@ const start = async () => {
 
 
   account.events.on('ready', async () => {
-    const balance = account.getBalance();
+    const balance = account.getTotalBalance();
     console.log('balance :', balance);
 
     const rawtx = account.createTransaction({

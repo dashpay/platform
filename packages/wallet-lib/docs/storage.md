@@ -35,6 +35,21 @@ The Storage object will later on need to be configured before being ready for us
 
 ---
 
+## calculateDuffBalance
+
+Returns the duff balance of specified walletId/Account pair
+
+`store.calculateDuffBalance(walletId, accountId, [type=total])`
+
+##### options
+
+> **walletId** : walletId - The desired descriminated walletId to perform calculation
+
+> **accountId** :  accountId - The desired descriminated accountId to perform calculation
+
+> **type** : enum['confirmed','unconfirmed','total'](def: total) - Calculate balance of specified type
+---
+
 ## getStore
 
 Returns a snapshot (cloned copy) of the state of the store

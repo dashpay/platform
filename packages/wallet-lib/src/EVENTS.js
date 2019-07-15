@@ -3,7 +3,7 @@ module.exports = {
   CREATED: 'created',
   STARTED: 'started',
   READY: 'ready',
-  BALANCE_CHANGED: 'balance_changed',
+  CONFIRMED_BALANCE_CHANGED: 'confirmed_balance_changed',
   UNCONFIRMED_BALANCE_CHANGED: 'unconfirmed_balance_changed',
   BLOCKHEIGHT_CHANGED: 'blockheight_changed',
   BLOCK: 'block',

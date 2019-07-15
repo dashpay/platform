@@ -1,7 +1,7 @@
 const { expect } = require('chai');
-const searchAddressWithTx = require('../../src/Storage/searchAddressWithTx');
+const searchAddressesWithTx = require('../../src/Storage/searchAddressesWithTx');
 
-describe('Storage - searchAddressWithTx', () => {
+describe('Storage - searchAddressesWithTx', () => {
   it('should search an address having a specific tx', () => {
 
   });

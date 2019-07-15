@@ -59,7 +59,8 @@ describe('Account - broadcastTransaction', () => {
         sendRawTransaction: () => sendCalled = +1,
       },
       storage: {
-        searchAddressWithTx: () => { searchCalled = +1; return { type: null }; },
+        searchAddress: () => { searchCalled = +1; return { found: false }; },
+        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
       },
     };
 
@@ -79,7 +80,28 @@ describe('Account - broadcastTransaction', () => {
         sendRawTransaction: () => sendCalled = +1,
       },
       storage: {
-        searchAddressWithTx: () => { searchCalled = +1; return { type: null }; },
+        searchAddress: () => { searchCalled = +1; return { found: false }; },
+        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
+      },
+    };
+
+    return broadcastTransaction
+      .call(self, validRawTxs.tx1to1Mainnet)
+      .then(
+        () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
+      );
+  });
+  it('should update affected tx', () => {
+    let sendCalled = +1;
+    let searchCalled = +1;
+    const self = {
+      transport: {
+        isValid: true,
+        sendRawTransaction: () => sendCalled = +1,
+      },
+      storage: {
+        searchAddress: () => { searchCalled = +1; return { found: false }; },
+        searchAddressesWithTx: (affectedTxId) => { searchCalled = +1; return { results: [] }; },
       },
     };
 

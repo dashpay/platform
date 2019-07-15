@@ -32,7 +32,9 @@ const forceRefreshAccount = require('./forceRefreshAccount');
 const generateAddress = require('./generateAddress');
 const getAddress = require('./getAddress');
 const getAddresses = require('./getAddresses');
-const getBalance = require('./getBalance');
+const getConfirmedBalance = require('./getConfirmedBalance');
+const getUnconfirmedBalance = require('./getUnconfirmedBalance');
+const getTotalBalance = require('./getTotalBalance');
 const getBIP44Path = require('./getBIP44Path');
 const getDPA = require('./getDPA');
 const getNetwork = require('./getNetwork');
@@ -63,7 +65,9 @@ class Account {
       generateAddress,
       getAddress,
       getAddresses,
-      getBalance,
+      getConfirmedBalance,
+      getUnconfirmedBalance,
+      getTotalBalance,
       getBIP44Path,
       getDPA,
       getPlugin,

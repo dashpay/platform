@@ -25,7 +25,7 @@ const wallet = new Wallet({
 const account = wallet.getAccount(0);
 
 const start = async () => {
-  console.log('Balance', account.getBalance());
+  console.log('Balance', account.getTotalBalance());
   console.log('Funding address', account.getUnusedAddress().address);
 
   // await showcasePlugin();

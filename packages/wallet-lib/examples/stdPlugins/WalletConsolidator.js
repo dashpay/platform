@@ -11,7 +11,7 @@ class WalletConsolidator extends StandardPlugin {
       dependencies: [
         'getUTXOS',
         'getUnusedAddress',
-        'getBalance',
+        'getConfirmedBalance',
         'createTransactionFromUTXOS',
         'broadcastTransaction',
       ],

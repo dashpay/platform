@@ -8,7 +8,7 @@ class ColdStorageWorker extends Worker {
       dependencies: [
         'walletConsolidator',
         'getUTXOS',
-        'getBalance',
+        'getConfirmedBalance',
       ],
     });
     if (!props.address) {
@@ -23,7 +23,7 @@ class ColdStorageWorker extends Worker {
     if (utxos.length === 0) {
       console.error('ColdStorageWorker : We did not found any utxos. Doing nothing');
     } else {
-      const balance = this.getBalance();
+      const balance = this.getConfirmedBalance();
       console.log('Found inputs to move');
       const consolidate = walletConsolidator.consolidateWallet(this.address, utxos);
       const preparedTransaction = consolidate.prepareTransaction();

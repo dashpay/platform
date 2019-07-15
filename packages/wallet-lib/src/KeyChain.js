@@ -46,8 +46,7 @@ class KeyChain {
    */
   generateKeyForPath(path, type = 'HDPrivateKey') {
     if (!['HDPrivateKey', 'HDPublicKey'].includes(this.type)) {
-      console.error('Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate keys');
-      return null;
+      throw new Error('Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate keys');
     }
     const HDKey = this[this.type];
     const hdPrivateKey = HDKey.derive(path);
@@ -63,10 +62,10 @@ class KeyChain {
    */
   generateKeyForChild(index, type = 'HDPrivateKey') {
     if (!['HDPrivateKey', 'HDPublicKey'].includes(this.type)) {
-      console.error('Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate child');
-      return null;
+      throw new Error('Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate child');
     }
-    const hdPublicKey = this.HDPublicKey.deriveChild(index);
+    const HDKey = this[this.type];
+    const hdPublicKey = HDKey.deriveChild(index);
     if (type === 'HDPublicKey') return HDPublicKey(hdPublicKey);
     return hdPublicKey;
   }

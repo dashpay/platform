@@ -14,6 +14,8 @@ const updateAddress = function (addressObj, walletId) {
   if (!is.addressObj(addressObj)) throw new InvalidAddressObject(addressObj);
   const { path } = addressObj;
   if (!path) throw new Error('Expected path to update an address');
+  const accountIndex = parseInt(path.split('/')[3], 10);
+
   const typeInt = path.split('/')[4];
   let type;
   switch (typeInt) {
@@ -67,29 +69,38 @@ const updateAddress = function (addressObj, walletId) {
     });
   }
 
+
+  // Check if there is a balance but no utxo.
+  addressesStore[type][path] = newObject;
   if (previousObject === undefined) {
     if (newObject.balanceSat > 0) {
       this.announce(
-        EVENTS.BALANCE_CHANGED,
+        EVENTS.CONFIRMED_BALANCE_CHANGED,
         {
-          currentValue: newObject.balanceSat,
           delta: newObject.balanceSat,
+          currentValue: this.calculateDuffBalance(walletId, accountIndex, 'confirmed') || newObject.unconfirmedBalanceSat,
+          // currentValue: newObject.balanceSat,
         },
       );
     }
     if (newObject.unconfirmedBalanceSat > 0) {
       this.announce(
         EVENTS.UNCONFIRMED_BALANCE_CHANGED,
-        { currentValue: newObject.unconfirmedBalanceSat, delta: newObject.unconfirmedBalanceSat },
+        {
+          delta: newObject.unconfirmedBalanceSat,
+          // currentValue: newObject.unconfirmedBalanceSat,
+          currentValue: this.calculateDuffBalance(walletId, accountIndex, 'unconfirmed'),
+        },
       );
     }
   } else {
     if (previousObject.balanceSat !== newObject.balanceSat) {
       this.announce(
-        EVENTS.BALANCE_CHANGED,
+        EVENTS.CONFIRMED_BALANCE_CHANGED,
         {
           delta: newObject.balanceSat - previousObject.balanceSat,
-          currentValue: newObject.balanceSat,
+          // currentValue: newObject.balanceSat,
+          currentValue: this.calculateDuffBalance(walletId, accountIndex, 'confirmed'),
         },
       );
     }
@@ -97,13 +108,12 @@ const updateAddress = function (addressObj, walletId) {
       this.announce(EVENTS.UNCONFIRMED_BALANCE_CHANGED,
         {
           delta: newObject.unconfirmedBalanceSat - previousObject.unconfirmedBalanceSat,
-          currentValue: newObject.unconfirmedBalanceSat,
+          // currentValue: newObject.unconfirmedBalanceSat,
+          currentValue: this.calculateDuffBalance(walletId, accountIndex, 'unconfirmed'),
         });
     }
   }
 
-  // Check if there is a balance but no utxo.
-  addressesStore[type][path] = newObject;
   this.lastModified = Date.now();
 
   if (!this.mappedAddress[newObject.address]) {

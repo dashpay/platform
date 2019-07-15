@@ -26,7 +26,6 @@ class ChainWorker extends Worker {
         'fetchAddressInfo',
         'fetchTransactionInfo',
         'walletId',
-        'getBalance',
       ],
     }, opts);
     super(params);

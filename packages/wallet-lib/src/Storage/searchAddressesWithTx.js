@@ -5,11 +5,10 @@ const _ = require('lodash');
  * @param txid
  * @return {{txid: *, address: null, type: null, found: boolean}}
  */
-const searchAddressWithTx = function (txid) {
+const searchAddressesWithTx = function (txid) {
   const search = {
     txid,
-    address: null,
-    type: null,
+    results: [],
     found: false,
   };
   const store = this.getStore();
@@ -24,11 +23,8 @@ const searchAddressWithTx = function (txid) {
         existingPaths.forEach((path) => {
           const el = store.wallets[walletId].addresses[type][path];
           if (el.transactions.includes(search.txid)) {
-            search.path = path;
-            search.address = el.address;
-            search.type = type;
+            search.results.push(Object.assign({}, { type }, el));
             search.found = true;
-            search.result = el;
           }
         });
       });
@@ -37,4 +33,4 @@ const searchAddressWithTx = function (txid) {
 
   return search;
 };
-module.exports = searchAddressWithTx;
+module.exports = searchAddressesWithTx;

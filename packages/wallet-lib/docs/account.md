@@ -72,15 +72,41 @@ const internalAddresses = account.getAddresses('internal');
 
 ---
 
-### Get Balance
+### Get total Balance
 
-Will return the balance amount in satoshis,
+Will return the total (conf + unconfirmed) balance amount in satoshis,
 
-`const balance = account.getBalance()`
+`const balance = account.getTotalBalance()`
 
 ##### params
 
-> **unconfirmed** : Boolean (default:true) :  Return the balance including unconfirmed inbound tx
+> **displayDuffs** : Boolean (default:true) : When set at true return in Duffs, else what in Dash.
+
+---
+
+---
+
+### Get Confirmed Balance
+
+Will return the confirmed balance amount in satoshis,
+
+`const balance = account.getConfirmedBalance()`
+
+##### params
+
+> **displayDuffs** : Boolean (default:true) : When set at true return in Duffs, else what in Dash.
+
+---
+
+---
+
+### Get unconfirmed Balance
+
+Will return the unconfirmed balance amount in satoshis,
+
+`const balance = account.getUnconfirmedBalance()`
+
+##### params
 
 > **displayDuffs** : Boolean (default:true) : When set at true return in Duffs, else what in Dash.
 

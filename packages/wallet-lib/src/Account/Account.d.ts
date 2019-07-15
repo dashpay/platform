@@ -14,7 +14,9 @@ export declare class Account {
     generateAddress(path:string): AddressObj;
     getAddress(_type: AddressType): AddressObj;
     getAddresses(rawtx: string, isIS: boolean): [AddressObj];
-    getBalance(unconfirmed?: boolean, displayDuffs?:boolean): number;
+    getTotalBalance(displayDuffs?:boolean): number;
+    getConfirmedBalance(displayDuffs?:boolean): number;
+    getUnconfirmedBalance(displayDuffs?:boolean): number;
     getBIP44Path(network?:Network, index?:number): string;
 
     getDPA(name: string): object;

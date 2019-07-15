@@ -8,7 +8,8 @@ const transport = new DAPIClient({
 });
 
 const wallet = new Wallet({
-  mnemonic: 'hurdle rebel rebuild skull add sustain local curious click industry illegal joy',
+  // mnemonic: 'hurdle rebel rebuild skull add sustain local curious click industry illegal joy',
+  mnemonic: 'stand reflect diagram busy sport clarify once ozone evoke doctor vessel aisle',
   network: 'testnet',
   transport,
 });
@@ -20,7 +21,17 @@ const start = async () => {
   // const HDExtPubKey = account.keyChain.getKeyForPath('m/44\'/1\'/0\'/0', 'HDPublicKey');
   // console.log(HDExtPubKey.toString());
 
-  console.log(account.getBalance());
+  // setTimeout(async ()=>{
+  //   const receiveAddress = 'yZHMa5Xr6iEKtoei22wqtuaJGtxtSQZcAz';
+  //   await account.broadcastTransaction(account.createTransaction({
+  //     recipient: receiveAddress, amount: 0.2000
+  //   }));
+  //
+  // },2000)
+
+  console.log(account.getTotalBalance());
+  console.log(account.getConfirmedBalance());
+  console.log(account.getUnconfirmedBalance());
   console.log(account.getUTXOS());
   console.log(account.getUnusedAddress());
 };
@@ -35,14 +46,14 @@ account.events.on(EVENTS.CREATED, (info) => {
 account.events.on(EVENTS.STARTED, (info) => {
   console.log('STARTED');
 });
-account.events.on(EVENTS.BALANCE_CHANGED, (info) => {
+account.events.on(EVENTS.CONFIRMED_BALANCE_CHANGED, (info) => {
   console.log('BALANCE_CHANGED');
 });
 account.events.on(EVENTS.UNCONFIRMED_BALANCE_CHANGED, (info) => {
   console.log('UNCONFIRMED_BALANCE_CHANGED');
 });
 account.events.on(EVENTS.BLOCKHEIGHT_CHANGED, (info) => {
-  console.log('BLOCKHEIGHT_CHANGED');
+  console.log('BLOCKHEIGHT_CHANGED', info);
 });
 account.events.on(EVENTS.BLOCK, (info) => {
   console.log('BLOCK');
@@ -61,16 +72,13 @@ account.events.on(EVENTS.FETCHED_TRANSACTIONS, (info) => {
   console.log('FETCHED_TRANSACTIONS');
 });
 account.events.on(EVENTS.FETCHED_UNCONFIRMED_TRANSACTION, (info) => {
-  console.log('FETCHED_UNCONFIRMED_TRANSACTION');
+  console.log('FETCHED_UNCONFIRMED_TRANSACTION', info);
 });
 account.events.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (info) => {
-  console.log('FETCHED_CONFIRMED_TRANSACTION');
-});
-account.events.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (info) => {
-  console.log('FETCHED_CONFIRMED_TRANSACTION');
+  console.log('FETCHED_CONFIRMED_TRANSACTION', info);
 });
 account.events.on(EVENTS.GENERATED_ADDRESS, (info) => {
-  console.log('GENERATED_ADDRESS');
+  // console.log('GENERATED_ADDRESS');
 });
 account.events.on(EVENTS.DISCOVERY_STARTED, (info) => {
   console.log('DISCOVERY_STARTED');
