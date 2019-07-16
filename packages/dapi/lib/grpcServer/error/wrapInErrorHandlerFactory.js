@@ -1,5 +1,18 @@
 const GrpcError = require('./GrpcError');
-const InternalError = require('./InternalError');
+const InternalGrpcError = require('./InternalGrpcError');
+
+/**
+ * @param {Error} error
+ * @param {grpc.ServerWriteableStream} call
+ * @param {function(Error, *)} [callback]
+ */
+function respondWithError(error, call, callback = undefined) {
+  if (callback) {
+    callback(error, null);
+  } else {
+    call.destroy(error);
+  }
+}
 
 /**
  * @param {Object} logger
@@ -15,21 +28,25 @@ module.exports = function wrapInErrorHandlerFactory(logger) {
    */
   function wrapInErrorHandler(method) {
     /**
-     * @param {Object} call
-     * @param {function(Error, *)} callback
+     * @param {grpc.ServerWriteableStream} call
+     * @param {function(Error, *)} [callback]
      */
-    function rpcMethodErrorHandler(call, callback) {
+    async function rpcMethodErrorHandler(call, callback = undefined) {
       try {
-        method(call, callback);
+        const result = await method(call);
+
+        if (callback) {
+          callback(null, result);
+        }
       } catch (e) {
         if (e instanceof GrpcError) {
-          callback(e, null);
+          respondWithError(e, call, callback);
         } else {
-          const internalError = new InternalError(e);
+          const internalError = new InternalGrpcError(e);
 
           logger.error(e);
 
-          callback(internalError, null);
+          respondWithError(internalError, call, callback);
         }
       }
     }

@@ -2,6 +2,18 @@
 const dotenv = require('dotenv');
 const grpc = require('grpc');
 
+const {
+  LastUserStateTransitionHashRequest,
+  utils: {
+    jsonToProtobufFactory,
+    protobufToJsonFactory,
+  },
+  pbjs: {
+    LastUserStateTransitionHashRequest: PBJSLastUserStateTransitionHashRequest,
+    LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
+  },
+} = require('@dashevo/dapi-grpc');
+
 // Load config from .env
 dotenv.config();
 
@@ -19,6 +31,8 @@ const userIndex = require('../lib/services/userIndex');
 const createServer = require('../lib/grpcServer/createServer');
 const wrapInErrorHandlerFactory = require('../lib/grpcServer/error/wrapInErrorHandlerFactory');
 const getLastUserStateTransitionHashHandlerFactory = require('../lib/grpcServer/handlers/core/getLastUserStateTransitionHashHandlerFactory');
+
+const jsonToProtobufHandlerWrapper = require('../lib/grpcServer/jsonToProtobufHandlerWrapper');
 
 async function main() {
   /* Application start */
@@ -85,8 +99,19 @@ async function main() {
     dashCoreRpcClient,
   );
 
+  const wrappedGetLastUserStateTransitionHash = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      LastUserStateTransitionHashRequest,
+      PBJSLastUserStateTransitionHashRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSLastUserStateTransitionHashResponse,
+    ),
+    wrapInErrorHandler(getLastUserStateTransitionHashHandler),
+  );
+
   const grpcServer = createServer('Core', {
-    getLastUserStateTransitionHash: wrapInErrorHandler(getLastUserStateTransitionHashHandler),
+    getLastUserStateTransitionHash: wrappedGetLastUserStateTransitionHash,
   });
 
   grpcServer.bind(

@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 
 class BloomFilterEmitter extends EventEmitter {
   /**
-   * @param {Filter} bloomFilter
+   * @param {BloomFilter} bloomFilter
    * @param {testFunction} testFunction
    */
   constructor(bloomFilter, testFunction) {
@@ -31,7 +31,7 @@ class BloomFilterEmitter extends EventEmitter {
 
 /**
  * @typedef testFunction
- * @param {Filter} filter
+ * @param {BloomFilter} filter
  * @param {*} data
  */
 

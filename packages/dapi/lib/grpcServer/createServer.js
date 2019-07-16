@@ -9,7 +9,7 @@ const {
   HealthCheckResponse: { ServingStatus: healthCheckStatuses },
 } = require('grpc-health-check/v1/health_pb');
 
-const { loadPackageDefinition } = require('@dashevo/dapi-grpc');
+const { utils: { loadPackageDefinition } } = require('@dashevo/dapi-grpc');
 
 /**
  * @typedef createServer

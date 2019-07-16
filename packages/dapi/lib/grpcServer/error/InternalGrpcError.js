@@ -1,6 +1,6 @@
 const GrpcError = require('./GrpcError');
 
-class InternalError extends GrpcError {
+class InternalGrpcError extends GrpcError {
   /**
    * @param {Error} error
    */
@@ -20,4 +20,4 @@ class InternalError extends GrpcError {
   }
 }
 
-module.exports = InternalError;
+module.exports = InternalGrpcError;

@@ -2,11 +2,11 @@ const { expect, use } = require('chai');
 const dirtyChai = require('dirty-chai');
 
 const GrpcError = require('../../../../lib/grpcServer/error/GrpcError');
-const InvalidArgumentError = require('../../../../lib/grpcServer/error/InvalidArgumentError');
+const InvalidArgumentGrpcError = require('../../../../lib/grpcServer/error/InvalidArgumentGrpcError');
 
 use(dirtyChai);
 
-describe('InvalidArgumentError', () => {
+describe('InvalidArgumentGrpcError', () => {
   let message;
   let metadata;
   let error;
@@ -15,7 +15,7 @@ describe('InvalidArgumentError', () => {
     message = 'Message';
     metadata = {};
 
-    error = new InvalidArgumentError(message, metadata);
+    error = new InvalidArgumentGrpcError(message, metadata);
   });
 
   describe('#getMessage', () => {

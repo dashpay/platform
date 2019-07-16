@@ -20,6 +20,10 @@ function inputIndexToBuffer(transactionHash, inputIndex) {
  * @returns {boolean}
  */
 function filterContainsScript(filter, script) {
+  if (!script) {
+    return false;
+  }
+
   const matchedChunk = script.chunks.find((chunk) => {
     if (chunk.opcodenum === 0 || !chunk.buf) {
       return false;

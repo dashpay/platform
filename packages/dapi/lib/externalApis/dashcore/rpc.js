@@ -186,6 +186,13 @@ const getUTXO = addr => new Promise((resolve, reject) => {
   });
 });
 
+/**
+ *
+ * @param {string} bloomFilter - hex string representing serialized bloom filter
+ * @param {string} fromBlockHash - block hash as a hex string
+ * @param {number} [count] - how many blocks to scan. Max 2000
+ * @return {Promise<string[]>} - serialized merkle blocks
+ */
 const getMerkleBlocks = (bloomFilter, fromBlockHash, count) => new Promise((resolve, reject) => {
   client.getMerkleBlocks(bloomFilter, fromBlockHash, count, (error, response) => {
     if (error) {
@@ -244,6 +251,31 @@ const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
   });
 });
 
+/**
+ * @typedef CoreRpcClient
+ * @type {{
+ * getMempoolInfo: (function(): Promise<any>),
+ * sendRawTransaction: (function(*=): Promise<any>),
+ * getBlock: (function(*=, *=): Promise<any>),
+ * getUser: (function(*=): Promise<any>),
+ * getUTXO: (function(*=): Promise<any>),
+ * getBlockHash: (function(*=): Promise<any>),
+ * getBestBlockHash: (function(): Promise<any>),
+ * getMnListDiff: (function(*=, *=): Promise<any>),
+ * getBlockHeaders: (function(*=, *=, *=): Promise<any>),
+ * getRawTransaction: (function(*=): Promise<any>),
+ * getTransactionFirstInputAddress: (function(*=): Promise<any>),
+ * getBlockHeader: (function(*=): Promise<any>),
+ * sendRawIxTransaction: (function(*=): Promise<any>),
+ * getRawBlock: (function(*=): (*|Promise<any>)),
+ * getQuorum: (function(*=): Promise<any>),
+ * getMasternodesList: (function(): Promise<any>),
+ * getBestBlockHeight: (function(): Promise<any>),
+ * sendRawTransition: (function(*=): Promise<any>),
+ * generate: (function(*=): Promise<any>),
+ * getTransaction: (function(*=): Promise<any>),
+ * getMerkleBlocks: (function(string, string, number): Promise<string[]>)}}
+ */
 module.exports = {
   generate,
   getBestBlockHash,

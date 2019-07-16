@@ -1,11 +1,24 @@
 const dotenv = require('dotenv');
 const grpc = require('grpc');
 
+const {
+  TransactionsWithProofsRequest,
+  utils: {
+    jsonToProtobufFactory,
+    protobufToJsonFactory,
+  },
+  pbjs: {
+    TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
+    TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+  },
+} = require('@dashevo/dapi-grpc');
+
 const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
 const log = require('../lib/log');
 
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
+const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 
 const createServer = require('../lib/grpcServer/createServer');
 const wrapInErrorHandlerFactory = require('../lib/grpcServer/error/wrapInErrorHandlerFactory');
@@ -16,6 +29,11 @@ const testTransactionAgainstFilterCollectionFactory = require('../lib/transactio
 const emitBlockEventToFilterCollectionFactory = require('../lib/transactionsFilter/emitBlockEventToFilterCollectionFactory');
 const testTransactionsAgainstFilter = require('../lib/transactionsFilter/testTransactionAgainstFilter');
 const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServer/handlers/tx-filter-stream/subscribeToTransactionsWithProofsHandlerFactory');
+
+const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
+const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
+
+const jsonToProtobufHandlerWrapper = require('../lib/grpcServer/jsonToProtobufHandlerWrapper');
 
 async function main() {
   dotenv.config();
@@ -69,16 +87,33 @@ async function main() {
 
   const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
 
+  const getHistoricalTransactionsIterator = getHistoricalTransactionsIteratorFactory(
+    dashCoreRpcClient,
+  );
+
   const subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
+    getHistoricalTransactionsIterator,
+    subscribeToNewTransactions,
     bloomFilterEmitterCollection,
     testTransactionsAgainstFilter,
+    dashCoreRpcClient,
+  );
+
+  const wrappedSubscribeToTransactionsWithProofs = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      TransactionsWithProofsRequest,
+      PBJSTransactionsWithProofsRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSTransactionsWithProofsResponse,
+    ),
+    wrapInErrorHandler(subscribeToTransactionsWithProofsHandler),
   );
 
   const grpcServer = createServer(
     'TransactionsFilterStream',
     {
-      subscribeToTransactionsWithProofs:
-        wrapInErrorHandler(subscribeToTransactionsWithProofsHandler),
+      subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
     },
   );
 

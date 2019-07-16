@@ -1,61 +1,52 @@
-const { LastUserStateTransitionHashResponse } = require('@dashevo/dapi-grpc');
+const {
+  LastUserStateTransitionHashResponse,
+} = require('@dashevo/dapi-grpc');
 
-const InvalidArgumentError = require('../../error/InvalidArgumentError');
+const InvalidArgumentGrpcError = require('../../error/InvalidArgumentGrpcError');
 
 /**
  * @param {RpcClient} coreAPI
- * @returns {getLastStateTransitionHashHandler}
+ * @returns {getLastUserStateTransitionHashHandler}
  */
-function getLastStateTransitionHashHandlerFactory(coreAPI) {
+function getLastUserStateTransitionHashHandlerFactory(coreAPI) {
   /**
-   * @typedef getLastStateTransitionHashHandler
+   * @typedef getLastUserStateTransitionHashHandler
    * @param {Object} call
-   * @param {function(Error, Object)} callback
    */
-  function getLastStateTransitionHashHandler(call, callback) {
-    const { userId: userIdBuffer } = call.request;
+  async function getLastUserStateTransitionHashHandler(call) {
+    const { request } = call;
 
-    if (userIdBuffer.length !== 256) {
-      const error = new InvalidArgumentError('userId length is not 256 bytes');
+    const userIdBuffer = request.getUserId_asU8();
 
-      callback(error, null);
-
-      return;
+    if (!userIdBuffer || userIdBuffer.length === 0) {
+      throw new InvalidArgumentGrpcError('userId is not specified');
     }
 
-    const userId = userIdBuffer.toString('hex');
+    const userId = Buffer.from(userIdBuffer)
+      .toString('hex');
 
-    coreAPI.getUser(userId)
-      .then((user) => {
-        if (!user) {
-          const error = new InvalidArgumentError(`User was not found by id ${userId}`);
+    let user;
+    try {
+      user = await coreAPI.getUser(userId);
+    } catch (e) {
+      throw new InvalidArgumentGrpcError(`Could not retrieve user by id ${userId}. Reason: ${e.message}`);
+    }
 
-          callback(error, null);
+    const response = new LastUserStateTransitionHashResponse();
 
-          return;
-        }
+    if (Array.isArray(user.subtx) && user.subtx.length > 0) {
+      const stateTransitionHash = Buffer.from(
+        user.subtx[user.subtx.length - 1],
+        'hex',
+      );
 
-        const response = new LastUserStateTransitionHashResponse();
+      response.setStateTransitionHash(stateTransitionHash);
+    }
 
-        let stateTransitionHash = null;
-
-        if (Array.isArray(user.subtx) && user.subtx.length > 0) {
-          stateTransitionHash = Buffer.from(
-            user.subtx[user.subtx.length - 1],
-            'hex',
-          );
-        }
-
-        response.setStateTransitionHash(stateTransitionHash);
-
-        callback(null, response);
-      })
-      .catch((e) => {
-        throw new Error(`Could not fetch user from Core: ${e.message}`);
-      });
+    return response;
   }
 
-  return getLastStateTransitionHashHandler;
+  return getLastUserStateTransitionHashHandler;
 }
 
-module.exports = getLastStateTransitionHashHandlerFactory;
+module.exports = getLastUserStateTransitionHashHandlerFactory;

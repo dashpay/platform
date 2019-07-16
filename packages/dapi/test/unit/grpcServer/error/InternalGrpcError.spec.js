@@ -2,18 +2,18 @@ const { expect, use } = require('chai');
 const dirtyChai = require('dirty-chai');
 
 const GrpcError = require('../../../../lib/grpcServer/error/GrpcError');
-const InternalError = require('../../../../lib/grpcServer/error/InternalError');
+const InternalGrpcError = require('../../../../lib/grpcServer/error/InternalGrpcError');
 
 use(dirtyChai);
 
-describe('InternalError', () => {
+describe('InternalGrpcError', () => {
   let error;
   let internalError;
 
   beforeEach(() => {
     error = new Error();
 
-    internalError = new InternalError(error);
+    internalError = new InternalGrpcError(error);
   });
 
   describe('#getError', () => {
