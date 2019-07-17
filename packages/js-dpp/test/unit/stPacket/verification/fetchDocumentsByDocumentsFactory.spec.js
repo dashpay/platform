@@ -44,11 +44,9 @@ describe('fetchDocumentsByDocuments', () => {
       contract.getId(),
       documents[0].getType(),
       {
-        where: {
-          _id: {
-            $in: [documents[0].getId()],
-          },
-        },
+        where: [
+          ['$id', 'in', [documents[0].getId()]],
+        ],
       },
     ];
 
@@ -56,14 +54,12 @@ describe('fetchDocumentsByDocuments', () => {
       contract.getId(),
       documents[1].getType(),
       {
-        where: {
-          _id: {
-            $in: [
-              documents[1].getId(),
-              documents[2].getId(),
-            ],
-          },
-        },
+        where: [
+          ['$id', 'in', [
+            documents[1].getId(),
+            documents[2].getId(),
+          ]],
+        ],
       },
     ];
 
@@ -71,14 +67,12 @@ describe('fetchDocumentsByDocuments', () => {
       contract.getId(),
       documents[3].getType(),
       {
-        where: {
-          _id: {
-            $in: [
-              documents[3].getId(),
-              documents[4].getId(),
-            ],
-          },
-        },
+        where: [
+          ['$id', 'in', [
+            documents[3].getId(),
+            documents[4].getId(),
+          ]],
+        ],
       },
     ];
 

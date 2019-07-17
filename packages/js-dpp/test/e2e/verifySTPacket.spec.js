@@ -155,6 +155,8 @@ describe('verifySTPacket', function main() {
       expect.fail('Duplicate object was successfully sent');
     } catch (e) {
       const error = e.originalError;
+
+      expect(error).to.have.property('data');
       expect(error.data[0].name).to.equal('DuplicateDocumentError');
       expect(error.data[0].document).to.deep.equal(thirdUserDocument.toJSON());
       expect(error.data[0].indexDefinition).to.deep.equal({

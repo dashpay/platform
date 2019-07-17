@@ -1,5 +1,6 @@
 const ValidationResult = require('../../validation/ValidationResult');
 const DuplicateDocumentError = require('../../errors/DuplicateDocumentError');
+const Document = require('../../document/Document');
 
 /**
  * @param {fetchDocumentsByDocuments} fetchDocumentsByDocuments
@@ -30,23 +31,18 @@ function verifyDocumentsUniquenessByIndicesFactory(fetchDocumentsByDocuments, da
           .filter(index => index.unique)
           .forEach((indexDefinition) => {
             const where = indexDefinition.properties
-              .reduce((obj, property) => {
+              .map((property) => {
                 const propertyName = Object.keys(property)[0];
 
+                let propertyValue;
                 if (propertyName === '$userId') {
-                  // eslint-disable-next-line no-param-reassign
-                  obj.userId = userId;
+                  propertyValue = userId;
                 } else {
-                  // eslint-disable-next-line no-param-reassign
-                  obj[`document.${propertyName}`] = document.get(propertyName);
+                  propertyValue = document.get(propertyName);
                 }
 
-                return obj;
-              }, {});
-
-            // Exclude origin Document
-            // eslint-disable-next-line no-underscore-dangle
-            where._id = { $ne: document.getId() };
+                return [propertyName, '==', propertyValue];
+              });
 
             queries.push({
               type: document.getType(),
@@ -82,8 +78,13 @@ function verifyDocumentsUniquenessByIndicesFactory(fetchDocumentsByDocuments, da
 
     // 3. Create errors if duplicates found
     fetchedDocumentsByIndices
-      .filter(documents => documents.length !== 0)
-      .forEach((documents) => {
+      .filter((documents) => {
+        const isEmpty = documents.length === 0;
+        const onlyOriginDocument = documents.length === 1
+          && new Document(documents[0]).getId() === documents.originDocument.getId();
+
+        return !isEmpty && !onlyOriginDocument;
+      }).forEach((documents) => {
         result.addError(
           new DuplicateDocumentError(
             documents.originDocument,

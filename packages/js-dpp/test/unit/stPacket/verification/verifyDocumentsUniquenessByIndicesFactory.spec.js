@@ -8,6 +8,8 @@ const getContractFixture = require('../../../../lib/test/fixtures/getContractFix
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
 
+const ValidationResult = require('../../../../lib/validation/ValidationResult');
+
 const DuplicateDocumentError = require('../../../../lib/errors/DuplicateDocumentError');
 
 describe('verifyDocumentsUniquenessByIndices', () => {
@@ -39,23 +41,57 @@ describe('verifyDocumentsUniquenessByIndices', () => {
     );
   });
 
-  it('should return invalid result if Document has unique indices and there are duplicates', async () => {
-    const [, , , william, leon] = documents;
+  it('should return valid result if Documents have no unique indices');
 
-    const indicesDefinition = contract.getDocumentSchema(william.getType()).indices;
-
-    dataProviderMock.fetchDocuments.resolves([]);
+  it('should return valid result if Document has unique indices and there are no duplicates', async () => {
+    const [, , , william] = documents;
 
     dataProviderMock.fetchDocuments
       .withArgs(
         stPacket.getContractId(),
         william.getType(),
         {
-          where: {
-            userId,
-            'document.firstName': william.get('firstName'),
-            _id: { $ne: william.getId() },
-          },
+          where: [
+            ['$userId', '==', userId],
+            ['firstName', '==', william.get('firstName')],
+          ],
+        },
+      )
+      .resolves([william.toJSON()]);
+
+    dataProviderMock.fetchDocuments
+      .withArgs(
+        stPacket.getContractId(),
+        william.getType(),
+        {
+          where: [
+            ['$userId', '==', userId],
+            ['lastName', '==', william.get('lastName')],
+          ],
+        },
+      )
+      .resolves([william.toJSON()]);
+
+    const result = await verifyDocumentsUniquenessByIndices(stPacket, userId, contract);
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+  });
+
+  it('should return invalid result if Document has unique indices and there are duplicates', async () => {
+    const [, , , william, leon] = documents;
+
+    const indicesDefinition = contract.getDocumentSchema(william.getType()).indices;
+
+    dataProviderMock.fetchDocuments
+      .withArgs(
+        stPacket.getContractId(),
+        william.getType(),
+        {
+          where: [
+            ['$userId', '==', userId],
+            ['firstName', '==', william.get('firstName')],
+          ],
         },
       )
       .resolves([leon.toJSON()]);
@@ -65,11 +101,10 @@ describe('verifyDocumentsUniquenessByIndices', () => {
         stPacket.getContractId(),
         william.getType(),
         {
-          where: {
-            userId,
-            'document.lastName': william.get('lastName'),
-            _id: { $ne: william.getId() },
-          },
+          where: [
+            ['$userId', '==', userId],
+            ['lastName', '==', william.get('lastName')],
+          ],
         },
       )
       .resolves([leon.toJSON()]);
@@ -79,11 +114,10 @@ describe('verifyDocumentsUniquenessByIndices', () => {
         stPacket.getContractId(),
         leon.getType(),
         {
-          where: {
-            userId,
-            'document.firstName': leon.get('firstName'),
-            _id: { $ne: leon.getId() },
-          },
+          where: [
+            ['$userId', '==', userId],
+            ['firstName', '==', leon.get('firstName')],
+          ],
         },
       )
       .resolves([william.toJSON()]);
@@ -93,11 +127,10 @@ describe('verifyDocumentsUniquenessByIndices', () => {
         stPacket.getContractId(),
         leon.getType(),
         {
-          where: {
-            userId,
-            'document.lastName': leon.get('lastName'),
-            _id: { $ne: leon.getId() },
-          },
+          where: [
+            ['$userId', '==', userId],
+            ['lastName', '==', leon.get('lastName')],
+          ],
         },
       )
       .resolves([william.toJSON()]);

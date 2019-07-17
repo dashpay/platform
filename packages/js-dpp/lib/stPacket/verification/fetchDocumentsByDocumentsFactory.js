@@ -28,7 +28,7 @@ function fetchDocumentsByDocumentsFactory(dataProvider) {
     // Fetch Documents by IDs
     const fetchedDocumentsPromises = documentArray.map(([type, ids]) => {
       const options = {
-        where: { _id: { $in: ids } },
+        where: [['$id', 'in', ids]],
       };
 
       return dataProvider.fetchDocuments(
