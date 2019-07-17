@@ -92,9 +92,11 @@ services:
         - insight
       ports:
         - 3000:3000
+        - 3005:3005
       environment:
         - INSIGHT_URI=http://insight:3001/insight-api
         - RPC_SERVER_PORT=3000
+        - CORE_GRPC_PORT=3005
         - DASHCORE_RPC_HOST=core
         - DASHCORE_RPC_PORT=20002
         - DASHCORE_RPC_USER=dashrpc
@@ -112,10 +114,10 @@ services:
       - ipfs
       - insight
     ports:
-      - 3002:3000
+      - 3010:3010
     environment:
       - INSIGHT_URI=http://insight:3001/insight-api
-      - RPC_SERVER_PORT=3000
+      - TX_FILTER_STREAM_GRPC_PORT=3010
       - DASHCORE_RPC_HOST=core
       - DASHCORE_RPC_PORT=20002
       - DASHCORE_RPC_USER=dashrpc
@@ -123,7 +125,6 @@ services:
       - DASHCORE_ZMQ_HOST=core
       - DASHCORE_ZMQ_PORT=29998
       - NETWORK=$DASH_NETWORK
-
 
 volumes:
   drive_mongodb:
