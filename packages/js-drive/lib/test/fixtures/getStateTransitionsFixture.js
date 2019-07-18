@@ -6,7 +6,7 @@ const createStateTransitionFixture = require('./createStateTransitionFixture');
 const transitions = [];
 
 /**
- * @param {integer} numberOfTransitions
+ * @param {number} numberOfTransitions
  * @return {StateTransition[]}
  */
 function getStateTransitionsFixture(numberOfTransitions = 5) {

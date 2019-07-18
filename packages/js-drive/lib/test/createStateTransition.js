@@ -10,12 +10,12 @@ const createStateTransitionFixture = require('./fixtures/createStateTransitionFi
  * @param {string} privateKeyString
  * @param {STPacket} stPacket
  * @param {string} hashPrevSubTx
- * @returns {Promise<Transaction>}
+ * @returns {StateTransition}
  */
 function createStateTransition(regTxId, privateKeyString, stPacket, hashPrevSubTx = undefined) {
   const privateKey = new PrivateKey(privateKeyString);
 
-  const transaction = createStateTransitionFixture({
+  return createStateTransitionFixture({
     extraPayload: createPayloadFixture({
       regTxId,
       hashPrevSubTx,
@@ -23,8 +23,6 @@ function createStateTransition(regTxId, privateKeyString, stPacket, hashPrevSubT
       privateKey,
     }),
   });
-
-  return transaction;
 }
 
 module.exports = createStateTransition;

@@ -8,8 +8,8 @@ const createPayloadFixture = require('./createPayloadFixture');
  * Create a single StateTransition fixture
  *
  * @param {object} options
- * @param {integer} options.type
- * @param {integer} options.version
+ * @param {number} options.type
+ * @param {number} options.version
  * @param {number} options.fee
  * @param {SubTxTransitionPayload} options.extraPayload
  *

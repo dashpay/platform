@@ -6,7 +6,7 @@ const createError = require('../api/jsonRpc/createError');
  * Returns error until initial sync process is not completed
  *
  * @param {Function} inSynced
- * @param {RpcClient} rpcClient
+ * @param {getSyncInfo} getSyncInfo
  * @param {SyncStateRepositoryChangeListener} stateRepositoryChangeListener
  * @param {number} checkInterval
  */
