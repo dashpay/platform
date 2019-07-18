@@ -5,7 +5,6 @@ const convertWhereToMongoDbQuery = require('../../../../lib/stateView/document/m
 const validateQueryFactory = require('../../../../lib/stateView/document/query/validateQueryFactory');
 const findConflictingConditions = require('../../../../lib/stateView/document/query/findConflictingConditions');
 
-const sanitizer = require('../../../../lib/mongoDb/sanitizer');
 const createSVDocumentMongoDbRepositoryFactory = require('../../../../lib/stateView/document/mongoDbRepository/createSVDocumentMongoDbRepositoryFactory');
 const fetchDocumentsFactory = require('../../../../lib/stateView/document/fetchDocumentsFactory');
 
@@ -30,7 +29,6 @@ describe('fetchDocumentsFactory', () => {
     createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       mongoClient,
       SVDocumentMongoDbRepository,
-      sanitizer,
       convertWhereToMongoDbQuery,
       validateQuery,
     );

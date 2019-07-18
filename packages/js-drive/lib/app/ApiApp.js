@@ -3,8 +3,6 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
 const { MongoClient } = require('mongodb');
 const DashPlatformProtocol = require('@dashevo/dpp');
 
-const sanitizer = require('../mongoDb/sanitizer');
-
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
 const SyncStateRepositoryChangeListener = require('../../lib/sync/state/repository/SyncStateRepositoryChangeListener');
 
@@ -242,7 +240,6 @@ class ApiApp {
       const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
         this.mongoClient,
         SVDocumentMongoDbRepository,
-        sanitizer,
         convertWhereToMongoDbQuery,
         validateQuery,
       );

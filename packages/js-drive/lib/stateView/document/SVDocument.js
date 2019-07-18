@@ -87,7 +87,20 @@ class SVDocument extends Revisions {
    *           },
    *           isDeleted: boolean,
    *           userId: string,
-   *           document: RawDocument,
+   *           data: RawDocument,
+   *           scope: string,
+   *           scopeId: string,
+   *           action: number,
+   *           currentRevision: {
+   *            revision: number,
+   *            reference: {
+   *              blockHash: string,
+   *              blockHeight: number,
+   *              stHash: string,
+   *              stPacketHash: string,
+   *              hash: string
+   *            }
+   *           },
    *           previousRevisions: {
    *            revision: number,
    *            reference: {
@@ -103,8 +116,12 @@ class SVDocument extends Revisions {
     return {
       userId: this.getUserId(),
       isDeleted: this.isDeleted(),
-      document: this.getDocument().toJSON(),
+      data: this.getDocument().getData(),
       reference: this.getReference().toJSON(),
+      scope: this.getDocument().scope,
+      scopeId: this.getDocument().scopeId,
+      action: this.getDocument().getAction(),
+      currentRevision: this.getCurrentRevision().toJSON(),
       previousRevisions: this.getPreviousRevisions().map(r => r.toJSON()),
     };
   }

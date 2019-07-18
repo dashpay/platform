@@ -3,7 +3,6 @@ const PREFIX = 'dpa_';
 /**
  * @param {MongoClient} mongoClient
  * @param {SVDocumentMongoDbRepository} SVDocumentMongoDbRepository
- * @param {sanitizer} sanitizer
  * @param {convertWhereToMongoDbQuery} convertWhereToMongoDbQuery
  * @param {validateQuery} validateQuery
  * @returns {createSVDocumentMongoDbRepository}
@@ -11,7 +10,6 @@ const PREFIX = 'dpa_';
 function createSVDocumentMongoDbRepositoryFactory(
   mongoClient,
   SVDocumentMongoDbRepository,
-  sanitizer,
   convertWhereToMongoDbQuery,
   validateQuery,
 ) {
@@ -28,7 +26,6 @@ function createSVDocumentMongoDbRepositoryFactory(
 
     return new SVDocumentMongoDbRepository(
       mongoDb,
-      sanitizer,
       convertWhereToMongoDbQuery,
       validateQuery,
       documentType,

@@ -10,7 +10,7 @@ const systemFields = {
  * @return {string}
  */
 function convertFieldName(field) {
-  let mongoDbField = `document.${field}`;
+  let mongoDbField = `data.${field}`;
   if (field.startsWith('$')) {
     mongoDbField = systemFields[field];
   }

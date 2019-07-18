@@ -12,16 +12,15 @@ const InvalidQueryError = require('../errors/InvalidQueryError');
 class SVDocumentMongoDbRepository {
   /**
    * @param {Db} mongoClient
-   * @param {sanitizer} sanitizer
    * @param {convertWhereToMongoDbQuery} convertWhereToMongoDbQuery
    * @param {validateQuery} validateQuery
    * @param {string} documentType
    */
-  constructor(mongoClient, sanitizer, convertWhereToMongoDbQuery, validateQuery, documentType) {
+  constructor(mongoClient, convertWhereToMongoDbQuery, validateQuery, documentType) {
     this.mongoClient = mongoClient.collection(`documents_${documentType}`);
-    this.sanitizer = sanitizer;
     this.convertWhereToMongoDbQuery = convertWhereToMongoDbQuery;
     this.validateQuery = validateQuery;
+    this.documentType = documentType;
   }
 
   /**
@@ -119,7 +118,7 @@ class SVDocumentMongoDbRepository {
   store(svDocument) {
     return this.mongoClient.updateOne(
       { _id: svDocument.getDocument().getId() },
-      { $set: this.sanitizer.sanitize(svDocument.toJSON()) },
+      { $set: svDocument.toJSON() },
       { upsert: true },
     );
   }
@@ -143,12 +142,21 @@ class SVDocumentMongoDbRepository {
   createSVDocument({
     userId,
     isDeleted,
-    document: sanitizedDocument,
+    data: storedData,
     reference,
+    scope,
+    scopeId,
+    action,
+    currentRevision,
     previousRevisions,
   }) {
-    const rawDocument = this.sanitizer.unsanitize(sanitizedDocument);
+    const rawDocument = Object.assign({}, storedData);
 
+    rawDocument.$scope = scope;
+    rawDocument.$scopeId = scopeId;
+    rawDocument.$action = action;
+    rawDocument.$rev = currentRevision.revision;
+    rawDocument.$type = this.documentType;
     rawDocument.$meta = {
       userId,
     };

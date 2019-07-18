@@ -67,10 +67,14 @@ describe('SVDocument', () => {
 
       expect(result).to.deep.equal({
         userId,
-        document: document.toJSON(),
+        data: document.getData(),
         reference: reference.toJSON(),
         isDeleted,
         previousRevisions,
+        scope: document.scope,
+        scopeId: document.scopeId,
+        action: document.getAction(),
+        currentRevision: svDocument.getCurrentRevision().toJSON(),
       });
     });
   });

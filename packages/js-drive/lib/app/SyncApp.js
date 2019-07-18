@@ -7,8 +7,6 @@ const DriveDataProvider = require('../dpp/DriveDataProvider');
 
 const Logger = require('../util/Logger');
 
-const sanitizer = require('../mongoDb/sanitizer');
-
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
 const SVContractMongoDbRepository = require('../stateView/contract/SVContractMongoDbRepository');
 const SVDocumentMongoDbRepository = require('../stateView/document/mongoDbRepository/SVDocumentMongoDbRepository');
@@ -239,7 +237,6 @@ class SyncApp {
       this.svDocumentMongoDbRepositoryFactory = createSVDocumentMongoDbRepositoryFactory(
         this.mongoClient,
         SVDocumentMongoDbRepository,
-        sanitizer,
         convertWhereToMongoDbQuery,
         validateQuery,
       );

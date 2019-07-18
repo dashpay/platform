@@ -11,8 +11,6 @@ const DriveDataProvider = require('../../../lib/dpp/DriveDataProvider');
 
 const Reference = require('../../../lib/stateView/revisions/Reference');
 
-const sanitizer = require('../../../lib/mongoDb/sanitizer');
-
 const createSVDocumentMongoDbRepositoryFactory = require('../../../lib/stateView/document/mongoDbRepository/createSVDocumentMongoDbRepositoryFactory');
 const convertWhereToMongoDbQuery = require('../../../lib/stateView/document/mongoDbRepository/convertWhereToMongoDbQuery');
 const validateQueryFactory = require('../../../lib/stateView/document/query/validateQueryFactory');
@@ -79,7 +77,6 @@ describe('applyStateTransitionFactory', () => {
     createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       mongoClient,
       SVDocumentMongoDbRepository,
-      sanitizer,
       convertWhereToMongoDbQuery,
       validateQuery,
     );
