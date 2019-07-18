@@ -9,7 +9,7 @@ before_install:
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 install:
-  - npm install
+  - npm ci
 
 before_script:
   - npm run lint
