@@ -13,8 +13,11 @@ const Reference = require('../../../lib/stateView/revisions/Reference');
 
 const sanitizer = require('../../../lib/mongoDb/sanitizer');
 
-const createSVDocumentMongoDbRepositoryFactory = require('../../../lib/stateView/document/createSVDocumentMongoDbRepositoryFactory');
-const SVDocumentMongoDbRepository = require('../../../lib/stateView/document/SVDocumentMongoDbRepository');
+const createSVDocumentMongoDbRepositoryFactory = require('../../../lib/stateView/document/mongoDbRepository/createSVDocumentMongoDbRepositoryFactory');
+const convertWhereToMongoDbQuery = require('../../../lib/stateView/document/mongoDbRepository/convertWhereToMongoDbQuery');
+const validateQueryFactory = require('../../../lib/stateView/document/query/validateQueryFactory');
+const findConflictingConditions = require('../../../lib/stateView/document/query/findConflictingConditions');
+const SVDocumentMongoDbRepository = require('../../../lib/stateView/document/mongoDbRepository/SVDocumentMongoDbRepository');
 const SVContractMongoDbRepository = require('../../../lib/stateView/contract/SVContractMongoDbRepository');
 const updateSVContractFactory = require('../../../lib/stateView/contract/updateSVContractFactory');
 const updateSVDocumentFactory = require('../../../lib/stateView/document/updateSVDocumentFactory');
@@ -71,10 +74,14 @@ describe('applyStateTransitionFactory', () => {
       1000,
     );
 
+    const validateQuery = validateQueryFactory(findConflictingConditions);
+
     createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       mongoClient,
       SVDocumentMongoDbRepository,
       sanitizer,
+      convertWhereToMongoDbQuery,
+      validateQuery,
     );
 
     const updateSVContract = updateSVContractFactory(svContractMongoDbRepository);

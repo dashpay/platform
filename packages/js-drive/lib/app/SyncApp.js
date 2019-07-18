@@ -11,8 +11,11 @@ const sanitizer = require('../mongoDb/sanitizer');
 
 const SyncStateRepository = require('../sync/state/repository/SyncStateRepository');
 const SVContractMongoDbRepository = require('../stateView/contract/SVContractMongoDbRepository');
-const SVDocumentMongoDbRepository = require('../stateView/document/SVDocumentMongoDbRepository');
-const createSVDocumentMongoDbRepositoryFactory = require('../stateView/document/createSVDocumentMongoDbRepositoryFactory');
+const SVDocumentMongoDbRepository = require('../stateView/document/mongoDbRepository/SVDocumentMongoDbRepository');
+const createSVDocumentMongoDbRepositoryFactory = require('../stateView/document/mongoDbRepository/createSVDocumentMongoDbRepositoryFactory');
+const convertWhereToMongoDbQuery = require('../stateView/document/mongoDbRepository/convertWhereToMongoDbQuery');
+const validateQueryFactory = require('../stateView/document/query/validateQueryFactory');
+const findConflictingConditions = require('../stateView/document/query/findConflictingConditions');
 const updateSVContractFactory = require('../stateView/contract/updateSVContractFactory');
 const updateSVDocumentFactory = require('../stateView/document/updateSVDocumentFactory');
 const revertSVDocumentsForStateTransitionFactory = require('../stateView/document/revertSVDocumentsForStateTransitionFactory');
@@ -227,15 +230,32 @@ class SyncApp {
 
   /**
    * @private
+   * @return {createSVDocumentMongoDbRepository}
+   */
+  createSVDocumentMongoDbRepository() {
+    if (!this.svDocumentMongoDbRepositoryFactory) {
+      const validateQuery = validateQueryFactory(findConflictingConditions);
+
+      this.svDocumentMongoDbRepositoryFactory = createSVDocumentMongoDbRepositoryFactory(
+        this.mongoClient,
+        SVDocumentMongoDbRepository,
+        sanitizer,
+        convertWhereToMongoDbQuery,
+        validateQuery,
+      );
+    }
+
+    return this.svDocumentMongoDbRepositoryFactory;
+  }
+
+  /**
+   * @private
    * @return {fetchDocuments}
    */
   createFetchDocuments() {
     if (!this.fetchDocuments) {
-      const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
-        this.mongoClient,
-        SVDocumentMongoDbRepository,
-        sanitizer,
-      );
+      const createSVDocumentMongoDbRepository = this.createSVDocumentMongoDbRepository();
+
       this.fetchDocuments = fetchDocumentsFactory(createSVDocumentMongoDbRepository);
     }
 
@@ -277,11 +297,7 @@ class SyncApp {
       mongoDb,
       this.createDashPlatformProtocol(),
     );
-    const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
-      this.getMongoClient(),
-      SVDocumentMongoDbRepository,
-      sanitizer,
-    );
+    const createSVDocumentMongoDbRepository = this.createSVDocumentMongoDbRepository();
 
     const updateSVContract = updateSVContractFactory(svContractMongoDbRepository);
     const updateSVDocument = updateSVDocumentFactory(createSVDocumentMongoDbRepository);
@@ -317,11 +333,7 @@ class SyncApp {
    * @returns {revertSVDocumentsForStateTransition}
    */
   createRevertSVDocumentsForStateTransition() {
-    const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
-      this.getMongoClient(),
-      SVDocumentMongoDbRepository,
-      sanitizer,
-    );
+    const createSVDocumentMongoDbRepository = this.createSVDocumentMongoDbRepository();
 
     return revertSVDocumentsForStateTransitionFactory(
       this.createSTPacketRepository(),

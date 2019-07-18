@@ -1,10 +1,5 @@
 const InvalidParamsError = require('../InvalidParamsError');
-const InvalidWhereError = require('../../stateView/document/errors/InvalidWhereError');
-const InvalidOrderByError = require('../../stateView/document/errors/InvalidOrderByError');
-const InvalidLimitError = require('../../stateView/document/errors/InvalidLimitError');
-const InvalidStartAtError = require('../../stateView/document/errors/InvalidStartAtError');
-const InvalidStartAfterError = require('../../stateView/document/errors/InvalidStartAfterError');
-const AmbiguousStartError = require('../../stateView/document/errors/AmbiguousStartError');
+const InvalidQueryError = require('../../stateView/document/errors/InvalidQueryError');
 
 /**
  * @param {fetchDocuments} fetchDocuments
@@ -17,8 +12,12 @@ module.exports = function fetchDocumentsMethodFactory(fetchDocuments) {
    * @returns {Promise<Object[]>}
    */
   async function fetchDocumentsMethod(params) {
-    if (!params.contractId || !params.type) {
-      throw new InvalidParamsError();
+    if (!params.contractId) {
+      throw new InvalidParamsError('Missing "contractId" param');
+    }
+
+    if (!params.type) {
+      throw new InvalidParamsError('Missing "type" param');
     }
 
     try {
@@ -26,17 +25,11 @@ module.exports = function fetchDocumentsMethodFactory(fetchDocuments) {
 
       return documents.map(d => d.toJSON());
     } catch (error) {
-      switch (error.constructor) {
-        case InvalidWhereError:
-        case InvalidOrderByError:
-        case InvalidLimitError:
-        case InvalidStartAtError:
-        case InvalidStartAfterError:
-        case AmbiguousStartError:
-          throw new InvalidParamsError();
-        default:
-          throw error;
+      if (error instanceof InvalidQueryError) {
+        throw new InvalidParamsError(error.message, error.getErrors());
       }
+
+      throw error;
     }
   }
 

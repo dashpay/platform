@@ -2,13 +2,9 @@ const fetchDocumentsMethodFactory = require('../../../../lib/api/methods/fetchDo
 
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
+const ValidationError = require('../../../../lib/stateView/document/query/errors/ValidationError');
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
-const InvalidWhereError = require('../../../../lib/stateView/document/errors/InvalidWhereError');
-const InvalidOrderByError = require('../../../../lib/stateView/document/errors/InvalidOrderByError');
-const InvalidLimitError = require('../../../../lib/stateView/document/errors/InvalidLimitError');
-const InvalidStartAtError = require('../../../../lib/stateView/document/errors/InvalidStartAtError');
-const InvalidStartAfterError = require('../../../../lib/stateView/document/errors/InvalidStartAfterError');
-const AmbiguousStartError = require('../../../../lib/stateView/document/errors/AmbiguousStartError');
+const InvalidQueryError = require('../../../../lib/stateView/document/errors/InvalidQueryError');
 
 describe('fetchDocumentsMethodFactory', () => {
   let contractId;
@@ -16,21 +12,6 @@ describe('fetchDocumentsMethodFactory', () => {
   let options;
   let fetchDocumentsMock;
   let fetchDocumentsMethod;
-
-  async function throwErrorAndExpectInvalidParamError(error) {
-    fetchDocumentsMock.throws(error);
-
-    let actualError;
-    try {
-      await fetchDocumentsMethod({ contractId, type, options });
-    } catch (e) {
-      actualError = e;
-    }
-
-    expect(actualError).to.be.an.instanceOf(InvalidParamsError);
-
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(contractId, type, options);
-  }
 
   beforeEach(function beforeEach() {
     contractId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
@@ -41,41 +22,49 @@ describe('fetchDocumentsMethodFactory', () => {
     fetchDocumentsMethod = fetchDocumentsMethodFactory(fetchDocumentsMock);
   });
 
-  it('should throw InvalidParamsError if Contract ID is not provided', async () => {
-    let error;
+  it('should throw InvalidParamsError if "type" is not provided', async () => {
     try {
-      await fetchDocumentsMethod({});
+      await fetchDocumentsMethod({ contractId });
+
+      expect.fail('should throw InvalidParamsError error');
     } catch (e) {
-      error = e;
+      expect(e).to.be.an.instanceOf(InvalidParamsError);
+      expect(e).to.have.property('message', 'Missing "type" param');
+
+      expect(fetchDocumentsMock).to.have.not.been.called();
     }
+  });
 
-    expect(error).to.be.an.instanceOf(InvalidParamsError);
+  it('should throw InvalidParamsError if "contractId" is not provided', async () => {
+    try {
+      await fetchDocumentsMethod({ type });
 
-    expect(fetchDocumentsMock).to.have.not.been.called();
+      expect.fail('should throw InvalidParamsError error');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidParamsError);
+      expect(e).to.have.property('message', 'Missing "contractId" param');
+
+      expect(fetchDocumentsMock).to.have.not.been.called();
+    }
   });
 
   it('should throw InvalidParamsError if InvalidWhereError is thrown', async () => {
-    await throwErrorAndExpectInvalidParamError(new InvalidWhereError());
-  });
+    const validationErrors = [new ValidationError('something')];
+    const error = new InvalidQueryError(validationErrors);
 
-  it('should throw InvalidParamsError if InvalidOrderByError is thrown', async () => {
-    await throwErrorAndExpectInvalidParamError(new InvalidOrderByError());
-  });
+    fetchDocumentsMock.throws(error);
 
-  it('should throw InvalidParamsError if InvalidLimitError is thrown', async () => {
-    await throwErrorAndExpectInvalidParamError(new InvalidLimitError());
-  });
+    try {
+      await fetchDocumentsMethod({ contractId, type, options });
 
-  it('should throw InvalidParamsError if InvalidStartAtError is thrown', async () => {
-    await throwErrorAndExpectInvalidParamError(new InvalidStartAtError());
-  });
+      expect.fail('should throw InvalidParamsError error');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidParamsError);
+      expect(e).to.have.property('message', error.message);
+      expect(e).to.have.property('data', error.getErrors());
 
-  it('should throw InvalidParamsError if InvalidStartAfterError is thrown', async () => {
-    await throwErrorAndExpectInvalidParamError(new InvalidStartAfterError());
-  });
-
-  it('should throw InvalidParamsError if AmbiguousStartError is thrown', async () => {
-    await throwErrorAndExpectInvalidParamError(new AmbiguousStartError());
+      expect(fetchDocumentsMock).to.have.been.calledOnceWith(contractId, type, options);
+    }
   });
 
   it('should escalate an error if error type is unknown', async () => {

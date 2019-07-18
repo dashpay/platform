@@ -25,8 +25,11 @@ const createCIDFromHash = require('../storage/stPacket/createCIDFromHash');
 const fetchContractFactory = require('../stateView/contract/fetchContractFactory');
 const fetchContractMethodFactory = require('../api/methods/fetchContractMethodFactory');
 
-const SVDocumentMongoDbRepository = require('../stateView/document/SVDocumentMongoDbRepository');
-const createSVDocumentMongoDbRepositoryFactory = require('../stateView/document/createSVDocumentMongoDbRepositoryFactory');
+const SVDocumentMongoDbRepository = require('../stateView/document/mongoDbRepository/SVDocumentMongoDbRepository');
+const createSVDocumentMongoDbRepositoryFactory = require('../stateView/document/mongoDbRepository/createSVDocumentMongoDbRepositoryFactory');
+const convertWhereToMongoDbQuery = require('../stateView/document/mongoDbRepository/convertWhereToMongoDbQuery');
+const validateQueryFactory = require('../stateView/document/query/validateQueryFactory');
+const findConflictingConditions = require('../stateView/document/query/findConflictingConditions');
 const fetchDocumentsFactory = require('../stateView/document/fetchDocumentsFactory');
 const fetchDocumentsMethodFactory = require('../api/methods/fetchDocumentsMethodFactory');
 
@@ -234,10 +237,14 @@ class ApiApp {
    */
   createFetchDocuments() {
     if (!this.fetchDocuments) {
+      const validateQuery = validateQueryFactory(findConflictingConditions);
+
       const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
         this.mongoClient,
         SVDocumentMongoDbRepository,
         sanitizer,
+        convertWhereToMongoDbQuery,
+        validateQuery,
       );
       this.fetchDocuments = fetchDocumentsFactory(createSVDocumentMongoDbRepository);
     }

@@ -14,11 +14,14 @@ const ReaderMediator = require('../../../../lib/blockchain/reader/BlockchainRead
 
 const Revision = require('../../../../lib/stateView/revisions/Revision');
 const Reference = require('../../../../lib/stateView/revisions/Reference');
-const SVDocumentMongoDbRepository = require('../../../../lib/stateView/document/SVDocumentMongoDbRepository');
+const SVDocumentMongoDbRepository = require('../../../../lib/stateView/document/mongoDbRepository/SVDocumentMongoDbRepository');
 const SVDocument = require('../../../../lib/stateView/document/SVDocument');
+const convertWhereToMongoDbQuery = require('../../../../lib/stateView/document/mongoDbRepository/convertWhereToMongoDbQuery');
+const validateQueryFactory = require('../../../../lib/stateView/document/query/validateQueryFactory');
+const findConflictingConditions = require('../../../../lib/stateView/document/query/findConflictingConditions');
 
 const revertSVDocumentsForStateTransitionFactory = require('../../../../lib/stateView/document/revertSVDocumentsForStateTransitionFactory');
-const createSVDocumentMongoDbRepositoryFactory = require('../../../../lib/stateView/document/createSVDocumentMongoDbRepositoryFactory');
+const createSVDocumentMongoDbRepositoryFactory = require('../../../../lib/stateView/document/mongoDbRepository/createSVDocumentMongoDbRepositoryFactory');
 const updateSVDocumentFactory = require('../../../../lib/stateView/document/updateSVDocumentFactory');
 const applyStateTransitionFactory = require('../../../../lib/stateView/applyStateTransitionFactory');
 const applyStateTransitionFromReferenceFactory = require('../../../../lib/stateView/applyStateTransitionFromReferenceFactory');
@@ -75,10 +78,14 @@ describe('revertSVDocumentsForStateTransitionFactory', () => {
       1000,
     );
 
+    const validateQuery = validateQueryFactory(findConflictingConditions);
+
     createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       mongoClient,
       SVDocumentMongoDbRepository,
       sanitizer,
+      convertWhereToMongoDbQuery,
+      validateQuery,
     );
 
     updateSVDocument = updateSVDocumentFactory(createSVDocumentMongoDbRepository);
@@ -248,7 +255,7 @@ describe('revertSVDocumentsForStateTransitionFactory', () => {
       block: thirdDocumentRevision.block,
     });
 
-    const revertedSVDocuments = await svDocumentRepository.fetch(document.getId());
+    const revertedSVDocuments = await svDocumentRepository.fetch();
 
     expect(revertedSVDocuments).to.be.an('array');
 

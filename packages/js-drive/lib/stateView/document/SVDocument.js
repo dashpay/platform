@@ -26,6 +26,17 @@ class SVDocument extends Revisions {
   }
 
   /**
+   * Set user ID
+   *
+   * @return {SVDocument}
+   */
+  setUserId(userId) {
+    this.userId = userId;
+
+    return this;
+  }
+
+  /**
    * Get Document
    *
    * @return {Document}

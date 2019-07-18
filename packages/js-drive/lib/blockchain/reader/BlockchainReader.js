@@ -52,6 +52,7 @@ class BlockchainReader {
               lastError = e;
             }
 
+            // noinspection ExceptionCaughtLocallyJS
             throw lastError;
           }
         }
