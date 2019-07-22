@@ -8,6 +8,10 @@ class DocumentMetadata {
     if (Object.prototype.hasOwnProperty.call(rawDocumentMetadata, 'userId')) {
       this.userId = rawDocumentMetadata.userId;
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawDocumentMetadata, 'stReference')) {
+      this.stReference = rawDocumentMetadata.stReference;
+    }
   }
 
   /**
@@ -20,14 +24,29 @@ class DocumentMetadata {
   }
 
   /**
+   * Get raw reference
+   *
+   * @returns {RawSTReference}
+   */
+  getSTReference() {
+    return this.stReference;
+  }
+
+  /**
    * Get the JSON representation of the meta
    *
    * @returns {RawDocumentMetadata}
    */
   toJSON() {
-    return {
+    const json = {
       userId: this.userId,
     };
+
+    if (this.stReference) {
+      json.stReference = this.stReference;
+    }
+
+    return json;
   }
 }
 
