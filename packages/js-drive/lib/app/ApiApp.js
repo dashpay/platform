@@ -11,7 +11,7 @@ const SyncStateRepositoryChangeListener = require('../../lib/sync/state/reposito
 const isSynced = require('../../lib/sync/isSynced');
 const getCheckSyncStateHttpMiddleware = require('../../lib/sync/getCheckSyncHttpMiddleware');
 
-const wrapToErrorHandler = require('../../lib/api/jsonRpc/wrapToErrorHandler');
+const wrapToErrorHandlerFactory = require('../../lib/api/jsonRpc/wrapToErrorHandlerFactory');
 
 const STPacketIpfsRepository = require('../storage/stPacket/STPacketIpfsRepository');
 const addSTPacketFactory = require('../../lib/storage/stPacket/addSTPacketFactory');
@@ -38,6 +38,8 @@ const isDashCoreRunningFactory = require('../../lib/sync/isDashCoreRunningFactor
 const DashCoreIsNotRunningError = require('../../lib/sync/DashCoreIsNotRunningError');
 
 const DriveDataProvider = require('../dpp/DriveDataProvider');
+
+const Logger = require('../../lib/util/Logger');
 
 /**
  * Remove 'Method' Postfix
@@ -115,12 +117,23 @@ class ApiApp {
   }
 
   /**
+   * @private
+   * @return {Logger}
+   */
+  createLogger() {
+    return new Logger(console);
+  }
+
+  /**
    * Create RPC methods with names
    *
    * @return {{string: Function}}
    */
   createRpcMethodsWithNames() {
     const methods = {};
+
+    const logger = this.createLogger();
+    const wrapToErrorHandler = wrapToErrorHandlerFactory(logger);
 
     for (const method of this.createRpcMethods()) {
       methods[rmPostfix(method)] = wrapToErrorHandler(method);

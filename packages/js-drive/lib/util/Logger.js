@@ -7,8 +7,8 @@ class Logger {
     this.writer.log(this.buildMessage(message, data));
   }
 
-  error(message, data) {
-    this.writer.error(this.buildMessage(message, data));
+  error(message, data, error) {
+    this.writer.error(this.buildMessage(message, data), error);
   }
 
   /**
