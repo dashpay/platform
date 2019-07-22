@@ -156,7 +156,15 @@ describe('revertSVDocumentsForStateTransitionFactory', () => {
     expect(svDocumentsAfterReverting).to.be.empty();
 
     const documentJson = document.toJSON();
-    documentJson.$meta = { userId };
+    documentJson.$meta = {
+      userId,
+      stReference: {
+        blockHash: reference.getBlockHash(),
+        blockHeight: reference.getBlockHeight(),
+        stHeaderHash: reference.getSTHash(),
+        stPacketHash: reference.getSTPacketHash(),
+      },
+    };
 
     expect(readerMediatorMock.emitSerial).to.have.been.calledWith(
       ReaderMediator.EVENTS.DOCUMENT_MARKED_DELETED,
@@ -266,8 +274,19 @@ describe('revertSVDocumentsForStateTransitionFactory', () => {
       previousRevisions[0],
     ]);
 
+    const currentReference = svDocument.getCurrentRevision()
+      .getReference();
+
     const documentJson = svDocument.getDocument().toJSON();
-    documentJson.$meta = { userId: svDocument.getUserId() };
+    documentJson.$meta = {
+      userId: svDocument.getUserId(),
+      stReference: {
+        blockHash: currentReference.getBlockHash(),
+        blockHeight: currentReference.getBlockHeight(),
+        stHeaderHash: currentReference.getSTHash(),
+        stPacketHash: currentReference.getSTPacketHash(),
+      },
+    };
 
     expect(readerMediatorMock.emitSerial.getCall(1)).to.have.been.calledWith(
       ReaderMediator.EVENTS.DOCUMENT_REVERTED,

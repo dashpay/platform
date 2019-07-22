@@ -18,6 +18,7 @@ describe('fetchDocumentsFactory', () => {
   let type;
   let contractId;
   let document;
+  let stReference;
 
   startMongoDb().then((mongoDb) => {
     mongoClient = mongoDb.getClient();
@@ -37,7 +38,16 @@ describe('fetchDocumentsFactory', () => {
 
     [svDocument] = getSVDocumentsFixture();
 
+    const currentReference = svDocument.getCurrentRevision()
+      .getReference();
+
     document = svDocument.getDocument();
+    stReference = {
+      blockHash: currentReference.getBlockHash(),
+      blockHeight: currentReference.getBlockHeight(),
+      stHeaderHash: currentReference.getSTHash(),
+      stPacketHash: currentReference.getSTPacketHash(),
+    };
     type = document.getType();
     contractId = 'HgKXrLhm7sMjPrRGS1UsETmmQ7nZHbaKN729zw55PUVk';
   });
@@ -53,7 +63,11 @@ describe('fetchDocumentsFactory', () => {
 
     const [actualDocument] = result;
 
-    expect(actualDocument.toJSON()).to.deep.equal(document.toJSON());
+    const documentJSON = document.toJSON();
+
+    documentJSON.$meta.stReference = stReference;
+
+    expect(actualDocument.toJSON()).to.deep.equal(documentJSON);
   });
 
   it('should fetch Documents for specified contract id, document type and name', async () => {
@@ -72,7 +86,11 @@ describe('fetchDocumentsFactory', () => {
 
     const [actualDocument] = result;
 
-    expect(actualDocument.toJSON()).to.deep.equal(document.toJSON());
+    const documentJSON = document.toJSON();
+
+    documentJSON.$meta.stReference = stReference;
+
+    expect(actualDocument.toJSON()).to.deep.equal(documentJSON);
   });
 
   it('should return empty array for specified contract ID, document type and name not exist', async () => {

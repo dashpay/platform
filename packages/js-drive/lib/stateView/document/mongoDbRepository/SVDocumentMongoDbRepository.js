@@ -159,6 +159,12 @@ class SVDocumentMongoDbRepository {
     rawDocument.$type = this.documentType;
     rawDocument.$meta = {
       userId,
+      stReference: {
+        blockHash: reference.blockHash,
+        blockHeight: reference.blockHeight,
+        stHeaderHash: reference.stHash,
+        stPacketHash: reference.stPacketHash,
+      },
     };
 
     return new SVDocument(
