@@ -1,4 +1,4 @@
-const { expect } = require('chai');
+const {expect} = require('chai');
 const getTransactionHistory = require('../../src/Account/getTransactionHistory');
 const searchTransaction = require('../../src/Storage/searchTransaction');
 const getTransaction = require('../../src/Storage/getTransaction');
@@ -70,14 +70,14 @@ describe('Account - getTransactionHistory', () => {
       },
       {
         fees: 930,
-        from: [{ address: 'yQSVFizTKcPLz2V7zoZ3HkkJ7sQmb5jXAs', amount: '350', valueSat: 35000000000 },
+        from: [{address: 'yQSVFizTKcPLz2V7zoZ3HkkJ7sQmb5jXAs', amount: '350', valueSat: 35000000000},
           {
             address: 'yNY6spErvvm9C8at2KQpvAfd6TPumgyETh',
             amount: '440.99997209',
             valueSat: 44099997209,
 
           },
-          { address: 'yhnTNo6tkmr8tA4SAL8gcci1z5rPHuaoxA', amount: '125', valueSat: 12500000000 },
+          {address: 'yhnTNo6tkmr8tA4SAL8gcci1z5rPHuaoxA', amount: '125', valueSat: 12500000000},
           {
             address: 'ySVpgHLkgrrrsbaWJhW5GMHZjeSkADrsTJ',
             amount: '49.99999753',
@@ -135,7 +135,7 @@ describe('Account - getTransactionHistory', () => {
       {
         fees: 247,
         from: [
-          { address: 'yRf8x9bov39e2vHtibjeG35ZNF4BCpSZGe', amount: '450', valueSat: 45000000000 },
+          {address: 'yRf8x9bov39e2vHtibjeG35ZNF4BCpSZGe', amount: '450', valueSat: 45000000000},
         ],
         time: 1548153589,
         to: [{
@@ -318,8 +318,8 @@ describe('Account - getTransactionHistory', () => {
       {
         fees: 522,
         from: [
-          { address: 'yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5', amount: '1000', valueSat: 100000000000 },
-          { address: 'yifmFokBdParjkfZp3Bu5oR9gTtHtPEU3b', amount: '2.99998582', valueSat: 299998582 },
+          {address: 'yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5', amount: '1000', valueSat: 100000000000},
+          {address: 'yifmFokBdParjkfZp3Bu5oR9gTtHtPEU3b', amount: '2.99998582', valueSat: 299998582},
         ],
         time: 1548505964,
         to: [{
@@ -332,5 +332,28 @@ describe('Account - getTransactionHistory', () => {
       },
     ];
     expect(txHistorySA).to.be.deep.equal(expectedTxHistorySA);
+  });
+  it('should output in less than a second', async () => {
+    const storageHDW = {
+      store: mockedStoreHDWallet,
+      getStore: () => mockedStoreHDWallet,
+      mappedAddress: {},
+    };
+    const walletIdHDW = Object.keys(mockedStoreHDWallet.wallets)[0];
+    const selfHDW = Object.assign({
+      walletId: walletIdHDW,
+      accountIndex: 0,
+      storage: storageHDW,
+    });
+
+
+    selfHDW.storage.searchTransaction = searchTransaction.bind(storageHDW);
+    selfHDW.storage.searchAddress = searchAddress.bind(storageHDW);
+    selfHDW.getTransaction = getTransaction.bind(storageHDW);
+    const timestartTs = +new Date();
+    const txHistoryHDW = await getTransactionHistory.call(selfHDW);
+    const timeendTs = +new Date();
+    const calculationTime = timeendTs - timestartTs;
+    expect(calculationTime).to.be.below(60 * 1000);
   });
 });
