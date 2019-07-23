@@ -14,8 +14,14 @@ fi
 
 IMAGE_NAME="dashpay/drive"
 
+# Use regex pattern matching to check if "dev" exists in tag
+DOCKER_TAG="latest"
+if [[ $PACKAGE_TAG =~ dev ]]; then
+  DOCKER_TAG="dev"
+fi
+
 docker build --build-arg NODE_ENV=development \
-             -t "${IMAGE_NAME}:latest" \
+             -t "${IMAGE_NAME}:${DOCKER_TAG}" \
              -t "${IMAGE_NAME}:${VERSION}" \
              .
 
@@ -23,5 +29,5 @@ docker build --build-arg NODE_ENV=development \
 echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
 # Push images to the registry
-docker push "${IMAGE_NAME}:latest"
+docker push "${IMAGE_NAME}:${DOCKER_TAG}"
 docker push "${IMAGE_NAME}:${VERSION}"
