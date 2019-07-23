@@ -50,34 +50,6 @@ const _defaultOpts = {
 class Storage {
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
-    Object.assign(Storage.prototype, {
-      addNewTxToAddress,
-      addUTXOToAddress,
-      announce,
-      calculateDuffBalance,
-      clearAll,
-      configure,
-      createChain,
-      createWallet,
-      getStore,
-      getTransaction,
-      importAccounts,
-      importAddress,
-      importAddresses,
-      importSingleAddress,
-      importTransaction,
-      importTransactions,
-      rehydrateState,
-      saveState,
-      searchAddress,
-      searchAddressesWithTx,
-      searchTransaction,
-      searchWallet,
-      updateAddress,
-      updateTransaction,
-      startWorker,
-      stopWorker,
-    });
 
     this.events = new EventEmitter();
     this.store = cloneDeep(initialStore);
@@ -99,4 +71,31 @@ class Storage {
     this.events = events;
   }
 }
+Storage.prototype.addNewTxToAddress = addNewTxToAddress;
+Storage.prototype.addUTXOToAddress = addUTXOToAddress;
+Storage.prototype.announce = announce;
+Storage.prototype.calculateDuffBalance = calculateDuffBalance;
+Storage.prototype.clearAll = clearAll;
+Storage.prototype.configure = configure;
+Storage.prototype.createChain = createChain;
+Storage.prototype.createWallet = createWallet;
+Storage.prototype.getStore = getStore;
+Storage.prototype.getTransaction = getTransaction;
+Storage.prototype.importAccounts = importAccounts;
+Storage.prototype.importAddress = importAddress;
+Storage.prototype.importAddresses = importAddresses;
+Storage.prototype.importSingleAddress = importSingleAddress;
+Storage.prototype.importTransaction = importTransaction;
+Storage.prototype.importTransactions = importTransactions;
+Storage.prototype.rehydrateState = rehydrateState;
+Storage.prototype.saveState = saveState;
+Storage.prototype.searchAddress = searchAddress;
+Storage.prototype.searchAddressesWithTx = searchAddressesWithTx;
+Storage.prototype.searchTransaction = searchTransaction;
+Storage.prototype.searchWallet = searchWallet;
+Storage.prototype.updateAddress = updateAddress;
+Storage.prototype.updateTransaction = updateTransaction;
+Storage.prototype.startWorker = startWorker;
+Storage.prototype.stopWorker = stopWorker;
+
 module.exports = Storage;

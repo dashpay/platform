@@ -53,36 +53,6 @@ const hasPlugins = require('./hasPlugins');
 
 class Account {
   constructor(wallet, opts = defaultOptions) {
-    Object.assign(Account.prototype, {
-      broadcastTransaction,
-      connect,
-      createTransaction,
-      disconnect,
-      fetchAddressInfo,
-      fetchStatus,
-      fetchTransactionInfo,
-      forceRefreshAccount,
-      generateAddress,
-      getAddress,
-      getAddresses,
-      getConfirmedBalance,
-      getUnconfirmedBalance,
-      getTotalBalance,
-      getBIP44Path,
-      getDPA,
-      getPlugin,
-      getWorker,
-      getPrivateKeys,
-      getTransaction,
-      getTransactionHistory,
-      getTransactions,
-      getUnusedAddress,
-      getUTXOS,
-      injectPlugin,
-      sign,
-      updateNetwork,
-      hasPlugins,
-    });
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
@@ -165,11 +135,39 @@ class Account {
         }
       }
     }
-
     this.events.emit(EVENTS.CREATED);
     _addAccountToWallet(this, wallet);
     _initializeAccount(this, wallet.plugins);
   }
 }
+
+Account.prototype.broadcastTransaction = broadcastTransaction;
+Account.prototype.connect = connect;
+Account.prototype.createTransaction = createTransaction;
+Account.prototype.disconnect = disconnect;
+Account.prototype.fetchAddressInfo = fetchAddressInfo;
+Account.prototype.fetchStatus = fetchStatus;
+Account.prototype.fetchTransactionInfo = fetchTransactionInfo;
+Account.prototype.forceRefreshAccount = forceRefreshAccount;
+Account.prototype.generateAddress = generateAddress;
+Account.prototype.getAddress = getAddress;
+Account.prototype.getAddresses = getAddresses;
+Account.prototype.getConfirmedBalance = getConfirmedBalance;
+Account.prototype.getUnconfirmedBalance = getUnconfirmedBalance;
+Account.prototype.getTotalBalance = getTotalBalance;
+Account.prototype.getBIP44Path = getBIP44Path;
+Account.prototype.getDPA = getDPA;
+Account.prototype.getPlugin = getPlugin;
+Account.prototype.getWorker = getWorker;
+Account.prototype.getPrivateKeys = getPrivateKeys;
+Account.prototype.getTransaction = getTransaction;
+Account.prototype.getTransactionHistory = getTransactionHistory;
+Account.prototype.getTransactions = getTransactions;
+Account.prototype.getUnusedAddress = getUnusedAddress;
+Account.prototype.getUTXOS = getUTXOS;
+Account.prototype.injectPlugin = injectPlugin;
+Account.prototype.sign = sign;
+Account.prototype.updateNetwork = updateNetwork;
+Account.prototype.hasPlugins = hasPlugins;
 
 module.exports = Account;

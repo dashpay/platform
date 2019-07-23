@@ -46,16 +46,13 @@ class Wallet {
    * @param opts
    */
   constructor(opts = defaultOptions) {
+    // Immediate prototype method-composition are used in order to give access in constructor.
     Object.assign(Wallet.prototype, {
-      createAccount,
-      disconnect,
-      getAccount,
       fromMnemonic,
       fromSeed,
       fromPrivateKey,
       fromHDExtPublicKey,
       generateNewWalletId,
-      updateNetwork,
       exportWallet,
     });
 
@@ -122,5 +119,12 @@ class Wallet {
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals
   }
 }
+
+Wallet.prototype.createAccount = createAccount;
+Wallet.prototype.disconnect = disconnect;
+Wallet.prototype.getAccount = getAccount;
+Wallet.prototype.generateNewWalletId = generateNewWalletId;
+Wallet.prototype.updateNetwork = updateNetwork;
+Wallet.prototype.exportWallet = exportWallet;
 
 module.exports = Wallet;
