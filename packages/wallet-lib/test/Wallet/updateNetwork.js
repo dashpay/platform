@@ -17,9 +17,9 @@ describe('Wallet - update network', () => {
       accounts: [{ updateNetwork: () => called += 1 }],
     };
     updateNetwork.call(self1, 'mainnet');
-    expect(self1.network).to.equal(Dashcore.Networks.mainnet);
+    expect(self1.network).to.equal(Dashcore.Networks.mainnet.toString());
     updateNetwork.call(self1, 'testnet');
-    expect(self1.network).to.equal(Dashcore.Networks.testnet);
+    expect(self1.network).to.equal(Dashcore.Networks.testnet.toString());
 
     expect(called).to.equal(2);
     const self2 = {
@@ -27,9 +27,9 @@ describe('Wallet - update network', () => {
       accounts: [{ updateNetwork: () => called += 1 }],
     };
     updateNetwork.call(self2, 'testnet');
-    expect(self2.network).to.equal(Dashcore.Networks.testnet);
+    expect(self2.network).to.equal(Dashcore.Networks.testnet.toString());
     updateNetwork.call(self2, 'mainnet');
-    expect(self2.network).to.equal(Dashcore.Networks.mainnet);
+    expect(self2.network).to.equal(Dashcore.Networks.mainnet.toString());
     expect(called).to.equal(4);
   });
 });

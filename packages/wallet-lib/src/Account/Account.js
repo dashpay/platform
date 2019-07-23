@@ -98,7 +98,7 @@ class Account {
     const accountIndex = _.has(opts, 'accountIndex') ? opts.accountIndex : wallet.accounts.length;
     this.accountIndex = accountIndex;
     this.strategy = _loadStrategy(_.has(opts, 'strategy') ? opts.strategy : defaultOptions.strategy);
-    this.network = getNetwork(wallet.network.toString());
+    this.network = getNetwork(wallet.network).toString();
 
     this.BIP44PATH = getBIP44Path(this.network, accountIndex);
 

@@ -113,7 +113,7 @@ function createTransaction(opts) {
     if (el.address) return el.address;
     return Dashcore.Script
       .fromHex(el.scriptPubKey)
-      .toAddress(this.network)
+      .toAddress(this.getNetwork())
       .toString();
   });
 

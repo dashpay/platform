@@ -9,56 +9,10 @@
               "m/44'/1'/0'": {
                 "label": null,
                 "path": "m/44'/1'/0'",
-                "network": {
-                  "name": "testnet",
-                  "alias": "regtest",
-                  "pubkeyhash": 140,
-                  "privatekey": 239,
-                  "scripthash": 19,
-                  "xpubkey": 70617039,
-                  "xprivkey": 70615956,
-                  "port": 19999,
-                  "networkMagic": {
-                    "type": "Buffer",
-                    "data": [
-                      206,
-                      226,
-                      202,
-                      255
-                    ]
-                  },
-                  "dnsSeeds": [
-                    "testnet-seed.darkcoin.io",
-                    "testnet-seed.dashdot.io",
-                    "test.dnsseed.masternode.io"
-                  ]
-                }
+                "network": "testnet"
               }
             },
-            "network": {
-              "name": "testnet",
-              "alias": "regtest",
-              "pubkeyhash": 140,
-              "privatekey": 239,
-              "scripthash": 19,
-              "xpubkey": 70617039,
-              "xprivkey": 70615956,
-              "port": 19999,
-              "networkMagic": {
-                "type": "Buffer",
-                "data": [
-                  206,
-                  226,
-                  202,
-                  255
-                ]
-              },
-              "dnsSeeds": [
-                "testnet-seed.darkcoin.io",
-                "testnet-seed.dashdot.io",
-                "test.dnsseed.masternode.io"
-              ]
-            },
+            "network":"testnet",
             "mnemonic": "orange endorse vintage grant brother regular miss hobby hand update recall orient",
             "type": "hdwallet",
             "blockheight": 0,

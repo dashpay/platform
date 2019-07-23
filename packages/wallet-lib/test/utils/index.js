@@ -198,8 +198,8 @@ describe('Utils', () => {
   });
   it('should is.network work', () => {
     const notANetwork = [];
-    const network = Networks.livenet;
-    const networktestnet = Networks.testnet;
+    const network = Networks.livenet.toString();
+    const networktestnet = Networks.testnet.toString();
     const network2 = 'livenet';
     const network2testnet = 'testnet';
     const notanetwork = notANetwork;

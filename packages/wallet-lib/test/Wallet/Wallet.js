@@ -27,13 +27,13 @@ describe('Wallet - class', () => {
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.length(10);
-    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet);
+    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
 
     const wallet2 = new Wallet(mocks);
     expect(wallet2.walletType).to.be.equal(WALLET_TYPES.HDWALLET);
     expect(Dashcore.Mnemonic(wallet2.mnemonic).toString()).to.be.equal(wallet2.mnemonic);
     expect(wallet2.mnemonic).to.be.not.equal(wallet1.mnemonic);
-    expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.testnet);
+    expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
 
     wallet1.storage.events.on('CONFIGURED', () => {
       wallet1.disconnect();
@@ -49,7 +49,7 @@ describe('Wallet - class', () => {
 
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
-    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet);
+    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
@@ -59,7 +59,7 @@ describe('Wallet - class', () => {
     const opts2 = Object.assign({ mnemonic: knifeMnemonic.mnemonic, network: 'livenet' }, mocks);
     const wallet2 = new Wallet(opts2);
     expect(wallet2.walletType).to.be.equal(WALLET_TYPES.HDWALLET);
-    expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.mainnet);
+    expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.mainnet.toString());
     expect(Dashcore.Mnemonic(wallet2.mnemonic).toString()).to.be.equal(wallet2.mnemonic);
     expect(wallet2.walletId).to.be.equal(knifeMnemonic.walletIdMainnet);
     wallet1.storage.events.on('CONFIGURED', () => {
@@ -76,7 +76,7 @@ describe('Wallet - class', () => {
 
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
-    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet);
+    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
@@ -93,7 +93,7 @@ describe('Wallet - class', () => {
 
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
-    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet);
+    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPublicKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
@@ -110,7 +110,7 @@ describe('Wallet - class', () => {
 
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
-    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet);
+    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('privateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
@@ -154,7 +154,7 @@ describe('Wallet - Get/Create Account', () => {
     wallet1.disconnect();
   });
   it('should encrypt wallet with a passphrase', () => {
-    const network = Dashcore.Networks.testnet;
+    const network = Dashcore.Networks.testnet.toString();
     const passphrase = 'Evolution';
     const config = {
       mnemonic: fluidMnemonic.mnemonic,
@@ -170,7 +170,7 @@ describe('Wallet - Get/Create Account', () => {
     });
   });
   it('should be able to create an account at a specific index', (done) => {
-    const network = Dashcore.Networks.testnet;
+    const network = Dashcore.Networks.testnet.toString();
     const passphrase = 'Evolution';
     const config = {
       mnemonic: fluidMnemonic.mnemonic,

@@ -53,7 +53,7 @@ describe('Storage - constructor', () => {
       wallets: {
         squawk7700: {
           accounts: {},
-          network: Dashcore.Networks.testnet,
+          network: Dashcore.Networks.testnet.toString(),
           mnemonic: null,
           type: null,
           blockheight: 0,

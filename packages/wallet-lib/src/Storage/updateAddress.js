@@ -37,7 +37,7 @@ const updateAddress = function (addressObj, walletId) {
   // if(newObject.utxos.length==0 && previousObject.utxos.length>0){
   //
   // }
-  const currentBlockHeight = this.store.chains[walletStore.network.name].blockheight;
+  const currentBlockHeight = this.store.chains[walletStore.network].blockheight;
 
   // We calculate here the balanceSat and unconfirmedBalanceSat of our addressObj
   // We do that to avoid getBalance to be slow, so we have to keep that in mind or then

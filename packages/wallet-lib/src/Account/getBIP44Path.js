@@ -9,7 +9,7 @@ const {
  * @return {string} - BIP44 Path to account
  */
 const getBIP44Path = function (network, accountIndex = 0) {
-  return (network === Dashcore.Networks.livenet)
+  return (network === Dashcore.Networks.livenet.toString())
     ? `${BIP44_LIVENET_ROOT_PATH}/${accountIndex}'`
     : `${BIP44_TESTNET_ROOT_PATH}/${accountIndex}'`;
 };

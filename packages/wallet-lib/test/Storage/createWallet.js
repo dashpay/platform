@@ -17,7 +17,7 @@ describe('Storage - createWallet', () => {
       wallets: {
         '123ae': {
           accounts: {},
-          network: Dashcore.Networks.testnet,
+          network: Dashcore.Networks.testnet.toString(),
           mnemonic: null,
           type: null,
           blockheight: 0,
@@ -40,7 +40,7 @@ describe('Storage - createWallet', () => {
       wallets: {
         squawk7700: {
           accounts: {},
-          network: Dashcore.Networks.testnet,
+          network: Dashcore.Networks.testnet.toString(),
           mnemonic: null,
           type: null,
           blockheight: 0,

@@ -8,7 +8,8 @@ const { is } = require('../utils/index');
  */
 module.exports = function updateNetwork(network) {
   if (is.network(network) && network !== this.network) {
-    this.network = Dashcore.Networks[network];
+    // Used to ensure network exist in Dashcore
+    this.network = Dashcore.Networks[network].toString();
     // this.transport.updateNetwork(network);
     if (this.accounts) {
       this.accounts.forEach((acc) => {

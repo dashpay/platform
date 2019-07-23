@@ -1,4 +1,4 @@
-const {expect} = require('chai');
+const { expect } = require('chai');
 const mockedStore = require('../fixtures/sirentonight-fullstore-snapshot-1562711703');
 const getTotalBalance = require('../../src/Account/getTotalBalance');
 const getConfirmedBalance = require('../../src/Account/getConfirmedBalance');

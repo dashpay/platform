@@ -43,7 +43,7 @@ describe('Wallet - HDExtPublicKey', () => {
 
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
-    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet);
+    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPublicKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
