@@ -121,6 +121,13 @@ describe('Wallet - class', () => {
       wallet1.disconnect();
     });
   });
+  it('should have an offline Mode', () => {
+    const wallet = new Wallet(Object.assign({ offlineMode: true, privateKey: cR4t6ePrivateKey.privateKey, network: 'testnet' }, mocks));
+    expect(wallet.offlineMode).to.equal(true);
+    wallet.storage.events.on('CONFIGURED', () => {
+      wallet.disconnect();
+    });
+  });
 });
 describe('Wallet - Get/Create Account', () => {
   const wallet1 = new Wallet(Object.assign({ mnemonic: fluidMnemonic.mnemonic }, mocks));

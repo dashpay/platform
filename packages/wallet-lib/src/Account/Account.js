@@ -59,6 +59,8 @@ class Account {
 
     this.events = new EventEmitter();
     this.isReady = false;
+    this.isInitialized = false;
+    this.isDisconnecting = false;
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
 

@@ -19,8 +19,9 @@ const StorageUnableToAddTransaction = require('./StorageUnableToAddTransaction')
 const TransactionNotInStore = require('./TransactionNotInStore');
 
 const UnknownDPA = require('./UnknownDPA');
-
+const UnknownWorker = require('./UnknownWorker');
 const UnknownPlugin = require('./UnknownPlugin');
+
 const ValidTransportLayerRequired = require('./ValidTransportLayerRequired');
 const WalletLibError = require('./WalletLibError');
 
@@ -44,6 +45,7 @@ module.exports = {
   TransactionNotInStore,
   UnknownDPA,
   UnknownPlugin,
+  UnknownWorker,
   ValidTransportLayerRequired,
   WalletLibError,
 };

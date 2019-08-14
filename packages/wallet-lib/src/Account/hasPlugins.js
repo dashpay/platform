@@ -1,13 +1,16 @@
 const _ = require('lodash');
 /**
  * To any object passed (Transaction, ST,..), will try to sign the message given passed keys.
- * @param plugins {Array} - Array of constructor
+ * @param searchedPlugins {Array} - Array of constructor or single plugin constructor
  */
-module.exports = function hasPlugins(searchedPlugins) {
+module.exports = function hasPlugins(searchedPlugins = []) {
   const search = {
     found: false,
     results: [],
   };
+  if (!Array.isArray(searchedPlugins)) {
+    return hasPlugins.call(this, [searchedPlugins]);
+  }
   const { plugins } = this;
   _.each(searchedPlugins, (searchedPlugin) => {
     const result = {};

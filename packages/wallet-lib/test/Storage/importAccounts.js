@@ -2,8 +2,8 @@ const { expect } = require('chai');
 const importAccounts = require('../../src/Storage/importAccounts');
 const Wallet = require('../../src/Wallet/Wallet');
 
-describe('Storage - importAccounts', function suite() {
-  this.timeout(5000);
+describe('Storage - importAccounts', async function suite() {
+  this.timeout(15000);
   it('should throw on failed import', () => {
     const mockOpts1 = { };
     const walletId = '123ae';
@@ -13,25 +13,28 @@ describe('Storage - importAccounts', function suite() {
     expect(() => importAccounts.call({}, walletId)).to.throw(exceptedException1);
   });
   it('should create a wallet if not existing', (done) => {
+
     const wallet = new Wallet({ offlineMode: true });
     wallet.storage.events.on('CONFIGURED', () => {
       const acc = wallet.getAccount();
-      let called = 0;
+      acc.events.on('*', (msg) => { console.log(msg); });
+      acc.events.on('INITIALIZED', () => {
+        let called = 0;
 
-      const self = {
-        searchWallet: () => ({ found: false }),
-        createWallet: () => (called += 1),
-        store: { wallets: { } },
-      };
-      self.store.wallets[wallet.walletId] = { accounts: {} };
-      importAccounts.call(self, acc, wallet.walletId);
+        const self = {
+          searchWallet: () => ({ found: false }),
+          createWallet: () => (called += 1),
+          store: { wallets: { } },
+        };
+        self.store.wallets[wallet.walletId] = { accounts: {} };
+        importAccounts.call(self, acc, wallet.walletId);
 
-      console.log(self.store);
-      // Called twice because of recursivity. We have a Acc Instance here.
-      expect(called).to.be.equal(2);
-      wallet.disconnect();
-      acc.disconnect();
-      done();
+        // Called twice because of recursivity. We have a Acc Instance here.
+        expect(called).to.be.equal(2);
+        wallet.disconnect();
+        acc.disconnect();
+        done();
+      });
     });
   });
   it('should import an account', (done) => {

@@ -20,7 +20,16 @@ const _defaultOpts = {
   workerIntervalTime: 10 * 1000,
 };
 
+/**
+ * SyncWorker is a worker that is responsible for fetching address, transactions
+ * and dealing with ensuring syncing the accounts data in general (for chain, see ChainWorker).
+ *
+ */
 class SyncWorker extends Worker {
+  /**
+   * Create the syncWorker instance
+   * @param opts
+   */
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     const params = Object.assign({

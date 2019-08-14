@@ -5,7 +5,8 @@
  * @return {Boolean}
  */
 module.exports = function disconnect() {
-  if (this.transport.isValid && this.transport.disconnect) {
+  this.isDisconnecting = true;
+  if (this.transport && this.transport.isValid && this.transport.disconnect) {
     this.transport.disconnect();
   }
 
