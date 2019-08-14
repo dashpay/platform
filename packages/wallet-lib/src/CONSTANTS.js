@@ -46,7 +46,9 @@ const CONSTANTS = {
       'createTransactionFromUTXOS',
       'getUTXOS',
       'getUnusedAddress',
-      'getBalance',
+      'getConfirmedBalance',
+      'getUnconfirmedBalance',
+      'getTotalBalance',
       'broadcastTransaction',
       'getAddress',
       'fetchAddressInfo',
@@ -73,6 +75,7 @@ const CONSTANTS = {
     ],
     SAFE_PROPERTIES: [
       'events',
+      'offlineMode',
       'transport',
       'walletId',
     ],
