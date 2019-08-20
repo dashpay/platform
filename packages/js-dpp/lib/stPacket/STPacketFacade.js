@@ -9,9 +9,12 @@ const createContract = require('../contract/createContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
 const verifyContract = require('./verification/verifyContract');
+const executeDataTriggersFactory = require('./verification/executeDataTriggersFactory');
 const verifyDocumentsFactory = require('./verification/verifyDocumentsFactory');
 const verifyDocumentsUniquenessByIndicesFactory = require('./verification/verifyDocumentsUniquenessByIndicesFactory');
 const fetchDocumentsByDocumentsFactory = require('./verification/fetchDocumentsByDocumentsFactory');
+
+const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 
 const STPacketFactory = require('./STPacketFactory');
 
@@ -146,10 +149,17 @@ class STPacketFacade {
       verifyDocumentsUniquenessByIndices,
     );
 
+    const getDataTriggers = getDataTriggersFactory();
+
+    const executeDataTriggers = executeDataTriggersFactory(
+      getDataTriggers,
+    );
+
     return verifySTPacketFactory(
       verifyContract,
       verifyDocuments,
       this.dpp.getDataProvider(),
+      executeDataTriggers,
     );
   }
 

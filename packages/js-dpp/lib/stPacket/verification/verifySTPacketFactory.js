@@ -1,19 +1,23 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 
 const ValidationResult = require('../../validation/ValidationResult');
+const DataTriggerExecutionContext = require('../../dataTrigger/DataTriggerExecutionContext');
 
 const UnconfirmedUserError = require('../../errors/UnconfirmedUserError');
 const UserNotFoundError = require('../../errors/UserNotFoundError');
 const InvalidTransactionTypeError = require('../../errors/InvalidTransactionTypeError');
 const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
 
+const MIN_CONFIRMATIONS = 6;
+
 /**
  * @param {verifyContract} verifyContract
  * @param {verifyDocuments} verifyDocuments
  * @param {DataProvider} dataProvider
+ * @param {executeDataTriggers} executeDataTriggers
  * @return {verifySTPacket}
  */
-function verifySTPacketFactory(verifyContract, verifyDocuments, dataProvider) {
+function verifySTPacketFactory(verifyContract, verifyDocuments, dataProvider, executeDataTriggers) {
   /**
    * @typedef verifySTPacket
    * @param {STPacket} stPacket
@@ -46,7 +50,7 @@ function verifySTPacketFactory(verifyContract, verifyDocuments, dataProvider) {
       result.addError(
         new UserNotFoundError(userId),
       );
-    } else if (registrationTransaction.confirmations < 6) {
+    } else if (registrationTransaction.confirmations < MIN_CONFIRMATIONS) {
       result.addError(
         new UnconfirmedUserError(registrationTransaction),
       );
@@ -64,6 +68,26 @@ function verifySTPacketFactory(verifyContract, verifyDocuments, dataProvider) {
       result.merge(
         await verifyDocuments(stPacket, userId, contract),
       );
+    }
+
+    if (stPacket.getDocuments().length > 0 && result.isValid()) {
+      const dataTriggersExecutionContext = new DataTriggerExecutionContext(
+        dataProvider,
+        userId,
+        contract,
+        stateTransition,
+      );
+
+      const dataTriggersExecutionResults = await executeDataTriggers(
+        stPacket.getDocuments(),
+        dataTriggersExecutionContext,
+      );
+
+      dataTriggersExecutionResults.forEach((dataTriggerExecutionResult) => {
+        if (!dataTriggerExecutionResult.isOk()) {
+          result.addError(...dataTriggerExecutionResult.getErrors());
+        }
+      });
     }
 
     return result;
