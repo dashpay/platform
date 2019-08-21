@@ -194,6 +194,8 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Profile must be valid').to.be.true();
 
       // 1. Create ST profile packet
+      profile.removeMetadata();
+
       const stPacket = dpp.packet.create([profile]);
 
       // 2. Create State Transition
@@ -290,6 +292,8 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Profile must be valid').to.be.true();
 
       // 1. Create ST Packet
+      aliceProfile.removeMetadata();
+
       const stPacket = dpp.packet.create([aliceProfile]);
 
       // 2. Create State Transition
@@ -355,6 +359,8 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Profile must be valid').to.be.true();
 
       // 1. Create ST update profile packet
+      aliceProfile.removeMetadata();
+
       const stPacket = dpp.packet.create([aliceProfile]);
 
       // 2. Create State Transition
@@ -419,6 +425,8 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Contact request must be valid').to.be.true();
 
       // 1. Create ST contact request packet
+      bobContactRequest.removeMetadata();
+
       const stPacket = dpp.packet.create([bobContactRequest]);
 
       // 2. Create State Transition
@@ -483,6 +491,8 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Contact acceptance must be valid').to.be.true();
 
       // 1. Create ST approve contact packet
+      aliceContactAcceptance.removeMetadata();
+
       const stPacket = dpp.packet.create([aliceContactAcceptance]);
 
       // 2. Create State Transition
