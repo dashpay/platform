@@ -16,7 +16,7 @@
       "type": "string",
       "minLength": 3,
       "maxLength": 24,
-      "pattern": "^[a-zA-Z0-9-_]{1,255}$"
+      "pattern": "^((?!-|_)[a-zA-Z0-9-_]*[a-zA-Z0-9])$"
     },
     "version": {
       "type": "number",
@@ -26,7 +26,7 @@
     "documents": {
       "type": "object",
       "patternProperties": {
-        "^[a-zA-Z0-9-_]{1,255}$": {
+        "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$": {
           "type": "object",
           "properties": {
             "type": {
@@ -43,7 +43,7 @@
                     "items": {
                       "type": "object",
                       "patternProperties": {
-                        "^[a-zA-Z0-9-_$]{1,255}$": {
+                        "^((?!-|_)[a-zA-Z0-9-_$]{0,62}[a-zA-Z0-9])$": {
                           "type": "string",
                           "enum": ["asc", "desc"]
                         }
@@ -68,7 +68,7 @@
             "properties": {
               "type": "object",
               "propertyNames": {
-                "pattern": "^[a-zA-Z0-9-_]{1,255}$"
+                "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
               },
               "minProperties": 1,
               "maxProperties": 100
@@ -91,7 +91,7 @@
     "definitions": {
       "type": "object",
       "propertyNames": {
-        "pattern": "^[a-zA-Z0-9-_]{1,255}$"
+        "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
       },
       "minProperties": 1,
       "maxProperties": 100
