@@ -1,20 +1,15 @@
 const Reference = require('./revisions/Reference');
 
-const ReaderMediator = require('../blockchain/reader/BlockchainReaderMediator');
 const StateTransition = require('../blockchain/StateTransition');
 
 /**
- * @param {STPacketIpfsRepository} stPacketRepository
  * @param {updateSVContract} updateSVContract
  * @param {updateSVDocument} updateSVDocument
- * @param {BlockchainReaderMediator} readerMediator
  * @returns {applyStateTransition}
  */
 function applyStateTransitionFactory(
-  stPacketRepository,
   updateSVContract,
   updateSVDocument,
-  readerMediator,
 ) {
   /**
    * @typedef {Promise} applyStateTransition
@@ -26,8 +21,8 @@ function applyStateTransitionFactory(
   async function applyStateTransition(rawStateTransition, block, reverting = false) {
     const stateTransition = new StateTransition(rawStateTransition);
 
-    const stPacket = await stPacketRepository
-      .find(stateTransition.getPacketCID());
+    // @TODO implement getStPacket
+    const stPacket = null;
 
     if (stPacket.getContract()) {
       const reference = new Reference({
@@ -45,13 +40,6 @@ function applyStateTransitionFactory(
         stPacket.getContract(),
         reverting,
       );
-
-      await readerMediator.emitSerial(ReaderMediator.EVENTS.CONTRACT_APPLIED, {
-        userId: stateTransition.extraPayload.regTxId,
-        contractId: stPacket.getContractId(),
-        reference,
-        contract: stPacket.getContract().toJSON(),
-      });
 
       return;
     }
@@ -72,14 +60,6 @@ function applyStateTransitionFactory(
         document,
         reverting,
       );
-
-      await readerMediator.emitSerial(ReaderMediator.EVENTS.DOCUMENT_APPLIED, {
-        userId: stateTransition.extraPayload.regTxId,
-        contractId: stPacket.getContractId(),
-        documentId: document.getId(),
-        reference,
-        document: document.toJSON(),
-      });
     }
   }
 

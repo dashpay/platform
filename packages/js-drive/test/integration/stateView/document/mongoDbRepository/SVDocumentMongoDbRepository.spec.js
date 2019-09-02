@@ -11,10 +11,8 @@ const getSVDocumentsFixture = require('../../../../../lib/test/fixtures/getSVDoc
 
 const InvalidQueryError = require('../../../../../lib/stateView/document/errors/InvalidQueryError');
 
-function sortAndJsonizeSVDocuments(svDocuments) {
-  return svDocuments.sort((prev, next) => (
-    prev.getDocument().getId() > next.getDocument().getId()
-  )).map(d => d.toJSON());
+function jsonizeSVDocuments(svDocuments) {
+  return svDocuments.map(d => d.toJSON());
 }
 
 describe('SVDocumentMongoDbRepository', function main() {
@@ -76,9 +74,10 @@ describe('SVDocumentMongoDbRepository', function main() {
       const result = await svDocumentRepository.fetch();
 
       expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(3);
 
-      const actualRawSVDocuments = sortAndJsonizeSVDocuments(result);
-      const expectedRawSVDocuments = sortAndJsonizeSVDocuments(svDocuments);
+      const actualRawSVDocuments = jsonizeSVDocuments(result);
+      const expectedRawSVDocuments = jsonizeSVDocuments(svDocuments);
 
       expect(actualRawSVDocuments).to.have.deep.members(expectedRawSVDocuments);
     });
@@ -125,10 +124,10 @@ describe('SVDocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawSVDocuments = sortAndJsonizeSVDocuments(result);
+        const actualRawSVDocuments = jsonizeSVDocuments(result);
 
         svDocuments.pop();
-        const expectedRawSVDocuments = sortAndJsonizeSVDocuments(svDocuments);
+        const expectedRawSVDocuments = jsonizeSVDocuments(svDocuments);
 
         expect(actualRawSVDocuments).to.deep.equal(expectedRawSVDocuments);
       });
@@ -173,12 +172,12 @@ describe('SVDocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawSVDocuments = sortAndJsonizeSVDocuments(result);
+        const actualRawSVDocuments = jsonizeSVDocuments(result);
 
         svDocuments.shift();
-        const expectedRawSVDocuments = sortAndJsonizeSVDocuments(svDocuments);
+        const expectedRawSVDocuments = jsonizeSVDocuments(svDocuments);
 
-        expect(actualRawSVDocuments).to.deep.equal(expectedRawSVDocuments);
+        expect(actualRawSVDocuments).to.have.deep.members(expectedRawSVDocuments);
       });
 
       it('should find SVDocuments using "in" operator', async () => {
@@ -196,12 +195,12 @@ describe('SVDocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawSVDocuments = sortAndJsonizeSVDocuments(result);
+        const actualRawSVDocuments = jsonizeSVDocuments(result);
 
         svDocuments.pop();
-        const expectedRawSVDocuments = sortAndJsonizeSVDocuments(svDocuments);
+        const expectedRawSVDocuments = jsonizeSVDocuments(svDocuments);
 
-        expect(actualRawSVDocuments).to.deep.equal(expectedRawSVDocuments);
+        expect(actualRawSVDocuments).to.have.deep.members(expectedRawSVDocuments);
       });
 
       it('should find SVDocuments using "length" operator', async () => {
@@ -282,12 +281,12 @@ describe('SVDocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawSVDocuments = sortAndJsonizeSVDocuments(result);
+        const actualRawSVDocuments = jsonizeSVDocuments(result);
 
         svDocuments.shift();
-        const expectedRawSVDocuments = sortAndJsonizeSVDocuments(svDocuments);
+        const expectedRawSVDocuments = jsonizeSVDocuments(svDocuments);
 
-        expect(actualRawSVDocuments).to.deep.equal(expectedRawSVDocuments);
+        expect(actualRawSVDocuments).to.have.deep.members(expectedRawSVDocuments);
       });
 
       it('should return empty array if where clause conditions do not match', async () => {
