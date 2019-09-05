@@ -129,7 +129,7 @@ describe('SVDocumentMongoDbRepository', function main() {
         svDocuments.pop();
         const expectedRawSVDocuments = jsonizeSVDocuments(svDocuments);
 
-        expect(actualRawSVDocuments).to.deep.equal(expectedRawSVDocuments);
+        expect(actualRawSVDocuments).to.deep.members(expectedRawSVDocuments);
       });
 
       it('should find SVDocuments using "==" operator', async () => {

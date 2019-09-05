@@ -11,16 +11,36 @@ const InvalidQueryError = require('../errors/InvalidQueryError');
 
 class SVDocumentMongoDbRepository {
   /**
-   * @param {Db} mongoClient
+   * @param {Db} mongoDatabase
    * @param {convertWhereToMongoDbQuery} convertWhereToMongoDbQuery
    * @param {validateQuery} validateQuery
    * @param {string} documentType
    */
-  constructor(mongoClient, convertWhereToMongoDbQuery, validateQuery, documentType) {
-    this.mongoClient = mongoClient.collection(`documents_${documentType}`);
+  constructor(mongoDatabase, convertWhereToMongoDbQuery, validateQuery, documentType) {
+    this.mongoDatabase = mongoDatabase;
     this.convertWhereToMongoDbQuery = convertWhereToMongoDbQuery;
     this.validateQuery = validateQuery;
     this.documentType = documentType;
+    this.mongoCollection = mongoDatabase.collection(this.getCollectionName());
+  }
+
+  /**
+   * Create new mongoDatabase collection
+   *
+   * @returns {Promise<*>}
+   */
+  async createCollection() {
+    return this.mongoDatabase.createCollection(this.getCollectionName());
+  }
+
+  /**
+   * Returns mongoDatabase collection name
+   *
+   * @private
+   * @returns {string}
+   */
+  getCollectionName() {
+    return `documents_${this.documentType}`;
   }
 
   /**
@@ -30,7 +50,7 @@ class SVDocumentMongoDbRepository {
    * @returns {Promise<SVDocument>}
    */
   async find(id) {
-    const result = await this.mongoClient.findOne({ _id: id });
+    const result = await this.mongoCollection.findOne({ _id: id });
 
     if (!result) {
       return null;
@@ -46,7 +66,7 @@ class SVDocumentMongoDbRepository {
    * @returns {Promise<SVDocument[]>}
    */
   async findAllBySTHash(stHash) {
-    const result = await this.mongoClient
+    const result = await this.mongoCollection
       .find({ 'reference.stHash': stHash })
       .toArray();
 
@@ -104,7 +124,7 @@ class SVDocumentMongoDbRepository {
       findOptions = Object.assign({}, findOptions, { sort });
     }
 
-    const results = await this.mongoClient.find(findQuery, findOptions).toArray();
+    const results = await this.mongoCollection.find(findQuery, findOptions).toArray();
 
     return results.map(document => this.createSVDocument(document));
   }
@@ -116,7 +136,7 @@ class SVDocumentMongoDbRepository {
    * @returns {Promise}
    */
   store(svDocument) {
-    return this.mongoClient.updateOne(
+    return this.mongoCollection.updateOne(
       { _id: svDocument.getDocument().getId() },
       { $set: svDocument.toJSON() },
       { upsert: true },
@@ -130,7 +150,7 @@ class SVDocumentMongoDbRepository {
    * @returns {Promise}
    */
   async delete(svDocument) {
-    return this.mongoClient.deleteOne({
+    return this.mongoCollection.deleteOne({
       _id: svDocument.getDocument().getId(),
     });
   }
