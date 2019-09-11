@@ -3,13 +3,13 @@ module.exports = (config) => {
     basePath: '',
     frameworks: ['mocha', 'chai'],
     files: [
-      './test/dist/bundle.js',
+      './test/dist/dapi-client.min.js',
       './test.spec.js',
     ],
     exclude: [
     ],
     preprocessors: {
-      './test/dist/bundle.js': ['webpack'],
+      './test/dist/dapi-client.min.js': ['webpack'],
       './test.spec.js': ['webpack'],
     },
     webpack: {

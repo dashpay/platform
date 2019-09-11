@@ -18,8 +18,8 @@ const commonJSConfig = {
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'bundle.js',
-    library: 'dash-sdk',
+    filename: 'dapi-client.min.js',
+    library: 'dapiClient',
     libraryTarget: 'umd',
   },
 };
