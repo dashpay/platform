@@ -15,7 +15,7 @@ const defaultHost = '127.0.0.1';
  */
 async function request(url, method, params, options = {}) {
   const destination = url.host
-    ? `http://${url.host ? url.host : defaultHost}:${url.port ? url.port : ''}` : url;
+    ? `${url.port === 443 ? 'https' : 'http'}://${url.host ? url.host : defaultHost}:${url.port && url.port !== 443 ? url.port : ''}` : url;
   const payload = {
     jsonrpc: '2.0',
     method,
