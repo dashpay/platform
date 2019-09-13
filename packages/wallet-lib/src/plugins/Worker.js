@@ -12,7 +12,7 @@ const _defaultOpts = {
 class Worker extends StandardPlugin {
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
-    super(Object.assign({ type: 'Worker' }, opts));
+    super({ type: 'Worker', ...opts });
     this.worker = null;
     this.workerPass = 0;
     this.isWorkerRunning = false;

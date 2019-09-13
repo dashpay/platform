@@ -106,7 +106,7 @@ function createTransaction(opts) {
   tx.change(changeAddress);
   // eslint-disable-next-line no-underscore-dangle
   const deltaChangeSize = tx._estimateSize() - preChangeSize;
-  const finalFees = Math.ceil(estimatedFee + (deltaChangeSize * estimatedFee / preChangeSize));
+  const finalFees = Math.ceil(estimatedFee + ((deltaChangeSize * estimatedFee) / preChangeSize));
 
   tx.fee(finalFees);
   const addressList = selectedUTXOs.map((el) => {

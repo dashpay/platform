@@ -15,7 +15,7 @@ const getFilteredTransactions = (store, walletId, accountIndex) => {
   if (isHDWallet) {
     const { external, internal } = addresses;
 
-    _.each(Object.assign({}, external, internal), (address) => {
+    _.each({ ...external, ...internal }, (address) => {
       if (!isHDWallet
         || (isHDWallet && parseInt(address.path.split('/')[3], 10) === accountIndex)
       ) {
@@ -86,7 +86,7 @@ async function getTransactionHistory() {
   const { addresses } = store.wallets[walletId];
   const isHDWallet = !((Object.keys(addresses.misc).length > Object.keys(addresses.external)));
 
-  const predicate = addr => ({ address: addr.address });
+  const predicate = (addr) => ({ address: addr.address });
   // eslint-disable-next-line consistent-return
   const filterInAccountPredicate = (addr) => {
     if ((isHDWallet && parseInt(addr.path.split('/')[3], 10) === accountIndex)) {
@@ -102,20 +102,20 @@ async function getTransactionHistory() {
   const changeAddresses = (isHDWallet)
     ? _.map(_.filter(addresses.internal, filterInAccountPredicate), predicate)
     : _.map(addresses.misc, predicate);
-  const changeAddressList = changeAddresses.map(addr => addr.address, []);
+  const changeAddressList = changeAddresses.map((addr) => addr.address, []);
 
   const externalAddresses = (isHDWallet)
     ? _.map(_.filter(addresses.external, filterInAccountPredicate), predicate)
     : _.filter(addresses.misc, predicate);
-  const externalAddressesList = externalAddresses.map(addr => addr.address, []);
+  const externalAddressesList = externalAddresses.map((addr) => addr.address, []);
 
-  const mergedAddresses = Object.assign({}, addresses.external, addresses.internal);
+  const mergedAddresses = { ...addresses.external, ...addresses.internal };
 
   const otherAccountAddresses = (isHDWallet)
     ? _.map(_.filter(mergedAddresses, filterOutAccountPredicate), predicate)
     : [];
   const otherAccountAddressesList = otherAccountAddresses
-    .map(addr => addr.address, []);
+    .map((addr) => addr.address, []);
 
   const determinateTransactionMetaData = (tx) => {
     const from = [];
@@ -268,7 +268,7 @@ async function getTransactionHistory() {
     const { txid, time, fees } = tx;
     const { type, to, from } = determinateTransactionMetaData(tx);
 
-    const cleanUpPredicate = val => ({
+    const cleanUpPredicate = (val) => ({
       address: val.address,
       amount: duffsToDash(val.valueSat).toString(),
       valueSat: val.valueSat,

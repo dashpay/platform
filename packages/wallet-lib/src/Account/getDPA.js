@@ -8,7 +8,7 @@ const {
  */
 function getDPA(dpaName) {
   const loweredDPAName = dpaName.toLowerCase();
-  const DpaList = Object.keys(this.plugins.DPAs).map(key => key.toLowerCase());
+  const DpaList = Object.keys(this.plugins.DPAs).map((key) => key.toLowerCase());
   if (DpaList.includes(loweredDPAName)) {
     return this.plugins.DPAs[loweredDPAName];
   }

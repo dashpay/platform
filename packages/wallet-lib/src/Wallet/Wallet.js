@@ -98,7 +98,7 @@ class Wallet {
     const plugins = opts.plugins || defaultOptions.plugins;
     this.plugins = {};
     // eslint-disable-next-line no-return-assign
-    plugins.map(item => this.plugins[item.name] = item);
+    plugins.map((item) => this.plugins[item.name] = item);
 
     // Handle import of cache
     if (opts.cache) {

@@ -14,7 +14,7 @@ class KeyChain {
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
     this.network = defaultOpts.network;
-    this.keys = Object.assign({}, defaultOpts.keys);
+    this.keys = { ...defaultOpts.keys };
 
     if (has(opts, 'HDPrivateKey')) {
       this.type = 'HDPrivateKey';
@@ -31,7 +31,7 @@ class KeyChain {
       throw new Error('Expect privateKey, HDPublicKey or HDPrivateKey');
     }
     if (opts.network) this.network = opts.network;
-    if (opts.keys) this.keys = Object.assign({}, opts.keys);
+    if (opts.keys) this.keys = { ...opts.keys };
   }
 
   updateNetwork(network = JSON.parse(JSON.stringify(_defaultOpts.network.toString()))) {

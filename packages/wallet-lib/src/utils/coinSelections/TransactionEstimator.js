@@ -152,7 +152,7 @@ class TransactionEstimator {
       const inputNb = this.getInputs().length;
       return (inputNb * FEES.INSTANT_FEE_PER_INPUTS);
     }
-    return (bytesSize / 1000 * FEES[this.feeCategory.toUpperCase()]);
+    return ((bytesSize / 1000) * FEES[this.feeCategory.toUpperCase()]);
   }
 
   debug() {

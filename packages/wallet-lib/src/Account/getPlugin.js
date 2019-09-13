@@ -8,7 +8,7 @@ const {
  */
 function getPlugin(pluginName) {
   const loweredPluginName = pluginName.toLowerCase();
-  const stdPluginsList = Object.keys(this.plugins.standard).map(key => key.toLowerCase());
+  const stdPluginsList = Object.keys(this.plugins.standard).map((key) => key.toLowerCase());
   if (stdPluginsList.includes(loweredPluginName)) {
     return this.plugins.standard[loweredPluginName];
   }

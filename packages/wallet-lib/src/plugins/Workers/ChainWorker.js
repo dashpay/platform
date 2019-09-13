@@ -13,7 +13,7 @@ const _defaultOpts = {
 class ChainWorker extends Worker {
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
-    const params = Object.assign({
+    const params = {
       name: 'ChainWorker',
       executeOnStart: true,
       firstExecutionRequired: true,
@@ -27,7 +27,8 @@ class ChainWorker extends Worker {
         'fetchTransactionInfo',
         'walletId',
       ],
-    }, opts);
+      ...opts,
+    };
     super(params);
   }
 

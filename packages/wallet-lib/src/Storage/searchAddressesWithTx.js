@@ -23,7 +23,7 @@ const searchAddressesWithTx = function (txid) {
         existingPaths.forEach((path) => {
           const el = store.wallets[walletId].addresses[type][path];
           if (el.transactions.includes(search.txid)) {
-            search.results.push(Object.assign({}, { type }, el));
+            search.results.push({ type, ...el });
             search.found = true;
           }
         });

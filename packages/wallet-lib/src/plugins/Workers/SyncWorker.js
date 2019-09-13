@@ -32,7 +32,7 @@ class SyncWorker extends Worker {
    */
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
-    const params = Object.assign({
+    const params = {
       name: 'SyncWorker',
       executeOnStart: true,
       firstExecutionRequired: true,
@@ -41,7 +41,8 @@ class SyncWorker extends Worker {
       dependencies: [
         'storage', 'transport', 'fetchStatus', 'getTransaction', 'fetchAddressInfo', 'fetchTransactionInfo', 'walletId', 'getUnusedAddress',
       ],
-    }, opts);
+      ...opts,
+    };
     super(params);
     this.isBIP44 = _.has(opts, 'isBIP44') ? opts.isBIP44 : true;
 
@@ -72,7 +73,7 @@ class SyncWorker extends Worker {
   async execAddressListener() {
     const self = this;
     const listenerAddresses = [];
-    this.listeners.addresses.filter(listener => listenerAddresses.push(listener.address));
+    this.listeners.addresses.filter((listener) => listenerAddresses.push(listener.address));
     const toPushListener = [];
 
     const { addresses } = this.storage.getStore().wallets[this.walletId];
@@ -94,7 +95,7 @@ class SyncWorker extends Worker {
     });
 
     toPushListener.forEach((listener) => {
-      const listenerObj = Object.assign({}, listener);
+      const listenerObj = { ...listener };
       listenerObj.cb = function (event) {
         console.log('Event:', event, listenerObj.address);
       };
@@ -272,7 +273,7 @@ class SyncWorker extends Worker {
 
   async execAddressBloomfilter() {
     const bloomfilterAddresses = [];
-    this.bloomfilters.filter(bloom => bloomfilterAddresses.push(bloom.address));
+    this.bloomfilters.filter((bloom) => bloomfilterAddresses.push(bloom.address));
     const toPushBloom = [];
 
     toPushBloom.forEach((bloom) => {

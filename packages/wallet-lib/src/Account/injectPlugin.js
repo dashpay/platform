@@ -19,6 +19,7 @@ module.exports = async function injectPlugin(
   // TODO : Only called internally, it might be worth to remove public access to it.
   // For now, it helps us on debugging
   const self = this;
+  // eslint-disable-next-line no-async-promise-executor
   return new Promise(async (res, rej) => {
     const isInit = !(typeof UnsafePlugin === 'function');
     const plugin = (isInit) ? UnsafePlugin : new UnsafePlugin();
@@ -35,8 +36,8 @@ module.exports = async function injectPlugin(
     // Check for dependencies
     const deps = plugin.dependencies || [];
 
-    const injectedPlugins = Object.keys(this.plugins.standard).map(key => key.toLowerCase());
-    const injectedDPAs = Object.keys(this.plugins.DPAs).map(key => key.toLowerCase());
+    const injectedPlugins = Object.keys(this.plugins.standard).map((key) => key.toLowerCase());
+    const injectedDPAs = Object.keys(this.plugins.DPAs).map((key) => key.toLowerCase());
     deps.forEach((dependencyName) => {
       if (_.has(self, dependencyName)) {
         plugin.inject(dependencyName, self[dependencyName], allowSensitiveOperations);
@@ -64,9 +65,9 @@ module.exports = async function injectPlugin(
             self.plugins.watchers[pluginName] = watcher;
 
             // eslint-disable-next-line no-return-assign,no-param-reassign
-            const startWatcher = _watcher => _watcher.started = true;
+            const startWatcher = (_watcher) => _watcher.started = true;
             // eslint-disable-next-line no-return-assign,no-param-reassign
-            const setReadyWatch = _watcher => _watcher.ready = true;
+            const setReadyWatch = (_watcher) => _watcher.ready = true;
 
             const onStartedEvent = () => startWatcher(watcher);
             const onExecuteEvent = () => setReadyWatch(watcher);

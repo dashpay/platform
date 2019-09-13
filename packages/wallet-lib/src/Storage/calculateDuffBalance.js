@@ -17,7 +17,7 @@ module.exports = function calculateDuffBalance(walletId, accountIndex, type = 't
   subwallets.forEach((subwallet) => {
     const paths = Object.keys(addresses[subwallet])
     // We filter out other potential account
-      .filter(el => type === WALLET_TYPES.SINGLE_ADDRESS
+      .filter((el) => type === WALLET_TYPES.SINGLE_ADDRESS
             || parseInt(el.split('/')[3], 10) === accountIndex);
 
     paths.forEach((path) => {

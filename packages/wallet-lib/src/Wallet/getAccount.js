@@ -18,7 +18,7 @@ function getAccount(accountOpts = JSON.parse(JSON.stringify(_defaultOpts))) {
     ? accountOpts.index
     : defaultOpts.index;
 
-  const acc = this.accounts.filter(el => el.accountIndex === accountIndex);
+  const acc = this.accounts.filter((el) => el.accountIndex === accountIndex);
   const baseOpts = { accountIndex };
 
   const opts = Object.assign(baseOpts, accountOpts);
