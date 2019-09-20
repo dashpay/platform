@@ -1,6 +1,6 @@
-/// <reference path="types.d.ts" />
-/// <reference path="Account/Account.d.ts" />
-/// <reference path="Wallet/Wallet.d.ts" />
-import { Account } from "./Account/Account";
-import { Wallet } from "./Wallet/Wallet";
+/// <reference path="types/types.d.ts" />
+/// <reference path="types/Account/Account.d.ts" />
+/// <reference path="types/Wallet/methods/Wallet.d.ts" />
+import { Account } from "./types/Account/Account";
+import { Wallet } from "./types/Wallet/methods/Wallet";
 export { Account, Wallet };

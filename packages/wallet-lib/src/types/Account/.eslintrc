@@ -1,0 +1,5 @@
+{
+  "rules": {
+    "import/newline-after-import": "off"
+  }
+}

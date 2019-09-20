@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 const { simpleDescendingAccumulator } = require('../../../../src/utils/coinSelections/strategies');
-const getUTXOS = require('../../../../src/Account/getUTXOS');
+const getUTXOS = require('../../../../src/types/Account/methods/getUTXOS');
 const duringDevelopStore = require('../../../fixtures/duringdevelop-fullstore-snapshot-1549310417');
 
 describe('CoinSelection - Strategy - simpleDescendingAccumulator', () => {

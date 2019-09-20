@@ -1,5 +1,5 @@
-const Wallet = require('./Wallet/Wallet');
-const Account = require('./Account/Account');
+const Wallet = require('./types/Wallet/Wallet');
+const Account = require('./types/Account/Account');
 const EVENTS = require('./EVENTS');
 const CONSTANTS = require('./CONSTANTS');
 const utils = require('./utils');
