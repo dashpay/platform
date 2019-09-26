@@ -7,7 +7,6 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const DashApiOptions = require('@dashevo/dp-services-ctl/lib/services/driveApi/DriveApiOptions');
-const DashSyncOptions = require('@dashevo/dp-services-ctl/lib/services/driveSync/DriveSyncOptions');
 const DapiCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/core/DapiCoreOptions');
 const DapiTxFilterStreamOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/txFilterStream/DapiTxFilterStreamOptions');
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
@@ -49,7 +48,6 @@ const driveOptions = {
 };
 
 DashApiOptions.setDefaultCustomOptions(driveOptions);
-DashSyncOptions.setDefaultCustomOptions(driveOptions);
 
 if (process.env.SERVICE_IMAGE_CORE) {
   DashCoreOptions.setDefaultCustomOptions({

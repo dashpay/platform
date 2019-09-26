@@ -3,11 +3,13 @@ class DriveDataProvider {
    * @param {fetchDocuments} fetchDocuments
    * @param {Function} fetchContract
    * @param {RpcClient} rpcClient
+   * @param {MongoDBTransaction} stateViewTransaction
    */
-  constructor(fetchDocuments, fetchContract, rpcClient) {
+  constructor(fetchDocuments, fetchContract, rpcClient, stateViewTransaction) {
     this.fetchDocumentsFromDrive = fetchDocuments;
     this.fetchContractFromDrive = fetchContract;
     this.rpcClient = rpcClient;
+    this.stateViewTransaction = stateViewTransaction;
   }
 
   /**
@@ -29,7 +31,7 @@ class DriveDataProvider {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}) {
-    return this.fetchDocumentsFromDrive(contractId, type, options);
+    return this.fetchDocumentsFromDrive(contractId, type, options, this.stateViewTransaction);
   }
 
   /**

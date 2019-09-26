@@ -10,11 +10,12 @@ function fetchDocumentsFactory(createSVDocumentRepository) {
    * @param {string} contractId
    * @param {string} type
    * @param {Object} [options] options
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Document[]}
    */
-  async function fetchDocuments(contractId, type, options) {
+  async function fetchDocuments(contractId, type, options, stateViewTransaction = undefined) {
     const svDocumentRepository = createSVDocumentRepository(contractId, type);
-    const svDocuments = await svDocumentRepository.fetch(options);
+    const svDocuments = await svDocumentRepository.fetch(options, stateViewTransaction);
     return svDocuments.map(svDocument => svDocument.getDocument());
   }
 

@@ -48,6 +48,7 @@ describe.skip('applyStateTransitionFactory', () => {
       null,
       fetchContract,
       null,
+      null,
     );
 
     dpp.setDataProvider(dataProvider);

@@ -21,6 +21,8 @@ class SVDocumentMongoDbRepository {
     this.convertWhereToMongoDbQuery = convertWhereToMongoDbQuery;
     this.validateQuery = validateQuery;
     this.documentType = documentType;
+    this.databaseName = mongoDatabase.databaseName;
+    this.collectionName = this.getCollectionName();
     this.mongoCollection = mongoDatabase.collection(this.getCollectionName());
   }
 
@@ -47,30 +49,31 @@ class SVDocumentMongoDbRepository {
    * Find SVDocument by id
    *
    * @param {string} id
+   * @param {MongoDBTransaction} [transaction]
    * @returns {Promise<SVDocument>}
    */
-  async find(id) {
-    const result = await this.mongoCollection.findOne({ _id: id });
+  async find(id, transaction = undefined) {
+    const findQuery = { _id: id };
+
+    let result;
+    if (transaction) {
+      const transactionFunction = async (mongoClient, session) => (
+        mongoClient
+          .db(this.databaseName)
+          .collection(this.collectionName)
+          .findOne(findQuery, { session })
+      );
+
+      result = await transaction.runWithTransaction(transactionFunction);
+    } else {
+      result = await this.mongoCollection.findOne(findQuery);
+    }
 
     if (!result) {
       return null;
     }
 
     return this.createSVDocument(result);
-  }
-
-  /**
-   * Find all documents by `reference.stHash`
-   *
-   * @param {string} stHash
-   * @returns {Promise<SVDocument[]>}
-   */
-  async findAllBySTHash(stHash) {
-    const result = await this.mongoCollection
-      .find({ 'reference.stHash': stHash })
-      .toArray();
-
-    return result.map(rawDocument => this.createSVDocument(rawDocument));
   }
 
   /**
@@ -82,11 +85,12 @@ class SVDocumentMongoDbRepository {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
+   * @param {MongoDBTransaction} [transaction]
    *
    * @returns {Promise<SVDocument[]>}
    * @throws {InvalidQueryError}
    */
-  async fetch(query = {}) {
+  async fetch(query = {}, transaction = undefined) {
     const result = this.validateQuery(query);
 
     if (!result.isValid()) {
@@ -124,7 +128,22 @@ class SVDocumentMongoDbRepository {
       findOptions = Object.assign({}, findOptions, { sort });
     }
 
-    const results = await this.mongoCollection.find(findQuery, findOptions).toArray();
+    let results;
+
+    if (transaction) {
+      const transactionFunction = async (mongoClient, session) => {
+        findOptions = Object.assign({}, findOptions, { session });
+
+        return mongoClient
+          .db(this.databaseName)
+          .collection(this.collectionName)
+          .find(findQuery, findOptions).toArray();
+      };
+
+      results = await transaction.runWithTransaction(transactionFunction);
+    } else {
+      results = await this.mongoCollection.find(findQuery, findOptions).toArray();
+    }
 
     return results.map(document => this.createSVDocument(document));
   }
@@ -133,13 +152,35 @@ class SVDocumentMongoDbRepository {
    * Store SVDocument entity
    *
    * @param {SVDocument} svDocument
+   * @param {MongoDBTransaction} [transaction]
    * @returns {Promise}
    */
-  store(svDocument) {
+  store(svDocument, transaction = undefined) {
+    const filter = { _id: svDocument.getDocument().getId() };
+    const update = { $set: svDocument.toJSON() };
+    let updateOptions = { upsert: true };
+
+    if (transaction) {
+      const transactionFunction = async (mongoClient, session) => {
+        updateOptions = Object.assign({}, updateOptions, { session });
+
+        return mongoClient
+          .db(this.databaseName)
+          .collection(this.collectionName)
+          .updateOne(
+            filter,
+            update,
+            updateOptions,
+          );
+      };
+
+      return transaction.runWithTransaction(transactionFunction);
+    }
+
     return this.mongoCollection.updateOne(
-      { _id: svDocument.getDocument().getId() },
-      { $set: svDocument.toJSON() },
-      { upsert: true },
+      filter,
+      update,
+      updateOptions,
     );
   }
 
@@ -147,12 +188,24 @@ class SVDocumentMongoDbRepository {
    * Delete SVDocument entity
    *
    * @param {SVDocument} svDocument
+   * @param {MongoDBTransaction} [transaction]
    * @returns {Promise}
    */
-  async delete(svDocument) {
-    return this.mongoCollection.deleteOne({
-      _id: svDocument.getDocument().getId(),
-    });
+  async delete(svDocument, transaction = undefined) {
+    const filter = { _id: svDocument.getDocument().getId() };
+
+    if (transaction) {
+      const transactionFunction = async (mongoClient, session) => (
+        mongoClient
+          .db(this.databaseName)
+          .collection(this.collectionName)
+          .deleteOne(filter, { session })
+      );
+
+      return transaction.runWithTransaction(transactionFunction);
+    }
+
+    return this.mongoCollection.deleteOne(filter);
   }
 
   /**
