@@ -35,6 +35,11 @@ export declare class Account {
     sign(object?:Transaction, privateKeys?:[PrivateKey], sigType?:string): Transaction;
     updateNetwork(network: Network): boolean;
 }
+export declare interface RecipientOptions {
+    satoshis?: number;
+    amount?: number;
+    address: PublicAddress,
+}
 export declare namespace Account {
     interface Options {
         network?: Network;
@@ -44,8 +49,8 @@ export declare namespace Account {
         strategy?: Strategy;
     }
     interface createTransactionOptions {
-        satoshis?: number;
-        recipient: PublicAddress,
+        recipient?:RecipientOptions,
+        recipients?:[RecipientOptions]
         change?: string;
         utxos?:[object];
         isInstantSend?: boolean;

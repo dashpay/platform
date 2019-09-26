@@ -4,3 +4,4 @@
 import { Account } from "./types/Account/Account";
 import { Wallet } from "./types/Wallet/methods/Wallet";
 export { Account, Wallet };
+declare module '@dashevo/wallet-lib';
