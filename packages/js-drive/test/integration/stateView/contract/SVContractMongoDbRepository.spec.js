@@ -6,13 +6,18 @@ const SVContractMongoDbRepository = require('../../../../lib/stateView/contract/
 
 const getSVContractFixture = require('../../../../lib/test/fixtures/getSVContractFixture');
 
+const MongoDBTransaction = require('../../../../lib/mongoDb/MongoDBTransaction');
+
 describe('SVContractMongoDbRepository', () => {
   let svContractRepository;
   let svContract;
   let mongoDatabase;
+  let mongoClient;
+  let stateViewTransaction;
 
   startMongoDb().then((mongoDb) => {
     mongoDatabase = mongoDb.getDb();
+    mongoClient = mongoDb.getClient();
   });
 
   beforeEach(() => {
@@ -21,6 +26,8 @@ describe('SVContractMongoDbRepository', () => {
     svContract = getSVContractFixture();
 
     svContractRepository = new SVContractMongoDbRepository(mongoDatabase, dpp);
+
+    stateViewTransaction = new MongoDBTransaction(mongoClient);
   });
 
   it('should store SV Contract entity', async () => {
@@ -48,6 +55,24 @@ describe('SVContractMongoDbRepository', () => {
     expect(svContracts).to.deep.equal([svContract]);
   });
 
+  it('should find all contracts by stHash in transaction', async () => {
+    await svContractRepository.createCollection();
+
+    stateViewTransaction.start();
+
+    await svContractRepository.store(svContract, stateViewTransaction);
+
+    const svContracts = await svContractRepository.findAllByReferenceSTHash(
+      svContract.getReference().getSTHash(),
+      stateViewTransaction,
+    );
+
+    await stateViewTransaction.commit();
+
+    expect(svContracts.length).to.equal(1);
+    expect(svContracts).to.deep.equal([svContract]);
+  });
+
   it('should return null if contract was marked as deleted', async () => {
     svContract.markAsDeleted();
 
@@ -68,5 +93,80 @@ describe('SVContractMongoDbRepository', () => {
     expect(result).to.be.not.null();
   });
 
-  it('should successfuly delete a contract');
+  it('should successfully delete a contract', async () => {
+    await svContractRepository.store(svContract);
+
+    const svContracts = await svContractRepository.findAllByReferenceSTHash(
+      svContract.getReference().getSTHash(),
+    );
+
+    await svContractRepository.delete(svContract);
+
+    const emptySVContracts = await svContractRepository.findAllByReferenceSTHash(
+      svContract.getReference().getSTHash(),
+    );
+
+    expect(svContracts.length).to.equal(1);
+    expect(emptySVContracts.length).to.equal(0);
+  });
+
+  it('should successfully delete a contract in transaction', async () => {
+    await svContractRepository.createCollection();
+
+    stateViewTransaction.start();
+
+    await svContractRepository.store(svContract, stateViewTransaction);
+
+    const svContracts = await svContractRepository.findAllByReferenceSTHash(
+      svContract.getReference().getSTHash(),
+      stateViewTransaction,
+    );
+
+    await svContractRepository.delete(svContract, stateViewTransaction);
+
+    const emptySVContracts = await svContractRepository.findAllByReferenceSTHash(
+      svContract.getReference().getSTHash(),
+      stateViewTransaction,
+    );
+
+    await stateViewTransaction.commit();
+
+    expect(svContracts.length).to.equal(1);
+    expect(emptySVContracts.length).to.equal(0);
+  });
+
+  it('should create collection for SVContract', async () => {
+    const collectionsBefore = await mongoDatabase.collections();
+    await svContractRepository.createCollection();
+    const collectionsAfter = await mongoDatabase.collections();
+
+    expect(collectionsBefore).to.have.lengthOf(0);
+    expect(collectionsAfter).to.have.lengthOf(1);
+    expect(collectionsAfter[0].collectionName).to.equal(svContractRepository.getCollectionName());
+  });
+
+  it('should find stored contract by id in transaction', async () => {
+    await svContractRepository.createCollection();
+
+    stateViewTransaction.start();
+
+    await svContractRepository.store(svContract, stateViewTransaction);
+
+    const storedSVContract = await svContractRepository.find(
+      svContract.getContractId(),
+      stateViewTransaction,
+    );
+
+    await stateViewTransaction.commit();
+
+    expect(storedSVContract).to.deep.equal(svContract);
+  });
+
+  it('should find stored contract by id', async () => {
+    await svContractRepository.store(svContract);
+
+    const storedSVContract = await svContractRepository.find(svContract.getContractId());
+
+    expect(storedSVContract).to.deep.equal(svContract);
+  });
 });

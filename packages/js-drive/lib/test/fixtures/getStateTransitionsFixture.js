@@ -10,11 +10,7 @@ const transitions = [];
  * @return {StateTransition[]}
  */
 function getStateTransitionsFixture(numberOfTransitions = 5) {
-  if (transitions.length > 0) {
-    return transitions.map(t => new StateTransition(t));
-  }
-
-  for (let i = 0; i < numberOfTransitions; i++) {
+  for (let i = transitions.length; i < numberOfTransitions; i++) {
     transitions.push(
       createStateTransitionFixture({
         extraPayload: createPayloadFixture({

@@ -47,8 +47,10 @@ class ApiApp {
    */
   async init() {
     this.mongoClient = await MongoClient.connect(
-      this.options.getStorageMongoDbUrl(),
-      { useNewUrlParser: true },
+      this.options.getStorageMongoDbUrl(), {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+      },
     );
   }
 

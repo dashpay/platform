@@ -1,8 +1,6 @@
 const Document = require('@dashevo/dpp/lib/document/Document');
 const SVDocument = require('../../../../lib/stateView/document/SVDocument');
 
-const Revision = require('../../../../lib/stateView/revisions/Revision');
-
 const updateSVDocumentFactory = require('../../../../lib/stateView/document/updateSVDocumentFactory');
 
 const getReferenceFixture = require('../../../../lib/test/fixtures/getReferenceFixture');
@@ -90,44 +88,6 @@ describe('updateSVDocumentFactory', () => {
 
     expect(svDocumentRepository.find).to.have.been.calledOnceWith(document.getId());
     expect(svDocumentRepository.store).to.have.not.been.called();
-  });
-
-  it('should store SVDocument and remove ahead versions if action is "update" upon reverting', async () => {
-    const previousRevisions = [
-      new Revision(0, reference),
-      new Revision(1, reference),
-      new Revision(2, reference),
-      new Revision(3, reference),
-    ];
-
-    const isDeleted = false;
-
-    const previousSVDocument = new SVDocument(
-      userId,
-      document,
-      reference,
-      isDeleted,
-      previousRevisions,
-    );
-
-    svDocumentRepository.find.returns(previousSVDocument);
-
-    document.setAction(Document.ACTIONS.UPDATE);
-    document.setRevision(2);
-
-    await updateSVDocument(contractId, userId, reference, document, true);
-
-    expect(svDocumentRepository.find).to.have.been.calledOnceWith(document.getId());
-    expect(svDocumentRepository.store).to.have.been.calledOnce();
-
-    const svDocument = svDocumentRepository.store.getCall(0).args[0];
-
-    expect(svDocument).to.be.an.instanceOf(SVDocument);
-    expect(svDocument.getUserId()).to.equal(userId);
-    expect(svDocument.getDocument()).to.equal(document);
-    expect(svDocument.getReference()).to.equal(reference);
-    expect(svDocument.getPreviousRevisions()).to.deep.equal(previousRevisions.slice(0, 2));
-    expect(svDocument.isDeleted()).to.be.false();
   });
 
   it('should delete SVDocument if action is "delete"', async () => {

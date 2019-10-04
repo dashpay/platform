@@ -136,6 +136,22 @@ describe('SVDocumentMongoDbRepository', function main() {
       expect(actualRawSVDocuments).to.have.deep.members(expectedRawSVDocuments);
     });
 
+    it('should fetch SVDocuments in transaction', async () => {
+      stateViewTransaction.start();
+
+      const result = await svDocumentRepository.fetch({}, stateViewTransaction);
+
+      await stateViewTransaction.commit();
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(3);
+
+      const actualRawSVDocuments = jsonizeSVDocuments(result);
+      const expectedRawSVDocuments = jsonizeSVDocuments(svDocuments);
+
+      expect(actualRawSVDocuments).to.have.deep.members(expectedRawSVDocuments);
+    });
+
     it('should throw InvalidQueryError if query is not valid', async () => {
       const invalidQuery = { invalid: 'query' };
 
@@ -683,14 +699,30 @@ describe('SVDocumentMongoDbRepository', function main() {
   });
 
   describe('#createCollection', () => {
-    it('should create collection', async () => {
-      const collectionsBefore = await mongoDatabase.listCollections().toArray();
+    it('should create collection for SVDocument', async () => {
+      const collectionsBefore = await mongoDatabase.collections();
       await svDocumentRepository.createCollection();
-      const collectionsAfter = await mongoDatabase.listCollections().toArray();
+      const collectionsAfter = await mongoDatabase.collections();
 
-      expect(collectionsBefore).to.have.length(0);
-      expect(collectionsAfter).to.have.length(1);
-      expect(collectionsAfter[0].name).to.equal(svDocumentRepository.getCollectionName());
+      expect(collectionsBefore).to.have.lengthOf(0);
+      expect(collectionsAfter).to.have.lengthOf(1);
+      expect(collectionsAfter[0].collectionName).to.equal(svDocumentRepository.getCollectionName());
+    });
+  });
+
+  describe('#removeCollection', () => {
+    beforeEach(async () => {
+      await createSVDocuments(svDocumentRepository, svDocuments);
+    });
+
+    it('should remove collection for SVDocument', async () => {
+      const collectionsBefore = await mongoDatabase.collections();
+      const result = await svDocumentRepository.removeCollection();
+      const collectionsAfter = await mongoDatabase.collections();
+
+      expect(result).to.be.true();
+      expect(collectionsBefore).to.have.lengthOf(1);
+      expect(collectionsAfter).to.have.lengthOf(0);
     });
   });
 });

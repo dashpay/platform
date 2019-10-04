@@ -7,6 +7,7 @@
   },
   "scripts": {
     "api": "node scripts/api",
+    "updateState": "node scripts/updateState",
     "lint": "eslint .",
     "test": "npm run test:coverage",
     "test:coverage": "nyc --check-coverage --stmts=95 --branch=86 --funcs=93 --lines=95 mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
@@ -45,11 +46,15 @@
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "0.17.8",
+    "@dashevo/dashd-rpc": "^1.3.1",
     "@dashevo/dpp": "dev",
+    "@dashevo/drive-grpc": "^0.1.2",
     "ajv": "^6.10.0",
     "connect": "^3.6.6",
     "dotenv-expand": "^4.2.0",
     "dotenv-safe": "^6.1.0",
+    "grpc": "^1.23.3",
+    "grpc-health-check": "^1.7.0",
     "jayson": "^2.1.2",
     "lodash.escaperegexp": "^4.1.2",
     "mongodb": "^3.2.2"

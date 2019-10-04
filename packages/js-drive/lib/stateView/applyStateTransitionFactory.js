@@ -1,7 +1,5 @@
 const Reference = require('./revisions/Reference');
 
-const StateTransition = require('../blockchain/StateTransition');
-
 /**
  * @param {updateSVContract} updateSVContract
  * @param {updateSVDocument} updateSVDocument
@@ -13,32 +11,29 @@ function applyStateTransitionFactory(
 ) {
   /**
    * @typedef {Promise} applyStateTransition
-   * @param {Object} rawStateTransition
-   * @param {Object} block
-   * @param {boolean} [reverting]
+   * @param {STPacket} stPacket
+   * @param {StateTransition} stHeader
+   * @param {string} blockHash
+   * @param {number} blockHeight
+   * @param {MongoDBTransaction} transaction
    * @returns {Promise<void>}
    */
-  async function applyStateTransition(rawStateTransition, block, reverting = false) {
-    const stateTransition = new StateTransition(rawStateTransition);
-
-    // @TODO implement getStPacket
-    const stPacket = null;
-
+  async function applyStateTransition(stPacket, stHeader, blockHash, blockHeight, transaction) {
     if (stPacket.getContract()) {
       const reference = new Reference({
-        blockHash: block.hash,
-        blockHeight: block.height,
-        stHash: stateTransition.hash,
-        stPacketHash: stateTransition.extraPayload.hashSTPacket,
+        blockHash,
+        blockHeight,
+        stHash: stHeader.hash,
+        stPacketHash: stHeader.extraPayload.hashSTPacket,
         hash: stPacket.getContract().hash(),
       });
 
       await updateSVContract(
         stPacket.getContractId(),
-        stateTransition.extraPayload.regTxId,
+        stHeader.extraPayload.regTxId,
         reference,
         stPacket.getContract(),
-        reverting,
+        transaction,
       );
 
       return;
@@ -46,19 +41,19 @@ function applyStateTransitionFactory(
 
     for (const document of stPacket.getDocuments()) {
       const reference = new Reference({
-        blockHash: block.hash,
-        blockHeight: block.height,
-        stHash: stateTransition.hash,
-        stPacketHash: stateTransition.extraPayload.hashSTPacket,
+        blockHash,
+        blockHeight,
+        stHash: stHeader.hash,
+        stPacketHash: stHeader.extraPayload.hashSTPacket,
         hash: document.hash(),
       });
 
       await updateSVDocument(
         stPacket.getContractId(),
-        stateTransition.extraPayload.regTxId,
+        stHeader.extraPayload.regTxId,
         reference,
         document,
-        reverting,
+        transaction,
       );
     }
   }

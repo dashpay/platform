@@ -7,7 +7,6 @@ const ApiApp = require('../lib/app/ApiApp');
 const ApiAppOptions = require('../lib/app/ApiAppOptions');
 
 const parseBodyFactory = require('../lib/api/middlewares/parseBodyFactory');
-const bypassFactory = require('../lib/api/middlewares/bypassFactory');
 
 const errorHandler = require('../lib/util/errorHandler');
 
@@ -21,10 +20,6 @@ const errorHandler = require('../lib/util/errorHandler');
   const server = connect();
 
   server.use(parseBodyFactory());
-  server.use(bypassFactory(apiApp.createCheckSyncStateHttpMiddleware(), [
-    'getSyncInfo',
-    'addSTPacket',
-  ]));
   server.use(rpc.middleware());
 
   server.listen(

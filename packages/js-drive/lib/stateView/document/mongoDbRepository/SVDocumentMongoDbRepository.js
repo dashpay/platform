@@ -36,6 +36,14 @@ class SVDocumentMongoDbRepository {
   }
 
   /**
+   * Drops mongoDatabase collection
+   * @returns {Promise<boolean>}
+   */
+  async removeCollection() {
+    return this.mongoCollection.drop();
+  }
+
+  /**
    * Returns mongoDatabase collection name
    *
    * @private

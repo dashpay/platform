@@ -13,11 +13,17 @@ function updateSVContractFactory(svContractRepository) {
    * @param {string} userId
    * @param {Reference} reference
    * @param {Contract} contract
-   * @param {boolean} [reverting]
+   * @param {MongoDBTransaction} [transaction]
    *
    * @returns {Promise<void>}
    */
-  async function updateSVContract(contractId, userId, reference, contract, reverting = false) {
+  async function updateSVContract(
+    contractId,
+    userId,
+    reference,
+    contract,
+    transaction = undefined,
+  ) {
     const currentSVContract = new SVContract(
       contractId,
       userId,
@@ -25,20 +31,12 @@ function updateSVContractFactory(svContractRepository) {
       reference,
     );
 
-    const previousSVContract = await svContractRepository.find(contractId);
+    const previousSVContract = await svContractRepository.find(contractId, transaction);
     if (previousSVContract) {
       currentSVContract.addRevision(previousSVContract);
-
-      // NOTE: Since reverting is more complicated
-      // `previousSVContract` is actually next one here
-      // so we have to remove it's version and the version before that
-      // to have a proper set of `previousRevisions`
-      if (reverting) {
-        currentSVContract.removeAheadRevisions();
-      }
     }
 
-    await svContractRepository.store(currentSVContract);
+    await svContractRepository.store(currentSVContract, transaction);
   }
 
   return updateSVContract;

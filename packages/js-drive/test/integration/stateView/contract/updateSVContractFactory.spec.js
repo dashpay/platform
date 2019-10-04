@@ -2,7 +2,6 @@ const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
-const Revision = require('../../../../lib/stateView/revisions/Revision');
 const SVContract = require('../../../../lib/stateView/contract/SVContract');
 
 const SVContractMongoDbRepository = require('../../../../lib/stateView/contract/SVContractMongoDbRepository');
@@ -86,46 +85,6 @@ describe('updateSVContractFactory', () => {
     expect(thirdSVContract.getPreviousRevisions()).to.deep.equal([
       svContract.getCurrentRevision(),
       secondSVContract.getCurrentRevision(),
-    ]);
-  });
-
-  it('should remove unnecessary previous versions of SVContract upon reverting', async () => {
-    // Create and store the third contract version
-    const thirdDPOContract = dpp.contract.createFromObject(contract.toJSON());
-    thirdDPOContract.setVersion(3);
-
-    const firstRevision = new Revision(1, getReferenceFixture(1));
-    const secondRevision = new Revision(2, getReferenceFixture(2));
-
-    const thirdSVContract = new SVContract(
-      contractId,
-      userId,
-      thirdDPOContract,
-      getReferenceFixture(3),
-      false,
-      [firstRevision, secondRevision],
-    );
-
-    await svContractRepository.store(thirdSVContract);
-
-    // Revert to second contract version
-    const secondContract = dpp.contract.createFromObject(contract.toJSON());
-    secondContract.setVersion(2);
-
-    await updateSVContract(
-      contractId,
-      userId,
-      secondRevision.getReference(),
-      secondContract,
-      true,
-    );
-
-    const secondSVContract = await svContractRepository.find(contractId);
-
-    expect(secondSVContract).to.be.an.instanceOf(SVContract);
-    expect(secondSVContract.getContract()).to.deep.equal(secondContract);
-    expect(secondSVContract.getPreviousRevisions()).to.deep.equal([
-      firstRevision,
     ]);
   });
 });

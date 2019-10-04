@@ -10,17 +10,17 @@ function updateSVDocumentFactory(createSVDocumentRepository) {
    * @param {string} userId
    * @param {Reference} reference
    * @param {Document} document
-   * @param {boolean} reverting
+   * @param {MongoDBTransaction} transaction
    * @returns {Promise<void>}
    */
-  async function updateSVDocument(contractId, userId, reference, document, reverting) {
+  async function updateSVDocument(contractId, userId, reference, document, transaction) {
     const svDocumentRepository = createSVDocumentRepository(contractId, document.getType());
 
     const svDocument = new SVDocument(userId, document, reference);
 
     switch (document.getAction()) {
       case Document.ACTIONS.CREATE: {
-        await svDocumentRepository.store(svDocument);
+        await svDocumentRepository.store(svDocument, transaction);
 
         break;
       }
@@ -32,6 +32,7 @@ function updateSVDocumentFactory(createSVDocumentRepository) {
       case Document.ACTIONS.UPDATE: {
         const previousSVDocument = await svDocumentRepository.find(
           svDocument.getDocument().getId(),
+          transaction,
         );
 
         if (!previousSVDocument) {
@@ -40,15 +41,7 @@ function updateSVDocumentFactory(createSVDocumentRepository) {
 
         svDocument.addRevision(previousSVDocument);
 
-        // NOTE: Since reverting is more complicated
-        // `previousSVDocument` is actually next one here
-        // so we have to remove it's revision and the revision before that
-        // to have a proper set of `previousRevisions`
-        if (reverting) {
-          svDocument.removeAheadRevisions();
-        }
-
-        await svDocumentRepository.store(svDocument);
+        await svDocumentRepository.store(svDocument, transaction);
 
         break;
       }
