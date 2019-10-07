@@ -1,21 +1,21 @@
 class UpdateStateAppOptions {
   constructor(options) {
-    this.storageMongoDbUrl = options.STORAGE_MONGODB_URL;
-    this.storageMongoDbDatabase = options.STORAGE_MONGODB_DB;
-    this.gRpcHost = options.UPDATE_STATE_API_GRPC_HOST;
-    this.gRpcPort = options.UPDATE_STATE_API_GRPC_PORT;
+    this.stateViewMongoDBUrl = options.STATEVIEW_MONGODB_URL;
+    this.stateViewMongoDBDatabase = options.STATEVIEW_MONGODB_DB;
+    this.gRpcHost = options.UPDATE_STATE_GRPC_HOST;
+    this.gRpcPort = options.UPDATE_STATE_GRPC_PORT;
     this.dashCoreJsonRpcHost = options.DASHCORE_JSON_RPC_HOST;
     this.dashCoreJsonRpcPort = options.DASHCORE_JSON_RPC_PORT;
     this.dashCoreJsonRpcUser = options.DASHCORE_JSON_RPC_USER;
     this.dashCoreJsonRpcPass = options.DASHCORE_JSON_RPC_PASS;
   }
 
-  getStorageMongoDbUrl() {
-    return this.storageMongoDbUrl;
+  getStateViewMongoDBUrl() {
+    return this.stateViewMongoDBUrl;
   }
 
-  getStorageMongoDbDatabase() {
-    return this.storageMongoDbDatabase;
+  getStateViewMongoDBDatabase() {
+    return this.stateViewMongoDBDatabase;
   }
 
   getGrpcHost() {

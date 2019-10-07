@@ -1,17 +1,17 @@
 class ApiAppOptions {
   constructor(options) {
-    this.storageMongoDbUrl = options.STORAGE_MONGODB_URL;
-    this.storageMongoDbDatabase = options.STORAGE_MONGODB_DB;
+    this.stateViewMongoDBUrl = options.STATEVIEW_MONGODB_URL;
+    this.stateViewMongoDBDatabase = options.STATEVIEW_MONGODB_DB;
     this.apiRpcPort = options.API_RPC_PORT;
     this.apiRpcHost = options.API_RPC_HOST;
   }
 
-  getStorageMongoDbUrl() {
-    return this.storageMongoDbUrl;
+  getStateViewMongoDBUrl() {
+    return this.stateViewMongoDBUrl;
   }
 
-  getStorageMongoDbDatabase() {
-    return this.storageMongoDbDatabase;
+  getStateViewMongoDBDatabase() {
+    return this.stateViewMongoDBDatabase;
   }
 
   getApiRpcHost() {

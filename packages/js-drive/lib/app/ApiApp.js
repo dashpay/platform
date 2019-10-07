@@ -47,7 +47,7 @@ class ApiApp {
    */
   async init() {
     this.mongoClient = await MongoClient.connect(
-      this.options.getStorageMongoDbUrl(), {
+      this.options.getStateViewMongoDBUrl(), {
         useNewUrlParser: true,
         useUnifiedTopology: true,
       },
@@ -97,7 +97,7 @@ class ApiApp {
    */
   createFetchContract() {
     if (!this.fetchContract) {
-      const mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
+      const mongoDb = this.mongoClient.db(this.options.getStateViewMongoDBDatabase());
       const svContractMongoDbRepository = new SVContractMongoDbRepository(
         mongoDb,
         new DashPlatformProtocol(),

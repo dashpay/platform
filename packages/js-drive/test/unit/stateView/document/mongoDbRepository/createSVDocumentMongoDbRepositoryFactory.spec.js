@@ -33,7 +33,7 @@ describe('createSVDocumentMongoDbRepositoryFactory', () => {
   });
 
   it('should create a MongoDb database with a prefix + contractId', async () => {
-    const dbName = `${process.env.MONGODB_DB_PREFIX}dpa_${contractId}`;
+    const dbName = `${process.env.STATEVIEW_MONGODB_DB_PREFIX}dpa_${contractId}`;
 
     const result = createSVDocumentMongoDbRepository(contractId, documentType);
 

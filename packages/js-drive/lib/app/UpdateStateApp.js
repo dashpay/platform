@@ -73,14 +73,14 @@ class UpdateStateApp {
     });
 
     this.mongoClient = await MongoClient.connect(
-      this.options.getStorageMongoDbUrl(), {
+      this.options.getStateViewMongoDBUrl(), {
         useNewUrlParser: true,
         useUnifiedTopology: true,
       },
     );
 
     this.stateViewTransaction = new MongoDBTransaction(this.mongoClient);
-    this.mongoDb = this.mongoClient.db(this.options.getStorageMongoDbDatabase());
+    this.mongoDb = this.mongoClient.db(this.options.getStateViewMongoDBDatabase());
 
     const validateQuery = validateQueryFactory(findConflictingConditions);
     this.createSVDocumentRepository = createSVDocumentMongoDbRepositoryFactory(

@@ -22,7 +22,7 @@ function createSVDocumentMongoDbRepositoryFactory(
    * @returns {SVDocumentMongoDbRepository}
    */
   function createSVDocumentMongoDbRepository(contractId, documentType) {
-    const mongoDb = mongoClient.db(`${process.env.MONGODB_DB_PREFIX}${PREFIX}${contractId}`);
+    const mongoDb = mongoClient.db(`${process.env.STATEVIEW_MONGODB_DB_PREFIX}${PREFIX}${contractId}`);
 
     return new SVDocumentMongoDbRepository(
       mongoDb,
