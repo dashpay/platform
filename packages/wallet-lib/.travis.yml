@@ -8,20 +8,12 @@ before_install:
   - echo -e "machine github.com\n  login ${GH_TOKEN}" >> ~/.netrc
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
-install:
-  - npm ci
-
-before_script:
-  - npm run lint
-
 jobs:
   include:
-    - stage: eslint
+    - stage: lint
       script: npm run lint
     - stage: size
       script: npm run size
-    - stage: test
-      script: npm test
 
 deploy:
   - provider: script
