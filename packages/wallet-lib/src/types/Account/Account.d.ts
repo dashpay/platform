@@ -21,6 +21,8 @@ export declare class Account {
 
     getDPA(name: string): object;
 
+    getIdentityPrivateKey(index: number): PrivateKey;
+
     getNetwork(): Network;
 
     getPlugin(name:string): object;

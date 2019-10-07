@@ -165,5 +165,6 @@ Account.prototype.updateNetwork = require('./methods/updateNetwork');
 
 Account.prototype.hasPlugins = require('./methods/hasPlugins');
 
+Account.prototype.getIdentityPrivateKey = require('./methods/getIdentityPrivateKey');
 
 module.exports = Account;
