@@ -26,7 +26,7 @@ jobs:
 deploy:
   - provider: script
     skip_cleanup: true
-    script: npm publish
+    script: bash scripts/travis-deploy.sh
     on:
       repo: dashevo/wallet-lib
       branch: master
