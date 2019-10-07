@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package org.dash.platform.dapi;
+package org.dash.platform.dapi.v0;
 
 service TransactionsFilterStream {
   rpc subscribeToTransactionsWithProofs (TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse);

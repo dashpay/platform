@@ -24,17 +24,8 @@ const {
   },
 } = require('./clients/nodejs/transactions_filter_stream_pbjs');
 
-const loadPackageDefinition = require('./src/loadPackageDefinition');
-const jsonToProtobufFactory = require('./src/converters/jsonToProtobufFactory');
-const protobufToJsonFactory = require('./src/converters/protobufToJsonFactory');
-
 module.exports = Object.assign({
   CorePromiseClient,
   TransactionsFilterStreamPromiseClient,
-  utils: {
-    loadPackageDefinition,
-    jsonToProtobufFactory,
-    protobufToJsonFactory,
-  },
   pbjs: Object.assign({}, pbjsCoreMessages, pbjsTransactionsFilterStreamMessages),
 }, protocCoreMessages, protocTransactionsFilterStreamMessages);

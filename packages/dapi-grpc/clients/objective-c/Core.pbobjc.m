@@ -37,7 +37,7 @@ static GPBFileDescriptor *CoreRoot_FileDescriptor(void) {
   static GPBFileDescriptor *descriptor = NULL;
   if (!descriptor) {
     GPB_DEBUG_CHECK_RUNTIME_VERSIONS();
-    descriptor = [[GPBFileDescriptor alloc] initWithPackage:@"org.dash.platform.dapi"
+    descriptor = [[GPBFileDescriptor alloc] initWithPackage:@"org.dash.platform.dapi.v0"
                                                      syntax:GPBFileSyntaxProto3];
   }
   return descriptor;

@@ -1,6 +1,22 @@
+const path = require('path');
 const grpc = require('grpc');
-const jsonToProtobufInterceptorFactory = require('../../src/interceptors/client/jsonToProtobufInterceptorFactory');
-const loadPackageDefinition = require('../../src/loadPackageDefinition');
+
+const {
+  loadPackageDefinition,
+  utils: {
+    isObject,
+    convertObjectToMetadata,
+  },
+  client: {
+    interceptors: {
+      jsonToProtobufInterceptorFactory,
+    },
+    converters: {
+      jsonToProtobufFactory,
+      protobufToJsonFactory,
+    },
+  },
+} = require('@dashevo/grpc-common');
 
 const {
   org: {
@@ -19,15 +35,11 @@ const {
   TransactionsWithProofsResponse: ProtocTransactionsWithProofsResponse,
 } = require('./transactions_filter_stream_protoc');
 
-const isObject = require('../../src/isObject');
-const convertObjectToMetadata = require('../../src/convertObjectToMetadata');
-
-const jsonToProtobufFactory = require('../../src/converters/jsonToProtobufFactory');
-const protobufToJsonFactory = require('../../src/converters/protobufToJsonFactory');
+const protoPath = path.join(__dirname, '../protos/transactions_filter_stream.proto');
 
 const {
   TransactionsFilterStream: TransactionsFilterStreamNodeJSClient,
-} = loadPackageDefinition('TransactionsFilterStream');
+} = loadPackageDefinition(protoPath, 'org.dash.platform.dapi.v0');
 
 const subscribeToTransactionsWithProofsOptions = {
   interceptors: [
