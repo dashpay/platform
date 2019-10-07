@@ -32,5 +32,5 @@ deploy:
   script: bash scripts/travis-deploy.sh
   on:
     tags: true
-    repo: dashevo/grpc-common
+    repo: dashevo/js-grpc-common
   skip_cleanup: true
