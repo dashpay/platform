@@ -1,0 +1,36 @@
+sudo: required
+dist: trusty
+language: node_js
+
+node_js:
+ - '10'
+
+branches:
+  only:
+    - master
+    - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+
+services:
+  - docker
+
+addons:
+  apt:
+    packages:
+      - docker-ce
+
+before_install:
+  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
+
+install: npm ci
+
+script:
+  - npm run lint
+  - npm run check-package
+
+deploy:
+  provider: script
+  script: bash scripts/travis-deploy.sh
+  on:
+    tags: true
+    repo: dashevo/grpc-common
+  skip_cleanup: true

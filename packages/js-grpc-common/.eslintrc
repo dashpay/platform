@@ -1,0 +1,17 @@
+{
+    "extends": "airbnb-base",
+    "rules": {
+      "import/no-extraneous-dependencies": ["error", { "packageDir": "." }],
+      "no-plusplus": 0,
+      "eol-last": [
+        "error",
+        "always"
+      ],
+      "class-methods-use-this": "off",
+      "curly": [
+        "error",
+        "all"
+      ]
+    }
+  }
+  
