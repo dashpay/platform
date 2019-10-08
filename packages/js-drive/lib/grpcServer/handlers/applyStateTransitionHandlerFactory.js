@@ -79,19 +79,23 @@ module.exports = function applyStateTransitionHandlerFactory(
       throw new InvalidArgumentGrpcError('Invalid "stPacket" and "stHeader"', { errors: result.getErrors() });
     }
 
+    let svContract;
+
     try {
-      await applyStateTransition(
+      ({ svContract } = await applyStateTransition(
         stPacket,
         stHeader,
         Buffer.from(blockHashBinaryArray).toString('hex'),
         blockHeight,
         stateViewTransaction,
-      );
+      ));
     } catch (error) {
       throw new InternalGrpcError(error);
     }
 
-    blockExecutionState.addContract(stPacket.getContract());
+    if (svContract) {
+      blockExecutionState.addContract(svContract);
+    }
 
     return new ApplyStateTransitionResponse();
   }

@@ -15,7 +15,7 @@ function updateSVContractFactory(svContractRepository) {
    * @param {Contract} contract
    * @param {MongoDBTransaction} [transaction]
    *
-   * @returns {Promise<void>}
+   * @returns {Promise<SVContract>}
    */
   async function updateSVContract(
     contractId,
@@ -37,6 +37,8 @@ function updateSVContractFactory(svContractRepository) {
     }
 
     await svContractRepository.store(currentSVContract, transaction);
+
+    return currentSVContract;
   }
 
   return updateSVContract;

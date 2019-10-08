@@ -94,6 +94,8 @@ class UpdateStateApp {
       this.mongoDb,
       new DashPlatformProtocol(),
     );
+
+    await this.svContractMongoDbRepository.createCollection();
   }
 
   /**

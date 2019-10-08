@@ -16,7 +16,7 @@ function applyStateTransitionFactory(
    * @param {string} blockHash
    * @param {number} blockHeight
    * @param {MongoDBTransaction} transaction
-   * @returns {Promise<void>}
+   * @returns {Promise<Object>}
    */
   async function applyStateTransition(stPacket, stHeader, blockHash, blockHeight, transaction) {
     if (stPacket.getContract()) {
@@ -28,7 +28,7 @@ function applyStateTransitionFactory(
         hash: stPacket.getContract().hash(),
       });
 
-      await updateSVContract(
+      const svContract = await updateSVContract(
         stPacket.getContractId(),
         stHeader.extraPayload.regTxId,
         reference,
@@ -36,7 +36,7 @@ function applyStateTransitionFactory(
         transaction,
       );
 
-      return;
+      return { svContract };
     }
 
     for (const document of stPacket.getDocuments()) {
@@ -56,6 +56,8 @@ function applyStateTransitionFactory(
         transaction,
       );
     }
+
+    return {};
   }
 
   return applyStateTransition;
