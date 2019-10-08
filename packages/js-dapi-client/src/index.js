@@ -37,7 +37,7 @@ class DAPIClient {
    * @private
    * @param {string} method
    * @param {Object} params
-   * @param {[string[]]} [excludedIps]
+   * @param {string[]} [excludedIps]
    * @returns {Promise<*>}
    */
   async makeRequestToRandomDAPINode(method, params, excludedIps = []) {
@@ -154,7 +154,7 @@ class DAPIClient {
   /**
    * Returns block header by hash
    * @param {string} blockHash
-   * @returns {Promise<[objects]>} - array of header objects
+   * @returns {Promise<object[]>} - array of header objects
    */
   getBlockHeader(blockHash) { return this.makeRequestToRandomDAPINode('getBlockHeader', { blockHash }); }
 
@@ -163,7 +163,7 @@ class DAPIClient {
    * @param {number} offset
    * @param {number} [limit=1]
    * @param {boolean} [verbose=false]
-   * @returns {Promise<[objects]>} - array of header objects
+   * @returns {Promise<object[]>} - array of header objects
    */
   getBlockHeaders(offset, limit = 1, verbose = false) { return this.makeRequestToRandomDAPINode('getBlockHeaders', { offset, limit, verbose }); }
 
@@ -171,7 +171,7 @@ class DAPIClient {
   /**
    * Get block summaries for the day
    * @param {string} blockDate string in format 'YYYY-MM-DD'
-   * @param limit
+   * @param {number} limit
    * @return {Promise<object>}
    */
   getBlocks(blockDate, limit) { return this.makeRequestToRandomDAPINode('getBlocks', { blockDate, limit }); }
@@ -228,7 +228,6 @@ class DAPIClient {
 
   /**
    * Returns Transactions for a given address or multiple addresses
-   * @param address
    * @param {string|string[]} address or array of addresses
    * @param {number} [from] - start of range in the ordered list of latest UTXO (optional)
    * @param {number} [to] - end of range in the ordered list of latest UTXO (optional)
@@ -338,9 +337,9 @@ class DAPIClient {
    * are added to the filter.
    * @param {Object} [options]
    * @param {string} [options.fromBlockHash] - Specifies block hash to start syncing from
-   * @param {int} [options.fromBlockHeight] - Specifies block height to start syncing from
-   * @param {int} [options.count=0] - Number of blocks to sync, if set to 0 syncing is continuously
-   * sends new data as well
+   * @param {number} [options.fromBlockHeight] - Specifies block height to start syncing from
+   * @param {number} [options.count=0] - Number of blocks to sync,
+   * if set to 0 syncing is continuously sends new data as well
    * @returns {
    *    Promise<EventEmitter>|!grpc.web.ClientReadableStream<!TransactionsWithProofsResponse>
    * }
