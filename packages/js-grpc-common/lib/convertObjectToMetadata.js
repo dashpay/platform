@@ -11,7 +11,8 @@ function convertObjectToMetadata(obj) {
   const metadata = new Metadata();
 
   Object.keys(obj).forEach((key) => {
-    metadata.set(key, obj[key]);
+    const value = JSON.stringify(obj[key]);
+    metadata.set(key, value);
   });
 
   return metadata;

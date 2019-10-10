@@ -1,3 +1,5 @@
+const convertObjectToMetadata = require('../../convertObjectToMetadata');
+
 class GrpcError extends Error {
   /**
    * @param {string} message
@@ -10,8 +12,10 @@ class GrpcError extends Error {
     this.code = code;
 
     if (metadata) {
-      this.metadata = metadata;
+      this.metadata = convertObjectToMetadata(metadata);
     }
+
+    this.metadataObject = metadata;
   }
 
   /**
@@ -38,7 +42,7 @@ class GrpcError extends Error {
    * @return {Object}
    */
   getMetadata() {
-    return this.metadata;
+    return this.metadataObject;
   }
 }
 

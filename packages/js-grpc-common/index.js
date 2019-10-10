@@ -11,6 +11,11 @@ const jsonToProtobufHandlerWrapper = require(
 const AcknowledgingWritable = require('./lib/server/stream/AcknowledgingWritable');
 const wrapInErrorHandlerFactory = require('./lib/server/error/wrapInErrorHandlerFactory');
 
+const FailedPreconditionGrpcError = require('./lib/server/error/FailedPreconditionGrpcError');
+const InvalidArgumentGrpcError = require('./lib/server/error/InvalidArgumentGrpcError');
+const InternalGrpcError = require('./lib/server/error/InternalGrpcError');
+const GrpcError = require('./lib/server/error/GrpcError');
+
 const isObject = require('./lib/utils/isObject');
 
 const convertObjectToMetadata = require('./lib/convertObjectToMetadata');
@@ -36,6 +41,10 @@ module.exports = {
     },
     error: {
       wrapInErrorHandlerFactory,
+      GrpcError,
+      InternalGrpcError,
+      InvalidArgumentGrpcError,
+      FailedPreconditionGrpcError,
     },
   },
   utils: {
