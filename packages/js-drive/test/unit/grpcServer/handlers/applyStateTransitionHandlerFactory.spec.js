@@ -178,6 +178,8 @@ describe('applyStateTransitionHandlerFactory', () => {
   });
 
   it('should apply state transition', async () => {
+    applyStateTransitionMock.resolves({ svContract: {} });
+
     const response = await applyStateTransitionHandler(call);
 
     expect(applyStateTransitionMock).to.be.calledOnce();
