@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/drive",
-  "version": "0.5.0-dev.1",
+  "version": "0.5.0-dev.2",
   "description": "Decentralized application storage on the Dash network",
   "engines": {
     "node": ">=8"
