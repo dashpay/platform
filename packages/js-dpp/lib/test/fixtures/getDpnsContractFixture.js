@@ -1,9 +1,9 @@
 const dpnsDocuments = require('@dashevo/dpns-contract/src/schema/dpns-documents');
-const Contract = require('../../contract/Contract');
+const DataContract = require('../../dataContract/DataContract');
 
 /**
- * @return {Contract}
+ * @return {DataContract}
  */
-module.exports = function getContractFixture() {
-  return new Contract('dpnsContract', dpnsDocuments);
+module.exports = function getDataContractFixture() {
+  return new DataContract('b78cd4a40369e401943b7c641ff560ce7069787b', dpnsDocuments);
 };

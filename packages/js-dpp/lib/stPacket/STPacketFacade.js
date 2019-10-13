@@ -5,7 +5,7 @@ const validateSTPacketDocumentsFactory = require('./validation/validateSTPacketD
 
 const findDuplicateDocuments = require('./validation/findDuplicateDocuments');
 const findDuplicateDocumentsByIndices = require('./validation/findDuplicateDocumentsByIndices');
-const createContract = require('../contract/createContract');
+const createContract = require('../dataContract/createDataContract');
 
 const verifySTPacketFactory = require('./verification/verifySTPacketFactory');
 const verifyContract = require('./verification/verifyContract');
@@ -29,7 +29,7 @@ class STPacketFacade {
     this.dpp = dpp;
 
     const validateSTPacketContracts = validateSTPacketContractsFactory(
-      dpp.contract.validateContract,
+      dpp.dataContract.validate,
     );
 
     const validateSTPacketDocuments = validateSTPacketDocumentsFactory(
@@ -54,16 +54,16 @@ class STPacketFacade {
   /**
    * Create ST Packet
    *
-   * @param {Contract|Array} items
+   * @param {DataContract|Array} items
    * @return {STPacket}
    */
   create(items) {
-    const contract = this.dpp.getContract();
+    const contract = this.dpp.getDataContract();
 
     if (!contract) {
       throw new MissingOptionError(
         'contract',
-        'Can\'t create ST Packet because Contract is not set, use setContract method',
+        'Can\'t create ST Packet because Contract is not set, use setDataContract method',
       );
     }
 
@@ -100,12 +100,12 @@ class STPacketFacade {
    * @return {ValidationResult}
    */
   validate(stPacket) {
-    const contract = this.dpp.getContract();
+    const contract = this.dpp.getDataContract();
 
     if (!contract) {
       throw new MissingOptionError(
         'contract',
-        'Can\'t validate ST Packet because Contract is not set, use setContract method',
+        'Can\'t validate ST Packet because Contract is not set, use setDataContract method',
       );
     }
 

@@ -1,8 +1,8 @@
 /**
  * @typedef {Object} RawSTPacket
- * @property {string} contractId
+ * @property {string} dataContractId
  * @property {string} itemsMerkleRoot
  * @property {string} itemsHash
- * @property {RawContract[]} contracts
+ * @property {RawDataContract[]} contracts
  * @property {RawDocument[]} documents
  */

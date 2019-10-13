@@ -3,7 +3,7 @@ const { encode } = require('../util/serializer');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
-class Contract {
+class DataContract {
   /**
    * @param {string} contractId
    * @param {Object<string, Object>} documents
@@ -11,8 +11,8 @@ class Contract {
   constructor(contractId, documents) {
     this.contractId = contractId;
 
-    this.setVersion(Contract.DEFAULTS.VERSION);
-    this.setJsonMetaSchema(Contract.DEFAULTS.SCHEMA);
+    this.setVersion(DataContract.DEFAULTS.VERSION);
+    this.setJsonMetaSchema(DataContract.DEFAULTS.SCHEMA);
     this.setDocuments(documents);
     this.setDefinitions({});
   }
@@ -32,13 +32,12 @@ class Contract {
    * @return {string}
    */
   getJsonSchemaId() {
-    return Contract.SCHEMA_ID;
+    return DataContract.SCHEMA_ID;
   }
-
   /**
    *
    * @param {number} version
-   * @return {Contract}
+   * @return {DataContract}
    */
   setVersion(version) {
     this.version = version;
@@ -75,7 +74,7 @@ class Contract {
   /**
    *
    * @param {Object<string, Object>} documents
-   * @return {Contract}
+   * @return {DataContract}
    */
   setDocuments(documents) {
     this.documents = documents;
@@ -105,7 +104,7 @@ class Contract {
    *
    * @param {string} type
    * @param {object} schema
-   * @return {Contract}
+   * @return {DataContract}
    */
   setDocumentSchema(type, schema) {
     this.documents[type] = schema;
@@ -141,7 +140,7 @@ class Contract {
 
   /**
    * @param {Object<string, Object>} definitions
-   * @return {Contract}
+   * @return {DataContract}
    */
   setDefinitions(definitions) {
     this.definitions = definitions;
@@ -157,9 +156,9 @@ class Contract {
   }
 
   /**
-   * Return Contract as plain object
+   * Return Data Contract as plain object
    *
-   * @return {RawContract}
+   * @return {RawDataContract}
    */
   toJSON() {
     const json = {
@@ -179,7 +178,7 @@ class Contract {
   }
 
   /**
-   * Return serialized Contract
+   * Return serialized Data Contract
    *
    * @return {Buffer}
    */
@@ -188,7 +187,7 @@ class Contract {
   }
 
   /**
-   * Returns hex string with contract hash
+   * Returns hex string with Data Contract hash
    *
    * @return {string}
    */
@@ -197,11 +196,11 @@ class Contract {
   }
 }
 
-Contract.DEFAULTS = {
+DataContract.DEFAULTS = {
   VERSION: 1,
-  SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/contract',
+  SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract',
 };
 
-Contract.SCHEMA_ID = 'contract';
+DataContract.SCHEMA_ID = 'dataContract';
 
-module.exports = Contract;
+module.exports = DataContract;

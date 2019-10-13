@@ -2,9 +2,9 @@ const verifyContract = require('../../../../lib/stPacket/verification/verifyCont
 
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
-const ContractAlreadyPresentError = require('../../../../lib/errors/ContractAlreadyPresentError');
+const DataContractAlreadyPresentError = require('../../../../lib/errors/DataContractAlreadyPresentError');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
@@ -22,16 +22,16 @@ describe.skip('verifyContract', () => {
   it('should return invalid result if Contract is already present', async () => {
     const result = await verifyContract(stPacket, contract);
 
-    expectValidationError(result, ContractAlreadyPresentError);
+    expectValidationError(result, DataContractAlreadyPresentError);
 
     const [error] = result.getErrors();
 
-    expect(error.getContract()).to.equal(contract);
+    expect(error.getDataContract()).to.equal(contract);
   });
 
   it('should return valid result if Contract is not present', async () => {
     const result = await verifyContract(stPacket, undefined);
 
-    expectValidationError(result, ContractAlreadyPresentError, 0);
+    expectValidationError(result, DataContractAlreadyPresentError, 0);
   });
 });

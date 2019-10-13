@@ -83,7 +83,7 @@ async function createDomainDataTrigger(document, context) {
     .toString('hex');
 
   const [parentDomain] = await context.getDataProvider().fetchDocuments(
-    context.getContract().getId(),
+    context.getDataContract().getId(),
     document.getType(),
     { where: [['nameHash', '==', parentDomainHash]] },
   );
@@ -101,7 +101,7 @@ async function createDomainDataTrigger(document, context) {
 
   const [preorderDocument] = await context.getDataProvider()
     .fetchDocuments(
-      context.getContract().getId(),
+      context.getDataContract().getId(),
       'preorder',
       { where: [['saltedDomainHash', '==', saltedDomainHash]] },
     );

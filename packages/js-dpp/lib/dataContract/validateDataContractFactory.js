@@ -1,6 +1,6 @@
 const JsonSchemaValidator = require('../validation/JsonSchemaValidator');
 
-const Contract = require('./Contract');
+const DataContract = require('./DataContract');
 
 const DuplicateIndexError = require('../errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyError');
@@ -8,25 +8,25 @@ const UniqueIndexMustHaveUserIdPrefixError = require('../errors/UniqueIndexMustH
 
 /**
  * @param validator
- * @return {validateContract}
+ * @return {validateDataContract}
  */
-module.exports = function validateContractFactory(validator) {
+module.exports = function validateDataContractFactory(validator) {
   /**
-   * @typedef validateContract
-   * @param {Contract|RawContract} contract
+   * @typedef validateDataContract
+   * @param {DataContract|RawDataContract} dataContract
    * @return {ValidationResult}
    */
-  function validateContract(contract) {
-    const rawContract = (contract instanceof Contract)
-      ? contract.toJSON()
-      : contract;
+  function validateDataContract(dataContract) {
+    const rawDataContract = (dataContract instanceof DataContract)
+      ? dataContract.toJSON()
+      : dataContract;
 
     // TODO: Use validateSchema
     //  https://github.com/epoberezkin/ajv#validateschemaobject-schema---boolean
 
     const result = validator.validate(
-      JsonSchemaValidator.SCHEMAS.META.CONTRACT,
-      rawContract,
+      JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
+      rawDataContract,
     );
 
     if (!result.isValid()) {
@@ -34,7 +34,7 @@ module.exports = function validateContractFactory(validator) {
     }
 
     // Validate indices
-    Object.entries(rawContract.documents).filter(([, documentSchema]) => (
+    Object.entries(rawDataContract.documents).filter(([, documentSchema]) => (
       Object.prototype.hasOwnProperty.call(documentSchema, 'indices')
     ))
       .forEach(([documentType, documentSchema]) => {
@@ -50,7 +50,7 @@ module.exports = function validateContractFactory(validator) {
           if (indicesFingerprints.includes(indicesFingerprint)) {
             result.addError(
               new DuplicateIndexError(
-                rawContract,
+                rawDataContract,
                 documentType,
                 indexDefinition,
               ),
@@ -65,7 +65,7 @@ module.exports = function validateContractFactory(validator) {
           if (indexPropertyNames[0] !== '$userId') {
             result.addError(
               new UniqueIndexMustHaveUserIdPrefixError(
-                rawContract,
+                rawDataContract,
                 documentType,
                 indexDefinition,
               ),
@@ -83,7 +83,7 @@ module.exports = function validateContractFactory(validator) {
             .forEach((undefinedPropertyName) => {
               result.addError(
                 new UndefinedIndexPropertyError(
-                  rawContract,
+                  rawDataContract,
                   documentType,
                   indexDefinition,
                   undefinedPropertyName,
@@ -96,5 +96,5 @@ module.exports = function validateContractFactory(validator) {
     return result;
   }
 
-  return validateContract;
+  return validateDataContract;
 };

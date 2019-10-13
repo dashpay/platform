@@ -3,7 +3,7 @@ const verifyDocumentsUniquenessByIndicesFactory = require('../../../../lib/stPac
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');

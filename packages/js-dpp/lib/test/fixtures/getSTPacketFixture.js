@@ -1,17 +1,17 @@
 const STPacket = require('../../stPacket/STPacket');
 
-const getContractFixture = require('./getContractFixture');
+const getDataContractFixture = require('./getDataContractFixture');
 const getDocumentsFixture = require('./getDocumentsFixture');
 
 /**
  * @return {STPacket}
  */
 function getSTPacketFixture() {
-  const contract = getContractFixture();
+  const dataContract = getDataContractFixture();
   const documents = getDocumentsFixture()
     .map(document => document.removeMetadata());
 
-  return new STPacket(contract.getId(), documents);
+  return new STPacket(dataContract.getId(), documents);
 }
 
 module.exports = getSTPacketFixture;

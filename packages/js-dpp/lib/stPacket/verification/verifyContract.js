@@ -1,11 +1,11 @@
 const ValidationResult = require('../../validation/ValidationResult');
 
-const ContractAlreadyPresentError = require('../../errors/ContractAlreadyPresentError');
+const DataContractAlreadyPresentError = require('../../errors/DataContractAlreadyPresentError');
 
 /**
  * @typedef verifyContract
  * @param {STPacket} stPacket
- * @param {Contract} contract
+ * @param {DataContract} contract
  * @return {ValidationResult}
  */
 async function verifyContract(stPacket, contract) {
@@ -13,7 +13,7 @@ async function verifyContract(stPacket, contract) {
 
   if (contract) {
     result.addError(
-      new ContractAlreadyPresentError(stPacket.getContract()),
+      new DataContractAlreadyPresentError(stPacket.getContract()),
     );
   }
 

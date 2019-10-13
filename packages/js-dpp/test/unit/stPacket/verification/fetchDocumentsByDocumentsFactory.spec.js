@@ -1,5 +1,5 @@
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
 const fetchDocumentsByDocumentsFactory = require('../../../../lib/stPacket/verification/fetchDocumentsByDocumentsFactory');
 

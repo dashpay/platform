@@ -7,33 +7,33 @@ const DataTriggerExecutionError = require('../../../lib/errors/DataTriggerExecut
 const DataTriggerInvalidResultError = require('../../../lib/errors/DataTriggerInvalidResultError');
 
 describe('DataTrigger', () => {
-  let contractMock;
+  let dataContractMock;
   let context;
   let triggerStub;
   let document;
 
   beforeEach(function beforeEach() {
     triggerStub = this.sinonSandbox.stub().resolves(new DataTriggerExecutionResult());
-    contractMock = getDpnsContractFixture();
+    dataContractMock = getDpnsContractFixture();
 
     ([document] = getDocumentsFixture());
 
     context = new DataTriggerExecutionContext(
       null,
       '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      contractMock,
+      dataContractMock,
     );
   });
 
   it('should check trigger fields', () => {
     const trigger = new DataTrigger(
-      contractMock.getId(),
+      dataContractMock.getId(),
       document.getType(),
       document.getAction(),
       triggerStub,
     );
 
-    expect(trigger.contractId).to.equal(contractMock.getId());
+    expect(trigger.dataContractId).to.equal(dataContractMock.getId());
     expect(trigger.documentType).to.equal(document.getType());
     expect(trigger.documentAction).to.equal(document.getAction());
     expect(trigger.trigger).to.equal(triggerStub);
@@ -42,7 +42,7 @@ describe('DataTrigger', () => {
   describe('#execute', () => {
     it('should check trigger execution', async () => {
       const trigger = new DataTrigger(
-        contractMock.getId(),
+        dataContractMock.getId(),
         document.getType(),
         document.getAction(),
         triggerStub,
@@ -63,7 +63,7 @@ describe('DataTrigger', () => {
       triggerStub.resolves(functionResult);
 
       const trigger = new DataTrigger(
-        contractMock.getId(),
+        dataContractMock.getId(),
         document.getType(),
         document.getAction(),
         triggerStub,
@@ -81,7 +81,7 @@ describe('DataTrigger', () => {
       triggerStub.throws(triggerError);
 
       const trigger = new DataTrigger(
-        contractMock.getId(),
+        dataContractMock.getId(),
         document.getType(),
         document.getAction(),
         triggerStub,
@@ -98,7 +98,7 @@ describe('DataTrigger', () => {
       triggerStub.resolves(null);
 
       const trigger = new DataTrigger(
-        contractMock.getId(),
+        dataContractMock.getId(),
         document.getType(),
         document.getAction(),
         triggerStub,

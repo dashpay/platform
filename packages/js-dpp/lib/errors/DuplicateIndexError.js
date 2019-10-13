@@ -2,16 +2,16 @@ const AbstractIndexError = require('./AbstractIndexError');
 
 class DuplicateIndexError extends AbstractIndexError {
   /**
-   * @param {RawContract} rawContract
+   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    */
-  constructor(rawContract, documentType, indexDefinition) {
+  constructor(rawDataContract, documentType, indexDefinition) {
     const message = `Duplicate index definition for "${documentType}" document`;
 
     super(
       message,
-      rawContract,
+      rawDataContract,
       documentType,
       indexDefinition,
     );

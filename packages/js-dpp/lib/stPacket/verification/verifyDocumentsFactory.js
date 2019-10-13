@@ -8,7 +8,7 @@ const DocumentAlreadyPresentError = require('../../errors/DocumentAlreadyPresent
 const DocumentNotFoundError = require('../../errors/DocumentNotFoundError');
 const InvalidDocumentRevisionError = require('../../errors/InvalidDocumentRevisionError');
 const InvalidDocumentScopeError = require('../../errors/InvalidDocumentScopeError');
-const ContractNotPresentError = require('../../errors/ContractNotPresentError');
+const ContractNotPresentError = require('../../errors/DataContractNotPresentError');
 
 const hash = require('../../util/hash');
 

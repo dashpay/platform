@@ -4,14 +4,14 @@ const { encode } = require('../util/serializer');
 const calculateItemsMerkleRoot = require('./calculateItemsMerkleRoot');
 const calculateItemsHash = require('./calculateItemsHash');
 
-const Contract = require('../contract/Contract');
+const DataContract = require('../dataContract/DataContract');
 
-const ContractAndDocumentsNotAllowedSamePacketError = require('./errors/ContractAndDocumentsNotAllowedSamePacketError');
+const DataContractAndDocumentsNotAllowedSamePacketError = require('./errors/DataContractAndDocumentsNotAllowedSamePacketError');
 
 class STPacket {
   /**
    * @param {string} contractId
-   * @param {Contract|Document[]} [items] Contract or Documents
+   * @param {DataContract|Document[]} [items] DataContract or Documents
    */
   constructor(contractId, items = undefined) {
     this.setContractId(contractId);
@@ -19,7 +19,7 @@ class STPacket {
     this.documents = [];
     this.contracts = [];
 
-    if (items instanceof Contract) {
+    if (items instanceof DataContract) {
       this.setContract(items);
     }
 
@@ -29,7 +29,7 @@ class STPacket {
   }
 
   /**
-   * Set Contract ID
+   * Set DataContract ID
    *
    * @param {string} contractId
    */
@@ -40,7 +40,7 @@ class STPacket {
   }
 
   /**
-   * Get Contract ID
+   * Get DataContract ID
    *
    * @return {string}
    */
@@ -74,13 +74,13 @@ class STPacket {
   }
 
   /**
-   * Set Contract
+   * Set DataContract
    *
-   * @param {Contract} contract
+   * @param {DataContract} contract
    */
   setContract(contract) {
     if (this.documents.length > 0) {
-      throw new ContractAndDocumentsNotAllowedSamePacketError(this);
+      throw new DataContractAndDocumentsNotAllowedSamePacketError(this);
     }
 
     this.contracts = !contract ? [] : [contract];
@@ -89,9 +89,9 @@ class STPacket {
   }
 
   /**
-   * Get Contract
+   * Get DataContract
    *
-   * @return {Contract|null}
+   * @return {DataContract|null}
    */
   getContract() {
     if (this.contracts.length) {
@@ -108,7 +108,7 @@ class STPacket {
    */
   setDocuments(documents) {
     if (this.contracts.length) {
-      throw new ContractAndDocumentsNotAllowedSamePacketError(this);
+      throw new DataContractAndDocumentsNotAllowedSamePacketError(this);
     }
 
     this.documents = documents;

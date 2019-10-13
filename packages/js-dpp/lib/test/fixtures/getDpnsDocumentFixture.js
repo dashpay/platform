@@ -13,13 +13,13 @@ const userId = transaction.hash;
  * @return {Document}
  */
 function getParentDocumentFixture(options = {}) {
-  const contract = getDpnsContractFixture();
+  const dataContract = getDpnsContractFixture();
 
   const validateDocumentStub = () => {};
 
   const factory = new DocumentFactory(
     userId,
-    contract,
+    dataContract,
     validateDocumentStub,
   );
 
@@ -44,13 +44,13 @@ function getParentDocumentFixture(options = {}) {
  * @return {Document}
  */
 function getChildDocumentFixture(options = {}) {
-  const contract = getDpnsContractFixture();
+  const dataContract = getDpnsContractFixture();
 
   const validateDocumentStub = () => {};
 
   const factory = new DocumentFactory(
     userId,
-    contract,
+    dataContract,
     validateDocumentStub,
   );
 

@@ -4,7 +4,7 @@ const STPacket = require('../../../../lib/stPacket/STPacket');
 const Document = require('../../../../lib/document/Document');
 
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
@@ -15,7 +15,7 @@ const DocumentAlreadyPresentError = require('../../../../lib/errors/DocumentAlre
 const DocumentNotFoundError = require('../../../../lib/errors/DocumentNotFoundError');
 const InvalidDocumentRevisionError = require('../../../../lib/errors/InvalidDocumentRevisionError');
 const InvalidDocumentActionError = require('../../../../lib/stPacket/errors/InvalidDocumentActionError');
-const ContractNotPresentError = require('../../../../lib/errors/ContractNotPresentError');
+const ContractNotPresentError = require('../../../../lib/errors/DataContractNotPresentError');
 
 describe.skip('verifyDocuments', () => {
   let verifyDocuments;

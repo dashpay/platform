@@ -3,7 +3,7 @@ const { Transaction, PrivateKey } = require('@dashevo/dashcore-lib');
 const STPacket = require('../../../../lib/stPacket/STPacket');
 
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
 

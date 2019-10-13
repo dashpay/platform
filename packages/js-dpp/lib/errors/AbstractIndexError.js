@@ -7,25 +7,25 @@ const ConsensusError = require('./ConsensusError');
 class AbstractIndexError extends ConsensusError {
   /**
    * @param {string} message
-   * @param {RawContract} rawContract
+   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    */
-  constructor(message, rawContract, documentType, indexDefinition) {
+  constructor(message, rawDataContract, documentType, indexDefinition) {
     super(message);
 
-    this.rawContract = rawContract;
+    this.rawDataContract = rawDataContract;
     this.documentType = documentType;
     this.indexDefintion = indexDefinition;
   }
 
   /**
-   * Get raw Contract
+   * Get raw Data Contract
    *
-   * @return {RawContract}
+   * @return {RawDataContract}
    */
-  getRawContract() {
-    return this.rawContract;
+  getRawDataContract() {
+    return this.rawDataContract;
   }
 
   /**

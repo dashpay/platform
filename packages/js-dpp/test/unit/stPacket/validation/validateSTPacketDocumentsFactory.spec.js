@@ -1,4 +1,4 @@
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
@@ -8,7 +8,7 @@ const validateSTPacketDocumentsFactory = require('../../../../lib/stPacket/valid
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
 const DuplicateDocumentsError = require('../../../../lib/errors/DuplicateDocumentsError');
-const InvalidContractError = require('../../../../lib/errors/InvalidContractError');
+const InvalidDataContractError = require('../../../../lib/errors/InvalidDataContractError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe.skip('validateSTPacketDocumentsFactory', () => {
@@ -47,11 +47,11 @@ describe.skip('validateSTPacketDocumentsFactory', () => {
 
     const result = validateSTPacketDocuments(rawSTPacket, contract);
 
-    expectValidationError(result, InvalidContractError);
+    expectValidationError(result, InvalidDataContractError);
 
     const [error] = result.getErrors();
 
-    expect(error.getContract()).to.equal(contract);
+    expect(error.getDataContract()).to.equal(contract);
     expect(error.getRawSTPacket()).to.equal(rawSTPacket);
 
     expect(validateDocumentMock.callCount).to.equal(5);

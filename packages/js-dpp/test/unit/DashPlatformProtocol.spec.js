@@ -1,18 +1,18 @@
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
 
-const getContractFixture = require('../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../lib/test/fixtures/getDataContractFixture');
 
 const createDataProviderMock = require('../../lib/test/mocks/createDataProviderMock');
 
 describe('DashPlatformProtocol', () => {
   let dpp;
   let userId;
-  let contract;
+  let dataContract;
   let dataProvider;
 
   beforeEach(function beforeEach() {
     userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
-    contract = getContractFixture();
+    dataContract = getDataContractFixture();
     dataProvider = createDataProviderMock(this.sinonSandbox);
 
     dpp = new DashPlatformProtocol();
@@ -38,23 +38,23 @@ describe('DashPlatformProtocol', () => {
     });
   });
 
-  describe('setContract', () => {
+  describe('setDataContract', () => {
     it('should set User ID', () => {
-      const result = dpp.setContract(contract);
+      const result = dpp.setDataContract(dataContract);
 
       expect(result).to.be.an.instanceOf(DashPlatformProtocol);
 
-      expect(dpp.getContract()).to.equal(contract);
+      expect(dpp.getDataContract()).to.equal(dataContract);
     });
   });
 
-  describe('getContract', () => {
-    it('should return Contract', () => {
-      dpp.setContract(contract);
+  describe('getDataContract', () => {
+    it('should return Data Contract', () => {
+      dpp.setDataContract(dataContract);
 
-      const result = dpp.getContract();
+      const result = dpp.getDataContract();
 
-      expect(result).to.equal(contract);
+      expect(result).to.equal(dataContract);
     });
   });
 

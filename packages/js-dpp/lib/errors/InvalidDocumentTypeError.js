@@ -3,15 +3,15 @@ const ConsensusError = require('./ConsensusError');
 class InvalidDocumentTypeError extends ConsensusError {
   /**
    * @param {string} type
-   * @param {Contract} contract
+   * @param {DataContract} dataContract
    */
-  constructor(type, contract) {
+  constructor(type, dataContract) {
     super(`Contract doesn't contain type ${type}`);
 
     this.name = this.constructor.name;
 
     this.type = type;
-    this.contract = contract;
+    this.dataContract = dataContract;
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
@@ -28,12 +28,12 @@ class InvalidDocumentTypeError extends ConsensusError {
   }
 
   /**
-   * Get Contract
+   * Get Data Contract
    *
-   * @return {Contract}
+   * @return {DataContract}
    */
-  getContract() {
-    return this.contract;
+  getDataContract() {
+    return this.dataContract;
   }
 }
 

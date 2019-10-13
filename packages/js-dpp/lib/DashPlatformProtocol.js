@@ -2,13 +2,13 @@ const Ajv = require('ajv');
 
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
-const ContractFacade = require('./contract/ContractFacade');
+const DataContractFacade = require('./dataContract/DataContractFacade');
 const DocumentFacade = require('./document/DocumentFacade');
 const STPacketFacade = require('./stPacket/STPacketFacade');
 const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 
 const userIdPropertyName = Symbol('userId');
-const contractPropertyName = Symbol('contract');
+const dataContractPropertyName = Symbol('dataContract');
 const dataProviderPropertyName = Symbol('dataProvider');
 
 /**
@@ -17,12 +17,12 @@ const dataProviderPropertyName = Symbol('dataProvider');
 class DashPlatformProtocol {
   /**
    * @param {string} [options.userId]
-   * @param {Contract} [options.contract]
+   * @param {DataContract} [options.dataContract]
    * @param {DataProvider} [options.dataProvider]
    */
   constructor(options = {}) {
     this[userIdPropertyName] = options.userId;
-    this[contractPropertyName] = options.contract;
+    this[dataContractPropertyName] = options.dataContract;
     this[dataProviderPropertyName] = options.dataProvider;
 
     const validator = new JsonSchemaValidator(new Ajv());
@@ -35,7 +35,7 @@ class DashPlatformProtocol {
    * @param {JsonSchemaValidator} validator
    */
   initializeFacades(validator) {
-    this.contract = new ContractFacade(validator);
+    this.dataContract = new DataContractFacade(validator);
 
     this.document = new DocumentFacade(this, validator);
 
@@ -66,24 +66,24 @@ class DashPlatformProtocol {
   }
 
   /**
-   * Set Contract
+   * Set Data Contract
    *
-   * @param {Contract} contract
+   * @param {DataContract} dataContract
    * @return {DashPlatformProtocol}
    */
-  setContract(contract) {
-    this[contractPropertyName] = contract;
+  setDataContract(dataContract) {
+    this[dataContractPropertyName] = dataContract;
 
     return this;
   }
 
   /**
-   * Get Contract
+   * Get Data Contract
    *
-   * @return {Contract}
+   * @return {DataContract}
    */
-  getContract() {
-    return this[contractPropertyName];
+  getDataContract() {
+    return this[dataContractPropertyName];
   }
 
   /**

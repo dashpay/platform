@@ -2,16 +2,16 @@ class DataTriggerExecutionContext {
   /**
    * @param {DataProvider} dataProvider
    * @param {string} userId
-   * @param {Contract} contract
+   * @param {DataContract} dataContract
    * @param {Transaction} stateTransitionHeader
    */
-  constructor(dataProvider, userId, contract, stateTransitionHeader) {
+  constructor(dataProvider, userId, dataContract, stateTransitionHeader) {
     /**
      * @type {DataProvider}
      */
     this.dataProvider = dataProvider;
     this.userId = userId;
-    this.contract = contract;
+    this.dataContract = dataContract;
     this.stateTransitionHeader = stateTransitionHeader;
   }
 
@@ -30,10 +30,10 @@ class DataTriggerExecutionContext {
   }
 
   /**
-   * @returns {Contract}
+   * @returns {DataContract}
    */
-  getContract() {
-    return this.contract;
+  getDataContract() {
+    return this.dataContract;
   }
 
   /**

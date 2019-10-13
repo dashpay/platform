@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.dash.org/dpp-0-4-0/meta/dash-schema",
-  "$id": "https://schema.dash.org/dpp-0-4-0/meta/contract",
+  "$id": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "type": "object",
   "allOf": [
     {
@@ -10,7 +10,7 @@
   "properties": {
     "$schema": {
       "type": "string",
-      "const": "https://schema.dash.org/dpp-0-4-0/meta/contract"
+      "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
     },
     "contractId":{
       "type": "string",

@@ -13,22 +13,22 @@ const entropy = require('../util/entropy');
 
 /**
  * @param {JsonSchemaValidator} validator
- * @param {enrichContractWithBaseDocument} enrichContractWithBaseDocument
+ * @param {enrichDataContractWithBaseDocument} enrichDataContractWithBaseDocument
  * @return {validateDocument}
  */
 module.exports = function validateDocumentFactory(
   validator,
-  enrichContractWithBaseDocument,
+  enrichDataContractWithBaseDocument,
 ) {
   /**
    * @typedef validateDocument
    * @param {Document|RawDocument} document
-   * @param {Contract} contract
+   * @param {DataContract} dataContract
    * @param {Object} [options]
    * @param {boolean} [options.allowMeta=true]
    * @return {ValidationResult}
    */
-  function validateDocument(document, contract, options = { allowMeta: true }) {
+  function validateDocument(document, dataContract, options = { allowMeta: true }) {
     const rawDocument = (document instanceof Document) ? document.toJSON() : document;
 
     const result = new ValidationResult();
@@ -49,9 +49,9 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    if (!contract.isDocumentDefined(rawDocument.$type)) {
+    if (!dataContract.isDocumentDefined(rawDocument.$type)) {
       result.addError(
-        new InvalidDocumentTypeError(rawDocument.$type, contract),
+        new InvalidDocumentTypeError(rawDocument.$type, dataContract),
       );
 
       return result;
@@ -65,15 +65,15 @@ module.exports = function validateDocumentFactory(
 
       result.merge(schemaValidationResult);
     } else {
-      const documentSchemaRef = contract.getDocumentSchemaRef(rawDocument.$type);
+      const documentSchemaRef = dataContract.getDocumentSchemaRef(rawDocument.$type);
 
-      const enrichedContract = enrichContractWithBaseDocument(
-        contract,
+      const enrichedDataContract = enrichDataContractWithBaseDocument(
+        dataContract,
         options.allowMeta ? [] : ['$meta'],
       );
 
       const additionalSchemas = {
-        [contract.getJsonSchemaId()]: enrichedContract,
+        [dataContract.getJsonSchemaId()]: enrichedDataContract,
       };
 
       const schemaValidationResult = validator.validate(

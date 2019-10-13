@@ -1,4 +1,4 @@
-const enrichContractWithBaseDocument = require('./enrichContractWithBaseDocument');
+const enrichDataContractWithBaseDocument = require('./enrichDataContractWithBaseDocument');
 const validateDocumentFactory = require('./validateDocumentFactory');
 
 const DocumentFactory = require('./DocumentFactory');
@@ -16,12 +16,12 @@ class DocumentFacade {
 
     this.validateDocument = validateDocumentFactory(
       validator,
-      enrichContractWithBaseDocument,
+      enrichDataContractWithBaseDocument,
     );
 
     this.factory = new DocumentFactory(
       dpp.getUserId(),
-      dpp.getContract(),
+      dpp.getDataContract(),
       this.validateDocument,
     );
   }
@@ -68,7 +68,7 @@ class DocumentFacade {
    * @return {ValidationResult}
    */
   validate(document) {
-    return this.validateDocument(document, this.dpp.getContract());
+    return this.validateDocument(document, this.dpp.getDataContract());
   }
 
   /**
@@ -83,15 +83,15 @@ class DocumentFacade {
       );
     }
 
-    if (!this.dpp.getContract()) {
+    if (!this.dpp.getDataContract()) {
       throw new MissingOptionError(
         'contract',
-        'Can\'t create Document because Contract is not set, use setContract method',
+        'Can\'t create Document because Data Contract is not set, use setDataContract method',
       );
     }
 
     this.factory.setUserId(this.dpp.getUserId());
-    this.factory.setContract(this.dpp.getContract());
+    this.factory.setDataContract(this.dpp.getDataContract());
 
     return this.factory;
   }

@@ -43,10 +43,10 @@ module.exports = function validateSTPacketFactory(
   /**
    * @typedef validateSTPacket
    * @param {STPacket|RawSTPacket} stPacket
-   * @param {Contract} [contract]
+   * @param {DataContract} [dataContract]
    * @return {ValidationResult}
    */
-  function validateSTPacket(stPacket, contract = undefined) {
+  function validateSTPacket(stPacket, dataContract = undefined) {
     const rawSTPacket = (stPacket instanceof STPacket)
       ? stPacket.toJSON()
       : stPacket;
@@ -68,7 +68,7 @@ module.exports = function validateSTPacketFactory(
 
     if (rawSTPacket.documents.length > 0) {
       result.merge(
-        validateSTPacketDocuments(rawSTPacket, contract),
+        validateSTPacketDocuments(rawSTPacket, dataContract),
       );
     }
 

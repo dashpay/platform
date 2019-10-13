@@ -7,17 +7,17 @@
  */
 
 /**
- * Fetch Contract by ID
+ * Fetch Data Contract by ID
  *
  * @async
  * @method
- * @name DataProvider#fetchContract
+ * @name DataProvider#fetchDataContract
  * @param {string} id
- * @returns {Promise<Contract|null>}
+ * @returns {Promise<DataContract|null>}
  */
 
 /**
- * Fetch Documents by contract ID and type
+ * Fetch Documents by Data Contract ID and type
  *
  * @async
  * @method

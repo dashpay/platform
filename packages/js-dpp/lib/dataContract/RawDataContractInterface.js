@@ -1,5 +1,5 @@
 /**
- * @typedef {Object} RawContract
+ * @typedef {Object} RawDataContract
  * @property {string} $schema
  * @property {string} contractId
  * @property {number} version

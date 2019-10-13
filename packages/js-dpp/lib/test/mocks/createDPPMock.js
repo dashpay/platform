@@ -4,7 +4,7 @@
  * @returns {DashPlatformProtocol}
  */
 module.exports = function createDPPMock(sinonSandbox) {
-  const contract = {
+  const dataContract = {
     create: sinonSandbox.stub(),
     createFromObject: sinonSandbox.stub(),
     createFromSerialized: sinonSandbox.stub(),
@@ -34,14 +34,14 @@ module.exports = function createDPPMock(sinonSandbox) {
   };
 
   return {
-    contract,
+    dataContract,
     document,
     packet,
     packetHeader,
     getUserId: sinonSandbox.stub(),
     setUserId: sinonSandbox.stub(),
-    getContract: sinonSandbox.stub(),
-    setContract: sinonSandbox.stub(),
+    getDataContract: sinonSandbox.stub(),
+    setDataContract: sinonSandbox.stub(),
     getDataProvider: sinonSandbox.stub(),
     setDataProvider: sinonSandbox.stub(),
   };

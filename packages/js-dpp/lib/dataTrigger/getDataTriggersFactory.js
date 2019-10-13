@@ -38,15 +38,19 @@ function getDataTriggersFactory() {
    *
    * @typedef getDataTriggers
    *
-   * @param {sting} contractId
+   * @param {string} dataContractId
    * @param {number} documentType
    * @param {number} documentAction
    *
    * @returns {DataTrigger[]}
    */
-  function getDataTriggers(contractId, documentType, documentAction) {
+  function getDataTriggers(dataContractId, documentType, documentAction) {
     return dataTriggers.filter(
-      dataTrigger => dataTrigger.isMatchingTriggerForData(contractId, documentType, documentAction),
+      dataTrigger => dataTrigger.isMatchingTriggerForData(
+        dataContractId,
+        documentType,
+        documentAction,
+      ),
     );
   }
 

@@ -4,9 +4,9 @@ const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
-const validateContractFactory = require('../../../lib/contract/validateContractFactory');
+const validateDataContractFactory = require('../../../lib/dataContract/validateDataContractFactory');
 
-const getContractFixture = require('../../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const { expectJsonSchemaError, expectValidationError } = require('../../../lib/test/expect/expectError');
 
@@ -14,24 +14,24 @@ const DuplicateIndexError = require('../../../lib/errors/DuplicateIndexError');
 const UniqueIndexMustHaveUserIdPrefixError = require('../../../lib/errors/UniqueIndexMustHaveUserIdPrefixError');
 const UndefinedIndexPropertyError = require('../../../lib/errors/UndefinedIndexPropertyError');
 
-describe('validateContractFactory', () => {
-  let rawContract;
-  let validateContract;
+describe('validateDataContractFactory', () => {
+  let rawDataContract;
+  let validateDataContract;
 
   beforeEach(() => {
-    rawContract = getContractFixture().toJSON();
+    rawDataContract = getDataContractFixture().toJSON();
 
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
 
-    validateContract = validateContractFactory(validator);
+    validateDataContract = validateDataContractFactory(validator);
   });
 
   describe('$schema', () => {
     it('should be present', () => {
-      delete rawContract.$schema;
+      delete rawDataContract.$schema;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -43,9 +43,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be a string', () => {
-      rawContract.$schema = 1;
+      rawDataContract.$schema = 1;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -56,9 +56,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be a particular url', () => {
-      rawContract.$schema = 'wrong';
+      rawDataContract.$schema = 'wrong';
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -71,9 +71,9 @@ describe('validateContractFactory', () => {
 
   describe('contractId', () => {
     it('should be present', () => {
-      delete rawContract.contractId;
+      delete rawDataContract.contractId;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -85,9 +85,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be a string', () => {
-      rawContract.contractId = 1;
+      rawDataContract.contractId = 1;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -98,9 +98,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be no less than 64 chars', () => {
-      rawContract.contractId = '86b273ff';
+      rawDataContract.contractId = '86b273ff';
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -111,9 +111,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be no longer than 64 chars', () => {
-      rawContract.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+      rawDataContract.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -126,9 +126,9 @@ describe('validateContractFactory', () => {
 
   describe('version', () => {
     it('should be present', () => {
-      delete rawContract.version;
+      delete rawDataContract.version;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -140,9 +140,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be a number', () => {
-      rawContract.version = 'wrong';
+      rawDataContract.version = 'wrong';
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -153,9 +153,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be an integer', () => {
-      rawContract.version = 1.2;
+      rawDataContract.version = 1.2;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -166,9 +166,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be greater or equal to one', () => {
-      rawContract.version = 0;
+      rawDataContract.version = 0;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -181,18 +181,18 @@ describe('validateContractFactory', () => {
 
   describe('definitions', () => {
     it('may not be present', () => {
-      delete rawContract.definitions;
+      delete rawDataContract.definitions;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });
 
     it('should be an object', () => {
-      rawContract.definitions = 1;
+      rawDataContract.definitions = 1;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -203,9 +203,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should not be empty', () => {
-      rawContract.definitions = {};
+      rawDataContract.definitions = {};
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -216,11 +216,11 @@ describe('validateContractFactory', () => {
     });
 
     it('should have no non-alphanumeric properties', () => {
-      rawContract.definitions = {
+      rawDataContract.definitions = {
         $subSchema: {},
       };
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result, 2);
 
@@ -234,13 +234,13 @@ describe('validateContractFactory', () => {
     });
 
     it('should have no more than 100 properties', () => {
-      rawContract.definitions = {};
+      rawDataContract.definitions = {};
 
       Array(101).fill({}).forEach((item, i) => {
-        rawContract.definitions[i] = item;
+        rawDataContract.definitions[i] = item;
       });
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -255,9 +255,9 @@ describe('validateContractFactory', () => {
         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
       validNames.forEach((name) => {
-        rawContract.definitions[name] = {};
+        rawDataContract.definitions[name] = {};
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result, 0);
       });
@@ -267,9 +267,9 @@ describe('validateContractFactory', () => {
       const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
 
       invalidNames.forEach((name) => {
-        rawContract.definitions[name] = {};
+        rawDataContract.definitions[name] = {};
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result, 2);
 
@@ -283,9 +283,9 @@ describe('validateContractFactory', () => {
 
   describe('documents', () => {
     it('should be present', () => {
-      delete rawContract.documents;
+      delete rawDataContract.documents;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -297,9 +297,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should be an object', () => {
-      rawContract.documents = 1;
+      rawDataContract.documents = 1;
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -310,9 +310,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should not be empty', () => {
-      rawContract.documents = {};
+      rawDataContract.documents = {};
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -327,9 +327,9 @@ describe('validateContractFactory', () => {
         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
       validNames.forEach((name) => {
-        rawContract.documents[name] = rawContract.documents.niceDocument;
+        rawDataContract.documents[name] = rawDataContract.documents.niceDocument;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result, 0);
       });
@@ -339,9 +339,9 @@ describe('validateContractFactory', () => {
       const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
 
       invalidNames.forEach((name) => {
-        rawContract.documents[name] = rawContract.documents.niceDocument;
+        rawDataContract.documents[name] = rawDataContract.documents.niceDocument;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -353,15 +353,15 @@ describe('validateContractFactory', () => {
     });
 
     it('should have no more than 100 properties', () => {
-      const niceDocumentDefinition = rawContract.documents.niceDocument;
+      const niceDocumentDefinition = rawDataContract.documents.niceDocument;
 
-      rawContract.documents = {};
+      rawDataContract.documents = {};
 
       Array(101).fill(niceDocumentDefinition).forEach((item, i) => {
-        rawContract.documents[i] = item;
+        rawDataContract.documents[i] = item;
       });
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -373,9 +373,9 @@ describe('validateContractFactory', () => {
 
     describe('Document schema', () => {
       it('should not be empty', () => {
-        rawContract.documents.niceDocument.properties = {};
+        rawDataContract.documents.niceDocument.properties = {};
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -386,9 +386,9 @@ describe('validateContractFactory', () => {
       });
 
       it('should have type "object" if defined', () => {
-        delete rawContract.documents.niceDocument.properties;
+        delete rawDataContract.documents.niceDocument.properties;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -400,9 +400,9 @@ describe('validateContractFactory', () => {
       });
 
       it('should have "properties"', () => {
-        delete rawContract.documents.niceDocument.properties;
+        delete rawDataContract.documents.niceDocument.properties;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -418,9 +418,9 @@ describe('validateContractFactory', () => {
           'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
         validNames.forEach((name) => {
-          rawContract.documents.niceDocument.properties[name] = {};
+          rawDataContract.documents.niceDocument.properties[name] = {};
 
-          const result = validateContract(rawContract);
+          const result = validateDataContract(rawDataContract);
 
           expectJsonSchemaError(result, 0);
         });
@@ -430,9 +430,9 @@ describe('validateContractFactory', () => {
         const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
 
         invalidNames.forEach((name) => {
-          rawContract.documents.niceDocument.properties[name] = {};
+          rawDataContract.documents.niceDocument.properties[name] = {};
 
-          const result = validateContract(rawContract);
+          const result = validateDataContract(rawDataContract);
 
           expectJsonSchemaError(result, 2);
 
@@ -446,9 +446,9 @@ describe('validateContractFactory', () => {
       });
 
       it('should have "additionalProperties" defined', () => {
-        delete rawContract.documents.niceDocument.additionalProperties;
+        delete rawDataContract.documents.niceDocument.additionalProperties;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -460,9 +460,9 @@ describe('validateContractFactory', () => {
       });
 
       it('should have "additionalProperties" defined to false', () => {
-        rawContract.documents.niceDocument.additionalProperties = true;
+        rawDataContract.documents.niceDocument.additionalProperties = true;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -475,13 +475,13 @@ describe('validateContractFactory', () => {
       it('should have no more than 100 properties', () => {
         const propertyDefinition = { };
 
-        rawContract.documents.niceDocument.properties = {};
+        rawDataContract.documents.niceDocument.properties = {};
 
         Array(101).fill(propertyDefinition).forEach((item, i) => {
-          rawContract.documents.niceDocument.properties[i] = item;
+          rawDataContract.documents.niceDocument.properties[i] = item;
         });
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -495,9 +495,9 @@ describe('validateContractFactory', () => {
 
   describe('indices', () => {
     it('should be an array', () => {
-      rawContract.documents.indexedDocument.indices = 'definitely not an array';
+      rawDataContract.documents.indexedDocument.indices = 'definitely not an array';
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -508,9 +508,9 @@ describe('validateContractFactory', () => {
     });
 
     it('should have at least one item', () => {
-      rawContract.documents.indexedDocument.indices = [];
+      rawDataContract.documents.indexedDocument.indices = [];
 
-      const result = validateContract(rawContract);
+      const result = validateDataContract(rawDataContract);
 
       expectJsonSchemaError(result);
 
@@ -522,9 +522,9 @@ describe('validateContractFactory', () => {
 
     describe('index', () => {
       it('should be an object', () => {
-        rawContract.documents.indexedDocument.indices = ['something else'];
+        rawDataContract.documents.indexedDocument.indices = ['something else'];
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -535,9 +535,9 @@ describe('validateContractFactory', () => {
       });
 
       it('should have properties definition', () => {
-        rawContract.documents.indexedDocument.indices = [{}];
+        rawDataContract.documents.indexedDocument.indices = [{}];
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -550,10 +550,10 @@ describe('validateContractFactory', () => {
 
       describe('properties definition', () => {
         it('should be an array', () => {
-          rawContract.documents.indexedDocument.indices[0]
+          rawDataContract.documents.indexedDocument.indices[0]
             .properties = 'something else';
 
-          const result = validateContract(rawContract);
+          const result = validateDataContract(rawDataContract);
 
           expectJsonSchemaError(result);
 
@@ -566,10 +566,10 @@ describe('validateContractFactory', () => {
         });
 
         it('should have at least one property defined', () => {
-          rawContract.documents.indexedDocument.indices[0]
+          rawDataContract.documents.indexedDocument.indices[0]
             .properties = [];
 
-          const result = validateContract(rawContract);
+          const result = validateDataContract(rawDataContract);
 
           expectJsonSchemaError(result);
 
@@ -583,13 +583,13 @@ describe('validateContractFactory', () => {
 
         it('should have no more than 100 property definitions', () => {
           for (let i = 0; i < 100; i++) {
-            rawContract.documents.indexedDocument.indices[0]
+            rawDataContract.documents.indexedDocument.indices[0]
               .properties.push({
                 [`field${i}`]: 'asc',
               });
           }
 
-          const result = validateContract(rawContract);
+          const result = validateDataContract(rawDataContract);
 
           expectJsonSchemaError(result);
 
@@ -603,10 +603,10 @@ describe('validateContractFactory', () => {
 
         describe('property definition', () => {
           it('should be an object', () => {
-            rawContract.documents.indexedDocument.indices[0]
+            rawDataContract.documents.indexedDocument.indices[0]
               .properties[0] = 'something else';
 
-            const result = validateContract(rawContract);
+            const result = validateDataContract(rawDataContract);
 
             expectJsonSchemaError(result);
 
@@ -619,10 +619,10 @@ describe('validateContractFactory', () => {
           });
 
           it('should have at least one property', () => {
-            rawContract.documents.indexedDocument.indices[0]
+            rawDataContract.documents.indexedDocument.indices[0]
               .properties = [];
 
-            const result = validateContract(rawContract);
+            const result = validateDataContract(rawDataContract);
 
             expectJsonSchemaError(result);
 
@@ -635,12 +635,12 @@ describe('validateContractFactory', () => {
           });
 
           it('should have no more than one property', () => {
-            const property = rawContract.documents.indexedDocument.indices[0]
+            const property = rawDataContract.documents.indexedDocument.indices[0]
               .properties[0];
 
             property.anotherField = 'something';
 
-            const result = validateContract(rawContract);
+            const result = validateDataContract(rawDataContract);
 
             expectJsonSchemaError(result);
 
@@ -653,10 +653,10 @@ describe('validateContractFactory', () => {
           });
 
           it('should have property values only "asc" or "desc"', () => {
-            rawContract.documents.indexedDocument.indices[0]
+            rawDataContract.documents.indexedDocument.indices[0]
               .properties[0].$userId = 'wrong';
 
-            const result = validateContract(rawContract);
+            const result = validateDataContract(rawDataContract);
 
             expectJsonSchemaError(result);
 
@@ -671,9 +671,9 @@ describe('validateContractFactory', () => {
       });
 
       it('should have "unique" flag', () => {
-        rawContract.documents.indexedDocument.indices[0].unique = undefined;
+        rawDataContract.documents.indexedDocument.indices[0].unique = undefined;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -685,9 +685,9 @@ describe('validateContractFactory', () => {
       });
 
       it('should have "unique" flag equal "true"', () => {
-        rawContract.documents.indexedDocument.indices[0].unique = false;
+        rawDataContract.documents.indexedDocument.indices[0].unique = false;
 
-        const result = validateContract(rawContract);
+        const result = validateDataContract(rawDataContract);
 
         expectJsonSchemaError(result);
 
@@ -700,9 +700,9 @@ describe('validateContractFactory', () => {
   });
 
   it('should return invalid result if there are additional properties', () => {
-    rawContract.additionalProperty = { };
+    rawDataContract.additionalProperty = { };
 
-    const result = validateContract(rawContract);
+    const result = validateDataContract(rawDataContract);
 
     expectJsonSchemaError(result);
 
@@ -714,44 +714,44 @@ describe('validateContractFactory', () => {
 
   it('should return invalid result if there are duplicated indices', () => {
     const indexDefinition = Object.assign({},
-      rawContract.documents.indexedDocument.indices[0]);
+      rawDataContract.documents.indexedDocument.indices[0]);
 
-    rawContract.documents.indexedDocument.indices.push(indexDefinition);
+    rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
 
-    const result = validateContract(rawContract);
+    const result = validateDataContract(rawDataContract);
 
     expectValidationError(result, DuplicateIndexError);
 
     const [error] = result.getErrors();
 
     expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-    expect(error.getRawContract()).to.deep.equal(rawContract);
+    expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
     expect(error.getDocumentType()).to.deep.equal('indexedDocument');
   });
 
   it('should return invalid result if indices don\'t have $userId prefix', () => {
-    const indexDefinition = rawContract.documents.indexedDocument.indices[0];
+    const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
 
     const firstIndex = indexDefinition.properties.shift();
     indexDefinition.properties.push(firstIndex);
 
-    const result = validateContract(rawContract);
+    const result = validateDataContract(rawDataContract);
 
     expectValidationError(result, UniqueIndexMustHaveUserIdPrefixError);
 
     const [error] = result.getErrors();
 
     expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-    expect(error.getRawContract()).to.deep.equal(rawContract);
+    expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
     expect(error.getDocumentType()).to.deep.equal('indexedDocument');
   });
 
   it('should return invalid result if indices don\'t have $userId prefix as a first field', () => {
-    const indexDefinition = rawContract.documents.indexedDocument.indices[0];
+    const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
 
     indexDefinition.properties.shift();
 
-    const result = validateContract(rawContract);
+    const result = validateDataContract(rawDataContract);
 
     expectValidationError(result, UniqueIndexMustHaveUserIdPrefixError);
 
@@ -761,26 +761,26 @@ describe('validateContractFactory', () => {
   });
 
   it('should return invalid result if indices has undefined property', () => {
-    const indexDefinition = rawContract.documents.indexedDocument.indices[0];
+    const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
 
     indexDefinition.properties.push({
       missingProperty: 'asc',
     });
 
-    const result = validateContract(rawContract);
+    const result = validateDataContract(rawDataContract);
 
     expectValidationError(result, UndefinedIndexPropertyError);
 
     const [error] = result.getErrors();
 
     expect(error.getPropertyName()).to.equal('missingProperty');
-    expect(error.getRawContract()).to.deep.equal(rawContract);
+    expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
     expect(error.getDocumentType()).to.deep.equal('indexedDocument');
     expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
   });
 
-  it('should return valid result if contract is valid', () => {
-    const result = validateContract(rawContract);
+  it('should return valid result if Data Contract is valid', () => {
+    const result = validateDataContract(rawDataContract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

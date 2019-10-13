@@ -1,9 +1,9 @@
-const Contract = require('../../contract/Contract');
+const DataContract = require('../../dataContract/DataContract');
 
 /**
- * @return {Contract}
+ * @return {DataContract}
  */
-module.exports = function getContractFixture() {
+module.exports = function getDataContractFixture() {
   const contractId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
   const documents = {
     niceDocument: {
@@ -53,13 +53,13 @@ module.exports = function getContractFixture() {
     },
   };
 
-  const contract = new Contract(contractId, documents);
+  const dataContract = new DataContract(contractId, documents);
 
-  contract.setDefinitions({
+  dataContract.setDefinitions({
     lastName: {
       type: 'string',
     },
   });
 
-  return contract;
+  return dataContract;
 };

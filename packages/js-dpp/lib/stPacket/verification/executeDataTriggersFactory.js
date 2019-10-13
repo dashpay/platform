@@ -37,7 +37,7 @@ function executeDataTriggersFactory(getDataTriggers) {
    * @return {Promise<DataTriggerExecutionResult[]>}
    */
   async function executeDataTriggers(documents, context) {
-    const contractId = context.getContract().getId();
+    const contractId = context.getDataContract().getId();
 
     const results = [];
 

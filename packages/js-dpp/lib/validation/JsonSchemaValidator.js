@@ -1,5 +1,5 @@
 const dashSchema = require('../../schema/meta/dash-schema');
-const contractMetaSchema = require('../../schema/meta/contract');
+const dataContractMetaSchema = require('../../schema/meta/data-contract');
 const stPacketHeaderSchema = require('../../schema/st-packet-header');
 
 const ValidationResult = require('./ValidationResult');
@@ -15,7 +15,7 @@ class JsonSchemaValidator {
 
     this.ajv.addSchema(stPacketHeaderSchema);
 
-    this.ajv.addMetaSchema(contractMetaSchema);
+    this.ajv.addMetaSchema(dataContractMetaSchema);
   }
 
   /**
@@ -45,7 +45,7 @@ class JsonSchemaValidator {
 
 JsonSchemaValidator.SCHEMAS = {
   META: {
-    CONTRACT: 'https://schema.dash.org/dpp-0-4-0/meta/contract',
+    DATA_CONTRACT: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract',
   },
   BASE: {
     DP_OBJECT: 'https://schema.dash.org/dpp-0-4-0/base/document',

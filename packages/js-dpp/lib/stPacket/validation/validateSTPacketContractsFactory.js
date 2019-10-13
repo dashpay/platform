@@ -1,17 +1,17 @@
 /**
- * @param {validateContract} validateContract
+ * @param {validateDataContract} validateDataContract
  * @return {validateSTPacketContracts}
  */
-function validateSTPacketContractsFactory(validateContract) {
+function validateSTPacketContractsFactory(validateDataContract) {
   /**
    * @typedef validateSTPacketContracts
    * @param {RawSTPacket} rawSTPacket
    * @return {ValidationResult}
    */
   function validateSTPacketContracts(rawSTPacket) {
-    const { contracts: [rawContract] } = rawSTPacket;
+    const { contracts: [rawDataContract] } = rawSTPacket;
 
-    return validateContract(rawContract);
+    return validateDataContract(rawDataContract);
   }
 
   return validateSTPacketContracts;

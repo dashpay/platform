@@ -7,7 +7,7 @@ const sendSTPacket = require('../../lib/test/e2e/sendSTPacket');
 const createStateTransition = require('../../lib/test/e2e/createStateTransition');
 const isDriveSynced = require('../../lib/test/e2e/isDriveSynced');
 
-describe.skip('verifySTPacket', function main() {
+describe.skip('verifySTPacket', function describe() {
   this.timeout(90000);
 
   let dpp;
@@ -30,7 +30,7 @@ describe.skip('verifySTPacket', function main() {
     );
 
     // Create the data contract
-    const contract = dpp.contract.create('IndexedContract', {
+    const dataContract = dpp.dataContract.create('IndexedContract', {
       profile: {
         indices: [
           {
@@ -61,9 +61,9 @@ describe.skip('verifySTPacket', function main() {
       },
     });
 
-    dpp.setContract(contract);
+    dpp.setDataContract(dataContract);
 
-    const contractPacket = dpp.packet.create(contract);
+    const contractPacket = dpp.packet.create(dataContract);
 
     const contractTransaction = createStateTransition(
       user,

@@ -2,7 +2,7 @@ const rewiremock = require('rewiremock/node');
 
 const STPacket = require('../../../lib/stPacket/STPacket');
 
-const getContractFixture = require('../../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getSTPacketFixture = require('../../../lib/test/fixtures/getSTPacketFixture');
 
 const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
@@ -10,7 +10,7 @@ const createDataProviderMock = require('../../../lib/test/mocks/createDataProvid
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const InvalidSTPacketError = require('../../../lib/stPacket/errors/InvalidSTPacketError');
-const ContractNotPresentError = require('../../../lib/errors/ContractNotPresentError');
+const ContractNotPresentError = require('../../../lib/errors/DataContractNotPresentError');
 const ConsensusError = require('../../../lib/errors/ConsensusError');
 
 describe.skip('STPacketFactory', () => {
@@ -58,7 +58,7 @@ describe.skip('STPacketFactory', () => {
       '../../../lib/stPacket/STPacket': STPacket,
     });
 
-    contract = getContractFixture();
+    contract = getDataContractFixture();
 
     contractId = contract.getId();
 

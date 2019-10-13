@@ -9,13 +9,13 @@ const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
 class DocumentFactory {
   /**
-   * @param {Contract} contract
    * @param {string} userId
+   * @param {DataContract} dataContract
    * @param {validateDocument} validateDocument
    */
-  constructor(userId, contract, validateDocument) {
+  constructor(userId, dataContract, validateDocument) {
     this.userId = userId;
-    this.contract = contract;
+    this.dataContract = dataContract;
     this.validateDocument = validateDocument;
   }
 
@@ -27,13 +27,13 @@ class DocumentFactory {
    * @return {Document}
    */
   create(type, data = {}) {
-    if (!this.contract.isDocumentDefined(type)) {
-      throw new InvalidDocumentTypeError(type, this.contract);
+    if (!this.dataContract.isDocumentDefined(type)) {
+      throw new InvalidDocumentTypeError(type, this.dataContract);
     }
 
     const rawDocument = {
       $type: type,
-      $scope: hash(this.contract.getId() + this.userId).toString('hex'),
+      $scope: hash(this.dataContract.getId() + this.userId).toString('hex'),
       $scopeId: entropy.generate(),
       $action: Document.DEFAULTS.ACTION,
       $rev: Document.DEFAULTS.REVISION,
@@ -57,7 +57,7 @@ class DocumentFactory {
    */
   createFromObject(rawDocument, options = { skipValidation: false }) {
     if (!options.skipValidation) {
-      const result = this.validateDocument(rawDocument, this.contract);
+      const result = this.validateDocument(rawDocument, this.dataContract);
 
       if (!result.isValid()) {
         throw new InvalidDocumentError(result.getErrors(), rawDocument);
@@ -103,24 +103,24 @@ class DocumentFactory {
   }
 
   /**
-   * Set Contract
+   * Set Data Contract
    *
-   * @param {Contract} contract
+   * @param {DataContract} dataContract
    * @return {DocumentFactory}
    */
-  setContract(contract) {
-    this.contract = contract;
+  setDataContract(dataContract) {
+    this.dataContract = dataContract;
 
     return this;
   }
 
   /**
-   * Get Contract
+   * Get Data Contract
    *
-   * @return {Contract}
+   * @return {DataContract}
    */
-  getContract() {
-    return this.contract;
+  getDataContract() {
+    return this.dataContract;
   }
 }
 

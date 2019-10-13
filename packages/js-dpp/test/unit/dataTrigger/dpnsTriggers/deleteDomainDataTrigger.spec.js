@@ -10,17 +10,17 @@ describe('deleteDomainDataTrigger', () => {
   let document;
   let context;
   let dataProviderMock;
-  let contract;
+  let dataContract;
 
   beforeEach(function beforeEach() {
-    contract = getDpnsContractFixture();
+    dataContract = getDpnsContractFixture();
     document = getChildDocumentFixture();
 
     dataProviderMock = createDataProviderMock(this.sinonSandbox);
     context = new DataTriggerExecutionContext(
       dataProviderMock,
       '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      contract,
+      dataContract,
     );
   });
 

@@ -3,7 +3,7 @@ const rewiremock = require('rewiremock/node');
 const Document = require('../../../lib/document/Document');
 
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
@@ -18,7 +18,7 @@ describe('DocumentFactory', () => {
   let validateDocumentMock;
   let DocumentFactory;
   let userId;
-  let contract;
+  let dataContract;
   let document;
   let rawDocument;
   let factory;
@@ -37,14 +37,14 @@ describe('DocumentFactory', () => {
     });
 
     ({ userId } = getDocumentsFixture);
-    contract = getContractFixture();
+    dataContract = getDataContractFixture();
 
     [document] = getDocumentsFixture();
     rawDocument = document.toJSON();
 
     factory = new DocumentFactory(
       userId,
-      contract,
+      dataContract,
       validateDocumentMock,
     );
   });
@@ -69,7 +69,7 @@ describe('DocumentFactory', () => {
 
       expect(newDocument.get('name')).to.equal(name);
 
-      expect(hashMock).to.have.been.calledOnceWith(contract.getId() + userId);
+      expect(hashMock).to.have.been.calledOnceWith(dataContract.getId() + userId);
       expect(newDocument.scope).to.equal(scope);
 
       expect(generateMock).to.have.been.calledOnce();
@@ -92,14 +92,14 @@ describe('DocumentFactory', () => {
 
       expect(error).to.be.an.instanceOf(InvalidDocumentTypeError);
       expect(error.getType()).to.equal(type);
-      expect(error.getContract()).to.equal(contract);
+      expect(error.getDataContract()).to.equal(dataContract);
 
       expect(hashMock).to.have.not.been.called();
     });
   });
 
   describe('createFromObject', () => {
-    it('should return new Contract with data from passed object', () => {
+    it('should return new Data Contract with data from passed object', () => {
       validateDocumentMock.returns(new ValidationResult());
 
       const result = factory.createFromObject(rawDocument);
@@ -107,7 +107,7 @@ describe('DocumentFactory', () => {
       expect(result).to.be.an.instanceOf(Document);
       expect(result.toJSON()).to.deep.equal(rawDocument);
 
-      expect(validateDocumentMock).to.have.been.calledOnceWith(rawDocument, contract);
+      expect(validateDocumentMock).to.have.been.calledOnceWith(rawDocument, dataContract);
     });
 
     it('should return new Document without validation if "skipValidation" option is passed', () => {
@@ -139,7 +139,7 @@ describe('DocumentFactory', () => {
       const [consensusError] = error.getErrors();
       expect(consensusError).to.equal(validationError);
 
-      expect(validateDocumentMock).to.have.been.calledOnceWith(rawDocument, contract);
+      expect(validateDocumentMock).to.have.been.calledOnceWith(rawDocument, dataContract);
     });
   });
 
@@ -148,7 +148,7 @@ describe('DocumentFactory', () => {
       this.sinonSandbox.stub(factory, 'createFromObject');
     });
 
-    it('should return new Contract from serialized Contract', () => {
+    it('should return new Data Contract from serialized Contract', () => {
       const serializedDocument = document.serialize();
 
       decodeMock.returns(rawDocument);
@@ -184,22 +184,22 @@ describe('DocumentFactory', () => {
     });
   });
 
-  describe('setContract', () => {
-    it('should set Contract', () => {
-      factory.contract = null;
+  describe('setDataContract', () => {
+    it('should set Data Contract', () => {
+      factory.dataContract = null;
 
-      const result = factory.setContract(contract);
+      const result = factory.setDataContract(dataContract);
 
       expect(result).to.equal(factory);
-      expect(factory.contract).to.equal(contract);
+      expect(factory.dataContract).to.equal(dataContract);
     });
   });
 
-  describe('getContract', () => {
-    it('should return Contract', () => {
-      const result = factory.getContract();
+  describe('getDataContract', () => {
+    it('should return Data Contract', () => {
+      const result = factory.getDataContract();
 
-      expect(result).to.equal(contract);
+      expect(result).to.equal(dataContract);
     });
   });
 });

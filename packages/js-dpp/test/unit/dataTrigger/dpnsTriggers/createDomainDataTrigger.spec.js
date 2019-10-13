@@ -18,10 +18,10 @@ describe('createDomainDataTrigger', () => {
   let preorderDocument;
   let context;
   let dataProviderMock;
-  let contract;
+  let dataContract;
 
   beforeEach(function beforeEach() {
-    contract = getDpnsContractFixture();
+    dataContract = getDpnsContractFixture();
 
     parentDocument = getParentDocumentFixture();
     childDocument = getChildDocumentFixture();
@@ -39,7 +39,7 @@ describe('createDomainDataTrigger', () => {
     dataProviderMock.fetchDocuments.resolves([]);
     dataProviderMock.fetchDocuments
       .withArgs(
-        contract.getId(),
+        dataContract.getId(),
         childDocument.getType(),
         { where: [['nameHash', '==', parentDomainHash]] },
       )
@@ -49,7 +49,7 @@ describe('createDomainDataTrigger', () => {
 
     dataProviderMock.fetchDocuments
       .withArgs(
-        contract.getId(),
+        dataContract.getId(),
         'preorder',
         { where: [['saltedDomainHash', '==', saltedDomainHash]] },
       )
@@ -66,7 +66,7 @@ describe('createDomainDataTrigger', () => {
     context = new DataTriggerExecutionContext(
       dataProviderMock,
       records.dashIdentity,
-      contract,
+      dataContract,
     );
   });
 

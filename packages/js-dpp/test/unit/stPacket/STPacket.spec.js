@@ -1,18 +1,18 @@
 const rewiremock = require('rewiremock/node');
 
-const getContractFixture = require('../../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 
-const Contract = require('../../../lib/contract/Contract');
+const DataContract = require('../../../lib/dataContract/DataContract');
 const Document = require('../../../lib/document/Document');
 
-const ContractAndDocumentsNotAllowedSamePacketError = require('../../../lib/stPacket/errors/ContractAndDocumentsNotAllowedSamePacketError');
+const DataContractAndDocumentsNotAllowedSamePacketError = require('../../../lib/stPacket/errors/DataContractAndDocumentsNotAllowedSamePacketError');
 
 describe.skip('STPacket', () => {
   let hashMock;
   let encodeMock;
   let STPacket;
-  let contract;
+  let dataContract;
   let documents;
   let stPacket;
   let itemsHash;
@@ -22,10 +22,10 @@ describe.skip('STPacket', () => {
   let calculateItemsHashMock;
 
   beforeEach(function beforeEach() {
-    contract = getContractFixture();
+    dataContract = getDataContractFixture();
     documents = getDocumentsFixture();
 
-    contractId = contract.getId();
+    contractId = dataContract.getId();
     itemsHash = '14207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc293';
     itemsMerkleRoot = '44207b92f112bc674f32a8d04008d5c62f18d5b6c846acb0edfaf9f0b32fc292';
 
@@ -38,7 +38,7 @@ describe.skip('STPacket', () => {
     STPacket = rewiremock.proxy('../../../lib/stPacket/STPacket', {
       '../../../lib/util/hash': hashMock,
       '../../../lib/util/serializer': serializerMock,
-      '../../../lib/contract/Contract': Contract,
+      '../../../lib/contract/DataContract': DataContract,
       '../../../lib/document/Document': Document,
       '../../../lib/stPacket/calculateItemsMerkleRoot': calculateItemsMerkleRootMock,
       '../../../lib/stPacket/calculateItemsHash': calculateItemsHashMock,
@@ -48,22 +48,22 @@ describe.skip('STPacket', () => {
   });
 
   describe('constructor', () => {
-    it('should return new ST Packet with specified Contract ID', () => {
+    it('should return new ST Packet with specified DataContract ID', () => {
       expect(stPacket).to.be.an.instanceOf(STPacket);
 
       expect(stPacket.contractId).to.equal(contractId);
     });
 
-    it('should return new STPacket with specified Contract ID and Contract', () => {
-      const result = new STPacket(contractId, contract);
+    it('should return new STPacket with specified DataContract ID and DataContract', () => {
+      const result = new STPacket(contractId, dataContract);
 
       expect(result).to.be.an.instanceOf(STPacket);
 
       expect(result.getContractId()).to.equal(contractId);
-      expect(result.getContract()).to.equal(contract);
+      expect(result.getContract()).to.equal(dataContract);
     });
 
-    it('should return new STPacket with specified Contract ID and Documents', () => {
+    it('should return new STPacket with specified DataContract ID and Documents', () => {
       const result = new STPacket(contractId, documents);
 
       expect(result).to.be.an.instanceOf(STPacket);
@@ -74,7 +74,7 @@ describe.skip('STPacket', () => {
   });
 
   describe('#setContractId', () => {
-    it('should set Contract ID', () => {
+    it('should set DataContract ID', () => {
       const result = stPacket.setContractId(contractId);
 
       expect(result).to.be.an.instanceOf(STPacket);
@@ -84,7 +84,7 @@ describe.skip('STPacket', () => {
   });
 
   describe('#getContractId', () => {
-    it('should return Contract ID', () => {
+    it('should return DataContract ID', () => {
       const result = stPacket.getContractId();
 
       expect(result).to.equal(contractId);
@@ -117,14 +117,14 @@ describe.skip('STPacket', () => {
     });
   });
 
-  describe('#setContract', () => {
-    it('should set Contract', () => {
-      const result = stPacket.setContract(contract);
+  describe('#setDataContract', () => {
+    it('should set DataContract', () => {
+      const result = stPacket.setContract(dataContract);
 
       expect(result).to.be.an.instanceOf(STPacket);
 
       expect(stPacket.contracts).to.have.lengthOf(1);
-      expect(stPacket.contracts[0]).to.equal(contract);
+      expect(stPacket.contracts[0]).to.equal(dataContract);
     });
 
     it('should throw an error if Documents are present', () => {
@@ -132,27 +132,27 @@ describe.skip('STPacket', () => {
 
       let error;
       try {
-        stPacket.setContract(contract);
+        stPacket.setContract(dataContract);
       } catch (e) {
         error = e;
       }
 
-      expect(error).to.be.an.instanceOf(ContractAndDocumentsNotAllowedSamePacketError);
+      expect(error).to.be.an.instanceOf(DataContractAndDocumentsNotAllowedSamePacketError);
 
       expect(error.getSTPacket()).to.equal(stPacket);
     });
   });
 
-  describe('#getContract', () => {
-    it('should return Contract', () => {
-      stPacket.contracts = [contract];
+  describe('#getDataContract', () => {
+    it('should return DataContract', () => {
+      stPacket.contracts = [dataContract];
 
       const result = stPacket.getContract();
 
-      expect(result).to.equal(contract);
+      expect(result).to.equal(dataContract);
     });
 
-    it('should return null of Contract is not present', () => {
+    it('should return null of DataContract is not present', () => {
       const result = stPacket.getContract();
 
       expect(result).to.be.null();
@@ -170,8 +170,8 @@ describe.skip('STPacket', () => {
       expect(stPacket.documents).to.equal(documents);
     });
 
-    it('should throw an error if Contract is present', () => {
-      stPacket.setContract(contract);
+    it('should throw an error if DataContract is present', () => {
+      stPacket.setContract(dataContract);
 
       let error;
       try {
@@ -180,7 +180,7 @@ describe.skip('STPacket', () => {
         error = e;
       }
 
-      expect(error).to.be.an.instanceOf(ContractAndDocumentsNotAllowedSamePacketError);
+      expect(error).to.be.an.instanceOf(DataContractAndDocumentsNotAllowedSamePacketError);
 
       expect(error.getSTPacket()).to.equal(stPacket);
     });
@@ -212,7 +212,7 @@ describe.skip('STPacket', () => {
     it('should return ST Packet as plain object', () => {
       hashMock.returns(itemsHash);
 
-      stPacket.setContract(contract);
+      stPacket.setContract(dataContract);
 
       const result = stPacket.toJSON();
 
@@ -221,14 +221,14 @@ describe.skip('STPacket', () => {
         itemsMerkleRoot,
         itemsHash,
         documents: [],
-        contracts: [contract.toJSON()],
+        contracts: [dataContract.toJSON()],
       });
     });
   });
 
   describe('#serialize', () => {
     it('should return serialized ST Packet', () => {
-      stPacket.setContract(contract);
+      stPacket.setContract(dataContract);
 
       const serializedSTPacket = '123';
 
@@ -236,7 +236,7 @@ describe.skip('STPacket', () => {
 
       const result = stPacket.serialize();
 
-      const rawContract = contract.toJSON();
+      const rawDataContract = dataContract.toJSON();
 
       expect(result).to.equal(serializedSTPacket);
 
@@ -245,7 +245,7 @@ describe.skip('STPacket', () => {
         itemsMerkleRoot,
         itemsHash,
         documents: [],
-        contracts: [rawContract],
+        contracts: [rawDataContract],
       });
     });
   });

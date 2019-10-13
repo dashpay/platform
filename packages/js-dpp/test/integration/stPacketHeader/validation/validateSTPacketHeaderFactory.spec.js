@@ -49,7 +49,7 @@ describe.skip('validateSTPacketHeaderStructure', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.contractId');
+      expect(error.dataPath).to.equal('.dataContractId');
       expect(error.keyword).to.equal('type');
     });
 
@@ -62,7 +62,7 @@ describe.skip('validateSTPacketHeaderStructure', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.contractId');
+      expect(error.dataPath).to.equal('.dataContractId');
       expect(error.keyword).to.equal('minLength');
     });
 
@@ -75,7 +75,7 @@ describe.skip('validateSTPacketHeaderStructure', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.contractId');
+      expect(error.dataPath).to.equal('.dataContractId');
       expect(error.keyword).to.equal('maxLength');
     });
   });

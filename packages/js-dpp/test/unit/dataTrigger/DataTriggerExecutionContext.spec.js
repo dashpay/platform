@@ -5,12 +5,12 @@ const createDataProviderMock = require('../../../lib/test/mocks/createDataProvid
 const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
 
 describe('DataTriggerExecutionContext', () => {
-  let contractMock;
+  let dataContractMock;
   let dataProviderMock;
   let stateTransitionHeaderMock;
 
   beforeEach(function beforeEach() {
-    contractMock = getDpnsContractFixture();
+    dataContractMock = getDpnsContractFixture();
     dataProviderMock = createDataProviderMock(this.sinonSandbox);
     stateTransitionHeaderMock = new Transaction();
   });
@@ -18,10 +18,10 @@ describe('DataTriggerExecutionContext', () => {
   it('should have all getters working', () => {
     const userId = 'user_id';
     const context = new DataTriggerExecutionContext(
-      dataProviderMock, userId, contractMock, stateTransitionHeaderMock,
+      dataProviderMock, userId, dataContractMock, stateTransitionHeaderMock,
     );
 
-    expect(context.getContract()).to.be.deep.equal(contractMock);
+    expect(context.getDataContract()).to.be.deep.equal(dataContractMock);
     expect(context.getDataProvider()).to.be.deep.equal(dataProviderMock);
     expect(context.getUserId()).to.be.deep.equal(userId);
     expect(context.getStateTransitionHeader()).to.be.deep.equal(stateTransitionHeaderMock);

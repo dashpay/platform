@@ -31,11 +31,11 @@ function isDuplicateByIndices(originalDocument, documentToCheck, typeIndices) {
  * @typedef findDuplicateDocumentsByIndices
  *
  * @param {RawDocument[]} rawDocuments
- * @param {Contract} contract
+ * @param {DataContract} dataContract
  *
  * @return {RawDocument[]}
  */
-function findDuplicateDocumentsByIndices(rawDocuments, contract) {
+function findDuplicateDocumentsByIndices(rawDocuments, dataContract) {
   // Convert raw documents to Document instances
   const documents = rawDocuments.map(o => new Document(o));
 
@@ -43,7 +43,7 @@ function findDuplicateDocumentsByIndices(rawDocuments, contract) {
     // Group documents by it's type, enrich them by type's unique indices
     .reduce((groups, document) => {
       const type = document.getType();
-      const typeIndices = (contract.getDocumentSchema(type).indices || []);
+      const typeIndices = (dataContract.getDocumentSchema(type).indices || []);
 
       // Init empty group
       if (!groups[type]) {

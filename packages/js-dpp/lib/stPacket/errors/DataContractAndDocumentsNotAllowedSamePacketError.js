@@ -1,4 +1,4 @@
-class ContractAndDocumentsNotAllowedSamePacketError extends Error {
+class DataContractAndDocumentsNotAllowedSamePacketError extends Error {
   /**
    * @param {STPacket} stPacket
    */
@@ -25,4 +25,4 @@ class ContractAndDocumentsNotAllowedSamePacketError extends Error {
   }
 }
 
-module.exports = ContractAndDocumentsNotAllowedSamePacketError;
+module.exports = DataContractAndDocumentsNotAllowedSamePacketError;

@@ -1,6 +1,6 @@
 /**
  * @typedef {Object} RawSTPacketHeader
- * @property {string} contractId
+ * @property {string} dataContractId
  * @property {string} itemsMerkleRoot
  * @property {string} itemsHash
  */

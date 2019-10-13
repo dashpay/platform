@@ -3,7 +3,7 @@ const { decode } = require('../util/serializer');
 const STPacket = require('./STPacket');
 
 const InvalidSTPacketError = require('./errors/InvalidSTPacketError');
-const ContractNotPresentError = require('../errors/ContractNotPresentError');
+const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
 
 const Document = require('../document/Document');
 
@@ -11,23 +11,23 @@ class STPacketFactory {
   /**
    * @param {DataProvider} dataProvider
    * @param {validateSTPacket} validateSTPacket
-   * @param {createContract} createContract
+   * @param {createDataContract} createDataContract
    */
   constructor(
     dataProvider,
     validateSTPacket,
-    createContract,
+    createDataContract,
   ) {
     this.dataProvider = dataProvider;
     this.validateSTPacket = validateSTPacket;
-    this.createContract = createContract;
+    this.createContract = createDataContract;
   }
 
   /**
    * Create ST Packet
    *
    * @param {string} contractId
-   * @param {Contract|Array} [items]
+   * @param {DataContract|Document[]} [items]
    * @return {STPacket}
    */
   create(contractId, items = undefined) {
@@ -54,7 +54,7 @@ class STPacketFactory {
         contract = await this.dataProvider.fetchContract(rawSTPacket.contractId);
 
         if (!contract) {
-          const error = new ContractNotPresentError(rawSTPacket.contractId);
+          const error = new DataContractNotPresentError(rawSTPacket.contractId);
 
           throw new InvalidSTPacketError([error], rawSTPacket);
         }

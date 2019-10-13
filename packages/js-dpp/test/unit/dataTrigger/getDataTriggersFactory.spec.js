@@ -21,7 +21,7 @@ describe('getDataTriggers', () => {
   let updateTrigger;
   let deleteTrigger;
 
-  let contractId;
+  let dataContractId;
 
   beforeEach(function beforeEach() {
     createDocument = getChildDocumentFixture();
@@ -34,20 +34,20 @@ describe('getDataTriggers', () => {
     deleteDocument.data = {};
     deleteDocument.setAction(Document.ACTIONS.DELETE);
 
-    contractId = 'someContractId';
+    dataContractId = 'someContractId';
 
     createTrigger = new DataTrigger(
-      contractId, 'domain', Document.ACTIONS.CREATE, createDomainDataTrigger,
+      dataContractId, 'domain', Document.ACTIONS.CREATE, createDomainDataTrigger,
     );
     updateTrigger = new DataTrigger(
-      contractId, 'domain', Document.ACTIONS.UPDATE, updateDomainDataTrigger,
+      dataContractId, 'domain', Document.ACTIONS.UPDATE, updateDomainDataTrigger,
     );
     deleteTrigger = new DataTrigger(
-      contractId, 'domain', Document.ACTIONS.DELETE, deleteDomainDataTrigger,
+      dataContractId, 'domain', Document.ACTIONS.DELETE, deleteDomainDataTrigger,
     );
 
     this.sinonSandbox.stub(process, 'env').value({
-      DPNS_CONTRACT_ID: contractId,
+      DPNS_CONTRACT_ID: dataContractId,
     });
 
     getDataTriggers = getDataTriggersFactory();
@@ -55,19 +55,19 @@ describe('getDataTriggers', () => {
 
   it('should return matching triggers', () => {
     let result = getDataTriggers(
-      contractId, createDocument.getType(), createDocument.getAction(),
+      dataContractId, createDocument.getType(), createDocument.getAction(),
     );
 
     expect(result).to.deep.equal([createTrigger]);
 
     result = getDataTriggers(
-      contractId, updateDocument.getType(), updateDocument.getAction(),
+      dataContractId, updateDocument.getType(), updateDocument.getAction(),
     );
 
     expect(result).to.deep.equal([updateTrigger]);
 
     result = getDataTriggers(
-      contractId, deleteDocument.getType(), deleteDocument.getAction(),
+      dataContractId, deleteDocument.getType(), deleteDocument.getAction(),
     );
 
     expect(result).to.deep.equal([deleteTrigger]);
@@ -75,7 +75,7 @@ describe('getDataTriggers', () => {
 
   it('should return empty trigger array for any other type except `domain`', () => {
     const result = getDataTriggers(
-      contractId, 'otherType', Document.ACTIONS.CREATE,
+      dataContractId, 'otherType', Document.ACTIONS.CREATE,
     );
 
     expect(result).to.deep.equal([]);

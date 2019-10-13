@@ -2,16 +2,16 @@ const AbstractIndexError = require('./AbstractIndexError');
 
 class UniqueIndexMustHaveUserIdPrefixError extends AbstractIndexError {
   /**
-   * @param {RawContract} rawContract
+   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    */
-  constructor(rawContract, documentType, indexDefinition) {
+  constructor(rawDataContract, documentType, indexDefinition) {
     const message = 'Unique index must contain $userId as a first property';
 
     super(
       message,
-      rawContract,
+      rawDataContract,
       documentType,
       indexDefinition,
     );

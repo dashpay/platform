@@ -5,21 +5,21 @@ const Document = require('../../../lib/document/Document');
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('DocumentFacade', () => {
   let dpp;
   let document;
-  let contract;
+  let dataContract;
 
   beforeEach(() => {
-    contract = getContractFixture();
+    dataContract = getDataContractFixture();
 
     dpp = new DashPlatformProtocol({
       userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      contract,
+      dataContract,
     });
 
     ([document] = getDocumentsFixture());
@@ -40,7 +40,7 @@ describe('DocumentFacade', () => {
 
     it('should throw an error if User ID is not defined', () => {
       dpp = new DashPlatformProtocol({
-        contract,
+        dataContract,
       });
 
       let error;
@@ -57,7 +57,7 @@ describe('DocumentFacade', () => {
       expect(error.getOptionName()).to.equal('userId');
     });
 
-    it('should throw an error if Contract is not defined', () => {
+    it('should throw an error if Data Contract is not defined', () => {
       dpp = new DashPlatformProtocol({
         userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       });
@@ -88,7 +88,7 @@ describe('DocumentFacade', () => {
 
     it('should throw an error if User ID is not defined', () => {
       dpp = new DashPlatformProtocol({
-        contract,
+        dataContract,
       });
 
       let error;
@@ -102,7 +102,7 @@ describe('DocumentFacade', () => {
       expect(error.getOptionName()).to.equal('userId');
     });
 
-    it('should throw an error if Contract is not defined', () => {
+    it('should throw an error if Data Contract is not defined', () => {
       dpp = new DashPlatformProtocol({
         userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       });
@@ -130,7 +130,7 @@ describe('DocumentFacade', () => {
 
     it('should throw an error if User ID is not defined', () => {
       dpp = new DashPlatformProtocol({
-        contract,
+        dataContract,
       });
 
       let error;
@@ -144,7 +144,7 @@ describe('DocumentFacade', () => {
       expect(error.getOptionName()).to.equal('userId');
     });
 
-    it('should throw an error if Contract is not defined', () => {
+    it('should throw an error if Data Contract is not defined', () => {
       dpp = new DashPlatformProtocol({
         userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       });

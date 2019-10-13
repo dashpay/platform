@@ -1,6 +1,6 @@
 class User {
   /*
-   * @param {string} contractId
+   * @param {string} id
    * @param {PrivateKey} privateKey
    *
    * @returns {User}

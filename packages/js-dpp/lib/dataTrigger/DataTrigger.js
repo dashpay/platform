@@ -4,13 +4,13 @@ const DataTriggerInvalidResultError = require('../errors/DataTriggerInvalidResul
 
 class DataTrigger {
   /**
-   * @param {string} contractId
+   * @param {string} dataContractId
    * @param {number} documentType
    * @param {number} documentAction
    * @param {function(Document, DataTriggerExecutionContext):DataTriggerExecutionResult} trigger
    */
-  constructor(contractId, documentType, documentAction, trigger) {
-    this.contractId = contractId;
+  constructor(dataContractId, documentType, documentAction, trigger) {
+    this.dataContractId = dataContractId;
     this.documentType = documentType;
     this.documentAction = documentAction;
     this.trigger = trigger;
@@ -19,14 +19,14 @@ class DataTrigger {
   /**
    * Check this trigger is matching for specified data
    *
-   * @param {string} contractId
+   * @param {string} dataContractId
    * @param {number} documentType
    * @param {number} documentAction
    *
    * @return {boolean}
    */
-  isMatchingTriggerForData(contractId, documentType, documentAction) {
-    return this.contractId === contractId
+  isMatchingTriggerForData(dataContractId, documentType, documentAction) {
+    return this.dataContractId === dataContractId
       && this.documentType === documentType
       && this.documentAction === documentAction;
   }
