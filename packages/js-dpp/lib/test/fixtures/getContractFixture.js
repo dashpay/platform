@@ -4,6 +4,7 @@ const Contract = require('../../contract/Contract');
  * @return {Contract}
  */
 module.exports = function getContractFixture() {
+  const contractId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
   const documents = {
     niceDocument: {
       properties: {
@@ -52,7 +53,7 @@ module.exports = function getContractFixture() {
     },
   };
 
-  const contract = new Contract('lovelyContract', documents);
+  const contract = new Contract(contractId, documents);
 
   contract.setDefinitions({
     lastName: {

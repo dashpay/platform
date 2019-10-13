@@ -1,6 +1,6 @@
 const calculateItemsMerkleRoot = require('../../../lib/stPacket/calculateItemsMerkleRoot');
 
-describe('calculateItemsMerkleRoot', () => {
+describe.skip('calculateItemsMerkleRoot', () => {
   it('should return null if contracts and documents are empty', () => {
     const result = calculateItemsMerkleRoot({
       contracts: [],

@@ -12,7 +12,7 @@ const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
 const DuplicateDocumentError = require('../../../../lib/errors/DuplicateDocumentError');
 
-describe('verifyDocumentsUniquenessByIndices', () => {
+describe.skip('verifyDocumentsUniquenessByIndices', () => {
   let fetchDocumentsByDocumentsMock;
   let dataProviderMock;
   let verifyDocumentsUniquenessByIndices;

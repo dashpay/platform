@@ -79,7 +79,7 @@ class DocumentFacade {
     if (!this.dpp.getUserId()) {
       throw new MissingOptionError(
         'userId',
-        'Can\'t create packet because User ID is not set, use setUserId method',
+        'Can\'t create Document because User ID is not set, use setUserId method',
       );
     }
 

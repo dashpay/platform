@@ -8,7 +8,7 @@ const getContractFixture = require('../../../../lib/test/fixtures/getContractFix
 
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
-describe('validateSTPacketContractsFactory', () => {
+describe.skip('validateSTPacketContractsFactory', () => {
   let rawSTPacket;
   let rawContract;
   let contract;

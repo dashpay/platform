@@ -15,13 +15,13 @@ class ContractFactory {
   /**
    * Create Contract
    *
-   * @param {string} name
+   * @param {string} contractId
    * @param {Object} documents
    * @return {Contract}
    */
-  create(name, documents) {
+  create(contractId, documents) {
     return this.createContract({
-      name,
+      contractId,
       documents,
     });
   }

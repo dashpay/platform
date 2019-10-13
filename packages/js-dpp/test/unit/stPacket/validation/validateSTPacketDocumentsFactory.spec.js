@@ -11,7 +11,7 @@ const DuplicateDocumentsError = require('../../../../lib/errors/DuplicateDocumen
 const InvalidContractError = require('../../../../lib/errors/InvalidContractError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
-describe('validateSTPacketDocumentsFactory', () => {
+describe.skip('validateSTPacketDocumentsFactory', () => {
   let rawSTPacket;
   let contract;
   let rawDocuments;

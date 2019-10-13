@@ -1,6 +1,6 @@
 const rewiremock = require('rewiremock/node');
 
-describe('STPacketHeader', () => {
+describe.skip('STPacketHeader', () => {
   let hashMock;
   let encodeMock;
   let STPacketHeader;

@@ -7,7 +7,7 @@ const Contract = require('./Contract');
  */
 function createContract(rawContract) {
   const contract = new Contract(
-    rawContract.name,
+    rawContract.contractId,
     rawContract.documents,
   );
 

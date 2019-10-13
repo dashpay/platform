@@ -1,4 +1,3 @@
-const bs58 = require('bs58');
 const rewiremock = require('rewiremock/node');
 
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
@@ -7,11 +6,11 @@ describe('Contract', () => {
   let hashMock;
   let encodeMock;
   let Contract;
-  let contractName;
   let documentType;
   let documentSchema;
   let documents;
   let contract;
+  let contractId;
 
   beforeEach(function beforeEach() {
     hashMock = this.sinonSandbox.stub();
@@ -23,7 +22,6 @@ describe('Contract', () => {
       '../../../lib/util/serializer': serializerMock,
     });
 
-    contractName = 'LovelyContract';
     documentType = 'niceDocument';
     documentSchema = {
       properties: {
@@ -36,13 +34,15 @@ describe('Contract', () => {
       [documentType]: documentSchema,
     };
 
-    contract = new Contract(contractName, documents);
+    contractId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
+
+    contract = new Contract(contractId, documents);
   });
 
   describe('constructor', () => {
     it('should create new Contract', () => {
-      contract = new Contract(contractName, documents);
-      expect(contract.name).to.equal(contractName);
+      contract = new Contract(contractId, documents);
+
       expect(contract.version).to.equal(Contract.DEFAULTS.VERSION);
       expect(contract.schema).to.equal(Contract.DEFAULTS.SCHEMA);
       expect(contract.documents).to.equal(documents);
@@ -50,41 +50,18 @@ describe('Contract', () => {
   });
 
   describe('#getId', () => {
-    it('should calculate Contract ID', () => {
-      const hashBuffer = Buffer.from('123');
-      const id = bs58.encode(hashBuffer);
-
-      hashMock.returns(hashBuffer);
-
+    it('should return base58 encoded Contract ID', () => {
       const result = contract.getId();
 
-      expect(result).to.equal(id);
-      expect(hashMock).to.have.been.calledOnce();
+      expect(result).to.equal(contractId);
     });
   });
 
   describe('#getJsonSchemaId', () => {
-    it('should return JSON Schema $id', () => {
+    it('should return JSON Schema $contractId', () => {
       const result = contract.getJsonSchemaId();
 
       expect(result).to.equal('contract');
-    });
-  });
-
-  describe('#setName', () => {
-    it('should set name', () => {
-      const result = contract.setName(contractName);
-
-      expect(result).to.equal(contract);
-      expect(contract.name).to.equal(contractName);
-    });
-  });
-
-  describe('#getName', () => {
-    it('should return name', () => {
-      const result = contract.getName();
-
-      expect(result).to.equal(contract.name);
     });
   });
 
@@ -248,7 +225,7 @@ describe('Contract', () => {
 
       expect(result).to.deep.equal({
         $schema: Contract.DEFAULTS.SCHEMA,
-        name: contractName,
+        contractId,
         version: Contract.DEFAULTS.VERSION,
         documents,
       });
@@ -265,7 +242,7 @@ describe('Contract', () => {
 
       expect(result).to.deep.equal({
         $schema: Contract.DEFAULTS.SCHEMA,
-        name: contractName,
+        contractId,
         version: Contract.DEFAULTS.VERSION,
         documents,
         definitions,

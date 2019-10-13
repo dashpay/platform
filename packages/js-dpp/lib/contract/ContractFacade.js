@@ -4,7 +4,6 @@ const createContract = require('./createContract');
 
 class ContractFacade {
   /**
-   *
    * @param {JsonSchemaValidator} validator
    */
   constructor(validator) {
@@ -19,12 +18,12 @@ class ContractFacade {
   /**
    * Create Contract
    *
-   * @param {string} name
+   * @param {string} contractId
    * @param {Object} documents
    * @return {Contract}
    */
-  create(name, documents) {
-    return this.factory.create(name, documents);
+  create(contractId, documents) {
+    return this.factory.create(contractId, documents);
   }
 
   /**

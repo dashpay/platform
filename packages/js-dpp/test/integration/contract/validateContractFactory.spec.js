@@ -69,9 +69,9 @@ describe('validateContractFactory', () => {
     });
   });
 
-  describe('name', () => {
+  describe('contractId', () => {
     it('should be present', () => {
-      delete rawContract.name;
+      delete rawContract.contractId;
 
       const result = validateContract(rawContract);
 
@@ -81,11 +81,11 @@ describe('validateContractFactory', () => {
 
       expect(error.dataPath).to.equal('');
       expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('name');
+      expect(error.params.missingProperty).to.equal('contractId');
     });
 
     it('should be a string', () => {
-      rawContract.name = 1;
+      rawContract.contractId = 1;
 
       const result = validateContract(rawContract);
 
@@ -93,12 +93,12 @@ describe('validateContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.name');
+      expect(error.dataPath).to.equal('.contractId');
       expect(error.keyword).to.equal('type');
     });
 
-    it('should be greater or equal to 3', () => {
-      rawContract.name = 'a'.repeat(2);
+    it('should be no less than 64 chars', () => {
+      rawContract.contractId = '86b273ff';
 
       const result = validateContract(rawContract);
 
@@ -106,12 +106,12 @@ describe('validateContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.name');
+      expect(error.dataPath).to.equal('.contractId');
       expect(error.keyword).to.equal('minLength');
     });
 
-    it('should be less or equal to 24', () => {
-      rawContract.name = 'a'.repeat(25);
+    it('should be no longer than 64 chars', () => {
+      rawContract.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
 
       const result = validateContract(rawContract);
 
@@ -119,38 +119,8 @@ describe('validateContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.name');
+      expect(error.dataPath).to.equal('.contractId');
       expect(error.keyword).to.equal('maxLength');
-    });
-
-    it('should be the valid string format', () => {
-      const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123',
-        'abcdefghigklmnopqrstuvwx', 'ValidName', 'abc_gbf_gdb', 'abc-gbf-gdb'];
-
-      validNames.forEach((name) => {
-        rawContract.name = name;
-
-        const result = validateContract(rawContract);
-
-        expectJsonSchemaError(result, 0);
-      });
-    });
-
-    it('should return an invalid result if a string is in invalid format', () => {
-      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
-
-      invalidNames.forEach((name) => {
-        rawContract.name = name;
-
-        const result = validateContract(rawContract);
-
-        expectJsonSchemaError(result);
-
-        const [error] = result.getErrors();
-
-        expect(error.dataPath).to.equal('.name');
-        expect(error.keyword).to.equal('pattern');
-      });
     });
   });
 

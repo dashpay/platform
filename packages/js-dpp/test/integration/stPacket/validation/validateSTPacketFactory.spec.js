@@ -17,7 +17,7 @@ const InvalidItemsMerkleRootError = require('../../../../lib/errors/InvalidItems
 const InvalidItemsHashError = require('../../../../lib/errors/InvalidItemsHashError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
-describe('validateSTPacketFactory', () => {
+describe.skip('validateSTPacketFactory', () => {
   let stPacket;
   let rawSTPacket;
   let rawContract;

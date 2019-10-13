@@ -2,7 +2,7 @@ const findDuplicateDocuments = require('../../../../lib/stPacket/validation/find
 
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
-describe('findDuplicateDocuments', () => {
+describe.skip('findDuplicateDocuments', () => {
   let rawDocuments;
 
   beforeEach(() => {

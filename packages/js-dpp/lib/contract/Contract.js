@@ -1,4 +1,3 @@
-const bs58 = require('bs58');
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
@@ -6,11 +5,12 @@ const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
 class Contract {
   /**
-   * @param {string} name
+   * @param {string} contractId
    * @param {Object<string, Object>} documents
    */
-  constructor(name, documents) {
-    this.setName(name);
+  constructor(contractId, documents) {
+    this.contractId = contractId;
+
     this.setVersion(Contract.DEFAULTS.VERSION);
     this.setJsonMetaSchema(Contract.DEFAULTS.SCHEMA);
     this.setDocuments(documents);
@@ -18,16 +18,12 @@ class Contract {
   }
 
   /**
-   * Calculate Contract ID
+   * Get ID
    *
    * @return {string}
    */
   getId() {
-    // TODO: Id should be unique for whole network
-    //  so we need something like BUID for Contracts or use ST hash what is not so flexible
-    return bs58.encode(
-      hash(this.serialize()),
-    );
+    return this.contractId;
   }
 
   /**
@@ -37,25 +33,6 @@ class Contract {
    */
   getJsonSchemaId() {
     return Contract.SCHEMA_ID;
-  }
-
-  /**
-   *
-   * @param {string} name
-   * @return {Contract}
-   */
-  setName(name) {
-    this.name = name;
-
-    return this;
-  }
-
-  /**
-   *
-   * @return {string}
-   */
-  getName() {
-    return this.name;
   }
 
   /**
@@ -187,7 +164,7 @@ class Contract {
   toJSON() {
     const json = {
       $schema: this.getJsonMetaSchema(),
-      name: this.getName(),
+      contractId: this.getId(),
       version: this.getVersion(),
       documents: this.getDocuments(),
     };

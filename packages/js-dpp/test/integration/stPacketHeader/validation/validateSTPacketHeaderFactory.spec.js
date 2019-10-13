@@ -7,7 +7,7 @@ const validateSTPacketHeaderFactory = require('../../../../lib/stPacketHeader/va
 
 const { expectJsonSchemaError } = require('../../../../lib/test/expect/expectError');
 
-describe('validateSTPacketHeaderStructure', () => {
+describe.skip('validateSTPacketHeaderStructure', () => {
   let rawStPacketHeader;
   let validateSTPacketHeader;
 

@@ -41,14 +41,14 @@ describe('ContractFactory', () => {
   describe('create', () => {
     it('should return new Contract with specified name and documents definition', () => {
       const result = factory.create(
-        rawContract.name,
+        rawContract.contractId,
         rawContract.documents,
       );
 
       expect(result).to.equal(contract);
 
       expect(createContractMock).to.have.been.calledOnceWith({
-        name: rawContract.name,
+        contractId: rawContract.contractId,
         documents: rawContract.documents,
       });
     });

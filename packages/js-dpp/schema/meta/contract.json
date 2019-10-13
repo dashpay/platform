@@ -12,11 +12,10 @@
       "type": "string",
       "const": "https://schema.dash.org/dpp-0-4-0/meta/contract"
     },
-    "name": {
+    "contractId":{
       "type": "string",
-      "minLength": 3,
-      "maxLength": 24,
-      "pattern": "^((?!-|_)[a-zA-Z0-9-_]*[a-zA-Z0-9])$"
+      "minLength": 64,
+      "maxLength": 64
     },
     "version": {
       "type": "number",
@@ -99,7 +98,7 @@
   },
   "required": [
     "$schema",
-    "name",
+    "contractId",
     "version",
     "documents"
   ],

@@ -5,7 +5,7 @@ describe('createContract', () => {
   let rawContract;
   beforeEach(() => {
     rawContract = {
-      name: 'LovelyContract',
+      id: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       documents: {
         niceDocument: {
           name: { type: 'string' },
@@ -14,12 +14,12 @@ describe('createContract', () => {
     };
   });
 
-  it('should return new Contract with "name" and documents', () => {
+  it('should return new Contract with "contractId" and documents', () => {
     const contract = createContract(rawContract);
 
     expect(contract).to.be.an.instanceOf(Contract);
 
-    expect(contract.getName()).to.equal(rawContract.name);
+    expect(contract.getId()).to.equal(rawContract.contractId);
     expect(contract.getDocuments()).to.equal(rawContract.documents);
   });
 
@@ -32,7 +32,7 @@ describe('createContract', () => {
 
     expect(contract.getJsonMetaSchema()).to.equal(rawContract.$schema);
 
-    expect(contract.getName()).to.equal(rawContract.name);
+    expect(contract.getId()).to.equal(rawContract.contractId);
     expect(contract.getDocuments()).to.equal(rawContract.documents);
   });
 
@@ -45,7 +45,7 @@ describe('createContract', () => {
 
     expect(contract.getVersion()).to.equal(rawContract.version);
 
-    expect(contract.getName()).to.equal(rawContract.name);
+    expect(contract.getId()).to.equal(rawContract.contractId);
     expect(contract.getDocuments()).to.equal(rawContract.documents);
   });
 
@@ -60,7 +60,7 @@ describe('createContract', () => {
 
     expect(contract.getDefinitions()).to.equal(rawContract.definitions);
 
-    expect(contract.getName()).to.equal(rawContract.name);
+    expect(contract.getId()).to.equal(rawContract.contractId);
     expect(contract.getDocuments()).to.equal(rawContract.documents);
   });
 });

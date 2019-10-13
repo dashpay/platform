@@ -6,7 +6,7 @@ class InvalidDocumentTypeError extends ConsensusError {
    * @param {Contract} contract
    */
   constructor(type, contract) {
-    super(`Contract ${contract.name} doesn't contain type ${type}`);
+    super(`Contract doesn't contain type ${type}`);
 
     this.name = this.constructor.name;
 

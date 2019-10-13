@@ -7,7 +7,7 @@ const sendSTPacket = require('../../lib/test/e2e/sendSTPacket');
 const createStateTransition = require('../../lib/test/e2e/createStateTransition');
 const isDriveSynced = require('../../lib/test/e2e/isDriveSynced');
 
-describe('verifySTPacket', function main() {
+describe.skip('verifySTPacket', function main() {
   this.timeout(90000);
 
   let dpp;

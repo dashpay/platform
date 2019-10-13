@@ -3,7 +3,7 @@ const findDuplicateDocumentsByIndices = require('../../../../lib/stPacket/valida
 const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
-describe('findDuplicateDocumentsByIndices', () => {
+describe.skip('findDuplicateDocumentsByIndices', () => {
   let rawDocuments;
   let contract;
 

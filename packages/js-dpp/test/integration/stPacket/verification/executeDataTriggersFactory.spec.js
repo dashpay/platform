@@ -12,7 +12,7 @@ const dpnsUpdateDomainDataTrigger = require('../../../../lib/dataTrigger/dpnsTri
 
 const executeDataTriggersFactory = require('../../../../lib/stPacket/verification/executeDataTriggersFactory');
 
-describe('executeDataTriggersFactory', () => {
+describe.skip('executeDataTriggersFactory', () => {
   let childDocument;
   let contractMock;
 

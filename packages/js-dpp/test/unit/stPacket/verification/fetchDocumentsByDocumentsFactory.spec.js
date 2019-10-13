@@ -5,7 +5,7 @@ const fetchDocumentsByDocumentsFactory = require('../../../../lib/stPacket/verif
 
 const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
 
-describe('fetchDocumentsByDocuments', () => {
+describe.skip('fetchDocumentsByDocuments', () => {
   let fetchDocumentsByDocuments;
   let dataProviderMock;
   let documents;
