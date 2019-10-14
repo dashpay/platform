@@ -34,7 +34,7 @@ class DataContractFacade {
    * @param {boolean} [options.skipValidation=false]
    * @return {DataContract}
    */
-  createFromObject(rawDataContract, options = { skipValidation: false }) {
+  createFromObject(rawDataContract, options = { }) {
     return this.factory.createFromObject(rawDataContract, options);
   }
 
@@ -46,7 +46,7 @@ class DataContractFacade {
    * @param {boolean} [options.skipValidation=false]
    * @return {DataContract}
    */
-  createFromSerialized(payload, options = { skipValidation: false }) {
+  createFromSerialized(payload, options = { }) {
     return this.factory.createFromSerialized(payload, options);
   }
 

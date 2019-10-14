@@ -2,7 +2,6 @@ const Document = require('./Document');
 
 const { decode } = require('../util/serializer');
 const entropy = require('../util/entropy');
-const hash = require('../util/hash');
 
 const InvalidDocumentError = require('./errors/InvalidDocumentError');
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
@@ -33,17 +32,18 @@ class DocumentFactory {
 
     const rawDocument = {
       $type: type,
-      $scope: hash(this.dataContract.getId() + this.userId).toString('hex'),
-      $scopeId: entropy.generate(),
-      $action: Document.DEFAULTS.ACTION,
+      $contractId: this.dataContract.getId(),
+      $userId: this.userId,
+      $entropy: entropy.generate(),
       $rev: Document.DEFAULTS.REVISION,
-      $meta: {
-        userId: this.getUserId(),
-      },
       ...data,
     };
 
-    return new Document(rawDocument);
+    const document = new Document(rawDocument);
+
+    document.setAction(Document.DEFAULTS.ACTION);
+
+    return document;
   }
 
 
@@ -53,11 +53,19 @@ class DocumentFactory {
    * @param {RawDocument} rawDocument
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
+   * @param {boolean} [options.allowMeta=true]
+   * @param {boolean} [options.action]
    * @return {Document}
    */
-  createFromObject(rawDocument, options = { skipValidation: false }) {
-    if (!options.skipValidation) {
-      const result = this.validateDocument(rawDocument, this.dataContract);
+  createFromObject(rawDocument, options = {}) {
+    const opts = Object.assign({ skipValidation: false }, options);
+
+    if (!opts.skipValidation) {
+      const result = this.validateDocument(
+        rawDocument,
+        this.dataContract,
+        opts,
+      );
 
       if (!result.isValid()) {
         throw new InvalidDocumentError(result.getErrors(), rawDocument);
@@ -73,9 +81,11 @@ class DocumentFactory {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
+   * @param {boolean} [options.allowMeta=true]
+   * @param {boolean} [options.action]
    * @return {Document}
    */
-  createFromSerialized(payload, options = { skipValidation: false }) {
+  createFromSerialized(payload, options = { }) {
     const rawDocument = decode(payload);
 
     return this.createFromObject(rawDocument, options);

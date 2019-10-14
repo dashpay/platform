@@ -6,8 +6,7 @@ const ValidationResult = require('../validation/ValidationResult');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const MissingDocumentTypeError = require('../errors/MissingDocumentTypeError');
-const MissingDocumentActionError = require('../errors/MissingDocumentActionError');
-const InvalidDocumentScopeIdError = require('../errors/InvalidDocumentScopeIdError');
+const InvalidDocumentEntropyError = require('../errors/InvalidDocumentEntropyError');
 
 const entropy = require('../util/entropy');
 
@@ -26,24 +25,31 @@ module.exports = function validateDocumentFactory(
    * @param {DataContract} dataContract
    * @param {Object} [options]
    * @param {boolean} [options.allowMeta=true]
+   * @param {boolean} [options.action]
    * @return {ValidationResult}
    */
-  function validateDocument(document, dataContract, options = { allowMeta: true }) {
-    const rawDocument = (document instanceof Document) ? document.toJSON() : document;
+  function validateDocument(document, dataContract, options = { }) {
+    /**
+     * @type {RawDocument}
+     */
+    let rawDocument;
+    let { action } = options;
+
+    if (document instanceof Document) {
+      rawDocument = document.toJSON();
+
+      if (action === undefined) {
+        action = document.getAction();
+      }
+    } else {
+      rawDocument = document;
+    }
 
     const result = new ValidationResult();
 
     if (!Object.prototype.hasOwnProperty.call(rawDocument, '$type')) {
       result.addError(
         new MissingDocumentTypeError(rawDocument),
-      );
-
-      return result;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(rawDocument, '$action')) {
-      result.addError(
-        new MissingDocumentActionError(rawDocument),
       );
 
       return result;
@@ -57,7 +63,7 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    if (rawDocument.$action === Document.ACTIONS.DELETE) {
+    if (action === Document.ACTIONS.DELETE) {
       const schemaValidationResult = validator.validate(
         documentBaseSchema,
         rawDocument,
@@ -69,7 +75,6 @@ module.exports = function validateDocumentFactory(
 
       const enrichedDataContract = enrichDataContractWithBaseDocument(
         dataContract,
-        options.allowMeta ? [] : ['$meta'],
       );
 
       const additionalSchemas = {
@@ -85,9 +90,9 @@ module.exports = function validateDocumentFactory(
       result.merge(schemaValidationResult);
     }
 
-    if (!entropy.validate(rawDocument.$scopeId)) {
+    if (!entropy.validate(rawDocument.$entropy)) {
       result.addError(
-        new InvalidDocumentScopeIdError(rawDocument),
+        new InvalidDocumentEntropyError(rawDocument),
       );
     }
 

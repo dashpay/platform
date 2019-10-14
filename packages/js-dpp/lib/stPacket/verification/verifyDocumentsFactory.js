@@ -22,7 +22,7 @@ function verifyDocumentsFactory(fetchDocumentsByDocuments, verifyDocumentsUnique
    * @typedef verifyDocuments
    * @param {STPacket} stPacket
    * @param {string} userId
-   * @param {Contract} contract
+   * @param {DataContract} contract
    * @return {ValidationResult}
    */
   async function verifyDocuments(stPacket, userId, contract) {
@@ -60,7 +60,7 @@ function verifyDocumentsFactory(fetchDocumentsByDocuments, verifyDocumentsUnique
               );
             }
             break;
-          case Document.ACTIONS.UPDATE:
+          case Document.ACTIONS.REPLACE:
           case Document.ACTIONS.DELETE:
             if (!fetchedDocument) {
               result.addError(

@@ -3,7 +3,7 @@ const baseDocumentSchema = require('../../schema/base/document');
 /**
  * @typedef {enrichDataContractWithBaseDocument}
  * @param {DataContract} dataContract
- * @param {string[]} excludeBaseDocumentProperties
+ * @param {string[]} [excludeBaseDocumentProperties]
  * @return {RawDataContract}
  */
 function enrichDataContractWithBaseDocument(dataContract, excludeBaseDocumentProperties = []) {

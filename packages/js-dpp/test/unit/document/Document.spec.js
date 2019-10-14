@@ -3,8 +3,6 @@ const rewiremock = require('rewiremock/node');
 
 const DataIsNotAllowedWithActionDeleteError = require('../../../lib/document/errors/DataIsNotAllowedWithActionDeleteError');
 
-const DocumentMetadata = require('../../../lib/document/DocumentMetadata');
-
 describe('Document', () => {
   let lodashGetMock;
   let lodashSetMock;
@@ -30,22 +28,15 @@ describe('Document', () => {
 
     rawDocument = {
       $type: 'test',
-      $scope: 'a832e4145650bfe8462e768e9c4a9a0d3a0bb7dcd9b3e50c61c73ac9d2e14068',
-      $scopeId: 'ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgzh',
-      $action: Document.DEFAULTS.ACTION,
+      $contractId: 'a832e4145650bfe8462e768e9c4a9a0d3a0bb7dcd9b3e50c61c73ac9d2e14068',
+      $userId: 'a832e4145650bfe8462e768e9c4a9a0d3a0bb7dcd9b3e50c61c73ac9d2e16546',
+      $entropy: 'ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgzh',
       $rev: Document.DEFAULTS.REVISION,
-      $meta: {
-        userId: 'a832e4145650bfe8462e768e9c4a9a0d3a0bb7dcd9b3e50c61c73ac9d2e16546',
-        stReference: {
-          blockHash: '000000000000000000000000000000000000000000000000000000000000000f',
-          blockHeight: 42,
-          stHeaderHash: '000000000000000000000000000000000000000000000000000000000000000f',
-          stPacketHash: '000000000000000000000000000000000000000000000000000000000000000f',
-        },
-      },
     };
 
     document = new Document(rawDocument);
+
+    document.setAction(Document.DEFAULTS.ACTION);
   });
 
   describe('constructor', () => {
@@ -69,51 +60,66 @@ describe('Document', () => {
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
-    it('should create Document with $scopeId and data if present', () => {
+    it('should create Document with $contractId and data if present', () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $scopeId: 'test',
+        $contractId: 'test',
         ...data,
       };
 
       document = new Document(rawDocument);
 
-      expect(document.scopeId).to.equal(rawDocument.$scopeId);
+      expect(document.contractId).to.equal(rawDocument.$contractId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
-    it('should create Document with $scope and data if present', () => {
+    it('should create Document with $userId and data if present', () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $scope: 'test',
+        $userId: 'test',
         ...data,
       };
 
       document = new Document(rawDocument);
 
-      expect(document.scope).to.equal(rawDocument.$scope);
+      expect(document.userId).to.equal(rawDocument.$userId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
-    it('should create Document with $action and data if present', () => {
+    it('should create Document with $entropy and data if present', () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $action: 'test',
+        $entropy: 'test',
         ...data,
       };
 
       document = new Document(rawDocument);
 
-      expect(document.action).to.equal(rawDocument.$action);
+      expect(document.entropy).to.equal(rawDocument.$entropy);
+      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
+    });
+
+    it('should create Document with undefined action and data if present', () => {
+      const data = {
+        test: 1,
+      };
+
+      rawDocument = {
+        ...data,
+      };
+
+      document = new Document(rawDocument);
+
+      expect(document.action).to.equal(undefined);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
@@ -132,27 +138,6 @@ describe('Document', () => {
       expect(document.revision).to.equal(rawDocument.$rev);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
-
-    it('should create Document with $meta and data if present', () => {
-      const data = {
-        test: 1,
-      };
-
-      const meta = {
-        userId: 'test',
-      };
-
-      rawDocument = {
-        $meta: meta,
-        ...data,
-      };
-
-      document = new Document(rawDocument);
-
-      expect(document.metadata).to.be.instanceOf(DocumentMetadata);
-      expect(document.metadata.toJSON()).to.deep.equal(meta);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
-    });
   });
 
   describe('#getId', () => {
@@ -164,7 +149,12 @@ describe('Document', () => {
 
       const actualId = document.getId();
 
-      expect(hashMock).to.have.been.calledOnceWith(rawDocument.$scope + rawDocument.$scopeId);
+      expect(hashMock).to.have.been.calledOnceWith(
+        rawDocument.$contractId
+        + rawDocument.$userId
+        + rawDocument.$type
+        + rawDocument.$entropy,
+      );
 
       expect(id).to.equal(actualId);
     });
@@ -318,34 +308,6 @@ describe('Document', () => {
     });
   });
 
-  describe('#getMetadata', () => {
-    it('should return all meta', () => {
-      const metadata = new DocumentMetadata({
-        userId: 'some string',
-      });
-
-      document.metadata = metadata;
-
-      expect(document.getMetadata()).to.be.equal(metadata);
-    });
-  });
-
-  describe('#removeMetadata', () => {
-    it('should remove all meta', () => {
-      const metadata = new DocumentMetadata({
-        userId: 'some string',
-      });
-
-      document.metadata = metadata;
-
-      expect(document.getMetadata()).to.deep.equal(metadata);
-
-      document.removeMetadata();
-
-      expect(document.getMetadata()).to.be.undefined();
-    });
-  });
-
   describe('#toJSON', () => {
     it('should return Document as plain JS object', () => {
       expect(document.toJSON()).to.deep.equal(rawDocument);
@@ -361,20 +323,6 @@ describe('Document', () => {
       const result = document.serialize();
 
       expect(result).to.equal(serializedDocument);
-
-      expect(encodeMock).to.have.been.calledOnceWith(rawDocument);
-    });
-
-    it('should skip meta if option `skipMeta` is true', () => {
-      const serializedDocument = '123';
-
-      encodeMock.returns(serializedDocument);
-
-      const result = document.serialize({ skipMeta: true });
-
-      expect(result).to.equal(serializedDocument);
-
-      delete rawDocument.$meta;
 
       expect(encodeMock).to.have.been.calledOnceWith(rawDocument);
     });
@@ -397,7 +345,7 @@ describe('Document', () => {
 
       expect(result).to.equal(hashedDocument);
 
-      expect(Document.prototype.serialize).to.have.been.calledOnceWith({ skipMeta: true });
+      expect(Document.prototype.serialize).to.have.been.calledOnce();
 
       expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
     });

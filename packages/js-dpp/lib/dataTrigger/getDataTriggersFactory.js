@@ -22,7 +22,7 @@ function getDataTriggersFactory() {
     new DataTrigger(
       process.env.DPNS_CONTRACT_ID,
       'domain',
-      Document.ACTIONS.UPDATE,
+      Document.ACTIONS.REPLACE,
       updateDomainDataTrigger,
     ),
     new DataTrigger(

@@ -43,9 +43,11 @@ class DocumentFacade {
    * @param {RawDocument} rawDocument
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
+   * @param {boolean} [options.allowMeta=true]
+   * @param {boolean} [options.action]
    * @return {Document}
    */
-  createFromObject(rawDocument, options = { skipValidation: false }) {
+  createFromObject(rawDocument, options = { }) {
     return this.getFactory().createFromObject(rawDocument, options);
   }
 
@@ -55,9 +57,11 @@ class DocumentFacade {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
+   * @param {boolean} [options.allowMeta=true]
+   * @param {boolean} [options.action]
    * @return {Document}
    */
-  createFromSerialized(payload, options = { skipValidation: false }) {
+  createFromSerialized(payload, options = { }) {
     return this.getFactory().createFromSerialized(payload, options);
   }
 

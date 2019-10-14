@@ -180,7 +180,7 @@ describe.skip('executeDataTriggersFactory', () => {
       .returns([])
       .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.DELETE)
       .returns([dpnsDeleteDomainDataTriggerMock])
-      .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.UPDATE)
+      .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.REPLACE)
       .returns([dpnsUpdateDomainDataTriggerMock]);
 
     await executeDataTriggers(documents, context);
@@ -199,7 +199,7 @@ describe.skip('executeDataTriggersFactory', () => {
       .returns([dpnsCreateDomainDataTriggerMock])
       .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.DELETE)
       .returns([dpnsDeleteDomainDataTriggerMock])
-      .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.UPDATE)
+      .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.REPLACE)
       .returns([dpnsUpdateDomainDataTriggerMock]);
 
     await executeDataTriggers(documents, context);
@@ -219,7 +219,7 @@ describe.skip('executeDataTriggersFactory', () => {
       .returns([dpnsCreateDomainDataTriggerMock])
       .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.DELETE)
       .returns([dpnsDeleteDomainDataTriggerMock])
-      .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.UPDATE)
+      .withArgs(contractMock.getId(), domainDocumentType, Document.ACTIONS.REPLACE)
       .returns([dpnsUpdateDomainDataTriggerMock]);
 
     await executeDataTriggers(documents, context);

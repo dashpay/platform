@@ -98,7 +98,7 @@ describe.skip('verifyDocuments', () => {
   });
 
   it('should return invalid result if Document with action "update" is not present', async () => {
-    documents[0].setAction(Document.ACTIONS.UPDATE);
+    documents[0].setAction(Document.ACTIONS.REPLACE);
 
     fetchDocumentsByDocumentsMock.resolves([]);
 
@@ -137,7 +137,7 @@ describe.skip('verifyDocuments', () => {
   });
 
   it('should return invalid result if Document with action "update" has wrong revision', async () => {
-    documents[0].setAction(Document.ACTIONS.UPDATE);
+    documents[0].setAction(Document.ACTIONS.REPLACE);
 
     fetchDocumentsByDocumentsMock.resolves([documents[0]]);
 
@@ -200,7 +200,7 @@ describe.skip('verifyDocuments', () => {
 
     fetchDocumentsByDocumentsMock.resolves(fetchedDocuments);
 
-    documents[1].setAction(Document.ACTIONS.UPDATE);
+    documents[1].setAction(Document.ACTIONS.REPLACE);
     documents[1].setRevision(2);
 
     documents[2].setData({});

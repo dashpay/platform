@@ -8,8 +8,7 @@ const getDocumentsFixture = require('./getDocumentsFixture');
  */
 function getSTPacketFixture() {
   const dataContract = getDataContractFixture();
-  const documents = getDocumentsFixture()
-    .map(document => document.removeMetadata());
+  const documents = getDocumentsFixture();
 
   return new STPacket(dataContract.getId(), documents);
 }

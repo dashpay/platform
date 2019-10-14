@@ -1,8 +1,11 @@
 const ConsensusError = require('./ConsensusError');
 
-class MissingDocumentActionError extends ConsensusError {
+class InvalidDocumentEntropyError extends ConsensusError {
+  /**
+   * @param {RawDocument} rawDocument
+   */
   constructor(rawDocument) {
-    super('$action is not present');
+    super('Invalid Document entropy');
 
     this.rawDocument = rawDocument;
   }
@@ -17,4 +20,4 @@ class MissingDocumentActionError extends ConsensusError {
   }
 }
 
-module.exports = MissingDocumentActionError;
+module.exports = InvalidDocumentEntropyError;

@@ -8,7 +8,7 @@ class DocumentNotFoundError extends ConsensusError {
    */
   constructor(document) {
     const noun = {
-      [Document.ACTIONS.UPDATE]: 'Updated',
+      [Document.ACTIONS.REPLACE]: 'Updated',
       [Document.ACTIONS.DELETE]: 'Deleted',
     };
 

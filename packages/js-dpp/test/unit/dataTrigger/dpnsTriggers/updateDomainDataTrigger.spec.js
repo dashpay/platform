@@ -24,7 +24,7 @@ describe('updateDomainDataTrigger', () => {
   });
 
   it('should always fail', async () => {
-    document.setAction(Document.ACTIONS.UPDATE);
+    document.setAction(Document.ACTIONS.REPLACE);
 
     const result = await domainUpdateDataTrigger(document, context);
 

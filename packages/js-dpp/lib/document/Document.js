@@ -7,8 +7,6 @@ const DataIsNotAllowedWithActionDeleteError = require('./errors/DataIsNotAllowed
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
-const DocumentMetadata = require('./DocumentMetadata');
-
 class Document {
   /**
    * @param {RawDocument} rawDocument
@@ -16,36 +14,32 @@ class Document {
   constructor(rawDocument) {
     const data = Object.assign({}, rawDocument);
 
-    this.id = null;
+    this.id = undefined;
+    this.action = undefined;
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$type')) {
       this.type = rawDocument.$type;
       delete data.$type;
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawDocument, '$scopeId')) {
-      this.scopeId = rawDocument.$scopeId;
-      delete data.$scopeId;
+    if (Object.prototype.hasOwnProperty.call(rawDocument, '$entropy')) {
+      this.entropy = rawDocument.$entropy;
+      delete data.$entropy;
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawDocument, '$scope')) {
-      this.scope = rawDocument.$scope;
-      delete data.$scope;
+    if (Object.prototype.hasOwnProperty.call(rawDocument, '$contractId')) {
+      this.contractId = rawDocument.$contractId;
+      delete data.$contractId;
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawDocument, '$action')) {
-      this.action = rawDocument.$action;
-      delete data.$action;
+    if (Object.prototype.hasOwnProperty.call(rawDocument, '$userId')) {
+      this.userId = rawDocument.$userId;
+      delete data.$userId;
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$rev')) {
       this.revision = rawDocument.$rev;
       delete data.$rev;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(rawDocument, '$meta')) {
-      this.metadata = new DocumentMetadata(rawDocument.$meta);
-      delete data.$meta;
     }
 
     this.setData(data);
@@ -59,7 +53,7 @@ class Document {
   getId() {
     if (!this.id) {
       this.id = bs58.encode(
-        hash(this.scope + this.scopeId),
+        hash(this.contractId + this.userId + this.type + this.entropy),
       );
     }
 
@@ -173,61 +167,28 @@ class Document {
   }
 
   /**
-   * Get metadata
-   *
-   * @return {DocumentMetadata}
-   */
-  getMetadata() {
-    return this.metadata;
-  }
-
-  /**
-   * Remove metadata from document
-   *
-   * @return {Document}
-   */
-  removeMetadata() {
-    this.metadata = undefined;
-
-    return this;
-  }
-
-  /**
    * Return Document as plain object
    *
    * @return {RawDocument}
    */
   toJSON() {
-    const json = {
+    return {
       $type: this.getType(),
-      $scope: this.scope,
-      $scopeId: this.scopeId,
+      $contractId: this.contractId,
+      $userId: this.userId,
+      $entropy: this.entropy,
       $rev: this.getRevision(),
-      $action: this.getAction(),
       ...this.getData(),
     };
-
-    if (this.metadata) {
-      json.$meta = this.metadata.toJSON();
-    }
-
-    return json;
   }
 
   /**
    * Return serialized Document
    *
-   * @param {Object} [options]
-   * @param {boolean} [options.skipMeta = false]
-   *
    * @return {Buffer}
    */
-  serialize(options = { skipMeta: false }) {
+  serialize() {
     const json = this.toJSON();
-
-    if (options.skipMeta) {
-      delete json.$meta;
-    }
 
     return encode(json);
   }
@@ -238,14 +199,14 @@ class Document {
    * @return {string}
    */
   hash() {
-    return hash(this.serialize({ skipMeta: true })).toString('hex');
+    return hash(this.serialize()).toString('hex');
   }
 }
 
 Document.ACTIONS = {
-  CREATE: 0,
-  UPDATE: 1,
-  DELETE: 2,
+  CREATE: 1,
+  REPLACE: 2,
+  DELETE: 4,
 };
 
 Document.DEFAULTS = {

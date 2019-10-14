@@ -28,7 +28,7 @@ describe('getDataTriggers', () => {
     createDocument.setAction(Document.ACTIONS.CREATE);
 
     updateDocument = getChildDocumentFixture();
-    updateDocument.setAction(Document.ACTIONS.UPDATE);
+    updateDocument.setAction(Document.ACTIONS.REPLACE);
 
     deleteDocument = getChildDocumentFixture();
     deleteDocument.data = {};
@@ -40,7 +40,7 @@ describe('getDataTriggers', () => {
       dataContractId, 'domain', Document.ACTIONS.CREATE, createDomainDataTrigger,
     );
     updateTrigger = new DataTrigger(
-      dataContractId, 'domain', Document.ACTIONS.UPDATE, updateDomainDataTrigger,
+      dataContractId, 'domain', Document.ACTIONS.REPLACE, updateDomainDataTrigger,
     );
     deleteTrigger = new DataTrigger(
       dataContractId, 'domain', Document.ACTIONS.DELETE, deleteDomainDataTrigger,
