@@ -2,6 +2,8 @@ const rewiremock = require('rewiremock/node');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
+const DataContractStateTransition = require('../../../lib/dataContract/stateTransition/DataContractStateTransition');
+
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const InvalidDataContractError = require('../../../lib/dataContract/errors/InvalidDataContractError');
@@ -30,6 +32,7 @@ describe('DataContractFactory', () => {
 
     DataContractFactory = rewiremock.proxy('../../../lib/dataContract/DataContractFactory', {
       '../../../lib/util/serializer': { decode: decodeMock },
+      '../../../lib/dataContract/stateTransition/DataContractStateTransition': DataContractStateTransition,
     });
 
     factory = new DataContractFactory(
@@ -123,6 +126,15 @@ describe('DataContractFactory', () => {
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawDataContract);
 
       expect(decodeMock).to.have.been.calledOnceWith(serializedDataContract);
+    });
+  });
+
+  describe('createStateTransition', () => {
+    it('should return new DataContractStateTransition with passed DataContract', () => {
+      const result = factory.createStateTransition(dataContract);
+
+      expect(result).to.be.an.instanceOf(DataContractStateTransition);
+      expect(result.getDataContract()).to.equal(dataContract);
     });
   });
 });

@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "dataContract": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "dataContract"
+  ]
+}

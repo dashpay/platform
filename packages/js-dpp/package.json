@@ -60,6 +60,7 @@
     "bs58": "^4.0.1",
     "cbor": "^4.1.1",
     "lodash.get": "^4.4.2",
+    "lodash.mergewith": "^4.6.2",
     "lodash.set": "^4.3.2",
     "multihashes": "^0.4.13"
   }

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/dash-schema",
+  "$id": "https://schema.dash.org/dpp-0-4-0/state-transition",
+  "properties": {
+    "protocolVersion": {
+      "type": "number",
+      "const": 0
+    },
+    "type": {
+      "type": "number",
+      "enum": [1]
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "type"
+  ],
+  "additionalProperties": false
+}

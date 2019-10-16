@@ -4,6 +4,7 @@ const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
 const DataContractFacade = require('./dataContract/DataContractFacade');
 const DocumentFacade = require('./document/DocumentFacade');
+const StateTransitionFacade = require('./stateTransition/StateTransitionFacade');
 const STPacketFacade = require('./stPacket/STPacketFacade');
 const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 
@@ -38,6 +39,8 @@ class DashPlatformProtocol {
     this.dataContract = new DataContractFacade(validator);
 
     this.document = new DocumentFacade(this, validator);
+
+    this.stateTransition = new StateTransitionFacade(this, validator);
 
     this.packet = new STPacketFacade(this, validator);
 

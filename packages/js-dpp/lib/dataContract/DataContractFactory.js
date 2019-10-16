@@ -1,5 +1,7 @@
 const InvalidDataContractError = require('./errors/InvalidDataContractError');
 
+const DataContractStateTransition = require('./stateTransition/DataContractStateTransition');
+
 const { decode } = require('../util/serializer');
 
 class DataContractFactory {
@@ -60,6 +62,16 @@ class DataContractFactory {
     const rawDataContract = decode(payload);
 
     return this.createFromObject(rawDataContract, options);
+  }
+
+  /**
+   * Create Data Contract State Transition
+   *
+   * @param {DataContract} dataContract
+   * @return {DataContractStateTransition}
+   */
+  createStateTransition(dataContract) {
+    return new DataContractStateTransition(dataContract);
   }
 }
 

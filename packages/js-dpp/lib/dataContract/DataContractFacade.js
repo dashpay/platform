@@ -51,6 +51,16 @@ class DataContractFacade {
   }
 
   /**
+   * Create Data Contract State Transition
+   *
+   * @param {DataContract} dataContract
+   * @return {DataContractStateTransition}
+   */
+  createStateTransition(dataContract) {
+    return this.factory.createStateTransition(dataContract);
+  }
+
+  /**
    * Validate Data Contract
    *
    * @param {DataContract|RawDataContract} dataContract

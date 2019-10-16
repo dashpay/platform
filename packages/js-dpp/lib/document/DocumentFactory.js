@@ -53,7 +53,6 @@ class DocumentFactory {
    * @param {RawDocument} rawDocument
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @param {boolean} [options.allowMeta=true]
    * @param {boolean} [options.action]
    * @return {Document}
    */
