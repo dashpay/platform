@@ -4,6 +4,7 @@ const {
   LastUserStateTransitionHashResponse,
   TransactionsFilterStreamPromiseClient,
   TransactionsWithProofsRequest,
+  UpdateStateTransitionResponse,
 } = require('@dashevo/dapi-grpc');
 const chai = require('chai');
 const { EventEmitter } = require('events');
@@ -806,38 +807,6 @@ describe('api', () => {
     });
   });
 
-  describe('.tx.sendRawTransition', () => {
-    xit('Should send raw transition', async () => {
-      // 1. Create ST packet
-      let { stpacket: stPacket } = Schema.create.stpacket();
-      stPacket = Object.assign(stPacket, contract);
-
-      // 2. Create State Transition
-      const transaction = new Transaction()
-        .setType(Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION);
-
-      const serializedPacket = Schema.serialize.encode(stPacket);
-      const stPacketHash = doubleSha256(serializedPacket);
-
-      transaction.extraPayload
-        .setRegTxId(validBlockchainUserObject.regtxid)
-        .setHashPrevSubTx(validBlockchainUserObject.regtxid)
-        .setHashSTPacket(stPacketHash)
-        .setCreditFee(1000)
-        .sign(new PrivateKey());
-
-      const dapi = new DAPIClient();
-      const transition = await dapi.sendRawTransition(transaction.serialize(),
-        serializedPacket.toString('hex'),
-      );
-      expect(transition).to.be.deep.equal(transitionHash);
-    });
-    it('Should throw error when data packet is missing', async () => {
-      const dapi = new DAPIClient();
-      await expect(dapi.sendRawTransition()).to.be.rejectedWith(RPCError, 'Data packet is missing');
-    });
-  });
-
   describe('.tx.fetchContract', () => {
     it('Should fetch dap contract', async () => {
       const dapi = new DAPIClient();
@@ -992,6 +961,36 @@ describe('api', () => {
       const result = await client.getLastUserStateTransitionHash(userId);
 
       expect(result).to.equal(null);
+    });
+  });
+
+  describe('#updateState', () => {
+    let updateStateStub;
+
+    beforeEach(() => {
+      userId = Buffer.alloc(256).toString('hex');
+
+      updateStateStub = sinon
+          .stub(CorePromiseClient.prototype, 'updateState');
+    });
+
+    afterEach(() => {
+      updateStateStub.restore();
+    });
+
+    it('should return a hex string if the last ST is present', async () => {
+      let stPacket = {
+        contract: 'fake contract',
+      };
+
+      const response = new UpdateStateTransitionResponse();
+      updateStateStub.resolves(response);
+
+      const stHeader = new Transaction();
+      const client = new DAPIClient();
+      const result = await client.updateState(stHeader, stPacket);
+
+      expect(result).to.be.instanceOf(UpdateStateTransitionResponse);
     });
   });
 });

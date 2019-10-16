@@ -6,6 +6,7 @@ const {
   TransactionsFilterStreamPromiseClient,
   TransactionsWithProofsRequest,
   BloomFilter,
+  StateTransition,
 } = require('@dashevo/dapi-grpc');
 const MNDiscovery = require('./MNDiscovery/index');
 const rpcClient = require('./RPCClient');
@@ -310,16 +311,22 @@ class DAPIClient {
   getUserByName(username) { return this.makeRequestToRandomDAPINode('getUser', { username }); }
 
   /**
-   * Sends serialized state transition header and data packet
-   * @param {string} rawStateTransition - hex string representing state transition header
-   * @param {string} rawSTPacket - hex string representing state transition data
-   * @returns {Promise<string>} - header id
+   * Send State Transition to machine
+   *
+   * @param {Transaction} stHeader
+   * @param {STPacket} stPacket
+   * @returns {Promise<!UpdateStateTransitionResponse>}
    */
-  sendRawTransition(rawStateTransition, rawSTPacket) {
-    return this.makeRequestToRandomDAPINode('sendRawTransition', {
-      rawSTPacket,
-      rawStateTransition,
-    });
+  async updateState(stHeader, stPacket) {
+    const stateTransition = new StateTransition();
+    stateTransition.setHeader(stHeader);
+    stateTransition.setPacket(stPacket);
+
+    const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
+
+    const client = new CorePromiseClient(`${nodeToConnect.getIp()}:${this.getGrpcPort()}`);
+
+    return client.updateState(stateTransition);
   }
 
   // Here go methods that used in VMN. Most of this methods will work only in regtest mode
