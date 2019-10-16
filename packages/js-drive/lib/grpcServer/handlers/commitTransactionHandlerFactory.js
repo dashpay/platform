@@ -1,7 +1,13 @@
 const { CommitTransactionResponse } = require('@dashevo/drive-grpc');
 
-const FailedPreconditionGrpcError = require('../error/FailedPreconditionGrpcError');
-const InternalGrpcError = require('../error/InternalGrpcError');
+const {
+  server: {
+    error: {
+      InternalGrpcError,
+      FailedPreconditionGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
 
 /**
  * @param {MongoDBTransaction} stateViewTransaction

@@ -1,6 +1,14 @@
 const { StartTransactionResponse } = require('@dashevo/drive-grpc');
+
+const {
+  server: {
+    error: {
+      FailedPreconditionGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
 const startTransactionHandlerFactory = require('../../../../lib/grpcServer/handlers/startTransactionHandlerFactory');
-const FailedPreconditionGrpcError = require('../../../../lib/grpcServer/error/FailedPreconditionGrpcError');
 const StateViewTransactionMock = require('../../../../lib/test/mock/StateViewTransactionMock');
 const GrpcCallMock = require('../../../../lib/test/mock/GrpcCallMock');
 

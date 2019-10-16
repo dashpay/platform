@@ -2,10 +2,6 @@ const {
   StartTransactionRequest,
   ApplyStateTransitionRequest,
   CommitTransactionRequest,
-  utils: {
-    jsonToProtobufFactory,
-    protobufToJsonFactory,
-  },
   pbjs: {
     StartTransactionRequest: PBJSStartTransactionRequest,
     StartTransactionResponse: PBJSStartTransactionResponse,
@@ -16,17 +12,32 @@ const {
   },
 } = require('@dashevo/drive-grpc');
 
+const {
+  client: {
+    converters: {
+      jsonToProtobufFactory,
+      protobufToJsonFactory,
+    },
+  },
+  server: {
+    jsonToProtobufHandlerWrapper,
+    error: {
+      wrapInErrorHandlerFactory,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 const { MongoClient } = require('mongodb');
 
 const errorHandler = require('../util/errorHandler');
-const jsonToProtobufHandlerWrapper = require('../grpcServer/jsonToProtobufHandlerWrapper');
-const wrapInErrorHandlerFactory = require('../grpcServer/error/wrapInErrorHandlerFactory');
+
 const startTransactionHandlerFactory = require('../grpcServer/handlers/startTransactionHandlerFactory');
 const applyStateTransitionHandlerFactory = require('../grpcServer/handlers/applyStateTransitionHandlerFactory');
 const commitTransactionHandlerFactory = require('../grpcServer/handlers/commitTransactionHandlerFactory');
+
 const createContractDatabaseFactory = require('../stateView/contract/createContractDatabaseFactory');
 const removeContractDatabaseFactory = require('../stateView/contract/removeContractDatabaseFactory');
 const SVContractMongoDbRepository = require('../stateView/contract/SVContractMongoDbRepository');

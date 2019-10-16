@@ -4,11 +4,18 @@ const InvalidSTPacketError = require('@dashevo/dpp/lib/stPacket/errors/InvalidST
 const ConsensusError = require('@dashevo/dpp/lib/errors/ConsensusError');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
+const {
+  server: {
+    error: {
+      InvalidArgumentGrpcError,
+      FailedPreconditionGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
 const StateViewTransactionMock = require('../../../../lib/test/mock/StateViewTransactionMock');
 const applyStateTransitionHandlerFactory = require('../../../../lib/grpcServer/handlers/applyStateTransitionHandlerFactory');
 const GrpcCallMock = require('../../../../lib/test/mock/GrpcCallMock');
-const InvalidArgumentGrpcError = require('../../../../lib/grpcServer/error/InvalidArgumentGrpcError');
-const FailedPreconditionGrpcError = require('../../../../lib/grpcServer/error/FailedPreconditionGrpcError');
 const getSTPacketsFixture = require('../../../../lib/test/fixtures/getSTPacketsFixture');
 const getStateTransitionsFixture = require('../../../../lib/test/fixtures/getStateTransitionsFixture');
 

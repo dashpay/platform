@@ -1,10 +1,17 @@
 const { ApplyStateTransitionResponse } = require('@dashevo/drive-grpc');
 const InvalidSTPacketError = require('@dashevo/dpp/lib/stPacket/errors/InvalidSTPacketError');
 
+const {
+  server: {
+    error: {
+      InternalGrpcError,
+      InvalidArgumentGrpcError,
+      FailedPreconditionGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
 const StateTransition = require('../../blockchain/StateTransition');
-const InvalidArgumentGrpcError = require('../error/InvalidArgumentGrpcError');
-const FailedPreconditionGrpcError = require('../error/FailedPreconditionGrpcError');
-const InternalGrpcError = require('../error/InternalGrpcError');
 
 /**
  * @param {MongoDBTransaction} stateViewTransaction

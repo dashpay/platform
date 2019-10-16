@@ -1,11 +1,18 @@
 const { CommitTransactionResponse, CommitTransactionRequest } = require('@dashevo/drive-grpc');
 
+const {
+  server: {
+    error: {
+      InternalGrpcError,
+      FailedPreconditionGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
 const commitTransactionHandlerFactory = require('../../../../lib/grpcServer/handlers/commitTransactionHandlerFactory');
 const GrpcCallMock = require('../../../../lib/test/mock/GrpcCallMock');
-const InternalGrpcError = require('../../../../lib/grpcServer/error/InternalGrpcError');
 const BlockExecutionState = require('../../../../lib/updateState/BlockExecutionState');
 const StateViewTransactionMock = require('../../../../lib/test/mock/StateViewTransactionMock');
-const FailedPreconditionGrpcError = require('../../../../lib/grpcServer/error/FailedPreconditionGrpcError');
 const getSVContractFixture = require('../../../../lib/test/fixtures/getSVContractFixture');
 
 describe('commitTransactionHandlerFactory', () => {
