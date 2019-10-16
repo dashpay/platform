@@ -34,10 +34,10 @@
   },
   "homepage": "https://github.com/dashevo/dapi-grpc#readme",
   "dependencies": {
-    "@dashevo/grpc-common": "^0.1.2",
+    "@dashevo/grpc-common": "^0.2.0",
     "google-protobuf": "^3.8.0",
-    "grpc": "^1.22.0",
-    "grpc-web": "^1.0.5",
+    "grpc": "^1.24.0",
+    "grpc-web": "^1.0.6",
     "protobufjs": "^6.8.8"
   },
   "devDependencies": {
