@@ -1,9 +1,7 @@
-const path = require('path');
 const grpc = require('grpc');
 const { promisify } = require('util');
 
 const {
-  loadPackageDefinition,
   utils: {
     isObject,
     convertObjectToMetadata,
@@ -42,11 +40,9 @@ const {
   UpdateStateTransitionResponse: ProtocUpdateStateTransitionResponse,
 } = require('./core_protoc');
 
-const protoPath = path.join(__dirname, '../protos/core.proto');
+const getCoreDefinition = require('../../lib/getCoreDefinition');
 
-const {
-  Core: CoreNodeJSClient,
-} = loadPackageDefinition(protoPath, 'org.dash.platform.dapi.v0');
+const CoreNodeJSClient = getCoreDefinition();
 
 const getLastUserStateTransitionHashOptions = {
   interceptors: [

@@ -1,8 +1,6 @@
-const path = require('path');
 const grpc = require('grpc');
 
 const {
-  loadPackageDefinition,
   utils: {
     isObject,
     convertObjectToMetadata,
@@ -35,11 +33,11 @@ const {
   TransactionsWithProofsResponse: ProtocTransactionsWithProofsResponse,
 } = require('./transactions_filter_stream_protoc');
 
-const protoPath = path.join(__dirname, '../protos/transactions_filter_stream.proto');
+const getTransactionFilterStreamDefinition = require(
+  '../../lib/getTransactionFilterStreamDefinition',
+);
 
-const {
-  TransactionsFilterStream: TransactionsFilterStreamNodeJSClient,
-} = loadPackageDefinition(protoPath, 'org.dash.platform.dapi.v0');
+const TransactionsFilterStreamNodeJSClient = getTransactionFilterStreamDefinition();
 
 const subscribeToTransactionsWithProofsOptions = {
   interceptors: [
