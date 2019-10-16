@@ -33,11 +33,11 @@ const {
   TransactionsWithProofsResponse: ProtocTransactionsWithProofsResponse,
 } = require('./transactions_filter_stream_protoc');
 
-const getTransactionFilterStreamDefinition = require(
-  '../../lib/getTransactionFilterStreamDefinition',
+const getTransactionsFilterStreamDefinition = require(
+  '../../lib/getTransactionsFilterStreamDefinition',
 );
 
-const TransactionsFilterStreamNodeJSClient = getTransactionFilterStreamDefinition();
+const TransactionsFilterStreamNodeJSClient = getTransactionsFilterStreamDefinition();
 
 const subscribeToTransactionsWithProofsOptions = {
   interceptors: [

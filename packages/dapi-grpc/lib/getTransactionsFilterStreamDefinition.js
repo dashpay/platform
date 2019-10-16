@@ -2,13 +2,13 @@ const path = require('path');
 
 const { loadPackageDefinition } = require('@dashevo/grpc-common');
 
-function getTransactionFilterStreamDefinition() {
+function getTransactionsFilterStreamDefinition() {
   const protoPath = path.join(
     __dirname,
     '../protos/transactions_filter_stream.proto',
   );
 
-  return loadPackageDefinition(protoPath, 'org.dash.platform.dapi.v0.TransactionFilterStream');
+  return loadPackageDefinition(protoPath, 'org.dash.platform.dapi.v0.TransactionsFilterStream');
 }
 
-module.exports = getTransactionFilterStreamDefinition;
+module.exports = getTransactionsFilterStreamDefinition;
