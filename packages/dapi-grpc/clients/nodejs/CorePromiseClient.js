@@ -28,6 +28,8 @@ const {
           LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
           BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
           BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
+          StateTransition: PBJSStateTransition,
+          UpdateStateTransitionResponse: PBJSUpdateStateTransitionResponse,
         },
       },
     },
@@ -37,6 +39,7 @@ const {
 const {
   LastUserStateTransitionHashResponse: ProtocLastUserStateTransitionHashResponse,
   BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
+  UpdateStateTransitionResponse: ProtocUpdateStateTransitionResponse,
 } = require('./core_protoc');
 
 const protoPath = path.join(__dirname, '../protos/core.proto');
@@ -73,6 +76,20 @@ const subscribeToBlockHeadersWithChainLocksOptions = {
   ],
 };
 
+const updateStateTransitionOptions = {
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocUpdateStateTransitionResponse,
+        PBJSUpdateStateTransitionResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSStateTransition,
+      ),
+    ),
+  ],
+};
+
 class CorePromiseClient {
   /**
    * @param {string} hostname
@@ -84,6 +101,10 @@ class CorePromiseClient {
 
     this.client.getLastUserStateTransitionHash = promisify(
       this.client.getLastUserStateTransitionHash.bind(this.client),
+    );
+
+    this.client.updateState = promisify(
+      this.client.updateState.bind(this.client),
     );
   }
 
@@ -119,6 +140,24 @@ class CorePromiseClient {
       blockHeadersWithChainLocksRequest,
       convertObjectToMetadata(metadata),
       subscribeToBlockHeadersWithChainLocksOptions,
+    );
+  }
+
+  /**
+   *
+   * @param {!StateTransition} stateTransition
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!UpdateStateTransitionResponse>}
+   */
+  updateState(stateTransition, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.updateState(
+      stateTransition,
+      convertObjectToMetadata(metadata),
+      updateStateTransitionOptions,
     );
   }
 }

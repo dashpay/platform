@@ -358,6 +358,90 @@ typedef struct ChainLockSignatureMessages__storage_ {
 
 @end
 
+#pragma mark - StateTransition
+
+@implementation StateTransition
+
+@dynamic header;
+@dynamic packet;
+
+typedef struct StateTransition__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *header;
+  NSData *packet;
+} StateTransition__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "header",
+        .dataTypeSpecific.className = NULL,
+        .number = StateTransition_FieldNumber_Header,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(StateTransition__storage_, header),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "packet",
+        .dataTypeSpecific.className = NULL,
+        .number = StateTransition_FieldNumber_Packet,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(StateTransition__storage_, packet),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[StateTransition class]
+                                     rootClass:[CoreRoot class]
+                                          file:CoreRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(StateTransition__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - UpdateStateTransitionResponse
+
+@implementation UpdateStateTransitionResponse
+
+
+typedef struct UpdateStateTransitionResponse__storage_ {
+  uint32_t _has_storage_[1];
+} UpdateStateTransitionResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[UpdateStateTransitionResponse class]
+                                     rootClass:[CoreRoot class]
+                                          file:CoreRoot_FileDescriptor()
+                                        fields:NULL
+                                    fieldCount:0
+                                   storageSize:sizeof(UpdateStateTransitionResponse__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 
 #pragma clang diagnostic pop
 

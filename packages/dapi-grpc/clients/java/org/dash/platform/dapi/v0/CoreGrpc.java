@@ -51,6 +51,18 @@ public final class CoreGrpc {
           .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
               org.dash.platform.dapi.v0.CoreOuterClass.BlockHeadersWithChainLocksResponse.getDefaultInstance()))
           .build();
+  @io.grpc.ExperimentalApi("https://github.com/grpc/grpc-java/issues/1901")
+  public static final io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.StateTransition,
+      org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse> METHOD_UPDATE_STATE =
+      io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.StateTransition, org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse>newBuilder()
+          .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+          .setFullMethodName(generateFullMethodName(
+              "org.dash.platform.dapi.v0.Core", "updateState"))
+          .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+              org.dash.platform.dapi.v0.CoreOuterClass.StateTransition.getDefaultInstance()))
+          .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+              org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse.getDefaultInstance()))
+          .build();
 
   /**
    * Creates a new async stub that supports all call types for the service
@@ -93,6 +105,13 @@ public final class CoreGrpc {
       asyncUnimplementedUnaryCall(METHOD_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS, responseObserver);
     }
 
+    /**
+     */
+    public void updateState(org.dash.platform.dapi.v0.CoreOuterClass.StateTransition request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse> responseObserver) {
+      asyncUnimplementedUnaryCall(METHOD_UPDATE_STATE, responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -109,6 +128,13 @@ public final class CoreGrpc {
                 org.dash.platform.dapi.v0.CoreOuterClass.BlockHeadersWithChainLocksRequest,
                 org.dash.platform.dapi.v0.CoreOuterClass.BlockHeadersWithChainLocksResponse>(
                   this, METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS)))
+          .addMethod(
+            METHOD_UPDATE_STATE,
+            asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.CoreOuterClass.StateTransition,
+                org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse>(
+                  this, METHODID_UPDATE_STATE)))
           .build();
     }
   }
@@ -146,6 +172,14 @@ public final class CoreGrpc {
       asyncServerStreamingCall(
           getChannel().newCall(METHOD_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS, getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void updateState(org.dash.platform.dapi.v0.CoreOuterClass.StateTransition request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse> responseObserver) {
+      asyncUnaryCall(
+          getChannel().newCall(METHOD_UPDATE_STATE, getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -180,6 +214,13 @@ public final class CoreGrpc {
       return blockingServerStreamingCall(
           getChannel(), METHOD_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS, getCallOptions(), request);
     }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse updateState(org.dash.platform.dapi.v0.CoreOuterClass.StateTransition request) {
+      return blockingUnaryCall(
+          getChannel(), METHOD_UPDATE_STATE, getCallOptions(), request);
+    }
   }
 
   /**
@@ -207,10 +248,19 @@ public final class CoreGrpc {
       return futureUnaryCall(
           getChannel().newCall(METHOD_GET_LAST_USER_STATE_TRANSITION_HASH, getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse> updateState(
+        org.dash.platform.dapi.v0.CoreOuterClass.StateTransition request) {
+      return futureUnaryCall(
+          getChannel().newCall(METHOD_UPDATE_STATE, getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_GET_LAST_USER_STATE_TRANSITION_HASH = 0;
   private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 1;
+  private static final int METHODID_UPDATE_STATE = 2;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -236,6 +286,10 @@ public final class CoreGrpc {
         case METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS:
           serviceImpl.subscribeToBlockHeadersWithChainLocks((org.dash.platform.dapi.v0.CoreOuterClass.BlockHeadersWithChainLocksRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.BlockHeadersWithChainLocksResponse>) responseObserver);
+          break;
+        case METHODID_UPDATE_STATE:
+          serviceImpl.updateState((org.dash.platform.dapi.v0.CoreOuterClass.StateTransition) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.UpdateStateTransitionResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -272,6 +326,7 @@ public final class CoreGrpc {
               .setSchemaDescriptor(new CoreDescriptorSupplier())
               .addMethod(METHOD_GET_LAST_USER_STATE_TRANSITION_HASH)
               .addMethod(METHOD_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS)
+              .addMethod(METHOD_UPDATE_STATE)
               .build();
         }
       }

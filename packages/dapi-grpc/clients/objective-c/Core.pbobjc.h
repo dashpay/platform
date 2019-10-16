@@ -158,6 +158,27 @@ typedef GPB_ENUM(ChainLockSignatureMessages_FieldNumber) {
 
 @end
 
+#pragma mark - StateTransition
+
+typedef GPB_ENUM(StateTransition_FieldNumber) {
+  StateTransition_FieldNumber_Header = 1,
+  StateTransition_FieldNumber_Packet = 2,
+};
+
+@interface StateTransition : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *header;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *packet;
+
+@end
+
+#pragma mark - UpdateStateTransitionResponse
+
+@interface UpdateStateTransitionResponse : GPBMessage
+
+@end
+
 NS_ASSUME_NONNULL_END
 
 CF_EXTERN_C_END
