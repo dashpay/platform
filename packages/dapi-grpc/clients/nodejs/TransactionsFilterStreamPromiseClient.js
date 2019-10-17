@@ -1,9 +1,9 @@
 const grpc = require('grpc');
 
 const {
+  convertObjectToMetadata,
   utils: {
     isObject,
-    convertObjectToMetadata,
   },
   client: {
     interceptors: {

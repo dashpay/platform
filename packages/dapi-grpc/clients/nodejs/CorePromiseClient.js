@@ -2,9 +2,9 @@ const grpc = require('grpc');
 const { promisify } = require('util');
 
 const {
+  convertObjectToMetadata,
   utils: {
     isObject,
-    convertObjectToMetadata,
   },
   client: {
     interceptors: {
