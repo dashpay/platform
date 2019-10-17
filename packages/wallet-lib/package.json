@@ -26,13 +26,11 @@
   },
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "https://github.com/dashevo/dapi-client.git#temp/exclusion",
+    "@dashevo/dapi-client": "^0.6.7",
     "@dashevo/dashcore-lib": "^0.17.9",
     "@dashevo/dpp": "^0.7.2",
-    "axios": "^0.19.0",
     "localforage": "^1.7.3",
-    "lodash": "^4.17.15",
-    "socket.io-client": "^2.2.0"
+    "lodash": "^4.17.15"
   },
   "devDependencies": {
     "chai": "^4.2.0",
