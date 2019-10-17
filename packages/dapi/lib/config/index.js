@@ -18,6 +18,8 @@ const OPTIONS = {
   DRIVE_RPC_PORT: 'DRIVE_RPC_PORT',
   NETWORK: 'NETWORK',
   BLOOM_FILTER_PERSISTENCE_TIMEOUT: 'BLOOM_FILTER_PERSISTENCE_TIMEOUT',
+  TENDERMINT_CORE_HOST: 'TENDERMINT_CORE_HOST',
+  TENDERMINT_CORE_PORT: 'TENDERMINT_CORE_PORT',
 };
 
 const DEFAULT_CONFIG = {};
@@ -92,5 +94,9 @@ module.exports = {
   drive: {
     host: config[OPTIONS.DRIVE_RPC_HOST],
     port: parseInt(config[OPTIONS.DRIVE_RPC_PORT], 10),
+  },
+  tendermintCore: {
+    host: config[OPTIONS.TENDERMINT_CORE_HOST],
+    port: parseInt(config[OPTIONS.TENDERMINT_CORE_PORT], 10),
   },
 };

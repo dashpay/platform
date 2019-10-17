@@ -4,13 +4,19 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
+const {
+  server: {
+    error: {
+      InvalidArgumentGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
 const getLastUserStateTransitionHashHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/core/getLastUserStateTransitionHashHandlerFactory',
 );
-
-const InvalidArgumentGrpcError = require('../../../../../lib/grpcServer/error/InvalidArgumentGrpcError');
 
 use(sinonChai);
 use(chaiAsPromised);

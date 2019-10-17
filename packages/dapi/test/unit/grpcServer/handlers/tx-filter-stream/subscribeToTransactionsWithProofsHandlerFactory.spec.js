@@ -5,6 +5,17 @@ const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
 const {
+  server: {
+    error: {
+      InvalidArgumentGrpcError,
+    },
+    stream: {
+      AcknowledgingWritable,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
+const {
   TransactionsWithProofsRequest,
   TransactionsWithProofsResponse,
   RawTransactions,
@@ -19,10 +30,6 @@ const subscribeToTransactionsWithProofsHandlerFactory = require(
 );
 
 const ProcessMediator = require('../../../../../lib/transactionsFilter/ProcessMediator');
-
-const InvalidArgumentGrpcError = require('../../../../../lib/grpcServer/error/InvalidArgumentGrpcError');
-
-const AcknowledgingWritable = require('../../../../../lib/utils/AcknowledgingWritable');
 
 use(sinonChai);
 use(chaiAsPromised);

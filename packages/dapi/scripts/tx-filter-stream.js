@@ -2,15 +2,28 @@ const dotenv = require('dotenv');
 const grpc = require('grpc');
 
 const {
-  TransactionsWithProofsRequest,
-  utils: {
-    jsonToProtobufFactory,
-    protobufToJsonFactory,
+  client: {
+    converters: {
+      jsonToProtobufFactory,
+      protobufToJsonFactory,
+    },
   },
+  server: {
+    createServer,
+    jsonToProtobufHandlerWrapper,
+    error: {
+      wrapInErrorHandlerFactory,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
+const {
+  TransactionsWithProofsRequest,
   pbjs: {
     TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
     TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
   },
+  getTransactionsFilterStreamDefinition,
 } = require('@dashevo/dapi-grpc');
 
 const config = require('../lib/config');
@@ -19,9 +32,6 @@ const log = require('../lib/log');
 
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
-
-const createServer = require('../lib/grpcServer/createServer');
-const wrapInErrorHandlerFactory = require('../lib/grpcServer/error/wrapInErrorHandlerFactory');
 
 const BloomFilterEmitterCollection = require('../lib/bloomFilter/emitter/BloomFilterEmitterCollection');
 
@@ -32,8 +42,6 @@ const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServ
 
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
-
-const jsonToProtobufHandlerWrapper = require('../lib/grpcServer/jsonToProtobufHandlerWrapper');
 
 async function main() {
   dotenv.config();
@@ -111,7 +119,7 @@ async function main() {
   );
 
   const grpcServer = createServer(
-    'TransactionsFilterStream',
+    getTransactionsFilterStreamDefinition(),
     {
       subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
     },

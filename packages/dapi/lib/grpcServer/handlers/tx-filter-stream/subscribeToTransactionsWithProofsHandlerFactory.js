@@ -1,11 +1,22 @@
 const { BloomFilter } = require('@dashevo/dashcore-lib');
-const { TransactionsWithProofsResponse, RawTransactions } = require('@dashevo/dapi-grpc');
 
-const AcknowledgingWritable = require('../../../utils/AcknowledgingWritable');
+const {
+  server: {
+    error: {
+      InvalidArgumentGrpcError,
+    },
+    stream: {
+      AcknowledgingWritable,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
+const {
+  TransactionsWithProofsResponse,
+  RawTransactions,
+} = require('@dashevo/dapi-grpc');
 
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
-
-const InvalidArgumentGrpcError = require('../../error/InvalidArgumentGrpcError');
 
 const wait = require('../../../utils/wait');
 

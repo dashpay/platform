@@ -3,16 +3,34 @@ const dotenv = require('dotenv');
 const grpc = require('grpc');
 
 const {
-  LastUserStateTransitionHashRequest,
-  utils: {
-    jsonToProtobufFactory,
-    protobufToJsonFactory,
+  client: {
+    converters: {
+      jsonToProtobufFactory,
+      protobufToJsonFactory,
+    },
   },
+  server: {
+    createServer,
+    jsonToProtobufHandlerWrapper,
+    error: {
+      wrapInErrorHandlerFactory,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
+const {
+  StateTransition,
+  LastUserStateTransitionHashRequest,
   pbjs: {
     LastUserStateTransitionHashRequest: PBJSLastUserStateTransitionHashRequest,
     LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
+    StateTransition: PBJSStateTransition,
+    StateTransitionResponse: PBJSStateTransitionResponse,
   },
+  getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
+
+const { client: RpcClient } = require('jayson/promise');
 
 // Load config from .env
 dotenv.config();
@@ -28,11 +46,12 @@ const insightAPI = require('../lib/externalApis/insight');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const userIndex = require('../lib/services/userIndex');
 
-const createServer = require('../lib/grpcServer/createServer');
-const wrapInErrorHandlerFactory = require('../lib/grpcServer/error/wrapInErrorHandlerFactory');
-const getLastUserStateTransitionHashHandlerFactory = require('../lib/grpcServer/handlers/core/getLastUserStateTransitionHashHandlerFactory');
-
-const jsonToProtobufHandlerWrapper = require('../lib/grpcServer/jsonToProtobufHandlerWrapper');
+const getLastUserStateTransitionHashHandlerFactory = require(
+  '../lib/grpcServer/handlers/core/getLastUserStateTransitionHashHandlerFactory',
+);
+const updateStateHandlerFactory = require(
+  '../lib/grpcServer/handlers/core/updateStateHandlerFactory',
+);
 
 async function main() {
   /* Application start */
@@ -110,8 +129,26 @@ async function main() {
     wrapInErrorHandler(getLastUserStateTransitionHashHandler),
   );
 
-  const grpcServer = createServer('Core', {
+  const rpcClient = RpcClient.http({
+    host: config.tendermintCore.host,
+    port: config.tendermintCore.port,
+  });
+
+  const updateStateHandler = updateStateHandlerFactory(rpcClient);
+  const wrappedUpdateState = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      StateTransition,
+      PBJSStateTransition,
+    ),
+    protobufToJsonFactory(
+      PBJSStateTransitionResponse,
+    ),
+    wrapInErrorHandler(updateStateHandler),
+  );
+
+  const grpcServer = createServer(getCoreDefinition(), {
     getLastUserStateTransitionHash: wrappedGetLastUserStateTransitionHash,
+    updateState: wrappedUpdateState,
   });
 
   grpcServer.bind(

@@ -1,8 +1,14 @@
 const {
+  server: {
+    error: {
+      InvalidArgumentGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
+const {
   LastUserStateTransitionHashResponse,
 } = require('@dashevo/dapi-grpc');
-
-const InvalidArgumentGrpcError = require('../../error/InvalidArgumentGrpcError');
 
 /**
  * @param {RpcClient} coreAPI
