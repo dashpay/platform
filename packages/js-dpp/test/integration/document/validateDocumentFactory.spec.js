@@ -15,6 +15,7 @@ const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTyp
 const InvalidDocumentEntropyError = require('../../../lib/errors/InvalidDocumentEntropyError');
 const ConsensusError = require('../../../lib/errors/ConsensusError');
 const JsonSchemaError = require('../../../lib/errors/JsonSchemaError');
+const MismatchDocumentContractIdAndDataContractError = require('../../../lib/errors/MismatchDocumentContractIdAndDataContractError');
 
 const originalDocumentBaseSchema = require('../../../schema/base/document');
 
@@ -406,7 +407,23 @@ describe('validateDocumentFactory', () => {
     expect(error.keyword).to.equal('additionalProperties');
   });
 
-  it('should return valid response is a document is valid', () => {
+  it('should return invalid result if a document contractId is not equal to Data Contract ID', () => {
+    rawDocument.$contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+
+    const result = validateDocument(
+      rawDocument,
+      dataContract,
+    );
+
+    expectValidationError(result, MismatchDocumentContractIdAndDataContractError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getDataContract()).to.equal(dataContract);
+    expect(error.getRawDocument()).to.equal(rawDocument);
+  });
+
+  it('should return valid result is a document is valid', () => {
     const result = validateDocument(rawDocument, dataContract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);

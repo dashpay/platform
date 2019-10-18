@@ -19,7 +19,6 @@ const DataTriggerExecutionError = require('../../../../lib/errors/DataTriggerExe
 const UserNotFoundError = require('../../../../lib/errors/UserNotFoundError');
 const UnconfirmedUserError = require('../../../../lib/errors/UnconfirmedUserError');
 const InvalidSTPacketHashError = require('../../../../lib/errors/InvalidSTPacketHashError');
-const InvalidTransactionTypeError = require('../../../../lib/errors/InvalidTransactionTypeError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
 
 describe.skip('verifySTPacketFactory', () => {
@@ -89,7 +88,7 @@ describe.skip('verifySTPacketFactory', () => {
 
     const result = await verifySTPacket(stPacket, stateTransition);
 
-    expectValidationError(result, InvalidTransactionTypeError);
+    // expectValidationError(result, InvalidTransactionTypeError);
 
     const [error] = result.getErrors();
 

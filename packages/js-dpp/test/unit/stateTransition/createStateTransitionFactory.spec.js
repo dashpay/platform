@@ -1,10 +1,10 @@
 const createStateTransitionFactory = require('../../../lib/stateTransition/createStateTransitionFactory');
 
 const DataContractStateTransition = require('../../../lib/dataContract/stateTransition/DataContractStateTransition');
-
-const stateTransitionTypes = require('../../../lib/stateTransition/stateTransitionTypes');
+const DocumentsStateTransition = require('../../../lib/document/stateTransition/DocumentsStateTransition');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 
 const InvalidStateTransitionTypeError = require('../../../lib/errors/InvalidStateTransitionTypeError');
 
@@ -22,21 +22,27 @@ describe('createStateTransitionFactory', () => {
 
   it('should return DataContractStateTransition if type is DATA_CONTRACT', () => {
     const dataContract = getDataContractFixture();
-    const rawDataContract = dataContract.toJSON();
 
-    const rawStateTransition = {
-      type: stateTransitionTypes.DATA_CONTRACT,
-      dataContract: rawDataContract,
-    };
+    const stateTransition = new DataContractStateTransition(dataContract);
 
     createDataContractMock.returns(dataContract);
 
-    const result = createStateTransition(rawStateTransition);
+    const result = createStateTransition(stateTransition.toJSON());
 
     expect(result).to.be.instanceOf(DataContractStateTransition);
     expect(result.getDataContract()).to.equal(dataContract);
 
-    expect(createDataContractMock).to.be.calledOnceWith(rawDataContract);
+    expect(createDataContractMock).to.be.calledOnceWith(dataContract.toJSON());
+  });
+
+  it('should return DocumentsStateTransition if type is DOCUMENTS', () => {
+    const documents = getDocumentsFixture();
+    const stateTransition = new DocumentsStateTransition(documents);
+
+    const result = createStateTransition(stateTransition.toJSON());
+
+    expect(result).to.be.instanceOf(DocumentsStateTransition);
+    expect(result.getDocuments()).to.deep.equal(documents);
   });
 
   it('should throw InvalidStateTransitionTypeError if type is invalid', () => {

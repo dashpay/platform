@@ -178,6 +178,18 @@ describe('Document', () => {
     });
   });
 
+  describe('#getUserId', () => {
+    it('should return $userId', () => {
+      expect(document.getUserId()).to.equal(rawDocument.$userId);
+    });
+  });
+
+  describe('#getContractId', () => {
+    it('should return $contractId', () => {
+      expect(document.getUserId()).to.equal(rawDocument.$userId);
+    });
+  });
+
   describe('#setAction', () => {
     it('should set $action', () => {
       const result = document.setAction(Document.ACTIONS.DELETE);

@@ -1,0 +1,25 @@
+{
+  "properties": {
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "enum": [1, 2, 4]
+      },
+      "minItems": 1,
+      "maxItems": 1000
+    },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "minItems": 1,
+      "maxItems": 1000
+    }
+  },
+  "required": [
+    "actions",
+    "documents"
+  ]
+}

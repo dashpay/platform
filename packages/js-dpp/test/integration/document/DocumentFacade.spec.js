@@ -1,6 +1,7 @@
 const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const Document = require('../../../lib/document/Document');
+const DocumentsStateTransition = require('../../../lib/document/stateTransition/DocumentsStateTransition');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
@@ -12,6 +13,7 @@ const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 describe('DocumentFacade', () => {
   let dpp;
   let document;
+  let documents;
   let dataContract;
 
   beforeEach(() => {
@@ -22,7 +24,8 @@ describe('DocumentFacade', () => {
       dataContract,
     });
 
-    ([document] = getDocumentsFixture());
+    documents = getDocumentsFixture();
+    ([document] = documents);
   });
 
   describe('create', () => {
@@ -158,6 +161,15 @@ describe('DocumentFacade', () => {
 
       expect(error).to.be.an.instanceOf(MissingOptionError);
       expect(error.getOptionName()).to.equal('contract');
+    });
+  });
+
+  describe('createStatTransition', () => {
+    it('should create DocumentsStateTransition with passed documents', () => {
+      const result = dpp.document.createStateTransition(documents);
+
+      expect(result).to.be.instanceOf(DocumentsStateTransition);
+      expect(result.getDocuments()).to.equal(documents);
     });
   });
 

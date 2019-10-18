@@ -24,6 +24,5 @@ describe('DataTriggerExecutionContext', () => {
     expect(context.getDataContract()).to.be.deep.equal(dataContractMock);
     expect(context.getDataProvider()).to.be.deep.equal(dataProviderMock);
     expect(context.getUserId()).to.be.deep.equal(userId);
-    expect(context.getStateTransitionHeader()).to.be.deep.equal(stateTransitionHeaderMock);
   });
 });

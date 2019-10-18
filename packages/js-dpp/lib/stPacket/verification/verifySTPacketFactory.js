@@ -1,11 +1,11 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+// const { Transaction } = require('@dashevo/dashcore-lib');
 
 const ValidationResult = require('../../validation/ValidationResult');
 const DataTriggerExecutionContext = require('../../dataTrigger/DataTriggerExecutionContext');
 
 const UnconfirmedUserError = require('../../errors/UnconfirmedUserError');
 const UserNotFoundError = require('../../errors/UserNotFoundError');
-const InvalidTransactionTypeError = require('../../errors/InvalidTransactionTypeError');
+// const InvalidTransactionTypeError = require('../../errors/InvalidTransactionTypeError');
 const InvalidSTPacketHashError = require('../../errors/InvalidSTPacketHashError');
 
 const MIN_CONFIRMATIONS = 6;
@@ -26,15 +26,15 @@ function verifySTPacketFactory(verifyContract, verifyDocuments, dataProvider, ex
    */
   async function verifySTPacket(stPacket, stateTransition) {
     const result = new ValidationResult();
-
-    if (!stateTransition.isSpecialTransaction()
-      || stateTransition.type !== Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION) {
-      result.addError(
-        new InvalidTransactionTypeError(stateTransition),
-      );
-
-      return result;
-    }
+    //
+    // if (!stateTransition.isSpecialTransaction()
+    //   || stateTransition.type !== Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION) {
+    //   result.addError(
+    //     new InvalidTransactionTypeError(stateTransition),
+    //   );
+    //
+    //   return result;
+    // }
 
     if (stPacket.hash() !== stateTransition.extraPayload.hashSTPacket) {
       result.addError(

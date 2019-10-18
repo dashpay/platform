@@ -5,7 +5,7 @@ const DataTriggerInvalidResultError = require('../errors/DataTriggerInvalidResul
 class DataTrigger {
   /**
    * @param {string} dataContractId
-   * @param {number} documentType
+   * @param {string} documentType
    * @param {number} documentAction
    * @param {function(Document, DataTriggerExecutionContext):DataTriggerExecutionResult} trigger
    */
@@ -20,7 +20,7 @@ class DataTrigger {
    * Check this trigger is matching for specified data
    *
    * @param {string} dataContractId
-   * @param {number} documentType
+   * @param {string} documentType
    * @param {number} documentAction
    *
    * @return {boolean}

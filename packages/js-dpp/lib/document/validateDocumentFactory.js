@@ -7,6 +7,7 @@ const ValidationResult = require('../validation/ValidationResult');
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const MissingDocumentTypeError = require('../errors/MissingDocumentTypeError');
 const InvalidDocumentEntropyError = require('../errors/InvalidDocumentEntropyError');
+const MismatchDocumentContractIdAndDataContractError = require('../errors/MismatchDocumentContractIdAndDataContractError');
 
 const entropy = require('../util/entropy');
 
@@ -24,7 +25,6 @@ module.exports = function validateDocumentFactory(
    * @param {Document|RawDocument} document
    * @param {DataContract} dataContract
    * @param {Object} [options]
-   * @param {boolean} [options.allowMeta=true]
    * @param {boolean} [options.action]
    * @return {ValidationResult}
    */
@@ -93,6 +93,16 @@ module.exports = function validateDocumentFactory(
     if (!entropy.validate(rawDocument.$entropy)) {
       result.addError(
         new InvalidDocumentEntropyError(rawDocument),
+      );
+    }
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (rawDocument.$contractId !== dataContract.getId()) {
+      result.addError(
+        new MismatchDocumentContractIdAndDataContractError(rawDocument, dataContract),
       );
     }
 

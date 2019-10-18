@@ -34,7 +34,9 @@ class DataContract {
   getJsonSchemaId() {
     return DataContract.SCHEMA_ID;
   }
+
   /**
+   * Set version
    *
    * @param {number} version
    * @return {DataContract}
@@ -46,6 +48,7 @@ class DataContract {
   }
 
   /**
+   * Get version
    *
    * @return {number}
    */

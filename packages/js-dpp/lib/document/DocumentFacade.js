@@ -43,7 +43,6 @@ class DocumentFacade {
    * @param {RawDocument} rawDocument
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @param {boolean} [options.allowMeta=true]
    * @param {boolean} [options.action]
    * @return {Document}
    */
@@ -57,12 +56,21 @@ class DocumentFacade {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @param {boolean} [options.allowMeta=true]
    * @param {boolean} [options.action]
    * @return {Document}
    */
   createFromSerialized(payload, options = { }) {
     return this.getFactory().createFromSerialized(payload, options);
+  }
+
+  /**
+   * Create Documents State Transition
+   *
+   * @param {Document[]} documents
+   * @return {DocumentsStateTransition}
+   */
+  createStateTransition(documents) {
+    return this.getFactory().createStateTransition(documents);
   }
 
   /**

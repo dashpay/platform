@@ -1,6 +1,7 @@
 const rewiremock = require('rewiremock/node');
 
 const Document = require('../../../lib/document/Document');
+const DocumentsStateTransition = require('../../../lib/document/stateTransition/DocumentsStateTransition');
 
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
@@ -19,6 +20,7 @@ describe('DocumentFactory', () => {
   let userId;
   let dataContract;
   let document;
+  let documents;
   let rawDocument;
   let factory;
 
@@ -31,12 +33,14 @@ describe('DocumentFactory', () => {
       '../../../lib/util/serializer': { decode: decodeMock },
       '../../../lib/util/entropy': { generate: generateMock },
       '../../../lib/document/Document': Document,
+      '../../../lib/document/stateTransition/DocumentsStateTransition': DocumentsStateTransition,
     });
 
     ({ userId } = getDocumentsFixture);
     dataContract = getDataContractFixture();
 
-    [document] = getDocumentsFixture();
+    documents = getDocumentsFixture();
+    ([document] = documents);
     rawDocument = document.toJSON();
 
     factory = new DocumentFactory(
@@ -156,6 +160,15 @@ describe('DocumentFactory', () => {
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawDocument);
 
       expect(decodeMock).to.have.been.calledOnceWith(serializedDocument);
+    });
+  });
+
+  describe('createStateTransition', () => {
+    it('should create DocumentsStateTransition with passed documents', () => {
+      const result = factory.createStateTransition(documents);
+
+      expect(result).to.be.instanceOf(DocumentsStateTransition);
+      expect(result.getDocuments()).to.equal(documents);
     });
   });
 

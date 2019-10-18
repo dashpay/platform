@@ -5,8 +5,6 @@ const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 const DataContractFacade = require('./dataContract/DataContractFacade');
 const DocumentFacade = require('./document/DocumentFacade');
 const StateTransitionFacade = require('./stateTransition/StateTransitionFacade');
-const STPacketFacade = require('./stPacket/STPacketFacade');
-const STPacketHeaderFacade = require('./stPacketHeader/STPacketHeaderFacade');
 
 const userIdPropertyName = Symbol('userId');
 const dataContractPropertyName = Symbol('dataContract');
@@ -41,10 +39,6 @@ class DashPlatformProtocol {
     this.document = new DocumentFacade(this, validator);
 
     this.stateTransition = new StateTransitionFacade(this, validator);
-
-    this.packet = new STPacketFacade(this, validator);
-
-    this.packetHeader = new STPacketHeaderFacade(validator);
   }
 
   /**

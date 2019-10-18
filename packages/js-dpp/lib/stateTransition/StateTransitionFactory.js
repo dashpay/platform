@@ -15,16 +15,16 @@ class StateTransitionFactory {
   /**
    * Create State Transition from plain object
    *
-   * @param {RawDataContractStateTransition} rawStateTransition
+   * @param {RawDataContractStateTransition|RawDocumentsStateTransition} rawStateTransition
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContractStateTransition}
+   * @return {DataContractStateTransition|DocumentsStateTransition}
    */
-  createFromObject(rawStateTransition, options = {}) {
+  async createFromObject(rawStateTransition, options = {}) {
     const opts = Object.assign({ skipValidation: false }, options);
 
     if (!opts.skipValidation) {
-      const result = this.validateStateTransitionStructure(rawStateTransition);
+      const result = await this.validateStateTransitionStructure(rawStateTransition);
 
       if (!result.isValid()) {
         throw new InvalidStateTransitionError(result.getErrors(), rawStateTransition);
@@ -40,9 +40,9 @@ class StateTransitionFactory {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContractStateTransition}
+   * @return {DataContractStateTransition|DocumentsStateTransition}
    */
-  createFromSerialized(payload, options = { }) {
+  async createFromSerialized(payload, options = { }) {
     const rawStateTransition = decode(payload);
 
     return this.createFromObject(rawStateTransition, options);

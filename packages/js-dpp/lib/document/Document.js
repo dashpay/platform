@@ -70,6 +70,24 @@ class Document {
   }
 
   /**
+   * Get Data Contract ID
+   *
+   * @return {string}
+   */
+  getDataContractId() {
+    return this.contractId;
+  }
+
+  /**
+   * Get User ID
+   *
+   * @return {string}
+   */
+  getUserId() {
+    return this.userId;
+  }
+
+  /**
    * Set action
    *
    * @param {number} action
@@ -174,8 +192,8 @@ class Document {
   toJSON() {
     return {
       $type: this.getType(),
-      $contractId: this.contractId,
-      $userId: this.userId,
+      $contractId: this.getDataContractId(),
+      $userId: this.getUserId(),
       $entropy: this.entropy,
       $rev: this.getRevision(),
       ...this.getData(),

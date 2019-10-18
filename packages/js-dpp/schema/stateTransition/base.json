@@ -8,7 +8,7 @@
     },
     "type": {
       "type": "number",
-      "enum": [1]
+      "enum": [1, 2]
     }
   },
   "required": [

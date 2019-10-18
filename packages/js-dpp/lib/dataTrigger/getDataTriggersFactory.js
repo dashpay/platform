@@ -39,7 +39,7 @@ function getDataTriggersFactory() {
    * @typedef getDataTriggers
    *
    * @param {string} dataContractId
-   * @param {number} documentType
+   * @param {string} documentType
    * @param {number} documentAction
    *
    * @returns {DataTrigger[]}

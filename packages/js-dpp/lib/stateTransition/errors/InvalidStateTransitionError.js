@@ -1,7 +1,7 @@
 class InvalidStateTransitionError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {RawDataContractStateTransition} rawStateTransition
+   * @param {RawDataContractStateTransition|RawDocumentsStateTransition} rawStateTransition
    */
   constructor(errors, rawStateTransition) {
     super();
@@ -29,7 +29,7 @@ class InvalidStateTransitionError extends Error {
   /**
    * Get raw State Transition
    *
-   * @return {RawDataContractStateTransition}
+   * @return {RawDataContractStateTransition|RawDocumentsStateTransition}
    */
   getRawStateTransition() {
     return this.rawStateTransition;

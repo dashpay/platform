@@ -3,6 +3,8 @@ const Document = require('./Document');
 const { decode } = require('../util/serializer');
 const entropy = require('../util/entropy');
 
+const DocumentsStateTransition = require('./stateTransition/DocumentsStateTransition');
+
 const InvalidDocumentError = require('./errors/InvalidDocumentError');
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
@@ -80,7 +82,6 @@ class DocumentFactory {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @param {boolean} [options.allowMeta=true]
    * @param {boolean} [options.action]
    * @return {Document}
    */
@@ -88,6 +89,16 @@ class DocumentFactory {
     const rawDocument = decode(payload);
 
     return this.createFromObject(rawDocument, options);
+  }
+
+  /**
+   * Create Documents State Transition
+   *
+   * @param {Document[]} documents
+   * @return {DocumentsStateTransition}
+   */
+  createStateTransition(documents) {
+    return new DocumentsStateTransition(documents);
   }
 
   /**

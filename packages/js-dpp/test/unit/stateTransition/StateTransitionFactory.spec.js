@@ -45,10 +45,10 @@ describe('StateTransitionFactory', () => {
   });
 
   describe('createFromObject', () => {
-    it('should return new State Transition with data from passed object', () => {
+    it('should return new State Transition with data from passed object', async () => {
       validateStateTransitionStructureMock.returns(new ValidationResult());
 
-      const result = factory.createFromObject(rawStateTransition);
+      const result = await factory.createFromObject(rawStateTransition);
 
       expect(result).to.equal(stateTransition);
 
@@ -57,8 +57,8 @@ describe('StateTransitionFactory', () => {
       expect(createStateTransitionMock).to.have.been.calledOnceWith(rawStateTransition);
     });
 
-    it('should return new State Transition without validation if "skipValidation" option is passed', () => {
-      const result = factory.createFromObject(rawStateTransition, { skipValidation: true });
+    it('should return new State Transition without validation if "skipValidation" option is passed', async () => {
+      const result = await factory.createFromObject(rawStateTransition, { skipValidation: true });
 
       expect(result).to.equal(stateTransition);
 
@@ -67,13 +67,13 @@ describe('StateTransitionFactory', () => {
       expect(createStateTransitionMock).to.have.been.calledOnceWith(rawStateTransition);
     });
 
-    it('should throw InvalidStateTransitionError if passed object is not valid', () => {
+    it('should throw InvalidStateTransitionError if passed object is not valid', async () => {
       const validationError = new ConsensusError('test');
 
       validateStateTransitionStructureMock.returns(new ValidationResult([validationError]));
 
       try {
-        factory.createFromObject(rawStateTransition);
+        await factory.createFromObject(rawStateTransition);
 
         expect.fail('InvalidStateTransitionError is not thrown');
       } catch (e) {
@@ -100,14 +100,14 @@ describe('StateTransitionFactory', () => {
       this.sinonSandbox.stub(factory, 'createFromObject');
     });
 
-    it('should return new State Transition from serialized contract', () => {
+    it('should return new State Transition from serialized contract', async () => {
       const serializedStateTransition = stateTransition.serialize();
 
       decodeMock.returns(rawStateTransition);
 
       factory.createFromObject.returns(stateTransition);
 
-      const result = factory.createFromSerialized(serializedStateTransition);
+      const result = await factory.createFromSerialized(serializedStateTransition);
 
       expect(result).to.equal(stateTransition);
 
