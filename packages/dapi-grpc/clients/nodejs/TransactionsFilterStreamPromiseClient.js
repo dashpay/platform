@@ -21,8 +21,10 @@ const {
     dash: {
       platform: {
         dapi: {
-          TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
-          TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+          v0: {
+            TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
+            TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+          },
         },
       },
     },

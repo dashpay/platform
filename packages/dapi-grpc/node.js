@@ -13,7 +13,9 @@ const {
   org: {
     dash: {
       platform: {
-        dapi: pbjsCoreMessages,
+        dapi: {
+          v0: pbjsCoreMessages,
+        },
       },
     },
   },
@@ -23,7 +25,9 @@ const {
   org: {
     dash: {
       platform: {
-        dapi: pbjsTransactionsFilterStreamMessages,
+        dapi: {
+          v0: pbjsTransactionsFilterStreamMessages,
+        },
       },
     },
   },

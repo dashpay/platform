@@ -22,12 +22,14 @@ const {
     dash: {
       platform: {
         dapi: {
-          LastUserStateTransitionHashRequest: PBJSLastUserStateTransitionHashRequest,
-          LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
-          BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
-          BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
-          StateTransition: PBJSStateTransition,
-          UpdateStateTransitionResponse: PBJSUpdateStateTransitionResponse,
+          v0: {
+            LastUserStateTransitionHashRequest: PBJSLastUserStateTransitionHashRequest,
+            LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
+            BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
+            BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
+            StateTransition: PBJSStateTransition,
+            UpdateStateTransitionResponse: PBJSUpdateStateTransitionResponse,
+          },
         },
       },
     },
