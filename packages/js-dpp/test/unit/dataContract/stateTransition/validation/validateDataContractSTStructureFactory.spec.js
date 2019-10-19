@@ -30,7 +30,7 @@ describe('validateDataContractSTStructureFactory', () => {
     );
   });
 
-  it('should return invalid result if data contract is not invalid', () => {
+  it('should return invalid result if data contract is invalid', () => {
     const dataContractError = new ConsensusError('test');
     const dataContractResult = new ValidationResult([
       dataContractError,

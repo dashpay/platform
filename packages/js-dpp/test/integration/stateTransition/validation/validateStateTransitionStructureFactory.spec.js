@@ -74,7 +74,7 @@ describe('validateStateTransitionStructureFactory', () => {
       it('should be present', async () => {
         delete rawStateTransition.protocolVersion;
 
-        const result = await await validateStateTransitionStructure(rawStateTransition);
+        const result = await validateStateTransitionStructure(rawStateTransition);
 
         expectJsonSchemaError(result);
 
@@ -90,7 +90,7 @@ describe('validateStateTransitionStructureFactory', () => {
       it('should equal to 0', async () => {
         rawStateTransition.protocolVersion = 666;
 
-        const result = await await validateStateTransitionStructure(rawStateTransition);
+        const result = await validateStateTransitionStructure(rawStateTransition);
 
         expectJsonSchemaError(result);
 

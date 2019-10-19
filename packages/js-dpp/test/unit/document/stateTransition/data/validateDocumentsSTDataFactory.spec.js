@@ -20,7 +20,7 @@ const DocumentNotFoundError = require('../../../../../lib/errors/DocumentNotFoun
 const InvalidDocumentRevisionError = require('../../../../../lib/errors/InvalidDocumentRevisionError');
 const DataContractNotPresentError = require('../../../../../lib/errors/DataContractNotPresentError');
 const ConsensusError = require('../../../../../lib/errors/ConsensusError');
-const InvalidDocumentActionError = require('../../../../../lib/stPacket/errors/InvalidDocumentActionError');
+const InvalidDocumentActionError = require('../../../../../lib/document/errors/InvalidDocumentActionError');
 
 describe('validateDocumentsSTDataFactory', () => {
   let validateDocumentsSTData;

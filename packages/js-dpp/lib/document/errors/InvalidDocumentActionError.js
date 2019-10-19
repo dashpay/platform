@@ -6,7 +6,7 @@ class InvalidDocumentActionError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid Document action';
+    this.message = `Invalid Document action ${document.getAction()}`;
     this.document = document;
 
     if (Error.captureStackTrace) {

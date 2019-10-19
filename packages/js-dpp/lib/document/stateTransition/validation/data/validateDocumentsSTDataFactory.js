@@ -8,7 +8,8 @@ const DataContractNotPresentError = require('../../../../errors/DataContractNotP
 const DocumentAlreadyPresentError = require('../../../../errors/DocumentAlreadyPresentError');
 const DocumentNotFoundError = require('../../../../errors/DocumentNotFoundError');
 const InvalidDocumentRevisionError = require('../../../../errors/InvalidDocumentRevisionError');
-const InvalidDocumentActionError = require('../../../../stPacket/errors/InvalidDocumentActionError');
+const InvalidDocumentActionError = require('../../../errors/InvalidDocumentActionError');
+
 
 /**
  *

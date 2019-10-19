@@ -1,10 +1,1 @@
 dist
-
-# They are temporary here
-test/unit/stPacket
-test/unit/stPacketHeader
-test/integration/stPacket
-test/integration/stPacketHeader
-lib/test/e2e
-lib/stPacket
-lib/stPacketHeader

@@ -18,26 +18,18 @@ module.exports = function createDPPMock(sinonSandbox) {
     validate: sinonSandbox.stub(),
   };
 
-  const packet = {
-    create: sinonSandbox.stub(),
+  const stateTransition = {
     createFromObject: sinonSandbox.stub(),
     createFromSerialized: sinonSandbox.stub(),
     validate: sinonSandbox.stub(),
-    verify: sinonSandbox.stub(),
-  };
-
-  const packetHeader = {
-    create: sinonSandbox.stub(),
-    createFromObject: sinonSandbox.stub(),
-    createFromSerialized: sinonSandbox.stub(),
-    validate: sinonSandbox.stub(),
+    validateStructure: sinonSandbox.stub(),
+    validateData: sinonSandbox.stub(),
   };
 
   return {
     dataContract,
     document,
-    packet,
-    packetHeader,
+    stateTransition,
     getUserId: sinonSandbox.stub(),
     setUserId: sinonSandbox.stub(),
     getDataContract: sinonSandbox.stub(),

@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class DataTriggerInvalidResultError extends ConsensusError {
   /**
-   * @param {Dot} document
+   * @param {DataTrigger} dataTrigger
    * @param {DataTriggerExecutionContext} context
    */
   constructor(dataTrigger, context) {
