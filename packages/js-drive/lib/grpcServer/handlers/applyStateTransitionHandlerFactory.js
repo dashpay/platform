@@ -43,19 +43,19 @@ module.exports = function applyStateTransitionHandlerFactory(
     const stPacketBinaryArray = request.getStateTransitionPacket();
     const stHeaderBinaryArray = request.getStateTransitionHeader();
 
-    if (!stPacketBinaryArray) {
+    if (stPacketBinaryArray === undefined) {
       throw new InvalidArgumentGrpcError('stateTransitionPacket is not specified');
     }
 
-    if (!stHeaderBinaryArray) {
+    if (stHeaderBinaryArray === undefined) {
       throw new InvalidArgumentGrpcError('stateTransitionHeader is not specified');
     }
 
-    if (!blockHeight) {
+    if (blockHeight === undefined) {
       throw new InvalidArgumentGrpcError('blockHeight is not specified');
     }
 
-    if (!blockHashBinaryArray) {
+    if (blockHashBinaryArray === undefined) {
       throw new InvalidArgumentGrpcError('blockHash is not specified');
     }
 

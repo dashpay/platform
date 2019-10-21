@@ -82,7 +82,7 @@ describe('applyStateTransitionHandlerFactory', () => {
   });
 
   it('should throw InvalidArgumentGrpcError if stHeaderPacket param is missed', async () => {
-    request.getStateTransitionPacket.returns(null);
+    request.getStateTransitionPacket.returns(undefined);
 
     try {
       await applyStateTransitionHandler(call);
@@ -95,7 +95,7 @@ describe('applyStateTransitionHandlerFactory', () => {
   });
 
   it('should thrown InvalidArgumentGrpcError if stHeaderHeader param is missed', async () => {
-    request.getStateTransitionHeader.returns(null);
+    request.getStateTransitionHeader.returns(undefined);
 
     try {
       await applyStateTransitionHandler(call);
@@ -108,7 +108,7 @@ describe('applyStateTransitionHandlerFactory', () => {
   });
 
   it('should throw InvalidArgumentGrpcError if blockHeight param is missed', async () => {
-    request.getBlockHeight.returns(null);
+    request.getBlockHeight.returns(undefined);
 
     try {
       await applyStateTransitionHandler(call);
@@ -121,7 +121,7 @@ describe('applyStateTransitionHandlerFactory', () => {
   });
 
   it('should throw InvalidArgumentGrpcError if blockHash param is missed', async () => {
-    request.getBlockHash.returns(null);
+    request.getBlockHash.returns(undefined);
 
     try {
       await applyStateTransitionHandler(call);
