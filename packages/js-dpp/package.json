@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.8.0-dev.3",
+  "version": "0.8.0",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -16,11 +16,14 @@
     "prepublishOnly": "npm run build"
   },
   "main": "lib/DashPlatformProtocol.js",
-  "author": "",
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "ivan@shumkov.ru",
+      "url": "https://github.com/shumkov"
+    }
+  ],
   "license": "MIT",
-  "publishConfig": {
-    "tag": "dev"
-  },
   "devDependencies": {
     "@babel/core": "^7.2.0",
     "@babel/polyfill": "^7.0.0",
