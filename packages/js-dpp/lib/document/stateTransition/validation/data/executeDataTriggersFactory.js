@@ -50,6 +50,10 @@ function executeDataTriggersFactory(getDataTriggers) {
         document.getAction(),
       );
 
+      if (dataTriggers.length === 0) {
+        return Promise.resolve();
+      }
+
       return executeTriggersSequentially(document, dataTriggers, context, results);
     }, Promise.resolve());
 

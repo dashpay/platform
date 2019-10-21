@@ -1,5 +1,6 @@
 const enrichDataContractWithBaseDocument = require('./enrichDataContractWithBaseDocument');
 const validateDocumentFactory = require('./validateDocumentFactory');
+const fetchAndValidateDataContractFactory = require('./fetchAndValidateDataContractFactory');
 
 const DocumentFactory = require('./DocumentFactory');
 
@@ -7,34 +8,38 @@ const MissingOptionError = require('../errors/MissingOptionError');
 
 class DocumentFacade {
   /**
-   *
-   * @param {DashPlatformProtocol} dpp
+   * @param {DataProvider} dataProvider
    * @param {JsonSchemaValidator} validator
    */
-  constructor(dpp, validator) {
-    this.dpp = dpp;
+  constructor(dataProvider, validator) {
+    this.dataProvider = dataProvider;
 
     this.validateDocument = validateDocumentFactory(
       validator,
       enrichDataContractWithBaseDocument,
     );
 
+    this.fetchAndValidateDataContract = fetchAndValidateDataContractFactory(
+      dataProvider,
+    );
+
     this.factory = new DocumentFactory(
-      dpp.getUserId(),
-      dpp.getDataContract(),
       this.validateDocument,
+      this.fetchAndValidateDataContract,
     );
   }
 
   /**
    * Create Document
    *
+   * @param {DataContract} dataContract
+   * @param {string} userId
    * @param {string} type
    * @param {Object} [data]
    * @return {Document}
    */
-  create(type, data = {}) {
-    return this.getFactory().create(type, data);
+  create(dataContract, userId, type, data = {}) {
+    return this.factory.create(dataContract, userId, type, data);
   }
 
   /**
@@ -46,8 +51,16 @@ class DocumentFacade {
    * @param {boolean} [options.action]
    * @return {Document}
    */
-  createFromObject(rawDocument, options = { }) {
-    return this.getFactory().createFromObject(rawDocument, options);
+  async createFromObject(rawDocument, options = {}) {
+    if (!this.dataProvider) {
+      throw new MissingOptionError(
+        'dataProvider',
+        'Can\'t create Document because Data Provider is not set in'
+        + ' DashPlatformProtocol options',
+      );
+    }
+
+    return this.factory.createFromObject(rawDocument, options);
   }
 
   /**
@@ -59,8 +72,16 @@ class DocumentFacade {
    * @param {boolean} [options.action]
    * @return {Document}
    */
-  createFromSerialized(payload, options = { }) {
-    return this.getFactory().createFromSerialized(payload, options);
+  async createFromSerialized(payload, options = { }) {
+    if (!this.dataProvider) {
+      throw new MissingOptionError(
+        'dataProvider',
+        'Can\'t create Document because Data Provider is not set in'
+        + ' DashPlatformProtocol options',
+      );
+    }
+
+    return this.factory.createFromSerialized(payload, options);
   }
 
   /**
@@ -70,42 +91,35 @@ class DocumentFacade {
    * @return {DocumentsStateTransition}
    */
   createStateTransition(documents) {
-    return this.getFactory().createStateTransition(documents);
+    return this.factory.createStateTransition(documents);
   }
 
   /**
    * Validate document
    *
    * @param {Document|RawDocument} document
+   * @param {Object} options
+   * @param {number} [options.action=1]
    * @return {ValidationResult}
    */
-  validate(document) {
-    return this.validateDocument(document, this.dpp.getDataContract());
-  }
-
-  /**
-   * @private
-   * @return {DocumentFactory}
-   */
-  getFactory() {
-    if (!this.dpp.getUserId()) {
+  async validate(document, options = {}) {
+    if (!this.dataProvider) {
       throw new MissingOptionError(
-        'userId',
-        'Can\'t create Document because User ID is not set, use setUserId method',
+        'dataProvider',
+        'Can\'t validate Document because Data Provider is not set in'
+        + ' DashPlatformProtocol options',
       );
     }
 
-    if (!this.dpp.getDataContract()) {
-      throw new MissingOptionError(
-        'contract',
-        'Can\'t create Document because Data Contract is not set, use setDataContract method',
-      );
+    const result = await this.fetchAndValidateDataContract(document);
+
+    if (!result.isValid()) {
+      return result;
     }
 
-    this.factory.setUserId(this.dpp.getUserId());
-    this.factory.setDataContract(this.dpp.getDataContract());
+    const dataContract = result.getData();
 
-    return this.factory;
+    return this.validateDocument(document, dataContract, options);
   }
 }
 

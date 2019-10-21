@@ -4,6 +4,7 @@ class ValidationResult {
    */
   constructor(errors = []) {
     this.errors = errors;
+    this.data = undefined;
   }
 
   /**
@@ -42,6 +43,25 @@ class ValidationResult {
     if (!result.isValid()) {
       this.addError(...result.getErrors());
     }
+  }
+
+  /**
+   *
+   * @param {*} data
+   * @return {ValidationResult}
+   */
+  setData(data) {
+    this.data = data;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {*}
+   */
+  getData() {
+    return this.data;
   }
 }
 

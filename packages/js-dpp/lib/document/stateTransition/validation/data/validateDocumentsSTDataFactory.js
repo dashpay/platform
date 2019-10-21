@@ -4,12 +4,10 @@ const DataTriggerExecutionContext = require('../../../../dataTrigger/DataTrigger
 
 const ValidationResult = require('../../../../validation/ValidationResult');
 
-const DataContractNotPresentError = require('../../../../errors/DataContractNotPresentError');
 const DocumentAlreadyPresentError = require('../../../../errors/DocumentAlreadyPresentError');
 const DocumentNotFoundError = require('../../../../errors/DocumentNotFoundError');
 const InvalidDocumentRevisionError = require('../../../../errors/InvalidDocumentRevisionError');
 const InvalidDocumentActionError = require('../../../errors/InvalidDocumentActionError');
-
 
 /**
  *
@@ -18,6 +16,7 @@ const InvalidDocumentActionError = require('../../../errors/InvalidDocumentActio
  * @param {fetchDocuments} fetchDocuments
  * @param {validateDocumentsUniquenessByIndices} validateDocumentsUniquenessByIndices
  * @param {executeDataTriggers} executeDataTriggers
+ * @param {fetchAndValidateDataContract} fetchAndValidateDataContract
  * @return {validateDataContractSTData}
  */
 function validateDocumentsSTDataFactory(
@@ -26,6 +25,7 @@ function validateDocumentsSTDataFactory(
   fetchDocuments,
   validateDocumentsUniquenessByIndices,
   executeDataTriggers,
+  fetchAndValidateDataContract,
 ) {
   /**
    * @typedef validateDocumentsSTData
@@ -39,7 +39,6 @@ function validateDocumentsSTDataFactory(
     const [firstDocument] = documents;
 
     const userId = firstDocument.getUserId();
-    const dataContractId = firstDocument.getDataContractId();
 
     // User must exist and confirmed
     result.merge(
@@ -51,15 +50,16 @@ function validateDocumentsSTDataFactory(
     }
 
     // Data contract must exist
-    const dataContract = await dataProvider.fetchDataContract(dataContractId);
-
-    if (!dataContract) {
-      result.addError(
-        new DataContractNotPresentError(dataContractId),
+    const dataContractValidationResult = await fetchAndValidateDataContract(firstDocument);
+    if (!dataContractValidationResult.isValid()) {
+      result.merge(
+        dataContractValidationResult,
       );
 
       return result;
     }
+
+    const dataContract = dataContractValidationResult.getData();
 
     // Validate document action, userId and revision
     const fetchedDocuments = await fetchDocuments(documents);

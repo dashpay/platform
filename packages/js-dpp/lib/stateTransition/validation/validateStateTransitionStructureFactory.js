@@ -11,7 +11,7 @@ const baseSchema = require('../../../schema/stateTransition/base');
 
 /**
  * @param {JsonSchemaValidator} validator
- * @param {Object.<number, {function: Function, schema: Object}>} typeExtensions
+ * @param {Object.<number, {validationFunction: Function, schema: Object}>} typeExtensions
  * @return {validateStateTransitionStructure}
  */
 function validateStateTransitionStructureFactory(validator, typeExtensions) {
@@ -50,7 +50,7 @@ function validateStateTransitionStructureFactory(validator, typeExtensions) {
       return result;
     }
 
-    const { function: validationFunction, schema } = typeExtensions[rawStateTransition.type];
+    const { validationFunction, schema } = typeExtensions[rawStateTransition.type];
 
     const extendedSchema = mergeWith({}, baseSchema, schema, (objValue, srcValue) => (
       Array.isArray(objValue) ? objValue.concat(srcValue) : undefined

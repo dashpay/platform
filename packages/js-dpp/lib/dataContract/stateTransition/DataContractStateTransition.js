@@ -8,7 +8,7 @@ class DataContractStateTransition extends AbstractStateTransition {
   constructor(dataContract) {
     super();
 
-    this.dataContract = dataContract;
+    this.setDataContract(dataContract);
   }
 
   /**

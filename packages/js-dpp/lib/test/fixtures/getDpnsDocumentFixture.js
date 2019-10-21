@@ -15,12 +15,9 @@ const userId = transaction.hash;
 function getParentDocumentFixture(options = {}) {
   const dataContract = getDpnsContractFixture();
 
-  const validateDocumentStub = () => {};
-
   const factory = new DocumentFactory(
-    userId,
-    dataContract,
-    validateDocumentStub,
+    () => {},
+    () => {},
   );
 
   const label = options.label || 'Parent';
@@ -37,7 +34,7 @@ function getParentDocumentFixture(options = {}) {
     },
   }, options);
 
-  return factory.create('domain', data);
+  return factory.create(dataContract, userId, 'domain', data);
 }
 
 /**
@@ -46,12 +43,9 @@ function getParentDocumentFixture(options = {}) {
 function getChildDocumentFixture(options = {}) {
   const dataContract = getDpnsContractFixture();
 
-  const validateDocumentStub = () => {};
-
   const factory = new DocumentFactory(
-    userId,
-    dataContract,
-    validateDocumentStub,
+    () => {},
+    () => {},
   );
 
   const label = options.label || 'Child';
@@ -70,7 +64,7 @@ function getChildDocumentFixture(options = {}) {
     },
   }, options);
 
-  return factory.create('domain', data);
+  return factory.create(dataContract, userId, 'domain', data);
 }
 
 module.exports = {

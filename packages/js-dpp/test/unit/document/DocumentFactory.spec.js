@@ -16,6 +16,7 @@ describe('DocumentFactory', () => {
   let decodeMock;
   let generateMock;
   let validateDocumentMock;
+  let fetchAndValidateDataContractMock;
   let DocumentFactory;
   let userId;
   let dataContract;
@@ -25,9 +26,21 @@ describe('DocumentFactory', () => {
   let factory;
 
   beforeEach(function beforeEach() {
+    ({ userId } = getDocumentsFixture);
+    dataContract = getDataContractFixture();
+
+    documents = getDocumentsFixture();
+    ([document] = documents);
+    rawDocument = document.toJSON();
+
     decodeMock = this.sinonSandbox.stub();
     generateMock = this.sinonSandbox.stub();
     validateDocumentMock = this.sinonSandbox.stub();
+
+    const fetchContractResult = new ValidationResult();
+    fetchContractResult.setData(dataContract);
+
+    fetchAndValidateDataContractMock = this.sinonSandbox.stub().returns(fetchContractResult);
 
     DocumentFactory = rewiremock.proxy('../../../lib/document/DocumentFactory', {
       '../../../lib/util/serializer': { decode: decodeMock },
@@ -36,17 +49,9 @@ describe('DocumentFactory', () => {
       '../../../lib/document/stateTransition/DocumentsStateTransition': DocumentsStateTransition,
     });
 
-    ({ userId } = getDocumentsFixture);
-    dataContract = getDataContractFixture();
-
-    documents = getDocumentsFixture();
-    ([document] = documents);
-    rawDocument = document.toJSON();
-
     factory = new DocumentFactory(
-      userId,
-      dataContract,
       validateDocumentMock,
+      fetchAndValidateDataContractMock,
     );
   });
 
@@ -59,6 +64,8 @@ describe('DocumentFactory', () => {
       generateMock.returns(entropy);
 
       const newDocument = factory.create(
+        dataContract,
+        userId,
         rawDocument.$type,
         { name },
       );
@@ -83,61 +90,95 @@ describe('DocumentFactory', () => {
     it('should throw an error if type is not defined', () => {
       const type = 'wrong';
 
-      let error;
       try {
-        factory.create(type);
-      } catch (e) {
-        error = e;
-      }
+        factory.create(dataContract, userId, type);
 
-      expect(error).to.be.an.instanceOf(InvalidDocumentTypeError);
-      expect(error.getType()).to.equal(type);
-      expect(error.getDataContract()).to.equal(dataContract);
+        expect.fail('InvalidDocumentTypeError should be thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(InvalidDocumentTypeError);
+        expect(e.getType()).to.equal(type);
+        expect(e.getDataContract()).to.equal(dataContract);
+      }
     });
   });
 
   describe('createFromObject', () => {
-    it('should return new Data Contract with data from passed object', () => {
+    it('should return new Data Contract with data from passed object', async () => {
       validateDocumentMock.returns(new ValidationResult());
 
-      const result = factory.createFromObject(rawDocument);
+      const result = await factory.createFromObject(rawDocument);
 
       expect(result).to.be.an.instanceOf(Document);
       expect(result.toJSON()).to.deep.equal(rawDocument);
 
-      expect(validateDocumentMock).to.have.been.calledOnceWith(rawDocument, dataContract);
+      expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(rawDocument);
+
+      expect(validateDocumentMock).to.have.been.calledOnceWith(
+        rawDocument,
+        dataContract,
+        { skipValidation: false },
+      );
     });
 
-    it('should return new Document without validation if "skipValidation" option is passed', () => {
-      const result = factory.createFromObject(rawDocument, { skipValidation: true });
+    it('should return new Document without validation if "skipValidation" option is passed', async () => {
+      const result = await factory.createFromObject(rawDocument, { skipValidation: true });
 
       expect(result).to.be.an.instanceOf(Document);
       expect(result.toJSON()).to.deep.equal(rawDocument);
 
+      expect(fetchAndValidateDataContractMock).to.have.not.been.called();
       expect(validateDocumentMock).to.have.not.been.called();
     });
 
-    it('should throw an error if passed object is not valid', () => {
+    it('should throw InvalidDocumentError if passed object is not valid', async () => {
       const validationError = new ConsensusError('test');
 
-      validateDocumentMock.returns(new ValidationResult([validationError]));
+      validateDocumentMock.returns(
+        new ValidationResult([validationError]),
+      );
 
-      let error;
       try {
-        factory.createFromObject(rawDocument);
+        await factory.createFromObject(rawDocument);
+
+        expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        error = e;
+        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+
+        expect(e.getErrors()).to.have.length(1);
+        expect(e.getRawDocument()).to.equal(rawDocument);
+
+        const [consensusError] = e.getErrors();
+        expect(consensusError).to.equal(validationError);
+
+        expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(rawDocument);
+        expect(validateDocumentMock).to.have.been.calledOnceWith(rawDocument, dataContract);
       }
+    });
 
-      expect(error).to.be.an.instanceOf(InvalidDocumentError);
+    it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
+      const fetchContractError = new ConsensusError('error');
 
-      expect(error.getErrors()).to.have.length(1);
-      expect(error.getRawDocument()).to.equal(rawDocument);
+      fetchAndValidateDataContractMock.returns(
+        new ValidationResult([fetchContractError]),
+      );
 
-      const [consensusError] = error.getErrors();
-      expect(consensusError).to.equal(validationError);
+      try {
+        await factory.createFromObject(rawDocument);
 
-      expect(validateDocumentMock).to.have.been.calledOnceWith(rawDocument, dataContract);
+        expect.fail('InvalidDocumentError should be thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+
+        expect(e.getErrors()).to.have.length(1);
+        expect(e.getRawDocument()).to.equal(rawDocument);
+
+        const [consensusError] = e.getErrors();
+
+        expect(consensusError).to.equal(fetchContractError);
+
+        expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(rawDocument);
+        expect(validateDocumentMock).to.have.not.been.called();
+      }
     });
   });
 
@@ -169,44 +210,6 @@ describe('DocumentFactory', () => {
 
       expect(result).to.be.instanceOf(DocumentsStateTransition);
       expect(result.getDocuments()).to.equal(documents);
-    });
-  });
-
-  describe('setUserId', () => {
-    it('should set User ID', () => {
-      userId = '123';
-
-      const result = factory.setUserId(userId);
-
-      expect(result).to.equal(factory);
-      expect(factory.userId).to.equal(userId);
-    });
-  });
-
-  describe('getUserId', () => {
-    it('should return User ID', () => {
-      const result = factory.getUserId();
-
-      expect(result).to.equal(userId);
-    });
-  });
-
-  describe('setDataContract', () => {
-    it('should set Data Contract', () => {
-      factory.dataContract = null;
-
-      const result = factory.setDataContract(dataContract);
-
-      expect(result).to.equal(factory);
-      expect(factory.dataContract).to.equal(dataContract);
-    });
-  });
-
-  describe('getDataContract', () => {
-    it('should return Data Contract', () => {
-      const result = factory.getDataContract();
-
-      expect(result).to.equal(dataContract);
     });
   });
 });

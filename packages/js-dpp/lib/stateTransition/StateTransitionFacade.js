@@ -19,36 +19,111 @@ const validateStateTransitionDataFactory = require('./validation/validateStateTr
 const validateDocumentsSTStructureFactory = require('../document/stateTransition/validation/structure/validateDocumentsSTStructureFactory');
 const validateDocumentFactory = require('../document/validateDocumentFactory');
 
+const fetchAndValidateDataContractFactory = require('../document/fetchAndValidateDataContractFactory');
 const enrichDataContractWithBaseDocument = require('../document/enrichDataContractWithBaseDocument');
 const findDuplicateDocumentsById = require('../document/stateTransition/validation/structure/findDuplicateDocumentsById');
 const findDuplicateDocumentsByIndices = require('../document/stateTransition/validation/structure/findDuplicateDocumentsByIndices');
 
+const validateDocumentsSTDataFactory = require('../document/stateTransition/validation/data/validateDocumentsSTDataFactory');
 const validateBlockchainUserFactory = require('./validation/validateBlockchainUserFactory');
+const fetchDocumentsFactory = require('../document/stateTransition/validation/data/fetchDocumentsFactory');
+const validateDocumentsUniquenessByIndicesFactory = require('../document/stateTransition/validation/data/validateDocumentsUniquenessByIndicesFactory');
+const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
+const executeDataTriggersFactory = require('../document/stateTransition/validation/data/executeDataTriggersFactory');
 
 class StateTransitionFacade {
   /**
-   * @param {DashPlatformProtocol} dpp
+   * @param {DataProvider} dataProvider
    * @param {JsonSchemaValidator} validator
    */
-  constructor(dpp, validator) {
-    this.dpp = dpp;
+  constructor(dataProvider, validator) {
+    this.dataProvider = dataProvider;
     this.validator = validator;
 
     const validateDataContract = validateDataContractFactory(
-      this.validator,
+      validator,
     );
 
-    this.validateDataContractSTStructure = validateDataContractSTStructureFactory(
+    const validateDataContractSTStructure = validateDataContractSTStructureFactory(
       validateDataContract,
     );
 
-    this.validateDocument = validateDocumentFactory(
+    const validateDocument = validateDocumentFactory(
       this.validator,
       enrichDataContractWithBaseDocument,
     );
 
     this.createStateTransition = createStateTransitionFactory(
       createDataContract,
+    );
+
+    const fetchAndValidateDataContract = fetchAndValidateDataContractFactory(
+      dataProvider,
+    );
+
+    const validateDocumentsSTStructure = validateDocumentsSTStructureFactory(
+      validateDocument,
+      findDuplicateDocumentsById,
+      findDuplicateDocumentsByIndices,
+      fetchAndValidateDataContract,
+    );
+
+    const typeExtensions = {
+      [stateTransitionTypes.DATA_CONTRACT]: {
+        validationFunction: validateDataContractSTStructure,
+        schema: dataContractStateTransitionSchema,
+      },
+      [stateTransitionTypes.DOCUMENTS]: {
+        validationFunction: validateDocumentsSTStructure,
+        schema: documentsStateTransitionSchema,
+      },
+    };
+
+    this.validateStateTransitionStructure = validateStateTransitionStructureFactory(
+      validator,
+      typeExtensions,
+    );
+
+    const validateBlockchainUser = validateBlockchainUserFactory(
+      dataProvider,
+    );
+
+    const validateDataContractSTData = validateDataContractSTDataFactory(
+      dataProvider,
+      validateBlockchainUser,
+    );
+
+    const fetchDocuments = fetchDocumentsFactory(
+      dataProvider,
+    );
+
+    const validateDocumentsUniquenessByIndices = validateDocumentsUniquenessByIndicesFactory(
+      dataProvider,
+    );
+
+    const getDataTriggers = getDataTriggersFactory();
+
+    const executeDataTriggers = executeDataTriggersFactory(
+      getDataTriggers,
+    );
+
+    const validateDocumentsSTData = validateDocumentsSTDataFactory(
+      dataProvider,
+      validateBlockchainUser,
+      fetchDocuments,
+      validateDocumentsUniquenessByIndices,
+      executeDataTriggers,
+      fetchAndValidateDataContract,
+    );
+
+    this.validateStateTransitionData = validateStateTransitionDataFactory({
+      [stateTransitionTypes.DATA_CONTRACT]: validateDataContractSTData,
+      [stateTransitionTypes.DOCUMENTS]: validateDocumentsSTData,
+    });
+
+    this.factory = new StateTransitionFactory(
+      this.validateStateTransitionStructure,
+      this.createStateTransition,
     );
   }
 
@@ -61,7 +136,15 @@ class StateTransitionFacade {
    * @return {DataContractStateTransition|DocumentsStateTransition}
    */
   async createFromObject(rawStateTransition, options = {}) {
-    return this.getFactory().createFromObject(rawStateTransition, options);
+    if (!this.dataProvider) {
+      throw new MissingOptionError(
+        'dataProvider',
+        'Can\'t create State Transition because Data Provider is not set, use'
+        + ' setDataProvider method',
+      );
+    }
+
+    return this.factory.createFromObject(rawStateTransition, options);
   }
 
   /**
@@ -73,7 +156,15 @@ class StateTransitionFacade {
    * @return {DataContractStateTransition|DocumentsStateTransition}
    */
   async createFromSerialized(payload, options = {}) {
-    return this.getFactory().createFromSerialized(payload, options);
+    if (!this.dataProvider) {
+      throw new MissingOptionError(
+        'dataProvider',
+        'Can\'t create State Transition because Data Provider is not set, use'
+        + ' setDataProvider method',
+      );
+    }
+
+    return this.factory.createFromSerialized(payload, options);
   }
 
   /**
@@ -115,9 +206,15 @@ class StateTransitionFacade {
    * @return {ValidationResult}
    */
   async validateStructure(stateTransition) {
-    const validateStateTransitionStructure = this.createValidateStateTransitionStructure();
+    if (!this.dataProvider) {
+      throw new MissingOptionError(
+        'dataProvider',
+        'Can\'t validate State Transition because Data Provider is not set, use'
+        + ' setDataProvider method',
+      );
+    }
 
-    return validateStateTransitionStructure(stateTransition);
+    return this.validateStateTransitionStructure(stateTransition);
   }
 
   /**
@@ -127,88 +224,15 @@ class StateTransitionFacade {
    * @return {ValidationResult}
    */
   async validateData(stateTransition) {
-    const validateStateTransitionData = this.createValidateStateTransitionData();
-
-    return validateStateTransitionData(stateTransition);
-  }
-
-  /**
-   * @private
-   * @return {validateStateTransitionStructure}
-   */
-  createValidateStateTransitionStructure() {
-    const dataProvider = this.dpp.getDataProvider();
-
-    if (!dataProvider) {
+    if (!this.dataProvider) {
       throw new MissingOptionError(
         'dataProvider',
-        'Can\'t validate State Transition data because Data Provider is not set, use'
+        'Can\'t validate State Transition because Data Provider is not set, use'
         + ' setDataProvider method',
       );
     }
 
-    const validateDocumentsSTStructure = validateDocumentsSTStructureFactory(
-      this.validateDocument,
-      findDuplicateDocumentsById,
-      findDuplicateDocumentsByIndices,
-      this.dpp.getDataProvider(),
-    );
-
-    const typeExtensions = {
-      [stateTransitionTypes.DATA_CONTRACT]: {
-        function: this.validateDataContractSTStructure,
-        schema: dataContractStateTransitionSchema,
-      },
-      [stateTransitionTypes.DOCUMENTS]: {
-        function: validateDocumentsSTStructure,
-        schema: documentsStateTransitionSchema,
-      },
-    };
-
-    return validateStateTransitionStructureFactory(
-      this.validator,
-      typeExtensions,
-    );
-  }
-
-  /**
-   * @private
-   * @return {validateStateTransitionData}
-   */
-  createValidateStateTransitionData() {
-    const dataProvider = this.dpp.getDataProvider();
-
-    if (!dataProvider) {
-      throw new MissingOptionError(
-        'dataProvider',
-        'Can\'t validate State Transition data because Data Provider is not set, use'
-        + ' setDataProvider method',
-      );
-    }
-
-    const validateBlockchainUser = validateBlockchainUserFactory(
-      dataProvider,
-    );
-
-    const validateDataContractSTData = validateDataContractSTDataFactory(
-      dataProvider,
-      validateBlockchainUser,
-    );
-
-    return validateStateTransitionDataFactory(
-      validateDataContractSTData,
-    );
-  }
-
-  /**
-   * @private
-   * @return {StateTransitionFactory}
-   */
-  getFactory() {
-    return new StateTransitionFactory(
-      this.createValidateStateTransitionStructure(),
-      this.createStateTransition,
-    );
+    return this.validateStateTransitionData(stateTransition);
   }
 }
 

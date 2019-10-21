@@ -47,7 +47,7 @@ describe('validateStateTransitionStructureFactory', () => {
 
     const typeExtensions = {
       [stateTransitionTypes.DATA_CONTRACT]: {
-        function: extensionFunctionMock,
+        validationFunction: extensionFunctionMock,
         schema: extensionSchema,
       },
     };
@@ -144,7 +144,7 @@ describe('validateStateTransitionStructureFactory', () => {
     beforeEach(() => {
       const typeExtensions = {
         [stateTransitionTypes.DATA_CONTRACT]: {
-          function: extensionFunctionMock,
+          validationFunction: extensionFunctionMock,
           schema: dataContractSTSchema,
         },
       };
@@ -193,7 +193,7 @@ describe('validateStateTransitionStructureFactory', () => {
     beforeEach(() => {
       const typeExtensions = {
         [stateTransitionTypes.DOCUMENTS]: {
-          function: extensionFunctionMock,
+          validationFunction: extensionFunctionMock,
           schema: documentsSTSchema,
         },
       };

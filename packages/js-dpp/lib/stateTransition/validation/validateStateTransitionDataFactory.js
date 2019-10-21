@@ -1,33 +1,31 @@
-const types = require('../stateTransitionTypes');
-
 const ValidationResult = require('../../validation/ValidationResult');
 
 const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransitionTypeError');
 
 /**
- * @param {validateDataContractSTData} validateDataContractSTData
+ * @param {Object<number, Function>} validationFunctions
  * @return {validateStateTransitionData}
  */
-function validateStateTransitionDataFactory(validateDataContractSTData) {
+function validateStateTransitionDataFactory(validationFunctions) {
   /**
    * @typedef validateStateTransitionData
-   * @param {DataContractStateTransition} stateTransition
+   * @param {DataContractStateTransition|DocumentsStateTransition} stateTransition
    * @return {ValidationResult}
    */
   async function validateStateTransitionData(stateTransition) {
     const result = new ValidationResult();
 
-    if (stateTransition.getType() === types.DATA_CONTRACT) {
-      result.merge(
-        await validateDataContractSTData(stateTransition),
-      );
-    } else {
+    const validationFunction = validationFunctions[stateTransition.getType()];
+
+    if (!validationFunction) {
       result.addError(
         new InvalidStateTransitionTypeError(stateTransition.toJSON()),
       );
+
+      return result;
     }
 
-    return result;
+    return validationFunction(stateTransition);
   }
 
   return validateStateTransitionData;

@@ -3,8 +3,6 @@ const DocumentsStateTransition = require('../../../../../lib/document/stateTrans
 const getContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
 
-const createDataProviderMock = require('../../../../../lib/test/mocks/createDataProviderMock');
-
 const ValidationResult = require('../../../../../lib/validation/ValidationResult');
 
 const validateDocumentsSTStructureFactory = require('../../../../../lib/document/stateTransition/validation/structure/validateDocumentsSTStructureFactory');
@@ -15,7 +13,6 @@ const DuplicateDocumentsError = require('../../../../../lib/errors/STDuplicateDo
 const MismatchSTDocumentsAndActionsError = require('../../../../../lib/errors/MismatchSTDocumentsAndActionsError');
 const STContainsDocumentsFromDifferentUsersError = require('../../../../../lib/errors/STContainsDocumentsFromDifferentUsersError');
 const ConsensusError = require('../../../../../lib/errors/ConsensusError');
-const MissingDocumentContractIdError = require('../../../../../lib/errors/MissingDocumentContractIdError');
 const STContainsDocumentsForDifferentDataContractsError = require('../../../../../lib/errors/STContainsDocumentsForDifferentDataContractsError');
 
 describe('validateDocumentsSTStructureFactory', () => {
@@ -26,7 +23,7 @@ describe('validateDocumentsSTStructureFactory', () => {
   let findDuplicateDocumentsByIndicesMock;
   let validateDocumentMock;
   let validateDocumentsSTStructure;
-  let dataProviderMock;
+  let fetchAndValidateDataContractMock;
 
   beforeEach(function beforeEach() {
     dataContract = getContractFixture();
@@ -38,14 +35,17 @@ describe('validateDocumentsSTStructureFactory', () => {
     findDuplicateDocumentsByIndicesMock = this.sinonSandbox.stub().returns([]);
     validateDocumentMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
-    dataProviderMock = createDataProviderMock(this.sinonSandbox);
-    dataProviderMock.fetchDataContract.resolves(dataContract);
+    const dataContractValidationResult = new ValidationResult();
+    dataContractValidationResult.setData(dataContract);
+
+    fetchAndValidateDataContractMock = this.sinonSandbox.stub()
+      .resolves(dataContractValidationResult);
 
     validateDocumentsSTStructure = validateDocumentsSTStructureFactory(
       validateDocumentMock,
       findDuplicateDocumentsByIdMock,
       findDuplicateDocumentsByIndicesMock,
-      dataProviderMock,
+      fetchAndValidateDataContractMock,
     );
   });
 
@@ -65,26 +65,11 @@ describe('validateDocumentsSTStructureFactory', () => {
     expect(findDuplicateDocumentsByIndicesMock).to.not.be.called();
   });
 
-  it('should return invalid result if documents do not contain $contractId', async () => {
-    const secondRawDocument = rawStateTransition.documents[1];
-    delete secondRawDocument.$contractId;
-
-    const result = await validateDocumentsSTStructure(rawStateTransition);
-
-    expectValidationError(result, MissingDocumentContractIdError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getRawDocument()).to.equal(secondRawDocument);
-
-    expect(validateDocumentMock).to.not.be.called();
-    expect(findDuplicateDocumentsByIdMock).to.not.be.called();
-    expect(findDuplicateDocumentsByIndicesMock).to.not.be.called();
-  });
-
   it('should return invalid result if there are documents with different $contractId', async () => {
-    const [firstRawDocument, secondRawDocument] = rawStateTransition.documents;
+    const [firstRawDocument, secondRawDocument, thirdRawDocument] = rawStateTransition.documents;
+
     secondRawDocument.$contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+    delete thirdRawDocument.$contractId;
 
     const result = await validateDocumentsSTStructure(rawStateTransition);
 
@@ -92,8 +77,35 @@ describe('validateDocumentsSTStructureFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getRawDocuments()).to.deep.equal([firstRawDocument, secondRawDocument]);
+    expect(error.getRawDocuments()).to.deep.equal([
+      firstRawDocument,
+      secondRawDocument,
+      thirdRawDocument,
+    ]);
 
+    expect(fetchAndValidateDataContractMock).to.not.be.called();
+    expect(validateDocumentMock).to.not.be.called();
+    expect(findDuplicateDocumentsByIdMock).to.not.be.called();
+    expect(findDuplicateDocumentsByIndicesMock).to.not.be.called();
+  });
+
+  it('should return invalid result if Documents are invalid', async () => {
+    const dataContractError = new ConsensusError('error');
+    const dataContractValidationResult = new ValidationResult([
+      dataContractError,
+    ]);
+
+    fetchAndValidateDataContractMock.resolves(dataContractValidationResult);
+
+    const result = await validateDocumentsSTStructure(rawStateTransition);
+
+    expectValidationError(result, ConsensusError, 1);
+
+    const [error] = result.getErrors();
+
+    expect(error).to.equal(dataContractError);
+
+    expect(fetchAndValidateDataContractMock).to.be.calledOnceWith(documents[0].toJSON());
     expect(validateDocumentMock).to.not.be.called();
     expect(findDuplicateDocumentsByIdMock).to.not.be.called();
     expect(findDuplicateDocumentsByIndicesMock).to.not.be.called();
@@ -114,6 +126,7 @@ describe('validateDocumentsSTStructureFactory', () => {
 
     expect(error).to.equal(documentError);
 
+    expect(fetchAndValidateDataContractMock).to.be.calledOnceWith(documents[0].toJSON());
     expect(validateDocumentMock.callCount).to.equal(5);
 
     documents.forEach((document) => {
@@ -141,6 +154,7 @@ describe('validateDocumentsSTStructureFactory', () => {
 
     expect(error.getDuplicatedDocuments()).to.deep.equal(duplicateDocuments);
 
+    expect(fetchAndValidateDataContractMock).to.be.calledOnceWith(documents[0].toJSON());
     expect(validateDocumentMock.callCount).to.equal(5);
 
     documents.forEach((document) => {
@@ -168,6 +182,7 @@ describe('validateDocumentsSTStructureFactory', () => {
 
     expect(error.getDuplicatedDocuments()).to.deep.equal(duplicateDocuments);
 
+    expect(fetchAndValidateDataContractMock).to.be.calledOnceWith(documents[0].toJSON());
     expect(validateDocumentMock.callCount).to.equal(5);
 
     documents.forEach((document) => {
@@ -199,6 +214,7 @@ describe('validateDocumentsSTStructureFactory', () => {
       documents[1].toJSON(),
     ]);
 
+    expect(fetchAndValidateDataContractMock).to.be.calledOnceWith(documents[0].toJSON());
     expect(validateDocumentMock.callCount).to.equal(5);
 
     documents.forEach((document) => {
@@ -219,8 +235,7 @@ describe('validateDocumentsSTStructureFactory', () => {
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(findDuplicateDocumentsByIdMock).to.have.been.calledOnceWith(documents);
-
+    expect(fetchAndValidateDataContractMock).to.be.calledOnceWith(documents[0].toJSON());
     expect(validateDocumentMock.callCount).to.equal(5);
 
     documents.forEach((document) => {

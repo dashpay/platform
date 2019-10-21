@@ -10,12 +10,9 @@ const userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288
 function getPreorderDocumentFixture(options = {}) {
   const dataContract = getDpnsContractFixture();
 
-  const validateDocumentStub = () => {};
-
   const factory = new DocumentFactory(
-    userId,
-    dataContract,
-    validateDocumentStub,
+    () => {},
+    () => {},
   );
 
   const label = options.label || 'Preorder';
@@ -31,7 +28,7 @@ function getPreorderDocumentFixture(options = {}) {
     },
   }, options);
 
-  return factory.create('preorder', data);
+  return factory.create(dataContract, userId, 'preorder', data);
 }
 
 module.exports = getPreorderDocumentFixture;

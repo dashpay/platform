@@ -5,9 +5,12 @@ const DocumentsStateTransition = require('../../../lib/document/stateTransition/
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
+const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
+
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
+const MissingDocumentContractIdError = require('../../../lib/errors/MissingDocumentContractIdError');
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('DocumentFacade', () => {
@@ -15,13 +18,19 @@ describe('DocumentFacade', () => {
   let document;
   let documents;
   let dataContract;
+  let userId;
+  let dataProviderMock;
 
-  beforeEach(() => {
+  beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
+    userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
+
+    dataProviderMock = createDataProviderMock(this.sinonSandbox);
+
+    dataProviderMock.fetchDataContract.resolves(dataContract);
 
     dpp = new DashPlatformProtocol({
-      userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      dataContract,
+      dataProvider: dataProviderMock,
     });
 
     documents = getDocumentsFixture();
@@ -31,6 +40,8 @@ describe('DocumentFacade', () => {
   describe('create', () => {
     it('should create Document', () => {
       const result = dpp.document.create(
+        dataContract,
+        userId,
         document.getType(),
         document.getData(),
       );
@@ -40,127 +51,51 @@ describe('DocumentFacade', () => {
       expect(result.getType()).to.equal(document.getType());
       expect(result.getData()).to.deep.equal(document.getData());
     });
-
-    it('should throw an error if User ID is not defined', () => {
-      dpp = new DashPlatformProtocol({
-        dataContract,
-      });
-
-      let error;
-      try {
-        dpp.document.create(
-          document.getType(),
-          document.getData(),
-        );
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.an.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.equal('userId');
-    });
-
-    it('should throw an error if Data Contract is not defined', () => {
-      dpp = new DashPlatformProtocol({
-        userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      });
-
-      let error;
-      try {
-        dpp.document.create(
-          document.getType(),
-          document.getData(),
-        );
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.an.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.equal('contract');
-    });
   });
 
   describe('createFromObject', () => {
-    it('should create Document from plain object', () => {
-      const result = dpp.document.createFromObject(document.toJSON());
+    it('should throw MissingOption if dataProvider is not set', async () => {
+      dpp = new DashPlatformProtocol();
+
+      try {
+        await dpp.document.createFromObject(document.toJSON());
+
+        expect.fail('MissingOption should be thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(MissingOptionError);
+        expect(e.getOptionName()).to.equal('dataProvider');
+      }
+    });
+
+    it('should create Document from plain object', async () => {
+      const result = await dpp.document.createFromObject(document.toJSON());
 
       expect(result).to.be.an.instanceOf(Document);
 
       expect(result.toJSON()).to.deep.equal(document.toJSON());
-    });
-
-    it('should throw an error if User ID is not defined', () => {
-      dpp = new DashPlatformProtocol({
-        dataContract,
-      });
-
-      let error;
-      try {
-        dpp.document.createFromObject(document.toJSON());
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.an.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.equal('userId');
-    });
-
-    it('should throw an error if Data Contract is not defined', () => {
-      dpp = new DashPlatformProtocol({
-        userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      });
-
-      let error;
-      try {
-        dpp.document.createFromObject(document.toJSON());
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.an.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.equal('contract');
     });
   });
 
   describe('createFromSerialized', () => {
-    it('should create Document from string', () => {
-      const result = dpp.document.createFromSerialized(document.serialize());
+    it('should throw MissingOption if dataProvider is not set', async () => {
+      dpp = new DashPlatformProtocol();
+
+      try {
+        await dpp.document.createFromSerialized(document.toJSON());
+
+        expect.fail('MissingOption should be thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(MissingOptionError);
+        expect(e.getOptionName()).to.equal('dataProvider');
+      }
+    });
+
+    it('should create Document from string', async () => {
+      const result = await dpp.document.createFromSerialized(document.serialize());
 
       expect(result).to.be.an.instanceOf(Document);
 
       expect(result.toJSON()).to.deep.equal(document.toJSON());
-    });
-
-    it('should throw an error if User ID is not defined', () => {
-      dpp = new DashPlatformProtocol({
-        dataContract,
-      });
-
-      let error;
-      try {
-        dpp.document.createFromSerialized(document.serialize());
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.an.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.equal('userId');
-    });
-
-    it('should throw an error if Data Contract is not defined', () => {
-      dpp = new DashPlatformProtocol({
-        userId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
-      });
-
-      let error;
-      try {
-        dpp.document.createFromSerialized(document.serialize());
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.an.instanceOf(MissingOptionError);
-      expect(error.getOptionName()).to.equal('contract');
     });
   });
 
@@ -174,10 +109,37 @@ describe('DocumentFacade', () => {
   });
 
   describe('validate', () => {
-    it('should validate Document', () => {
-      const result = dpp.document.validate(document.toJSON());
+    it('should throw MissingOption if dataProvider is not set', async () => {
+      dpp = new DashPlatformProtocol();
+
+      try {
+        await dpp.document.validate(document);
+
+        expect.fail('MissingOption should be thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(MissingOptionError);
+        expect(e.getOptionName()).to.equal('dataProvider');
+      }
+    });
+
+    it('should validate Document', async () => {
+      const result = await dpp.document.validate(document);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.true();
+    });
+
+    it('should return invalid result if Data Contract is invalid', async () => {
+      dataProviderMock.fetchDataContract.returns(null);
+
+      const result = await dpp.document.validate(dataContract, document);
+
+      expect(result).to.be.an.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.false();
+
+      const [error] = result.getErrors();
+
+      expect(error).to.be.an.instanceOf(MissingDocumentContractIdError);
     });
   });
 });

@@ -3,7 +3,6 @@ const ValidationResult = require('../../../../validation/ValidationResult');
 const Document = require('../../../Document');
 
 const MismatchSTDocumentsAndActionsError = require('../../../../errors/MismatchSTDocumentsAndActionsError');
-const MissingDocumentContractIdError = require('../../../../errors/MissingDocumentContractIdError');
 const STDuplicateDocumentsError = require('../../../../errors/STDuplicateDocumentsError');
 const STContainsDocumentsFromDifferentUsersError = require('../../../../errors/STContainsDocumentsFromDifferentUsersError');
 const STContainsDocumentsForDifferentDataContractsError = require('../../../../errors/STContainsDocumentsForDifferentDataContractsError');
@@ -12,14 +11,14 @@ const STContainsDocumentsForDifferentDataContractsError = require('../../../../e
  * @param {validateDocument} validateDocument
  * @param {findDuplicateDocumentsById} findDuplicateDocumentsById
  * @param {findDuplicateDocumentsByIndices} findDuplicateDocumentsByIndices
- * @param {DataProvider} dataProvider
+ * @param {fetchAndValidateDataContract} fetchAndValidateDataContract
  * @return {validateDocumentsSTStructure}
  */
 function validateDocumentsSTStructureFactory(
   validateDocument,
   findDuplicateDocumentsById,
   findDuplicateDocumentsByIndices,
-  dataProvider,
+  fetchAndValidateDataContract,
 ) {
   /**
    * @typedef validateDocumentsSTStructure
@@ -40,14 +39,6 @@ function validateDocumentsSTStructureFactory(
     // Make sure that there are no documents for different Data Contracts
     const documentsForDifferentContracts = Object.values(
       rawStateTransition.documents.reduce((docs, rawDocument) => {
-        if (!Object.prototype.hasOwnProperty.call(rawDocument, '$contractId')) {
-          result.addError(
-            new MissingDocumentContractIdError(rawDocument),
-          );
-
-          return docs;
-        }
-
         if (!docs[rawDocument.$contractId]) {
           // eslint-disable-next-line no-param-reassign
           docs[rawDocument.$contractId] = rawDocument;
@@ -72,9 +63,18 @@ function validateDocumentsSTStructureFactory(
     }
 
     // Fetch Data Contract
-    const dataContract = await dataProvider.fetchDataContract(
-      rawStateTransition.documents[0].$contractId,
-    );
+    const [firstRawDocument] = rawStateTransition.documents;
+
+    const dataContractValidationResult = await fetchAndValidateDataContract(firstRawDocument);
+    if (!dataContractValidationResult.isValid()) {
+      result.merge(
+        dataContractValidationResult,
+      );
+
+      return result;
+    }
+
+    const dataContract = dataContractValidationResult.getData();
 
     // Validate documents
     rawStateTransition.documents.forEach((document, index) => {

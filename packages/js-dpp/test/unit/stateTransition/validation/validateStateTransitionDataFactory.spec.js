@@ -1,3 +1,5 @@
+const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
+
 const validateStateTransitionDataFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionDataFactory');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
@@ -18,9 +20,9 @@ describe('validateStateTransitionDataFactory', () => {
   beforeEach(function beforeEach() {
     validateDataContractSTDataMock = this.sinonSandbox.stub();
 
-    validateStateTransitionData = validateStateTransitionDataFactory(
-      validateDataContractSTDataMock,
-    );
+    validateStateTransitionData = validateStateTransitionDataFactory({
+      [stateTransitionTypes.DATA_CONTRACT]: validateDataContractSTDataMock,
+    });
   });
 
   it('should return invalid result if State Transition type is invalid', async () => {

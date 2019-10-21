@@ -18,7 +18,6 @@ const { expectValidationError } = require('../../../../../lib/test/expect/expect
 const DocumentAlreadyPresentError = require('../../../../../lib/errors/DocumentAlreadyPresentError');
 const DocumentNotFoundError = require('../../../../../lib/errors/DocumentNotFoundError');
 const InvalidDocumentRevisionError = require('../../../../../lib/errors/InvalidDocumentRevisionError');
-const DataContractNotPresentError = require('../../../../../lib/errors/DataContractNotPresentError');
 const ConsensusError = require('../../../../../lib/errors/ConsensusError');
 const InvalidDocumentActionError = require('../../../../../lib/document/errors/InvalidDocumentActionError');
 
@@ -33,6 +32,7 @@ describe('validateDocumentsSTDataFactory', () => {
   let dataProviderMock;
   let validateBlockchainUserMock;
   let executeDataTriggersMock;
+  let fetchAndValidateDataContractMock;
 
   beforeEach(function beforeEach() {
     ({ userId } = getDocumentsFixture);
@@ -41,7 +41,6 @@ describe('validateDocumentsSTDataFactory', () => {
     dataContract = getContractFixture();
 
     stateTransition = new DocumentsStateTransition(documents);
-
 
     dataProviderMock = createDataProviderMock(this.sinonSandbox);
     dataProviderMock.fetchDataContract.resolves(dataContract);
@@ -53,12 +52,19 @@ describe('validateDocumentsSTDataFactory', () => {
     validateDocumentsUniquenessByIndicesMock = this.sinonSandbox.stub();
     validateDocumentsUniquenessByIndicesMock.resolves(new ValidationResult());
 
+    const dataContractValidationResult = new ValidationResult();
+    dataContractValidationResult.setData(dataContract);
+
+    fetchAndValidateDataContractMock = this.sinonSandbox.stub()
+      .resolves(dataContractValidationResult);
+
     validateDocumentsSTData = validateDocumentsSTDataFactory(
       dataProviderMock,
       validateBlockchainUserMock,
       fetchDocumentsMock,
       validateDocumentsUniquenessByIndicesMock,
       executeDataTriggersMock,
+      fetchAndValidateDataContractMock,
     );
   });
 
@@ -75,24 +81,29 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error).to.equal(userError);
 
-    expect(dataProviderMock.fetchDataContract).to.have.not.been.called();
+    expect(fetchAndValidateDataContractMock).to.have.not.been.called();
     expect(fetchDocumentsMock).to.have.not.been.called();
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
   it('should return invalid result if Data Contract is not present', async () => {
-    dataProviderMock.fetchDataContract.resolves(null);
+    const dataContractError = new ConsensusError('error');
+    const dataContractValidationResult = new ValidationResult([
+      dataContractError,
+    ]);
+
+    fetchAndValidateDataContractMock.resolves(dataContractValidationResult);
 
     const result = await validateDocumentsSTData(stateTransition);
 
-    expectValidationError(result, DataContractNotPresentError);
+    expectValidationError(result);
 
     const [error] = result.getErrors();
 
-    expect(error.getDataContractId()).to.equal(dataContract.getId());
+    expect(error).to.equal(dataContractError);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.not.been.called();
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -111,7 +122,7 @@ describe('validateDocumentsSTDataFactory', () => {
     expect(error.getDocument()).to.equal(documents[0]);
     expect(error.getFetchedDocument()).to.equal(documents[0]);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -130,7 +141,7 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error.getDocument()).to.equal(documents[0]);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -150,7 +161,7 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error.getDocument()).to.equal(documents[0]);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -172,7 +183,7 @@ describe('validateDocumentsSTDataFactory', () => {
     expect(error.getDocument()).to.equal(documents[0]);
     expect(error.getFetchedDocument()).to.equal(documents[0]);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -194,7 +205,7 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error.getDocument()).to.equal(documents[0]);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -215,7 +226,7 @@ describe('validateDocumentsSTDataFactory', () => {
       expect(e).to.be.an.instanceOf(InvalidDocumentActionError);
       expect(e.getDocument()).to.equal(documents[0]);
 
-      expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+      expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
       expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -239,7 +250,7 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error).to.equal(duplicateDocumentsError);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -276,7 +287,7 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error).to.equal(dataTriggerExecutionError);
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
@@ -322,7 +333,7 @@ describe('validateDocumentsSTDataFactory', () => {
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(dataProviderMock.fetchDataContract).to.have.been.calledOnceWith(dataContract.getId());
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
 
