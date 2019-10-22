@@ -5,15 +5,27 @@
   "main": "index.js",
   "scripts": {
     "lint": "eslint .",
+    "test": "npm run test:coverage",
+    "test:coverage": "nyc --check-coverage --stmts=95 --branch=95 --funcs=95 --lines=95 mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
+    "test:unit": "mocha './test/unit/**/*.spec.js'",
+    "test:integration": "mocha './test/integration/**/*.spec.js'",
     "check-package": "npm run check-package:name && npm run check-package:version",
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)"
   },
   "license": "MIT",
   "devDependencies": {
+    "chai": "^4.2.0",
+    "chai-as-promised": "^7.1.1",
+    "dirty-chai": "^2.0.1",
     "eslint": "^6.5.1",
     "eslint-config-airbnb-base": "^14.0.0",
-    "eslint-plugin-import": "^2.18.2"
+    "eslint-plugin-import": "^2.18.2",
+    "mocha": "^6.2.1",
+    "mocha-sinon": "^2.1.0",
+    "nyc": "^14.1.1",
+    "sinon": "^7.5.0",
+    "sinon-chai": "^3.3.0"
   },
   "dependencies": {
     "@grpc/proto-loader": "^0.5.2",

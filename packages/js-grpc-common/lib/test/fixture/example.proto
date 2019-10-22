@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package org.dash.platform.example.v0;
+
+service Example {
+  rpc callExample (ExampleRequest) returns (ExampleResponse);
+}
+
+message ExampleRequest {
+  uint32 value = 1;
+}
+
+message ExampleResponse {
+  uint32 value = 1;
+}
+

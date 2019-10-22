@@ -26,6 +26,7 @@ install: npm ci
 script:
   - npm run lint
   - npm run check-package
+  - npm run test
 
 deploy:
   provider: script
