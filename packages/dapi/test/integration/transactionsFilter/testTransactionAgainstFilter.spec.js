@@ -1,6 +1,3 @@
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-
 const { mocha: { startDashCore } } = require('@dashevo/dp-services-ctl');
 
 const {
@@ -11,8 +8,6 @@ const {
   Networks,
   MerkleBlock,
 } = require('@dashevo/dashcore-lib');
-
-use(dirtyChai);
 
 const testTransactionAgainstFilter = require('../../../lib/transactionsFilter/testTransactionAgainstFilter');
 

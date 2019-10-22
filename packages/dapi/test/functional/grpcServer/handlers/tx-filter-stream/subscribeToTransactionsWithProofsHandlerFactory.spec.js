@@ -1,7 +1,3 @@
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-
 const {
   startDapi,
 } = require('@dashevo/dp-services-ctl');
@@ -17,11 +13,7 @@ const {
 
 const wait = require('../../../../../lib/utils/wait');
 
-use(chaiAsPromised);
-use(dirtyChai);
-
-// @TODO enable after js-dp-services-ctl will be fixed
-describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main() {
+describe('subscribeToTransactionsWithProofsHandlerFactory', function main() {
   this.timeout(160000);
 
   let coreAPI;

@@ -1,7 +1,3 @@
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-
 const {
   startDapi,
 } = require('@dashevo/dp-services-ctl');
@@ -11,11 +7,7 @@ const {
   Transaction,
 } = require('@dashevo/dashcore-lib');
 
-use(chaiAsPromised);
-use(dirtyChai);
-
-// @TODO enable after js-dp-services-ctl will be fixed
-describe.skip('getLastUserStateTransitionHashHandlerFactory', function main() {
+describe('getLastUserStateTransitionHashHandlerFactory', function main() {
   this.timeout(160000);
 
   let coreAPI;
@@ -30,18 +22,7 @@ describe.skip('getLastUserStateTransitionHashHandlerFactory', function main() {
       dashCore,
       dapiCore,
       remove,
-    } = await startDapi({
-      dapi: {
-        cacheNodeModules: true,
-        localAppPath: process.cwd(),
-        container: {
-          volumes: [
-            `${process.cwd()}/lib:/usr/src/app/lib`,
-            `${process.cwd()}/scripts:/usr/src/app/scripts`,
-          ],
-        },
-      },
-    });
+    } = await startDapi();
 
     removeDapi = remove;
 

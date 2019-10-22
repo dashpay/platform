@@ -25,7 +25,7 @@ const {
     LastUserStateTransitionHashRequest: PBJSLastUserStateTransitionHashRequest,
     LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
     StateTransition: PBJSStateTransition,
-    StateTransitionResponse: PBJSStateTransitionResponse,
+    UpdateStateTransitionResponse: PBJSStateTransitionResponse,
   },
   getCoreDefinition,
 } = require('@dashevo/dapi-grpc');

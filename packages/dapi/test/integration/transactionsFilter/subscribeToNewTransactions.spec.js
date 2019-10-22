@@ -1,7 +1,3 @@
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-
 const {
   Transaction,
   Block,
@@ -17,9 +13,6 @@ const ProcessMediator = require('../../../lib/transactionsFilter/ProcessMediator
 
 const subscribeToNewTransactions = require('../../../lib/transactionsFilter/subscribeToNewTransactions');
 const testTransactionsAgainstFilter = require('../../../lib/transactionsFilter/testTransactionAgainstFilter');
-
-use(chaiAsPromised);
-use(dirtyChai);
 
 /**
  * Reverse the hash

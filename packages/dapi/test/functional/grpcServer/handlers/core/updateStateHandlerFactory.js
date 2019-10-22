@@ -1,7 +1,3 @@
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-
 const {
   startDapi,
 } = require('@dashevo/dp-services-ctl');
@@ -10,55 +6,81 @@ const {
   UpdateStateTransitionResponse,
 } = require('@dashevo/dapi-grpc');
 
+const {
+  PrivateKey,
+  Transaction,
+} = require('@dashevo/dashcore-lib');
+
 const getStPacketFixture = require('../../../../../lib/test/fixtures/getStPacketFixture');
-const getStHeaderFixture = require('../../../../../lib/test/fixtures/getStHeaderFixture');
+const createStateTransition = require('../../../../../lib/test/createStateTransition');
 
-use(chaiAsPromised);
-use(dirtyChai);
-
-// @TODO enable after js-dp-services-ctl will be fixed
-describe.skip('updateStateHandlerFactory', function main() {
+describe('updateStateHandlerFactory', function main() {
   this.timeout(160000);
 
   let removeDapi;
   let dapiClient;
+  let coreAPI;
+  let driveClient;
   let stHeader;
   let stPacket;
+  let stPacketFixture;
+  let userId;
 
   beforeEach(async () => {
     const {
+      driveApi,
       dapiCore,
+      dashCore,
       remove,
-    } = await startDapi({
-      dapi: {
-        cacheNodeModules: true,
-        localAppPath: process.cwd(),
-        container: {
-          volumes: [
-            `${process.cwd()}/lib:/usr/src/app/lib`,
-            `${process.cwd()}/scripts:/usr/src/app/scripts`,
-          ],
-        },
-      },
-      drive: {
-        container: {
-          image: 'drivewithnewapi',
-        },
-      },
-      machine: {
-        container: {
-          image: 'abci',
-        },
-      },
-    });
+    } = await startDapi();
 
-    dapiClient = dapiCore.getApi();
     removeDapi = remove;
 
-    const stPacketFixture = getStPacketFixture();
-    const stHeaderFixture = getStHeaderFixture(stPacketFixture);
+    dapiClient = dapiCore.getApi();
+    driveClient = driveApi.getApi();
+    coreAPI = dashCore.getApi();
 
-    stHeader = Buffer.from(stHeaderFixture.serialize(), 'hex');
+    const { result: addressString } = await coreAPI.getNewAddress();
+    const { result: privateKeyString } = await coreAPI.dumpPrivKey(addressString);
+
+    const privateKey = new PrivateKey(privateKeyString);
+
+    await coreAPI.generate(500);
+    await coreAPI.sendToAddress(addressString, 10);
+    await coreAPI.generate(10);
+
+    const { result: unspent } = await coreAPI.listUnspent();
+    const inputs = unspent.filter(input => input.address === addressString);
+
+    const transactionPayload = new Transaction.Payload.SubTxRegisterPayload();
+
+    const userName = 'dashUser';
+
+    transactionPayload.setUserName(userName)
+      .setPubKeyIdFromPrivateKey(privateKey)
+      .sign(privateKey);
+
+    const transaction = new Transaction({
+      type: Transaction.TYPES.TRANSACTION_SUBTX_REGISTER,
+      version: 3,
+      extraPayload: transactionPayload.toString(),
+    });
+
+    transaction.from(inputs)
+      .addFundingOutput(10000)
+      .change(addressString)
+      .fee(668)
+      .sign(privateKey);
+
+    ({ result: userId } = await coreAPI.sendrawtransaction(transaction.serialize()));
+
+    await coreAPI.generate(1);
+
+    stPacketFixture = getStPacketFixture();
+
+    const stateTransition = createStateTransition(userId, privateKeyString, stPacketFixture);
+
+    stHeader = Buffer.from(stateTransition.serialize(), 'hex');
     stPacket = stPacketFixture.serialize();
   });
 
@@ -66,14 +88,12 @@ describe.skip('updateStateHandlerFactory', function main() {
     await removeDapi();
   });
 
-  it('should respond with valid result', async () => {
+  it('should respond with valid result and store contract', async () => {
     const result = await dapiClient.updateState(stHeader, stPacket);
+    const contractId = stPacketFixture.getContractId();
+    const { result: contract } = await driveClient.request('fetchContract', { contractId });
 
     expect(result).to.be.an.instanceOf(UpdateStateTransitionResponse);
-
-    // @TODO
-    // getApi fetch documents
-    // getContracts
-    // check them
+    expect(contract).to.deep.include(stPacketFixture.getContract().toJSON());
   });
 });

@@ -65,7 +65,7 @@ function updateStateHandlerFactory(rpcClient) {
     }
 
     if (deliverTx.code > 0) {
-      const { error: { message, data } } = JSON.parse(checkTx.log);
+      const { error: { message, data } } = JSON.parse(deliverTx.log);
 
       throw new InvalidArgumentGrpcError(message, data);
     }
