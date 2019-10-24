@@ -19,6 +19,7 @@ const RPCError = require("../../src/errors/RPCError");
 const {
   Transaction,
   PrivateKey,
+  BloomFilter,
 } = require('@dashevo/dashcore-lib');
 
 const doubleSha256 = require('../utils/doubleSha256');
@@ -892,12 +893,7 @@ describe('api', () => {
       const count = 2;
       const vData = Buffer.from([1]);
 
-      const bloomFilter = {
-        vData: vData.toString('base64'),
-        nHashFuncs: 10,
-        nTweak: Math.floor(Math.random() * 1000),
-        nFlags: 1,
-      };
+      const bloomFilter = BloomFilter.create(1, 0.001);
 
       const actualStream = await client.subscribeToTransactionsWithProofs(
         bloomFilter,
@@ -911,7 +907,14 @@ describe('api', () => {
       expect(request).to.be.an.instanceOf(TransactionsWithProofsRequest);
 
       const actualBloomFilter = request.getBloomFilter();
-      expect(actualBloomFilter.toObject()).to.be.deep.equal(bloomFilter);
+
+      expect(actualBloomFilter.toObject()).to.be.deep.equal(
+        Object.assign(bloomFilter.toObject(), {
+          vData: Buffer.from(
+            new Uint8Array(bloomFilter.toObject().vData),
+          ).toString('base64'),
+        }),
+      );
 
       expect(request.getFromBlockHash()).to.equal('');
       expect(request.getFromBlockHeight()).to.equal(fromBlockHeight);

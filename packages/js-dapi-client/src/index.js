@@ -5,7 +5,7 @@ const {
   LastUserStateTransitionHashRequest,
   TransactionsFilterStreamPromiseClient,
   TransactionsWithProofsRequest,
-  BloomFilter,
+  BloomFilter: BloomFilterMessage,
   StateTransition,
 } = require('@dashevo/dapi-grpc');
 const MNDiscovery = require('./MNDiscovery/index');
@@ -334,7 +334,7 @@ class DAPIClient {
 
   /**
    * @param {Object} bloomFilter
-   * @param {Uint8Array|string} bloomFilter.vData - The filter itself is simply a bit
+   * @param {Uint8Array|Array} bloomFilter.vData - The filter itself is simply a bit
    * field of arbitrary byte-aligned size. The maximum size is 36,000 bytes.
    * @param {number} bloomFilter.nHashFuncs - The number of hash functions to use in this filter.
    * The maximum value allowed in this field is 50.
@@ -352,8 +352,14 @@ class DAPIClient {
    * }
    */
   async subscribeToTransactionsWithProofs(bloomFilter, options = { count: 0 }) {
-    const bloomFilterMessage = new BloomFilter();
-    bloomFilterMessage.setVData(bloomFilter.vData);
+    const bloomFilterMessage = new BloomFilterMessage();
+
+    let { vData } = bloomFilter;
+    if (Array.isArray(vData)) {
+      vData = new Uint8Array(vData);
+    }
+
+    bloomFilterMessage.setVData(vData);
     bloomFilterMessage.setNHashFuncs(bloomFilter.nHashFuncs);
     bloomFilterMessage.setNTweak(bloomFilter.nTweak);
     bloomFilterMessage.setNFlags(bloomFilter.nFlags);
