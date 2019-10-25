@@ -26,8 +26,14 @@ fi
 
 IMAGE_NAME="dashpay/dapi"
 
+# Use regex pattern matching to check if "dev" exists in tag
+DOCKER_TAG="latest"
+if [[ $PACKAGE_TAG =~ dev ]]; then
+  DOCKER_TAG="dev"
+fi
+
 # 1. build image:
-docker build -t "${IMAGE_NAME}:latest" \
+docker build -t "${IMAGE_NAME}:${DOCKER_TAG}" \
              -t "${IMAGE_NAME}:${VERSION}" \
              .
 
@@ -35,5 +41,5 @@ docker build -t "${IMAGE_NAME}:latest" \
 echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
 # Push images to the registry
-docker push "${IMAGE_NAME}:latest"
+docker push "${IMAGE_NAME}:${DOCKER_TAG}"
 docker push "${IMAGE_NAME}:${VERSION}"
