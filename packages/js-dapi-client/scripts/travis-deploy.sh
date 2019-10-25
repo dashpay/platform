@@ -21,5 +21,11 @@ if [[ "$PACKAGE_TAG" != "$TRAVIS_TAG" ]]; then
   exit 1
 fi
 
+# Use regex pattern matching to check if "dev" exists in tag
+NPM_TAG="latest"
+if [[ $PACKAGE_TAG =~ dev ]]; then
+  NPM_TAG="dev"
+fi
+
 # Now that checks have been passed, publish the module
-npm publish
+npm publish --tag $NPM_TAG
