@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-syntax */
 const _ = require('lodash');
+const logger = require('../../logger');
 const { Worker } = require('../');
 const { ValidTransportLayerRequired, InvalidTransactionObject } = require('../../errors');
 const EVENTS = require('../../EVENTS');
@@ -97,7 +98,7 @@ class SyncWorker extends Worker {
     toPushListener.forEach((listener) => {
       const listenerObj = { ...listener };
       listenerObj.cb = function (event) {
-        console.log('Event:', event, listenerObj.address);
+        logger.info('Event:', event, listenerObj.address);
       };
 
       this.listeners.addresses.push(listener);
@@ -292,7 +293,7 @@ class SyncWorker extends Worker {
         break;
       default:
         this.events.emit(type, el);
-        console.warn('Not implemented, announce of ', type, el);
+        logger.warn('Not implemented, announce of ', { type, el });
     }
   }
 }

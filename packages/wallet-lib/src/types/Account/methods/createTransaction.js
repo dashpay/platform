@@ -1,6 +1,7 @@
 /* eslint-disable no-underscore-dangle */
 const _ = require('lodash');
 const Dashcore = require('@dashevo/dashcore-lib');
+const logger = require('../../../logger');
 const { CreateTransactionError } = require('../../../errors');
 const { dashToDuffs, coinSelection, is } = require('../../../utils');
 const _loadStrategy = require('../_loadStrategy');
@@ -32,7 +33,7 @@ function createTransaction(opts) {
       if (_.has(recipient, 'address') && _.has(recipient, 'satoshis')) {
         outputs.push(recipient);
       } else {
-        console.error('Invalid recipient provided', recipient);
+        logger.error('Invalid recipient provided', recipient);
       }
     });
   } else {
@@ -127,7 +128,7 @@ function createTransaction(opts) {
     } else if (pk.constructor.name === Dashcore.HDPrivateKey.name) {
       transformedPrivateKeys.push(pk.privateKey);
     } else {
-      console.log('Unexpected pk type', pk, pk.constructor.name);
+      logger.error('Unexpected pk type', pk, pk.constructor.name);
     }
   });
   try {
@@ -138,7 +139,7 @@ function createTransaction(opts) {
     );
     return signedTx;
   } catch (e) {
-    console.log('createTransaction error', e.message);
+    logger.error('createTransaction error', e.message);
     // if (e.message === 'Not fully signed transaction') {}
     return e;
   }

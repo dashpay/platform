@@ -1,4 +1,5 @@
 const { StandardPlugin } = require('../../src/plugins/index');
+const logger = require('../../src/logger');
 
 class WalletConsolidator extends StandardPlugin {
   constructor() {
@@ -19,7 +20,6 @@ class WalletConsolidator extends StandardPlugin {
   }
 
   consolidateWallet(address = this.getUnusedAddress().address, utxos = this.getUTXOS()) {
-    const self = this;
     return {
       prepareTransaction: () => {
         if (!utxos || utxos.length === 0) {
@@ -34,7 +34,7 @@ class WalletConsolidator extends StandardPlugin {
         return {
           toString: () => rawtx,
           broadcast: async () => {
-            console.log('TRIED TO BROADCAST', rawtx);
+            logger.info('TRIED TO BROADCAST', rawtx);
             return rawtx;
             // return self.broadcastTransaction(rawtx);
           },

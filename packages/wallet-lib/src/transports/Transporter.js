@@ -1,6 +1,6 @@
 const DAPIClient = require('@dashevo/dapi-client');
+const logger = require('../logger');
 const { is, hasProp } = require('../utils/index');
-
 
 const transportList = {
   dapi: DAPIClient,
@@ -21,7 +21,7 @@ function isValidTransport(transport) {
     expectedKeys.forEach((key) => {
       if (!transport[key]) {
         valid = false;
-        console.error(`Invalid Transporter. Expected key :${key}`);
+        logger.error(`Invalid Transporter. Expected key :${key}`);
       }
     });
     return valid;
@@ -79,7 +79,7 @@ class Transporter {
           }
           break;
         default:
-          console.log('E.code', e.code);
+          logger.error('E.code', e.code);
           return e;
       }
     } else if (e && e.response && e.response.data) {
@@ -88,12 +88,12 @@ class Transporter {
         case 429:
           if (error === 'Rate limit exceeded') {
             self.canConnect = false;
-            console.error('Rate limit exceeded');
+            logger.error('Rate limit exceeded');
             return e;
           }
           break;
         default:
-          console.log('e.response.data', e.response.data);
+          logger.error('e.response.data', e.response.data);
           return e;
       }
     } else {

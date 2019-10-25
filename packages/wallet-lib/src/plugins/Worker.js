@@ -1,4 +1,5 @@
 const _ = require('lodash');
+const logger = require('../logger');
 const StandardPlugin = require('./StandardPlugin');
 
 // eslint-disable-next-line no-underscore-dangle
@@ -66,11 +67,11 @@ class Worker extends StandardPlugin {
     if (this.execute) {
       try {
         await this.execute();
-      } catch (e) {
-        console.log(e);
+      } catch (err) {
+        logger.error(`${this.name} Error`, err);
       }
     } else {
-      console.error(`${this.name} : Missing execute function`);
+      logger.error(`${this.name} : Missing execute function`);
     }
 
     this.isWorkerRunning = false;

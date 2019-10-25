@@ -1,3 +1,4 @@
+const logger = require('../../logger');
 const { Worker } = require('../');
 const { ValidTransportLayerRequired } = require('../../errors');
 const EVENTS = require('../../EVENTS');
@@ -59,11 +60,11 @@ class ChainWorker extends Worker {
       this.storage.store.chains[network.toString()].blockheight = blocks;
       this.announce(EVENTS.BLOCKHEIGHT_CHANGED, blocks);
       return true;
-    } catch (e) {
-      if (e instanceof ValidTransportLayerRequired) {
-        console.log('invalid');
+    } catch (err) {
+      if (err instanceof ValidTransportLayerRequired) {
+        logger.error('Error', err);
       }
-      return e;
+      return err;
     }
   }
 
@@ -82,7 +83,7 @@ class ChainWorker extends Worker {
         break;
       default:
         this.events.emit(type, el);
-        console.warn('Not implemented, announce of ', type, el);
+        logger.warn('Not implemented, announce of ', type, el);
     }
   }
 }

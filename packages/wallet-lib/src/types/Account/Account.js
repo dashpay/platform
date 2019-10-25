@@ -1,6 +1,6 @@
 const _ = require('lodash');
 const { EventEmitter } = require('events');
-
+const logger = require('../../logger');
 const { WALLET_TYPES } = require('../../CONSTANTS');
 const { is } = require('../../utils');
 const EVENTS = require('../../EVENTS');
@@ -104,7 +104,7 @@ class Account {
         try {
           this.storage.importTransactions(opts.cache.transactions);
         } catch (e) {
-          console.log(e);
+          logger.error(e);
           this.disconnect();
           throw e;
         }

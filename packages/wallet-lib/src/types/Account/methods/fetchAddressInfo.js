@@ -1,3 +1,4 @@
+const logger = require('../../../logger');
 const { ValidTransportLayerRequired } = require('../../../errors');
 const { is } = require('../../../utils');
 
@@ -76,8 +77,8 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
       }
     }
     return addrInfo;
-  } catch (e) {
-    console.log(e);
+  } catch (err) {
+    logger.error('Error', err);
     return false;
   }
 }

@@ -1,4 +1,5 @@
-const { Wallet } = require('../index');
+const { Wallet } = require('../src/index');
+const logger = require('../src/logger');
 
 const mnemonic = 'never citizen worry shrimp used wild color snack undo armed scout chief';
 const walletOpts = {
@@ -17,22 +18,22 @@ const startService = () => {
 
   // Get any specific address
   const specific = account.getAddress(100);
-  console.log('Specific', specific);
+  logger.info('Specific', specific);
 
   // Generate a batch of all 200 first addreses
   const poolAddresses = [];
   for (let i = 0; i <= 200; i += 1) {
     poolAddresses.push(account.getAddress(i).address);
   }
-  console.log('Pregenerated pool of addr', poolAddresses);
+  logger.info('Pregenerated pool of addr', poolAddresses);
 
   const addrPool = [];
   // get 10 unused address
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 10; i += 1) {
     const skip = i;
     addrPool.push(account.getUnusedAddress('external', skip));
   }
-  console.log('Pool of unused addr', addrPool);
+  logger.info('Pool of unused addr', addrPool);
 };
 
 account.events.on('ready', startService);

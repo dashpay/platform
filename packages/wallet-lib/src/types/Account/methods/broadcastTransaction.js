@@ -1,4 +1,5 @@
 const Dashcore = require('@dashevo/dashcore-lib');
+const logger = require('../../../logger');
 const { is } = require('../../../utils');
 const {
   ValidTransportLayerRequired,
@@ -56,7 +57,7 @@ async function broadcastTransaction(transaction, isIs = false) {
 
   const txid = await this.transport.sendRawTransaction(transaction.toString(), isIs);
   if (!is.txid(txid)) {
-    console.error(txid, 'is said to not be a txid!');
+    logger.error(txid, 'is said to not be a txid!');
   }
   // We now need to impact/update our affected inputs
   // so we clear them out from UTXOset.

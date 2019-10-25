@@ -1,5 +1,6 @@
 const DashPlatformProtocol = require('@dashevo/dpp');
 const { Transaction } = require('@dashevo/dashcore-lib');
+const logger = require('../logger');
 const StandardPlugin = require('./StandardPlugin');
 
 // eslint-disable-next-line no-underscore-dangle
@@ -44,7 +45,7 @@ class DPA extends StandardPlugin {
       this.initDPP();
     }
     const contractId = this.dpp.getContract().getId();
-    console.log('Verifying DPA ID', contractId);
+    logger.info('Verifying DPA ID', contractId);
 
     if (!transporter || !transporter.fetchContract) {
       throw new Error('Require transporter to have a fetchContract method to verify DPA Contract');
@@ -64,7 +65,7 @@ class DPA extends StandardPlugin {
   }
 
   async register(buser, privateKey = null) {
-    console.log(`Registering DPA : ${this.name}`);
+    logger.info(`Registering DPA : ${this.name}`);
     const creditFeeSet = 1000;
     if (!this.dpp) {
       this.initDPP();
@@ -74,11 +75,11 @@ class DPA extends StandardPlugin {
       throw new Error('A BUser Object is required to register (see @dashevo/dashpay-dpa)');
     }
     if (!buser.regtxid) {
-      console.log(`'Registering DPA : ${this.name} - Missing regtxid, trying synchronize...`);
+      logger.info(`'Registering DPA : ${this.name} - Missing regtxid, trying synchronize...`);
       try {
         await buser.synchronize();
-      } catch (e) {
-        console.error(e);
+      } catch (err) {
+        logger.error('DPA Registration Error', err);
         throw new Error('Invalid BUser or inable to synchronize (regtxid missing.)');
       }
     }
@@ -113,7 +114,7 @@ class DPA extends StandardPlugin {
         .toString('hex'),
     );
 
-    console.log(`DPA ${dppContract.name} Registered (txid ${txid}.)`);
+    logger.info(`DPA ${dppContract.name} Registered (txid ${txid}.)`);
     return txid;
   }
 }

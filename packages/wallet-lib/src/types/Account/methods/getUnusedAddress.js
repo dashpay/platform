@@ -1,3 +1,5 @@
+const logger = require('../../../logger');
+
 /**
  * Get an unused address from the store
  * @param type - (default: 'external') - Type of the requested usused address
@@ -20,7 +22,7 @@ function getUnusedAddress(type = 'external', skip = 0) {
     const el = (this.store.wallets[walletId].addresses[type][key]);
 
     if (!el || !el.address || el.address === '') {
-      console.warn('getUnusedAddress received an empty one.', el, i, skipped);
+      logger.warn('getUnusedAddress received an empty one.', el, i, skipped);
     }
     unused = el;
     if (el.used === false) {

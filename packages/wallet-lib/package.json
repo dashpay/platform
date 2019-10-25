@@ -30,7 +30,8 @@
     "@dashevo/dashcore-lib": "^0.17.9",
     "@dashevo/dpp": "^0.7.2",
     "localforage": "^1.7.3",
-    "lodash": "^4.17.15"
+    "lodash": "^4.17.15",
+    "winston": "^3.2.1"
   },
   "devDependencies": {
     "chai": "^4.2.0",

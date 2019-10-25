@@ -1,4 +1,5 @@
-const { Wallet } = require('../index');
+const { Wallet } = require('../src');
+const logger = require('../src/logger');
 // This is a ColdStorage worker. It ran each X, verify a condition (execute function), and
 const ColdStorageWorker = require('./workers/ColdStorageWorker');
 
@@ -25,8 +26,8 @@ const wallet = new Wallet({
 const account = wallet.getAccount(0);
 
 const start = async () => {
-  console.log('Balance', account.getTotalBalance());
-  console.log('Funding address', account.getUnusedAddress().address);
+  logger.info('Balance', account.getTotalBalance());
+  logger.info('Funding address', account.getUnusedAddress().address);
 
   // await showcasePlugin();
   // await showcaseDPA();
@@ -38,8 +39,8 @@ const showcasePlugin = async () => {
   const consolidate = await walletConsolidator.consolidateWallet();
 
   const preparedTransaction = consolidate.prepareTransaction();
-  console.log('RawTx', preparedTransaction.toString());
-  // console.log('Broadcast', await preparedTransaction.broadcast());
+  logger.info('RawTx', preparedTransaction.toString());
+  // logger.info('Broadcast', await preparedTransaction.broadcast());
 };
 
 const showcaseDPA = async () => {
@@ -47,7 +48,7 @@ const showcaseDPA = async () => {
   const documentPath = `${__dirname}/document.txt`;
   const notarize = await dpaDoc.notarizeDocument(documentPath);
 
-  console.log('Notarized ?', notarize);
+  logger.info('Notarized ?', notarize);
 };
 
 account.events.on('ready', start);

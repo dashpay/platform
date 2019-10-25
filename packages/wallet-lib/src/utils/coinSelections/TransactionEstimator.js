@@ -2,8 +2,7 @@ const _ = require('lodash');
 const {
   Address, Script, Transaction,
 } = require('@dashevo/dashcore-lib');
-
-const { Output } = Transaction;
+const logger = require('../../logger');
 const {
   FEES,
   VERSION_BYTES,
@@ -16,6 +15,7 @@ const {
 const is = require('../is');
 const { varIntSizeBytesFromLength } = require('../varInt');
 
+const { Output } = Transaction;
 const calculateInputsSize = (inputs) => {
   let inputsSize = 0;
   inputs.forEach(() => {
@@ -156,11 +156,11 @@ class TransactionEstimator {
   }
 
   debug() {
-    console.log('=== Transaction Estimator');
-    console.log('State:', this.state);
-    console.log('Size', this.getSize());
-    console.log('Fees', this.estimateFees());
-    console.log('=========================');
+    logger.info('=== Transaction Estimator');
+    logger.info('State:', this.state);
+    logger.info('Size', this.getSize());
+    logger.info('Fees', this.estimateFees());
+    logger.info('=========================');
   }
 }
 module.exports = TransactionEstimator;

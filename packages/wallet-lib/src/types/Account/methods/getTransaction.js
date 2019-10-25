@@ -1,3 +1,5 @@
+const logger = require('../../../logger');
+
 /**
  * Get a transaction from a provided txid
  * @param txid - Transaction Hash
@@ -12,7 +14,7 @@ async function getTransaction(txid = null) {
   try {
     await this.storage.importTransactions(tx);
   } catch (e) {
-    console.error(e);
+    logger.error('getTransaction', e);
   }
   return tx;
 }

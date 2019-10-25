@@ -1,4 +1,5 @@
 const localForage = require('localforage');
+const logger = require('../../logger');
 const InMem = require('../../adapters/InMem');
 
 module.exports = async function getDefaultAdapter() {
@@ -8,11 +9,11 @@ module.exports = async function getDefaultAdapter() {
   const isNode = !isBrowser && !isReactNative;
 
   if (isNode) {
-    console.warn('NodeJS env - Specify an adapter, fallback on inMem storage only.');
+    logger.warn('NodeJS env - Specify an adapter, fallback on inMem storage only.');
     return InMem;
   }
   if (isReactNative) {
-    console.warn('React Native env - Specify an adapter, fallback on inMem storage only.');
+    logger.warn('React Native env - Specify an adapter, fallback on inMem storage only.');
     return InMem;
   } if (isBrowser) {
     return localForage;

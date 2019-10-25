@@ -1,4 +1,5 @@
 const { cloneDeep, xor } = require('lodash');
+const logger = require('../../../logger');
 const { InvalidAddressObject, TransactionNotInStore } = require('../../../errors');
 const { is } = require('../../../utils');
 const EVENTS = require('../../../EVENTS');
@@ -60,7 +61,7 @@ const updateAddress = function (addressObj, walletId) {
         if (currentBlockHeight - blockheight >= 6) newObject.balanceSat += utxo.satoshis;
         else newObject.unconfirmedBalanceSat += utxo.satoshis;
       } catch (e) {
-        console.log(e);
+        logger.error('Error', e);
         if (e instanceof TransactionNotInStore) {
           // TODO : We consider unconfirmed a transaction that we don't know of, should we ?
           newObject.unconfirmedBalanceSat += utxo.satoshis;

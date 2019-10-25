@@ -1,3 +1,4 @@
+const logger = require('../../../logger');
 const EVENTS = require('../../../EVENTS');
 
 /**
@@ -17,7 +18,7 @@ const announce = function (type, el) {
       break;
     default:
       this.events.emit(type, el);
-      console.warn('Not implemented, announce of ', type, el);
+      logger.warn('Not implemented, announce of ', type, el);
   }
   return true;
 };

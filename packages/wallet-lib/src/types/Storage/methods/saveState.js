@@ -1,3 +1,4 @@
+const logger = require('../../../logger');
 const { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } = require('../../../EVENTS');
 
 /**
@@ -14,15 +15,10 @@ const saveState = async function () {
       this.lastSave = +new Date();
       this.events.emit(SAVE_STATE_SUCCESS);
       return true;
-    } catch (e) {
-      switch (e.message) {
-        default:
-          console.log('Storage saveState err', e);
-      }
-
-      this.events.emit(SAVE_STATE_FAILED, e);
-
-      throw e;
+    } catch (err) {
+      logger.error('Storage#saveState', err);
+      this.events.emit(SAVE_STATE_FAILED, err);
+      throw err;
     }
   }
   return false;

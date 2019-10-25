@@ -1,9 +1,9 @@
 const { expect } = require('chai');
+const logger = require('../../../src/logger');
 const importAddress = require('../../../src/types/Storage/methods/importAddress');
 
 describe('Storage - importAddress', () => {
   it('should throw on failed import', () => {
-    const mockOpts1 = { };
     const walletId = '123ae';
     const exceptedException1 = 'Expected walletId to import addresses';
 
@@ -11,9 +11,8 @@ describe('Storage - importAddress', () => {
     expect(() => importAddress.call({}, walletId)).to.throw(exceptedException1);
   });
   it('should import an address', () => {
-    console.log('FIXME');
+    logger.warn('FIXME');
     // const self = {};
     // importAddress.call(self, {});
-    // console.log(self);
   });
 });

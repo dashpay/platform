@@ -1,4 +1,5 @@
 const _ = require('lodash');
+const logger = require('../../logger');
 const SyncWorker = require('../../plugins/Workers/SyncWorker');
 const ChainWorker = require('../../plugins/Workers/ChainWorker');
 const BIP44Worker = require('../../plugins/Workers/BIP44Worker');
@@ -33,9 +34,8 @@ async function _initializeAccount(account, userUnsafePlugins) {
         if (!account.offlineMode) {
           account.injectPlugin(SyncWorker, true);
         }
-      } catch (e) {
-        console.error('Failed to perform standard injections');
-        console.error(e);
+      } catch (err) {
+        logger.error('Failed to perform standard injections', err);
       }
     }
 
@@ -43,8 +43,8 @@ async function _initializeAccount(account, userUnsafePlugins) {
       try {
         account.injectPlugin(UnsafePlugin, account.allowSensitiveOperations);
       } catch (e) {
-        console.error('Failed to inject plugin:', UnsafePlugin.name);
-        console.error(e);
+        logger.error('Failed to inject plugin:', UnsafePlugin.name);
+        logger.error(e);
       }
     });
 
@@ -112,7 +112,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
             return res(true);
           })
           .catch((err) => {
-            console.log(err);
+            logger.log('Error', err);
             throw new Error(`Unable to generate addresses :${err}`);
           });
       }
