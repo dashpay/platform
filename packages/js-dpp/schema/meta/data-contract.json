@@ -55,11 +55,10 @@
                     "maxItems": 100
                   },
                   "unique": {
-                    "type": "boolean",
-                    "const": true
+                    "type": "boolean"
                   }
                 },
-                "required": ["properties", "unique"],
+                "required": ["properties"],
                 "additionalProperties": false
               },
               "minItems": 1

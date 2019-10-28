@@ -669,22 +669,8 @@ describe('validateDataContractFactory', () => {
         });
       });
 
-      it('should have "unique" flag', () => {
-        rawDataContract.documents.indexedDocument.indices[0].unique = undefined;
-
-        const result = validateDataContract(rawDataContract);
-
-        expectJsonSchemaError(result);
-
-        const [error] = result.getErrors();
-
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices[0]');
-        expect(error.params.missingProperty).to.equal('unique');
-        expect(error.keyword).to.equal('required');
-      });
-
-      it('should have "unique" flag equal "true"', () => {
-        rawDataContract.documents.indexedDocument.indices[0].unique = false;
+      it('should have "unique" flag to be of a boolean type', () => {
+        rawDataContract.documents.indexedDocument.indices[0].unique = 12;
 
         const result = validateDataContract(rawDataContract);
 
@@ -693,7 +679,7 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices[0].unique');
-        expect(error.keyword).to.equal('const');
+        expect(error.keyword).to.equal('type');
       });
     });
   });
