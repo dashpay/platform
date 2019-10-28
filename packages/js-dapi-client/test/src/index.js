@@ -17,12 +17,12 @@ const SMNListFixture = require('../fixtures/mnList');
 const RPCError = require("../../src/errors/RPCError");
 
 const {
-  Transaction,
-  PrivateKey,
   BloomFilter,
 } = require('@dashevo/dashcore-lib');
 
-const doubleSha256 = require('../utils/doubleSha256');
+const DashPlatformProtocol = require('@dashevo/dpp');
+
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 chai.use(chaiAsPromised);
 
@@ -689,7 +689,6 @@ describe('api', () => {
   describe('.user.searchUsers', () => {
     it('Should return users', async () => {
       const dapi = new DAPIClient();
-      const pattern = '';
       const res = await dapi.searchUsers({
         pattern: 'Dash',
         offset: -1,
@@ -969,29 +968,30 @@ describe('api', () => {
 
   describe('#updateState', () => {
     let updateStateStub;
+    let stateTransitionFixture;
 
     beforeEach(() => {
       userId = Buffer.alloc(256).toString('hex');
 
       updateStateStub = sinon
           .stub(CorePromiseClient.prototype, 'updateState');
+
+      const dataContractFixture = getDataContractFixture();
+      const dpp = new DashPlatformProtocol();
+
+      stateTransitionFixture = dpp.dataContract.createStateTransition(dataContractFixture);
     });
 
     afterEach(() => {
       updateStateStub.restore();
     });
 
-    it('should return a hex string if the last ST is present', async () => {
-      let stPacket = {
-        contract: 'fake contract',
-      };
-
+    it('should return UpdateStateTransitionResponse', async () => {
       const response = new UpdateStateTransitionResponse();
       updateStateStub.resolves(response);
 
-      const stHeader = new Transaction();
       const client = new DAPIClient();
-      const result = await client.updateState(stHeader, stPacket);
+      const result = await client.updateState(stateTransitionFixture);
 
       expect(result).to.be.instanceOf(UpdateStateTransitionResponse);
     });
