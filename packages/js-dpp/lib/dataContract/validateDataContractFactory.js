@@ -4,7 +4,6 @@ const DataContract = require('./DataContract');
 
 const DuplicateIndexError = require('../errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyError');
-const UniqueIndexMustHaveUserIdPrefixError = require('../errors/UniqueIndexMustHaveUserIdPrefixError');
 
 /**
  * @param validator
@@ -58,21 +57,6 @@ module.exports = function validateDataContractFactory(validator) {
           }
 
           indicesFingerprints.push(indicesFingerprint);
-
-          // Currently, only user-based MN quorums are implemented
-          // so we are unable to verify uniqueness among all DPA data, only for user scope.
-          // That's why userId prefix for index is temporary required
-          if (indexPropertyNames[0] !== '$userId') {
-            result.addError(
-              new UniqueIndexMustHaveUserIdPrefixError(
-                rawDataContract,
-                documentType,
-                indexDefinition,
-              ),
-            );
-
-            return;
-          }
 
           // Ensure index properties definition
           const userDefinedProperties = indexPropertyNames.slice(1);
