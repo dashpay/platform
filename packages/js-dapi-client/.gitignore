@@ -6,3 +6,4 @@ dist/
 !test/dist
 .nyc_output/
 coverage/
+.env

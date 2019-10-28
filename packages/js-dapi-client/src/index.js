@@ -313,20 +313,18 @@ class DAPIClient {
   /**
    * Send State Transition to machine
    *
-   * @param {Transaction} stHeader
-   * @param {STPacket} stPacket
+   * @param {DataContractStateTransition|DocumentsStateTransition} stateTransition
    * @returns {Promise<!UpdateStateTransitionResponse>}
    */
-  async updateState(stHeader, stPacket) {
-    const stateTransition = new StateTransition();
-    stateTransition.setHeader(stHeader);
-    stateTransition.setPacket(stPacket);
+  async updateState(stateTransition) {
+    const stateTransitionRequest = new StateTransition();
+    stateTransitionRequest.setData(stateTransition.serialize());
 
     const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
 
     const client = new CorePromiseClient(`${nodeToConnect.getIp()}:${this.getGrpcPort()}`);
 
-    return client.updateState(stateTransition);
+    return client.updateState(stateTransitionRequest);
   }
 
   // Here go methods that used in VMN. Most of this methods will work only in regtest mode
