@@ -1,4 +1,5 @@
 {
+  "$id": "https://schema.dash.org/dpp-0-4-0/state-transition/data-contract",
   "properties": {
     "dataContract": {
       "type": "object"
