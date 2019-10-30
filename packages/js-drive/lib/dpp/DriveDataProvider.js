@@ -1,3 +1,5 @@
+const { Transaction } = require('@dashevo/dashcore-lib');
+
 class DriveDataProvider {
   /**
    * @param {fetchDocuments} fetchDocuments
@@ -42,7 +44,8 @@ class DriveDataProvider {
    */
   async fetchTransaction(id) {
     try {
-      return await this.rpcClient.getRawTransaction(id);
+      const { result: transaction } = await this.rpcClient.getRawTransaction(id);
+      return new Transaction(transaction);
     } catch (e) {
       // Invalid address or key error
       if (e.code === -5) {
