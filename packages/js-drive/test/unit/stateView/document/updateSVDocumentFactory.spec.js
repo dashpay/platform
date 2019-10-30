@@ -13,7 +13,6 @@ describe('updateSVDocumentFactory', () => {
   let reference;
   let document;
   let userId;
-  let contractId;
 
   beforeEach(function beforeEach() {
     svDocumentRepository = {
@@ -21,7 +20,6 @@ describe('updateSVDocumentFactory', () => {
       store: this.sinon.stub(),
     };
 
-    contractId = 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75';
     ({ userId } = getDocumentsFixture);
     [document] = getDocumentsFixture();
 
@@ -33,7 +31,7 @@ describe('updateSVDocumentFactory', () => {
   });
 
   it('should store SVDocument if action is "create"', async () => {
-    await updateSVDocument(contractId, userId, reference, document);
+    await updateSVDocument(document, reference);
 
     expect(svDocumentRepository.store).to.have.been.calledOnce();
 
@@ -55,7 +53,7 @@ describe('updateSVDocumentFactory', () => {
     document.setRevision(1);
     document.setAction(Document.ACTIONS.UPDATE);
 
-    await updateSVDocument(contractId, userId, reference, document);
+    await updateSVDocument(document, reference);
 
     expect(svDocumentRepository.find).to.have.been.calledOnceWith(document.getId());
     expect(svDocumentRepository.store).to.have.been.calledOnce();
@@ -79,7 +77,7 @@ describe('updateSVDocumentFactory', () => {
 
     let error;
     try {
-      await updateSVDocument(contractId, userId, reference, document);
+      await updateSVDocument(document, reference);
     } catch (e) {
       error = e;
     }
@@ -99,7 +97,7 @@ describe('updateSVDocumentFactory', () => {
     document.setData({});
     document.setAction(Document.ACTIONS.DELETE);
 
-    await updateSVDocument(contractId, userId, reference, document);
+    await updateSVDocument(document, reference);
 
     expect(svDocumentRepository.store).to.have.been.calledOnce();
 
@@ -121,7 +119,7 @@ describe('updateSVDocumentFactory', () => {
 
     let error;
     try {
-      await updateSVDocument(contractId, userId, reference, document);
+      await updateSVDocument(document, reference);
     } catch (e) {
       error = e;
     }

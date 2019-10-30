@@ -13,12 +13,12 @@ class DriveDataProvider {
   }
 
   /**
-   * Fetch Contract by ID
+   * Fetch Data Contract by ID
    *
    * @param {string} id
-   * @returns {Promise<Contract|null>}
+   * @returns {Promise<DataContract|null>}
    */
-  async fetchContract(id) {
+  async fetchDataContract(id) {
     return this.fetchContractFromDrive(id);
   }
 

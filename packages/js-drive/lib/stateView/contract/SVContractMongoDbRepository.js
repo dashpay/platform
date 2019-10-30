@@ -41,10 +41,10 @@ class SVContractMongoDbRepository {
    * Find SV Contract by contractId
    *
    * @param {string} contractId
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Promise<SVContract|null>}
    */
-  async find(contractId, transaction = undefined) {
+  async find(contractId, stateViewTransaction = undefined) {
     const findQuery = {
       _id: contractId,
       isDeleted: false,
@@ -52,7 +52,7 @@ class SVContractMongoDbRepository {
 
     let result;
 
-    if (transaction) {
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => (
         mongoClient
           .db(this.databaseName)
@@ -60,7 +60,7 @@ class SVContractMongoDbRepository {
           .findOne(findQuery, { session })
       );
 
-      result = await transaction.runWithTransaction(transactionFunction);
+      result = await stateViewTransaction.runWithTransaction(transactionFunction);
     } else {
       result = await this.mongoCollection.findOne(findQuery);
     }
@@ -76,14 +76,14 @@ class SVContractMongoDbRepository {
    * Find list of SV Contract by `reference.stHash`
    *
    * @param {string} hash
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Promise<SVContract[]|null>}
    */
-  async findAllByReferenceSTHash(hash, transaction = undefined) {
+  async findAllByReferenceSTHash(hash, stateViewTransaction = undefined) {
     const findQuery = { 'reference.stHash': hash };
 
     let result;
-    if (transaction) {
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => (
         mongoClient
           .db(this.databaseName)
@@ -92,7 +92,7 @@ class SVContractMongoDbRepository {
           .toArray()
       );
 
-      result = await transaction.runWithTransaction(transactionFunction);
+      result = await stateViewTransaction.runWithTransaction(transactionFunction);
     } else {
       result = await this.mongoCollection.find(findQuery)
         .toArray();
@@ -105,20 +105,20 @@ class SVContractMongoDbRepository {
    * Store SV Contract
    *
    * @param {SVContract} svContract
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Promise}
    */
-  async store(svContract, transaction = undefined) {
+  async store(svContract, stateViewTransaction = undefined) {
     const rawSVContract = svContract.toJSON();
     rawSVContract.contract = mongo.Binary(
-      svContract.getContract().serialize(),
+      svContract.getDataContract().serialize(),
     );
 
-    const filter = { _id: svContract.getContractId() };
+    const filter = { _id: svContract.getId() };
     const update = { $set: rawSVContract };
     let updateOptions = { upsert: true };
 
-    if (transaction) {
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => {
         updateOptions = Object.assign({}, updateOptions, { session });
 
@@ -132,7 +132,7 @@ class SVContractMongoDbRepository {
           );
       };
 
-      return transaction.runWithTransaction(transactionFunction);
+      return stateViewTransaction.runWithTransaction(transactionFunction);
     }
 
     return this.mongoCollection.updateOne(
@@ -146,12 +146,12 @@ class SVContractMongoDbRepository {
    * Delete SV Contract
    *
    * @param {SVContract} svContract
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Promise}
    */
-  async delete(svContract, transaction = undefined) {
-    const filter = { _id: svContract.getContractId() };
-    if (transaction) {
+  async delete(svContract, stateViewTransaction = undefined) {
+    const filter = { _id: svContract.getId() };
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => (
         mongoClient
           .db(this.databaseName)
@@ -159,7 +159,7 @@ class SVContractMongoDbRepository {
           .deleteOne(filter, { session })
       );
 
-      return transaction.runWithTransaction(transactionFunction);
+      return stateViewTransaction.runWithTransaction(transactionFunction);
     }
 
     return this.mongoCollection.deleteOne(filter);
@@ -171,21 +171,17 @@ class SVContractMongoDbRepository {
    * @returns {SVContract}
    */
   createSVContract({
-    contractId,
-    userId,
     contract: serializedRawContract,
     reference,
     isDeleted,
     previousRevisions,
   }) {
-    const contract = this.dpp.contract.createFromSerialized(
+    const contract = this.dpp.dataContract.createFromSerialized(
       serializedRawContract.buffer,
       { skipValidation: true },
     );
 
     return new SVContract(
-      contractId,
-      userId,
       contract,
       new Reference(reference),
       isDeleted,

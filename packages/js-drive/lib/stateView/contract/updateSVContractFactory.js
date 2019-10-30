@@ -9,34 +9,32 @@ function updateSVContractFactory(svContractRepository) {
    * Generate Contract State View
    *
    * @typedef {Promise} updateSVContract
-   * @param {string} contractId
-   * @param {string} userId
+   * @param {DataContract} contract
    * @param {Reference} reference
-   * @param {Contract} contract
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    *
    * @returns {Promise<SVContract>}
    */
   async function updateSVContract(
-    contractId,
-    userId,
-    reference,
     contract,
-    transaction = undefined,
+    reference,
+    stateViewTransaction = undefined,
   ) {
     const currentSVContract = new SVContract(
-      contractId,
-      userId,
       contract,
       reference,
     );
 
-    const previousSVContract = await svContractRepository.find(contractId, transaction);
+    const previousSVContract = await svContractRepository.find(
+      currentSVContract.getId(),
+      stateViewTransaction,
+    );
+
     if (previousSVContract) {
       currentSVContract.addRevision(previousSVContract);
     }
 
-    await svContractRepository.store(currentSVContract, transaction);
+    await svContractRepository.store(currentSVContract, stateViewTransaction);
 
     return currentSVContract;
   }

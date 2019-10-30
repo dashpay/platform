@@ -33,7 +33,7 @@ describe('SVContractMongoDbRepository', () => {
   it('should store SV Contract entity', async () => {
     await svContractRepository.store(svContract);
 
-    const result = await svContractRepository.find(svContract.getContractId());
+    const result = await svContractRepository.find(svContract.getId());
 
     expect(result.toJSON()).to.deep.equal(svContract.toJSON());
   });
@@ -78,7 +78,7 @@ describe('SVContractMongoDbRepository', () => {
 
     await svContractRepository.store(svContract);
 
-    const contract = await svContractRepository.find(svContract.getContractId());
+    const contract = await svContractRepository.find(svContract.getId());
 
     expect(contract).to.be.null();
   });
@@ -87,7 +87,7 @@ describe('SVContractMongoDbRepository', () => {
     await svContractRepository.store(svContract);
 
     const result = await mongoDatabase.collection('contracts').findOne({
-      _id: svContract.getContractId(),
+      _id: svContract.getId(),
     });
 
     expect(result).to.be.not.null();
@@ -153,7 +153,7 @@ describe('SVContractMongoDbRepository', () => {
     await svContractRepository.store(svContract, stateViewTransaction);
 
     const storedSVContract = await svContractRepository.find(
-      svContract.getContractId(),
+      svContract.getId(),
       stateViewTransaction,
     );
 
@@ -165,7 +165,7 @@ describe('SVContractMongoDbRepository', () => {
   it('should find stored contract by id', async () => {
     await svContractRepository.store(svContract);
 
-    const storedSVContract = await svContractRepository.find(svContract.getContractId());
+    const storedSVContract = await svContractRepository.find(svContract.getId());
 
     expect(storedSVContract).to.deep.equal(svContract);
   });

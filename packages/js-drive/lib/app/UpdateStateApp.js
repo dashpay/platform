@@ -179,8 +179,9 @@ class UpdateStateApp {
       this.stateViewTransaction,
     );
 
-    const dpp = new DashPlatformProtocol();
-    dpp.setDataProvider(dataProvider);
+    const dpp = new DashPlatformProtocol({
+      dataProvider,
+    });
 
     return applyStateTransitionHandlerFactory(
       this.stateViewTransaction,

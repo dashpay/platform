@@ -4,14 +4,12 @@ class Reference {
    * @param {string} hashes.blockHash
    * @param {number} hashes.blockHeight
    * @param {string} hashes.stHash
-   * @param {string} hashes.stPacketHash
    * @param {string} hashes.hash
    */
   constructor(hashes) {
     this.blockHash = hashes.blockHash;
     this.blockHeight = hashes.blockHeight;
     this.stHash = hashes.stHash;
-    this.stPacketHash = hashes.stPacketHash;
     this.hash = hashes.hash;
   }
 
@@ -39,13 +37,6 @@ class Reference {
   /**
    * @return {string}
    */
-  getSTPacketHash() {
-    return this.stPacketHash;
-  }
-
-  /**
-   * @return {string}
-   */
   getHash() {
     return this.hash;
   }
@@ -56,7 +47,6 @@ class Reference {
    * @return {{ blockHash: string,
    *            blockHeight: number,
    *            stHash: string,
-   *            stPacketHash: string,
    *            hash: string }}
    */
   toJSON() {
@@ -64,7 +54,6 @@ class Reference {
       blockHash: this.getBlockHash(),
       blockHeight: this.getBlockHeight(),
       stHash: this.getSTHash(),
-      stPacketHash: this.getSTPacketHash(),
       hash: this.getHash(),
     };
   }

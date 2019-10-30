@@ -6,21 +6,22 @@ function updateSVDocumentFactory(createSVDocumentRepository) {
    * Generate Document State View
    *
    * @typedef {Promise} updateSVDocument
-   * @param {string} contractId
-   * @param {string} userId
-   * @param {Reference} reference
    * @param {Document} document
-   * @param {MongoDBTransaction} transaction
+   * @param {Reference} reference
+   * @param {MongoDBTransaction} stateViewTransaction
    * @returns {Promise<void>}
    */
-  async function updateSVDocument(contractId, userId, reference, document, transaction) {
-    const svDocumentRepository = createSVDocumentRepository(contractId, document.getType());
+  async function updateSVDocument(document, reference, stateViewTransaction) {
+    const svDocumentRepository = createSVDocumentRepository(
+      document.getDataContractId(),
+      document.getType(),
+    );
 
-    const svDocument = new SVDocument(userId, document, reference);
+    const svDocument = new SVDocument(document, reference);
 
     switch (document.getAction()) {
       case Document.ACTIONS.CREATE: {
-        await svDocumentRepository.store(svDocument, transaction);
+        await svDocumentRepository.store(svDocument, stateViewTransaction);
 
         break;
       }
@@ -28,11 +29,12 @@ function updateSVDocumentFactory(createSVDocumentRepository) {
       case Document.ACTIONS.DELETE: {
         svDocument.markAsDeleted();
       }
+
       // eslint-disable-next-line no-fallthrough
       case Document.ACTIONS.UPDATE: {
         const previousSVDocument = await svDocumentRepository.find(
           svDocument.getDocument().getId(),
-          transaction,
+          stateViewTransaction,
         );
 
         if (!previousSVDocument) {
@@ -41,7 +43,7 @@ function updateSVDocumentFactory(createSVDocumentRepository) {
 
         svDocument.addRevision(previousSVDocument);
 
-        await svDocumentRepository.store(svDocument, transaction);
+        await svDocumentRepository.store(svDocument, stateViewTransaction);
 
         break;
       }

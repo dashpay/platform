@@ -18,7 +18,6 @@ describe('fetchDocumentsFactory', () => {
   let type;
   let contractId;
   let document;
-  let stReference;
 
   startMongoDb().then((mongoDb) => {
     mongoClient = mongoDb.getClient();
@@ -38,18 +37,9 @@ describe('fetchDocumentsFactory', () => {
 
     [svDocument] = getSVDocumentsFixture();
 
-    const currentReference = svDocument.getCurrentRevision()
-      .getReference();
-
     document = svDocument.getDocument();
-    stReference = {
-      blockHash: currentReference.getBlockHash(),
-      blockHeight: currentReference.getBlockHeight(),
-      stHeaderHash: currentReference.getSTHash(),
-      stPacketHash: currentReference.getSTPacketHash(),
-    };
     type = document.getType();
-    contractId = 'HgKXrLhm7sMjPrRGS1UsETmmQ7nZHbaKN729zw55PUVk';
+    contractId = Buffer.alloc(32, 'somePool').toString('hex');
   });
 
   it('should fetch Documents for specified contract ID and document type', async () => {
@@ -64,8 +54,6 @@ describe('fetchDocumentsFactory', () => {
     const [actualDocument] = result;
 
     const documentJSON = document.toJSON();
-
-    documentJSON.$meta.stReference = stReference;
 
     expect(actualDocument.toJSON()).to.deep.equal(documentJSON);
   });
@@ -87,8 +75,6 @@ describe('fetchDocumentsFactory', () => {
     const [actualDocument] = result;
 
     const documentJSON = document.toJSON();
-
-    documentJSON.$meta.stReference = stReference;
 
     expect(actualDocument.toJSON()).to.deep.equal(documentJSON);
   });

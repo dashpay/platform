@@ -1,3 +1,5 @@
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
+
 const Reference = require('./revisions/Reference');
 
 /**
@@ -11,53 +13,66 @@ function applyStateTransitionFactory(
 ) {
   /**
    * @typedef {Promise} applyStateTransition
-   * @param {STPacket} stPacket
-   * @param {StateTransition} stHeader
+   * @param {AbstractStateTransition} stateTransition
    * @param {string} blockHash
    * @param {number} blockHeight
-   * @param {MongoDBTransaction} transaction
+   * @param {MongoDBTransaction} stateViewTransaction
    * @returns {Promise<Object>}
    */
-  async function applyStateTransition(stPacket, stHeader, blockHash, blockHeight, transaction) {
-    if (stPacket.getContract()) {
-      const reference = new Reference({
-        blockHash,
-        blockHeight,
-        stHash: stHeader.hash,
-        stPacketHash: stHeader.extraPayload.hashSTPacket,
-        hash: stPacket.getContract().hash(),
-      });
+  async function applyStateTransition(
+    stateTransition,
+    blockHash,
+    blockHeight,
+    stateViewTransaction,
+  ) {
+    let result = {};
 
-      const svContract = await updateSVContract(
-        stPacket.getContractId(),
-        stHeader.extraPayload.regTxId,
-        reference,
-        stPacket.getContract(),
-        transaction,
-      );
+    // eslint-disable-next-line default-case
+    switch (stateTransition.getType()) {
+      case stateTransitionTypes.DATA_CONTRACT: {
+        const dataContract = stateTransition.getDataContract();
 
-      return { svContract };
+        const reference = new Reference({
+          blockHash,
+          blockHeight,
+          stHash: stateTransition.hash(),
+          hash: dataContract.hash(),
+        });
+
+        const svContract = await updateSVContract(
+          dataContract,
+          reference,
+          stateViewTransaction,
+        );
+
+        result = { svContract };
+
+        break;
+      }
+
+      case stateTransitionTypes.DOCUMENTS: {
+        const documents = stateTransition.getDocuments();
+
+        for (const document of documents) {
+          const reference = new Reference({
+            blockHash,
+            blockHeight,
+            stHash: stateTransition.hash(),
+            hash: document.hash(),
+          });
+
+          await updateSVDocument(
+            document,
+            reference,
+            stateViewTransaction,
+          );
+        }
+
+        break;
+      }
     }
 
-    for (const document of stPacket.getDocuments()) {
-      const reference = new Reference({
-        blockHash,
-        blockHeight,
-        stHash: stHeader.hash,
-        stPacketHash: stHeader.extraPayload.hashSTPacket,
-        hash: document.hash(),
-      });
-
-      await updateSVDocument(
-        stPacket.getContractId(),
-        stHeader.extraPayload.regTxId,
-        reference,
-        document,
-        transaction,
-      );
-    }
-
-    return {};
+    return result;
   }
 
   return applyStateTransition;

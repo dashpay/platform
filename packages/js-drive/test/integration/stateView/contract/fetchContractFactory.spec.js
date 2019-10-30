@@ -26,9 +26,9 @@ describe('fetchContractFactory', () => {
 
     await svContractMongoDbRepository.store(svContract);
 
-    const contractData = await fetchContract(svContract.getContractId());
+    const contractData = await fetchContract(svContract.getId());
 
-    expect(contractData.toJSON()).to.deep.equal(svContract.getContract().toJSON());
+    expect(contractData.toJSON()).to.deep.equal(svContract.getDataContract().toJSON());
   });
 
   it('should return null if no DP contract were stored by specific Contract id', async () => {

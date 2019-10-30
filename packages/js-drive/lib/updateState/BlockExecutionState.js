@@ -8,7 +8,8 @@ class BlockExecutionState {
 
   /**
    * Add new contract
-   * @param {Contract|null} contract
+   *
+   * @param {SVContract|null} contract
    */
   addContract(contract) {
     if (contract !== null) {
@@ -18,7 +19,8 @@ class BlockExecutionState {
 
   /**
    * Get all contracts
-   * @returns {Array}
+   *
+   * @returns {SVContract[]}
    */
   getContracts() {
     return this.contracts;

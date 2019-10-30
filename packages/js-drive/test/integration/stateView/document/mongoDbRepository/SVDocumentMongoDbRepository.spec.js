@@ -574,9 +574,8 @@ describe('SVDocumentMongoDbRepository', function main() {
       it('should sort SVDocuments by $userId', async () => {
         await Promise.all(
           svDocuments.map((svDoc, i) => {
-            svDoc.setUserId(i + 1);
             // eslint-disable-next-line no-param-reassign
-            svDoc.getDocument().getMetadata().userId = i + 1;
+            svDoc.getDocument().userId = i + 1;
 
             return svDocumentRepository.store(svDoc);
           }),
@@ -667,29 +666,6 @@ describe('SVDocumentMongoDbRepository', function main() {
     it('should find SVDocument by ID');
 
     it('should find SVDocument marked as deleted by ID');
-
-    it('should return SVDocument with Document having proper $meta', async () => {
-      await svDocumentRepository.store(svDocument);
-
-      const foundSVDocument = await svDocumentRepository
-        .find(svDocument.getDocument().getId());
-
-      const metadataJSON = foundSVDocument.getDocument().getMetadata()
-        .toJSON();
-
-      const currentReference = svDocument.getCurrentRevision()
-        .getReference();
-
-      expect(metadataJSON).to.deep.equal({
-        userId: svDocument.getUserId(),
-        stReference: {
-          blockHash: currentReference.getBlockHash(),
-          blockHeight: currentReference.getBlockHeight(),
-          stHeaderHash: currentReference.getSTHash(),
-          stPacketHash: currentReference.getSTPacketHash(),
-        },
-      });
-    });
 
     it('should return null if SVDocument was not found', async () => {
       const document = await svDocumentRepository.find('unknown');

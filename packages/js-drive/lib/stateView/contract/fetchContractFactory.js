@@ -21,7 +21,7 @@ function fetchContractFactory(svContractRepository) {
       return null;
     }
 
-    return svContract.getContract();
+    return svContract.getDataContract();
   }
 
   return fetchContract;

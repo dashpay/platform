@@ -19,7 +19,6 @@ describe('SVDocument', () => {
     previousRevisions = [];
 
     svDocument = new SVDocument(
-      userId,
       document,
       reference,
       isDeleted,
@@ -67,12 +66,12 @@ describe('SVDocument', () => {
 
       expect(result).to.deep.equal({
         userId,
+        contractId: document.getDataContractId(),
         data: document.getData(),
         reference: reference.toJSON(),
         isDeleted,
         previousRevisions,
-        scope: document.scope,
-        scopeId: document.scopeId,
+        entropy: document.entropy,
         action: document.getAction(),
         currentRevision: svDocument.getCurrentRevision().toJSON(),
       });

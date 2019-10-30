@@ -1,5 +1,7 @@
 const { ApplyStateTransitionResponse } = require('@dashevo/drive-grpc');
-const InvalidSTPacketError = require('@dashevo/dpp/lib/stPacket/errors/InvalidSTPacketError');
+const InvalidStateTransitionError = require(
+  '@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError',
+);
 
 const {
   server: {
@@ -10,8 +12,6 @@ const {
     },
   },
 } = require('@dashevo/grpc-common');
-
-const StateTransition = require('../../blockchain/StateTransition');
 
 /**
  * @param {MongoDBTransaction} stateViewTransaction
@@ -40,58 +40,39 @@ module.exports = function applyStateTransitionHandlerFactory(
 
     const blockHeight = request.getBlockHeight();
     const blockHashBinaryArray = request.getBlockHash();
-    const stPacketBinaryArray = request.getStateTransitionPacket();
-    const stHeaderBinaryArray = request.getStateTransitionHeader();
+    const stateTransitionBinaryArray = request.getStateTransition();
 
-    if (stPacketBinaryArray === undefined) {
-      throw new InvalidArgumentGrpcError('stateTransitionPacket is not specified');
-    }
-
-    if (stHeaderBinaryArray === undefined) {
-      throw new InvalidArgumentGrpcError('stateTransitionHeader is not specified');
+    if (stateTransitionBinaryArray === undefined) {
+      throw new InvalidArgumentGrpcError('State Transition is not specified');
     }
 
     if (blockHeight === undefined) {
-      throw new InvalidArgumentGrpcError('blockHeight is not specified');
+      throw new InvalidArgumentGrpcError('Block height is not specified');
     }
 
     if (blockHashBinaryArray === undefined) {
-      throw new InvalidArgumentGrpcError('blockHash is not specified');
+      throw new InvalidArgumentGrpcError('Block hash is not specified');
     }
 
-    let stPacket;
+    let stateTransition;
 
     try {
-      const stPacketHex = Buffer.from(stPacketBinaryArray).toString('hex');
-
-      stPacket = await dpp.packet.createFromSerialized(stPacketHex);
+      stateTransition = await dpp.stateTransition.createFromSerialized(
+        Buffer.from(stateTransitionBinaryArray),
+      );
     } catch (e) {
-      if (e instanceof InvalidSTPacketError) {
+      if (e instanceof InvalidStateTransitionError) {
         throw new InvalidArgumentGrpcError(e.message, { errors: e.getErrors() });
       }
 
       throw e;
     }
 
-    let stHeader;
-
-    try {
-      stHeader = new StateTransition(Buffer.from(stHeaderBinaryArray));
-    } catch (e) {
-      throw new InvalidArgumentGrpcError(`Invalid "stateTransitionHeader": ${e.message}`);
-    }
-
-    const result = await dpp.packet.verify(stPacket, stHeader);
-    if (!result.isValid()) {
-      throw new InvalidArgumentGrpcError('Invalid "stPacket" and "stHeader"', { errors: result.getErrors() });
-    }
-
     let svContract;
 
     try {
       ({ svContract } = await applyStateTransition(
-        stPacket,
-        stHeader,
+        stateTransition,
         Buffer.from(blockHashBinaryArray).toString('hex'),
         blockHeight,
         stateViewTransaction,

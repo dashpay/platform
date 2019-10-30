@@ -1,9 +1,9 @@
-const Contract = require('@dashevo/dpp/lib/contract/Contract');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
 /**
- * @return Contract
+ * @return {DataContract}
  */
-function getContractFixture() {
+function getDataContractFixture() {
   const documents = {
     niceDocument: {
       properties: {
@@ -24,15 +24,18 @@ function getContractFixture() {
     },
   };
 
-  const contract = new Contract('Contract', documents);
+  const dataContract = new DataContract(
+    Buffer.alloc(32, 'abcFhdvD').toString('hex'),
+    documents,
+  );
 
-  contract.setDefinitions({
+  dataContract.setDefinitions({
     lastName: {
       type: 'string',
     },
   });
 
-  return contract;
+  return dataContract;
 }
 
-module.exports = getContractFixture;
+module.exports = getDataContractFixture;

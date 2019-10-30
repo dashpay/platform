@@ -1,8 +1,7 @@
 const SVContract = require('../../../../lib/stateView/contract/SVContract');
 
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getReferenceFixture = require('../../../../lib/test/fixtures/getReferenceFixture');
-const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
 describe('SVContract', () => {
   let svContract;
@@ -10,13 +9,10 @@ describe('SVContract', () => {
   let contractId;
   let reference;
   let isDeleted;
-  let userId;
   let previousRevisions;
 
   beforeEach(() => {
-    ({ userId } = getDocumentsFixture);
-
-    contract = getContractFixture();
+    contract = getDataContractFixture();
     reference = getReferenceFixture();
 
     contractId = contract.getId();
@@ -24,8 +20,6 @@ describe('SVContract', () => {
     previousRevisions = [];
 
     svContract = new SVContract(
-      contractId,
-      userId,
       contract,
       reference,
       isDeleted,
@@ -33,25 +27,17 @@ describe('SVContract', () => {
     );
   });
 
-  describe('#getContractId', () => {
+  describe('#getId', () => {
     it('should return contract ID', () => {
-      const result = svContract.getContractId();
+      const result = svContract.getId();
 
       expect(result).to.equal(contractId);
     });
   });
 
-  describe('#getUserId', () => {
-    it('should return user ID', () => {
-      const result = svContract.getUserId();
-
-      expect(result).to.equal(userId);
-    });
-  });
-
-  describe('#getContract', () => {
-    it('should return Contract', () => {
-      const result = svContract.getContract();
+  describe('#getDataContract', () => {
+    it('should return Data Contract', () => {
+      const result = svContract.getDataContract();
 
       expect(result.toJSON()).to.deep.equal(contract.toJSON());
     });
@@ -78,8 +64,6 @@ describe('SVContract', () => {
   describe('#toJSON', () => {
     it('should return SV Contract as a plain object', () => {
       svContract = new SVContract(
-        contractId,
-        userId,
         contract,
         reference,
         isDeleted,
@@ -88,7 +72,6 @@ describe('SVContract', () => {
 
       expect(svContract.toJSON()).to.deep.equal({
         contractId,
-        userId,
         contract: contract.toJSON(),
         reference: reference.toJSON(),
         isDeleted,

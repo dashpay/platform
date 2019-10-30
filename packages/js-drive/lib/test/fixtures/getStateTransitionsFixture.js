@@ -1,26 +1,31 @@
-const StateTransition = require('../../blockchain/StateTransition');
+const DataContractStateTransition = require(
+  '@dashevo/dpp/lib/dataContract/stateTransition/DataContractStateTransition',
+);
 
-const createPayloadFixture = require('./createPayloadFixture');
-const createStateTransitionFixture = require('./createStateTransitionFixture');
+const DocumentsStateTransition = require(
+  '@dashevo/dpp/lib/document/stateTransition/DocumentsStateTransition',
+);
 
-const transitions = [];
+
+const getDataContractFixture = require('./getDataContractFixture');
+const getDocumentsFixture = require('./getDocumentsFixture');
 
 /**
- * @param {number} numberOfTransitions
- * @return {StateTransition[]}
+ * Get some state transition fixtures
+ *
+ * @return {AbstractStateTransition[]}
  */
-function getStateTransitionsFixture(numberOfTransitions = 5) {
-  for (let i = transitions.length; i < numberOfTransitions; i++) {
-    transitions.push(
-      createStateTransitionFixture({
-        extraPayload: createPayloadFixture({
-          hashPrevSubTx: (i === 0 ? undefined : transitions[i - 1].hash),
-        }),
-      }),
-    );
-  }
+function getStateTransitionsFixture() {
+  const dataContract = getDataContractFixture();
+  const documents = getDocumentsFixture();
 
-  return transitions.map(t => new StateTransition(t));
+  const stateTransitions = [
+    new DataContractStateTransition(dataContract),
+    new DocumentsStateTransition(documents),
+    new DocumentsStateTransition(documents),
+  ];
+
+  return stateTransitions;
 }
 
 module.exports = getStateTransitionsFixture;

@@ -9,7 +9,6 @@ describe('Reference', () => {
       blockHash: 'b8ae412cdeeb4bb39ec496dec34495ecccaf74f9fa9eaa712c77a03eb1994e75',
       blockHeight: 1,
       stHash: '17jasdjk129uasd8asd023098SD09023jll123jlasd90823jklD',
-      stPacketHash: 'ad877138as8012309asdkl123l123lka908013',
       hash: '123981as90d01309ad09123',
     };
 

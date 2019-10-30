@@ -12,8 +12,8 @@ function createContractDatabaseFactory(createSVDocumentRepository) {
    * @returns {Promise<*[]>}
    */
   async function createContractDatabase(svContract) {
-    const documents = svContract.getContract().getDocuments();
-    const contractId = svContract.getContractId();
+    const documents = svContract.getDataContract().getDocuments();
+    const contractId = svContract.getId();
 
     const promises = Object.keys(documents).map((documentType) => {
       const svDocumentRepository = createSVDocumentRepository(contractId, documentType);

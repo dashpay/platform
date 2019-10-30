@@ -2,38 +2,25 @@ const Revisions = require('../revisions/Revisions');
 
 class SVDocument extends Revisions {
   /**
-   * @param {string} userId
    * @param {Document} document
    * @param {Reference} reference
    * @param {boolean} [isDeleted]
    * @param {array} [previousRevisions]
    */
-  constructor(userId, document, reference, isDeleted = false, previousRevisions = []) {
+  constructor(document, reference, isDeleted = false, previousRevisions = []) {
     super(reference, previousRevisions);
 
-    this.userId = userId;
     this.document = document;
     this.deleted = isDeleted;
   }
 
   /**
-   * Get user ID
+   * Get document user id
    *
    * @return {string}
    */
   getUserId() {
-    return this.userId;
-  }
-
-  /**
-   * Set user ID
-   *
-   * @return {SVDocument}
-   */
-  setUserId(userId) {
-    this.userId = userId;
-
-    return this;
+    return this.document.getUserId();
   }
 
   /**
@@ -82,14 +69,13 @@ class SVDocument extends Revisions {
    *            blockHash: string,
    *            blockHeight: number,
    *            stHash: string,
-   *            stPacketHash: string,
    *            hash: string
    *           },
    *           isDeleted: boolean,
    *           userId: string,
+   *           contractId: string,
    *           data: RawDocument,
-   *           scope: string,
-   *           scopeId: string,
+   *           entropy: string,
    *           action: number,
    *           currentRevision: {
    *            revision: number,
@@ -97,7 +83,6 @@ class SVDocument extends Revisions {
    *              blockHash: string,
    *              blockHeight: number,
    *              stHash: string,
-   *              stPacketHash: string,
    *              hash: string
    *            }
    *           },
@@ -107,7 +92,6 @@ class SVDocument extends Revisions {
    *              blockHash: string,
    *              blockHeight: number,
    *              stHash: string,
-   *              stPacketHash: string,
    *              hash: string
    *            }
    *           }[]}}
@@ -115,11 +99,11 @@ class SVDocument extends Revisions {
   toJSON() {
     return {
       userId: this.getUserId(),
+      contractId: this.getDocument().getDataContractId(),
       isDeleted: this.isDeleted(),
       data: this.getDocument().getData(),
       reference: this.getReference().toJSON(),
-      scope: this.getDocument().scope,
-      scopeId: this.getDocument().scopeId,
+      entropy: this.getDocument().entropy,
       action: this.getDocument().getAction(),
       currentRevision: this.getCurrentRevision().toJSON(),
       previousRevisions: this.getPreviousRevisions().map(r => r.toJSON()),

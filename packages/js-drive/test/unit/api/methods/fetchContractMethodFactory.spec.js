@@ -1,6 +1,6 @@
 const fetchContractMethodFactory = require('../../../../lib/api/methods/fetchContractMethodFactory');
 
-const getContractFixture = require('../../../../lib/test/fixtures/getContractFixture');
+const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
 const InvalidParamsError = require('../../../../lib/api/InvalidParamsError');
 
@@ -11,7 +11,7 @@ describe('fetchContractMethodFactory', () => {
   let fetchContractMock;
 
   beforeEach(function beforeEach() {
-    contract = getContractFixture();
+    contract = getDataContractFixture();
     contractId = contract.getId();
 
     fetchContractMock = this.sinon.stub();

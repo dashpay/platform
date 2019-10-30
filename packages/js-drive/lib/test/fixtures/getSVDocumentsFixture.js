@@ -7,11 +7,9 @@ const getReferenceFixture = require('./getReferenceFixture');
  * @return {SVDocument[]}
  */
 function getSVDocumentsFixture() {
-  const { userId } = getDocumentsFixture;
   const documents = getDocumentsFixture();
 
   return documents.map((document, i) => new SVDocument(
-    userId,
     document,
     getReferenceFixture(i + 1),
   ));

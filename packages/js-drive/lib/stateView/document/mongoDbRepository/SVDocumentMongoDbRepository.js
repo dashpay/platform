@@ -57,14 +57,14 @@ class SVDocumentMongoDbRepository {
    * Find SVDocument by id
    *
    * @param {string} id
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Promise<SVDocument>}
    */
-  async find(id, transaction = undefined) {
+  async find(id, stateViewTransaction = undefined) {
     const findQuery = { _id: id };
 
     let result;
-    if (transaction) {
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => (
         mongoClient
           .db(this.databaseName)
@@ -72,7 +72,7 @@ class SVDocumentMongoDbRepository {
           .findOne(findQuery, { session })
       );
 
-      result = await transaction.runWithTransaction(transactionFunction);
+      result = await stateViewTransaction.runWithTransaction(transactionFunction);
     } else {
       result = await this.mongoCollection.findOne(findQuery);
     }
@@ -93,12 +93,12 @@ class SVDocumentMongoDbRepository {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    *
    * @returns {Promise<SVDocument[]>}
    * @throws {InvalidQueryError}
    */
-  async fetch(query = {}, transaction = undefined) {
+  async fetch(query = {}, stateViewTransaction = undefined) {
     const result = this.validateQuery(query);
 
     if (!result.isValid()) {
@@ -138,7 +138,7 @@ class SVDocumentMongoDbRepository {
 
     let results;
 
-    if (transaction) {
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => {
         findOptions = Object.assign({}, findOptions, { session });
 
@@ -148,7 +148,7 @@ class SVDocumentMongoDbRepository {
           .find(findQuery, findOptions).toArray();
       };
 
-      results = await transaction.runWithTransaction(transactionFunction);
+      results = await stateViewTransaction.runWithTransaction(transactionFunction);
     } else {
       results = await this.mongoCollection.find(findQuery, findOptions).toArray();
     }
@@ -160,15 +160,15 @@ class SVDocumentMongoDbRepository {
    * Store SVDocument entity
    *
    * @param {SVDocument} svDocument
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Promise}
    */
-  store(svDocument, transaction = undefined) {
+  store(svDocument, stateViewTransaction = undefined) {
     const filter = { _id: svDocument.getDocument().getId() };
     const update = { $set: svDocument.toJSON() };
     let updateOptions = { upsert: true };
 
-    if (transaction) {
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => {
         updateOptions = Object.assign({}, updateOptions, { session });
 
@@ -182,7 +182,7 @@ class SVDocumentMongoDbRepository {
           );
       };
 
-      return transaction.runWithTransaction(transactionFunction);
+      return stateViewTransaction.runWithTransaction(transactionFunction);
     }
 
     return this.mongoCollection.updateOne(
@@ -196,13 +196,13 @@ class SVDocumentMongoDbRepository {
    * Delete SVDocument entity
    *
    * @param {SVDocument} svDocument
-   * @param {MongoDBTransaction} [transaction]
+   * @param {MongoDBTransaction} [stateViewTransaction]
    * @returns {Promise}
    */
-  async delete(svDocument, transaction = undefined) {
+  async delete(svDocument, stateViewTransaction = undefined) {
     const filter = { _id: svDocument.getDocument().getId() };
 
-    if (transaction) {
+    if (stateViewTransaction) {
       const transactionFunction = async (mongoClient, session) => (
         mongoClient
           .db(this.databaseName)
@@ -210,7 +210,7 @@ class SVDocumentMongoDbRepository {
           .deleteOne(filter, { session })
       );
 
-      return transaction.runWithTransaction(transactionFunction);
+      return stateViewTransaction.runWithTransaction(transactionFunction);
     }
 
     return this.mongoCollection.deleteOne(filter);
@@ -221,36 +221,29 @@ class SVDocumentMongoDbRepository {
    * @return {SVDocument}
    */
   createSVDocument({
+    entropy,
+    contractId,
     userId,
-    isDeleted,
     data: storedData,
+    isDeleted,
     reference,
-    scope,
-    scopeId,
     action,
     currentRevision,
     previousRevisions,
   }) {
     const rawDocument = Object.assign({}, storedData);
 
-    rawDocument.$scope = scope;
-    rawDocument.$scopeId = scopeId;
-    rawDocument.$action = action;
-    rawDocument.$rev = currentRevision.revision;
     rawDocument.$type = this.documentType;
-    rawDocument.$meta = {
-      userId,
-      stReference: {
-        blockHash: reference.blockHash,
-        blockHeight: reference.blockHeight,
-        stHeaderHash: reference.stHash,
-        stPacketHash: reference.stPacketHash,
-      },
-    };
+    rawDocument.$entropy = entropy;
+    rawDocument.$contractId = contractId;
+    rawDocument.$userId = userId;
+    rawDocument.$rev = currentRevision.revision;
+
+    const document = new Document(rawDocument);
+    document.setAction(action);
 
     return new SVDocument(
-      userId,
-      new Document(rawDocument),
+      document,
       new Reference(reference),
       isDeleted,
       createRevisions(previousRevisions),

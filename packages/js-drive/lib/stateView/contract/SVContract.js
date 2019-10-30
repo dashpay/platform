@@ -1,55 +1,40 @@
 const Revisions = require('../revisions/Revisions');
 
 /**
- * @param {string} contractId
- * @param {string} userId
- * @param {Contract} contract
+ * @param {DataContract} dataContract
  * @param {Reference} reference
  * @param {boolean} [isDeleted=false]
  * @param {array} [previousRevisions=[]]
  */
 class SVContract extends Revisions {
   constructor(
-    contractId,
-    userId,
-    contract,
+    dataContract,
     reference,
     isDeleted = false,
     previousRevisions = [],
   ) {
     super(reference, previousRevisions);
 
-    this.contractId = contractId;
-    this.userId = userId;
-    this.contract = contract;
+    this.dataContract = dataContract;
     this.deleted = isDeleted;
   }
 
   /**
-   * Get Contract ID
+   * Get contract id
    *
    * @return {string}
    */
-  getContractId() {
-    return this.contractId;
+  getId() {
+    return this.getDataContract().getId();
   }
 
   /**
-   * Get user ID
+   * Get Data Contract
    *
-   * @return {string}
+   * @return {DataContract}
    */
-  getUserId() {
-    return this.userId;
-  }
-
-  /**
-   * Get Contract
-   *
-   * @return {Contract}
-   */
-  getContract() {
-    return this.contract;
+  getDataContract() {
+    return this.dataContract;
   }
 
   /**
@@ -79,11 +64,9 @@ class SVContract extends Revisions {
    *            blockHash: string,
    *            blockHeight: number,
    *            stHash: string,
-   *            stPacketHash: string,
    *            hash: string
    *          },
    *          isDeleted: boolean,
-   *          userId: string,
    *          contractId: string,
    *          previousRevisions: {
    *            revision: number,
@@ -91,7 +74,6 @@ class SVContract extends Revisions {
    *              blockHash: string,
    *              blockHeight: number,
    *              stHash: string,
-   *              stPacketHash: string,
    *              hash: string
    *            }
    *          }[],
@@ -100,10 +82,9 @@ class SVContract extends Revisions {
    */
   toJSON() {
     return {
-      contractId: this.getContractId(),
-      userId: this.getUserId(),
+      contractId: this.getId(),
       reference: this.reference.toJSON(),
-      contract: this.getContract().toJSON(),
+      contract: this.getDataContract().toJSON(),
       isDeleted: this.isDeleted(),
       previousRevisions: this.getPreviousRevisions().map(r => r.toJSON()),
     };
@@ -116,7 +97,7 @@ class SVContract extends Revisions {
    * @return {number}
    */
   getRevisionNumber() {
-    return this.getContract().getVersion();
+    return this.getDataContract().getVersion();
   }
 }
 

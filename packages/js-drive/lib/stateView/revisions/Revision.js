@@ -33,7 +33,6 @@ class Revision {
    *              blockHash: string,
    *              blockHeight: number,
    *              stHash: string,
-   *              stPacketHash: string,
    *              hash: string
    *            },
    *            revision: number}}
