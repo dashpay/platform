@@ -54,6 +54,7 @@ const DriveDataProvider = require('../dpp/DriveDataProvider');
 const fetchContractFactory = require('../stateView/contract/fetchContractFactory');
 const fetchDocumentsFactory = require('../stateView/document/fetchDocumentsFactory');
 const BlockExecutionState = require('../updateState/BlockExecutionState');
+const convertToMongoDbIndices = require('../stateView/contract/convertToMongoDbIndices');
 
 class UpdateStateApp {
   /**
@@ -196,7 +197,10 @@ class UpdateStateApp {
    * @returns {commitTransactionHandler}
    */
   createCommitTransactionHandler() {
-    const createContractDatabase = createContractDatabaseFactory(this.createSVDocumentRepository);
+    const createContractDatabase = createContractDatabaseFactory(
+      this.createSVDocumentRepository,
+      convertToMongoDbIndices,
+    );
     const removeContractDatabase = removeContractDatabaseFactory(this.createSVDocumentRepository);
 
     return commitTransactionHandlerFactory(

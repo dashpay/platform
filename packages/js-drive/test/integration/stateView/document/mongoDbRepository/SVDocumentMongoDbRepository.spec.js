@@ -684,6 +684,81 @@ describe('SVDocumentMongoDbRepository', function main() {
       expect(collectionsAfter).to.have.lengthOf(1);
       expect(collectionsAfter[0].collectionName).to.equal(svDocumentRepository.getCollectionName());
     });
+
+    it('should create indices for SVDocument', async () => {
+      const indices = [{
+        key: {
+          name: 1,
+        },
+        unique: true,
+        name: 'index_name',
+      }];
+
+      await svDocumentRepository.createCollection(indices);
+      const indexInformation = await mongoDatabase
+        .collection(svDocumentRepository.getCollectionName())
+        .indexInformation({ full: true });
+
+      expect(indexInformation).to.deep.equal([{
+        v: 2,
+        key: { _id: 1 },
+        name: '_id_',
+        ns: 'test.documents_niceDocument',
+      }, {
+        v: 2,
+        unique: true,
+        key: {
+          name: 1,
+        },
+        name: 'index_name',
+        ns: 'test.documents_niceDocument',
+      }]);
+    });
+  });
+
+  describe('#createIndices', () => {
+    it('should create indices for SVDocument', async () => {
+      const indices = [{
+        key: {
+          name: 1,
+        },
+        unique: true,
+        name: 'index_name',
+      }];
+
+      await svDocumentRepository.createCollection();
+      let indexInformation = await mongoDatabase
+        .collection(svDocumentRepository.getCollectionName())
+        .indexInformation({ full: true });
+
+      expect(indexInformation).to.deep.equal([{
+        v: 2,
+        key: { _id: 1 },
+        name: '_id_',
+        ns: 'test.documents_niceDocument',
+      }]);
+
+      await svDocumentRepository.createIndices(indices);
+
+      indexInformation = await mongoDatabase
+        .collection(svDocumentRepository.getCollectionName())
+        .indexInformation({ full: true });
+
+      expect(indexInformation).to.deep.equal([{
+        v: 2,
+        key: { _id: 1 },
+        name: '_id_',
+        ns: 'test.documents_niceDocument',
+      }, {
+        v: 2,
+        unique: true,
+        key: {
+          name: 1,
+        },
+        name: 'index_name',
+        ns: 'test.documents_niceDocument',
+      }]);
+    });
   });
 
   describe('#removeCollection', () => {

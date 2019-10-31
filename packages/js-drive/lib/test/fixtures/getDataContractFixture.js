@@ -6,6 +6,11 @@ const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 function getDataContractFixture() {
   const documents = {
     niceDocument: {
+      indices: [{
+        properties: [
+          { name: 'asc' },
+        ],
+      }],
       properties: {
         name: {
           type: 'string',

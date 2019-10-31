@@ -27,12 +27,16 @@ class SVDocumentMongoDbRepository {
   }
 
   /**
-   * Create new mongoDatabase collection
-   *
-   * @returns {Promise<*>}
+   * Create new mongoDatabase collection with indices
+   * @param {{ key: object, unique: boolean, name: string }[]} [indices]
+   * @returns {Promise<void>}
    */
-  async createCollection() {
-    return this.mongoDatabase.createCollection(this.getCollectionName());
+  async createCollection(indices = undefined) {
+    await this.mongoDatabase.createCollection(this.getCollectionName());
+
+    if (indices) {
+      await this.createIndices(indices);
+    }
   }
 
   /**
@@ -248,6 +252,16 @@ class SVDocumentMongoDbRepository {
       isDeleted,
       createRevisions(previousRevisions),
     );
+  }
+
+  /**
+   * Create indices for collection
+   *
+   * @param {Array} indices
+   * @returns {Promise<*>}
+   */
+  async createIndices(indices) {
+    return this.mongoCollection.createIndexes(indices);
   }
 }
 

@@ -1,9 +1,10 @@
 /**
  *
  * @param {createSVDocumentMongoDbRepository} createSVDocumentRepository
+ * @param {convertToMongoDbIndices} convertToMongoDbIndices
  * @returns {createContractDatabase}
  */
-function createContractDatabaseFactory(createSVDocumentRepository) {
+function createContractDatabaseFactory(createSVDocumentRepository, convertToMongoDbIndices) {
   /**
    * Create new collection for each documentType in Contract
    *
@@ -12,13 +13,20 @@ function createContractDatabaseFactory(createSVDocumentRepository) {
    * @returns {Promise<*[]>}
    */
   async function createContractDatabase(svContract) {
-    const documents = svContract.getDataContract().getDocuments();
+    const dataContract = svContract.getDataContract();
+    const documents = dataContract.getDocuments();
     const contractId = svContract.getId();
 
     const promises = Object.keys(documents).map((documentType) => {
+      const documentSchema = dataContract.getDocumentSchema(documentType);
+      let indices;
+      if (documentSchema.indices) {
+        indices = convertToMongoDbIndices(documentSchema.indices);
+      }
+
       const svDocumentRepository = createSVDocumentRepository(contractId, documentType);
 
-      return svDocumentRepository.createCollection();
+      return svDocumentRepository.createCollection(indices);
     });
 
     return Promise.all(promises);
