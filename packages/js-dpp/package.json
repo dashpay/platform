@@ -4,7 +4,7 @@
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
-    "test": "npm run test:coverage && npm run test:browsers",
+    "test": "(EXIT_CODE=0; npm run test:coverage || EXIT_CODE=$?; npm run test:browsers || EXIT_CODE=$?; npm run test:functional || EXIT_CODE=$?; exit $EXIT_CODE)",
     "build": "webpack --display-error-details",
     "check-package": "npm run check-package:name && npm run check-package:version",
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
@@ -12,6 +12,7 @@
     "test:node": "NODE_ENV=test mocha",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=94 --funcs=95 --lines=98 mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
+    "test:functional": "NODE_ENV=test mocha 'test/functional/**/*.spec.js'",
     "prepublishOnly": "npm run build"
   },
   "main": "lib/DashPlatformProtocol.js",
@@ -27,8 +28,9 @@
     "@babel/core": "^7.2.0",
     "@babel/polyfill": "^7.0.0",
     "@babel/preset-env": "^7.2.0",
-    "@dashevo/dp-services-ctl": "^0.7.3",
+    "@dashevo/dp-services-ctl": "^0.9.0-dev.2",
     "@dashevo/dpns-contract": "^0.1.0",
+    "@dashevo/drive-grpc": "^0.3.0",
     "babel-loader": "^8.0.4",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
