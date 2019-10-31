@@ -1,11 +1,3 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-
-const cbor = require('cbor');
-
 const {
   server: {
     error: {
@@ -19,43 +11,31 @@ const {
   UpdateStateTransitionResponse,
 } = require('@dashevo/dapi-grpc');
 
-const getStPacketFixture = require('../../../../../lib/test/fixtures/getStPacketFixture');
-const getStHeaderFixture = require('../../../../../lib/test/fixtures/getStHeaderFixture');
+const DashPlatformProtocol = require('@dashevo/dpp');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
 const updateStateHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/core/updateStateHandlerFactory',
 );
 
-use(sinonChai);
-use(chaiAsPromised);
-use(dirtyChai);
-
 describe('updateStateHandlerFactory', () => {
   let call;
   let rpcClientMock;
   let updateStateHandler;
   let response;
-  let stHeader;
-  let stPacket;
+  let stateTransitionFixture;
   let log;
 
-  beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.createSandbox();
-    } else {
-      this.sinon.restore();
-    }
+  beforeEach(async function beforeEach() {
+    const dpp = new DashPlatformProtocol();
 
-    const stPacketFixture = getStPacketFixture();
-    const stHeaderFixture = getStHeaderFixture(stPacketFixture);
-
-    stHeader = Buffer.from(stHeaderFixture.serialize(), 'hex');
-    stPacket = stPacketFixture.serialize();
+    const dataContractFixture = getDataContractFixture();
+    stateTransitionFixture = dpp.dataContract.createStateTransition(dataContractFixture);
 
     call = new GrpcCallMock(this.sinon, {
-      getHeader: this.sinon.stub().returns(stHeader),
-      getPacket: this.sinon.stub().returns(stPacket),
+      getData: this.sinon.stub().returns(stateTransitionFixture.serialize()),
     });
 
     log = JSON.stringify({
@@ -95,8 +75,8 @@ describe('updateStateHandlerFactory', () => {
     this.sinon.restore();
   });
 
-  it('should throw an InvalidArgumentGrpcError if header is not specified', async () => {
-    call.request.getHeader.returns(null);
+  it('should throw an InvalidArgumentGrpcError if stateTransition is not specified', async () => {
+    call.request.getData.returns(null);
 
     try {
       await updateStateHandler(call);
@@ -104,21 +84,7 @@ describe('updateStateHandlerFactory', () => {
       expect.fail('InvalidArgumentGrpcError was not thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: header is not specified');
-      expect(rpcClientMock.request).to.not.be.called();
-    }
-  });
-
-  it('should throw an InvalidArgumentGrpcError if packet is not specified', async () => {
-    call.request.getPacket.returns(null);
-
-    try {
-      await updateStateHandler(call);
-
-      expect.fail('InvalidArgumentGrpcError was not thrown');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: packet is not specified');
+      expect(e.getMessage()).to.equal('Invalid argument: stateTransition is not specified');
       expect(rpcClientMock.request).to.not.be.called();
     }
   });
@@ -126,12 +92,7 @@ describe('updateStateHandlerFactory', () => {
   it('should return valid result', async () => {
     const result = await updateStateHandler(call);
 
-    const st = {
-      header: Buffer.from(stHeader).toString('hex'),
-      packet: Buffer.from(stPacket),
-    };
-
-    const tx = cbor.encodeCanonical(st).toString('base64');
+    const tx = stateTransitionFixture.serialize().toString('base64');
 
     expect(result).to.be.an.instanceOf(UpdateStateTransitionResponse);
     expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
@@ -140,12 +101,7 @@ describe('updateStateHandlerFactory', () => {
   it('should throw InvalidArgumentGrpcError if Tendermint Core returns check_tx with non zero code', async () => {
     response.result.check_tx.code = 1;
 
-    const st = {
-      header: Buffer.from(stHeader).toString('hex'),
-      packet: Buffer.from(stPacket),
-    };
-
-    const tx = cbor.encodeCanonical(st).toString('base64');
+    const tx = stateTransitionFixture.serialize().toString('base64');
 
     try {
       await updateStateHandler(call);

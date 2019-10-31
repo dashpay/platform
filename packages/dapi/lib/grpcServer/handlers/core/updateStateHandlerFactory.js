@@ -1,5 +1,3 @@
-const cbor = require('cbor');
-
 const {
   server: {
     error: {
@@ -25,28 +23,17 @@ function updateStateHandlerFactory(rpcClient) {
    */
   async function updateStateHandler(call) {
     const { request } = call;
-    const header = request.getHeader();
-    const packet = request.getPacket();
+    const stByteArray = request.getData();
 
-    if (!header) {
-      throw new InvalidArgumentGrpcError('header is not specified');
+    if (!stByteArray) {
+      throw new InvalidArgumentGrpcError('State Transition is not specified');
     }
 
-    if (!packet) {
-      throw new InvalidArgumentGrpcError('packet is not specified');
-    }
-
-    const st = {
-      header: Buffer.from(header).toString('hex'),
-      packet: Buffer.from(packet),
-    };
-
-    const tx = cbor.encodeCanonical(st).toString('base64');
+    const tx = Buffer.from(stByteArray).toString('base64');
 
     let result;
     let error;
     try {
-      // @TODO check for timeout
       ({ result, error } = await rpcClient.request('broadcast_tx_commit', { tx }));
     } catch (e) {
       throw new InternalGrpcError(e);
