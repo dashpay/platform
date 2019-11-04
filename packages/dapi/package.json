@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi",
-  "version": "0.8.0-dev.1",
+  "version": "0.8.0-dev.2",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "core": "node scripts/core.js",
