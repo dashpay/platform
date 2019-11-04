@@ -8,7 +8,7 @@
         "enum": [1, 2, 4]
       },
       "minItems": 1,
-      "maxItems": 1000
+      "maxItems": 10
     },
     "documents": {
       "type": "array",
@@ -16,7 +16,7 @@
         "type": "object"
       },
       "minItems": 1,
-      "maxItems": 1000
+      "maxItems": 10
     }
   },
   "required": [

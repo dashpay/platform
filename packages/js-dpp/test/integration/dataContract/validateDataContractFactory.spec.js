@@ -12,6 +12,7 @@ const { expectJsonSchemaError, expectValidationError } = require('../../../lib/t
 
 const DuplicateIndexError = require('../../../lib/errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../../../lib/errors/UndefinedIndexPropertyError');
+const InvalidIndexPropertyTypeError = require('../../../lib/errors/InvalidIndexPropertyTypeError');
 
 describe('validateDataContractFactory', () => {
   let rawDataContract;
@@ -728,6 +729,32 @@ describe('validateDataContractFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.getPropertyName()).to.equal('missingProperty');
+    expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
+    expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+    expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+  });
+
+  it('should return invalid result if index property is object', () => {
+    const propertiesDefinition = rawDataContract.documents.indexedDocument.properties;
+
+    propertiesDefinition.objectProperty = {
+      type: 'object',
+    };
+
+    const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
+
+    indexDefinition.properties.push({
+      objectProperty: 'asc',
+    });
+
+    const result = validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexPropertyTypeError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getPropertyName()).to.equal('objectProperty');
+    expect(error.getPropertyType()).to.equal('object');
     expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
     expect(error.getDocumentType()).to.deep.equal('indexedDocument');
     expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);

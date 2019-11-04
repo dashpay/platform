@@ -4,6 +4,9 @@ const DataContract = require('./DataContract');
 
 const DuplicateIndexError = require('../errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyError');
+const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
+
+const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
 /**
  * @param validator
@@ -43,6 +46,22 @@ module.exports = function validateDataContractFactory(validator) {
           const indexPropertyNames = indexDefinition.properties
             .map(property => Object.keys(property)[0]);
 
+          indexPropertyNames.forEach((propertyName) => {
+            const { type: propertyType } = (getPropertyDefinitionByPath(
+              documentSchema, propertyName,
+            ) || {});
+
+            if (propertyType === 'object') {
+              result.addError(new InvalidIndexPropertyTypeError(
+                rawDataContract,
+                documentType,
+                indexDefinition,
+                propertyName,
+                'object',
+              ));
+            }
+          });
+
           const indicesFingerprint = JSON.stringify(indexDefinition.properties);
 
           // Ensure index definition uniqueness
@@ -62,7 +81,7 @@ module.exports = function validateDataContractFactory(validator) {
           const userDefinedProperties = indexPropertyNames.slice(1);
 
           userDefinedProperties.filter(propertyName => (
-            !Object.prototype.hasOwnProperty.call(documentSchema.properties, propertyName)
+            !getPropertyDefinitionByPath(documentSchema, propertyName)
           ))
             .forEach((undefinedPropertyName) => {
               result.addError(

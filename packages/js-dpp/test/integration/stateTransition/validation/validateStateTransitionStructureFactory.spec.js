@@ -264,8 +264,8 @@ describe('validateStateTransitionStructureFactory', () => {
         expect(extensionFunctionMock).to.not.be.called();
       });
 
-      it('should have no more than 1000 elements', async () => {
-        rawStateTransition.actions = Array(1001).fill({});
+      it('should have no more than 10 elements', async () => {
+        rawStateTransition.actions = Array(11).fill({});
 
         const result = await validateStateTransitionStructure(
           rawStateTransition,
@@ -277,7 +277,7 @@ describe('validateStateTransitionStructureFactory', () => {
 
         expect(error.dataPath).to.equal('.actions');
         expect(error.keyword).to.equal('maxItems');
-        expect(error.params.limit).to.equal(1000);
+        expect(error.params.limit).to.equal(10);
 
         expect(extensionFunctionMock).to.not.be.called();
       });
@@ -354,8 +354,8 @@ describe('validateStateTransitionStructureFactory', () => {
         expect(extensionFunctionMock).to.not.be.called();
       });
 
-      it('should have no more than 1000 elements', async () => {
-        rawStateTransition.documents = Array(1001).fill({});
+      it('should have no more than 10 elements', async () => {
+        rawStateTransition.documents = Array(11).fill({});
 
         const result = await validateStateTransitionStructure(rawStateTransition);
 
@@ -365,7 +365,7 @@ describe('validateStateTransitionStructureFactory', () => {
 
         expect(error.dataPath).to.equal('.documents');
         expect(error.keyword).to.equal('maxItems');
-        expect(error.params.limit).to.equal(1000);
+        expect(error.params.limit).to.equal(10);
 
         expect(extensionFunctionMock).to.not.be.called();
       });
