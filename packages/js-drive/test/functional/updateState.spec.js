@@ -27,7 +27,7 @@ describe('updateState', function main() {
   const hash = 'b4749f017444b051c44dfd2720e88f314ff94f3dd6d56d40ef65854fcd7fff6b';
   const nextHash = 'b4749f017444b051c44dfd2720e88f314ff94f3dd6d56d40ef65854fcd7fff7b';
 
-  this.timeout(90000);
+  this.timeout(190000);
 
   beforeEach(async () => {
     driveInstance = await startDrive();
