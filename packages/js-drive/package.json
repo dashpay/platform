@@ -57,6 +57,6 @@
     "grpc-health-check": "^1.7.0",
     "jayson": "^2.1.2",
     "lodash.escaperegexp": "^4.1.2",
-    "mongodb": "^3.2.2"
+    "mongodb": "^3.3.3"
   }
 }
