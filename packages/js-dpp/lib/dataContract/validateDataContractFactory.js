@@ -66,17 +66,33 @@ module.exports = function validateDataContractFactory(validator) {
             });
 
           indexPropertyNames.forEach((propertyName) => {
-            const { type: propertyType } = (getPropertyDefinitionByPath(
+            const propertyDefinition = (getPropertyDefinitionByPath(
               documentSchema, propertyName,
             ) || {});
 
+            const { type: propertyType } = propertyDefinition;
+
+            let invalidPropertyType;
+
             if (propertyType === 'object') {
+              invalidPropertyType = 'object';
+            }
+
+            if (propertyType === 'array') {
+              const { items } = propertyDefinition;
+
+              if (Array.isArray(items) || items.type === 'object' || items.type === 'array') {
+                invalidPropertyType = 'array';
+              }
+            }
+
+            if (invalidPropertyType) {
               result.addError(new InvalidIndexPropertyTypeError(
                 rawDataContract,
                 documentType,
                 indexDefinition,
                 propertyName,
-                'object',
+                invalidPropertyType,
               ));
             }
           });
