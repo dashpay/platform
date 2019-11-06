@@ -18,6 +18,12 @@ describe('convertToMongoDbIndices', () => {
           { lastName: 'desc' },
         ],
       },
+      {
+        properties: [
+          { $id: 'asc' },
+          { lastName: 'desc' },
+        ],
+      },
     ];
   });
 
@@ -26,18 +32,25 @@ describe('convertToMongoDbIndices', () => {
 
     expect(convertedIndices).to.deep.equal([{
       key: {
-        $userId: 1,
-        firstName: -1,
+        userId: 1,
+        'data.firstName': -1,
       },
       unique: true,
-      name: '$userId_firstName',
+      name: 'userId_data.firstName',
     }, {
       key: {
-        $userId: 1,
-        lastName: -1,
+        userId: 1,
+        'data.lastName': -1,
       },
       unique: false,
-      name: '$userId_lastName',
+      name: 'userId_data.lastName',
+    }, {
+      key: {
+        _id: 1,
+        'data.lastName': -1,
+      },
+      unique: false,
+      name: '_id_data.lastName',
     }]);
   });
 });

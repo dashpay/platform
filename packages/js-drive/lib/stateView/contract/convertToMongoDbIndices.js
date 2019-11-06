@@ -1,3 +1,5 @@
+const convertFieldName = require('../document/mongoDbRepository/convertFieldName');
+
 /**
  * Convert indices from contract format to mongoDB format
  *
@@ -10,7 +12,7 @@ function convertToMongoDbIndices(indices) {
     const key = index.properties.reduce((result, item) => {
       const [[field, order]] = Object.entries(item);
       const newProperty = {
-        [field]: order.toLowerCase() === 'asc' ? 1 : -1,
+        [convertFieldName(field)]: order.toLowerCase() === 'asc' ? 1 : -1,
       };
 
       return { ...result, ...newProperty };
