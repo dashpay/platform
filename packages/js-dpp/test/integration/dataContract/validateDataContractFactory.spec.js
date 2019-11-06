@@ -13,6 +13,7 @@ const { expectJsonSchemaError, expectValidationError } = require('../../../lib/t
 const DuplicateIndexError = require('../../../lib/errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../../../lib/errors/UndefinedIndexPropertyError');
 const InvalidIndexPropertyTypeError = require('../../../lib/errors/InvalidIndexPropertyTypeError');
+const SystemPropertyIndexAlreadyPresentError = require('../../../lib/errors/SystemPropertyIndexAlreadyPresentError');
 
 describe('validateDataContractFactory', () => {
   let rawDataContract;
@@ -755,6 +756,29 @@ describe('validateDataContractFactory', () => {
 
     expect(error.getPropertyName()).to.equal('objectProperty');
     expect(error.getPropertyType()).to.equal('object');
+    expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
+    expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+    expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+  });
+
+  it('should return invalid result if index property is a single $id', () => {
+    const indexDefinition = {
+      properties: [
+        { $id: 'asc' },
+      ],
+    };
+
+    const indeciesDefinition = rawDataContract.documents.indexedDocument.indices;
+
+    indeciesDefinition.push(indexDefinition);
+
+    const result = validateDataContract(rawDataContract);
+
+    expectValidationError(result, SystemPropertyIndexAlreadyPresentError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getPropertyName()).to.equal('$id');
     expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
     expect(error.getDocumentType()).to.deep.equal('indexedDocument');
     expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);

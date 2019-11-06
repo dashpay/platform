@@ -39,6 +39,12 @@ module.exports = function getDataContractFixture() {
           ],
           unique: true,
         },
+        {
+          properties: [
+            { $id: 'asc' },
+            { lastName: 'asc' },
+          ],
+        },
       ],
       properties: {
         firstName: {

@@ -5,8 +5,12 @@ const DataContract = require('./DataContract');
 const DuplicateIndexError = require('../errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyError');
 const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
+const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
+
+const systemProperties = ['$id', '$userId'];
+const prebuiltIndices = ['$id'];
 
 /**
  * @param validator
@@ -46,6 +50,21 @@ module.exports = function validateDataContractFactory(validator) {
           const indexPropertyNames = indexDefinition.properties
             .map(property => Object.keys(property)[0]);
 
+          prebuiltIndices
+            .forEach((propertyName) => {
+              const isSingleIndex = indexPropertyNames.length === 1
+                    && indexPropertyNames[0] === propertyName;
+
+              if (isSingleIndex) {
+                result.addError(new SystemPropertyIndexAlreadyPresentError(
+                  rawDataContract,
+                  documentType,
+                  indexDefinition,
+                  propertyName,
+                ));
+              }
+            });
+
           indexPropertyNames.forEach((propertyName) => {
             const { type: propertyType } = (getPropertyDefinitionByPath(
               documentSchema, propertyName,
@@ -78,7 +97,8 @@ module.exports = function validateDataContractFactory(validator) {
           indicesFingerprints.push(indicesFingerprint);
 
           // Ensure index properties definition
-          const userDefinedProperties = indexPropertyNames.slice(1);
+          const userDefinedProperties = indexPropertyNames
+            .filter(name => systemProperties.indexOf(name) === -1);
 
           userDefinedProperties.filter(propertyName => (
             !getPropertyDefinitionByPath(documentSchema, propertyName)
