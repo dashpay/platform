@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/drive",
-  "version": "0.6.0-dev.3",
+  "version": "0.6.0-dev.4",
   "description": "Decentralized application storage on the Dash network",
   "engines": {
     "node": ">=8"
@@ -28,7 +28,7 @@
   },
   "homepage": "https://github.com/dashevo/drive",
   "devDependencies": {
-    "@dashevo/dp-services-ctl": "^0.9.0-dev.2",
+    "@dashevo/dp-services-ctl": "^0.9.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
