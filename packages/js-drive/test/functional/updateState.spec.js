@@ -44,6 +44,14 @@ describe('updateState', function main() {
 
     [stateTransition, documentsStateTransition] = getStateTransitionsFixture();
 
+    stateTransition.dataContract.contractId = userId;
+    documentsStateTransition.documents.forEach((document) => {
+      // eslint-disable-next-line
+      document.contractId = userId;
+      // eslint-disable-next-line
+      document.userId = userId;
+    });
+
     startTransactionRequest = new StartTransactionRequest();
     startTransactionRequest.setBlockHeight(height);
 

@@ -42,6 +42,10 @@ describe('applyStateTransitionHandlerFactory', () => {
 
     dppMock.stateTransition.createFromSerialized.resolves(stateTransition);
 
+    dppMock.stateTransition.validateData.resolves({
+      isValid: () => true,
+    });
+
     applyStateTransitionMock = this.sinon.stub();
 
     applyStateTransitionHandler = applyStateTransitionHandlerFactory(
@@ -112,6 +116,26 @@ describe('applyStateTransitionHandlerFactory', () => {
     } catch (error) {
       expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(error.message).to.be.equal('Invalid argument: Invalid State Transition');
+      expect(applyStateTransitionMock).to.not.be.called();
+    }
+  });
+
+  it('should throw InvalidArgumentGrpcError if validation of state transition failed', async () => {
+    dppMock.stateTransition.validateData.resolves({
+      isValid: () => false,
+      getErrors: () => [
+        42,
+      ],
+    });
+
+    try {
+      await applyStateTransitionHandler(call);
+
+      expect.fail('should throw an InvalidArgumentGrpcError error');
+    } catch (error) {
+      expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(error.message).to.equal('Invalid argument: Invalid State Transition');
+      expect(error.metadata.get('errors')).to.deep.equal(['[42]']);
       expect(applyStateTransitionMock).to.not.be.called();
     }
   });

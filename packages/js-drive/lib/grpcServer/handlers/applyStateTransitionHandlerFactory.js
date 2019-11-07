@@ -68,6 +68,11 @@ module.exports = function applyStateTransitionHandlerFactory(
       throw e;
     }
 
+    const validationResult = await dpp.stateTransition.validateData(stateTransition);
+    if (!validationResult.isValid()) {
+      throw new InvalidArgumentGrpcError('Invalid State Transition', { errors: validationResult.getErrors() });
+    }
+
     let svContract;
 
     try {
