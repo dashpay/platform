@@ -7,13 +7,25 @@ const ConflictingConditionsError = require('./errors/ConflictingConditionsError'
 const DuplicateSortingFieldError = require('./errors/DuplicateSortingFieldError');
 const NestedSystemFieldError = require('./errors/NestedSystemFieldError');
 const NestedElementMatchError = require('./errors/NestedElementMatchError');
+const NotIndexedFieldError = require('./errors/NotIndexedFieldError');
+const NotIndexedOrderByError = require('./errors/NotIndexedOrderByError');
 
 const jsonSchema = require('./jsonSchema');
 
 /**
+ * @param {findConflictingConditions} findConflictingConditions
+ * @param {getIndexedFieldsFromDocumentSchema} getIndexedFieldsFromDocumentSchema
+ * @param {findNotIndexedFields} findNotIndexedFields
+ * @param {findNotIndexedOrderByFields} findNotIndexedOrderByFields
+ *
  * @return {validateQuery}
  */
-function validateQueryFactory(findConflictingConditions) {
+function validateQueryFactory(
+  findConflictingConditions,
+  getIndexedFieldsFromDocumentSchema,
+  findNotIndexedFields,
+  findNotIndexedOrderByFields,
+) {
   const ajv = new Ajv();
 
   const validateWithJsonSchema = ajv.compile(jsonSchema);
@@ -23,9 +35,10 @@ function validateQueryFactory(findConflictingConditions) {
    *
    * @typedef validateQuery
    * @param {Object} query
+   * @param {Object} documentSchema
    * @return {ValidationResult}
    */
-  function validateQuery(query) {
+  function validateQuery(query, documentSchema) {
     const result = new ValidationResult();
 
     const isValid = validateWithJsonSchema(query);
@@ -36,12 +49,20 @@ function validateQueryFactory(findConflictingConditions) {
       );
     }
 
+    const dataContractIndexFields = getIndexedFieldsFromDocumentSchema(documentSchema);
+
     // Additional validations for where conditions
     if (query.where) {
       // Find conflicting conditions
       result.addError(
         ...findConflictingConditions(query.where)
           .map(([field, operators]) => new ConflictingConditionsError(field, operators)),
+      );
+
+      // Check all fields having index
+      result.addError(
+        ...findNotIndexedFields(dataContractIndexFields, query.where)
+          .map(field => new NotIndexedFieldError(field)),
       );
 
       // Check nested elementMatch
@@ -91,6 +112,11 @@ function validateQueryFactory(findConflictingConditions) {
             return isDuplicatedField;
           })
           .map(([field]) => new DuplicateSortingFieldError(field)),
+      );
+
+      result.addError(
+        ...findNotIndexedOrderByFields(dataContractIndexFields, query.orderBy, query.where)
+          .map(field => new NotIndexedOrderByError(field)),
       );
     }
 

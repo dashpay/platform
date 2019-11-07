@@ -97,13 +97,15 @@ class SVDocumentMongoDbRepository {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
+   * @param {Object} [documentSchema]
    * @param {MongoDBTransaction} [stateViewTransaction]
    *
    * @returns {Promise<SVDocument[]>}
    * @throws {InvalidQueryError}
    */
-  async fetch(query = {}, stateViewTransaction = undefined) {
-    const result = this.validateQuery(query);
+
+  async fetch(query = {}, documentSchema = {}, stateViewTransaction = undefined) {
+    const result = this.validateQuery(query, documentSchema);
 
     if (!result.isValid()) {
       throw new InvalidQueryError(result.getErrors());

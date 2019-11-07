@@ -14,6 +14,9 @@ const convertWhereToMongoDbQuery = require('../stateView/document/mongoDbReposit
 const validateQueryFactory = require('../stateView/document/query/validateQueryFactory');
 const findConflictingConditions = require('../stateView/document/query/findConflictingConditions');
 const fetchDocumentsFactory = require('../stateView/document/fetchDocumentsFactory');
+const findNotIndexedFields = require('../stateView/document/query/findNotIndexedFields');
+const findNotIndexedOrderByFields = require('../stateView/document/query/findNotIndexedOrderByFields');
+const getIndexedFieldsFromDocumentSchema = require('../stateView/document/query/getIndexedFieldsFromDocumentSchema');
 const fetchDocumentsMethodFactory = require('../api/methods/fetchDocumentsMethodFactory');
 
 const Logger = require('../../lib/util/Logger');
@@ -125,7 +128,12 @@ class ApiApp {
    */
   createFetchDocuments() {
     if (!this.fetchDocuments) {
-      const validateQuery = validateQueryFactory(findConflictingConditions);
+      const validateQuery = validateQueryFactory(
+        findConflictingConditions,
+        getIndexedFieldsFromDocumentSchema,
+        findNotIndexedFields,
+        findNotIndexedOrderByFields,
+      );
 
       const createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
         this.mongoClient,
@@ -133,7 +141,15 @@ class ApiApp {
         convertWhereToMongoDbQuery,
         validateQuery,
       );
-      this.fetchDocuments = fetchDocumentsFactory(createSVDocumentMongoDbRepository);
+      const mongoDb = this.mongoClient.db(this.options.getStateViewMongoDBDatabase());
+      const svContractMongoDbRepository = new SVContractMongoDbRepository(
+        mongoDb,
+        new DashPlatformProtocol(),
+      );
+      this.fetchDocuments = fetchDocumentsFactory(
+        createSVDocumentMongoDbRepository,
+        svContractMongoDbRepository,
+      );
     }
 
     return this.fetchDocuments;

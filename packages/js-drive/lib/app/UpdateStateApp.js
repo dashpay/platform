@@ -53,6 +53,9 @@ const updateSVDocumentFactory = require('../stateView/document/updateSVDocumentF
 const DriveDataProvider = require('../dpp/DriveDataProvider');
 const fetchContractFactory = require('../stateView/contract/fetchContractFactory');
 const fetchDocumentsFactory = require('../stateView/document/fetchDocumentsFactory');
+const findNotIndexedFields = require('../stateView/document/query/findNotIndexedFields');
+const findNotIndexedOrderByFields = require('../stateView/document/query/findNotIndexedOrderByFields');
+const getIndexedFieldsFromDocumentSchema = require('../stateView/document/query/getIndexedFieldsFromDocumentSchema');
 const BlockExecutionState = require('../updateState/BlockExecutionState');
 const convertToMongoDbIndices = require('../stateView/contract/convertToMongoDbIndices');
 
@@ -94,7 +97,12 @@ class UpdateStateApp {
     this.stateViewTransaction = new MongoDBTransaction(this.mongoClient);
     this.mongoDb = this.mongoClient.db(this.options.getStateViewMongoDBDatabase());
 
-    const validateQuery = validateQueryFactory(findConflictingConditions);
+    const validateQuery = validateQueryFactory(
+      findConflictingConditions,
+      getIndexedFieldsFromDocumentSchema,
+      findNotIndexedFields,
+      findNotIndexedOrderByFields,
+    );
     this.createSVDocumentRepository = createSVDocumentMongoDbRepositoryFactory(
       this.mongoClient,
       SVDocumentMongoDbRepository,
@@ -171,7 +179,10 @@ class UpdateStateApp {
     const updateSVDocument = updateSVDocumentFactory(this.createSVDocumentRepository);
     const applyStateTransition = applyStateTransitionFactory(updateSVContract, updateSVDocument);
     const fetchContract = fetchContractFactory(this.svContractMongoDbRepository);
-    const fetchDocuments = fetchDocumentsFactory(this.createSVDocumentRepository);
+    const fetchDocuments = fetchDocumentsFactory(
+      this.createSVDocumentRepository,
+      this.svContractMongoDbRepository,
+    );
 
     const dataProvider = new DriveDataProvider(
       fetchDocuments,

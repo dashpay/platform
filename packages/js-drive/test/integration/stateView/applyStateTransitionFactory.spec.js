@@ -12,6 +12,9 @@ const createSVDocumentMongoDbRepositoryFactory = require('../../../lib/stateView
 const convertWhereToMongoDbQuery = require('../../../lib/stateView/document/mongoDbRepository/convertWhereToMongoDbQuery');
 const validateQueryFactory = require('../../../lib/stateView/document/query/validateQueryFactory');
 const findConflictingConditions = require('../../../lib/stateView/document/query/findConflictingConditions');
+const getIndexedFieldsFromDocumentSchema = require('../../../lib/stateView/document/query/getIndexedFieldsFromDocumentSchema');
+const findNotIndexedFields = require('../../../lib/stateView/document/query/findNotIndexedFields');
+const findNotIndexedOrderByFields = require('../../../lib/stateView/document/query/findNotIndexedOrderByFields');
 const SVDocumentMongoDbRepository = require('../../../lib/stateView/document/mongoDbRepository/SVDocumentMongoDbRepository');
 const SVContractMongoDbRepository = require('../../../lib/stateView/contract/SVContractMongoDbRepository');
 
@@ -41,7 +44,12 @@ describe('applyStateTransitionFactory', () => {
 
     svContractMongoDbRepository = new SVContractMongoDbRepository(mongoDatabase, dpp);
 
-    const validateQuery = validateQueryFactory(findConflictingConditions);
+    const validateQuery = validateQueryFactory(
+      findConflictingConditions,
+      getIndexedFieldsFromDocumentSchema,
+      findNotIndexedFields,
+      findNotIndexedOrderByFields,
+    );
 
     createSVDocumentMongoDbRepository = createSVDocumentMongoDbRepositoryFactory(
       mongoClient,

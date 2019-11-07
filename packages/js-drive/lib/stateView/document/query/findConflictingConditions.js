@@ -1,6 +1,7 @@
 /**
  * Find duplicate fields in where condition
  *
+ * @typedef findConflictingConditions
  * @param {Array[]} conditions
  * @return {Array<string, string[]>[]}
  */
