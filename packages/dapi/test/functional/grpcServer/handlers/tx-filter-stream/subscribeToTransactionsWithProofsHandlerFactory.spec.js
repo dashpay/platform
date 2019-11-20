@@ -34,7 +34,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', function main() {
   beforeEach(async () => {
     historicalTransactions = [];
 
-    bloomFilter = BloomFilter.create(1, 0.001);
+    bloomFilter = BloomFilter.create(1, 0.00001);
 
     const {
       dashCore,
