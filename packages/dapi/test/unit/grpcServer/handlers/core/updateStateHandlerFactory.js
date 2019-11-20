@@ -84,7 +84,7 @@ describe('updateStateHandlerFactory', () => {
       expect.fail('InvalidArgumentGrpcError was not thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: stateTransition is not specified');
+      expect(e.getMessage()).to.equal('Invalid argument: State Transition is not specified');
       expect(rpcClientMock.request).to.not.be.called();
     }
   });

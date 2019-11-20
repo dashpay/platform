@@ -18,6 +18,11 @@ RUN npm ci --production
 
 FROM node:10-alpine
 
+# While we're using this image for tests
+# We have to run `npm i` and zeromq build fails
+RUN apk add zeromq-dev
+RUN echo npm_config_zmq_external=true >> /etc/environment
+
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
 

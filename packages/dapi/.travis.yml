@@ -28,6 +28,8 @@ install:
 before_script:
   - npm run check-package
   - npm run lint
+  - docker build . -t dapi-dev 
+  - echo SERVICE_IMAGE_DAPI=dapi-dev >> .env
 
 deploy:
   skip_cleanup: true

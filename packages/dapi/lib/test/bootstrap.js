@@ -42,6 +42,13 @@ const dapiOptions = {
   container: dapiContainerOptions,
 };
 
+if (process.env.SERVICE_IMAGE_DAPI) {
+  dapiOptions.container = {
+    image: process.env.SERVICE_IMAGE_DAPI,
+    ...dapiContainerOptions,
+  };
+}
+
 DapiCoreOptions.setDefaultCustomOptions(dapiOptions);
 DapiTxFilterStreamOptions.setDefaultCustomOptions(dapiOptions);
 
@@ -62,20 +69,6 @@ if (process.env.SERVICE_IMAGE_CORE) {
   DashCoreOptions.setDefaultCustomOptions({
     container: {
       image: process.env.SERVICE_IMAGE_CORE,
-    },
-  });
-}
-
-if (process.env.SERVICE_IMAGE_DAPI) {
-  DapiCoreOptions.setDefaultCustomOptions({
-    container: {
-      image: process.env.SERVICE_IMAGE_DAPI,
-    },
-  });
-
-  DapiTxFilterStreamOptions.setDefaultCustomOptions({
-    container: {
-      image: process.env.SERVICE_IMAGE_DAPI,
     },
   });
 }
