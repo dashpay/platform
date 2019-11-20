@@ -112,7 +112,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
             return res(true);
           })
           .catch((err) => {
-            logger.log('Error', err);
+            logger.error('Error', err);
             throw new Error(`Unable to generate addresses :${err}`);
           });
       }

@@ -1,8 +1,6 @@
 const { expect } = require('chai');
 const startWorker = require('../../../src/types/Storage/methods/startWorker');
 
-const noop = () => {};
-
 describe('Storage - startWorker', () => {
   it('should set an interval', () => {
     const defaultIntervalValue = 10000;
