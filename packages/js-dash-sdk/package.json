@@ -1,0 +1,47 @@
+{
+  "name": "dashjs",
+  "version": "1.0.0",
+  "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
+  "main": "index.js",
+  "scripts": {
+    "start": "npm run build && node build/index.js",
+    "start:dev": "nodemon",
+    "build:dev": "webpack -d --display-error-details --progress",
+    "build:prod": "webpack -p --progress"
+    "build:live": "nodemon --exec 'ts-node' examples/usage1.js",
+    "build:livenet": "nodemon --exec 'ts-node' examples/usage.ts",
+    "test": "npm run test:ts && npm run build && npm run test:js",
+    "test:ts": "mocha -r ts-node/register \"src/**/*.spec.ts\"",
+    "test:js": "mocha --recursive tests/**/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/DashJS.git"
+  },
+  "author": "Dashevo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dashevo/DashJS/issues"
+  },
+  "homepage": "https://github.com/dashevo/DashJS#readme",
+  "dependencies": {
+    "@dashevo/dapi-client": "^0.6.7",
+    "@dashevo/wallet-lib": "^4.0.0",
+    "@dashevo/dpp": "^0.7.2"
+  },
+  "devDependencies": {
+    "@dashevo/dashcore-lib": "^0.17.9",
+    "@types/chai": "^4.2.3",
+    "@types/mocha": "^5.2.7",
+    "@types/node": "^12.7.5",
+    "chai": "^4.2.0",
+    "mocha": "^6.2.0",
+    "rimraf": "^3.0.0",
+    "ts-loader": "^6.2.0",
+    "ts-node": "^8.4.1",
+    "typescript": "^3.6.3",
+    "webpack": "^4.41.0",
+    "webpack-bundle-analyzer": "^3.5.2",
+    "webpack-cli": "^3.3.9"
+  }
+}
