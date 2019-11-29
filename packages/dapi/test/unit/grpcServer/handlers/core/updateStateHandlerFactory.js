@@ -98,8 +98,24 @@ describe('updateStateHandlerFactory', () => {
     expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
   });
 
-  it('should throw InvalidArgumentGrpcError if Tendermint Core returns check_tx with non zero code', async () => {
+  it('should throw InternalGrpcError if Tendermint Core returns check_tx with code 1 (internal error)', async () => {
     response.result.check_tx.code = 1;
+
+    const tx = stateTransitionFixture.serialize().toString('base64');
+
+    try {
+      await updateStateHandler(call);
+
+      expect.fail('InternalGrpcError was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InternalGrpcError);
+      expect(e.getMetadata()).to.deep.equal({ error: 'some data' });
+      expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
+    }
+  });
+
+  it('should throw InvalidArgumentGrpcError if Tendermint Core returns check_tx with code 2 (invalid argument)', async () => {
+    response.result.check_tx.code = 2;
 
     const tx = stateTransitionFixture.serialize().toString('base64');
 
@@ -115,8 +131,42 @@ describe('updateStateHandlerFactory', () => {
     }
   });
 
-  it('should throw InvalidArgumentGrpcError if Tendermint Core returns deliver_tx with non zero code', async () => {
+  it('should throw InternalGrpcError if Tendermint Core returns check_tx with unknown code', async () => {
+    response.result.check_tx.code = 4;
+
+    const tx = stateTransitionFixture.serialize().toString('base64');
+
+    try {
+      await updateStateHandler(call);
+
+      expect.fail('InternalGrpcError was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InternalGrpcError);
+      expect(e.getMetadata()).to.deep.equal({ error: 'some data' });
+      expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
+    }
+  });
+
+  it('should throw InternalGrpcError if Tendermint Core returns deliver_tx with code 1 (internal error)', async () => {
     response.result.deliver_tx.code = 1;
+
+    const tx = stateTransitionFixture.serialize().toString('base64');
+
+    try {
+      await updateStateHandler(call);
+
+      expect.fail('InternalGrpcError was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InternalGrpcError);
+      expect(e.getMetadata()).to.deep.equal({ error: 'some data' });
+      expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
+    }
+  });
+
+  it('should throw InvalidArgumentGrpcError if Tendermint Core returns deliver_tx with code 2 (invalid argument)', async () => {
+    response.result.deliver_tx.code = 2;
+
+    const tx = stateTransitionFixture.serialize().toString('base64');
 
     try {
       await updateStateHandler(call);
@@ -126,6 +176,23 @@ describe('updateStateHandlerFactory', () => {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('Invalid argument: some message');
       expect(e.getMetadata()).to.deep.equal({ error: 'some data' });
+      expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
+    }
+  });
+
+  it('should throw InternalGrpcError if Tendermint Core returns deliver_tx with unknown code', async () => {
+    response.result.deliver_tx.code = 4;
+
+    const tx = stateTransitionFixture.serialize().toString('base64');
+
+    try {
+      await updateStateHandler(call);
+
+      expect.fail('InternalGrpcError was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InternalGrpcError);
+      expect(e.getMetadata()).to.deep.equal({ error: 'some data' });
+      expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
     }
   });
 

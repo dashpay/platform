@@ -95,4 +95,6 @@ describe('updateStateHandlerFactory', function main() {
     expect(result).to.be.an.instanceOf(UpdateStateTransitionResponse);
     expect(contract).to.deep.equal(stateTransition.getDataContract().toJSON());
   });
+
+  it('should respond with error if contract is invalid');
 });

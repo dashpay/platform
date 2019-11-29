@@ -18,6 +18,30 @@ const {
  */
 function updateStateHandlerFactory(rpcClient) {
   /**
+   * @param {{code: number, log: string}} response
+   */
+  function handleResponse(response) {
+    if (response.code === undefined || response.code === 0) {
+      return;
+    }
+
+    const { error: { message, data } } = JSON.parse(response.log);
+
+    switch (response.code) {
+      case 2:
+
+        throw new InvalidArgumentGrpcError(message, data);
+      case 1:
+      default: {
+        const e = new Error(message);
+
+        throw new InternalGrpcError(e, data);
+      }
+    }
+  }
+
+
+  /**
    * @typedef updateStateHandler
    * @param {Object} call
    */
@@ -45,17 +69,9 @@ function updateStateHandlerFactory(rpcClient) {
 
     const { check_tx: checkTx, deliver_tx: deliverTx } = result;
 
-    if (checkTx.code > 0) {
-      const { error: { message, data } } = JSON.parse(checkTx.log);
+    handleResponse(checkTx);
 
-      throw new InvalidArgumentGrpcError(message, data);
-    }
-
-    if (deliverTx.code > 0) {
-      const { error: { message, data } } = JSON.parse(deliverTx.log);
-
-      throw new InvalidArgumentGrpcError(message, data);
-    }
+    handleResponse(deliverTx);
 
     return new UpdateStateTransitionResponse();
   }
