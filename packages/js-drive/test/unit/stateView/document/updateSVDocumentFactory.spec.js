@@ -45,13 +45,13 @@ describe('updateSVDocumentFactory', () => {
     expect(svDocument.isDeleted()).to.be.false();
   });
 
-  it('should store SVDocument if action is "update" and it has a previous version', async () => {
+  it('should store SVDocument if action is "replace" and it has a previous version', async () => {
     const [previousSVDocument] = getSVDocumentsFixture();
 
     svDocumentRepository.find.returns(previousSVDocument);
 
     document.setRevision(1);
-    document.setAction(Document.ACTIONS.UPDATE);
+    document.setAction(Document.ACTIONS.REPLACE);
 
     await updateSVDocument(document, reference);
 
@@ -70,10 +70,10 @@ describe('updateSVDocumentFactory', () => {
     expect(svDocument.isDeleted()).to.be.false();
   });
 
-  it('should throw an error if action is "update" and there is no previous version', async () => {
+  it('should throw an error if action is "replace" and there is no previous version', async () => {
     svDocumentRepository.find.returns(null);
 
-    document.setAction(Document.ACTIONS.UPDATE);
+    document.setAction(Document.ACTIONS.REPLACE);
 
     let error;
     try {

@@ -31,7 +31,7 @@ function updateSVDocumentFactory(createSVDocumentRepository) {
       }
 
       // eslint-disable-next-line no-fallthrough
-      case Document.ACTIONS.UPDATE: {
+      case Document.ACTIONS.REPLACE: {
         const previousSVDocument = await svDocumentRepository.find(
           svDocument.getDocument().getId(),
           stateViewTransaction,
