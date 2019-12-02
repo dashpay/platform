@@ -46,16 +46,28 @@
              responseClass:[BlockHeadersWithChainLocksResponse class]
         responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
 }
-#pragma mark updateState(StateTransition) returns (UpdateStateTransitionResponse)
+#pragma mark updateState(UpdateStateRequest) returns (UpdateStateResponse)
 
-- (void)updateStateWithRequest:(StateTransition *)request handler:(void(^)(UpdateStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)updateStateWithRequest:(UpdateStateRequest *)request handler:(void(^)(UpdateStateResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCToupdateStateWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCToupdateStateWithRequest:(StateTransition *)request handler:(void(^)(UpdateStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCToupdateStateWithRequest:(UpdateStateRequest *)request handler:(void(^)(UpdateStateResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"updateState"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[UpdateStateTransitionResponse class]
+             responseClass:[UpdateStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+#pragma mark fetchIdentity(FetchIdentityRequest) returns (FetchIdentityResponse)
+
+- (void)fetchIdentityWithRequest:(FetchIdentityRequest *)request handler:(void(^)(FetchIdentityResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTofetchIdentityWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTofetchIdentityWithRequest:(FetchIdentityRequest *)request handler:(void(^)(FetchIdentityResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"fetchIdentity"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[FetchIdentityResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
 @end

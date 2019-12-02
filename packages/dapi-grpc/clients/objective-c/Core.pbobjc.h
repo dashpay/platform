@@ -158,21 +158,45 @@ typedef GPB_ENUM(ChainLockSignatureMessages_FieldNumber) {
 
 @end
 
-#pragma mark - StateTransition
+#pragma mark - UpdateStateRequest
 
-typedef GPB_ENUM(StateTransition_FieldNumber) {
-  StateTransition_FieldNumber_Data_p = 1,
+typedef GPB_ENUM(UpdateStateRequest_FieldNumber) {
+  UpdateStateRequest_FieldNumber_StateTransition = 1,
 };
 
-@interface StateTransition : GPBMessage
+@interface UpdateStateRequest : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSData *data_p;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransition;
 
 @end
 
-#pragma mark - UpdateStateTransitionResponse
+#pragma mark - UpdateStateResponse
 
-@interface UpdateStateTransitionResponse : GPBMessage
+@interface UpdateStateResponse : GPBMessage
+
+@end
+
+#pragma mark - FetchIdentityRequest
+
+typedef GPB_ENUM(FetchIdentityRequest_FieldNumber) {
+  FetchIdentityRequest_FieldNumber_Id_p = 1,
+};
+
+@interface FetchIdentityRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *id_p;
+
+@end
+
+#pragma mark - FetchIdentityResponse
+
+typedef GPB_ENUM(FetchIdentityResponse_FieldNumber) {
+  FetchIdentityResponse_FieldNumber_Identity = 1,
+};
+
+@interface FetchIdentityResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 
 @end
 

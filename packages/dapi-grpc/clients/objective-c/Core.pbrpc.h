@@ -25,11 +25,18 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTosubscribeToBlockHeadersWithChainLocksWithRequest:(BlockHeadersWithChainLocksRequest *)request eventHandler:(void(^)(BOOL done, BlockHeadersWithChainLocksResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 
-#pragma mark updateState(StateTransition) returns (UpdateStateTransitionResponse)
+#pragma mark updateState(UpdateStateRequest) returns (UpdateStateResponse)
 
-- (void)updateStateWithRequest:(StateTransition *)request handler:(void(^)(UpdateStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)updateStateWithRequest:(UpdateStateRequest *)request handler:(void(^)(UpdateStateResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCToupdateStateWithRequest:(StateTransition *)request handler:(void(^)(UpdateStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCToupdateStateWithRequest:(UpdateStateRequest *)request handler:(void(^)(UpdateStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark fetchIdentity(FetchIdentityRequest) returns (FetchIdentityResponse)
+
+- (void)fetchIdentityWithRequest:(FetchIdentityRequest *)request handler:(void(^)(FetchIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTofetchIdentityWithRequest:(FetchIdentityRequest *)request handler:(void(^)(FetchIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

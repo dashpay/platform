@@ -5,7 +5,8 @@ package org.dash.platform.dapi.v0;
 service Core {
   rpc getLastUserStateTransitionHash (LastUserStateTransitionHashRequest) returns (LastUserStateTransitionHashResponse);
   rpc subscribeToBlockHeadersWithChainLocks (BlockHeadersWithChainLocksRequest) returns (stream BlockHeadersWithChainLocksResponse);
-  rpc updateState (StateTransition) returns (UpdateStateTransitionResponse);
+  rpc updateState (UpdateStateRequest) returns (UpdateStateResponse);
+  rpc fetchIdentity (FetchIdentityRequest) returns (FetchIdentityResponse);
 }
 
 message LastUserStateTransitionHashRequest {
@@ -40,8 +41,16 @@ message ChainLockSignatureMessages {
   repeated bytes messages = 1;
 }
 
-message StateTransition {
-  bytes data = 1;
+message UpdateStateRequest {
+  bytes stateTransition = 1;
 }
 
-message UpdateStateTransitionResponse {}
+message UpdateStateResponse {}
+
+message FetchIdentityRequest {
+  string id = 1;
+}
+
+message FetchIdentityResponse {
+  bytes identity = 1;
+}

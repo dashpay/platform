@@ -14,6 +14,7 @@ describe('CorePromiseClient', () => {
       getLastUserStateTransitionHash: this.sinon.stub().resolves(response),
       subscribeToBlockHeadersWithChainLocks: this.sinon.stub().resolves(response),
       updateState: this.sinon.stub().resolves(response),
+      fetchIdentity: this.sinon.stub().resolves(response),
     };
   });
 
@@ -72,6 +73,15 @@ describe('CorePromiseClient', () => {
       } catch (e) {
         expect(e.message).to.equal('metadata must be an object');
       }
+    });
+  });
+
+  describe('#fetchIdentity', () => {
+    it('should fetch identity', async () => {
+      const result = await corePromiseClient.fetchIdentity(request);
+
+      expect(result).to.equal(response);
+      expect(corePromiseClient.client.fetchIdentity).to.be.calledOnceWith(request);
     });
   });
 });
