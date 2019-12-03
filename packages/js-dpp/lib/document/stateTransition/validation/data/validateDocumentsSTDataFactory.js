@@ -104,12 +104,17 @@ function validateDocumentsSTDataFactory(
     }
 
     // Validate unique indices
-    result.merge(
-      await validateDocumentsUniquenessByIndices(documents, dataContract),
-    );
+    const nonDeleteActionDocuments = documents
+      .filter(d => d.getAction() !== Document.ACTIONS.DELETE);
 
-    if (!result.isValid()) {
-      return result;
+    if (nonDeleteActionDocuments.length > 0) {
+      result.merge(
+        await validateDocumentsUniquenessByIndices(nonDeleteActionDocuments, dataContract),
+      );
+
+      if (!result.isValid()) {
+        return result;
+      }
     }
 
     // Run Data Triggers
