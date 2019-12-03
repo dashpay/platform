@@ -1,4 +1,4 @@
-FROM node:10-alpine
+FROM node:12-alpine
 
 RUN apk update && \
     apk --no-cache upgrade && \
@@ -16,7 +16,7 @@ COPY package.json package-lock.json ./
 ENV npm_config_zmq_external=true
 RUN npm ci --production
 
-FROM node:10-alpine
+FROM node:12-alpine
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Drive Node.JS"
