@@ -2,6 +2,9 @@
 
 > Reference contract of the DashPay DAP on Dash Evolution
 
+## About DashPay 
+DashPay allows Dash user to create a DashPay profile on the Platform chain.   
+This profile can then be used to interact with other DashPay profiles, may it be for the purpose of sending/receiving transactions without having to go around the process of querying the public address of the recipient.  
 
 ## Getting Started 
 
@@ -32,3 +35,6 @@ To run tests, simply run
 ```shell
 npm test
 ```
+
+## Licence
+[MIT](LICENCE) © Dash Core Group, Inc.
