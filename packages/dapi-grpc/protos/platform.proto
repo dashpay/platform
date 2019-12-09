@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package org.dash.platform.dapi.v0;
+
+service Platform {
+  rpc applyStateTransition (ApplyStateTransitionRequest) returns (ApplyStateTransitionResponse);
+  rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
+  rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
+  rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
+}
+
+message ApplyStateTransitionRequest {
+  bytes state_transition = 1;
+}
+
+message ApplyStateTransitionResponse {
+
+}
+
+message GetIdentityRequest {
+  string id = 1;
+}
+
+message GetIdentityResponse {
+  bytes identity = 1;
+}
+
+message GetDataContractRequest {
+  string id = 1;
+}
+
+message GetDataContractResponse {
+  bytes data_contract = 1;
+}
+
+message GetDocumentsRequest {
+  string data_contract_id = 1;
+  string document_type = 2;
+
+  bytes where = 3;
+  bytes orderBy = 4;
+
+  uint32 limit = 5;
+
+  oneof start {
+    uint32 start_after = 6;
+    uint32 start_at = 7;
+  }
+}
+
+message GetDocumentsResponse {
+  repeated bytes documents = 1;
+}
