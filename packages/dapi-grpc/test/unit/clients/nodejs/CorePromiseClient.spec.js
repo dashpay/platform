@@ -11,24 +11,25 @@ describe('CorePromiseClient', () => {
 
     corePromiseClient = new CorePromiseClient('localhost');
     corePromiseClient.client = {
-      getLastUserStateTransitionHash: this.sinon.stub().resolves(response),
-      subscribeToBlockHeadersWithChainLocks: this.sinon.stub().resolves(response),
-      updateState: this.sinon.stub().resolves(response),
-      fetchIdentity: this.sinon.stub().resolves(response),
+      getStatus: this.sinon.stub().resolves(response),
+      getBlock: this.sinon.stub().resolves(response),
+      sendTransaction: this.sinon.stub().resolves(response),
+      getTransaction: this.sinon.stub().resolves(response),
+      getEstimatedTransactionFee: this.sinon.stub().resolves(response),
     };
   });
 
-  describe('#getLastUserStateTransitionHash', () => {
-    it('should get last user state transition hash', async () => {
-      const result = await corePromiseClient.getLastUserStateTransitionHash(request);
+  describe('#getStatus', () => {
+    it('should return status', async () => {
+      const result = await corePromiseClient.getStatus(request);
 
       expect(result).to.equal(response);
-      expect(corePromiseClient.client.getLastUserStateTransitionHash).to.be.calledOnceWith(request);
+      expect(corePromiseClient.client.getStatus).to.be.calledOnceWith(request);
     });
 
     it('should throw an error when metadata is not an object', async () => {
       try {
-        corePromiseClient.getLastUserStateTransitionHash({}, 'metadata');
+        corePromiseClient.getStatus({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {
@@ -37,51 +38,61 @@ describe('CorePromiseClient', () => {
     });
   });
 
-  describe('#subscribeToBlockHeadersWithChainLocks', () => {
-    it('should subscribe to block headers with chain locks', async () => {
-      const result = await corePromiseClient.subscribeToBlockHeadersWithChainLocks(request);
+  describe('#getBlock', () => {
+    it('should get block', async () => {
+      const result = await corePromiseClient.getBlock(request);
 
       expect(result).to.equal(response);
-      expect(corePromiseClient.client.subscribeToBlockHeadersWithChainLocks)
+      expect(corePromiseClient.client.getBlock).to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        corePromiseClient.getBlock({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#sendTransaction', () => {
+    it('should send transaction', async () => {
+      const result = await corePromiseClient.sendTransaction(request);
+
+      expect(result).to.equal(response);
+      expect(corePromiseClient.client.sendTransaction).to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        corePromiseClient.sendTransaction({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getTransaction', () => {
+    it('should get transaction', async () => {
+      const result = await corePromiseClient.getTransaction(request);
+
+      expect(result).to.equal(response);
+      expect(corePromiseClient.client.getTransaction)
         .to.be.calledOnceWith(request);
     });
 
     it('should throw an error when metadata is not an object', async () => {
       try {
-        corePromiseClient.subscribeToBlockHeadersWithChainLocks({}, 'metadata');
+        corePromiseClient.getTransaction({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e.message).to.equal('metadata must be an object');
       }
-    });
-  });
-
-  describe('#updateState', () => {
-    it('should update state', async () => {
-      const result = await corePromiseClient.updateState(request);
-
-      expect(result).to.equal(response);
-      expect(corePromiseClient.client.updateState).to.be.calledOnceWith(request);
-    });
-
-    it('should throw an error when metadata is not an object', async () => {
-      try {
-        corePromiseClient.updateState({}, 'metadata');
-
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e.message).to.equal('metadata must be an object');
-      }
-    });
-  });
-
-  describe('#fetchIdentity', () => {
-    it('should fetch identity', async () => {
-      const result = await corePromiseClient.fetchIdentity(request);
-
-      expect(result).to.equal(response);
-      expect(corePromiseClient.client.fetchIdentity).to.be.calledOnceWith(request);
     });
   });
 });

@@ -7,13 +7,10 @@ describe('getCoreDefinition', () => {
     expect(coreDefinition).to.be.an('function');
     expect(coreDefinition).to.have.property('service');
 
-    expect(coreDefinition.service).to.have.property('getLastUserStateTransitionHash');
-    expect(coreDefinition.service.getLastUserStateTransitionHash.path).to.equal('/org.dash.platform.dapi.v0.Core/getLastUserStateTransitionHash');
+    expect(coreDefinition.service).to.have.property('sendTransaction');
+    expect(coreDefinition.service.sendTransaction.path).to.equal('/org.dash.platform.dapi.v0.Core/sendTransaction');
 
-    expect(coreDefinition.service).to.have.property('subscribeToBlockHeadersWithChainLocks');
-    expect(coreDefinition.service.subscribeToBlockHeadersWithChainLocks.path).to.equal('/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks');
-
-    expect(coreDefinition.service).to.have.property('updateState');
-    expect(coreDefinition.service.updateState.path).to.equal('/org.dash.platform.dapi.v0.Core/updateState');
+    expect(coreDefinition.service).to.have.property('getTransaction');
+    expect(coreDefinition.service.getTransaction.path).to.equal('/org.dash.platform.dapi.v0.Core/getTransaction');
   });
 });

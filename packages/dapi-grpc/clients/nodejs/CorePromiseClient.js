@@ -23,14 +23,16 @@ const {
       platform: {
         dapi: {
           v0: {
-            LastUserStateTransitionHashRequest: PBJSLastUserStateTransitionHashRequest,
-            LastUserStateTransitionHashResponse: PBJSLastUserStateTransitionHashResponse,
+            GetStatusRequest: PBJSGetStatusRequest,
+            GetStatusResponse: PBJSGetStatusResponse,
+            GetBlockRequest: PBJSGetBlockRequest,
+            GetBlockResponse: PBJSGetBlockResponse,
+            SendTransactionRequest: PBJSSendTransactionRequest,
+            SendTransactionResponse: PBJSSendTransactionResponse,
+            GetTransactionRequest: PBJSGetTransactionRequest,
+            GetTransactionResponse: PBJSGetTransactionResponse,
             BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
             BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
-            UpdateStateRequest: PBJSUpdateStateRequest,
-            UpdateStateResponse: PBJSUpdateStateResponse,
-            FetchIdentityRequest: PBJSFetchIdentityRequest,
-            FetchIdentityResponse: PBJSFetchIdentityResponse,
           },
         },
       },
@@ -39,25 +41,68 @@ const {
 } = require('./core_pbjs');
 
 const {
-  LastUserStateTransitionHashResponse: ProtocLastUserStateTransitionHashResponse,
+  GetStatusResponse: ProtocGetStatusResponse,
+  GetBlockResponse: ProtocGetBlockResponse,
+  SendTransactionResponse: ProtocSendTransactionResponse,
+  GetTransactionResponse: ProtocGetTransactionResponse,
   BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
-  UpdateStateResponse: ProtocUpdateStateResponse,
-  FetchIdentityResponse: ProtocFetchIdentityResponse,
 } = require('./core_protoc');
 
 const getCoreDefinition = require('../../lib/getCoreDefinition');
 
 const CoreNodeJSClient = getCoreDefinition();
 
-const getLastUserStateTransitionHashOptions = {
+const getStatusOptions = {
   interceptors: [
     jsonToProtobufInterceptorFactory(
       jsonToProtobufFactory(
-        ProtocLastUserStateTransitionHashResponse,
-        PBJSLastUserStateTransitionHashResponse,
+        ProtocGetStatusResponse,
+        PBJSGetStatusResponse,
       ),
       protobufToJsonFactory(
-        PBJSLastUserStateTransitionHashRequest,
+        PBJSGetStatusRequest,
+      ),
+    ),
+  ],
+};
+
+const getBlockOptions = {
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocGetBlockResponse,
+        PBJSGetBlockResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSGetBlockRequest,
+      ),
+    ),
+  ],
+};
+
+const sendTransactionOptions = {
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocSendTransactionResponse,
+        PBJSSendTransactionResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSSendTransactionRequest,
+      ),
+    ),
+  ],
+};
+
+const getTransactionOptions = {
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocGetTransactionResponse,
+        PBJSGetTransactionResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSGetTransactionRequest,
       ),
     ),
   ],
@@ -77,34 +122,6 @@ const subscribeToBlockHeadersWithChainLocksOptions = {
   ],
 };
 
-const updateStateTransitionOptions = {
-  interceptors: [
-    jsonToProtobufInterceptorFactory(
-      jsonToProtobufFactory(
-        ProtocUpdateStateResponse,
-        PBJSUpdateStateResponse,
-      ),
-      protobufToJsonFactory(
-        PBJSUpdateStateRequest,
-      ),
-    ),
-  ],
-};
-
-const fetchIdentityOptions = {
-  interceptors: [
-    jsonToProtobufInterceptorFactory(
-      jsonToProtobufFactory(
-        ProtocFetchIdentityResponse,
-        PBJSFetchIdentityResponse,
-      ),
-      protobufToJsonFactory(
-        PBJSFetchIdentityRequest,
-      ),
-    ),
-  ],
-};
-
 class CorePromiseClient {
   /**
    * @param {string} hostname
@@ -114,29 +131,88 @@ class CorePromiseClient {
   constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
     this.client = new CoreNodeJSClient(hostname, credentials, options);
 
-    this.client.getLastUserStateTransitionHash = promisify(
-      this.client.getLastUserStateTransitionHash.bind(this.client),
+    this.client.getStatus = promisify(
+      this.client.getStatus.bind(this.client),
     );
 
-    this.client.updateState = promisify(
-      this.client.updateState.bind(this.client),
+    this.client.getBlock = promisify(
+      this.client.getBlock.bind(this.client),
+    );
+
+    this.client.sendTransaction = promisify(
+      this.client.sendTransaction.bind(this.client),
+    );
+
+    this.client.getTransaction = promisify(
+      this.client.getTransaction.bind(this.client),
     );
   }
 
   /**
-   * @param {!LastUserStateTransitionHashRequest} lastUserStateTransitionHashRequest
+   * @param {!GetStatusRequest} getStatusRequest
    * @param {?Object<string, string>} metadata
-   * @return {Promise<!LastUserStateTransitionHashResponse>}
+   * @return {Promise<!GetStatusResponse>}
    */
-  getLastUserStateTransitionHash(lastUserStateTransitionHashRequest, metadata = {}) {
+  getStatus(getStatusRequest, metadata = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
 
-    return this.client.getLastUserStateTransitionHash(
-      lastUserStateTransitionHashRequest,
+    return this.client.getStatus(
+      getStatusRequest,
       convertObjectToMetadata(metadata),
-      getLastUserStateTransitionHashOptions,
+      getStatusOptions,
+    );
+  }
+
+  /**
+   * @param {!GetBlockRequest} getBlockRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetBlockResponse>}
+   */
+  getBlock(getBlockRequest, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getBlock(
+      getBlockRequest,
+      convertObjectToMetadata(metadata),
+      getBlockOptions,
+    );
+  }
+
+  /**
+   * @param {!SendTransactionRequest} sendTransactionRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!SendTransactionResponse>}
+   */
+  sendTransaction(sendTransactionRequest, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.sendTransaction(
+      sendTransactionRequest,
+      convertObjectToMetadata(metadata),
+      sendTransactionOptions,
+    );
+  }
+
+  /**
+   * @param {!GetTransactionRequest} getTransactionRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetTransactionResponse>}
+   */
+  getTransaction(getTransactionRequest, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getTransaction(
+      getTransactionRequest,
+      convertObjectToMetadata(metadata),
+      getTransactionOptions,
     );
   }
 
@@ -155,42 +231,6 @@ class CorePromiseClient {
       blockHeadersWithChainLocksRequest,
       convertObjectToMetadata(metadata),
       subscribeToBlockHeadersWithChainLocksOptions,
-    );
-  }
-
-  /**
-   *
-   * @param {!UpdateStateRequest} updateStateRequest
-   * @param {?Object<string, string>} metadata
-   * @returns {Promise<!UpdateStateResponse>}
-   */
-  updateState(updateStateRequest, metadata = {}) {
-    if (!isObject(metadata)) {
-      throw new Error('metadata must be an object');
-    }
-
-    return this.client.updateState(
-      updateStateRequest,
-      convertObjectToMetadata(metadata),
-      updateStateTransitionOptions,
-    );
-  }
-
-  /**
-   *
-   * @param {!FetchIdentityRequest} fetchIdentityRequest
-   * @param {?Object<string, string>} metadata
-   * @returns {Promise<!FetchIdentityResponse>}
-   */
-  fetchIdentity(fetchIdentityRequest, metadata = {}) {
-    if (!isObject(metadata)) {
-      throw new Error('metadata must be an object');
-    }
-
-    return this.client.fetchIdentity(
-      fetchIdentityRequest,
-      convertObjectToMetadata(metadata),
-      fetchIdentityOptions,
     );
   }
 }
