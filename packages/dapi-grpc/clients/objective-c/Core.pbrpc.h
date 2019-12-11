@@ -11,11 +11,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 @protocol Core <NSObject>
 
-#pragma mark getStatus(GetStatusRequest) returns (GetStatusRequest)
+#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
 
-- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusRequest *_Nullable response, NSError *_Nullable error))handler;
+- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusRequest *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getBlock(GetBlockRequest) returns (GetBlockResponse)

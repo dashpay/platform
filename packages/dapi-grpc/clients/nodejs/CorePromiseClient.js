@@ -33,6 +33,8 @@ const {
             GetTransactionResponse: PBJSGetTransactionResponse,
             BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
             BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
+            GetEstimatedTransactionFeeRequest: PBJSGetEstimatedTransactionFeeRequest,
+            GetEstimatedTransactionFeeResponse: PBJSGetEstimatedTransactionFeeResponse,
           },
         },
       },
@@ -46,6 +48,7 @@ const {
   SendTransactionResponse: ProtocSendTransactionResponse,
   GetTransactionResponse: ProtocGetTransactionResponse,
   BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
+  GetEstimatedTransactionFeeResponse: ProtocGetEstimatedTransactionFeeResponse,
 } = require('./core_protoc');
 
 const getCoreDefinition = require('../../lib/getCoreDefinition');
@@ -108,6 +111,20 @@ const getTransactionOptions = {
   ],
 };
 
+const getEstimatedTransactionFeeOptions = {
+  interceptors: [
+    jsonToProtobufInterceptorFactory(
+      jsonToProtobufFactory(
+        ProtocGetEstimatedTransactionFeeResponse,
+        PBJSGetEstimatedTransactionFeeResponse,
+      ),
+      protobufToJsonFactory(
+        PBJSGetEstimatedTransactionFeeRequest,
+      ),
+    ),
+  ],
+};
+
 const subscribeToBlockHeadersWithChainLocksOptions = {
   interceptors: [
     jsonToProtobufInterceptorFactory(
@@ -145,6 +162,10 @@ class CorePromiseClient {
 
     this.client.getTransaction = promisify(
       this.client.getTransaction.bind(this.client),
+    );
+
+    this.client.getEstimatedTransactionFee = promisify(
+      this.client.getEstimatedTransactionFee.bind(this.client),
     );
   }
 
@@ -213,6 +234,23 @@ class CorePromiseClient {
       getTransactionRequest,
       convertObjectToMetadata(metadata),
       getTransactionOptions,
+    );
+  }
+
+  /**
+   * @param {!GetEstimatedTransactionFeeRequest} getEstimatedTransactionFeeRequest
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!GetEstimatedTransactionFeeResponse>}
+   */
+  getEstimatedTransactionFee(getEstimatedTransactionFeeRequest, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getEstimatedTransactionFee(
+      getEstimatedTransactionFeeRequest,
+      convertObjectToMetadata(metadata),
+      getEstimatedTransactionFeeOptions,
     );
   }
 

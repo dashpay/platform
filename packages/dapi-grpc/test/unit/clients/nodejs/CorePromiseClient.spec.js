@@ -95,4 +95,23 @@ describe('CorePromiseClient', () => {
       }
     });
   });
+
+  describe('#getEstimatedTransactionFee', () => {
+    it('should return status', async () => {
+      const result = await corePromiseClient.getEstimatedTransactionFee(request);
+
+      expect(result).to.equal(response);
+      expect(corePromiseClient.client.getEstimatedTransactionFee).to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        corePromiseClient.getEstimatedTransactionFee({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
 });

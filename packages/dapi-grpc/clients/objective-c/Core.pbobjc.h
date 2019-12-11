@@ -189,24 +189,6 @@ typedef GPB_ENUM(GetTransactionResponse_FieldNumber) {
 
 @end
 
-#pragma mark - GetEstimatedTransactionFeeRequest
-
-@interface GetEstimatedTransactionFeeRequest : GPBMessage
-
-@end
-
-#pragma mark - GetEstimatedTransactionFeeResponse
-
-typedef GPB_ENUM(GetEstimatedTransactionFeeResponse_FieldNumber) {
-  GetEstimatedTransactionFeeResponse_FieldNumber_EstimatedFee = 1,
-};
-
-@interface GetEstimatedTransactionFeeResponse : GPBMessage
-
-@property(nonatomic, readwrite) double estimatedFee;
-
-@end
-
 #pragma mark - BlockHeadersWithChainLocksRequest
 
 typedef GPB_ENUM(BlockHeadersWithChainLocksRequest_FieldNumber) {
@@ -291,6 +273,30 @@ typedef GPB_ENUM(ChainLockSignatureMessages_FieldNumber) {
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *messagesArray;
 /** The number of items in @c messagesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger messagesArray_Count;
+
+@end
+
+#pragma mark - GetEstimatedTransactionFeeRequest
+
+typedef GPB_ENUM(GetEstimatedTransactionFeeRequest_FieldNumber) {
+  GetEstimatedTransactionFeeRequest_FieldNumber_Blocks = 1,
+};
+
+@interface GetEstimatedTransactionFeeRequest : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t blocks;
+
+@end
+
+#pragma mark - GetEstimatedTransactionFeeResponse
+
+typedef GPB_ENUM(GetEstimatedTransactionFeeResponse_FieldNumber) {
+  GetEstimatedTransactionFeeResponse_FieldNumber_Fee = 1,
+};
+
+@interface GetEstimatedTransactionFeeResponse : GPBMessage
+
+@property(nonatomic, readwrite) double fee;
 
 @end
 

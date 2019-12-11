@@ -22,16 +22,16 @@
 }
 
 
-#pragma mark getStatus(GetStatusRequest) returns (GetStatusRequest)
+#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
 
-- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusRequest *_Nullable response, NSError *_Nullable error))handler{
+- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetStatusWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusRequest *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getStatus"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetStatusRequest class]
+             responseClass:[GetStatusResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
 #pragma mark getBlock(GetBlockRequest) returns (GetBlockResponse)
