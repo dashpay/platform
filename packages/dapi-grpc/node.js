@@ -28,6 +28,18 @@ const {
     dash: {
       platform: {
         dapi: {
+          v0: pbjsPlatformMessages,
+        },
+      },
+    },
+  },
+} = require('./clients/nodejs/platform_pbjs');
+
+const {
+  org: {
+    dash: {
+      platform: {
+        dapi: {
           v0: pbjsTransactionsFilterStreamMessages,
         },
       },
@@ -41,5 +53,10 @@ module.exports = Object.assign({
   getCoreDefinition,
   getPlatformDefinition,
   getTransactionsFilterStreamDefinition,
-  pbjs: Object.assign({}, pbjsCoreMessages, pbjsTransactionsFilterStreamMessages),
+  pbjs: Object.assign(
+    {},
+    pbjsCoreMessages,
+    pbjsTransactionsFilterStreamMessages,
+    pbjsPlatformMessages,
+  ),
 }, protocCoreMessages, protocTransactionsFilterStreamMessages);
