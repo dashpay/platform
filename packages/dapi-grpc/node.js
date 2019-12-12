@@ -1,7 +1,9 @@
 const CorePromiseClient = require('./clients/nodejs/CorePromiseClient');
+const PlatformPromiseClient = require('./clients/nodejs/PlatformPromiseClient');
 const TransactionsFilterStreamPromiseClient = require('./clients/nodejs/TransactionsFilterStreamPromiseClient');
 
 const protocCoreMessages = require('./clients/nodejs/core_protoc');
+const protocPlatformMessages = require('./clients/nodejs/platform_protoc');
 const protocTransactionsFilterStreamMessages = require('./clients/nodejs/transactions_filter_stream_protoc');
 
 const getCoreDefinition = require('./lib/getCoreDefinition');
@@ -50,13 +52,14 @@ const {
 module.exports = Object.assign({
   CorePromiseClient,
   TransactionsFilterStreamPromiseClient,
+  PlatformPromiseClient,
   getCoreDefinition,
-  getPlatformDefinition,
   getTransactionsFilterStreamDefinition,
+  getPlatformDefinition,
   pbjs: Object.assign(
     {},
     pbjsCoreMessages,
     pbjsTransactionsFilterStreamMessages,
     pbjsPlatformMessages,
   ),
-}, protocCoreMessages, protocTransactionsFilterStreamMessages);
+}, protocCoreMessages, protocTransactionsFilterStreamMessages, protocPlatformMessages);
