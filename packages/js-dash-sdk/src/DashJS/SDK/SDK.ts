@@ -1,6 +1,6 @@
-// import {Wallet} from "@dashevo/wallet-lib";
-import {Wallet} from "../../../../wallet-lib/src";
-import {Mnemonic, Network} from "@dashevo/wallet-lib/src/types";
+import {Wallet} from "@dashevo/wallet-lib";
+// FIXME: use dashcorelib types
+import {Mnemonic, Network} from "@dashevo/wallet-lib/src/types/types";
 import {Platform, PlatformOpts} from './Platform';
 // @ts-ignore
 import DAPIClient from "@dashevo/dapi-client"
@@ -15,7 +15,7 @@ const defaultSeeds = [
 export type DPASchema = object
 
 export interface SDKOpts {
-    network?: Network;
+    network?: Network | string;
     mnemonic?: Mnemonic | string,
     schemas?:SDKSchemas;
 }
@@ -37,9 +37,9 @@ export class SDK {
     private readonly clients: SDKClients;
     private readonly schemas: SDKOpts['schemas'];
 
-    constructor(opts: SDKOpts) {
-        this.network = opts && opts.network || 'testnet';
-        this.schemas = opts && opts.schemas;
+    constructor(opts: SDKOpts = {}) {
+        this.network = opts.network || 'testnet';
+        this.schemas = opts.schemas;
         this.clients = {
             dapi: new DAPIClient(Object.assign({
                 seeds: defaultSeeds,
@@ -49,7 +49,7 @@ export class SDK {
         }
         if(opts.mnemonic){
             // @ts-ignore
-            this.wallet = new Wallet({...opts, offlineMode: !(opts && opts.mnemonic)});
+            this.wallet = new Wallet({...opts, offlineMode: !(opts.mnemonic)});
         }
         if(opts.schemas!== undefined){
             let platformOpts: PlatformOpts = {
@@ -61,7 +61,7 @@ export class SDK {
     }
 
     getDAPIInstance(){
-        if (!!this.clients['dapi']) {
+        if (this.clients['dapi'] == undefined) {
             throw new Error(`There is no client DAPI`);
         }
         return this.clients['dapi'];

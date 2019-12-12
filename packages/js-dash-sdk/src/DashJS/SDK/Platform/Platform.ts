@@ -1,6 +1,6 @@
 // @ts-ignore
 import DashPlatformProtocol from "@dashevo/dpp";
-import {Mnemonic, Network} from "@dashevo/wallet-lib/src/types";
+import {Mnemonic, Network} from "@dashevo/wallet-lib/src/types/types";
 // @ts-ignore
 import DAPIClient from "@dashevo/dapi-client"
 import {SDKClients, SDKSchemas} from "../SDK";
@@ -48,26 +48,26 @@ export class Platform {
 
     constructor(platformOpts: PlatformOpts) {
         // @ts-ignore
-        this.documents = {};
+        this.documents = {
+            broadcast: broadcastDocument.bind(this),
+            create: createDocument.bind(this),
+            fetch: fetchDocument.bind(this),
+        };
         // @ts-ignore
-        this.contracts = {};
+        this.contracts = {
+            broadcast: broadcastContract.bind(this),
+            create: createContract.bind(this),
+            fetch: fetchContract.bind(this),
+        };
         // @ts-ignore
-        this.identities = {};
+        this.identities = {
+            register: registerIdentity.bind(this),
+            create: createIdentity.bind(this),
+            get: getIdentity.bind(this),
+            search: searchIdentity.bind(this),
+        };
         this.dpp = new DashPlatformProtocol(platformOpts);
         this.client = platformOpts.client;
         this.schemas = platformOpts.schemas;
     }
 }
-
-Platform.prototype.documents.broadcast = broadcastDocument;
-Platform.prototype.documents.create = createDocument;
-Platform.prototype.documents.fetch = fetchDocument;
-
-Platform.prototype.contracts.broadcast = broadcastContract;
-Platform.prototype.contracts.create = createContract;
-Platform.prototype.contracts.fetch = fetchContract;
-
-Platform.prototype.identities.create = createIdentity;
-Platform.prototype.identities.get = getIdentity;
-Platform.prototype.identities.register = registerIdentity;
-Platform.prototype.identities.search = searchIdentity;

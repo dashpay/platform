@@ -37,13 +37,24 @@ Dash is a powerful new peer-to-peer platform for the next generation of financia
 
 ## Install
 
-```sh
-npm install @dashevo/dashjs
-```
+### ES5/ES6 via NPM
 
 In order to use this library, you will need to add it to your project as a dependency.
 
 Having [NodeJS](https://nodejs.org/) installed, just type : `npm install @dashevo/dashjs` in your terminal.
+
+```sh
+npm install @dashevo/dashjs
+```
+
+
+### CDN Standalone
+
+For browser usage, you can also directly rely on unpkg : 
+
+```
+<script src="https://unpkg.com/dash"></script>
+```
 
 ## Usage
 
