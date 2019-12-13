@@ -351,7 +351,7 @@ typedef struct GetDocumentsRequest__storage_ {
         .number = GetDocumentsRequest_FieldNumber_OrderBy,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetDocumentsRequest__storage_, orderBy),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldTextFormatNameCustom),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
       },
       {
@@ -396,11 +396,6 @@ typedef struct GetDocumentsRequest__storage_ {
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-#if !GPBOBJC_SKIP_MESSAGE_TEXTFORMAT_EXTRAS
-    static const char *extraTextFormatInfo =
-        "\001\004\007\000";
-    [localDescriptor setupExtraTextInfo:extraTextFormatInfo];
-#endif  // !GPBOBJC_SKIP_MESSAGE_TEXTFORMAT_EXTRAS
     NSAssert(descriptor == nil, @"Startup recursed!");
     descriptor = localDescriptor;
   }

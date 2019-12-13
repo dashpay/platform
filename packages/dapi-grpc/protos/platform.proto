@@ -38,7 +38,7 @@ message GetDocumentsRequest {
   string document_type = 2;
 
   bytes where = 3;
-  bytes orderBy = 4;
+  bytes order_by = 4;
 
   uint32 limit = 5;
 
