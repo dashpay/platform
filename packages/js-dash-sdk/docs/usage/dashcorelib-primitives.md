@@ -1,7 +1,7 @@
 ## Transaction 
 
-The Transaction primitives allow easy creation and manipulation of transaction. It also allow signing when provided a privatekey.  
-Fee control and input/output access provided (which allow to pass along specific script).  
+The Transaction primitive allows easy creation and manipulation of transactions. It also allows signing when provided with a privatekey.  
+Supports fee control and input/output access (which allows passing a specific script).
 ```js
 import { Transaction } from '@dashevo/dashjs';
 const tx = new Transaction(txProps)
@@ -12,7 +12,7 @@ Access the [Transaction documentation on dashevo/dashcore-lib](https://github.co
 ## Address
 
 Standardized representation of a Dash Address. Address can be instantiated from a String, PrivateKey, PublicKey, HDPrivateKey or HdPublicKey.  
-It also support pay-to-script-hash multi-sinatures from an array of PublicKeys.  
+Pay-to-script-hash (P2SH) multi-signature addresses from an array of PublicKeys are also supported.  
 
 ```js
 import { Address } from '@dashevo/dashjs';
@@ -22,8 +22,9 @@ Access the [Address documentation on dashevo/dashcore-lib](https://github.com/da
 
 ## Block
 
-Given an hexadecimal string representation of the block as input, the Block class allow you to have a deserialized representation of a Block, it's header and can validate it.  
-Transaction of the block can also be explorated by iterating on transactions member (`block.transactions`).
+Given a hexadecimal string representation of the block as input, the Block class allows you to have a deserialized representation of a Block or its header. It also allows validating the transactions in the block against the header merkle root.
+
+Transactions of the block can also be explored by iterating over elements in array (`block.transactions`).  
 
 `import { Block } from '@dashevo/dashjs'`
 

@@ -6,34 +6,11 @@
 > Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
 
 
-## Table of Contents
+DashJS allows you to transact on L1 or fetch/register documents on L2 within a single library, including management and signing of your documents.
 
-- [State](#state)
-- [Principles](#principles)
-- [Install](#install)
-- [Usage](#usage)
-    - [Platform](#platform)
-    - [Wallet](#wallet)
-    - [Primitives](#primitives)
-        - [Transaction](#transaction)
-        - [Address](#address)
-        - [Block](#block)
-        - [UnspentOutput](#unspentoutput)
-        - [HDPublicKey](#hdpublickey)
-        - [HDPrivateKey](#hdprivatekey)
-        - [PublicKey](#publickey)
-        - [PrivateKey](#privatekey)
-        - [Mnemonic](#mnemonic)
-        - [Network](#network)
-- [License](#license)
-
-## State
-
-Under active development.
-
-## Principles
-
-Dash is a powerful new peer-to-peer platform for the next generation of financial technology. The decentralized nature of the Dash network allows for highly resilient Dash infrastructure, and the developer community needs reliable, open-source tools to implement Dash apps and services.
+Find more in the : 
+- [Documentation](https://dashevo.github.io/DashJS/#/)
+- [Examples & snippets](https://dashevo.github.io/DashJS/#/)
 
 ## Install
 
@@ -60,8 +37,7 @@ For browser usage, you can also directly rely on unpkg :
 
 ```js
 import DashJS from "@dashevo/dashjs"; 
-//const DashJS = require('../build/index'); for es5
-import schema from "./schema.json"; // If you want to interact with L2 (DPA)
+import schema from "./schema.json";
 
 const network = "testnet";
 const opts = {
@@ -70,154 +46,34 @@ const opts = {
     schema
 };
 const sdk = new DashJS.SDK(opts);
-const acc = sdk.wallet.getAccount();
+const account = sdk.wallet.getAccount();
 async function sendPayment(){
-    const tx = await acc.createTransaction({recipient:{address:'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h', amount:0.12}})
+    const txOpts = {recipient:{address:'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h', amount:0.12}};
+    const tx = await account.createTransaction(txOpts)
     console.log(tx)
 }
 
 async function readDocument() {
-    const profile = await sdk.platform.fetchDocuments('profile',{},opts)
+    const profile = await sdk.platform.fetchDocuments('profile',{name:'Bob'})
     console.log(profile);
 }
 ```
 
-Notes : 
+## In a nutshell 
 
-- Omitting mnemonic will set the Wallet functionalities in offlineMode (for resources savings purposes) and set a default mnemonic.  
- You can use `sdk.wallet.exportWallet()` to get the randomly generated mnemonic.
-- Omitting a schema will unset the Platform functionalities.
+- If you use multiple contracts, fetchDocuments is done using dot-locator `dashpay.profile` and passing a named-schemas object.
+   See more on how to [work with multiple contracts in detail](https://dashevo.github.io/DashJS/#/getting-started/multiples-schemas)
 
-### Platform
+## Dependencies 
 
-Access the [Platform documentation on dashevo/dashcore-lib](/docs/Platform.md)
+DashJS works using multiple dependencies that might interest you :
+- [Wallet-Lib](https://github.com/dashevo/wallet-lib) - Wallet management for handling, signing and broadcasting transactions (HD44).
+- [Dashcore-Lib](https://github.com/dashevo/dashcore-lib) - Providing the main primitives (Block, Transaction,...).
+- [DAPI-Client](https://github.com/dashevo/dapi-client) - Client library for accessing DAPI endpoints.
+- [DPP](https://github.com/dashevo/js-dpp) - Implementation (JS) of Dash Platform Protocol.
 
-### Wallet
-
-Access the [Wallet documentation on dashevo/dashcore-lib](/docs/Wallet.md)
-
-
-### Primitives
-
-In order to facilitate manipulations between the dependencies, DashJS provides the standardized Primitives as implemented in [Dashcore-lib](https://github.com/dashevo/dashcore-lib).
-
-
-#### Transaction 
-
-The Transaction primitive allows easy creation and manipulation of transactions. It also allows signing when provided with a privatekey.  
-Supports fee control and input/output access (which allows to pass a specific script).  
-```js
-import { Transaction } from '@dashevo/dashjs';
-const tx = new Transaction(txProps)
-```
-
-Access the [Transaction documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/transaction.md)
-
-#### Address
-
-Standardized representation of a Dash Address. Address can be instantiated from a String, PrivateKey, PublicKey, HDPrivateKey or HdPublicKey.  
-Pay-to-script-hash multi-signatures from an array of PublicKeys are also supported.  
-
-```js
-import { Address } from '@dashevo/dashjs';
-```
-
-Access the [Address documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/address.md)
-
-#### Block
-
-Given a hexadecimal string representation of the block as input, the Block class allows you to have a deserialized representation of a Block or it's header. It also allows to validate the transactions in the block against the header merkle root.  
-Transactions of the block can also be explored by iterating over elements in array (`block.transactions`).
-
-`import { Block } from '@dashevo/dashjs'`
-
-Access the [Block documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/block.md)
-
-#### UnspentOutput
-
-Representation of an UnspentOutput (also called UTXO as in Unspent Transaction Output).  
-Mostly useful in association with a Transaction and for Scripts. 
-
-`import { UnspentOutput } from '@dashevo/dashjs'`
-
-Access the [UnspentOutput documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/unspentoutput.md)
-
-#### HDPublicKey
-
-Hierarchical Deterministic (HD) version of the PublicKey.  
-Used internally by Wallet-lib and for exchange between peers (DashPay)
-
-`import { HDPublicKey } from '@dashevo/dashjs'`
-
-Access the [HDKeys documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/hierarchical.md)
-
-#### HDPrivateKey
-
-Hierarchical Deterministic (HD) version of the PrivateKey.  
-Used internally by Wallet-lib.
-
-`import { HDPrivateKey } from '@dashevo/dashjs'`
-
-Access the [HDKeys documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/hierarchical.md)
-
-#### PublicKey
-
-`import { PublicKey } from '@dashevo/dashjs'`
-
-Access the [PublicKey documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/publickey.md)
-
-#### PrivateKey
-
-`import { PrivateKey } from '@dashevo/dashjs'`
-
-Access the [PrivateKey documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/privatekey.md)
-
-#### Mnemonic
-
-Implementation of [BIP39 Mnemonic code for generative deterministic keys](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki).  
-Allow to generate random mnemonic on the language set needed, validate a mnemonic or get the HDPrivateKey associated.  
-
-`import { Mnemonic } from '@dashevo/dashjs'`
-
-Access the [Mnemonic documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/mnemonic.md)
-
-#### Network
-
-A representation of the internal parameters relative to the network used. By default, all primitives works with 'livenet', this class allow to have an testnet instance to used on the other primitives (such as Addresses), or for Wallet-lib.
-
-`import { Network } from '@dashevo/dashjs'`
-
-
-Access the [Network documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/networks.md)
-
-#### Script
-
-In Dash, transaction have in their inputs and outputs some script, very simple programming language with a stack-based evaluation and which is not Turing Complete.
-A valid Transaction is a transaction which output script are evaluated as valid.  
-
-Some operations of this language, such as OP_RETURN has been used to store hashes and B64 data on the payment chain.  
-Learn more on our walkthrough [Transaction script manipulation with the OP_RETURN example](/docs/walkthroughs/op_return/or_return.md)
-
-`import { Script } from '@dashevo/dashjs'`
-
-Access the [Script documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/script.md)
-
-
-#### Input
-
-`import { Input } from '@dashevo/dashjs'`
-
-Access the [Transaction documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/transaction.md)
-
-
-#### Output
-
-`import { Output } from '@dashevo/dashjs'`
-
-Access the [Transaction documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/transaction.md)
-
+Some features might be more extensive in those libs, as DashJS only wraps around them to provide a single interface that is easy to use (and thus has less features).
 
 ## Licence
 
 [MIT](/LICENCE.md) © Dash Core Group, Inc.
-
