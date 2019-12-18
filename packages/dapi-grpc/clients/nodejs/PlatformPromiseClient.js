@@ -36,14 +36,14 @@ const {
       },
     },
   },
-} = require('./core_pbjs');
+} = require('./platform_pbjs');
 
 const {
   ApplyStateTransitionResponse: ProtocApplyStateTransitionResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDocumentsResponse: ProtocGetDocumentsRequest,
-} = require('./core_protoc');
+} = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../lib/getPlatformDefinition');
 
