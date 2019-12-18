@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Wallet-lib - A pure and extensible JavaScript Wallet Library for Dash</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="keywords" content="wallet-lib, mnemonic, HDExtPubKey, private key, dashcore-lib, dapi, javascript">
+    <meta name="description" content="A pure and extensible JavaScript Wallet Library for Dash.">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <link rel="stylesheet" href="//unpkg.com/docsify/lib/themes/vue.css">
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.$docsify = {
+    alias: {
+      '.*?/changelog': 'https://raw.githubusercontent.com/dashevo/wallet-lib/master/CHANGELOG.md',
+    },
+    name: 'Wallet-lib',
+    repo: 'https://github.com/dashevo/wallet-lib',
+    loadSidebar: "_sidebar.md",
+    maxLevel: 4,
+    subMaxLevel: 2,
+    search: {
+      noData: {
+        '/': 'No results!'
+      },
+      paths: 'auto',
+      placeholder: {
+        '/': 'Search'
+      }
+    },
+    // search: 'auto',
+    formatUpdated: '{MM}/{DD} {HH}:{mm}',
+  }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+<script src="//unpkg.com/docsify/lib/plugins/search.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docsify-tabs@1"></script>
+</body>
+</html>
