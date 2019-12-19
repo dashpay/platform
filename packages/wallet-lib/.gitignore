@@ -96,3 +96,5 @@ atlassian-ide-plugin.xml
 *.db.json
 
 *.ungit.js
+
+dist

@@ -3,8 +3,11 @@
   "version": "4.1.1",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
+  "unpkg": "dist/wallet-lib.min.js",
   "scripts": {
     "lint": "eslint src/*",
+    "build:dev": "webpack -d --display-error-details --progress",
+    "build:prod": "webpack -p --display-error-details --progress",
     "lint:fix": "eslint . --fix",
     "test": "nyc mocha test/ --recursive",
     "size": "size-limit",
@@ -44,7 +47,10 @@
     "mocha": "^6.2.0",
     "nodeforage": "git+https://github.com/Alex-Werner/nodeForage.git",
     "nyc": "^14.1.1",
-    "size-limit": "^2.1.4"
+    "size-limit": "^2.1.4",
+    "webpack": "^4.41.2",
+    "webpack-bundle-analyzer": "^3.6.0",
+    "webpack-cli": "^3.3.10"
   },
   "size-limit": [
     {
