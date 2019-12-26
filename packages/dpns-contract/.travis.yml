@@ -21,6 +21,10 @@ addons:
     packages:
       - docker-ce
 
+before_install:
+  # Login to NPM registry
+  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
+
 install:
   - npm ci
 
