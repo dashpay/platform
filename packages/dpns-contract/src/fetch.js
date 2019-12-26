@@ -6,19 +6,19 @@ const DAPIClient = require('@dashevo/dapi-client');
  *
  * @param {string} contractId
  *
- * @returns {Promise<Object>}
+ * @returns {Promise<Buffer>}
  */
 async function fetch(contractId) {
   const seeds = process.env.DAPI_CLIENT_SEEDS
     .split(',')
-    .map(ip => ({ service: `${ip}:${process.env.DAPI_CLIENT_PORT}` }));
+    .map((ip) => ({ service: `${ip}:${process.env.DAPI_CLIENT_PORT}` }));
 
   const dapiClient = new DAPIClient({
     seeds,
     timeout: 30000,
   });
 
-  return dapiClient.fetchContract(contractId);
+  return dapiClient.getContract(contractId);
 }
 
 module.exports = fetch;

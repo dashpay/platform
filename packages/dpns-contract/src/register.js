@@ -1,7 +1,9 @@
 /* eslint-disable import/no-extraneous-dependencies */
+const { client: { http: JaysonClient } } = require('jayson');
+
 const {
-  Transaction,
   PrivateKey,
+  PublicKey,
 } = require('@dashevo/dashcore-lib');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
@@ -12,49 +14,77 @@ const dpnsDocumentsSchema = require('./schema/dpns-documents.json');
 /**
  * Execute DPNS contract registration
  *
- * @returns {Promise<{ contractId: string, transitionHash: string }>}
+ * @returns {Promise<DataContract>}
  */
 async function register() {
   const seeds = process.env.DAPI_CLIENT_SEEDS
     .split(',')
-    .map(ip => ({ service: `${ip}:${process.env.DAPI_CLIENT_PORT}` }));
+    .map((ip) => ({ service: `${ip}:${process.env.DAPI_CLIENT_PORT}` }));
 
   const dapiClient = new DAPIClient({
     seeds,
     timeout: 30000,
   });
 
-  const dpp = new DashPlatformProtocol();
+  const tendermintRPCClient = new JaysonClient({
+    host: process.env.TENDERMINT_RPC_HOST,
+    port: process.env.TENDERMINT_RPC_PORT,
+  });
 
-  const contract = dpp.contract.create('DPNSContract', dpnsDocumentsSchema);
+  const validationlessDPP = new DashPlatformProtocol({
+    dataProvider: {},
+  });
 
-  dpp.setContract(contract);
+  const dpp = new DashPlatformProtocol({
+    dataProvider: {
+      fetchIdentity: async (id) => {
+        const data = Buffer.from(id).toString('hex');
 
-  const contractPacket = dpp.packet.create(contract);
+        const {
+          result: {
+            response: {
+              value: serializedIdentity,
+            },
+          },
+        } = await tendermintRPCClient.request(
+          'abci_query',
+          {
+            path: '/identity',
+            data,
+          },
+        );
 
-  const privateKey = new PrivateKey(
-    process.env.DPNS_USER_PRIVATE_KEY_STRING,
+        if (!serializedIdentity) {
+          return null;
+        }
+
+        return validationlessDPP.identity.createFromSerialized(
+          Buffer.from(serializedIdentity, 'base64'),
+          { skipValidation: true },
+        );
+      },
+    },
+  });
+
+  const dpnsUserPrivateKey = new PrivateKey(
+    process.env.DPNS_USER_PRIVATE_KEY,
   );
 
-  const transaction = new Transaction()
-    .setType(Transaction.TYPES.TRANSACTION_SUBTX_TRANSITION);
-
-  transaction.extraPayload
-    .setRegTxId(process.env.DPNS_USER_REG_TX_ID)
-    .setHashPrevSubTx(process.env.DPNS_USER_PREVIOUS_ST)
-    .setHashSTPacket(contractPacket.hash())
-    .setCreditFee(1000)
-    .sign(privateKey);
-
-  const transitionHash = await dapiClient.sendRawTransition(
-    transaction.serialize(),
-    contractPacket.serialize().toString('hex'),
+  const dpnsUserPublicKey = new PublicKey(
+    process.env.DPNS_USER_PUBLIC_KEY,
   );
 
-  return {
-    contractId: contract.getId(),
-    transitionHash,
-  };
+  const dataContract = dpp.dataContract.create(
+    process.env.DPNS_IDENTITY_ID,
+    dpnsDocumentsSchema,
+  );
+
+  const dataContractST = dpp.dataContract.createStateTransition(dataContract);
+  dataContractST.sign(dpnsUserPublicKey, dpnsUserPrivateKey);
+
+  await dapiClient.applyStateTransition(dataContractST);
+
+  return dataContract;
 }
 
 module.exports = register;

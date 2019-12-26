@@ -9,16 +9,18 @@
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
     "lint": "eslint .",
-    "test": "npm run test:unit && npm run test:functional",
-    "test:unit": "mocha 'test/unit/**/*.spec.js'",
-    "test:functional": "mocha 'test/functional/**/*.spec.js'"
+    "test": "npm run test:unit",
+    "test:unit": "mocha 'test/unit/**/*.spec.js'"
   },
   "authors": [
     "Djavid Gabibiyan"
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dp-services-ctl": "^0.9.3",
+    "@dashevo/dapi-client": "^v0.8.0-dev.14 ",
+    "@dashevo/dashcore-lib": "^0.18.0",
+    "@dashevo/dp-services-ctl": "^v0.10.0-dev.7",
+    "@dashevo/dpp": "^v0.10.0-dev.13",
     "chai": "^4.2.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^6.7.2",
@@ -26,8 +28,7 @@
     "eslint-plugin-import": "^2.19.1",
     "mocha": "^6.2.2",
     "multihashes": "^0.4.15",
-    "@dashevo/dapi-client": "^0.7.0",
-    "@dashevo/dashcore-lib": "^0.18.0",
-    "@dashevo/dpp": "^0.9.1"
+    "sinon": "^8.0.1",
+    "sinon-chai": "^3.4.0"
   }
 }
