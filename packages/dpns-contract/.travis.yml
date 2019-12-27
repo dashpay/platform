@@ -1,4 +1,4 @@
-sudo: required
+sudo: false
 dist: trusty
 language: node_js
 
@@ -35,6 +35,7 @@ script:
 
 deploy:
   provider: script
+  skip_cleanup: true
   script: bash bin/travis-deploy.sh
   on:
     tags: true
