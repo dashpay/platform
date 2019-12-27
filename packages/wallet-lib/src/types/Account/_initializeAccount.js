@@ -24,7 +24,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
           account.injectPlugin(ChainWorker, true);
         }
 
-        if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDEXTPUBLIC].includes(account.walletType)) {
+        if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
           // Ideally we should move out from worker to event based
           account.injectPlugin(BIP44Worker, true);
         }

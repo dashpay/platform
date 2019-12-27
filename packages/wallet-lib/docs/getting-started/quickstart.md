@@ -43,7 +43,7 @@ Nothing force you to do so, this is mostly an helper provided to you.
 
 
 Quick note :
-- If no mnemonic is provided (nor any privatekey, HDExtPubKey,...), a mnemonic will be created for you automatically.  
+- If no mnemonic is provided (nor any privatekey, HDPubKey,...), a mnemonic will be created for you automatically.  
 - By default, if not provided, network value will be `testnet`.
 - If no adapter specified, Wallet-lib will use a in-memory store (and warn you about it).
 - If no transport specified, Wallet-lib will connect to DAPI.

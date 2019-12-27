@@ -44,6 +44,7 @@ export declare interface RecipientOptions {
 }
 export declare namespace Account {
     interface Options {
+        index?:number,
         network?: Network;
         allowSensitiveOperations?: string;
         plugins?: [Plugins];

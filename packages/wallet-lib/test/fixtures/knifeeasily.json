@@ -2,8 +2,14 @@
   "mnemonic":"knife easily prosper input concert merge prepare autumn pen blood glance toilet",
   "walletIdTestnet":"906469385b",
   "walletIdMainnet":"419829f73c",
+  "seed": "9e55e5cb0e2fe273600cf5af7d7760fe569121c320395f0233202b97445e54f577d5a706c49aa1f3f0993d2ff97e2e6d63e4ccd0b7e9d4c4f115ae58957a9114",
+  "passphrase": "myPassphrase",
+  "HDRootEncryptedPrivateKeyMainnet":"xprv9s21ZrQH143K2Gcg8Ey7FA7xrA2x8B8cnod787pVLgQjaNH2t4cM2TjB8dU5LSp5YbhckFRSYTdaKwzBdUavjFsnrKauwW23ytHYesCoCmG",
+  "HDRootEncryptedPrivateKeyTestnet":"tprv8ZgxMBicQKsPd5rCnopcQojxAHTAMhAd8MYDzYEwpeuDMy27sRx6YD6d3odjLpCPv3EPkM3ChpDNnoXvkgvsYK9PNxoDbrk6tz2y6WGXK5R",
   "HDRootPrivateKeyMainnet":"xprv9s21ZrQH143K37d2j9YW7snYGbAJJX9vzEZRwU7QEc4yP39t1Yc7t2Aw79aBBQWfLNqnpo9bFRnWoDv7xCPyBpLFHZvvrtVYfRv2zEBtnT5",
   "HDRootPrivateKeyTestnet":"tprv8ZgxMBicQKsPdvrZPiQ1HXQXaiaWY3BwKnUYotXriaZTAdtxzuwsPmYP2KjqBmtyhpNZptmMQnNKG5Ts5QjuzsbqpD9EXFDbaXfTRxbTNsr",
+  "HDRootPublicKeyMainnet":"xpub6DpxeMAsZivtkMfFg82pHMuwXaCcwTNZUdmUecLqZ8gwbgSLCqqeBRDEDAtMYxDCNRDTEpvvYrXETjibBaY2pDMmFqqwqgkgWbQtUerQTVT",
+  "HDRootPublicKeyTestnet":"tpubDECbAazZGztM29r78K1uVHFJrhJGvqsd2GMn1APyu3SqLy73H4gjKrt4TCy95TASAKkMrQSo5xMH9vDCaSPGhep4KSbFXDQv6Z1JEgt3m1J",
   "HDPrivateKeyMainnetWalletId":"419829f73c",
   "HDPrivateKeyTestnetWalletId":"906469385b"
 }

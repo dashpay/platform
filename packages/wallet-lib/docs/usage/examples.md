@@ -14,7 +14,7 @@ Such uses case would be to generate a bunch of addresses that you could manually
 You also have ways to import a known address, transaction, account or any type of data that you could wish to have via the network.  
 And thus allowing you to use the wallet-library without connectivity.  
 
-See here [sample code](/examples/offline-wallet.md) 
+See here [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/offline-wallet.js) 
 
 ## Server usage
 

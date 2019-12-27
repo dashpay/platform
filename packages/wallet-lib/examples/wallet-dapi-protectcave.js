@@ -1,16 +1,9 @@
-const DAPIClient = require('@dashevo/dapi-client');
 const logger = require('../src/logger');
 const { Wallet, EVENTS } = require('../src');
 
-const transport = new DAPIClient({
-  seeds: [{ service: '18.237.69.61:3000' }],
-  timeout: 20000,
-  retries: 5,
-});
 const wallet = new Wallet({
   mnemonic: 'protect cave garden achieve hand vacant clarify atom finish outer waste sword',
   network: 'testnet',
-  transport,
 });
 
 const account = wallet.getAccount();

@@ -36,7 +36,7 @@ describe('Account - class', () => {
     const account = new Account(mockWallet, { injectDefaultPlugins: false });
 
     expect(account).to.be.deep.equal(mockWallet.accounts[0]);
-    expect(account.accountIndex).to.be.deep.equal(0);
+    expect(account.index).to.be.deep.equal(0);
     expect(account.injectDefaultPlugins).to.be.deep.equal(false);
     expect(account.allowSensitiveOperations).to.be.deep.equal(false);
     expect(account.isReady).to.be.deep.equal(false);

@@ -6,10 +6,14 @@ const walletOpts = {
   offlineMode: true,
   network: 'testnet',
   mnemonic,
+  // HDPublicKey:
 };
 const wallet = new Wallet(walletOpts);
 const account = wallet.getAccount(0);
 
+/**
+ * This simple offline service simulates an offline usage for generating new addresses from an Extended Pub Key.
+ */
 const startService = () => {
   // Import a tx that happened in the network
   // See for the format

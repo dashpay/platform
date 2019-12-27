@@ -1,8 +1,17 @@
 const { varIntSizeBytesFromLength } = require('./varInt');
 const {
-  dashToDuffs, duffsToDash, getBytesOf, hasProp,
+  dashToDuffs,
+  duffsToDash,
+  getBytesOf,
+  hasProp,
 } = require('./utils');
-const { generateNewMnemonic, mnemonicToHDPrivateKey, mnemonicToWalletId } = require('./mnemonic.js');
+const {
+  generateNewMnemonic,
+  mnemonicToHDPrivateKey,
+  mnemonicToWalletId,
+  seedToHDPrivateKey,
+  mnemonicToSeed,
+} = require('./mnemonic.js');
 const is = require('./is');
 const coinSelection = require('./coinSelection');
 const feeCalculation = require('./feeCalculation');
@@ -14,6 +23,8 @@ module.exports = {
   generateNewMnemonic,
   mnemonicToHDPrivateKey,
   mnemonicToWalletId,
+  mnemonicToSeed,
+  seedToHDPrivateKey,
   is,
   coinSelection,
   feeCalculation,

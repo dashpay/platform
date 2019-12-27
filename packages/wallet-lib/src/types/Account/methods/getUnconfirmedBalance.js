@@ -7,8 +7,10 @@ const { duffsToDash } = require('../../../utils');
  */
 function getUnconfirmedBalance(displayDuffs = true) {
   const {
-    walletId, storage, accountIndex,
+    walletId, storage,
   } = this;
+  const accountIndex = this.index;
+
   const totalSat = storage.calculateDuffBalance(walletId, accountIndex, 'unconfirmed');
   return (displayDuffs) ? totalSat : duffsToDash(totalSat);
 }

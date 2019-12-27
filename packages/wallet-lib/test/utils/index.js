@@ -213,7 +213,13 @@ describe('Utils', () => {
     const seed = new Mnemonic().toSeed();
     const seed2 = new Mnemonic().toHDPrivateKey();
     expect(is.seed(seed.toString('hex'))).to.be.equal(true);
-    expect(is.seed(seed2)).to.be.equal(true);
+    expect(is.seed(seed2)).to.be.equal(false);
+  });
+  it('should is.HDPrivateKey work', () => {
+    const seed = new Mnemonic().toSeed();
+    const seed2 = new Mnemonic().toHDPrivateKey();
+    expect(is.seed(seed.toString('hex'))).to.be.equal(true);
+    expect(is.seed(seed2)).to.be.equal(false);
   });
   it('should is.address work', () => {
     const addr = new Address('yinidcHwrfzb4bEJDSq3wtQyxRAgQxsQia');

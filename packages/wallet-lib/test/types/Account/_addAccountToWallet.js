@@ -8,9 +8,9 @@ describe('Account - addAccountToWallet', () => {
     };
     const mockAcc = {
       label: 'mockedAccount',
-      accountIndex: 0,
+      index: 0,
     };
     addAccountToWallet(mockAcc, wallet);
-    expect(wallet.accounts).to.deep.equal([{ label: 'mockedAccount', accountIndex: 0 }]);
+    expect(wallet.accounts).to.deep.equal([{ label: 'mockedAccount', index: 0 }]);
   });
 });

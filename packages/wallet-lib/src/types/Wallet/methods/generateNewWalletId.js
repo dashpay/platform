@@ -13,9 +13,9 @@ module.exports = function generateNewWalletId() {
       if (!this.privateKey) throw new Error(`${errorMessageBase} : No privateKey found`);
       this.walletId = mnemonicToWalletId(this.privateKey);
       break;
-    case WALLET_TYPES.HDEXTPUBLIC:
-      if (!this.HDExtPublicKey) throw new Error(`${errorMessageBase} : No HDExtPublicKey found`);
-      this.walletId = mnemonicToWalletId(this.HDExtPublicKey);
+    case WALLET_TYPES.HDPUBLIC:
+      if (!this.HDPublicKey) throw new Error(`${errorMessageBase} : No HDPublicKey found`);
+      this.walletId = mnemonicToWalletId(this.HDPublicKey);
       break;
     case WALLET_TYPES.HDWALLET:
     default:

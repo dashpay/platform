@@ -40,8 +40,8 @@ class Account {
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
 
-    const accountIndex = _.has(opts, 'accountIndex') ? opts.accountIndex : wallet.accounts.length;
-    this.accountIndex = accountIndex;
+    const accountIndex = _.has(opts, 'index') ? opts.index : wallet.accounts.length;
+    this.index = accountIndex;
     this.strategy = _loadStrategy(_.has(opts, 'strategy') ? opts.strategy : defaultOptions.strategy);
     this.network = getNetwork(wallet.network).toString();
 
@@ -64,7 +64,7 @@ class Account {
         network: this.network,
       }, this.walletId);
     }
-    if (this.walletType === WALLET_TYPES.HDEXTPUBLIC) {
+    if (this.walletType === WALLET_TYPES.HDPUBLIC) {
       this.storage.importSingleAddress({
         label: this.label,
         path: '/0',
@@ -111,6 +111,10 @@ class Account {
       }
     }
     this.events.emit(EVENTS.CREATED);
+    // It's actually Account that mutates wallet.accounts to add itself.
+    // We might want to get rid of that as it can be really confusing.
+    // It would gives that responsability to createAccount to create
+    // (and therefore push to accounts).
     _addAccountToWallet(this, wallet);
     _initializeAccount(this, wallet.plugins);
   }
@@ -119,6 +123,8 @@ class Account {
 Account.prototype.broadcastTransaction = require('./methods/broadcastTransaction');
 Account.prototype.connect = require('./methods/connect');
 Account.prototype.createTransaction = require('./methods/createTransaction');
+Account.prototype.decode = require('./methods/decode');
+Account.prototype.decrypt = require('./methods/decrypt');
 Account.prototype.disconnect = require('./methods/disconnect');
 Account.prototype.fetchAddressInfo = require('./methods/fetchAddressInfo');
 Account.prototype.fetchStatus = require('./methods/fetchStatus');
@@ -164,8 +170,6 @@ Account.prototype.getUTXOS = require('./methods/getUTXOS');
 Account.prototype.injectPlugin = require('./methods/injectPlugin');
 
 Account.prototype.sign = require('./methods/sign');
-
-Account.prototype.updateNetwork = require('./methods/updateNetwork');
 
 Account.prototype.hasPlugins = require('./methods/hasPlugins');
 

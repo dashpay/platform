@@ -19,8 +19,8 @@ const account = wallet.getAccount();
 logger.info('Exported wallet', wallet.exportWallet());
 
 const start = async () => {
-  // const HDExtPubKey = account.keyChain.getKeyForPath('m/44\'/1\'/0\'/0', 'HDPublicKey');
-  // console.log(HDExtPubKey.toString());
+  // const HDPubKey = account.keyChain.getKeyForPath('m/44\'/1\'/0\'/0', 'HDPublicKey');
+  // console.log(HDPubKey.toString());
 
   // setTimeout(async ()=>{
   //   const receiveAddress = 'yZHMa5Xr6iEKtoei22wqtuaJGtxtSQZcAz';

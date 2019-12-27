@@ -3,7 +3,7 @@ const { InjectionToPluginUnallowed } = require('../errors');
 const { SAFE_FUNCTIONS, SAFE_PROPERTIES } = require('../CONSTANTS').INJECTION_LISTS;
 
 class StandardPlugin {
-  constructor(opts) {
+  constructor(opts = {}) {
     this.pluginType = _.has(opts, 'type') ? opts.type : 'Standard';
     this.name = _.has(opts, 'name') ? opts.name : 'UnnamedPlugin';
     this.dependencies = _.has(opts, 'dependencies') ? opts.dependencies : [];

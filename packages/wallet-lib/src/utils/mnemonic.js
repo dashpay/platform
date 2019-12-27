@@ -1,4 +1,5 @@
-const { Mnemonic } = require('@dashevo/dashcore-lib');
+const { pbkdf2Sync } = require('pbkdf2');
+const { Mnemonic, HDPrivateKey } = require('@dashevo/dashcore-lib');
 const { doubleSha256 } = require('./crypto');
 
 function generateNewMnemonic() {
@@ -27,9 +28,20 @@ function mnemonicToWalletId(mnemonic) {
   const buff = doubleSha256(buffMnemonic);
   return buff.toString('hex').slice(0, 10);
 }
-
+const mnemonicToSeed = function (mnemonic, password = '') {
+  const mnemonicBuff = Buffer.from(mnemonic.normalize('NFKD'), 'utf8');
+  const salfBuff = Buffer.from(`mnemonic${password}`, 'utf8');
+  return pbkdf2Sync(mnemonicBuff, salfBuff, 2048, 64, 'sha512')
+    .toString('hex');
+};
+// See https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
+const seedToHDPrivateKey = function (seed, network = 'testnet') {
+  return HDPrivateKey.fromSeed(seed, network);
+};
 module.exports = {
   generateNewMnemonic,
   mnemonicToHDPrivateKey,
   mnemonicToWalletId,
+  mnemonicToSeed,
+  seedToHDPrivateKey,
 };

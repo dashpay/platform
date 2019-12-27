@@ -20,7 +20,8 @@ const defaultOptions = {
 const fromMnemonic = require('./methods/fromMnemonic');
 const fromPrivateKey = require('./methods/fromPrivateKey');
 const fromSeed = require('./methods/fromSeed');
-const fromHDExtPublicKey = require('./methods/fromHDExtPublicKey');
+const fromHDPublicKey = require('./methods/fromHDPublicKey');
+const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
 const generateNewWalletId = require('./methods/generateNewWalletId');
 
 /**
@@ -45,8 +46,9 @@ class Wallet {
     Object.assign(Wallet.prototype, {
       fromMnemonic,
       fromSeed,
+      fromHDPrivateKey,
       fromPrivateKey,
-      fromHDExtPublicKey,
+      fromHDPublicKey,
       generateNewWalletId,
     });
 
@@ -67,10 +69,12 @@ class Wallet {
       this.fromMnemonic(opts.mnemonic);
     } else if ('seed' in opts) {
       this.fromSeed(opts.seed);
+    } else if ('HDPrivateKey' in opts) {
+      this.fromHDPrivateKey(opts.HDPrivateKey);
     } else if ('privateKey' in opts) {
       this.fromPrivateKey(opts.privateKey);
-    } else if ('HDExtPublicKey' in opts) {
-      this.fromHDExtPublicKey(opts.HDExtPublicKey);
+    } else if ('HDPublicKey' in opts) {
+      this.fromHDPublicKey(opts.HDPublicKey);
     } else {
       this.fromMnemonic(generateNewMnemonic());
     }
@@ -118,7 +122,6 @@ Wallet.prototype.createAccount = require('./methods/createAccount');
 Wallet.prototype.disconnect = require('./methods/disconnect');
 Wallet.prototype.getAccount = require('./methods/getAccount');
 Wallet.prototype.generateNewWalletId = generateNewWalletId;
-Wallet.prototype.updateNetwork = require('./methods/updateNetwork');
 Wallet.prototype.exportWallet = require('./methods/exportWallet');
 
 module.exports = Wallet;

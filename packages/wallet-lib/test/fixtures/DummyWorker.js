@@ -1,0 +1,16 @@
+const Worker = require('../../src/plugins/Worker');
+
+class DummyWorker extends Worker {
+  constructor() {
+    super({
+      name: 'DummyWorker',
+      dependencies: [],
+    });
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  execute() {
+    console.log('Dummy worker successfully did nothing');
+  }
+}
+module.exports = DummyWorker;

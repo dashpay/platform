@@ -20,7 +20,7 @@ function generateAddress(path) {
       index = parseInt(path.split('/')[5], 10);
       privateKey = this.keyChain.getKeyForPath(path);
       break;
-    case WALLET_TYPES.HDEXTPUBLIC:
+    case WALLET_TYPES.HDPUBLIC:
       index = parseInt(path.split('/')[5], 10);
       privateKey = this.keyChain.getKeyForChild(index);
       break;

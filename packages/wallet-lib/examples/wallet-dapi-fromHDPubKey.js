@@ -8,7 +8,7 @@ const transport = new DAPIClient({
   retries: 5,
 });
 const wallet = new Wallet({
-  HDExtPublicKey: 'tpubDFLd6pf4VJ72YFdAVp5sXWiszJhGM4yhXnAYkXagFf2fS3NiTU6rwQsxkMiVPKqeGBTWC2DZ8ZicuT49jnKwMEr6gAT4f83YqB3dnujarD3',
+  HDPublicKey: 'tpubDFLd6pf4VJ72YFdAVp5sXWiszJhGM4yhXnAYkXagFf2fS3NiTU6rwQsxkMiVPKqeGBTWC2DZ8ZicuT49jnKwMEr6gAT4f83YqB3dnujarD3',
   network: 'testnet',
   transport,
 });

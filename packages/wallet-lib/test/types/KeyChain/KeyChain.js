@@ -37,13 +37,6 @@ describe('Keychain', () => {
     const address = new Dashcore.Address(derivedPk.publicKey.toAddress()).toString();
     expect(address).to.equal('yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT');
   });
-  it('should update network', () => {
-    const keychain2 = new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(mnemonic, 'testnet') });
-    // TODO : Network should never be the whole object, just the string.
-    // expect(keychain2.network).to.equal('testnet');
-    keychain2.updateNetwork('livenet');
-    expect(keychain2.network).to.equal('livenet');
-  });
   it('should generate key for child', () => {
     const keychain2 = new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(mnemonic, 'testnet') });
     const keyForChild = keychain2.generateKeyForChild(0);
@@ -75,14 +68,6 @@ describe('Keychain - single privateKey', () => {
     const expectedException2 = 'Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate child';
     expect(() => pkKeyChain.generateKeyForPath()).to.throw(expectedException1);
     expect(() => pkKeyChain.generateKeyForChild()).to.throw(expectedException2);
-
-
-    // const method = () => {
-    //   throw new Error('Wallet is not loaded.');
-    // };
-    //
-    // const expectedException1 = 'dd'
-    // expect(() => method()).to.throw(expectedException1);
   });
   it('should get private key', () => {
     const privateKey = Dashcore.PrivateKey().toString();
@@ -90,3 +75,4 @@ describe('Keychain - single privateKey', () => {
     expect(pkKeyChain.getPrivateKey().toString()).to.equal(privateKey);
   });
 });
+

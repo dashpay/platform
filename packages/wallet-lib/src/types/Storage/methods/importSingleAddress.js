@@ -1,3 +1,10 @@
+/**
+ * SingleAddress differs from importAddress is the type being linked to a
+ * single PrivateKey (when not a HDWallet).
+ * @param singleAddress
+ * @param walletId
+ * @returns {boolean}
+ */
 const importSingleAddress = function (singleAddress, walletId) {
   const type = singleAddress.constructor.name;
   if (!walletId) throw new Error('Expected walletId to import single address');

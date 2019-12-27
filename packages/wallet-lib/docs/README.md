@@ -9,7 +9,7 @@
 
 From being able to display an account balance, to paying to another address, passing by the need to automate back-end task related to a cold-storage.  
 The Wallet-lib allows you to easily work with Wallet/Account for HDWallet, or from just a single private key.  
-Wallet-lib also allow you to watch for a public key or an HDExtPubKey.  
+Wallet-lib also allow you to watch for a public key or an HDPubKey.  
 You might also wish to have your own set of plugins or your own coin selection logic.  
 The wallet-lib provides all the set of feature intended for node and browser usage.  
 

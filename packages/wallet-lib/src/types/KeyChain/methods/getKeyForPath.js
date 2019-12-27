@@ -3,7 +3,7 @@ const { HDPrivateKey } = require('@dashevo/dashcore-lib');
  * Get a key from the cache or generate if none
  * @param path
  * @param type - def : HDPrivateKey - Expected return datatype of the keys
- * @return {HDPrivateKey | HDExtPublicKey}
+ * @return {HDPrivateKey | HDPublicKey}
  */
 function getKeyForPath(path, type = 'HDPrivateKey') {
   if (type === 'HDPublicKey') {

@@ -37,7 +37,7 @@ const CONSTANTS = {
   WALLET_TYPES: {
     SINGLE_ADDRESS: 'single_address',
     HDWALLET: 'hdwallet',
-    HDEXTPUBLIC: 'hdextpublic',
+    HDPUBLIC: 'hdpublic',
   },
   // List of account function and properties that can be injected in a plugin
   INJECTION_LISTS: {
@@ -60,7 +60,6 @@ const CONSTANTS = {
       'getTransactions',
       'getTransactionHistory',
       'forceRefreshAccount',
-      'updateNetwork',
       'disconnect',
       'connect',
     ],

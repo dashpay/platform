@@ -78,7 +78,8 @@ const considerValue = (list, address, valueSat) => {
 async function getTransactionHistory() {
   const transactionHistory = [];
 
-  const { walletId, accountIndex } = this;
+  const { walletId } = this;
+  const accountIndex = this.index;
   const store = this.storage.getStore();
 
   const txs = getFilteredTransactions(store, walletId, accountIndex);

@@ -61,7 +61,7 @@ class BIP44Worker extends Worker {
       firstExecutionRequired: true,
       executeOnStart: true,
       dependencies: [
-        'storage', 'getAddress', 'walletId', 'accountIndex', 'walletType',
+        'storage', 'getAddress', 'walletId', 'index', 'walletType',
       ],
     });
   }
@@ -72,7 +72,9 @@ class BIP44Worker extends Worker {
     const store = this.storage.getStore();
     const addresses = store.wallets[this.walletId].addresses.external;
     let addressesPaths = Object.keys(addresses);
-    const { accountIndex, walletType } = this;
+    const { walletType } = this;
+    const accountIndex = this.index;
+
     let prevPath;
 
     // Ensure that all our above paths are contiguous

@@ -1,3 +1,5 @@
+import {Account} from "./Account/Account";
+
 export declare type transactionId<T extends string = string> = T;
 export declare type Mnemonic<T extends object = object> = T & {
     toString(): string;
@@ -39,6 +41,10 @@ export declare type AddressObj<T extends object = object> = T & {
     address: string;
     path: string;
 }
+
+export declare type AddressInfoMap<T extends object = object> = T & {
+    [pathName: string]: AddressInfo
+}
 export declare type AddressInfo<T extends AddressObj = AddressObj> = T & {
     balanceSat: number;
     fetchedLast:number;
@@ -50,3 +56,24 @@ export declare type AddressInfo<T extends AddressObj = AddressObj> = T & {
 export declare type Network = "livenet" | "testnet";
 export declare type Strategy = "livenet" | "testnet";
 export declare type AddressType = "external" | "internal" | "misc";
+// todo: actually, I would vote to move hdextpublic to hdextpubkey
+export declare type WalletType = "single_address" | "hdwallet" | "hdextpublic";
+export declare type WalletObj = {
+    network?: Network;
+    mnemonic?: Mnemonic|string;
+    type: WalletType,
+    accounts: AccountMap,
+    blockheight: number,
+    addresses:{
+        external: AddressInfoMap,
+        internal: AddressInfoMap,
+        misc: AddressInfoMap
+    }
+}
+
+export declare type  AccountMap = {
+    [pathName: string]: Account
+}
+
+
+export declare type SerializedUTXO = string;

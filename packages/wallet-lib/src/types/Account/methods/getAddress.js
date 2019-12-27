@@ -10,7 +10,7 @@ const getTypePathFromWalletType = (walletType, addressType = 'external', index, 
       type = addressType;
       path = `${BIP44PATH}/${addressTypeIndex}/${index}`;
       break;
-    case WALLET_TYPES.HDEXTPUBLIC:
+    case WALLET_TYPES.HDPUBLIC:
       type = 'external';
       path = `${BIP44PATH}/${addressTypeIndex}/${index}`;
       break;

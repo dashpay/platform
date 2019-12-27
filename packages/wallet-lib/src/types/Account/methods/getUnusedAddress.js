@@ -11,10 +11,10 @@ function getUnusedAddress(type = 'external', skip = 0) {
     address: '',
   };
   let skipped = 0;
-  const { walletId, accountIndex } = this;
-
+  const { walletId } = this;
+  const accountIndex = this.index;
   const keys = Object.keys(this.store.wallets[walletId].addresses[type])
-    // We filter out other potential account
+  // We filter out other potential account
     .filter((el) => parseInt(el.split('/')[3], 10) === accountIndex);
 
   for (let i = 0; i < keys.length; i += 1) {
@@ -42,4 +42,5 @@ function getUnusedAddress(type = 'external', skip = 0) {
   }
   return unused;
 }
+
 module.exports = getUnusedAddress;

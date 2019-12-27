@@ -1,4 +1,4 @@
-const Wallet = require('../src/types/Wallet/methods/Wallet');
+const Wallet = require('../src/types/Wallet/Wallet');
 
 const transport = 'insight';
 const privateKey = '9488797ee0018994d5ae22640e25210f65b1a450a0adcfa428cb5ffb29faa24b';

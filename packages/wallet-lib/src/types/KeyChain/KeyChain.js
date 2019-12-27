@@ -1,4 +1,4 @@
-const { Networks } = require('@dashevo/dashcore-lib');
+const { Networks, HDPrivateKey, HDPublicKey } = require('@dashevo/dashcore-lib');
 const { has } = require('lodash');
 
 // eslint-disable-next-line no-underscore-dangle
@@ -15,11 +15,11 @@ class KeyChain {
 
     if (has(opts, 'HDPrivateKey')) {
       this.type = 'HDPrivateKey';
-      this.HDPrivateKey = opts.HDPrivateKey;
+      this.HDPrivateKey = (typeof opts.HDPrivateKey === 'string') ? HDPrivateKey(opts.HDPrivateKey) : opts.HDPrivateKey;
       this.network = this.HDPrivateKey.network;
     } else if (has(opts, 'HDPublicKey')) {
       this.type = 'HDPublicKey';
-      this.HDPublicKey = opts.HDPublicKey;
+      this.HDPublicKey = (typeof opts.HDPublicKey === 'string') ? HDPublicKey(opts.HDPublicKey) : opts.HDPublicKey;
       this.network = this.HDPublicKey.network;
     } else if (has(opts, 'privateKey')) {
       this.type = 'privateKey';
@@ -39,6 +39,5 @@ KeyChain.prototype.getKeyForChild = require('./methods/getKeyForChild');
 KeyChain.prototype.getKeyForPath = require('./methods/getKeyForPath');
 KeyChain.prototype.getPrivateKey = require('./methods/getPrivateKey');
 KeyChain.prototype.sign = require('./methods/sign');
-KeyChain.prototype.updateNetwork = require('./methods/updateNetwork');
 
 module.exports = KeyChain;
