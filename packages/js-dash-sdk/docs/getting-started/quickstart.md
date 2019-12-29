@@ -24,7 +24,6 @@ const activeAccount = sdk.wallet.getAccount();
 ```
 
 Quick note :
-- If no schema is provided, the subinstance `sdk.Platform` will not be initiated.
 - If no mnemonic is provided, the subinstance `sdk.Wallet` will not be initiated.
 
 ## Make a payment
