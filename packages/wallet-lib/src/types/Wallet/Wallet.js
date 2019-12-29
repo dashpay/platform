@@ -66,7 +66,7 @@ class Wallet {
     this.network = Dashcore.Networks[network].toString();
 
     if ('mnemonic' in opts) {
-      this.fromMnemonic(opts.mnemonic);
+      this.fromMnemonic((opts.mnemonic === null) ? generateNewMnemonic() : opts.mnemonic);
     } else if ('seed' in opts) {
       this.fromSeed(opts.seed);
     } else if ('HDPrivateKey' in opts) {

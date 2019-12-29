@@ -1,4 +1,4 @@
-const { expect } = require('chai');
+const {expect} = require('chai');
 const startWorker = require('../../../../src/types/Storage/methods/startWorker');
 
 let testInterval = null;
@@ -23,7 +23,10 @@ describe('Storage - startWorker', function suite() {
   it('should works', async () => new Promise((res) => {
     let saved = 0;
     const self = {
-      saveState: () => { saved += 1; self.lastSave = Date.now(); },
+      saveState: () => {
+        saved += 1;
+        self.lastSave = Date.now();
+      },
       autosaveIntervalTime: 500,
       lastModified: Date.now(),
       lastSave: 0,
@@ -35,8 +38,10 @@ describe('Storage - startWorker', function suite() {
       clearInterval(self.interval);
       testInterval = clearInterval(testInterval);
 
+      expect(saved < 11).to.be.equal(true);
       // First autosave + 9 induced changes
-      res(expect(saved).to.be.equal(10));
+      // However it can be less as we do not hard force the place in the event loop (simple setInterval)
+      res(expect(saved >= 8).to.be.equal(true));
     }, 5499);
   }));
 });

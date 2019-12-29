@@ -32,7 +32,7 @@ const Wallet = new Wallet(opts);
 
 > **passphrase** : String(def: null) : Set the passphrase to a mnemonic
 
-> **mnemonic** : String|Mnemonic : When set will init the wallet from it.
+> **mnemonic** : String|Mnemonic|null : When set will init the wallet from it. When null generates a new mnemonic.
 
 > **HDPrivateKey** : String|HDPrivateKey : When set will init the wallet from it.
 
@@ -49,6 +49,18 @@ const Wallet = new Wallet(opts);
 > **offlineMode** : Bool(false) : When set at true, the wallet will not try to use any transport layer.
 
 N.B : If mnemonic, seed and privateKey are filled, only mnemonic will be used. If none is entered, the wallet will create a mnemonic.
+
+### Creation without a mnemonic (gets one generated)
+```js
+const wallet = new Wallet();
+```
+or 
+```js
+const wallet = new Wallet({
+  mnemonic: null
+});
+console.log(wallet.exportWallet());
+```
 
 ### Creation from Mnemonic 
 

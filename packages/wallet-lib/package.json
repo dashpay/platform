@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
@@ -29,16 +29,15 @@
   },
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "^0.6.7",
+    "@dashevo/dapi-client": "^0.7.0",
     "@dashevo/dashcore-lib": "^0.18.0",
-    "@dashevo/dpp": "^0.7.2",
-    "bls-signatures": "^0.1.9",
+    "@dashevo/dpp": "^0.9.1",
     "cbor": "^5.0.1",
     "crypto-js": "^3.1.9-1",
     "localforage": "^1.7.3",
     "lodash": "^4.17.15",
     "winston": "^3.2.1",
-    "pbkdf2": "latest"
+    "pbkdf2": "^3.0.17"
   },
   "devDependencies": {
     "chai": "^4.2.0",
@@ -46,7 +45,6 @@
     "eslint-config-airbnb-base": "^14.0.0",
     "eslint-plugin-import": "^2.18.2",
     "mocha": "^6.2.0",
-    "nodeforage": "git+https://github.com/Alex-Werner/nodeForage.git",
     "nyc": "^14.1.1",
     "size-limit": "^2.1.4",
     "webpack": "^4.41.2",

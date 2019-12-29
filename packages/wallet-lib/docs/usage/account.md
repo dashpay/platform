@@ -4,6 +4,8 @@ In Wallet-Lib, an Account represent in an ideal condition (HDWallet) a specific 
 This Account hold all the method that one might want to use, from creating a transaction to getting the transaction history. 
 
 Account will also emit differents [events](#Events) that you can listen for.
+A sugar-syntax replacement for `account.events.on('ready'), exist in a promise : await account.isReady()`
+
 ## Create an Account
 
 ```

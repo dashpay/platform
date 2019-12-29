@@ -49,6 +49,8 @@ Quick note :
 - If no transport specified, Wallet-lib will connect to DAPI.
 - `wallet.getAccount()` is by default equivalent to `wallet.getAccount(0)`, where 0 correspond of the account index as per [BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki).
 
+A sugar-syntax replacement for `account.events.on('ready'), exist in a promise : await account.isReady()`
+
 ## Make a payment to an address
 
 ```js

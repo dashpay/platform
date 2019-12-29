@@ -3,7 +3,7 @@ const logger = require('../src/logger');
 const { Wallet, EVENTS } = require('../src');
 
 const transport = new DAPIClient({
-  seeds: [{ service: '18.237.69.61:3000' }],
+  seeds: [{ service: '18.236.131.253:3000' }],
   timeout: 20000,
   retries: 5,
 });

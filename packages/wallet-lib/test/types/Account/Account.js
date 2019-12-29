@@ -39,7 +39,7 @@ describe('Account - class', () => {
     expect(account.index).to.be.deep.equal(0);
     expect(account.injectDefaultPlugins).to.be.deep.equal(false);
     expect(account.allowSensitiveOperations).to.be.deep.equal(false);
-    expect(account.isReady).to.be.deep.equal(false);
+    expect(account.state.isReady).to.be.deep.equal(false);
     expect(account.type).to.be.deep.equal(undefined);
     expect(account.transactions).to.be.deep.equal({});
     expect(account.label).to.be.deep.equal(null);

@@ -13,6 +13,26 @@ const hdRootKey = 'tprv8ZgxMBicQKsPeWisxgPVWiXho8ozsAUqc3uvpAhBuoGvSTxqkxPZbTeG4
 const keychain = new KeyChain({HDPrivateKey:hdRootKey});
 ```
 
+
+### getHardenedBIP44Path()
+
+BIP44 define a logical hierarchy for HDWallet (BIP32).  
+This method gives a clusterized root key for all BIP44 derivation need. (m/44'/1' - m/44'/5').
+
+```
+keychain.getHardenedBIP44Path().deriveChild('...')
+```
+
+### getHardenedDIP9FeaturePath()
+
+DIP09 define a logical hierarchy for HDWallet (BIP32).  
+This method gives a clusterized root key for all DIP9 derivation need. (m/9'/1' - m/9'/5').
+
+```
+keychain.getHardenedDIP9FeaturePath().deriveChild('...')
+```
+
+
 ### Get keys for a specific path
 
 ```

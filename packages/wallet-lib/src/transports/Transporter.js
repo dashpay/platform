@@ -48,7 +48,7 @@ class Transporter {
           // TODO : Remove me toward release
           if (transportArg === 'dapi') {
             transport = new DAPIClient({
-              seeds: [{ service: '34.221.111.151:3000' }],
+              seeds: [{ service: '18.236.131.253:3000' }],
               timeout: 20000,
               retries: 5,
             });

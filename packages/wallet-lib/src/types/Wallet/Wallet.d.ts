@@ -32,7 +32,7 @@ export declare namespace Wallet {
         plugins?: [Plugins];
         passphrase?: string;
         injectDefaultPlugins?: boolean;
-        mnemonic?: Mnemonic|string;
+        mnemonic?: Mnemonic|string|null;
         seed?: Mnemonic|string;
         privateKey?: PrivateKey|string;
         HDPrivateKey?: HDPrivateKey|string;

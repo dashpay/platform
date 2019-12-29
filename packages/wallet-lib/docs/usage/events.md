@@ -5,7 +5,6 @@ const {EVENTS} = require('@dashevo/wallet-lib');
 const {READY} = EVENTS;
 const doSomethingWhenReady = (info) => {...}
 account.events.on(READY, doSomethingWhenReady);
-
 ```
 
 Events types : 
