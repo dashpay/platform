@@ -1,8 +1,7 @@
 import {Platform} from "../../Platform";
 
-
-export function search(this: Platform): any {
+export async function get(this: Platform, id: string): Promise<any> {
     throw new Error('Implementation missing in dependencies.');
 }
 
-export default search;
+export default get;

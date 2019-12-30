@@ -6,11 +6,11 @@ At the core of each contracts lies a [JSON Application Schema](/getting-started/
 ## Registering a new contract 
 
 ```js
-const bob = sdk.platform.contracts.register();
+const contract = sdk.platform.contracts.register(dashpayContract);
 ```   
 
 ## Fetching a new contract 
 
 ```js
-const bob = sdk.platform.contracts.egister();
+const contract = sdk.platform.contracts.fetch('dashpay');
 ```   

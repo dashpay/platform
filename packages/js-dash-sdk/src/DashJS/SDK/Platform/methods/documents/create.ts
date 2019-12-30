@@ -5,11 +5,11 @@ declare interface createOpts {
 }
 
 export function create(this: Platform, typeLocator: string, opts: createOpts): any {
-    const contractsName = Object.keys(this.schemas);
+    const appNames = Object.keys(this.apps);
 
     //We can either provide of type `dashpay.profile` or if only one schema provided, of type `profile`.
-    const [contractName, fieldType] = (typeLocator.includes('.')) ? typeLocator.split('.') : [contractsName[0], typeLocator];
-    this.dpp.setContract(this.schemas[contractName]);
+    const [appName, fieldType] = (typeLocator.includes('.')) ? typeLocator.split('.') : [appNames[0], typeLocator];
+    this.dpp.setContract(this.apps[appName].schema);
 
     const document = this.dpp.document.create(fieldType, opts);
     return document;

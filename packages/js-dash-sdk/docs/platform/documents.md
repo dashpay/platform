@@ -5,22 +5,24 @@
 Allow to fetch documents of a certains type specified by the schema contract provided. 
 
 ```js
-const doc = await sdk.platform.documents.fetch(type,queryOpts);
-```   
+const doc = await sdk.platform.documents.fetch('dashpay.profile',{});
+```  
 
-{string} - type : the type of document (example on dashPay : 'profile')  
-{Object} - queryOpts:   
-    - {Object} where - Mongo-like query  
-    - {Object} orderBy - Mongo-like sort field  
-    - {number} limit - how many objects to fetch  
-    - {number} startAt - number of objects to skip  
-    - {number} startAfter - exclusive skip  
+`fetch(type,queryOpts)`
+
+- `type` {string} : the type of document (example with the application named dashpay : 'dashpay.profile')  
+- `queryOpts` {Object}:   
+- `where` {Object} - Mongo-like query  
+- `orderBy` {Object} - Mongo-like sort field  
+- `limit` {number} - how many objects to fetch  
+- `startAt` {number} - number of objects to skip  
+- `startAfter` {number} - exclusive skip  
 
 
 ## Creating a document
 
 ```js
-const doc = sdk.platform.documents.create();
+const doc = sdk.platform.documents.create(data);
 ```   
 
 ## Broadcasting a document

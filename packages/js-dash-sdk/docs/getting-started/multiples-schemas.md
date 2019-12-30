@@ -10,11 +10,11 @@ If both opts.schemas and .schema are passed, the later is discarded.
 
 ```js
 const opts = {
-  schemas: {
+  apps: {
     dashpay: dashpayJsonSchema,
     dashkeys: dashkeysJsonSchema
   }
 };
-const bobProfile = await sdk.platform.fetchDocuments('dashpay.profile', {name:'bob'})
-const bobMsgKey = await sdk.platform.fetchDocuments('dashkeys.key', {name:'bob'});
+const bobProfile = await sdk.platform.documents.fetch('dashpay.profile', {name:'bob'})
+const bobMsgKey = await sdk.platform.documents.fetch('dashkeys.key', {name:'bob'});
 ```

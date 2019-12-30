@@ -3,7 +3,7 @@ import DashPlatformProtocol from "@dashevo/dpp";
 import {Mnemonic, Network} from "@dashevo/wallet-lib/src/types/types";
 // @ts-ignore
 import DAPIClient from "@dashevo/dapi-client"
-import {SDKClients, SDKSchemas} from "../SDK";
+import {SDKClients, SDKApps} from "../SDK";
 
 import broadcastDocument from "./methods/documents/broadcast";
 import createDocument from "./methods/documents/create";
@@ -14,14 +14,18 @@ import createContract from "./methods/contracts/create";
 import fetchContract from "./methods/contracts/fetch";
 
 
-import createIdentity from "./methods/identities/create";
 import getIdentity from "./methods/identities/get";
 import registerIdentity from "./methods/identities/register";
-import searchIdentity from "./methods/identities/search";
+
+import getName from "./methods/names/get";
+import registerName from "./methods/names/register";
+
+import {Account} from "@dashevo/wallet-lib";
 
 export interface PlatformOpts {
     client: DAPIClient,
-    schemas: SDKSchemas
+    apps: SDKApps
+    account?: Account
 }
 
 
@@ -33,10 +37,12 @@ export class Platform {
         fetch:Function
     };
     public identities: {
-        create:Function,
         get:Function,
         register:Function,
-        search:Function,
+    };
+    public names: {
+        get:Function,
+        register:Function,
     };
     public contracts: {
         broadcast:Function,
@@ -44,30 +50,34 @@ export class Platform {
         fetch:Function
     };
     client: DAPIClient;
-    schemas: SDKSchemas;
+    apps: SDKApps;
+    account?: Account;
 
     constructor(platformOpts: PlatformOpts) {
-        // @ts-ignore
         this.documents = {
             broadcast: broadcastDocument.bind(this),
             create: createDocument.bind(this),
             fetch: fetchDocument.bind(this),
         };
-        // @ts-ignore
         this.contracts = {
             broadcast: broadcastContract.bind(this),
             create: createContract.bind(this),
             fetch: fetchContract.bind(this),
         };
-        // @ts-ignore
+        this.names = {
+            register: registerName.bind(this),
+            get: getName.bind(this),
+        }
         this.identities = {
             register: registerIdentity.bind(this),
-            create: createIdentity.bind(this),
             get: getIdentity.bind(this),
-            search: searchIdentity.bind(this),
         };
         this.dpp = new DashPlatformProtocol(platformOpts);
         this.client = platformOpts.client;
-        this.schemas = platformOpts.schemas;
+        this.apps = platformOpts.apps;
+
+        if(platformOpts.account){
+            this.account = platformOpts.account;
+        }
     }
 }

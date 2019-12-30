@@ -1,3 +1,8 @@
 ## DashPay
-## DPNS
+
+Soon. 
+
+
 ## Memo.dash
+
+Soon. 

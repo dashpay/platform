@@ -18,6 +18,10 @@ const baseConfig = {
       },
     ],
   },
+  node: {
+    // Prevent embedded winston to throw error with FS not existing.
+    fs: 'empty',
+  },
   output: {
     path: path.resolve(__dirname, 'dist'),
   },
