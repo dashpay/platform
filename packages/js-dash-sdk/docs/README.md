@@ -1,6 +1,6 @@
 ## DashJS
 
-[![Package Version](https://img.shields.io/github/package-json/v/dashevo/dashjs.svg?&style=flat-square)](https://www.npmjs.org/package/@dashevo/dashjs)
+[![Package Version](https://img.shields.io/github/package-json/v/dashevo/dashjs.svg?&style=flat-square)](https://www.npmjs.org/package/dash)
 [![Build Status](https://img.shields.io/travis/com/dashevo/dashjs.svg?branch=master&style=flat-square)](https://travis-ci.com/dashevo/dashjs)
 
 > Client-side library for wallet payment/signing and application development with Dash. (Wallet, DAPI, Primitives, BLS, ...)
@@ -12,12 +12,12 @@ DashJS is intended to provide in a single entry-point all the different feature 
 
 ### Install
 
-In order to use this library, you will need to add our [NPM package](https://www.npmjs.com/@dashevo/dashjs) to your project.
+In order to use this library, you will need to add our [NPM package](https://www.npmjs.com/dash) to your project.
 
 Having [NodeJS](https://nodejs.org/) installed, just type :
 
 ```bash
-npm install @dashevo/dashjs
+npm install dash
 ```
 
 ## Licence

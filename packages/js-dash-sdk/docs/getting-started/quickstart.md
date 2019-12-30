@@ -1,11 +1,11 @@
 # Quick start
 
-In order to use this library, you will need to add our [NPM package](https://www.npmjs.com/@dashevo/dashjs) to your project.
+In order to use this library, you will need to add our [NPM package](https://www.npmjs.com/dash) to your project.
 
 Having [NodeJS](https://nodejs.org/) installed, just type :
 
 ```bash
-npm install @dashevo/dashjs
+npm install dash
 ## Initialize
 ```
 ## Initialization

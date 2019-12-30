@@ -1,6 +1,6 @@
 # DashJS
 
-[![Package Version](https://img.shields.io/github/package-json/v/dashevo/dashjs.svg?&style=flat-square)](https://www.npmjs.org/package/@dashevo/dashjs)
+[![Package Version](https://img.shields.io/github/package-json/v/dashevo/dashjs.svg?&style=flat-square)](https://www.npmjs.org/package/dash)
 [![Build Status](https://img.shields.io/travis/com/dashevo/dashjs.svg?branch=master&style=flat-square)](https://travis-ci.com/dashevo/dashjs)
 
 > Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
@@ -18,10 +18,10 @@ Find more in the :
 
 In order to use this library, you will need to add it to your project as a dependency.
 
-Having [NodeJS](https://nodejs.org/) installed, just type : `npm install @dashevo/dashjs` in your terminal.
+Having [NodeJS](https://nodejs.org/) installed, just type : `npm install dash` in your terminal.
 
 ```sh
-npm install @dashevo/dashjs
+npm install dash
 ```
 
 
@@ -36,7 +36,7 @@ For browser usage, you can also directly rely on unpkg :
 ## Usage
 
 ```js
-import DashJS from "@dashevo/dashjs"; 
+import DashJS from "dash"; 
 import schema from "./schema.json";
 
 const network = "testnet";
