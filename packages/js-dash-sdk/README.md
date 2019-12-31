@@ -76,4 +76,4 @@ Some features might be more extensive in those libs, as DashJS only wraps around
 
 ## Licence
 
-[MIT](/LICENCE.md) © Dash Core Group, Inc.
+[MIT](/LICENCE) © Dash Core Group, Inc.
