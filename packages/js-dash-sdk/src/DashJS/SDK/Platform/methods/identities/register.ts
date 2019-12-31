@@ -10,7 +10,7 @@ const IdentityCreateTransition = require('@dashevo/dpp/lib/identity/stateTransit
 import {Platform} from "../../Platform";
 
 export async function register(this: Platform, identityType: string = 'USER'): Promise<any> {
-    const { account } = this;
+    const { account, client } = this;
 
     const burnAmount = 10000;
 
@@ -109,6 +109,9 @@ export async function register(this: Platform, identityType: string = 'USER'): P
         // FIXME : Need dpp to be a dependency of wallet-lib to deal with signing IdentityPublicKey (validation)
         // account.sign(identityPublicKeyModel, identityPrivateKey);
         identityCreateTransition.sign(identityPublicKeyModel, identityPrivateKey);
+
+        // @ts-ignore
+        await client.applyStateTransition(identityCreateTransition);
 
         // @ts-ignore
         return identityCreateTransition.getIdentityId();
