@@ -21,26 +21,16 @@ export async function register(this: Platform, identityType: string = 'USER'): P
     if (account === undefined) {
         throw new Error(`A initialized wallet is required to create an Identity.`);
     }
-    const hardenedFeatureRootKey = account.keyChain.getHardenedDIP9FeaturePath();
+    //TODO : Here, we always use index 0. We might want to increment.
+    const identityHDPrivateKey = account.getIdentityHDKey(0, 'user');
 
-    // Feature 5 : identity.
-    const identityFeatureKey = hardenedFeatureRootKey.deriveChild(5, true);
-
-    const identityHDPrivateKey = identityFeatureKey
-        // @ts-ignore
-        .deriveChild(account.index, true)
-        // @ts-ignore
-        .deriveChild(Identity.TYPES[identityType.toUpperCase()], false)
-        // @ts-ignore
-        .deriveChild(0, false);
-
+    // @ts-ignore
     const identityPrivateKey = identityHDPrivateKey.privateKey;
+    // @ts-ignore
     const identityPublicKey = identityHDPrivateKey.publicKey;
 
     const identityAddress = identityPublicKey.toAddress().toString();
     const changeAddress = account.getUnusedAddress('internal').address;
-    console.log('Identity Public Key', identityPublicKey.toString());
-    console.log('Identity Public Address', identityAddress);
 
     let selection;
     try {

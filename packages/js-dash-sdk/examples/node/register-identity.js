@@ -1,9 +1,8 @@
-import DashJS from "../../../src";
+import DashJS from '../../src';
 
-const network = "testnet";
 const sdkOpts = {
-  network,
-  mnemonic: "bring pledge solid dance age arena raise recycle orbit mango lyrics gorilla",
+  network: 'testnet',
+  mnemonic: 'bring pledge solid dance age arena raise recycle orbit mango lyrics gorilla',
 };
 const sdk = new DashJS.SDK(sdkOpts);
 

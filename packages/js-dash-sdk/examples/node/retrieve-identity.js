@@ -1,8 +1,7 @@
-import DashJS from "../../../src";
+import DashJS from '../../src';
 
-const network = "testnet";
 const sdkOpts = {
-  network,
+  network: 'testnet'
 };
 const sdk = new DashJS.SDK(sdkOpts);
 

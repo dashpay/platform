@@ -14,7 +14,8 @@ if [ "$TRAVIS_NODE_VERSION" != "$LATEST_LTS_VERSION" ]; then
   exit 0
 fi
 
-npm run build:prod
+# Should be done already by .travis.yml
+# npm run build:prod
 
 # Now that checks have been passed, publish the module
 npm publish

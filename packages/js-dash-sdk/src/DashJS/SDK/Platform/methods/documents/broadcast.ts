@@ -1,26 +1,20 @@
 import {Platform} from "../../Platform";
 
 
-export function broadcast(this: Platform, document: any): any {
-    document.removeMetadata();
-    const result = this.dpp.document.validate(document);
-    if (!result.isValid()) {
-        throw new Error('Invalid request');
-    }
-    throw new Error('Implementation missing in dependencies.');
+export async function broadcast(this: Platform, document: any, identity: any): Promise<any> {
+    const { account, client, dpp } = this;
 
-    // const {
-    //     serializedTransaction,
-    //     serializedPacket,
-    // } = this.prepareStateTransition(document, this.sender.buser, this.sender.buser.privateKey);
-    //
-    //
-    // const txid = await this.sender.broadcastTransition(
-    //     serializedTransaction,
-    //     serializedPacket,
-    // );
-    //
-    // return txid;
+    // @ts-ignore
+    const identityHDPrivateKey = account.getIdentityHDKey(0, 'user');
+
+    // @ts-ignore
+    const identityPrivateKey = identityHDPrivateKey.privateKey;
+
+    const stateTransition = dpp.document.createStateTransition([document]);
+    stateTransition.sign(identity.getPublicKeyById(1), identityPrivateKey);
+
+    // @ts-ignore
+    await client.applyStateTransition(stateTransition);
 }
 
 export default broadcast;
