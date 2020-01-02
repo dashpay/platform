@@ -46,7 +46,7 @@ class DashPayDPA extends DPA {
     const txFee = CONSTANTS.FEES.PRIORITY;
     const requiredSatoshisForFees = funding + txFee;
 
-    // Let's parse our utxos up to us having at least enought to cover for the fees.
+    // Let's parse our utxos up to us having at least enough to cover for the fees.
     const filteredUtxosList = [];
 
     const isEnougthOutputForFees = (list, totalFee) => {

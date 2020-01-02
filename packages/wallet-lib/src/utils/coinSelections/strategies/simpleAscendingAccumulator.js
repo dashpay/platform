@@ -54,7 +54,7 @@ const simpleAscendingAccumulator = (utxosList, outputsList, deductFee = false, f
     const inValue = txEstimator.getInValue();
     const outValue = txEstimator.getOutValue();
     if (inValue < outValue + estimatedFee) {
-      // We don't have enought change for fee, so we remove from outValue
+      // We don't have enough change for fee, so we remove from outValue
       txEstimator.reduceFeeFromOutput((outValue + estimatedFee) - inValue);
     } else {
       // TODO : Here we can add some process to check up that we clearly have enough to deduct fee

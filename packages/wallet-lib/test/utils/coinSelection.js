@@ -56,7 +56,7 @@ describe('Utils - coinSelection', () => {
   it('should require a outputsList with valid outputs', () => {
     expect(() => coinSelection(utxosList, [{ toto: true }])).to.throw('Output txid:unknown address: unknown should have property address of type string');
   });
-  it('should alert if the total amount is not enought', () => {
+  it('should alert if the total amount is not enough', () => {
     expect(() => coinSelection(utxosList, [outputs.HUNDRED_DASH])).to.throw('Unsufficient utxos (7099960000) to cover the output : 10000000000. Diff : -2900040000');
   });
   it('should get a coinSelection for 1 dash', () => {
