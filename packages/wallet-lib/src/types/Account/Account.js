@@ -191,6 +191,6 @@ Account.prototype.sign = require('./methods/sign');
 
 Account.prototype.hasPlugins = require('./methods/hasPlugins');
 
-Account.prototype.getIdentityPrivateKey = require('./methods/getIdentityPrivateKey');
+Account.prototype.getIdentityHDKey = require('./methods/getIdentityHDKey');
 
 module.exports = Account;

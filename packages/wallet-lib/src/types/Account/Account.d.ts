@@ -1,5 +1,6 @@
 import {Mnemonic, Transaction, AddressObj,AddressInfo, AddressType, transactionId, TransactionInfo, PublicAddress, PrivateKey, Strategy, Network, Plugins} from "../types";
 import {KeyChain} from "../KeyChain/KeyChain";
+import {HDPrivateKey} from "@dashevo/dashcore-lib";
 
 export declare class Account {
     constructor(options?: Account.Options);
@@ -27,7 +28,7 @@ export declare class Account {
 
     getDPA(name: string): object;
 
-    getIdentityPrivateKey(index: number): PrivateKey;
+    getIdentityHDKey(index: number, identityType: string): HDPrivateKey;
 
     getNetwork(): Network;
 

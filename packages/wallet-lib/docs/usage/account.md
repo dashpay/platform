@@ -189,6 +189,16 @@ const txHistory = account.getTransactionHistory();
 > **addressList** : Array[String] - required
 
 ---
+### Get Identity HD Key
+
+`const HDKey = account.getIdentityHDKey(index, identityType)`
+
+##### params
+
+> **index** : number - optional (def: 0 )
+> **identityType** : enum['user','application'] - optional (def: 'user' )
+
+---
 
 ### Sign
 
