@@ -1,7 +1,7 @@
 - Getting started
     - [Quick start](getting-started/quickstart.md)
     - [Quick introduction to core concepts](getting-started/core-concepts.md)
-    - [Working with multiple apps](getting-started/multiples-apps.md)
+    - [Working with multiple apps](getting-started/multiple-apps.md)
     - [Dash Platform Applications](getting-started/dash-platform-applications.md)
     - [About Schemas](getting-started/about-schemas.md)
     - [With TypeScript](getting-started/with-typescript.md)
@@ -20,13 +20,13 @@
     - [Register a Name for an Identity](https://dashplatform.readme.io/docs/tutorial-register-a-name-for-an-identity)
 
 - Snippets 
-    - [Create and fund wallet](/examples/node/create-and-fund-wallet.js)
-    - [Register identity](/examples/node/register-identity.js)
-    - [Register name](/examples/node/register-name.js)
-    - [Retrieve Contract](/examples/node/retrieve-contract.js)
-    - [Retrieve Documents](/examples/node/retrieve-documents.js)
-    - [Retrieve Identity](/examples/node/retrieve-identity.js)
-    - [Retrieve Name](/examples/node/retrieve-name.js)    
+    - [Create and fund wallet](https://github.com/dashevo/DashJS/tree/master/examples/node/create-and-fund-wallet.js)
+    - [Register identity](https://github.com/dashevo/DashJS/tree/master/examples/node/register-identity.js)
+    - [Register name](https://github.com/dashevo/DashJS/tree/master/examples/node/register-name.js)
+    - [Retrieve Contract](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-contract.js)
+    - [Retrieve Documents](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-documents.js)
+    - [Retrieve Identity](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-identity.js)
+    - [Retrieve Name](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-name.js)    
     
 - Usage 
     - [DAPI](usage/dapi.md)    
