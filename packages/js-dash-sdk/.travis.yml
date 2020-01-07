@@ -1,5 +1,7 @@
 os: linux
 language: node_js
+
+# Support Active LTS versions of Node.js
 node_js:
   - "10"
   - "12"
@@ -7,8 +9,15 @@ node_js:
 before_install:
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
+install:
+  - npm ci
+
 after_install:
   - npm run build:prod
+
+script:
+  - npm run check-package
+  - npm run test
 
 deploy:
   - provider: script
@@ -16,4 +25,4 @@ deploy:
     script: bash scripts/travis-deploy.sh
     on:
       repo: dashevo/DashJS
-      branch: master
+      tags: true

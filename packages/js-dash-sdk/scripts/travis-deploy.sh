@@ -14,8 +14,18 @@ if [ "$TRAVIS_NODE_VERSION" != "$LATEST_LTS_VERSION" ]; then
   exit 0
 fi
 
-# Should be done already by .travis.yml
-# npm run build:prod
+# Ensure the tag matches the one in package.json, otherwise abort.
+PACKAGE_TAG=v"$(jq -r .version package.json)"
+if [ "$PACKAGE_TAG" != "$TRAVIS_TAG" ]; then
+  echo "Travis tag (\"$TRAVIS_TAG\") is not equal to package.json tag (\"$PACKAGE_TAG\"). Please push a correct tag and try again."
+  exit 1
+fi
+
+# Use regex pattern matching to check if "dev" exists in tag
+NPM_TAG="latest"
+if [[ $PACKAGE_TAG =~ dev ]]; then
+  NPM_TAG="dev"
+fi
 
 # Now that checks have been passed, publish the module
-npm publish
+npm publish --tag $NPM_TAG
