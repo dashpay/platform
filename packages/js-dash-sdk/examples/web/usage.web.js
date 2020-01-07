@@ -2,18 +2,23 @@ const network = "testnet";
 const opts = {
   network,
   mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
-  schemas: {dashpay: schema}
+  apps: {
+    dashpay: {
+    contractId: ''// Provide the dashpay contract id here
+    }
+  }
 };
 const sdk = new DashJS.SDK(opts);
-const acc = sdk.wallet.getAccount();
-readDocument();
+sdk.isReady().then(()=>{
+  const {account, platform} = sdk;
 
-async function sendPayment() {
-  const tx = await acc.createTransaction({recipient: {address: 'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h', amount: 0.12}})
-  console.log(tx)
-}
+  async function sendPayment() {
+    const tx = await account.createTransaction({recipient: 'yNPbcFfabtNmmxKdGwhHomdYfVs6gikbPf', satoshis: 12000});
+    console.log(await account.broadcastTransaction(tx));
+  }
 
-async function readDocument() {
-  const profile = await sdk.platform.documents.fetch('profile', opts);
-  console.log(profile);
-}
+  async function readDocument() {
+    const profile = await platform.documents.fetch('dashpay.profile', {});
+    console.log(profile);
+  }
+});

@@ -4,6 +4,7 @@ import {Platform, PlatformOpts} from './Platform';
 // @ts-ignore
 import DAPIClient from "@dashevo/dapi-client"
 import {Network, Mnemonic} from "@dashevo/dashcore-lib";
+import isReady from "./methods/isReady";
 
 const defaultSeeds = [
     '52.26.165.185',
@@ -15,6 +16,7 @@ const defaultSeeds = [
 export type DPASchema = object
 
 export interface SDKOpts {
+    seeds?: [string];
     network?: Network | string,
     mnemonic?: Mnemonic | string | null,
     apps?: SDKApps,
@@ -45,8 +47,10 @@ export class SDK {
     private readonly clients: SDKClients;
     private readonly apps: SDKApps;
     public state: { isReady: boolean, isAccountReady: boolean };
+    public isReady: Function;
 
     constructor(opts: SDKOpts = {}) {
+        this.isReady = isReady.bind(this);
 
         this.network = (opts.network !== undefined) ? opts.network.toString() : 'testnet';
         this.apps = Object.assign({
@@ -59,13 +63,16 @@ export class SDK {
             isReady: false,
             isAccountReady: false
         };
+        const seeds = (opts.seeds)? opts.seeds : defaultSeeds;
+
         this.clients = {
-            dapi: new DAPIClient(Object.assign({
-                seeds: defaultSeeds,
-                timeout: 20000,
-                retries: 15
-            }, opts || {network: this.network}))
-        }
+            dapi: new DAPIClient({
+                seeds: seeds,
+                timeout: 1000,
+                retries: 5,
+                network: this.network
+            })
+        };
         // We accept null as parameter for a new generated mnemonic
         if (opts.mnemonic !== undefined) {
             // @ts-ignore
@@ -113,36 +120,7 @@ export class SDK {
             .then((res) => {this.state.isReady = true});
     }
 
-    async isReady() {
-        const self = this;
-        // eslint-disable-next-line consistent-return
-        return new Promise(((resolve) => {
-            // @ts-ignore
-            if (self.state.isAccountReady && self.state.isReady) return resolve(true);
 
-            const promises = [];
-
-            if(!self.state.isAccountReady){
-                // @ts-ignore
-                promises.push(self.account.isReady());
-            }
-            if(!self.state.isReady){
-                const p = new Promise((res)=>{
-                    let isReadyInterval = setInterval(() => {
-                        if (self.state.isReady) {
-                            clearInterval(isReadyInterval);
-                            res(true);
-                        }
-                    }, 100);
-                })
-                promises.push(p);
-            }
-
-            Promise.all(promises).then((promisesResults)=>{
-                resolve(true);
-            });
-        }));
-    }
 
    async disconnect(){
         if(this.wallet){

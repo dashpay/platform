@@ -15,5 +15,5 @@ deploy:
     skip_cleanup: true
     script: bash scripts/travis-deploy.sh
     on:
-      repo: dash
+      repo: dashevo/DashJS
       branch: master

@@ -1,9 +1,10 @@
 {
   "name": "dash",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "dist/dash.cjs.min.js",
   "unpkg": "dist/dash.min.js",
+  "types": "src/DashJS/DashJS.d.ts",
   "scripts": {
     "start:dev": "nodemon --exec 'npm run build:dev && npm run test:ts'",
     "build:dev": "webpack -d --display-error-details --progress",

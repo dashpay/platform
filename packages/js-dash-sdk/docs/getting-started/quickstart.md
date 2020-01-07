@@ -26,7 +26,8 @@ const opts = {
 };
 const sdk = new DashJS.SDK(opts);
 sdk.isReady().then(()=>{
-    const activeAccount = sdk.account;
+    const {account} = sdk;
+    // Do something
  });
 ```
 
@@ -39,17 +40,24 @@ If you do not have any mnemonic, you can pass `null` to get one generated or omi
 ## Make a payment
 
 ```js
-activeAccount
-  .createTransaction({
-    recipient:{address:'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h', amount:0.12}
-  })
-  .then((tx)=> console.log(tx));
+sdk.isReady().then(()=>{
+     const {account} = sdk;
+
+    account
+      .createTransaction({
+        recipient:{address:'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h', amount:0.12}
+      })
+      .then(account.broadcastTransaction);
+  });
 ```
 
-## Read a document
+## Read a document 
+
+At time of writing, you will need to have registered dashpay yourself, see on [publishing a new contract](/examples/publishing-a-new-contract.md).
 
 ```js
-activeAccount.platform
-  .documents.fetch('dashpay.profile', {name:'bob'})
-  .then((profile)=> console.log(profile));
+sdk.isReady().then(async ()=>{
+    const {account} = sdk;
+    const bobProfile = await account.platform.documents.fetch('dashpay.profile', {name:'bob'})
+  });
 ```

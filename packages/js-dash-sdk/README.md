@@ -36,33 +36,21 @@ For browser usage, you can also directly rely on unpkg :
 ## Usage
 
 ```js
-import DashJS from "dash"; 
-import schema from "./schema.json";
+const DashJS = require("dash");
 
-const network = "testnet";
-const opts = {
-    network,
-    mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
-    schema
-};
-const sdk = new DashJS.SDK(opts);
-const account = sdk.wallet.getAccount();
-async function sendPayment(){
-    const txOpts = {recipient:{address:'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h', amount:0.12}};
-    const tx = await account.createTransaction(txOpts)
-    console.log(tx)
-}
+const sdk = new DashJS.SDK({
+  network: "testnet",
+  mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
+});
 
-async function readDocument() {
-    const profile = await sdk.platform.fetchDocuments('profile',{name:'Bob'})
-    console.log(profile);
-}
+sdk.isReady().then(async () => {
+  const {account, platform} = sdk;
+  console.log("Funding address", account.getUnusedAddress().address);
+  console.log("Confirmed Balance", account.getConfirmedBalance());
+  console.log(await platform.names.get('alice'));
+});
+
 ```
-
-## In a nutshell 
-
-- If you use multiple contracts, fetchDocuments is done using dot-locator `dashpay.profile` and passing a named-schemas object.
-   See more on how to [work with multiple contracts in detail](https://dashevo.github.io/DashJS/#/getting-started/multiples-schemas)
 
 ## Dependencies 
 

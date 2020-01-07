@@ -1,5 +1,4 @@
-import DashJS from '../../src';
-
+const DashJS = require('dash');
 const sdkOpts = {
   network: 'testnet',
   mnemonic:'your mnemonic here'

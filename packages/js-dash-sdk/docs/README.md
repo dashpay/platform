@@ -5,12 +5,19 @@
 
 > Client-side library for wallet payment/signing and application development with Dash. (Wallet, DAPI, Primitives, BLS, ...)
 
-### What it is 
+---
 
-From being able to pay to another address, to the need of publishing a contract, passing by the one of the application contract developer and those who want to handle Dash server-side.  
-DashJS is intended to provide in a single entry-point all the different feature and classes your might need. 
+DashJS is intended to provide, in a single entry-point all the different features, classes & utils you might need to interface with the Dash network.
 
-### Install
+## Install
+
+## Browser 
+
+```html
+<script src="https://unpkg.com/dash"></script>
+```
+
+## Node
 
 In order to use this library, you will need to add our [NPM package](https://www.npmjs.com/dash) to your project.
 
@@ -19,6 +26,38 @@ Having [NodeJS](https://nodejs.org/) installed, just type :
 ```bash
 npm install dash
 ```
+
+### Usage 
+
+```
+const DashJS = require("dash");
+
+const sdk = new DashJS.SDK({
+  network: "testnet",
+  mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
+});
+
+sdk.isReady().then(async () => {
+  const {account, platform} = sdk;
+  console.log("Funding address", account.getUnusedAddress().address);
+  console.log("Confirmed Balance", account.getConfirmedBalance());
+  console.log(await platform.names.get('alice'));
+});
+```
+
+
+### Use-cases examples
+- [Generate a mnemonic](/examples/generate-a-new-mnemonic.md) 
+- [Receive money and display balance](/examples/receive-money-and-check-balance.md) 
+- [Pay to another address](/examples/pay-to-another-address.md) 
+- [Use a local evonet](/examples/use-local-evonet.md) 
+- [Publishing a new contract](/examples/publishing-a-new-contract.md) 
+- [Use another BIP44 account](/examples/use-different-account.md) 
+    
+### Tutorial
+- [Register an identity](https://dashplatform.readme.io/docs/tutorial-register-an-identity)
+- [Register a Name for an Identity](https://dashplatform.readme.io/docs/tutorial-register-a-name-for-an-identity)
+    
 
 ## Licence
 

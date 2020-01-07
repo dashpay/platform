@@ -10,17 +10,22 @@ At the core of Dash is the Payment Chain, in order to be able to transact on it,
 
 In order to access your UTXO, you will have to provide a valid mnemonic that will unlock the Wallet and automatically fetch the associated UTXOs.
 
-## Wallet accounts
+When a SDK instance is created, you can access your wallet via the `sdk.wallet` variable, with the [wallet-lib Wallet doc](https://dashevo.github.io/wallet-lib/#/usage/wallet)
 
-Since the introduction of deterministic wallet, a Wallet is actually composed of multiple account. 
+## Account
 
-For manipulation account, `Wallet.getAccount()` takes an optional (default: 0) account Id. 
+Since the introduction of deterministic wallet ([BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)), a Wallet is a representation of multiple account. 
 
-## Schema
+It is the instance you will use most of the time for receiving or broadcasting payments. 
+
+You can access your account with `sdk.account` and see [how to use a different account](/examples/use-different-account) if you need to get a specific account index.
+
+## App Schema and Contracts
 
 The Dash Platform Application Chain, provides to developers the ability to create application.   
-That application requires a set of rules and conditions describe in a portable document in the form of a JSON names : Application Schema. 
+That application requires a set of rules and conditions describe in a portable document in the form of a JSON names : Application Schema.
 
-This SDK will use these schema in order to help you working with the platform in coordination with those set of rules.  
+When registered, those app schema are called contracts and contains a contractId (namespace : `sdk.contracts`).  
+By default, DashJS supports DPNS (to attach a name to an identity), under the namespace `sdk.names` for evonet.  
 
-If you need to use more than just one specific schema, look up for how to use [multiples schemas](/getting-started/multiples-schemas.md)
+You can read more on [how to use DPNS on a local evonet](/examples/use-local-evonet.md) or [how to use multiple apps](/getting-started/multiple-apps.md)

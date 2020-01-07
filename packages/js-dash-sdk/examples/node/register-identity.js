@@ -1,8 +1,7 @@
-import DashJS from '../../src';
-
+const DashJS = require('dash');
 const sdkOpts = {
   network: 'testnet',
-  mnemonic: 'bring pledge solid dance age arena raise recycle orbit mango lyrics gorilla',
+  mnemonic:'your mnemonic here'
 };
 const sdk = new DashJS.SDK(sdkOpts);
 
