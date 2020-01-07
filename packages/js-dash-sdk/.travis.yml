@@ -1,4 +1,4 @@
-os: linux
+dist: bionic
 language: node_js
 
 # Support Active LTS versions of Node.js
