@@ -42,10 +42,9 @@
             - [`.create()`](platform/contracts/create.md)
             - [`.broadcast()`](platform/contracts/broadcast.md)
         - **Documents**
-            - [About contracts](platform/contracts/about-contracts.md)
-            - [`.get()`](platform/contracts/get.md)
-            - [`.create()`](platform/contracts/create.md)
-            - [`.broadcast()`](platform/contracts/broadcast.md)
+            - [`.get()`](platform/documents/get.md)
+            - [`.create()`](platform/documents/create.md)
+            - [`.broadcast()`](platform/documents/broadcast.md)
         - **Names**
             - [About DPNS](platform/names/about-dpns.md)
             - [`.get()`](platform/names/get.md)
