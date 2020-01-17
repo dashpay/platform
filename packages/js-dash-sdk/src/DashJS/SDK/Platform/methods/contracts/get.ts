@@ -16,15 +16,21 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     if (localContract && localContract.contract) {
         return localContract.contract;
     } else {
-        // @ts-ignore
-        const rawContract = await this.client.getDataContract(identifier)
-        const contract = this.dpp.dataContract.createFromSerialized(rawContract);
-        const app = {contractId: identifier, contract};
-        // If we do not have even the identifier in this.apps, we add it with timestamp as key
-        if (localContract === undefined) {
-            this.apps[Date.now()] = app
+        try {
+            // @ts-ignore
+            const rawContract = await this.client.getDataContract(identifier)
+            const contract = this.dpp.dataContract.createFromSerialized(rawContract);
+            const app = {contractId: identifier, contract};
+            // If we do not have even the identifier in this.apps, we add it with timestamp as key
+            if (localContract === undefined) {
+                this.apps[Date.now()] = app
+            }
+            return app.contract;
+        } catch (e) {
+            console.error('Failed to get dataContract', e);
+            throw e;
         }
-        return app.contract;
+
     }
 }
 

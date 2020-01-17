@@ -1,6 +1,5 @@
 // @ts-ignore
 import DashPlatformProtocol from "@dashevo/dpp";
-import {Mnemonic, Network} from "@dashevo/wallet-lib/src/types/types";
 // @ts-ignore
 import DAPIClient from "@dashevo/dapi-client"
 import {SDKClients, SDKApps} from "../SDK";
@@ -20,6 +19,7 @@ import registerIdentity from "./methods/identities/register";
 import getName from "./methods/names/get";
 import registerName from "./methods/names/register";
 
+// @ts-ignore
 import {Account} from "@dashevo/wallet-lib";
 
 export interface PlatformOpts {

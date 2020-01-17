@@ -63,7 +63,7 @@ export class SDK {
             isReady: false,
             isAccountReady: false
         };
-        const seeds = (opts.seeds)? opts.seeds : defaultSeeds;
+        const seeds = (opts.seeds) ? opts.seeds : defaultSeeds;
 
         this.clients = {
             dapi: new DAPIClient({
@@ -108,22 +108,23 @@ export class SDK {
         const promises = [];
         for (let appName in this.apps) {
             const app = this.apps[appName];
-            try {
-                const p = this.platform?.contracts.get(app.contractId);
-                promises.push(p);
-            } catch (e) {
-                console.error(e);
-            }
+            const p = this.platform?.contracts.get(app.contractId);
+            promises.push(p);
         }
         Promise
             .all(promises)
-            .then((res) => {this.state.isReady = true});
+            .then((res) => {
+                this.state.isReady = true
+            })
+            .catch((e) => {
+                console.error('SDK apps fetching : failed to init', e);
+            });
+
     }
 
 
-
-   async disconnect(){
-        if(this.wallet){
+    async disconnect() {
+        if (this.wallet) {
             await this.wallet.disconnect();
         }
     }

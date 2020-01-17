@@ -40,7 +40,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
   it('should be ready quickly', (done) => {
     let timer = setTimeout(() => {
       done(new Error('Should have been initialized in time'));
-    }, 5000);
+    }, 15000);
     sdkInstance.isReady().then(() => {
       clearTimeout(timer);
       expect(sdkInstance.account.state).to.deep.equal({isInitialized: true, isReady: true, isDisconnecting: false});
@@ -102,6 +102,9 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
   });
 
   it('should retrieve itself by document', async function () {
+    if(!createdIdentity){
+      throw new Error('Can\'t perform the test. Failed to fetch identity & did not reg name');
+    }
     const [doc] = await sdkInstance.platform.documents.get('dpns.domain', {where:[
         ["normalizedParentDomainName","==","dash"],
         ["normalizedLabel","==",username.toLowerCase()],

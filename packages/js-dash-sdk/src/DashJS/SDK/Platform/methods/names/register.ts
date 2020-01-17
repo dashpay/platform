@@ -45,15 +45,10 @@ export async function register(this: Platform,
     if(!this.apps.dpns.contractId){
         throw new Error('DPNS is required to register a new name.');
     }
-    const dataContract = await this.contracts.get(this.apps.dpns.contractId);
-    if(!dataContract){
-        throw new Error('DPNS Contract not loaded. Cannot register.');
-    }
     // 1. Create preorder document
-    const preorderDocument = dpp.document.create(
-        dataContract,
-        identity.id,
-        'preorder',
+    const preorderDocument = await this.documents.create(
+        'dpns.preorder',
+        identity,
         {
             saltedDomainHash,
         },
@@ -66,10 +61,9 @@ export async function register(this: Platform,
     await client.applyStateTransition(preorderTransition);
 
     // 3. Create domain document
-    const domainDocument = dpp.document.create(
-        dataContract,
-        identity.id,
-        'domain',
+    const domainDocument = await this.documents.create(
+        'dpns.domain',
+        identity,
         {
             nameHash,
             label,
