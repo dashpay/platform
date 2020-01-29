@@ -2,7 +2,9 @@ const getDataContractFixture = require('./getDataContractFixture');
 
 const DocumentFactory = require('../../document/DocumentFactory');
 
-const userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
+const generateRandomId = require('../utils/generateRandomId');
+
+const userId = generateRandomId();
 
 /**
  * @return {Document[]}

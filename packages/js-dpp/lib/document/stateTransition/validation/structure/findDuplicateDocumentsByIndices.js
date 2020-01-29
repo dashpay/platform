@@ -46,7 +46,7 @@ function findDuplicateDocumentsByIndices(documents, dataContract) {
         groups[type] = {
           items: [],
           // init group with only it's unique indices
-          indices: typeIndices.filter(index => index.unique),
+          indices: typeIndices.filter((index) => index.unique),
         };
       }
 
@@ -57,16 +57,16 @@ function findDuplicateDocumentsByIndices(documents, dataContract) {
 
   const duplicateArrays = Object.values(groupsObject)
     // Filter out groups without unique indices
-    .filter(group => group.indices.length > 0)
+    .filter((group) => group.indices.length > 0)
     // Filter out groups with only one object
-    .filter(group => group.items.length > 1)
-    .map(group => group.items
+    .filter((group) => group.items.length > 1)
+    .map((group) => group.items
       // Flat map found duplicates in a group
       .reduce((foundGroupDocuments, document) => {
         // For every document in a group make duplicate search
         const duplicateDocuments = group.items
           // Exclude current document from search
-          .filter(o => o.getId() !== document.getId())
+          .filter((o) => o.getId() !== document.getId())
           .reduce((foundDocuments, documentsToCheck) => {
             if (isDuplicateByIndices(document, documentsToCheck, group.indices)) {
               foundDocuments.push(documentsToCheck);
@@ -80,7 +80,7 @@ function findDuplicateDocumentsByIndices(documents, dataContract) {
   // Flat map the results and return raw documents
   return duplicateArrays
     .reduce((accumulator, items) => accumulator.concat(items), [])
-    .map(o => o.toJSON());
+    .map((o) => o.toJSON());
 }
 
 module.exports = findDuplicateDocumentsByIndices;

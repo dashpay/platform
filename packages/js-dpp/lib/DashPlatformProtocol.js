@@ -6,6 +6,8 @@ const DataContractFacade = require('./dataContract/DataContractFacade');
 const DocumentFacade = require('./document/DocumentFacade');
 const StateTransitionFacade = require('./stateTransition/StateTransitionFacade');
 
+const IdentityFacade = require('./identity/IdentityFacade');
+
 /**
  * @class DashPlatformProtocol
  */
@@ -32,6 +34,8 @@ class DashPlatformProtocol {
     this.document = new DocumentFacade(this.dataProvider, validator);
 
     this.stateTransition = new StateTransitionFacade(this.dataProvider, validator);
+
+    this.identity = new IdentityFacade(validator);
   }
 
   /**

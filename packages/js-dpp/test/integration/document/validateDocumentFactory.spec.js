@@ -24,6 +24,8 @@ const {
   expectJsonSchemaError,
 } = require('../../../lib/test/expect/expectError');
 
+const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+
 describe('validateDocumentFactory', () => {
   let dataContract;
   let rawDocuments;
@@ -45,7 +47,7 @@ describe('validateDocumentFactory', () => {
       enrichDataContractWithBaseDocument,
     );
 
-    rawDocuments = getDocumentsFixture().map(o => o.toJSON());
+    rawDocuments = getDocumentsFixture().map((o) => o.toJSON());
     [rawDocument] = rawDocuments;
 
     documentBaseSchema = JSON.parse(
@@ -186,8 +188,8 @@ describe('validateDocumentFactory', () => {
         expect(error.keyword).to.equal('type');
       });
 
-      it('should be no less than 64 chars', () => {
-        rawDocument.$contractId = '86b273ff';
+      it('should be no less than 42 chars', () => {
+        rawDocument.$contractId = '1'.repeat(41);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -199,8 +201,8 @@ describe('validateDocumentFactory', () => {
         expect(error.keyword).to.equal('minLength');
       });
 
-      it('should be no longer than 64 chars', () => {
-        rawDocument.$contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+      it('should be no longer than 44 chars', () => {
+        rawDocument.$contractId = '1'.repeat(45);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -210,6 +212,19 @@ describe('validateDocumentFactory', () => {
 
         expect(error.dataPath).to.equal('.$contractId');
         expect(error.keyword).to.equal('maxLength');
+      });
+
+      it('should be base58 encoded', () => {
+        rawDocument.$contractId = '&'.repeat(44);
+
+        const result = validateDocument(rawDocument, dataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.keyword).to.equal('pattern');
+        expect(error.dataPath).to.equal('.$contractId');
       });
     });
 
@@ -241,8 +256,8 @@ describe('validateDocumentFactory', () => {
         expect(error.keyword).to.equal('type');
       });
 
-      it('should be no less than 64 chars', () => {
-        rawDocument.$userId = '86b273ff';
+      it('should be no less than 42 chars', () => {
+        rawDocument.$userId = '1'.repeat(41);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -254,8 +269,8 @@ describe('validateDocumentFactory', () => {
         expect(error.keyword).to.equal('minLength');
       });
 
-      it('should be no longer than 64 chars', () => {
-        rawDocument.$userId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+      it('should be no longer than 44 chars', () => {
+        rawDocument.$userId = '1'.repeat(45);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -265,6 +280,19 @@ describe('validateDocumentFactory', () => {
 
         expect(error.dataPath).to.equal('.$userId');
         expect(error.keyword).to.equal('maxLength');
+      });
+
+      it('should be base58 encoded', () => {
+        rawDocument.$userId = '&'.repeat(44);
+
+        const result = validateDocument(rawDocument, dataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.keyword).to.equal('pattern');
+        expect(error.dataPath).to.equal('.$userId');
       });
     });
 
@@ -408,7 +436,7 @@ describe('validateDocumentFactory', () => {
   });
 
   it('should return invalid result if a document contractId is not equal to Data Contract ID', () => {
-    rawDocument.$contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+    rawDocument.$contractId = generateRandomId();
 
     const result = validateDocument(
       rawDocument,

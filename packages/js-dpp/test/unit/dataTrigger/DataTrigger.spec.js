@@ -11,6 +11,7 @@ describe('DataTrigger', () => {
   let context;
   let triggerStub;
   let document;
+  let topLevelIdentity;
 
   beforeEach(function beforeEach() {
     triggerStub = this.sinonSandbox.stub().resolves(new DataTriggerExecutionResult());
@@ -23,6 +24,8 @@ describe('DataTrigger', () => {
       '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
       dataContractMock,
     );
+
+    topLevelIdentity = context.getUserId();
   });
 
   it('should check trigger fields', () => {
@@ -31,12 +34,14 @@ describe('DataTrigger', () => {
       document.getType(),
       document.getAction(),
       triggerStub,
+      topLevelIdentity,
     );
 
     expect(trigger.dataContractId).to.equal(dataContractMock.getId());
     expect(trigger.documentType).to.equal(document.getType());
     expect(trigger.documentAction).to.equal(document.getAction());
     expect(trigger.trigger).to.equal(triggerStub);
+    expect(trigger.topLevelIdentity).to.equal(topLevelIdentity);
   });
 
   describe('#execute', () => {
@@ -46,6 +51,7 @@ describe('DataTrigger', () => {
         document.getType(),
         document.getAction(),
         triggerStub,
+        topLevelIdentity,
       );
 
       const result = await trigger.execute(context);
@@ -67,6 +73,7 @@ describe('DataTrigger', () => {
         document.getType(),
         document.getAction(),
         triggerStub,
+        topLevelIdentity,
       );
 
       const result = await trigger.execute(document, context);
@@ -85,9 +92,10 @@ describe('DataTrigger', () => {
         document.getType(),
         document.getAction(),
         triggerStub,
+        topLevelIdentity,
       );
 
-      const result = await trigger.execute(context);
+      const result = await trigger.execute(document, context);
 
       expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
       expect(result.getErrors()[0]).to.be.an.instanceOf(DataTriggerExecutionError);
@@ -102,9 +110,10 @@ describe('DataTrigger', () => {
         document.getType(),
         document.getAction(),
         triggerStub,
+        topLevelIdentity,
       );
 
-      const result = await trigger.execute(context);
+      const result = await trigger.execute(document, context);
 
       expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
       expect(result.getErrors()[0]).to.be.an.instanceOf(DataTriggerInvalidResultError);

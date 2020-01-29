@@ -44,15 +44,16 @@ class DocumentsStateTransition extends AbstractStateTransition {
   /**
    * Get Documents State Transition as plain object
    *
+   * @param {Object} [options]
    * @return {RawDocumentsStateTransition}
    */
-  toJSON() {
+  toJSON(options = {}) {
     const documents = this.getDocuments();
 
     return {
-      ...super.toJSON(),
-      actions: documents.map(d => d.getAction()),
-      documents: documents.map(d => d.toJSON()),
+      ...super.toJSON(options),
+      actions: documents.map((d) => d.getAction()),
+      documents: documents.map((d) => d.toJSON()),
     };
   }
 }

@@ -13,13 +13,15 @@
     },
     "$contractId": {
       "type": "string",
-      "minLength": 64,
-      "maxLength": 64
+      "minLength": 42,
+      "maxLength": 44,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
     },
     "$userId": {
       "type": "string",
-      "minLength": 64,
-      "maxLength": 64
+      "minLength": 42,
+      "maxLength": 44,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
     },
     "$entropy": {
       "type": "string",

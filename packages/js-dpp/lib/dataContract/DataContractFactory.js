@@ -37,7 +37,7 @@ class DataContractFactory {
    * @return {DataContract}
    */
   createFromObject(rawDataContract, options = { }) {
-    const opts = Object.assign({ skipValidation: false }, options);
+    const opts = { skipValidation: false, ...options };
 
     if (!opts.skipValidation) {
       const result = this.validateDataContract(rawDataContract);

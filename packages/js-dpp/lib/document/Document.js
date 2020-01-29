@@ -12,7 +12,7 @@ class Document {
    * @param {RawDocument} rawDocument
    */
   constructor(rawDocument) {
-    const data = Object.assign({}, rawDocument);
+    const data = { ...rawDocument };
 
     this.id = undefined;
     this.action = undefined;

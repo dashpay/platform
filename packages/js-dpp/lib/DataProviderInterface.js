@@ -37,3 +37,13 @@
  * @param {string} id
  * @returns {Promise<{ confirmations: number }|null>}
  */
+
+/**
+ * Fetch identity by ID
+ *
+ * @async
+ * @method
+ * @name DataProvider#fetchIdentity
+ * @param {string} id
+ * @returns {Promise<Identity|null>}
+ */

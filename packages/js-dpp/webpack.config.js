@@ -1,7 +1,7 @@
 const path = require('path');
 
 const commonJSConfig = {
-  entry: ['@babel/polyfill', './lib/DashPlatformProtocol.js'],
+  entry: ['core-js/stable', 'regenerator-runtime/runtime', './lib/DashPlatformProtocol.js'],
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'DashPlatformProtocol.min.js',

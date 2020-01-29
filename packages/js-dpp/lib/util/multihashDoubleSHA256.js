@@ -1,4 +1,5 @@
 const multihashes = require('multihashes');
+const doubleSha = require('./hash');
 
 /**
  * Hash payload using multihash
@@ -8,7 +9,9 @@ const multihashes = require('multihashes');
  * @return {Buffer}
  */
 function hash(payload) {
-  return multihashes.encode(payload, 'dbl-sha2-256');
+  const digest = doubleSha(payload);
+
+  return multihashes.encode(digest, 'dbl-sha2-256');
 }
 
 /**

@@ -1,15 +1,15 @@
-const ConsensusError = require('./ConsensusError');
+const AbstractDataTriggerError = require('./AbstractDataTriggerError');
 
-class DataTriggerInvalidResultError extends ConsensusError {
+class DataTriggerInvalidResultError extends AbstractDataTriggerError {
   /**
    * @param {DataTrigger} dataTrigger
-   * @param {DataTriggerExecutionContext} context
+   * @param {DataContract} dataContract
+   * @param {string} userId
    */
-  constructor(dataTrigger, context) {
-    super('Data trigger have not returned any result');
+  constructor(dataTrigger, dataContract, userId) {
+    super('Data trigger have not returned any result', dataContract, userId);
 
     this.dataTrigger = dataTrigger;
-    this.context = context;
   }
 
   /**
@@ -19,15 +19,6 @@ class DataTriggerInvalidResultError extends ConsensusError {
    */
   getDataTrigger() {
     return this.dataTrigger;
-  }
-
-  /**
-   * Get data trigger execution context
-   *
-   * @return {DataTriggerExecutionContext}
-   */
-  getContext() {
-    return this.context;
   }
 }
 

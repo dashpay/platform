@@ -1,12 +1,14 @@
 const createDataContract = require('../../../lib/dataContract/createDataContract');
 const DataContract = require('../../../lib/dataContract/DataContract');
 
+const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+
 describe('createDataContract', () => {
   let rawDataContract;
 
   beforeEach(() => {
     rawDataContract = {
-      contractId: '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
+      contractId: generateRandomId(),
       documents: {
         niceDocument: {
           name: { type: 'string' },

@@ -15,15 +15,21 @@ const UndefinedIndexPropertyError = require('../../../lib/errors/UndefinedIndexP
 const InvalidIndexPropertyTypeError = require('../../../lib/errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../../../lib/errors/SystemPropertyIndexAlreadyPresentError');
 
+const originalEnv = { ...process.env };
+
 describe('validateDataContractFactory', () => {
   let rawDataContract;
   let validateDataContract;
+  let allowedIdentities;
 
   beforeEach(() => {
     rawDataContract = getDataContractFixture().toJSON();
 
     const ajv = new Ajv();
     const validator = new JsonSchemaValidator(ajv);
+
+    allowedIdentities = ['1'.repeat(42), '2'.repeat(42)].join(',');
+    process.env = { ...originalEnv };
 
     validateDataContract = validateDataContractFactory(validator);
   });
@@ -98,8 +104,8 @@ describe('validateDataContractFactory', () => {
       expect(error.keyword).to.equal('type');
     });
 
-    it('should be no less than 64 chars', () => {
-      rawDataContract.contractId = '86b273ff';
+    it('should be no less than 42 chars', () => {
+      rawDataContract.contractId = '1'.repeat(41);
 
       const result = validateDataContract(rawDataContract);
 
@@ -111,8 +117,8 @@ describe('validateDataContractFactory', () => {
       expect(error.keyword).to.equal('minLength');
     });
 
-    it('should be no longer than 64 chars', () => {
-      rawDataContract.contractId = '86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff86b273ff';
+    it('should be no longer than 44 chars', () => {
+      rawDataContract.contractId = '1'.repeat(45);
 
       const result = validateDataContract(rawDataContract);
 
@@ -122,6 +128,43 @@ describe('validateDataContractFactory', () => {
 
       expect(error.dataPath).to.equal('.contractId');
       expect(error.keyword).to.equal('maxLength');
+    });
+
+    it('should be base58 encoded', () => {
+      rawDataContract.contractId = '&'.repeat(44);
+
+      const result = validateDataContract(rawDataContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.keyword).to.equal('pattern');
+      expect(error.dataPath).to.equal('.contractId');
+    });
+
+    it('should be valid if contractId is in the list of allowed identities', () => {
+      process.env.ALLOWED_IDENTITIES = allowedIdentities;
+
+      rawDataContract.contractId = '1'.repeat(42);
+
+      const result = validateDataContract(rawDataContract);
+
+      expect(result.isValid()).to.be.true();
+    });
+
+    it('should not be valid if contractId is not in the list of allowed identities', () => {
+      process.env.ALLOWED_IDENTITIES = allowedIdentities;
+
+      rawDataContract.contractId = '3'.repeat(42);
+
+      const result = validateDataContract(rawDataContract);
+
+      const [error] = result.getErrors();
+
+      expect(error.name).to.equal('DataContractRestrictedIdentityError');
+      expect(error.message).to.equal('The identity is not allowed to register contracts');
+      expect(error.getDataContract()).to.be.deep.equal(rawDataContract);
     });
   });
 
@@ -700,8 +743,7 @@ describe('validateDataContractFactory', () => {
   });
 
   it('should return invalid result if there are duplicated indices', () => {
-    const indexDefinition = Object.assign({},
-      rawDataContract.documents.indexedDocument.indices[0]);
+    const indexDefinition = { ...rawDataContract.documents.indexedDocument.indices[0] };
 
     rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
 

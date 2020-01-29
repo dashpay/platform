@@ -1,6 +1,6 @@
 class DataTriggerExecutionResult {
   /**
-   * @param {DataTriggerExecutionError[]} errors
+   * @param {AbstractDataTriggerError[]} errors
    */
   constructor(errors = []) {
     this.errors = errors;
@@ -9,7 +9,7 @@ class DataTriggerExecutionResult {
   /**
    * Add an error to result
    *
-   * @param {DataTriggerExecutionError} error
+   * @param {AbstractDataTriggerError} error
    */
   addError(...error) {
     this.errors.push(...error);
@@ -18,14 +18,14 @@ class DataTriggerExecutionResult {
   /**
    * Get all data trigger execution errors
    *
-   * @return {DataTriggerExecutionError[]}
+   * @return {AbstractDataTriggerError[]}
    */
   getErrors() {
     return this.errors;
   }
 
   /**
-   * Check if result have no errros
+   * Check if result have no errors
    *
    * @return {boolean}
    */

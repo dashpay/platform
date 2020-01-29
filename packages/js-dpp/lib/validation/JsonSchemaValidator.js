@@ -35,7 +35,7 @@ class JsonSchemaValidator {
     });
 
     return new ValidationResult(
-      (this.ajv.errors || []).map(error => new JsonSchemaError(error)),
+      (this.ajv.errors || []).map((error) => new JsonSchemaError(error)),
     );
   }
 }

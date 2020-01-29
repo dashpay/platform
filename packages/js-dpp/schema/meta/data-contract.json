@@ -14,8 +14,9 @@
     },
     "contractId":{
       "type": "string",
-      "minLength": 64,
-      "maxLength": 64
+      "minLength": 42,
+      "maxLength": 44,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
     },
     "version": {
       "type": "number",
@@ -42,7 +43,7 @@
                     "items": {
                       "type": "object",
                       "patternProperties": {
-                        "^((?!-|_)[a-zA-Z0-9-_$]{0,62}[a-zA-Z0-9])$": {
+                        "^((?!-|_|\\.)[a-zA-Z0-9-\\._$]{0,62}[a-zA-Z0-9])$": {
                           "type": "string",
                           "enum": ["asc", "desc"]
                         }

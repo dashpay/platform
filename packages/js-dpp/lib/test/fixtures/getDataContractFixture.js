@@ -1,10 +1,13 @@
+const generateRandomId = require('../utils/generateRandomId');
+
 const DataContract = require('../../dataContract/DataContract');
+
+const contractId = generateRandomId();
 
 /**
  * @return {DataContract}
  */
 module.exports = function getDataContractFixture() {
-  const contractId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
   const documents = {
     niceDocument: {
       properties: {

@@ -5,10 +5,9 @@ const DataContractAlreadyPresentError = require('../../../errors/DataContractAlr
 /**
  *
  * @param {DataProvider} dataProvider
- * @param {validateBlockchainUser} validateBlockchainUser
  * @return {validateDataContractSTData}
  */
-function validateDataContractSTDataFactory(dataProvider, validateBlockchainUser) {
+function validateDataContractSTDataFactory(dataProvider) {
   /**
    * @typedef validateDataContractSTData
    * @param {DataContractStateTransition} stateTransition
@@ -19,15 +18,6 @@ function validateDataContractSTDataFactory(dataProvider, validateBlockchainUser)
 
     const dataContract = stateTransition.getDataContract();
     const dataContractId = dataContract.getId();
-
-    // Data Contract identity must exists and confirmed
-    result.merge(
-      await validateBlockchainUser(dataContractId),
-    );
-
-    if (!result.isValid()) {
-      return result;
-    }
 
     // Data contract shouldn't exist
     const existingDataContract = await dataProvider.fetchDataContract(dataContractId);

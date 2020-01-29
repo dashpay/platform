@@ -4,6 +4,7 @@ const Document = require('../document/Document');
 
 const DocumentsStateTransition = require('../document/stateTransition/DocumentsStateTransition');
 const DataContractStateTransition = require('../dataContract/stateTransition/DataContractStateTransition');
+const IdentityCreateTransition = require('../identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 
 const InvalidStateTransitionTypeError = require('../errors/InvalidStateTransitionTypeError');
 
@@ -14,15 +15,22 @@ const InvalidStateTransitionTypeError = require('../errors/InvalidStateTransitio
 function createStateTransitionFactory(createDataContract) {
   /**
    * @typedef createStateTransition
-   * @param {RawDataContractStateTransition|RawDocumentsStateTransition} rawStateTransition
-   * @return {DataContractStateTransition|DocumentsStateTransition}
+   * @param {
+   * RawDataContractStateTransition|
+   * RawDocumentsStateTransition|
+   * RawIdentityCreateTransition
+   * } rawStateTransition
+   * @return {DataContractStateTransition|DocumentsStateTransition|IdentityCreateTransition}
    */
   function createStateTransition(rawStateTransition) {
+    let stateTransition;
+
     switch (rawStateTransition.type) {
       case types.DATA_CONTRACT: {
         const dataContract = createDataContract(rawStateTransition.dataContract);
 
-        return new DataContractStateTransition(dataContract);
+        stateTransition = new DataContractStateTransition(dataContract);
+        break;
       }
       case types.DOCUMENTS: {
         const documents = rawStateTransition.documents.map((rawDocument, index) => {
@@ -33,11 +41,22 @@ function createStateTransitionFactory(createDataContract) {
           return document;
         });
 
-        return new DocumentsStateTransition(documents);
+        stateTransition = new DocumentsStateTransition(documents);
+        break;
+      }
+      case types.IDENTITY_CREATE: {
+        stateTransition = new IdentityCreateTransition(rawStateTransition);
+        break;
       }
       default:
         throw new InvalidStateTransitionTypeError(rawStateTransition);
     }
+
+    stateTransition
+      .setSignature(rawStateTransition.signature)
+      .setSignaturePublicKeyId(rawStateTransition.signaturePublicKeyId);
+
+    return stateTransition;
   }
 
   return createStateTransition;

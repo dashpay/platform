@@ -29,12 +29,12 @@ function enrichDataContractWithBaseDocument(dataContract, excludeBaseDocumentPro
     }
 
     Object.keys(baseDocumentProperties)
-      .filter(name => excludeBaseDocumentProperties.indexOf(name) === -1)
+      .filter((name) => excludeBaseDocumentProperties.indexOf(name) === -1)
       .forEach((name) => {
         clonedDocument.properties[name] = baseDocumentProperties[name];
       });
 
-    baseDocumentRequired.forEach(name => clonedDocument.required.push(name));
+    baseDocumentRequired.forEach((name) => clonedDocument.required.push(name));
   });
 
   return clonedDataContract;

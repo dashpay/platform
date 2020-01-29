@@ -27,7 +27,7 @@ function validateDocumentsUniquenessByIndicesFactory(dataProvider) {
         }
 
         documentSchema.indices
-          .filter(index => index.unique)
+          .filter((index) => index.unique)
           .forEach((indexDefinition) => {
             const where = indexDefinition.properties
               .map((property) => {
@@ -67,7 +67,7 @@ function validateDocumentsUniquenessByIndicesFactory(dataProvider) {
           type,
           { where },
         )
-          .then(doc => Object.assign(doc, {
+          .then((doc) => Object.assign(doc, {
             indexDefinition,
             originDocument,
           }))

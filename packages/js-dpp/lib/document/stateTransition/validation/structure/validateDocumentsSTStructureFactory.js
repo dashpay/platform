@@ -7,11 +7,17 @@ const STDuplicateDocumentsError = require('../../../../errors/STDuplicateDocumen
 const STContainsDocumentsFromDifferentUsersError = require('../../../../errors/STContainsDocumentsFromDifferentUsersError');
 const STContainsDocumentsForDifferentDataContractsError = require('../../../../errors/STContainsDocumentsForDifferentDataContractsError');
 
+const DocumentsStateTransition = require('../../DocumentsStateTransition');
+
+const Identity = require('../../../../identity/Identity');
+
 /**
  * @param {validateDocument} validateDocument
  * @param {findDuplicateDocumentsById} findDuplicateDocumentsById
  * @param {findDuplicateDocumentsByIndices} findDuplicateDocumentsByIndices
  * @param {fetchAndValidateDataContract} fetchAndValidateDataContract
+ * @param {validateStateTransitionSignature} validateStateTransitionSignature
+ * @param {validateIdentityExistenceAndType} validateIdentityExistenceAndType
  * @return {validateDocumentsSTStructure}
  */
 function validateDocumentsSTStructureFactory(
@@ -19,6 +25,8 @@ function validateDocumentsSTStructureFactory(
   findDuplicateDocumentsById,
   findDuplicateDocumentsByIndices,
   fetchAndValidateDataContract,
+  validateStateTransitionSignature,
+  validateIdentityExistenceAndType,
 ) {
   /**
    * @typedef validateDocumentsSTStructure
@@ -136,6 +144,31 @@ function validateDocumentsSTStructureFactory(
         ),
       );
     }
+
+    const [firstDocument] = documents;
+    const userId = firstDocument.getUserId();
+    const stateTransition = new DocumentsStateTransition(documents);
+
+    // User must exist and confirmed
+    result.merge(
+      await validateIdentityExistenceAndType(
+        userId,
+        [Identity.TYPES.USER, Identity.TYPES.APPLICATION],
+      ),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    // Verify ST signature
+    stateTransition
+      .setSignature(rawStateTransition.signature)
+      .setSignaturePublicKeyId(rawStateTransition.signaturePublicKeyId);
+
+    result.merge(
+      await validateStateTransitionSignature(stateTransition, userId),
+    );
 
     return result;
   }

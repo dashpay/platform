@@ -1,4 +1,4 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
@@ -12,6 +12,9 @@ const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixt
 
 const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
 
+const Identity = require('../../../lib/identity/Identity');
+const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
+
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('StateTransitionFacade', () => {
@@ -20,15 +23,36 @@ describe('StateTransitionFacade', () => {
   let documentsStateTransition;
   let dataProviderMock;
   let dataContract;
+  let identityPublicKey;
 
   beforeEach(function beforeEach() {
+    const privateKeyModel = new PrivateKey();
+    const privateKey = privateKeyModel.toBuffer();
+    const publicKey = privateKeyModel.toPublicKey().toBuffer().toString('base64');
+    const publicKeyId = 1;
+
+    identityPublicKey = new IdentityPublicKey()
+      .setId(publicKeyId)
+      .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
+      .setData(publicKey);
+
     dataContract = getDataContractFixture();
     dataContractStateTransition = new DataContractStateTransition(dataContract);
+    dataContractStateTransition.sign(identityPublicKey, privateKey);
 
     const documents = getDocumentsFixture();
     documentsStateTransition = new DocumentsStateTransition(documents);
+    documentsStateTransition.sign(identityPublicKey, privateKey);
+
+    const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
+
+    const identity = {
+      getPublicKeyById,
+      type: 2,
+    };
 
     dataProviderMock = createDataProviderMock(this.sinonSandbox);
+    dataProviderMock.fetchIdentity.resolves(identity);
 
     dpp = new DashPlatformProtocol({
       dataProvider: dataProviderMock,
@@ -49,6 +73,15 @@ describe('StateTransitionFacade', () => {
         expect(e).to.be.an.instanceOf(MissingOptionError);
         expect(e.getOptionName()).to.equal('dataProvider');
       }
+    });
+
+    it('should skip checking for data provider if skipValidation is set', async () => {
+      dpp = new DashPlatformProtocol();
+
+      await dpp.stateTransition.createFromObject(
+        dataContractStateTransition.toJSON(),
+        { skipValidation: true },
+      );
     });
 
     it('should create State Transition from plain object', async () => {
@@ -76,6 +109,15 @@ describe('StateTransitionFacade', () => {
         expect(e).to.be.an.instanceOf(MissingOptionError);
         expect(e.getOptionName()).to.equal('dataProvider');
       }
+    });
+
+    it('should skip checking for data provider if skipValidation is set', async () => {
+      dpp = new DashPlatformProtocol();
+
+      await dpp.stateTransition.createFromSerialized(
+        dataContractStateTransition.serialize(),
+        { skipValidation: true },
+      );
     });
 
     it('should create State Transition from string', async () => {
@@ -123,22 +165,20 @@ describe('StateTransitionFacade', () => {
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
+      expect(result.isValid()).to.be.true();
 
       expect(validateStructureSpy).to.be.calledOnceWith(dataContractStateTransition);
       expect(validateDataSpy).to.be.calledOnceWith(dataContractStateTransition);
     });
 
     it('should validate Documents ST structure and data', async function it() {
-      dataProviderMock.fetchTransaction.resolves({
-        type: Transaction.TYPES.TRANSACTION_SUBTX_REGISTER,
-        confirmations: 6,
-      });
-
       dataProviderMock.fetchDocuments.resolves([]);
 
-
       dataProviderMock.fetchDataContract.resolves(dataContract);
+      dataProviderMock.fetchIdentity.resolves({
+        type: Identity.TYPES.USER,
+        getPublicKeyById: this.sinonSandbox.stub().returns(identityPublicKey),
+      });
 
       const validateStructureSpy = this.sinonSandbox.spy(
         dpp.stateTransition,
@@ -210,7 +250,7 @@ describe('StateTransitionFacade', () => {
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
+      expect(result.isValid()).to.be.true();
     });
   });
 });

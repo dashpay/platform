@@ -23,7 +23,7 @@ function getParentDocumentFixture(options = {}) {
   const label = options.label || 'Parent';
   const normalizedLabel = options.normalizedLabel || label.toLowerCase();
   const fullDomainName = `${normalizedLabel}.grandparent`;
-  const data = Object.assign({}, {
+  const data = {
     nameHash: multihash.hash(Buffer.from(fullDomainName)).toString('hex'),
     label,
     normalizedLabel,
@@ -32,7 +32,8 @@ function getParentDocumentFixture(options = {}) {
     records: {
       dashIdentity: transaction.hash,
     },
-  }, options);
+    ...options,
+  };
 
   return factory.create(dataContract, userId, 'domain', data);
 }
@@ -53,16 +54,17 @@ function getChildDocumentFixture(options = {}) {
   const parent = getParentDocumentFixture();
   const parentDomainName = `${parent.getData().normalizedLabel}.${parent.getData().normalizedParentDomainName}`;
   const fullDomainName = `${normalizedLabel}.${parentDomainName}`;
-  const data = Object.assign({}, {
+  const data = {
     nameHash: multihash.hash(Buffer.from(fullDomainName)).toString('hex'),
     label,
     normalizedLabel,
     normalizedParentDomainName: parentDomainName,
     preorderSalt: entropy.generate(),
     records: {
-      dashIdentity: transaction.hash,
+      dashIdentity: userId,
     },
-  }, options);
+    ...options,
+  };
 
   return factory.create(dataContract, userId, 'domain', data);
 }

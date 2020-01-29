@@ -14,7 +14,7 @@ const expectError = {
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.getErrors()).to.have.lengthOf(count);
 
-    result.getErrors().forEach(error => expect(error).to.be.an.instanceOf(errorClass));
+    result.getErrors().forEach((error) => expect(error).to.be.an.instanceOf(errorClass));
   },
 
   /**

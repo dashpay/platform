@@ -12,7 +12,6 @@ const InvalidDocumentActionError = require('../../../errors/InvalidDocumentActio
 /**
  *
  * @param {DataProvider} dataProvider
- * @param {validateBlockchainUser} validateBlockchainUser
  * @param {fetchDocuments} fetchDocuments
  * @param {validateDocumentsUniquenessByIndices} validateDocumentsUniquenessByIndices
  * @param {executeDataTriggers} executeDataTriggers
@@ -21,7 +20,6 @@ const InvalidDocumentActionError = require('../../../errors/InvalidDocumentActio
  */
 function validateDocumentsSTDataFactory(
   dataProvider,
-  validateBlockchainUser,
   fetchDocuments,
   validateDocumentsUniquenessByIndices,
   executeDataTriggers,
@@ -40,15 +38,6 @@ function validateDocumentsSTDataFactory(
 
     const userId = firstDocument.getUserId();
 
-    // User must exist and confirmed
-    result.merge(
-      await validateBlockchainUser(userId),
-    );
-
-    if (!result.isValid()) {
-      return result;
-    }
-
     // Data contract must exist
     const dataContractValidationResult = await fetchAndValidateDataContract(firstDocument);
     if (!dataContractValidationResult.isValid()) {
@@ -66,7 +55,7 @@ function validateDocumentsSTDataFactory(
 
     documents
       .forEach((document) => {
-        const fetchedDocument = fetchedDocuments.find(d => document.getId() === d.getId());
+        const fetchedDocument = fetchedDocuments.find((d) => document.getId() === d.getId());
 
         switch (document.getAction()) {
           case Document.ACTIONS.CREATE:
@@ -105,7 +94,7 @@ function validateDocumentsSTDataFactory(
 
     // Validate unique indices
     const nonDeleteActionDocuments = documents
-      .filter(d => d.getAction() !== Document.ACTIONS.DELETE);
+      .filter((d) => d.getAction() !== Document.ACTIONS.DELETE);
 
     if (nonDeleteActionDocuments.length > 0) {
       result.merge(

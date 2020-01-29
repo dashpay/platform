@@ -52,7 +52,7 @@ class DocumentFacade {
    * @return {Document}
    */
   async createFromObject(rawDocument, options = {}) {
-    if (!this.dataProvider) {
+    if (!this.dataProvider && !options.skipValidation) {
       throw new MissingOptionError(
         'dataProvider',
         'Can\'t create Document because Data Provider is not set in'
@@ -73,7 +73,7 @@ class DocumentFacade {
    * @return {Document}
    */
   async createFromSerialized(payload, options = { }) {
-    if (!this.dataProvider) {
+    if (!this.dataProvider && !options.skipValidation) {
       throw new MissingOptionError(
         'dataProvider',
         'Can\'t create Document because Data Provider is not set in'

@@ -1,6 +1,8 @@
 const bs58 = require('bs58');
 const rewiremock = require('rewiremock/node');
 
+const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+
 const DataIsNotAllowedWithActionDeleteError = require('../../../lib/document/errors/DataIsNotAllowedWithActionDeleteError');
 
 describe('Document', () => {
@@ -28,8 +30,8 @@ describe('Document', () => {
 
     rawDocument = {
       $type: 'test',
-      $contractId: 'a832e4145650bfe8462e768e9c4a9a0d3a0bb7dcd9b3e50c61c73ac9d2e14068',
-      $userId: 'a832e4145650bfe8462e768e9c4a9a0d3a0bb7dcd9b3e50c61c73ac9d2e16546',
+      $contractId: generateRandomId(),
+      $userId: generateRandomId(),
       $entropy: 'ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgzh',
       $rev: Document.DEFAULTS.REVISION,
     };
@@ -66,7 +68,7 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $contractId: 'test',
+        $contractId: generateRandomId(),
         ...data,
       };
 
@@ -82,7 +84,7 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $userId: 'test',
+        $userId: generateRandomId(),
         ...data,
       };
 

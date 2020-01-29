@@ -1,17 +1,17 @@
-const ConsensusError = require('./ConsensusError');
+const AbstractDataTriggerError = require('./AbstractDataTriggerError');
 
-class DataTriggerExecutionError extends ConsensusError {
+class DataTriggerExecutionError extends AbstractDataTriggerError {
   /**
    * @param {DataTrigger} dataTrigger
-   * @param {DataTriggerExecutionContext} context
+   * @param {DataContract} dataContract
+   * @param {string} userId
    * @param {Error} error
    */
-  constructor(dataTrigger, context, error) {
-    super(error.message);
+  constructor(dataTrigger, dataContract, userId, error) {
+    super(error.message, dataContract, userId);
 
     this.error = error;
     this.dataTrigger = dataTrigger;
-    this.context = context;
   }
 
   /**
@@ -30,15 +30,6 @@ class DataTriggerExecutionError extends ConsensusError {
    */
   getDataTrigger() {
     return this.dataTrigger;
-  }
-
-  /**
-   * Get data trigger execution context
-   *
-   * @return {DataTriggerExecutionContext}
-   */
-  getContext() {
-    return this.context;
   }
 }
 

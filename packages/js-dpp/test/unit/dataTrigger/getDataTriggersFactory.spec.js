@@ -9,6 +9,7 @@ const createDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/c
 const updateDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/updateDomainDataTrigger');
 const deleteDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/deleteDomainDataTrigger');
 
+const generateRandomId = require('../../../lib/test/utils/generateRandomId');
 
 describe('getDataTriggers', () => {
   let getDataTriggers;
@@ -22,6 +23,7 @@ describe('getDataTriggers', () => {
   let deleteTrigger;
 
   let dataContractId;
+  let topLevelIdentity;
 
   beforeEach(function beforeEach() {
     createDocument = getChildDocumentFixture();
@@ -34,20 +36,22 @@ describe('getDataTriggers', () => {
     deleteDocument.data = {};
     deleteDocument.setAction(Document.ACTIONS.DELETE);
 
-    dataContractId = 'someContractId';
+    dataContractId = generateRandomId();
+    topLevelIdentity = generateRandomId();
 
     createTrigger = new DataTrigger(
-      dataContractId, 'domain', Document.ACTIONS.CREATE, createDomainDataTrigger,
+      dataContractId, 'domain', Document.ACTIONS.CREATE, createDomainDataTrigger, topLevelIdentity,
     );
     updateTrigger = new DataTrigger(
-      dataContractId, 'domain', Document.ACTIONS.REPLACE, updateDomainDataTrigger,
+      dataContractId, 'domain', Document.ACTIONS.REPLACE, updateDomainDataTrigger, topLevelIdentity,
     );
     deleteTrigger = new DataTrigger(
-      dataContractId, 'domain', Document.ACTIONS.DELETE, deleteDomainDataTrigger,
+      dataContractId, 'domain', Document.ACTIONS.DELETE, deleteDomainDataTrigger, topLevelIdentity,
     );
 
     this.sinonSandbox.stub(process, 'env').value({
       DPNS_CONTRACT_ID: dataContractId,
+      DPNS_TOP_LEVEL_IDENTITY: topLevelIdentity,
     });
 
     getDataTriggers = getDataTriggersFactory();

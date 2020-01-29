@@ -160,8 +160,8 @@ describe('executeDataTriggersFactory', () => {
     expect(documents.length).to.equal(expectedResultsCount);
     expect(dataTriggerExecutionResults.length).to.equal(expectedResultsCount);
 
-    const passingResults = dataTriggerExecutionResults.filter(result => result.isOk());
-    const failingResults = dataTriggerExecutionResults.filter(result => !result.isOk());
+    const passingResults = dataTriggerExecutionResults.filter((result) => result.isOk());
+    const failingResults = dataTriggerExecutionResults.filter((result) => !result.isOk());
 
     expect(passingResults).to.have.a.lengthOf(2);
     expect(failingResults).to.have.a.lengthOf(1);

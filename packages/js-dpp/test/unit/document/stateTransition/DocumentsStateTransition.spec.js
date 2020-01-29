@@ -66,8 +66,10 @@ describe('DocumentsStateTransition', () => {
       expect(stateTransition.toJSON()).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.DOCUMENTS,
-        actions: documents.map(d => d.getAction()),
-        documents: documents.map(d => d.toJSON()),
+        actions: documents.map((d) => d.getAction()),
+        documents: documents.map((d) => d.toJSON()),
+        signaturePublicKeyId: null,
+        signature: null,
       });
     });
   });

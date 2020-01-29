@@ -53,6 +53,8 @@ describe('DataContractStateTransition', () => {
         protocolVersion: 0,
         type: stateTransitionTypes.DATA_CONTRACT,
         dataContract: dataContract.toJSON(),
+        signaturePublicKeyId: null,
+        signature: null,
       });
     });
   });

@@ -8,6 +8,7 @@ const stateTransitionTypes = require('./stateTransitionTypes');
 
 const dataContractStateTransitionSchema = require('../../schema/stateTransition/data-contract');
 const documentsStateTransitionSchema = require('../../schema/stateTransition/documents');
+const identityCreateTransitionSchema = require('../../schema/identity/state-transitions/identity-create');
 
 const createDataContract = require('../dataContract/createDataContract');
 const createStateTransitionFactory = require('./createStateTransitionFactory');
@@ -18,6 +19,9 @@ const validateDataContractSTDataFactory = require('../dataContract/stateTransiti
 const validateStateTransitionDataFactory = require('./validation/validateStateTransitionDataFactory');
 const validateDocumentsSTStructureFactory = require('../document/stateTransition/validation/structure/validateDocumentsSTStructureFactory');
 const validateDocumentFactory = require('../document/validateDocumentFactory');
+const validateIdentityCreateSTDataFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTDataFactory');
+const validateIdentityCreateSTStructureFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTStructureFactory');
+const validateStateTransitionSignatureFactory = require('../stateTransition/validation/validateStateTransitionSignatureFactory');
 
 const fetchAndValidateDataContractFactory = require('../document/fetchAndValidateDataContractFactory');
 const enrichDataContractWithBaseDocument = require('../document/enrichDataContractWithBaseDocument');
@@ -25,11 +29,13 @@ const findDuplicateDocumentsById = require('../document/stateTransition/validati
 const findDuplicateDocumentsByIndices = require('../document/stateTransition/validation/structure/findDuplicateDocumentsByIndices');
 
 const validateDocumentsSTDataFactory = require('../document/stateTransition/validation/data/validateDocumentsSTDataFactory');
-const validateBlockchainUserFactory = require('./validation/validateBlockchainUserFactory');
 const fetchDocumentsFactory = require('../document/stateTransition/validation/data/fetchDocumentsFactory');
 const validateDocumentsUniquenessByIndicesFactory = require('../document/stateTransition/validation/data/validateDocumentsUniquenessByIndicesFactory');
 const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/validation/data/executeDataTriggersFactory');
+const validateIdentityExistenceAndTypeFactory = require('./validation/validateIdentityExistenceAndTypeFactory');
+const validateIdentityType = require('../identity/validation/validateIdentityType');
+const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
 
 class StateTransitionFacade {
   /**
@@ -44,8 +50,17 @@ class StateTransitionFacade {
       validator,
     );
 
+    const validateStateTransitionSignature = validateStateTransitionSignatureFactory(
+      dataProvider,
+    );
+
+    const validateIdentityExistenceAndType = validateIdentityExistenceAndTypeFactory(dataProvider);
+
     const validateDataContractSTStructure = validateDataContractSTStructureFactory(
       validateDataContract,
+      validateStateTransitionSignature,
+      createDataContract,
+      validateIdentityExistenceAndType,
     );
 
     const validateDocument = validateDocumentFactory(
@@ -66,6 +81,17 @@ class StateTransitionFacade {
       findDuplicateDocumentsById,
       findDuplicateDocumentsByIndices,
       fetchAndValidateDataContract,
+      validateStateTransitionSignature,
+      validateIdentityExistenceAndType,
+    );
+
+    const validatePublicKeys = validatePublicKeysFactory(
+      validator,
+    );
+
+    const validateIdentityCreateSTStructure = validateIdentityCreateSTStructureFactory(
+      validateIdentityType,
+      validatePublicKeys,
     );
 
     const typeExtensions = {
@@ -77,6 +103,10 @@ class StateTransitionFacade {
         validationFunction: validateDocumentsSTStructure,
         schema: documentsStateTransitionSchema,
       },
+      [stateTransitionTypes.IDENTITY_CREATE]: {
+        validationFunction: validateIdentityCreateSTStructure,
+        schema: identityCreateTransitionSchema,
+      },
     };
 
     this.validateStateTransitionStructure = validateStateTransitionStructureFactory(
@@ -84,13 +114,12 @@ class StateTransitionFacade {
       typeExtensions,
     );
 
-    const validateBlockchainUser = validateBlockchainUserFactory(
+    const validateDataContractSTData = validateDataContractSTDataFactory(
       dataProvider,
     );
 
-    const validateDataContractSTData = validateDataContractSTDataFactory(
+    const validateIdentityCreateSTData = validateIdentityCreateSTDataFactory(
       dataProvider,
-      validateBlockchainUser,
     );
 
     const fetchDocuments = fetchDocumentsFactory(
@@ -109,7 +138,6 @@ class StateTransitionFacade {
 
     const validateDocumentsSTData = validateDocumentsSTDataFactory(
       dataProvider,
-      validateBlockchainUser,
       fetchDocuments,
       validateDocumentsUniquenessByIndices,
       executeDataTriggers,
@@ -119,6 +147,7 @@ class StateTransitionFacade {
     this.validateStateTransitionData = validateStateTransitionDataFactory({
       [stateTransitionTypes.DATA_CONTRACT]: validateDataContractSTData,
       [stateTransitionTypes.DOCUMENTS]: validateDocumentsSTData,
+      [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateSTData,
     });
 
     this.factory = new StateTransitionFactory(
@@ -136,7 +165,7 @@ class StateTransitionFacade {
    * @return {DataContractStateTransition|DocumentsStateTransition}
    */
   async createFromObject(rawStateTransition, options = {}) {
-    if (!this.dataProvider) {
+    if (!this.dataProvider && !options.skipValidation) {
       throw new MissingOptionError(
         'dataProvider',
         'Can\'t create State Transition because Data Provider is not set, use'
@@ -156,7 +185,7 @@ class StateTransitionFacade {
    * @return {DataContractStateTransition|DocumentsStateTransition}
    */
   async createFromSerialized(payload, options = {}) {
-    if (!this.dataProvider) {
+    if (!this.dataProvider && !options.skipValidation) {
       throw new MissingOptionError(
         'dataProvider',
         'Can\'t create State Transition because Data Provider is not set, use'

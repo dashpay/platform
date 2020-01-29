@@ -26,10 +26,18 @@ module.exports = function createDPPMock(sinonSandbox) {
     validateData: sinonSandbox.stub(),
   };
 
+  const identity = {
+    create: sinonSandbox.stub(),
+    createFromObject: sinonSandbox.stub(),
+    createFromSerialized: sinonSandbox.stub(),
+    validate: sinonSandbox.stub(),
+  };
+
   return {
     dataContract,
     document,
     stateTransition,
+    identity,
     getUserId: sinonSandbox.stub(),
     setUserId: sinonSandbox.stub(),
     getDataContract: sinonSandbox.stub(),

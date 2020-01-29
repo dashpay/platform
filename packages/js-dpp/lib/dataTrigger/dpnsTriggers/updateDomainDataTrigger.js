@@ -12,7 +12,14 @@ const DataTriggerConditionError = require('../../errors/DataTriggerConditionErro
 async function updateDomainDataTrigger(document, context) {
   const result = new DataTriggerExecutionResult();
 
-  result.addError(new DataTriggerConditionError(document, context, 'Update action is not allowed'));
+  result.addError(
+    new DataTriggerConditionError(
+      document,
+      context.getDataContract(),
+      context.getUserId(),
+      'Update action is not allowed',
+    ),
+  );
 
   return result;
 }

@@ -15,7 +15,7 @@ async function executeTriggersSequentially(document, dataTriggers, context, resu
       results.push(result);
     }
     return dataTrigger.execute(document, context);
-  }, Promise.resolve()).then(lastResult => results.push(lastResult));
+  }, Promise.resolve()).then((lastResult) => results.push(lastResult));
 }
 
 /**

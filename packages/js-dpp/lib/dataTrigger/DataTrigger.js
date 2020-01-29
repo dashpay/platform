@@ -7,13 +7,17 @@ class DataTrigger {
    * @param {string} dataContractId
    * @param {string} documentType
    * @param {number} documentAction
-   * @param {function(Document, DataTriggerExecutionContext):DataTriggerExecutionResult} trigger
+   * @param {
+   * function(Document, DataTriggerExecutionContext, string):DataTriggerExecutionResult
+   * } trigger
+   * @param {string} topLevelIdentity
    */
-  constructor(dataContractId, documentType, documentAction, trigger) {
+  constructor(dataContractId, documentType, documentAction, trigger, topLevelIdentity) {
     this.dataContractId = dataContractId;
     this.documentType = documentType;
     this.documentAction = documentAction;
     this.trigger = trigger;
+    this.topLevelIdentity = topLevelIdentity;
   }
 
   /**
@@ -43,11 +47,11 @@ class DataTrigger {
     let result = new DataTriggerExecutionResult();
 
     try {
-      result = await this.trigger(document, context);
+      result = await this.trigger(document, context, this.topLevelIdentity);
     } catch (e) {
       result.addError(
         new DataTriggerExecutionError(
-          this, context, e,
+          this, context.getDataContract(), context.getUserId(), e,
         ),
       );
     }
@@ -56,7 +60,7 @@ class DataTrigger {
       result = new DataTriggerExecutionResult();
       result.addError(
         new DataTriggerInvalidResultError(
-          this, context,
+          this, context.getDataContract(), context.getUserId(),
         ),
       );
     }

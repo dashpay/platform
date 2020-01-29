@@ -34,7 +34,7 @@ async function registerUser(coreApi) {
   await coreApi.generate(10);
 
   const { result: unspent } = await coreApi.listUnspent();
-  const inputs = unspent.filter(input => input.address === addressString);
+  const inputs = unspent.filter((input) => input.address === addressString);
 
   const transactionPayload = new Transaction.Payload.SubTxRegisterPayload();
 
@@ -61,7 +61,7 @@ async function registerUser(coreApi) {
   return userId;
 }
 
-describe('validateStateTransition', function main() {
+describe.skip('validateStateTransition', function main() {
   this.timeout(180000);
 
   let driveInstance;
@@ -215,7 +215,7 @@ describe('validateStateTransition', function main() {
     });
   });
 
-  it('should successfuly submit valid contract and documents', async () => {
+  it('should successfully submit valid contract and documents', async () => {
     const stateTransition = new DataContractStateTransition(dataContract);
 
     await withinBlock(async (blockHeight, blockHash) => {
@@ -265,7 +265,7 @@ describe('validateStateTransition', function main() {
         .concat(indexedDocuments),
     ).to.have.deep.members(
       documents
-        .map(d => d.toJSON()),
+        .map((d) => d.toJSON()),
     );
   });
 

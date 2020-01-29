@@ -12,7 +12,14 @@ const DataTriggerConditionError = require('../../errors/DataTriggerConditionErro
 async function deleteDomainDataTrigger(document, context) {
   const result = new DataTriggerExecutionResult();
 
-  result.addError(new DataTriggerConditionError(document, context, 'Delete action is not allowed'));
+  result.addError(
+    new DataTriggerConditionError(
+      document,
+      context.getDataContract(),
+      context.getUserId(),
+      'Delete action is not allowed',
+    ),
+  );
 
   return result;
 }

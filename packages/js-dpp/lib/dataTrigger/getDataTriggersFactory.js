@@ -18,18 +18,21 @@ function getDataTriggersFactory() {
       'domain',
       Document.ACTIONS.CREATE,
       createDomainDataTrigger,
+      process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
     new DataTrigger(
       process.env.DPNS_CONTRACT_ID,
       'domain',
       Document.ACTIONS.REPLACE,
       updateDomainDataTrigger,
+      process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
     new DataTrigger(
       process.env.DPNS_CONTRACT_ID,
       'domain',
       Document.ACTIONS.DELETE,
       deleteDomainDataTrigger,
+      process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
   ];
 
@@ -46,7 +49,7 @@ function getDataTriggersFactory() {
    */
   function getDataTriggers(dataContractId, documentType, documentAction) {
     return dataTriggers.filter(
-      dataTrigger => dataTrigger.isMatchingTriggerForData(
+      (dataTrigger) => dataTrigger.isMatchingTriggerForData(
         dataContractId,
         documentType,
         documentAction,

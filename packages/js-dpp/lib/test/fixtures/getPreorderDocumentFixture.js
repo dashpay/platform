@@ -3,7 +3,10 @@ const DocumentFactory = require('../../document/DocumentFactory');
 const hash = require('../../../lib/util/hash');
 const entropy = require('../../../lib/util/entropy');
 
-const userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
+const generateRandomId = require('../utils/generateRandomId');
+
+const userId = generateRandomId();
+
 /**
  * @return {Document}
  */
@@ -17,7 +20,7 @@ function getPreorderDocumentFixture(options = {}) {
 
   const label = options.label || 'Preorder';
   const normalizedLabel = options.normalizedLabel || label.toLowerCase();
-  const data = Object.assign({}, {
+  const data = {
     hash: hash(Buffer.from(normalizedLabel)).toString('hex'),
     label,
     normalizedLabel,
@@ -26,7 +29,8 @@ function getPreorderDocumentFixture(options = {}) {
     records: {
       dashIdentity: userId,
     },
-  }, options);
+    ...options,
+  };
 
   return factory.create(dataContract, userId, 'preorder', data);
 }

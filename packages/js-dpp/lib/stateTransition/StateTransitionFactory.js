@@ -21,7 +21,7 @@ class StateTransitionFactory {
    * @return {DataContractStateTransition|DocumentsStateTransition}
    */
   async createFromObject(rawStateTransition, options = {}) {
-    const opts = Object.assign({ skipValidation: false }, options);
+    const opts = { skipValidation: false, ...options };
 
     if (!opts.skipValidation) {
       const result = await this.validateStateTransitionStructure(rawStateTransition);

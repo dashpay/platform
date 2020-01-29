@@ -44,11 +44,12 @@ class DataContractStateTransition extends AbstractStateTransition {
   /**
    * Get Data Contract State Transition as plain object
    *
+   * @params {Object} [options]
    * @return {RawDataContractStateTransition}
    */
-  toJSON() {
+  toJSON(options = {}) {
     return {
-      ...super.toJSON(),
+      ...super.toJSON(options),
       dataContract: this.getDataContract().toJSON(),
     };
   }

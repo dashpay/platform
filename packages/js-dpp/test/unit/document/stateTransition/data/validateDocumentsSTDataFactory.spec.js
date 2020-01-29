@@ -30,7 +30,6 @@ describe('validateDocumentsSTDataFactory', () => {
   let userId;
   let validateDocumentsUniquenessByIndicesMock;
   let dataProviderMock;
-  let validateBlockchainUserMock;
   let executeDataTriggersMock;
   let fetchAndValidateDataContractMock;
 
@@ -46,7 +45,7 @@ describe('validateDocumentsSTDataFactory', () => {
     dataProviderMock.fetchDataContract.resolves(dataContract);
 
     fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
-    validateBlockchainUserMock = this.sinonSandbox.stub().resolves(new ValidationResult());
+
     executeDataTriggersMock = this.sinonSandbox.stub();
 
     validateDocumentsUniquenessByIndicesMock = this.sinonSandbox.stub();
@@ -60,31 +59,11 @@ describe('validateDocumentsSTDataFactory', () => {
 
     validateDocumentsSTData = validateDocumentsSTDataFactory(
       dataProviderMock,
-      validateBlockchainUserMock,
       fetchDocumentsMock,
       validateDocumentsUniquenessByIndicesMock,
       executeDataTriggersMock,
       fetchAndValidateDataContractMock,
     );
-  });
-
-  it('should return invalid result if userId is not valid', async () => {
-    const userError = new ConsensusError('error');
-
-    validateBlockchainUserMock.resolves(new ValidationResult([userError]));
-
-    const result = await validateDocumentsSTData(stateTransition);
-
-    expectValidationError(result);
-
-    const [error] = result.getErrors();
-
-    expect(error).to.equal(userError);
-
-    expect(fetchAndValidateDataContractMock).to.have.not.been.called();
-    expect(fetchDocumentsMock).to.have.not.been.called();
-    expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
-    expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
   it('should return invalid result if Data Contract is not present', async () => {
@@ -103,7 +82,7 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error).to.equal(dataContractError);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
     expect(fetchDocumentsMock).to.have.not.been.called();
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -122,9 +101,9 @@ describe('validateDocumentsSTDataFactory', () => {
     expect(error.getDocument()).to.equal(documents[0]);
     expect(error.getFetchedDocument()).to.equal(documents[0]);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
@@ -141,9 +120,9 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error.getDocument()).to.equal(documents[0]);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
@@ -161,9 +140,9 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error.getDocument()).to.equal(documents[0]);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
@@ -183,9 +162,9 @@ describe('validateDocumentsSTDataFactory', () => {
     expect(error.getDocument()).to.equal(documents[0]);
     expect(error.getFetchedDocument()).to.equal(documents[0]);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
@@ -205,9 +184,9 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error.getDocument()).to.equal(documents[0]);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
@@ -226,9 +205,9 @@ describe('validateDocumentsSTDataFactory', () => {
       expect(e).to.be.an.instanceOf(InvalidDocumentActionError);
       expect(e.getDocument()).to.equal(documents[0]);
 
-      expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+      expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-      expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+      expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
       expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
       expect(executeDataTriggersMock).to.have.not.been.called();
@@ -250,16 +229,14 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error).to.equal(duplicateDocumentsError);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
-    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWith(
+    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
       documents,
       dataContract,
     );
-
-    expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
   it('should return invalid result if data triggers execution failed', async () => {
@@ -271,7 +248,8 @@ describe('validateDocumentsSTDataFactory', () => {
 
     const dataTriggerExecutionError = new DataTriggerExecutionError(
       documents[0],
-      dataTriggersExecutionContext,
+      dataTriggersExecutionContext.getDataContract(),
+      dataTriggersExecutionContext.getUserId(),
       new Error('error'),
     );
 
@@ -287,16 +265,16 @@ describe('validateDocumentsSTDataFactory', () => {
 
     expect(error).to.equal(dataTriggerExecutionError);
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
-    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWith(
+    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
       documents,
       dataContract,
     );
 
-    expect(executeDataTriggersMock).to.have.been.calledOnceWith(
+    expect(executeDataTriggersMock).to.have.been.calledOnceWithExactly(
       documents,
       dataTriggersExecutionContext,
     );
@@ -327,22 +305,21 @@ describe('validateDocumentsSTDataFactory', () => {
       new DataTriggerExecutionResult(),
     ]);
 
-
     const result = await validateDocumentsSTData(stateTransition);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(documents[0]);
+    expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(documents[0]);
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWith(documents);
+    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(documents);
 
-    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWith(
-      documents.filter(d => d.getAction() !== Document.ACTIONS.DELETE),
+    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
+      documents.filter((d) => d.getAction() !== Document.ACTIONS.DELETE),
       dataContract,
     );
 
-    expect(executeDataTriggersMock).to.have.been.calledOnceWith(
+    expect(executeDataTriggersMock).to.have.been.calledOnceWithExactly(
       documents,
       dataTriggersExecutionContext,
     );

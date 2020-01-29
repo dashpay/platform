@@ -1,3 +1,5 @@
+const bs58 = require('bs58');
+
 const createDomainDataTrigger = require('../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 
 const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTriggerExecutionContext');
@@ -19,6 +21,7 @@ describe('createDomainDataTrigger', () => {
   let context;
   let dataProviderMock;
   let dataContract;
+  let topLevelIdentity;
 
   beforeEach(function beforeEach() {
     dataContract = getDpnsContractFixture();
@@ -45,7 +48,14 @@ describe('createDomainDataTrigger', () => {
       )
       .resolves([parentDocument.toJSON()]);
 
-    const saltedDomainHash = multihash.hash(Buffer.from(preorderSalt + nameHash, 'hex')).toString('hex');
+    const saltedDomainHashBuffer = Buffer.concat([
+      bs58.decode(preorderSalt),
+      Buffer.from(nameHash, 'hex'),
+    ]);
+
+    const saltedDomainHash = multihash.hash(
+      saltedDomainHashBuffer,
+    ).toString('hex');
 
     dataProviderMock.fetchDocuments
       .withArgs(
@@ -68,10 +78,12 @@ describe('createDomainDataTrigger', () => {
       records.dashIdentity,
       dataContract,
     );
+
+    topLevelIdentity = context.getUserId();
   });
 
   it('should successfully execute if document is valid', async () => {
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result.isOk()).to.be.true();
   });
@@ -87,7 +99,7 @@ describe('createDomainDataTrigger', () => {
       .resolves({ confirmations: 10 });
 
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -106,7 +118,7 @@ describe('createDomainDataTrigger', () => {
       )
       .resolves({ confirmations: 10 });
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -131,7 +143,7 @@ describe('createDomainDataTrigger', () => {
       )
       .resolves({ confirmations: 10 });
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -149,7 +161,7 @@ describe('createDomainDataTrigger', () => {
       },
     });
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -162,10 +174,10 @@ describe('createDomainDataTrigger', () => {
 
   it('should fail with preorder document was not found', async () => {
     childDocument = getChildDocumentFixture({
-      preorderSalt: Buffer.alloc(256, '012fd').toString('hex'),
+      preorderSalt: bs58.encode(Buffer.alloc(256, '012fd')),
     });
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -181,7 +193,7 @@ describe('createDomainDataTrigger', () => {
       nameHash: '01',
     });
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -197,7 +209,7 @@ describe('createDomainDataTrigger', () => {
       normalizedParentDomainName: Buffer.alloc(512).toString('hex'),
     });
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -216,7 +228,7 @@ describe('createDomainDataTrigger', () => {
       normalizedParentDomainName: 'Parent.domain',
     });
 
-    const result = await createDomainDataTrigger(childDocument, context);
+    const result = await createDomainDataTrigger(childDocument, context, topLevelIdentity);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -226,6 +238,25 @@ describe('createDomainDataTrigger', () => {
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
     expect(error.message).to.equal(
       'Parent domain name is not normalized (e.g. contains non-lowercase letter)',
+    );
+  });
+
+  it('should fail with identity can\'t create top level domain', async () => {
+    parentDocument.data.normalizedParentDomainName = '';
+    parentDocument.data.nameHash = multihash.hash(Buffer.from('parent')).toString('hex');
+
+    topLevelIdentity = 'someIdentity';
+
+    const result = await createDomainDataTrigger(parentDocument, context, topLevelIdentity);
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal(
+      'Can\'t create top level domain for this identity',
     );
   });
 });

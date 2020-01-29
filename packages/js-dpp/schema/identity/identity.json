@@ -1,0 +1,27 @@
+{
+  "$id": "https://schema.dash.org/dpp-0-4-0/identity/identity",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 42,
+      "maxLength": 44,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+    },
+    "type": {
+      "type": "number",
+      "multipleOf": 1.0,
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "publicKeys": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "publicKeys"
+  ]
+}

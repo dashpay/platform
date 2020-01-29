@@ -2,6 +2,8 @@ const rewiremock = require('rewiremock/node');
 
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 
+const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+
 describe('DataContract', () => {
   let hashMock;
   let encodeMock;
@@ -23,6 +25,7 @@ describe('DataContract', () => {
     });
 
     documentType = 'niceDocument';
+
     documentSchema = {
       properties: {
         nice: {
@@ -30,11 +33,12 @@ describe('DataContract', () => {
         },
       },
     };
+
     documents = {
       [documentType]: documentSchema,
     };
 
-    contractId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
+    contractId = generateRandomId();
 
     dataContract = new DataContract(contractId, documents);
   });

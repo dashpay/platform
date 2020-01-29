@@ -59,7 +59,7 @@ class DocumentFactory {
    * @return {Document}
    */
   async createFromObject(rawDocument, options = {}) {
-    const opts = Object.assign({ skipValidation: false }, options);
+    const opts = { skipValidation: false, ...options };
 
     if (!opts.skipValidation) {
       const result = await this.fetchAndValidateDataContract(rawDocument);
