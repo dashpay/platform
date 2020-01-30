@@ -1,0 +1,13 @@
+# Note that this file must be the same as gitignore, except for dist folder
+
+# ignore JetBrains IDE project specific files
+.idea
+
+# do not track dependencies
+node_modules
+
+# ignore generated code coverage output
+.nyc_output
+
+# Env file
+.env
