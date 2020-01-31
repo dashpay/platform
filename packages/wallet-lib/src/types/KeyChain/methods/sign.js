@@ -1,5 +1,5 @@
 const {
-  crypto, Transaction,
+  crypto, Transaction, Message,
 } = require('@dashevo/dashcore-lib');
 
 /**
@@ -9,7 +9,7 @@ const {
  * @param sigType
  */
 function sign(object, privateKeys, sigType = crypto.Signature.SIGHASH_ALL) {
-  const handledTypes = [Transaction.name, Transaction.Payload.SubTxRegisterPayload];
+  const handledTypes = [Transaction.name, Transaction.Payload.SubTxRegisterPayload, Message.name];
   if (!privateKeys) throw new Error('Require one or multiple privateKeys to sign');
   if (!object) throw new Error('Nothing to sign');
   if (!handledTypes.includes(object.constructor.name)) {
@@ -17,8 +17,12 @@ function sign(object, privateKeys, sigType = crypto.Signature.SIGHASH_ALL) {
   }
   const obj = object.sign(privateKeys, sigType);
 
-  if (!obj.isFullySigned()) {
+  if (obj.isFullySigned && !obj.isFullySigned()) {
     throw new Error('Not fully signed transaction');
+  }
+  if (object.constructor.name === 'Message') {
+    // When signed, message are in string form.
+    return Message(obj);
   }
   return obj;
 }
