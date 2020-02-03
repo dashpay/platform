@@ -8,6 +8,8 @@ class UpdateStateAppOptions {
     this.dashCoreJsonRpcPort = options.DASHCORE_JSON_RPC_PORT;
     this.dashCoreJsonRpcUser = options.DASHCORE_JSON_RPC_USER;
     this.dashCoreJsonRpcPass = options.DASHCORE_JSON_RPC_PASS;
+    this.tendermintRpcHost = options.TENDERMINT_RPC_HOST;
+    this.tendermintRpcPort = options.TENDERMINT_RPC_PORT;
   }
 
   getStateViewMongoDBUrl() {
@@ -40,6 +42,14 @@ class UpdateStateAppOptions {
 
   getDashCoreJsonRpcPass() {
     return this.dashCoreJsonRpcPass;
+  }
+
+  getTendermintRpcHost() {
+    return this.tendermintRpcHost;
+  }
+
+  getTendermintRpcPort() {
+    return this.tendermintRpcPort;
   }
 }
 

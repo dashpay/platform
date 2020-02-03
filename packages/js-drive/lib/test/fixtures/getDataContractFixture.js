@@ -1,4 +1,5 @@
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const generateRandomId = require('@dashevo/dpp/lib/test/utils/generateRandomId');
 
 /**
  * @return {DataContract}
@@ -30,7 +31,7 @@ function getDataContractFixture() {
   };
 
   const dataContract = new DataContract(
-    Buffer.alloc(32, 'abcFhdvD').toString('hex'),
+    generateRandomId(),
     documents,
   );
 

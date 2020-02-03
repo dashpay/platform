@@ -7,21 +7,27 @@ const {
   CommitTransactionResponse,
 } = require('@dashevo/drive-grpc');
 const {
-  startDrive,
+  startDapi,
 } = require('@dashevo/dp-services-ctl');
+
+const DashPlatformProtocol = require('@dashevo/dpp');
+
+const DriveDataProvider = require('../../lib/dpp/DriveDataProvider');
 
 const getStateTransitionsFixture = require('../../lib/test/fixtures/getStateTransitionsFixture');
 const registerUser = require('../../lib/test/registerUser');
 
-describe('updateState', function main() {
+// TODO: Make this test integrational
+describe.skip('updateState', function main() {
   let grpcClient;
   let driveApiClient;
+  let dapiCoreClient;
   let stateTransition;
   let documentsStateTransition;
   let startTransactionRequest;
   let applyStateTransitionRequest;
   let commitTransactionRequest;
-  let driveInstance;
+  let dapiInstance;
 
   const height = 1;
   const hash = 'b4749f017444b051c44dfd2720e88f314ff94f3dd6d56d40ef65854fcd7fff6b';
@@ -30,26 +36,38 @@ describe('updateState', function main() {
   this.timeout(190000);
 
   beforeEach(async () => {
-    driveInstance = await startDrive();
+    dapiInstance = await startDapi();
 
-    grpcClient = driveInstance.driveUpdateState.getApi();
-    driveApiClient = driveInstance.driveApi.getApi();
-    const coreApi = driveInstance.dashCore.getApi();
+    grpcClient = dapiInstance.driveUpdateState.getApi();
+    driveApiClient = dapiInstance.driveApi.getApi();
+    dapiCoreClient = dapiInstance.dapiCore.getApi();
+    const tendermintApi = dapiInstance.tendermintCore.getApi();
+    const coreApi = dapiInstance.dashCore.getApi();
 
     // activate sporks
     await coreApi.generate(1000);
 
+    const dpp = new DashPlatformProtocol({
+      dataProvider: new DriveDataProvider(
+        null,
+        null,
+        coreApi,
+        tendermintApi,
+        null,
+      ),
+    });
+
     // eslint-disable-next-line no-unused-vars
-    const { userId, privateKeyString: userPrivateKeyString } = await registerUser('testUser', coreApi);
+    const { identityId, identityPrivateKey } = await registerUser(coreApi, dapiCoreClient, dpp);
 
     [stateTransition, documentsStateTransition] = getStateTransitionsFixture();
 
-    stateTransition.dataContract.contractId = userId;
+    stateTransition.dataContract.contractId = identityId;
     documentsStateTransition.documents.forEach((document) => {
       // eslint-disable-next-line
-      document.contractId = userId;
+      document.contractId = identityId;
       // eslint-disable-next-line
-      document.userId = userId;
+      document.userId = identityId;
     });
 
     startTransactionRequest = new StartTransactionRequest();
@@ -66,7 +84,7 @@ describe('updateState', function main() {
 
   after(async () => {
     await Promise.all([
-      driveInstance.remove(),
+      dapiInstance.remove(),
     ]);
   });
 

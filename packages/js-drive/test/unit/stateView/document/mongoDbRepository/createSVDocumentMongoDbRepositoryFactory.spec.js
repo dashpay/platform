@@ -1,4 +1,4 @@
-const bs58 = require('bs58');
+const generateRandomId = require('@dashevo/dpp/lib/test/utils/generateRandomId');
 
 const createSVDocumentMongoDbRepositoryFactory = require('../../../../../lib/stateView/document/mongoDbRepository/createSVDocumentMongoDbRepositoryFactory');
 
@@ -13,7 +13,7 @@ describe('createSVDocumentMongoDbRepositoryFactory', () => {
   let validateQuery;
 
   beforeEach(function beforeEach() {
-    contractId = Buffer.alloc(32, 'somePool').toString('hex');
+    contractId = generateRandomId();
     documentType = 'niceDocument';
 
     mongoDb = {};
@@ -35,11 +35,7 @@ describe('createSVDocumentMongoDbRepositoryFactory', () => {
   });
 
   it('should create a MongoDb database with a prefix + contractId', async () => {
-    const base58ContractId = bs58.encode(
-      Buffer.from(contractId, 'hex'),
-    );
-
-    const dbName = `${process.env.STATEVIEW_MONGODB_DB_PREFIX}dpa_${base58ContractId}`;
+    const dbName = `${process.env.STATEVIEW_MONGODB_DB_PREFIX}dpa_${contractId}`;
 
     const result = createSVDocumentMongoDbRepository(contractId, documentType);
 

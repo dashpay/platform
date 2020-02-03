@@ -3,6 +3,18 @@
 # Show script in output, and error if anything fails
 set -xe
 
+# Update this whenever the latest Node.js LTS version changes (~ every year).
+# Do not forget to add this version to .travis.yml config also.
+LATEST_LTS_VERSION="12"
+
+# We want this command to succeed whether or not the Node.js version is the
+# latest (so that the build does not show as failed), but _only_ the latest
+# should be used to publish the module.
+if [[ "$TRAVIS_NODE_VERSION" != "$LATEST_LTS_VERSION" ]]; then
+  echo "Node.js v$TRAVIS_NODE_VERSION is not latest LTS version -- will not deploy with this version."
+  exit 0
+fi
+
 # Ensure the tag matches the one in package.json, otherwise abort.
 VERSION="$(jq -r .version package.json)"
 PACKAGE_TAG=v"$VERSION"

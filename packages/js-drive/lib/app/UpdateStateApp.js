@@ -28,6 +28,7 @@ const {
 } = require('@dashevo/grpc-common');
 
 const RpcClient = require('@dashevo/dashd-rpc/promise');
+const { client: JaysonClient } = require('jayson/promise');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 const { MongoClient } = require('mongodb');
@@ -85,6 +86,11 @@ class UpdateStateApp {
       port: this.options.getDashCoreJsonRpcPort(),
       user: this.options.getDashCoreJsonRpcUser(),
       pass: this.options.getDashCoreJsonRpcPass(),
+    });
+
+    this.tendermintRPCClient = JaysonClient.http({
+      host: this.options.getTendermintRpcHost(),
+      port: this.options.getTendermintRpcPort(),
     });
 
     this.mongoClient = await MongoClient.connect(
@@ -184,11 +190,17 @@ class UpdateStateApp {
       this.svContractMongoDbRepository,
     );
 
+    const driveDpp = new DashPlatformProtocol({
+      dataProvider: undefined,
+    });
+
     const dataProvider = new DriveDataProvider(
       fetchDocuments,
       fetchContract,
       this.rpcClient,
+      this.tendermintRPCClient,
       this.stateViewTransaction,
+      driveDpp,
     );
 
     const dpp = new DashPlatformProtocol({

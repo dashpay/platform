@@ -4,14 +4,25 @@ class DriveDataProvider {
   /**
    * @param {fetchDocuments} fetchDocuments
    * @param {Function} fetchContract
-   * @param {RpcClient} rpcClient
+   * @param {RpcClient} coreRPCClient
+   * @param {JaysonClient} tendermintRPCClient
    * @param {MongoDBTransaction} stateViewTransaction
+   * @param {DashPlatformProtocol} dpp
    */
-  constructor(fetchDocuments, fetchContract, rpcClient, stateViewTransaction) {
+  constructor(
+    fetchDocuments,
+    fetchContract,
+    coreRPCClient,
+    tendermintRPCClient,
+    stateViewTransaction,
+    dpp,
+  ) {
     this.fetchDocumentsFromDrive = fetchDocuments;
     this.fetchContractFromDrive = fetchContract;
-    this.rpcClient = rpcClient;
+    this.coreRPCClient = coreRPCClient;
+    this.tendermintRPCClient = tendermintRPCClient;
     this.stateViewTransaction = stateViewTransaction;
+    this.dpp = dpp;
   }
 
   /**
@@ -44,7 +55,7 @@ class DriveDataProvider {
    */
   async fetchTransaction(id) {
     try {
-      const { result: transaction } = await this.rpcClient.getRawTransaction(id);
+      const { result: transaction } = await this.coreRPCClient.getRawTransaction(id);
       return new Transaction(transaction);
     } catch (e) {
       // Invalid address or key error
@@ -54,6 +65,40 @@ class DriveDataProvider {
 
       throw e;
     }
+  }
+
+  /**
+   * Fetch identity by it's id
+   *
+   * @param {string} id
+   *
+   * @return {Promise<Identity|null>}
+   */
+  async fetchIdentity(id) {
+    const data = Buffer.from(id).toString('hex');
+
+    const {
+      result: {
+        response: {
+          value: serializedIdentity,
+        },
+      },
+    } = await this.tendermintRPCClient.request(
+      'abci_query',
+      {
+        path: '/identity',
+        data,
+      },
+    );
+
+    if (!serializedIdentity) {
+      return null;
+    }
+
+    return this.dpp.identity.createFromSerialized(
+      Buffer.from(serializedIdentity, 'base64'),
+      { skipValidation: true },
+    );
   }
 }
 

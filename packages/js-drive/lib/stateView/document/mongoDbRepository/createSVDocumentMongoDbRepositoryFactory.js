@@ -1,5 +1,3 @@
-const bs58 = require('bs58');
-
 const PREFIX = 'dpa_';
 
 /**
@@ -24,9 +22,7 @@ function createSVDocumentMongoDbRepositoryFactory(
    * @returns {SVDocumentMongoDbRepository}
    */
   function createSVDocumentMongoDbRepository(contractId, documentType) {
-    const base58ContractId = bs58.encode(Buffer.from(contractId, 'hex'));
-
-    const mongoDb = mongoClient.db(`${process.env.STATEVIEW_MONGODB_DB_PREFIX}${PREFIX}${base58ContractId}`);
+    const mongoDb = mongoClient.db(`${process.env.STATEVIEW_MONGODB_DB_PREFIX}${PREFIX}${contractId}`);
 
     return new SVDocumentMongoDbRepository(
       mongoDb,

@@ -1,15 +1,17 @@
 const DocumentFactory = require('@dashevo/dpp/lib/document/DocumentFactory');
 
+const generateRandomId = require('@dashevo/dpp/lib/test/utils/generateRandomId');
+
 const getDataContractFixture = require('./getDataContractFixture');
 
-const userId = '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288';
+const contract = getDataContractFixture();
+
+const userId = generateRandomId();
 
 /**
  * @return {Document[]}
  */
 function getDocumentsFixture() {
-  const contract = getDataContractFixture();
-
   const validateDocumentStub = () => {};
   const fetchAndValidateDataContractStub = () => {};
 
