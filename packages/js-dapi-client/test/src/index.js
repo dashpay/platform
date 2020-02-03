@@ -1,10 +1,13 @@
 const sinon = require('sinon');
 const {
-  CorePromiseClient,
-  LastUserStateTransitionHashResponse,
+  // CorePromiseClient,
+  PlatformPromiseClient,
   TransactionsFilterStreamPromiseClient,
   TransactionsWithProofsRequest,
-  UpdateStateTransitionResponse,
+  ApplyStateTransitionResponse,
+  GetIdentityResponse,
+  GetDocumentsResponse,
+  GetDataContractResponse,
 } = require('@dashevo/dapi-grpc');
 const chai = require('chai');
 const { EventEmitter } = require('events');
@@ -495,12 +498,6 @@ describe('api', () => {
           if (method === 'getRawBlock') {
             return rawBlock;
           }
-          if (method === 'fetchContract') {
-            return contract;
-          }
-          if (method === 'fetchDocuments') {
-            return documents;
-          }
           if (method === 'sendRawIxTransaction') {
             return {
               'txid': '9eda025a3b9e1e31e883f0cf2d249f4218466677c6707ec98b1f3f4a4570fa1a'
@@ -807,22 +804,6 @@ describe('api', () => {
     });
   });
 
-  describe('.tx.fetchContract', () => {
-    it('Should fetch dap contract', async () => {
-      const dapi = new DAPIClient();
-      const contract = await dapi.fetchContract(contractId);
-      expect(contract).to.be.deep.equal(contract);
-    });
-  });
-
-  describe('.tx.fetchDocuments', () => {
-    it('Should fetch dap objects', async () => {
-      const dapi = new DAPIClient();
-      const contract = await dapi.fetchDocuments(contractId, 'user', {});
-      expect(contract).to.be.deep.equal(documents);
-    });
-  });
-
   describe('.tx.sendRawTransaction', () => {
     it('Should return txid', async () => {
       const dapi = new DAPIClient();
@@ -923,58 +904,15 @@ describe('api', () => {
     });
   });
 
-  describe('#getLastUserStateTransitionHash', () => {
-    let userId;
-    let getLastUserStateTransitionHashStub;
-
-    beforeEach(() => {
-      userId = Buffer.alloc(256).toString('hex');
-
-      getLastUserStateTransitionHashStub = sinon
-        .stub(CorePromiseClient.prototype, 'getLastUserStateTransitionHash');
-    });
-
-    afterEach(() => {
-      getLastUserStateTransitionHashStub.restore();
-    });
-
-    it('should return a hex string if the last ST is present', async () => {
-      const subTxHash = Buffer.from('536f6d65537562547848617368', 'hex');
-
-      const response = new LastUserStateTransitionHashResponse();
-      response.setStateTransitionHash(subTxHash);
-
-      getLastUserStateTransitionHashStub.resolves(response);
-
-      const client = new DAPIClient();
-
-      const result = await client.getLastUserStateTransitionHash(userId);
-
-      expect(result).to.equal(subTxHash.toString('hex'));
-    });
-
-    it('should return null if the last ST is not present', async () => {
-      const response = new LastUserStateTransitionHashResponse();
-
-      getLastUserStateTransitionHashStub.resolves(response);
-
-      const client = new DAPIClient();
-
-      const result = await client.getLastUserStateTransitionHash(userId);
-
-      expect(result).to.equal(null);
-    });
-  });
-
-  describe('#updateState', () => {
-    let updateStateStub;
+  describe('#applyStateTransition', () => {
+    let applyStateTransitionStub;
     let stateTransitionFixture;
 
     beforeEach(() => {
       userId = Buffer.alloc(256).toString('hex');
 
-      updateStateStub = sinon
-          .stub(CorePromiseClient.prototype, 'updateState');
+      applyStateTransitionStub = sinon
+          .stub(PlatformPromiseClient.prototype, 'applyStateTransition');
 
       const dataContractFixture = getDataContractFixture();
       const dpp = new DashPlatformProtocol();
@@ -983,17 +921,99 @@ describe('api', () => {
     });
 
     afterEach(() => {
-      updateStateStub.restore();
+      applyStateTransitionStub.restore();
     });
 
-    it('should return UpdateStateTransitionResponse', async () => {
-      const response = new UpdateStateTransitionResponse();
-      updateStateStub.resolves(response);
+    it('should return ApplyStateTransitionResponse', async () => {
+      const response = new ApplyStateTransitionResponse();
+      applyStateTransitionStub.resolves(response);
 
       const client = new DAPIClient();
-      const result = await client.updateState(stateTransitionFixture);
+      const result = await client.applyStateTransition(stateTransitionFixture);
 
-      expect(result).to.be.instanceOf(UpdateStateTransitionResponse);
+      expect(result).to.be.instanceOf(ApplyStateTransitionResponse);
+    });
+  });
+
+  describe('#getIdentity', () => {
+    let getIdentityStub;
+    let id;
+
+    beforeEach(() => {
+      getIdentityStub = sinon
+        .stub(PlatformPromiseClient.prototype, 'getIdentity');
+
+      id = '4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176';
+    });
+
+    afterEach(() => {
+      getIdentityStub.restore();
+    });
+
+    it('should return Buffer', async () => {
+      const response = new GetIdentityResponse();
+      response.setIdentity(Buffer.from('identity'));
+      getIdentityStub.resolves(response);
+
+      const client = new DAPIClient();
+      const result = await client.getIdentity(id);
+
+      expect(result).to.be.instanceof(Buffer);
+    });
+  });
+
+  describe('#getDocuments', () => {
+    let getDocumentsStub;
+    let serializedDocuments;
+
+    beforeEach(() => {
+      serializedDocuments = documents.map(document => Buffer.from(JSON.stringify(document)));
+      getDocumentsStub = sinon
+        .stub(PlatformPromiseClient.prototype, 'getDocuments');
+    });
+
+    afterEach(() => {
+      getDocumentsStub.restore();
+    });
+
+    it('should return documents', async () => {
+      const response = new GetDocumentsResponse();
+      response.setDocumentsList(serializedDocuments);
+      getDocumentsStub.resolves(response);
+
+      const client = new DAPIClient();
+      const result = await client.getDocuments(contractId, 'user', {});
+
+      expect(result).to.be.an('array');
+      expect(result).to.be.deep.equal(serializedDocuments);
+    });
+  });
+
+  describe('#getDataContract', () => {
+    let getDataContractStub;
+    let serializedDataContract;
+
+    beforeEach(() => {
+      serializedDataContract = Buffer.from(JSON.stringify(contract));
+
+      getDataContractStub = sinon
+        .stub(PlatformPromiseClient.prototype, 'getDataContract');
+    });
+
+    afterEach(() => {
+      getDataContractStub.restore();
+    });
+
+    it('should return data contract', async () => {
+      const response = new GetDataContractResponse();
+      response.setDataContract(serializedDataContract);
+      getDataContractStub.resolves(response);
+
+      const client = new DAPIClient();
+      const result = await client.getDataContract(contractId);
+
+      expect(result).to.be.instanceof(Buffer);
+      expect(result).to.be.deep.equal(serializedDataContract);
     });
   });
 });
