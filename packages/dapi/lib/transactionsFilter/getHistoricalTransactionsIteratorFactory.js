@@ -4,7 +4,7 @@ const {
   util: { buffer: BufferUtils },
 } = require('@dashevo/dashcore-lib');
 
-const { MAX_HEADERS_PER_REQUEST } = require('../constants');
+const MAX_HEADERS_PER_REQUEST = 2000;
 
 /**
  * @param {CoreRpcClient} coreRpcApi
