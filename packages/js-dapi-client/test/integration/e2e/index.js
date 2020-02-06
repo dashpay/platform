@@ -8,8 +8,6 @@ const sinon = require('sinon');
 const { startDapi } = require('@dashevo/dp-services-ctl');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
-const STPacketFactory = require('@dashevo/dpp/lib/stPacket/STPacketFactory');
-const entropy = require('@dashevo/dpp/lib/util/entropy');
 const Document = require('@dashevo/dpp/lib/document/Document');
 
 const {
@@ -29,7 +27,6 @@ dotenvSafe.config({
   sample: path.resolve(__dirname, '../.env'),
   path: path.resolve(__dirname, '../.env'),
 });
-
 
 
 describe('basic E2E tests', () => {

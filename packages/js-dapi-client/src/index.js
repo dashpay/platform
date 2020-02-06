@@ -87,14 +87,6 @@ class DAPIClient {
   }
 
   /* Layer 1 commands */
-
-  /**
-   * Estimate fee
-   * @param {number} numberOfBlocksToWait
-   * @return {Promise<number>} - duffs per byte
-   */
-  estimateFee(numberOfBlocksToWait) { return this.makeRequestToRandomDAPINode('estimateFee', { blocks: numberOfBlocksToWait }); }
-
   /**
    * ONLY FOR TESTING PURPOSES WITH REGTEST. WILL NOT WORK ON TESTNET/LIVENET.
    * @param {number} amount - Number of blocks to generate
@@ -103,58 +95,10 @@ class DAPIClient {
   generate(amount) { return this.makeRequestToRandomDAPINode('generate', { amount }); }
 
   /**
-   * Returns a summary (balance, txs) for a given address
-   * @param {string|string[]} address or array of addresses
-   * @param {boolean} [noTxList=false] - true if a list of all txs should NOT be included in result
-   * @param {number} [from] - start of range for the tx to be included in the tx list
-   * @param {number} [to] - end of range for the tx to be included in the tx list
-   * @param {number} [fromHeight] - which height to start from (optional, overriding from/to)
-   * @param {number} [toHeight] - on which height to end (optional, overriding from/to)
-   * @returns {Promise<Object>} - an object with basic address info
-   */
-  getAddressSummary(address, noTxList, from, to, fromHeight, toHeight) {
-    return this.makeRequestToRandomDAPINode('getAddressSummary',
-      {
-        address, noTxList, from, to, fromHeight, toHeight,
-      });
-  }
-
-  /**
-   * @param {string|string[]} address or array of addresses
-   * @return {Promise<number>}
-   */
-  getAddressTotalSent(address) { return this.makeRequestToRandomDAPINode('getAddressTotalSent', { address }); }
-
-  /**
-   * @param {string|string[]} address or array of addresses
-   * @return {Promise<number>}
-   */
-  getAddressUnconfirmedBalance(address) { return this.makeRequestToRandomDAPINode('getAddressUnconfirmedBalance', { address }); }
-
-  /**
-   * @param {string|string[]} address or array of addresses
-   * @return {Promise<number>}
-   */
-  getAddressTotalReceived(address) { return this.makeRequestToRandomDAPINode('getAddressTotalReceived', { address }); }
-
-  /**
-   * Returns balance for a given address
-   * @param {string|string[]} address or array of addresses
-   * @returns {Promise<number>} - address balance
-   */
-  getBalance(address) { return this.makeRequestToRandomDAPINode('getBalance', { address }); }
-
-  /**
    * Returns block hash of chaintip
    * @returns {Promise<string>}
    */
   getBestBlockHash() { return this.makeRequestToRandomDAPINode('getBestBlockHash', {}); }
-
-  /**
-   * Returns best block height
-   * @returns {Promise<number>}
-   */
-  getBestBlockHeight() { return this.makeRequestToRandomDAPINode('getBestBlockHeight', {}); }
 
   /**
    * Returns block hash for the given height
@@ -164,76 +108,12 @@ class DAPIClient {
   getBlockHash(height) { return this.makeRequestToRandomDAPINode('getBlockHash', { height }); }
 
   /**
-   * Returns block header by hash
-   * @param {string} blockHash
-   * @returns {Promise<object[]>} - array of header objects
-   */
-  getBlockHeader(blockHash) { return this.makeRequestToRandomDAPINode('getBlockHeader', { blockHash }); }
-
-  /**
-   * Returns block headers from [offset] with length [limit], where limit is <= 2000
-   * @param {number} offset
-   * @param {number} [limit=1]
-   * @param {boolean} [verbose=false]
-   * @returns {Promise<object[]>} - array of header objects
-   */
-  getBlockHeaders(offset, limit = 1, verbose = false) { return this.makeRequestToRandomDAPINode('getBlockHeaders', { offset, limit, verbose }); }
-
-  // TODO: Do we really need it this way?
-  /**
-   * Get block summaries for the day
-   * @param {string} blockDate string in format 'YYYY-MM-DD'
-   * @param {number} limit
-   * @return {Promise<object>}
-   */
-  getBlocks(blockDate, limit) { return this.makeRequestToRandomDAPINode('getBlocks', { blockDate, limit }); }
-
-  /**
-   * @return {Promise<object>}
-   */
-  getHistoricBlockchainDataSyncStatus() { return this.makeRequestToRandomDAPINode('getHistoricBlockchainDataSyncStatus', {}); }
-
-  /**
-   * Returns mempool usage info
-   * @returns {Promise<object>}
-   */
-  getMempoolInfo() { return this.makeRequestToRandomDAPINode('getMempoolInfo', {}); }
-
-  /**
    * Get deterministic masternodelist diff
    * @param {string} baseBlockHash - hash or height of start block
    * @param {string} blockHash - hash or height of end block
    * @return {Promise<object>}
    */
   getMnListDiff(baseBlockHash, blockHash) { return this.makeRequestToRandomDAPINode('getMnListDiff', { baseBlockHash, blockHash }); }
-
-  /**
-   * @param {string} blockHash
-   * @return {Promise<object>}
-   */
-  getRawBlock(blockHash) { return this.makeRequestToRandomDAPINode('getRawBlock', { blockHash }); }
-
-  /**
-   * Returns Transactions for a given address or multiple addresses
-   * @param {string|string[]} address or array of addresses
-   * @param {number} [from] - start of range in the ordered list of latest UTXO (optional)
-   * @param {number} [to] - end of range in the ordered list of latest UTXO (optional)
-   * @param {number} [fromHeight] - which height to start from (optional, overriding from/to)
-   * @param {number} [toHeight] - on which height to end (optional, overriding from/to)
-   * @returns {Promise<object>} - Object with pagination info and array of unspent outputs
-   */
-  getTransactionsByAddress(address, from, to, fromHeight, toHeight) {
-    return this.makeRequestToRandomDAPINode('getTransactionsByAddress',
-      {
-        address, from, to, fromHeight, toHeight,
-      });
-  }
-
-  /**
-   * @param {string} txid - transaction hash
-   * @return {Promise<object>}
-   */
-  getTransactionById(txid) { return this.makeRequestToRandomDAPINode('getTransactionById', { txid }); }
 
   /**
    * Returns UTXO for a given address or multiple addresses (max result 1000)
@@ -251,38 +131,9 @@ class DAPIClient {
       });
   }
 
-  /**
-   * @param {string} rawIxTransaction - hex-serialized instasend transaction
-   * @return {Promise<string>} - transaction id
-   */
-  sendRawIxTransaction(rawIxTransaction) { return this.makeRequestToRandomDAPINode('sendRawIxTransaction', { rawIxTransaction }); }
+  /* gRPC methods */
 
-  /**
-   * Sends serialized transaction to the network
-   * @param {string} rawTransaction - hex string representing serialized transaction
-   * @returns {Promise<string>} - transaction id
-   */
-  sendRawTransaction(rawTransaction) { return this.makeRequestToRandomDAPINode('sendRawTransaction', { rawTransaction }); }
-
-  /* Layer 2 commands */
-
-  /**
-   * Returns blockchain user by its username or regtx id
-   * @param {string} userId - user reg tx id
-   * @returns {Promise<Object>} - blockchain user
-   */
-  getUserById(userId) { return this.makeRequestToRandomDAPINode('getUser', { userId }); }
-
-  /**
-   * Returns blockchain user by its username or regtx id
-   * @param {string} username
-   * @returns {Promise<Object>} - blockchain user
-   */
-  getUserByName(username) { return this.makeRequestToRandomDAPINode('getUser', { username }); }
-
-  // Here go methods that used in VMN. Most of this methods will work only in regtest mode
-  searchUsers(pattern, limit = 10, offset = 0) { return this.makeRequestToRandomDAPINode('searchUsers', { pattern, limit, offset }); }
-
+  /* txFilterStream methods */
   /**
    * @param {Object} bloomFilter
    * @param {Uint8Array|Array} bloomFilter.vData - The filter itself is simply a bit
@@ -337,9 +188,7 @@ class DAPIClient {
     return client.subscribeToTransactionsWithProofs(request);
   }
 
-  /*
-  * Platform gRPC methods
-  * */
+  /* Platform gRPC methods */
 
   /**
    * Send State Transition to machine
