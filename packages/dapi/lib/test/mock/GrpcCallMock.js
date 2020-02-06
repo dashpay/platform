@@ -7,7 +7,7 @@ const { EventEmitter } = require('events');
  */
 class GrpcCallMock extends EventEmitter {
   /**
-   * @param {Sandbox} sinon
+   * @param {SinonSandbox} sinon
    * @param {Object} request
    */
   constructor(sinon, request = {}) {

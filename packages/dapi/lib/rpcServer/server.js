@@ -1,6 +1,12 @@
 const jayson = require('jayson/promise');
 const { isRegtest, isDevnet } = require('../utils');
+const Validator = require('../utils/Validator');
 const errorHandlerDecorator = require('./errorHandlerDecorator');
+
+const getIdnetityArgsSchema = require('./commands/platform/schemas/getIdentity');
+const getDocumentsArgsSchema = require('./commands/platform/schemas/getDocuments');
+const getDataContractArgsSchema = require('./commands/platform/schemas/getDataContract');
+const applyIdentityArgsSchema = require('./commands/platform/schemas/applyStateTransition');
 
 const estimateFee = require('./commands/estimateFee');
 const getAddressSummary = require('./commands/getAddressSummary');
@@ -34,10 +40,19 @@ const fetchDocuments = require('./commands/fetchDocuments');
 const searchUsers = require('./commands/searchUsers');
 const getQuorum = require('./commands/getQuorum');
 
+const getIdentityHandlerFactory = require('./commands/platform/getIdentityHandlerFactory');
+const applyStateTransitionHandlerFactory = require('./commands/platform/applyStateTransitionHandlerFactory');
+const getDataContractHandlerFactory = require('./commands/platform/getDataContractHandlerFactory');
+const getDocumentsHandlerFactory = require('./commands/platform/getDocumentsHandlerFactory');
+
+const handleAbciResponse = require('../grpcServer/handlers/handleAbciResponse');
+
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
 
-const createCommands = (insightAPI, dashcoreAPI, driveAPI, userIndex) => ({
+const createCommands = (
+  insightAPI, dashcoreAPI, driveAPI, userIndex, tendermintRpcClient, dpp,
+) => ({
   estimateFee: estimateFee(insightAPI),
   getAddressSummary: getAddressSummary(insightAPI),
   getAddressTotalReceived: getAddressTotalReceived(insightAPI),
@@ -70,6 +85,19 @@ const createCommands = (insightAPI, dashcoreAPI, driveAPI, userIndex) => ({
   fetchContract: fetchContract(driveAPI),
   fetchDocuments: fetchDocuments(driveAPI),
   searchUsers: searchUsers(userIndex),
+
+  getIdentity: getIdentityHandlerFactory(
+    tendermintRpcClient, handleAbciResponse, new Validator(getIdnetityArgsSchema),
+  ),
+  applyStateTransition: applyStateTransitionHandlerFactory(
+    tendermintRpcClient, handleAbciResponse, new Validator(applyIdentityArgsSchema),
+  ),
+  getDataContract: getDataContractHandlerFactory(
+    driveAPI, dpp, new Validator(getDataContractArgsSchema),
+  ),
+  getDocuments: getDocumentsHandlerFactory(
+    driveAPI, dpp, new Validator(getDocumentsArgsSchema),
+  ),
 });
 
 const createRegtestCommands = dashcoreAPI => ({
@@ -85,12 +113,29 @@ const createRegtestCommands = dashcoreAPI => ({
   * @param {object} options.dashcoreAPI
   * @param {AbstractDriveAdapter} options.driveAPI - Drive api adapter
   * @param {object} options.userIndex
+  * @param {object} options.tendermintRpcClient
+  * @param {DashPlatformProtocol} options.dpp
   * @param {object} options.log
  */
 const start = ({
-  port, networkType, insightAPI, dashcoreAPI, driveAPI, userIndex, log,
+  port,
+  networkType,
+  insightAPI,
+  dashcoreAPI,
+  driveAPI,
+  userIndex,
+  log,
+  tendermintRpcClient,
+  dpp,
 }) => {
-  const commands = createCommands(insightAPI, dashcoreAPI, driveAPI, userIndex);
+  const commands = createCommands(
+    insightAPI,
+    dashcoreAPI,
+    driveAPI,
+    userIndex,
+    tendermintRpcClient,
+    dpp,
+  );
   const areRegtestCommandsEnabled = isRegtest(networkType) || isDevnet(networkType);
 
   const allCommands = areRegtestCommandsEnabled

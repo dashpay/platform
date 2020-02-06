@@ -97,13 +97,11 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       throw new InvalidArgumentGrpcError(`Invalid bloom filter: ${e.message}`);
     }
 
-    if (!fromBlockHash && !fromBlockHeight) {
-      throw new InvalidArgumentGrpcError('Either fromBlockHash or fromBlockHeight should be specified');
-    }
-
     const isNewTransactionsRequested = count === 0;
-    let blockHash = fromBlockHash.toString('hex');
-    if (fromBlockHeight) {
+
+    let blockHash = fromBlockHash;
+
+    if (blockHash.length === 0) {
       const bestHeight = await coreAPI.getBestBlockHeight();
 
       if (fromBlockHeight > bestHeight) {

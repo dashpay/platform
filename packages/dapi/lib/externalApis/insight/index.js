@@ -38,67 +38,71 @@ const getTransactionFirstInputAddress = async (txHash) => {
 
 const getUTXO = async (address, from, to, fromHeight, toHeight) => {
   const addresses = Array.isArray(address) ? address.join() : address;
-  const res = await get(`/addrs/${addresses}/utxopage?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
-  return res;
+  return get(`/addrs/${addresses}/utxopage?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
 };
 
-const getBalance = async (address) => {
-  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/balance`) : await get(`/addr/${address}/balance`);
-  return res;
-};
+const getBalance = async address => (
+  Array.isArray(address)
+    ? get(`/addrs/${address.join()}/balance`)
+    : get(`/addr/${address}/balance`)
+);
 
 const getUser = async usernameOrRegTx => get(`/getuser/${usernameOrRegTx}`);
 const getMasternodesList = async () => get('/masternodes/list');
 
 const getBestBlockHeight = async () => {
-  const res = await get('/status');
-  return res.info.blocks;
+  const { info: { blocks } } = await get('/status');
+
+  return blocks;
 };
 
-const getAddressTotalReceived = async (address) => {
-  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/totalReceived`) : await get(`/addr/${address}/totalReceived`);
-  return res;
-};
+const getAddressTotalReceived = async address => (
+  Array.isArray(address)
+    ? get(`/addrs/${address.join()}/totalReceived`)
+    : get(`/addr/${address}/totalReceived`)
+);
 
 const getBlocks = async (blockDate, limit) => {
   let queryParams = '?';
   if (blockDate) {
     queryParams += `blockDate=${blockDate}&`;
   }
+
   if (limit) {
     queryParams += `limit=${limit}`;
   } else {
     queryParams = queryParams.slice(0, -1);
   }
-  const res = await get(`/blocks${queryParams}`);
-  return res.blocks;
+
+  const { blocks } = await get(`/blocks${queryParams}`);
+
+  return blocks;
 };
 
-const getAddressTotalSent = async (address) => {
-  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/totalSent`) : await get(`/addr/${address}/totalSent`);
-  return res;
-};
+const getAddressTotalSent = async address => (
+  Array.isArray(address)
+    ? get(`/addrs/${address.join()}/totalSent`)
+    : get(`/addr/${address}/totalSent`)
+);
 
-const getAddressUnconfirmedBalance = async (address) => {
-  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}/unconfirmedBalance`) : await get(`/addr/${address}/unconfirmedBalance`);
-  return res;
-};
+const getAddressUnconfirmedBalance = async address => (
+  Array.isArray(address)
+    ? get(`/addrs/${address.join()}/unconfirmedBalance`)
+    : get(`/addr/${address}/unconfirmedBalance`)
+);
 
-const getAddressSummary = async (address, noTxList = false, from, to, fromHeight, toHeight) => {
-  const res = Array.isArray(address) ? await get(`/addrs/${address.join()}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`) : await get(`/addr/${address}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
-  return res;
-};
+const getAddressSummary = async (address, noTxList = false, from, to, fromHeight, toHeight) => (
+  Array.isArray(address)
+    ? get(`/addrs/${address.join()}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`)
+    : get(`/addr/${address}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`)
+);
 
 const getTransactionsByAddress = async (address, from, to, fromHeight, toHeight) => {
   const addresses = Array.isArray(address) ? address.join() : address;
-  const res = await get(`/addrs/${addresses}/txs?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
-  return res;
+  return get(`/addrs/${addresses}/txs?from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`);
 };
 
-const getHistoricBlockchainDataSyncStatus = async () => {
-  const res = await get('/sync');
-  return res;
-};
+const getHistoricBlockchainDataSyncStatus = async () => get('/sync');
 
 const getStatus = async (queryString) => {
   switch (queryString) {
@@ -113,25 +117,65 @@ const getStatus = async (queryString) => {
     default:
       throw new Error('Invalid query string.');
   }
-  const res = await get(`/status?q=${queryString}`);
-  return res;
+
+  return get(`/status?q=${queryString}`);
 };
 
-const getPeerDataSyncStatus = async () => {
-  const res = await get('/peer');
-  return res;
+const getPeerDataSyncStatus = async () => get('/peer');
+
+const estimateFee = async (blocks) => {
+  let url = '/utils/estimatefee';
+
+  if (blocks) {
+    url = `${url}?nbBlocks=${blocks}`;
+  }
+
+  return get(url);
 };
 
-// eslint-disable-next-line no-unused-vars
-const estimateFee = async blocks => 1; // 1 duff per byte
+const getTransactionById = async txId => get(`/tx/${txId}`);
 
-const getTransactionById = async (txid) => {
-  const res = await get(`/tx/${txid}`);
-  return res;
+const getRawTransactionById = async (txId) => {
+  const { rawtx } = await get(`/rawtx/${txId}`);
+
+  return rawtx;
 };
 
 const getBlockHeaders = async (offset, limit) => get(`/block-headers/${offset}/${limit}`);
 
+const getBlockByHash = async hash => get(`/block/${hash}`);
+
+const getBlockByHeight = async (height) => {
+  const res = await get(`/block-index/${height}`);
+  const { blockHash: hash } = res;
+
+  return getBlockByHash(hash);
+};
+
+const sendTransaction = async (rawtx) => {
+  const { txid } = await post('/tx/send', {
+    rawtx,
+  });
+
+  return txid;
+};
+
+const getRawBlockByHash = async (hash) => {
+  const { rawblock } = await get(`/rawblock/${hash}`);
+
+  return rawblock;
+};
+
+const getRawBlockByHeight = async (height) => {
+  const res = await get(`/block-index/${height}`);
+  const { blockHash: hash } = res;
+
+  return getRawBlockByHash(hash);
+};
+
+/**
+ * @typedef InsightAPI
+ */
 module.exports = {
   getTransactionFirstInputAddress,
   request,
@@ -154,4 +198,10 @@ module.exports = {
   estimateFee,
   getTransactionById,
   getBlockHeaders,
+  getBlockByHeight,
+  getBlockByHash,
+  sendTransaction,
+  getRawTransactionById,
+  getRawBlockByHash,
+  getRawBlockByHeight,
 };

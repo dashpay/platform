@@ -14,7 +14,7 @@ const {
 const wait = require('../../../../../lib/utils/wait');
 
 describe('subscribeToTransactionsWithProofsHandlerFactory', function main() {
-  this.timeout(160000);
+  this.timeout(200000);
 
   let coreAPI;
   let dapiClient;

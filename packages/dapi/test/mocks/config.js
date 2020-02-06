@@ -23,10 +23,8 @@ module.exports = {
       rpcServer: {
         port: '123',
       },
-      core: {
-        grpcServer: {
-          port: '123',
-        },
+      grpcServer: {
+        port: '123',
       },
       txFilterStream: {
         grpcServer: {

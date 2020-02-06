@@ -86,6 +86,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     coreAPIMock = {
       getBlock: this.sinon.stub(),
       getBestBlockHeight: this.sinon.stub(),
+      getBlockHash: this.sinon.stub(),
     };
 
     subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
@@ -128,18 +129,76 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     }
   });
 
-  it('should respond with error if both fromBlockHash and fromBlockHeight are not specified', async () => {
-    try {
-      await subscribeToTransactionsWithProofsHandler(call);
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal(
-        'Invalid argument: Either fromBlockHash or fromBlockHeight should be specified',
+  it('should subscribe to new transactions from 0 height if both fromBlockHash and fromBlockHeight are not specified', async function it() {
+    const hash = 'someHash';
+    const hashHex = Buffer.from('someHash').toString('hex');
+
+    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBestBlockHeight.resolves(10);
+    coreAPIMock.getBlockHash.resolves(hashHex);
+
+    call.request.setCount(10);
+
+    const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
+
+    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBestBlockHeight.resolves(10);
+
+    historicalTxData.push({
+      merkleBlock: {
+        toBuffer: () => Buffer.from(hash),
+        header: {
+          hash,
+        },
+      },
+      transactions: [
+        {
+          toBuffer: () => Buffer.from(
+            'edefad1c70ee6736a0a0c2f9be7f22cfcf77ae2c120704a98cdc9aebdab7ffc5', 'hex',
+          ),
+        },
+      ],
+    });
+
+    await subscribeToTransactionsWithProofsHandler(call);
+
+    const filter = new CoreBloomFilter({
+      vData: new Uint8Array([]),
+      nTweak: 1000,
+      nFlags: 100,
+      nHashFuncs: 10,
+    });
+
+    expect(getHistoricalTransactionsIteratorMock).to.have.been
+      .calledOnceWith(
+        filter,
+        hashHex,
+        10,
       );
 
-      expect(call.write).to.not.have.been.called();
-      expect(call.end).to.not.have.been.called();
-    }
+    expect(subscribeToNewTransactionsMock).to.not.have.been.called();
+    expect(writableStub).to.have.been.calledTwice();
+
+    const firstResponse = new TransactionsWithProofsResponse();
+    const rawTransactions = new RawTransactions();
+    rawTransactions.setTransactionsList(
+      historicalTxData[0].transactions.map(tx => tx.toBuffer()),
+    );
+    firstResponse.setRawTransactions(rawTransactions);
+
+    const secondResponse = new TransactionsWithProofsResponse();
+    secondResponse.setRawMerkleBlock(historicalTxData[0].merkleBlock.toBuffer());
+
+    expect(writableStub.getCall(0).args).to.deep.equal(
+      [firstResponse],
+    );
+
+    expect(writableStub.getCall(1).args).to.deep.equal(
+      [secondResponse],
+    );
+
+    expect(coreAPIMock.getBlockHash).to.be.calledOnceWith(0);
+    expect(coreAPIMock.getBestBlockHeight).to.be.calledThrice();
   });
 
   it('should respond with error if fromBlockHeight exceeded blockchain length', async () => {

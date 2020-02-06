@@ -1,5 +1,5 @@
 sudo: required
-dist: trusty
+dist: bionic
 language: node_js
 
 node_js:
@@ -28,7 +28,8 @@ install:
 before_script:
   - npm run check-package
   - npm run lint
-  - docker build . -t dapi-dev 
+  - docker pull dashpay/insight-api:latest # workaround for functional tests
+  - docker build . -t dapi-dev
   - echo SERVICE_IMAGE_DAPI=dapi-dev >> .env
 
 deploy:
