@@ -26,6 +26,9 @@ const {
   getTransactionsFilterStreamDefinition,
 } = require('@dashevo/dapi-grpc');
 
+// Load config from .env
+dotenv.config();
+
 const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
 const log = require('../lib/log');
@@ -44,8 +47,6 @@ const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeT
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
 
 async function main() {
-  dotenv.config();
-
   // Validate config
   const configValidationResult = validateConfig(config);
   if (!configValidationResult.isValid) {
