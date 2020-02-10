@@ -2,7 +2,7 @@ const jsutil = require('@dashevo/dashcore-lib').util.js;
 const preconditionsUtil = require('@dashevo/dashcore-lib').util.preconditions;
 const cbor = require('cbor');
 const {
-  // CorePromiseClient,
+  CorePromiseClient,
   PlatformPromiseClient,
   TransactionsFilterStreamPromiseClient,
   TransactionsWithProofsRequest,
@@ -11,6 +11,10 @@ const {
   GetIdentityRequest,
   GetDataContractRequest,
   GetDocumentsRequest,
+  GetBlockRequest,
+  GetStatusRequest,
+  GetTransactionRequest,
+  SendTransactionRequest,
 } = require('@dashevo/dapi-grpc');
 const {
   ApplyStateTransitionResponse,
@@ -114,6 +118,126 @@ class DAPIClient {
    * @return {Promise<object>}
    */
   getMnListDiff(baseBlockHash, blockHash) { return this.makeRequestToRandomDAPINode('getMnListDiff', { baseBlockHash, blockHash }); }
+
+
+  /**
+   * Get block by height
+   *
+   * @param {number} height
+   * @return {Promise<null|Buffer>}
+   */
+  async getBlockByHeight(height) {
+    const getBlockRequest = new GetBlockRequest();
+    getBlockRequest.setHeight(height);
+
+    const urlToConnect = await this.getGrpcUrl();
+
+    const client = new CorePromiseClient(urlToConnect);
+
+    const response = await client.getBlock(getBlockRequest);
+
+    const blockBinaryArray = response.getBlock();
+
+    let block = null;
+    if (blockBinaryArray) {
+      block = Buffer.from(blockBinaryArray);
+    }
+
+    return block;
+  }
+
+  /**
+   * Get block by hash
+   *
+   * @param {string} hash
+   * @return {Promise<null|Buffer>}
+   */
+  async getBlockByHash(hash) {
+    const getBlockRequest = new GetBlockRequest();
+    getBlockRequest.setHash(hash);
+
+    const urlToConnect = await this.getGrpcUrl();
+
+    const client = new CorePromiseClient(urlToConnect);
+
+    const response = await client.getBlock(getBlockRequest);
+
+    const blockBinaryArray = response.getBlock();
+
+    let block = null;
+    if (blockBinaryArray) {
+      block = Buffer.from(blockBinaryArray);
+    }
+
+    return block;
+  }
+
+  /**
+   * Get Core chain status
+   *
+   * @return {Promise<Object>}
+   */
+  async getStatus() {
+    const getStatusRequest = new GetStatusRequest();
+
+    const urlToConnect = await this.getGrpcUrl();
+
+    const client = new CorePromiseClient(urlToConnect);
+
+    const response = await client.getStatus(getStatusRequest);
+
+    return response.toObject();
+  }
+
+  /**
+   * Get Transaction by ID
+   *
+   * @param {string} id
+   * @return {Promise<null|Buffer>}
+   */
+  async getTransaction(id) {
+    const getTransactionRequest = new GetTransactionRequest();
+    getTransactionRequest.setId(id);
+
+    const urlToConnect = await this.getGrpcUrl();
+
+    const client = new CorePromiseClient(urlToConnect);
+
+    const response = await client.getTransaction(getTransactionRequest);
+
+    const transactionBinaryArray = response.getTransaction();
+
+    let transaction = null;
+    if (transactionBinaryArray) {
+      transaction = Buffer.from(transactionBinaryArray);
+    }
+
+    return transaction;
+  }
+
+  /**
+   * Send Transaction
+   *
+   * @param {Buffer} transaction
+   * @param {Object} [options]
+   * @param {Object} [options.allowHighFees=false]
+   * @param {Object} [options.bypassLimits=false]
+   * @return {string}
+   */
+  async sendTransaction(transaction, options = {}) {
+    const sendTransactionRequest = new SendTransactionRequest();
+    sendTransactionRequest.setTransaction(transaction);
+    sendTransactionRequest.setAllowHighFees(options.allowHighFees || false);
+    sendTransactionRequest.setBypassLimits(options.bypassLimits || false);
+
+    const urlToConnect = await this.getGrpcUrl();
+
+    const client = new CorePromiseClient(urlToConnect);
+
+    const response = await client.sendTransaction(sendTransactionRequest);
+
+    return response.getTransactionId();
+  }
 
   /**
    * Returns UTXO for a given address or multiple addresses (max result 1000)
