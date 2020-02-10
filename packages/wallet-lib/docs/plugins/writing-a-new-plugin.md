@@ -52,7 +52,7 @@ class MyWalletConsolidatorPlugin extends StandardPlugin {
 }
 ```
 
-### Using my created plugin
+## Using my created plugin
 
 When you plugin is created, including it in your Wallet is as easy as referencing up the class in the `plugins` array. 
 
@@ -70,7 +70,7 @@ const wallet = new Wallet({
 });
 ```
 
-### Accessing secure dependencies 
+## Accessing secure dependencies 
 
 Due to the risk from running a plugin that have access to your keychain, these are, by default, not accessible.  
 One would need to initialize a Wallet with the option `allowSensitiveOperations` set to `true`.  

@@ -8,42 +8,28 @@ In order to perform it's duty of being in-sync with the network and to always ke
 Theses default workers can be deactivated by adding the options `injectDefaultPlugins` to `false` while initializing your Wallet instance.
 
 
-### Sync Worker
-
-#### Create a worker
-
-```
-const {events, storage, transport, fetchAddressInfo, fetchTransactionInfo} = account;
-const opts = {
- events,
- storage,
- transport,
- fetchAddressInfo,
- fetchTransactionInfo,
-}
-const worker = new BIP44Worker(opts);
-```
-
-#### Start a worker
+## Start a worker
 
 ```
 worker.startWorker();
 ```
 
-#### Stop a worker
+## Stop a worker
 
 ```
 worker.stopWorker();
 ```
 
-#### Events
+## Sync Worker
+
+### Events
 
 - WORKER/SYNC/STARTED - Triggered when the worker is started.
 - WORKER/SYNC/EXECUTED - Triggered each time the worker get executed.
 
-### BIP 44 Worker
+## BIP 44 Worker
 
-#### Create a worker
+### Create a BIP44 worker
 
 ```
 const {events, storage, getAddress} = account;
@@ -55,19 +41,7 @@ const opts = {
 const worker = new BIP44Worker(opts);
 ```
 
-#### Start a worker
-
-```
-worker.startWorker();
-```
-
-#### Stop a worker
-
-```
-worker.stopWorker();
-```
-
-#### Events
+### Events
 
 - WORKER/BIP44/STARTED - Triggered when the worker is started.
 - WORKER/BIP44/EXECUTED - Triggered each time the worker get executed.

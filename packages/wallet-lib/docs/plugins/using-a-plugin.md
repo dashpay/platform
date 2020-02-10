@@ -1,4 +1,4 @@
-## Using a plugin
+## About plugins
 
 In order to add features and logic to the Wallet-library and be able to share independant module and request them together. 
 Wallet-lib can be passed some plugins at his instantiation. 
@@ -11,7 +11,7 @@ You can disable them by adding `injectDefaultPlugins:false` at the initializatio
  
 For more granularity, you could do it as a parameter of `getAccount(accId, accOpts)`.
 
-### Type of plugins 
+## Type of plugins 
 
 There are three different types of plugins that can be used in the wallet-library:
 
@@ -19,7 +19,7 @@ There are three different types of plugins that can be used in the wallet-librar
 - DPA :  A DPA plugins inherits from DPA class and is only require to have a init method.
 - Standard : These are mostly enhancers of the wallet library functionalities.
 
-### Dependencies
+## Dependencies
 
 In order for a plugin to have the ability to access wallet data, you have to add a dependency in the constructor.
 
@@ -36,7 +36,7 @@ class MyPlugin extends StandardPlugin {
 
 This will allow to access the walletId property; the same thing is doable with the account function.
 
-### Accessing a plugin / DPA
+## Accessing a plugin / DPA
 
 
 ```

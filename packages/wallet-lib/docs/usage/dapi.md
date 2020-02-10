@@ -1,6 +1,7 @@
 ## About DAPI
 
-DAPI (Decentralized API) is a distributed and decentralized endpoints provided by the Masternode Network.
+DAPI (Decentralized API) is a distributed and decentralized endpoints provided by the Masternode Network.  
+You can learn more about DAPI on the [DAPI-Client documentation](https://dashevo.github.io/dapi-client/#/).
 
 ## Get the DAPI-Client instance
 
@@ -10,4 +11,18 @@ You can fetch the current instance of DAPI directly from the wallet :
 ```js
   const wallet = new Wallet();
   const dapiInstance = wallet.transport;
+```
+
+## Modify the seeds
+
+By using your own DAPI-Client instance and passing it to the Wallet constructor (using `transport` argument). You can specify your own seeds to connect to.  
+
+```js 
+const DAPIClient = require('@dashevo/dapi-client');
+const transporter = new DAPIClient({
+      seeds: [{ service: '18.236.131.253:3000' }],
+      timeout: 20000,
+      retries: 5,
+});
+const wallet = new Wallet({transport:transporter});
 ```

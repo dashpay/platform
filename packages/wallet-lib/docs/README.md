@@ -1,4 +1,4 @@
-## DashJS
+## Wallet-lib
 
 [![Package Version](https://img.shields.io/github/package-json/v/dashevo/wallet-lib.svg?&style=flat-square)](https://www.npmjs.org/package/@dashevo/wallet-lib)
 [![Build Status](https://img.shields.io/travis/com/dashevo/wallet-lib.svg?branch=master&style=flat-square)](https://travis-ci.com/dashevo/wallet-lib)
@@ -22,7 +22,7 @@ In order to use this library in Node, you will need to add it to your project as
 Having [NodeJS](https://nodejs.org/) installed, just type in your terminal : 
 
 ```sh
-npm install @dashevo/dashjs
+npm install @dashevo/wallet-lib
 ```
 
 ### CDN Standalone
@@ -32,7 +32,6 @@ For browser usage, you can also directly rely on unpkg :
 ```
 <script src="https://unpkg.com/@dashevo/wallet-lib"></script>
 ```
-
 
 
 ## Licence

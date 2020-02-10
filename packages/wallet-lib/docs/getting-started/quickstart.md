@@ -7,7 +7,7 @@ In order to use this library in Node, you will need to add it to your project as
 Having [NodeJS](https://nodejs.org/) installed, just type in your terminal : 
 
 ```sh
-npm install @dashevo/dashjs
+npm install @dashevo/wallet-lib
 ```
 
 ### CDN Standalone
@@ -34,7 +34,7 @@ const account = wallet.getAccount();
 account.events.on('ready', _ => console.log('Account ready to be used'));
 ```
 
-This above code, will by default use DAPI as a transporter and a in-memory store as an adapter.  
+In above code, we did not specify any `transport` instance, which by default, is equivalent to using DAPI as a transporter; The `adapter` being not set, we will use by default an in-memory (without persistance) adapter.    
 One can set any adapter that contains a valid adapter syntax (getItem, setItem), such as [localforage](https://www.npmjs.com/package/localforage).
 
 As you can see, we are waiting for the `ready` event to be thrown before using the Wallet.  
@@ -43,7 +43,7 @@ Nothing force you to do so, this is mostly an helper provided to you.
 
 
 Quick note :
-- If no mnemonic is provided (nor any privatekey, HDPubKey,...), a mnemonic will be created for you automatically.  
+- If no mnemonic is provided (nor any privatekey, HDPubKey,...) or if mnemonic is `null`, a mnemonic will be created for you automatically.  
 - By default, if not provided, network value will be `testnet`.
 - If no adapter specified, Wallet-lib will use a in-memory store (and warn you about it).
 - If no transport specified, Wallet-lib will connect to DAPI.

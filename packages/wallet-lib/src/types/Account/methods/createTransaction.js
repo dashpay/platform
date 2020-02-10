@@ -37,6 +37,7 @@ function createTransaction(opts) {
       }
     });
   } else {
+    // FIXME : Remove amount support in next release.
     if (!opts || (!opts.amount && !opts.satoshis)) {
       throw new Error('An amount in dash or in satoshis is expected to create a transaction');
     }
@@ -144,4 +145,5 @@ function createTransaction(opts) {
     return e;
   }
 }
+
 module.exports = createTransaction;

@@ -40,6 +40,7 @@ function impactAffectedInputs({ inputs }) {
  * @param isIs - If the tx is InstantSend tx todo: Should be automatically deducted from the rawtx
  * @return {Promise<*>}
  */
+// FIXME : IsIS needs to be removed.
 async function broadcastTransaction(transaction, isIs = false) {
   if (!this.transport.isValid) throw new ValidTransportLayerRequired('broadcast');
 

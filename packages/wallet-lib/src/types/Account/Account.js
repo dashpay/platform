@@ -42,7 +42,9 @@ class Account {
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
 
-    const accountIndex = _.has(opts, 'index') ? opts.index : wallet.accounts.length;
+    // FIXME : this is wrong, it suppose they have been created sequentially. What if [i:0, i:10]...
+    // We should use the same system that for BIP44 and foreach seq
+    const accountIndex = _.has(opts, 'index') ? opts.index : wallet.accounts[wallet.accounts.length - 1].index + 1;
     this.index = accountIndex;
     this.strategy = _loadStrategy(_.has(opts, 'strategy') ? opts.strategy : defaultOptions.strategy);
     this.network = getNetwork(wallet.network).toString();

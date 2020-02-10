@@ -3,7 +3,7 @@ const _ = require('lodash');
  * Search an address having a specific txid
  * todo : Handle when multiples one (inbound/outbound)
  * @param txid
- * @return {{txid: *, address: null, type: null, found: boolean}}
+ * @return {{found: boolean, txid: *, results: []}}
  */
 const searchAddressesWithTx = function (txid) {
   const search = {
