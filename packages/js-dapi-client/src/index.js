@@ -119,6 +119,22 @@ class DAPIClient {
    */
   getMnListDiff(baseBlockHash, blockHash) { return this.makeRequestToRandomDAPINode('getMnListDiff', { baseBlockHash, blockHash }); }
 
+  /**
+   * Returns a summary (balance, txs) for a given address
+   * @param {string|string[]} address or array of addresses
+   * @param {boolean} [noTxList=false] - true if a list of all txs should NOT be included in result
+   * @param {number} [from] - start of range for the tx to be included in the tx list
+   * @param {number} [to] - end of range for the tx to be included in the tx list
+   * @param {number} [fromHeight] - which height to start from (optional, overriding from/to)
+   * @param {number} [toHeight] - on which height to end (optional, overriding from/to)
+   * @returns {Promise<Object>} - an object with basic address info
+   */
+  getAddressSummary(address, noTxList, from, to, fromHeight, toHeight) {
+    return this.makeRequestToRandomDAPINode('getAddressSummary',
+      {
+        address, noTxList, from, to, fromHeight, toHeight,
+      });
+  }
 
   /**
    * Get block by height

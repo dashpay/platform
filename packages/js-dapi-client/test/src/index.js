@@ -42,6 +42,20 @@ chai.use(sinonChai);
 const { expect } = chai;
 
 const validAddressWithOutputs = 'yXdxAYfK8eJgQmHpUzMaKEBhqwKQWKSezS';
+const validAddressSummary = {
+  'addrStr': validAddressWithOutputs,
+  'balance': 4173964.74940914,
+  'balanceSat': 417396474940914,
+  'totalReceived': 4287576.24940914,
+  'totalReceivedSat': 428757624940914,
+  'totalSent': 113611.5,
+  'totalSentSat': 11361150000000,
+  'unconfirmedBalance': 0,
+  'unconfirmedBalanceSat': 0,
+  'unconfirmedTxApperances': 0,
+  'txApperances': 27434,
+  'transactions': ['4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', '8890a0ee95a17f6723ab2d9a0bdd579351b9220738ad34f5b49cbe63f09b082a']
+};
 const contractId = '11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c';
 
 const contract = {
@@ -277,6 +291,9 @@ describe('api', () => {
             }
             throw new RPCError('DAPI RPC error: getBlockHash: Error: Address not found');
           }
+          if (method === 'getAddressSummary') {
+            return validAddressSummary;
+          }
           if (method === 'getBestBlockHash') {
             return validBlockHash;
           }
@@ -382,6 +399,24 @@ describe('api', () => {
       expect(mnlistdiff.blockHash).to.be.equal(validBlockHash);
       expect(mnlistdiff.deletedMNs).to.be.an('array');
       expect(mnlistdiff.mnList).to.be.an('array');
+    });
+  });
+
+  describe('.address.getAddressSummary', () => {
+    it('Should return a summary for an address', async () => {
+      const dapi = new DAPIClient();
+      const summary = await dapi.getAddressSummary(validAddressWithOutputs);
+      expect(summary).to.be.an('object');
+      expect(summary.balanceSat).to.be.a('number');
+      expect(summary.unconfirmedBalanceSat).to.be.an('number');
+      expect(summary.transactions).to.be.an('array');
+      expect(summary.addrStr).to.be.equal(validAddressWithOutputs);
+    });
+    it('Should equal options.retries passed in', async () => {
+      const options = { retries: 1 };
+      const dapi = new DAPIClient(options);
+      await dapi.getAddressSummary(validAddressWithOutputs);
+      expect(dapi.retries).to.equal(1);
     });
   });
 
