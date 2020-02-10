@@ -79,17 +79,9 @@ async function main() {
   const coreHandlers = coreHandlersFactory(insightAPI);
   const platformHandlers = platformHandlersFactory(rpcClient, driveAPI, dpp);
 
-  const handlers = {
-    ...coreHandlers,
-    ...platformHandlers,
-  };
+  const grpcApiServer = createServer(getCoreDefinition(), coreHandlers);
 
-  const definitions = {
-    ...getCoreDefinition(),
-    ...getPlatformDefinition(),
-  };
-
-  const grpcApiServer = createServer(definitions, handlers);
+  grpcApiServer.addService(getPlatformDefinition().service, platformHandlers);
 
   grpcApiServer.bind(
     `0.0.0.0:${config.grpcServer.port}`,
