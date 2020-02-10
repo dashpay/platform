@@ -1,7 +1,7 @@
 const path = require('path');
 
 const commonJSConfig = {
-  entry: ['@babel/polyfill', './src/index.js'],
+  entry: ['core-js/stable', 'regenerator-runtime/runtime', './src/index.js'],
   module: {
     rules: [
       {
