@@ -13,6 +13,7 @@ const getBlockHash = require('./commands/getBlockHash');
 const getMnListDiff = require('./commands/getMnListDiff');
 const getUTXO = require('./commands/getUTXO');
 const generate = require('./commands/generate');
+const getAddressSummary = require('./commands/getAddressSummary');
 
 const getIdentityHandlerFactory = require('./commands/platform/getIdentityHandlerFactory');
 const applyStateTransitionHandlerFactory = require('./commands/platform/applyStateTransitionHandlerFactory');
@@ -36,6 +37,7 @@ const createCommands = (
   getBlockHash: getBlockHash(dashcoreAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
   getUTXO: getUTXO(insightAPI),
+  getAddressSummary: getAddressSummary(dashcoreAPI),
 
   getIdentity: getIdentityHandlerFactory(
     tendermintRpcClient, handleAbciResponse, new Validator(getIdentityArgsSchema),
