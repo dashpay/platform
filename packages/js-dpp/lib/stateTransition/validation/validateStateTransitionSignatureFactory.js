@@ -2,6 +2,7 @@ const ValidationResult = require('../../validation/ValidationResult');
 const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 const InvalidIdentityPublicKeyTypeError = require('../../errors/InvalidIdentityPublicKeyTypeError');
 const InvalidStateTransitionSignatureError = require('../../errors/InvalidStateTransitionSignatureError');
+const MissingPublicKeyError = require('../../errors/MissingPublicKeyError');
 
 /**
  * Validate state transition signature
@@ -25,6 +26,15 @@ function validateStateTransitionSignatureFactory(dataProvider) {
     const identity = await dataProvider.fetchIdentity(userId);
 
     const publicKey = identity.getPublicKeyById(stateTransition.getSignaturePublicKeyId());
+
+    if (!publicKey) {
+      result.addError(
+        new MissingPublicKeyError(stateTransition.getSignaturePublicKeyId()),
+      );
+
+      return result;
+    }
+
     if (publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_SECP256K1) {
       result.addError(
         new InvalidIdentityPublicKeyTypeError(publicKey.getType()),
