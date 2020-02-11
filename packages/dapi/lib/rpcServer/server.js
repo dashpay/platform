@@ -37,7 +37,7 @@ const createCommands = (
   getBlockHash: getBlockHash(dashcoreAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
   getUTXO: getUTXO(insightAPI),
-  getAddressSummary: getAddressSummary(dashcoreAPI),
+  getAddressSummary: getAddressSummary(insightAPI),
 
   getIdentity: getIdentityHandlerFactory(
     tendermintRpcClient, handleAbciResponse, new Validator(getIdentityArgsSchema),
