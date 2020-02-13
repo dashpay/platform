@@ -59,7 +59,7 @@ $PWD/node_modules/protobufjs/bin/pbjs \
 $PWD/node_modules/protobufjs/bin/pbjs \
   -t static-module \
   -w commonjs \
-  -r core_root \
+  -r platform_root \
   -o "$CLIENTS_PATH/nodejs/platform_pbjs.js" \
   "$PROTO_PATH/platform.proto"
 
