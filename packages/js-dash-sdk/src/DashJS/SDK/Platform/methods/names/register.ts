@@ -22,8 +22,17 @@ export async function register(this: Platform,
 
     const records = {dashIdentity: identity.id};
 
-    const normalizedParentDomainName = `dash`;
-    const label = name;
+    const nameSlice = name.indexOf('.');
+    const normalizedParentDomainName = (
+        nameSlice === -1
+        ? 'dash'
+        : name.slice(nameSlice + 1)
+    );
+    const label = (
+        nameSlice === -1
+        ? name
+        : name.slice(0,nameSlice)
+    );
     const normalizedLabel = label.toLowerCase();
     const fullDomainName = `${normalizedLabel}.${normalizedParentDomainName}`;
 

@@ -5,7 +5,7 @@ Parameters:
 
 | parameters                | type      | required       | Description                                                                   |  
 |---------------------------|-----------|----------------| ----------------------------------------------------------------------------- |
-| **name**                  | String    | yes            | An alphanumeric (2-63) value used for human-identification (can contains `-`) |
+| **name**                  | String    | yes            | An alphanumeric (1-63 character) value used for human-identification (can contain `-` but not as the first or last character). If a name with no parent domain is entered, '.dash' is used. |
 | **identity**              | Identity  | yes            | A valid [registered identity](/platform/identities/register.md)               |
 
 
