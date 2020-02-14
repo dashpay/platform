@@ -7,6 +7,7 @@ const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyErr
 const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
 const DataContractRestrictedIdentityError = require('../errors/DataContractRestrictedIdentityError');
+const UniqueIndicesLimitReached = require('../errors/UniqueIndicesLimitReached');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
@@ -54,8 +55,23 @@ module.exports = function validateDataContractFactory(validator) {
     ))
       .forEach(([documentType, documentSchema]) => {
         const indicesFingerprints = [];
+        let uniqueIndexCount = 0;
+        let isUniqueIndexLimitReached = false;
 
         documentSchema.indices.forEach((indexDefinition) => {
+          if (!isUniqueIndexLimitReached && indexDefinition.unique) {
+            uniqueIndexCount++;
+
+            if (uniqueIndexCount > UniqueIndicesLimitReached.UNIQUE_INDEX_LIMIT) {
+              isUniqueIndexLimitReached = true;
+
+              result.addError(new UniqueIndicesLimitReached(
+                rawDataContract,
+                documentType,
+              ));
+            }
+          }
+
           const indexPropertyNames = indexDefinition.properties
             .map((property) => Object.keys(property)[0]);
 

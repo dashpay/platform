@@ -53,7 +53,7 @@
                       "additionalProperties": false
                     },
                     "minItems": 1,
-                    "maxItems": 100
+                    "maxItems": 10
                   },
                   "unique": {
                     "type": "boolean"
@@ -62,7 +62,8 @@
                 "required": ["properties"],
                 "additionalProperties": false
               },
-              "minItems": 1
+              "minItems": 1,
+              "maxItems": 10
             },
             "properties": {
               "type": "object",

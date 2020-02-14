@@ -14,6 +14,7 @@ const DuplicateIndexError = require('../../../lib/errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../../../lib/errors/UndefinedIndexPropertyError');
 const InvalidIndexPropertyTypeError = require('../../../lib/errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../../../lib/errors/SystemPropertyIndexAlreadyPresentError');
+const UniqueIndicesLimitReached = require('../../../lib/errors/UniqueIndicesLimitReached');
 
 const originalEnv = { ...process.env };
 
@@ -625,8 +626,8 @@ describe('validateDataContractFactory', () => {
           expect(error.keyword).to.equal('minItems');
         });
 
-        it('should have no more than 100 property definitions', () => {
-          for (let i = 0; i < 100; i++) {
+        it('should have no more than 10 property definitions', () => {
+          for (let i = 0; i < 10; i++) {
             rawDataContract.documents.indexedDocument.indices[0]
               .properties.push({
                 [`field${i}`]: 'asc',
@@ -725,6 +726,51 @@ describe('validateDataContractFactory', () => {
 
         expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices[0].unique');
         expect(error.keyword).to.equal('type');
+      });
+
+      it('should have no more than 10 indices', () => {
+        for (let i = 0; i < 10; i++) {
+          const propertyName = `field${i}`;
+
+          rawDataContract.documents.indexedDocument.properties[propertyName] = { type: 'string' };
+
+          rawDataContract.documents.indexedDocument.indices.push({
+            properties: [{ [propertyName]: 'asc' }],
+          });
+        }
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal(
+          '.documents[\'indexedDocument\'].indices',
+        );
+        expect(error.keyword).to.equal('maxItems');
+      });
+
+      it('should have no more than 3 unique indices', () => {
+        for (let i = 0; i < 4; i++) {
+          const propertyName = `field${i}`;
+
+          rawDataContract.documents.indexedDocument.properties[propertyName] = { type: 'string' };
+
+          rawDataContract.documents.indexedDocument.indices.push({
+            properties: [{ [propertyName]: 'asc' }],
+            unique: true,
+          });
+        }
+
+        const result = validateDataContract(rawDataContract);
+
+        expectValidationError(result, UniqueIndicesLimitReached);
+
+        const [error] = result.getErrors();
+
+        expect(error.getRawDataContract()).to.equal(rawDataContract);
+        expect(error.getDocumentType()).to.equal('indexedDocument');
       });
     });
   });
