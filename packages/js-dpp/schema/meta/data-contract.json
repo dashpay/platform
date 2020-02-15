@@ -73,12 +73,12 @@
           "$ref": "#/definitions/documentSchema"
         },
         "items": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/documentSchema"
-            },
+          "oneOf": [
             {
               "$ref": "#/definitions/documentSchemaArray"
+            },
+            {
+              "$ref": "#/definitions/documentSchema"
             }
           ]
         },
@@ -104,7 +104,8 @@
           "$ref": "http://json-schema.org/draft-07/schema#/properties/minProperties"
         },
         "additionalProperties": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/additionalProperties"
+          "type": "boolean",
+          "const": false
         },
         "properties": {
           "$ref": "#/definitions/documentProperties"
@@ -119,7 +120,7 @@
         "dependencies": {
           "type": "object",
           "additionalProperties": {
-            "anyOf": [
+            "oneOf": [
               { "$ref": "#/definitions/documentSchema" },
               { "$ref": "http://json-schema.org/draft-07/schema#/definitions/stringArray" }
             ]
@@ -165,6 +166,19 @@
         "not": {
           "$ref": "#/definitions/documentSchema"
         }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "object"
+          }
+        },
+        "not": {
+          "required": ["$ref"]
+        }
+      },
+      "then": {
+        "required": ["properties", "additionalProperties"]
       },
       "additionalProperties": false
     }

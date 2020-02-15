@@ -281,7 +281,7 @@ describe('validateDataContractFactory', () => {
     it('should have no more than 100 properties', () => {
       rawDataContract.definitions = {};
 
-      Array(101).fill({}).forEach((item, i) => {
+      Array(101).fill({ type: 'string' }).forEach((item, i) => {
         rawDataContract.definitions[i] = item;
       });
 
@@ -300,7 +300,9 @@ describe('validateDataContractFactory', () => {
         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
       validNames.forEach((name) => {
-        rawDataContract.definitions[name] = {};
+        rawDataContract.definitions[name] = {
+          type: 'string',
+        };
 
         const result = validateDataContract(rawDataContract);
 
@@ -312,7 +314,9 @@ describe('validateDataContractFactory', () => {
       const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
 
       invalidNames.forEach((name) => {
-        rawDataContract.definitions[name] = {};
+        rawDataContract.definitions[name] = {
+          type: 'string',
+        };
 
         const result = validateDataContract(rawDataContract);
 
@@ -430,8 +434,8 @@ describe('validateDataContractFactory', () => {
         expect(error.keyword).to.equal('minProperties');
       });
 
-      it('should have type "object" if defined', () => {
-        delete rawDataContract.documents.niceDocument.properties;
+      it('should have type "object"', () => {
+        rawDataContract.documents.niceDocument.type = 'string';
 
         const result = validateDataContract(rawDataContract);
 
@@ -439,9 +443,8 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\']');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('properties');
+        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].type');
+        expect(error.keyword).to.equal('const');
       });
 
       it('should have "properties"', () => {
@@ -458,12 +461,60 @@ describe('validateDataContractFactory', () => {
         expect(error.params.missingProperty).to.equal('properties');
       });
 
+      it('should have nested "properties"', () => {
+        rawDataContract.documents.niceDocument.properties.object = {
+          type: 'array',
+          items: [
+            {
+              properties: {
+                something: {
+                  additionalProperties: false,
+                },
+              },
+              additionalProperties: false,
+            },
+          ],
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result, 3);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties[\'object\'].items[0].properties[\'something\']');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('.properties');
+      });
+
       it('should have valid property names', () => {
         const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123', 'ValidName', 'validName',
           'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
         validNames.forEach((name) => {
-          rawDataContract.documents.niceDocument.properties[name] = {};
+          rawDataContract.documents.niceDocument.properties[name] = {
+            type: 'string',
+          };
+
+          const result = validateDataContract(rawDataContract);
+
+          expectJsonSchemaError(result, 0);
+        });
+      });
+
+      it('should have valid nested property names', () => {
+        const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123', 'ValidName', 'validName',
+          'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+
+        rawDataContract.documents.niceDocument.properties.something = {
+          properties: {},
+          additionalProperties: false,
+        };
+
+        validNames.forEach((name) => {
+          rawDataContract.documents.niceDocument.properties.something.properties[name] = {
+            type: 'string',
+          };
 
           const result = validateDataContract(rawDataContract);
 
@@ -486,6 +537,34 @@ describe('validateDataContractFactory', () => {
           expect(errors[0].dataPath).to.equal('.documents[\'niceDocument\'].properties');
           expect(errors[0].keyword).to.equal('pattern');
           expect(errors[1].dataPath).to.equal('.documents[\'niceDocument\'].properties');
+          expect(errors[1].keyword).to.equal('propertyNames');
+        });
+      });
+
+      it('should return an invalid result if a nested property has invalid format', () => {
+        const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
+
+        rawDataContract.documents.niceDocument.properties.something = {
+          properties: {},
+          additionalProperties: false,
+        };
+
+        invalidNames.forEach((name) => {
+          rawDataContract.documents.niceDocument.properties.something.properties[name] = {};
+
+          const result = validateDataContract(rawDataContract);
+
+          expectJsonSchemaError(result, 2);
+
+          const errors = result.getErrors();
+
+          expect(errors[0].dataPath).to.equal(
+            '.documents[\'niceDocument\'].properties[\'something\'].properties',
+          );
+          expect(errors[0].keyword).to.equal('pattern');
+          expect(errors[1].dataPath).to.equal(
+            '.documents[\'niceDocument\'].properties[\'something\'].properties',
+          );
           expect(errors[1].keyword).to.equal('propertyNames');
         });
       });
@@ -515,6 +594,31 @@ describe('validateDataContractFactory', () => {
 
         expect(error.dataPath).to.equal('.documents[\'niceDocument\'].additionalProperties');
         expect(error.keyword).to.equal('const');
+      });
+
+      it('should have nested "additionalProperties" defined', () => {
+        rawDataContract.documents.niceDocument.properties.object = {
+          type: 'array',
+          items: [
+            {
+              properties: {
+                something: {
+                  type: 'string',
+                },
+              },
+            },
+          ],
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result, 3);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties[\'object\'].items[0]');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('.additionalProperties');
       });
 
       it('should have no more than 100 properties', () => {
@@ -812,6 +916,12 @@ describe('validateDataContractFactory', () => {
 
       propertiesDefinition.objectProperty = {
         type: 'object',
+        properties: {
+          something: {
+            type: 'string',
+          },
+        },
+        additionalProperties: false,
       };
 
       const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
@@ -840,6 +950,12 @@ describe('validateDataContractFactory', () => {
         type: 'array',
         items: {
           type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+            },
+          },
+          additionalProperties: false,
         },
       };
 
@@ -896,7 +1012,11 @@ describe('validateDataContractFactory', () => {
 
       propertiesDefinition.arrayProperty = {
         type: 'array',
-        items: [{}, {}],
+        items: [{
+          type: 'string',
+        }, {
+          type: 'number',
+        }],
       };
 
       const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
