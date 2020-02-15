@@ -109,7 +109,7 @@
           "$ref": "http://json-schema.org/draft-07/schema#/properties/minProperties"
         },
         "required": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/minProperties"
+          "$ref": "http://json-schema.org/draft-07/schema#/properties/required"
         },
         "additionalProperties": {
           "type": "boolean",
@@ -246,10 +246,6 @@
         "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$": {
           "type": "object",
           "properties": {
-            "type": {
-              "type": "string",
-              "const": "object"
-            },
             "indices": {
               "type": "array",
               "items": {
@@ -282,23 +278,106 @@
               "minItems": 1,
               "maxItems": 10
             },
-            "properties": {
-              "$ref": "#/definitions/documentProperties"
+            "type": {
+              "const": "object"
+            },
+            "$id": {
+              "type": "string",
+              "pattern": "^#",
+              "minLength": 1
+            },
+            "$ref": {
+              "type": "string",
+              "pattern": "^#",
+              "minLength": 1
+            },
+            "$comment": {
+              "$ref": "http://json-schema.org/draft-07/schema#/properties/$comment"
+            },
+            "description": {
+              "$ref": "http://json-schema.org/draft-07/schema#/properties/description"
+            },
+            "examples": {
+              "$ref": "http://json-schema.org/draft-07/schema#/properties/examples"
+            },
+            "maxProperties": {
+              "$ref": "http://json-schema.org/draft-07/schema#/properties/maxProperties"
+            },
+            "minProperties": {
+              "$ref": "http://json-schema.org/draft-07/schema#/properties/minProperties"
+            },
+            "required": {
+              "$ref": "http://json-schema.org/draft-07/schema#/properties/required"
             },
             "additionalProperties": {
               "type": "boolean",
               "const": false
+            },
+            "properties": {
+              "$ref": "#/definitions/documentProperties"
+            },
+            "patternProperties": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/documentSchema" },
+              "propertyNames": { "format": "regex" },
+              "default": {}
+            },
+            "propertyNames": { "$ref": "#/definitions/documentSchema" },
+            "dependencies": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  { "$ref": "#/definitions/documentSchema" },
+                  { "$ref": "http://json-schema.org/draft-07/schema#/definitions/stringArray" }
+                ]
+              }
+            },
+            "const": true,
+            "if": {
+              "$ref": "#/definitions/documentSchema"
+            },
+            "then": {
+              "$ref": "#/definitions/documentSchema"
+            },
+            "else": {
+              "$ref": "#/definitions/documentSchema"
+            },
+            "allOf": {
+              "$ref": "#/definitions/documentSchemaArray"
+            },
+            "anyOf": {
+              "$ref": "#/definitions/documentSchemaArray"
+            },
+            "oneOf": {
+              "$ref": "#/definitions/documentSchemaArray"
+            },
+            "not": {
+              "$ref": "#/definitions/documentSchema"
             }
           },
-          "required": [
-            "properties",
-            "additionalProperties"
-          ]
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "not": {
+              "required": ["$ref"]
+            }
+          },
+          "then": {
+            "required": ["properties", "additionalProperties"]
+          },
+          "minProperties": 1,
+          "maxProperties": 100,
+          "additionalProperties": false
         }
       },
+      "propertyNames": {
+        "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
+      },
       "minProperties": 1,
-      "maxProperties": 100,
-      "additionalProperties": false
+      "maxProperties": 100
     },
     "definitions": {
       "$ref": "#/definitions/documentProperties"

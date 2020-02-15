@@ -371,7 +371,7 @@ describe('validateDataContractFactory', () => {
       expect(error.keyword).to.equal('minProperties');
     });
 
-    it('should have valid property names', () => {
+    it('should have valid property names (document types)', () => {
       const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123', 'ValidName', 'validName',
         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
@@ -384,7 +384,7 @@ describe('validateDataContractFactory', () => {
       });
     });
 
-    it('should return an invalid result if a property has invalid format', () => {
+    it('should return an invalid result if a property (document type) has invalid format', () => {
       const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
 
       invalidNames.forEach((name) => {
@@ -392,12 +392,12 @@ describe('validateDataContractFactory', () => {
 
         const result = validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.documents');
-        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.keyword).to.equal('pattern');
       });
     });
 
@@ -458,7 +458,7 @@ describe('validateDataContractFactory', () => {
 
         expect(error.dataPath).to.equal('.documents[\'niceDocument\']');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('properties');
+        expect(error.params.missingProperty).to.equal('.properties');
       });
 
       it('should have nested "properties"', () => {
@@ -580,7 +580,7 @@ describe('validateDataContractFactory', () => {
 
         expect(error.dataPath).to.equal('.documents[\'niceDocument\']');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('additionalProperties');
+        expect(error.params.missingProperty).to.equal('.additionalProperties');
       });
 
       it('should have "additionalProperties" defined to false', () => {
@@ -619,6 +619,19 @@ describe('validateDataContractFactory', () => {
         expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties[\'object\'].items[0]');
         expect(error.keyword).to.equal('required');
         expect(error.params.missingProperty).to.equal('.additionalProperties');
+      });
+
+      it('should return invalid result if there are additional properties', () => {
+        rawDataContract.additionalProperty = { };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('');
+        expect(error.keyword).to.equal('additionalProperties');
       });
 
       it('should have no more than 100 properties', () => {
@@ -766,6 +779,34 @@ describe('validateDataContractFactory', () => {
           '.documents[\'new\'].properties[\'something\'].additionalItems',
         );
         expect(shouldEqualConstant.keyword).to.equal('const');
+      });
+
+      it('should return invalid result if "default" keyword is used', () => {
+        rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'firstName\']');
+        expect(error.keyword).to.equal('additionalProperties');
+      });
+
+      it('should return invalid result if remote ref is used', () => {
+        rawDataContract.documents.indexedDocument = {
+          $ref: 'http://remote.com/schema#',
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].$ref');
+        expect(error.keyword).to.equal('pattern');
       });
     });
   });
@@ -1192,32 +1233,6 @@ describe('validateDataContractFactory', () => {
       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
     });
-  });
-
-  it('should return invalid result if "default" keyword is used', () => {
-    rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
-
-    const result = validateDataContract(rawDataContract);
-
-    expectJsonSchemaError(result);
-
-    const [error] = result.getErrors();
-
-    expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'firstName\']');
-    expect(error.keyword).to.equal('additionalProperties');
-  });
-
-  it('should return invalid result if there are additional properties', () => {
-    rawDataContract.additionalProperty = { };
-
-    const result = validateDataContract(rawDataContract);
-
-    expectJsonSchemaError(result);
-
-    const [error] = result.getErrors();
-
-    expect(error.dataPath).to.equal('');
-    expect(error.keyword).to.equal('additionalProperties');
   });
 
   it('should return valid result if Data Contract is valid', () => {
