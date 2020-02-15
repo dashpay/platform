@@ -639,6 +639,134 @@ describe('validateDataContractFactory', () => {
         expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties');
         expect(error.keyword).to.equal('maxProperties');
       });
+
+      it('should have defined items for arrays', () => {
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'new\'].properties[\'something\']');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('.items');
+      });
+
+      it('should not have additionalItems for arrays if items is subschema', () => {
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result, 0);
+      });
+
+      it('should have additionalItems for arrays', () => {
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+              items: [
+                {
+                  type: 'string',
+                },
+                {
+                  type: 'number',
+                },
+              ],
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'new\'].properties[\'something\']');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('.additionalItems');
+      });
+
+      it('should have additionalItems disabled for arrays', () => {
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+              items: [
+                {
+                  type: 'string',
+                },
+                {
+                  type: 'number',
+                },
+              ],
+              additionalItems: false,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result, 0);
+      });
+
+      it('should not have additionalItems enabled for arrays', () => {
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+              items: [
+                {
+                  type: 'string',
+                },
+                {
+                  type: 'number',
+                },
+              ],
+              additionalItems: true,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result, 3);
+
+        const [shouldBeAnObjectError, shouldEqualConstant] = result.getErrors();
+
+        expect(shouldBeAnObjectError.dataPath).to.equal(
+          '.documents[\'new\'].properties[\'something\'].additionalItems',
+        );
+        expect(shouldBeAnObjectError.keyword).to.equal('type');
+
+        expect(shouldEqualConstant.dataPath).to.equal(
+          '.documents[\'new\'].properties[\'something\'].additionalItems',
+        );
+        expect(shouldEqualConstant.keyword).to.equal('const');
+      });
     });
   });
 
@@ -985,6 +1113,9 @@ describe('validateDataContractFactory', () => {
         type: 'array',
         items: {
           type: 'array',
+          items: {
+            type: 'string',
+          },
         },
       };
 
@@ -1017,6 +1148,7 @@ describe('validateDataContractFactory', () => {
         }, {
           type: 'number',
         }],
+        additionalItems: false,
       };
 
       const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];

@@ -70,7 +70,15 @@
           "$ref": "http://json-schema.org/draft-07/schema#/properties/pattern"
         },
         "additionalItems": {
-          "$ref": "#/definitions/documentSchema"
+          "oneOf": [
+            {
+              "$ref": "#/definitions/documentSchema"
+            },
+            {
+              "type": "boolean",
+              "const": false
+            }
+          ]
         },
         "items": {
           "oneOf": [
@@ -167,19 +175,52 @@
           "$ref": "#/definitions/documentSchema"
         }
       },
-      "if": {
-        "properties": {
-          "type": {
-            "const": "object"
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["items"]
           }
         },
-        "not": {
-          "required": ["$ref"]
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              },
+              "items": {
+                "type": "array"
+              }
+            },
+            "required": ["type","items"]
+          },
+          "then": {
+            "required": ["additionalItems"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "not": {
+              "required": ["$ref"]
+            }
+          },
+          "then": {
+            "required": ["properties", "additionalProperties"]
+          }
         }
-      },
-      "then": {
-        "required": ["properties", "additionalProperties"]
-      },
+      ],
       "additionalProperties": false
     }
   },
