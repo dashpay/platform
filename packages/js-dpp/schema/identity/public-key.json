@@ -1,5 +1,5 @@
 {
-  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/dash-schema",
+  "$schema": "http://json-schema.org/draft-07/schema",
   "$id": "https://schema.dash.org/dpp-0-4-0/identity/public-key",
   "type": "object",
   "properties": {

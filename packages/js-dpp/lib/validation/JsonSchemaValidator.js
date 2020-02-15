@@ -1,4 +1,3 @@
-const dashSchema = require('../../schema/meta/dash-schema');
 const dataContractMetaSchema = require('../../schema/meta/data-contract');
 
 const ValidationResult = require('./ValidationResult');
@@ -9,9 +8,6 @@ class JsonSchemaValidator {
     this.ajv = ajv;
 
     // TODO Validator shouldn't know about schemas
-
-    this.ajv.addMetaSchema(dashSchema);
-
     this.ajv.addMetaSchema(dataContractMetaSchema);
   }
 
