@@ -5,6 +5,9 @@
 [![npm](https://img.shields.io/npm/v/@dashevo/dapi-client.svg)](https://www.npmjs.com/package/@dashevo/dapi-client)
 
 > Client library used to access Dash DAPI endpoints
+>
+[Documentation](https://dashevo.github.io/dapi-client/#/)
+
 
 This library enables HTTP-based interaction with the Dash blockchain and Dash
 Platform via the decentralized API ([DAPI](https://github.com/dashevo/dapi))
