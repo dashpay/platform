@@ -833,6 +833,52 @@ describe('validateDataContractFactory', () => {
         expect(error.keyword).to.equal('additionalProperties');
         expect(error.params.additionalProperty).to.equal('propertyNames');
       });
+
+      it('should have maxItems if uniqueItems is used', () => {
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'array',
+              uniqueItems: true,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\']');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('maxItems');
+      });
+
+      it('should have maxItems no bigger than 1000 if uniqueItems is used', () => {
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'array',
+              uniqueItems: true,
+              maxItems: 200000,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\'].maxItems');
+        expect(error.keyword).to.equal('maximum');
+      });
     });
   });
 
