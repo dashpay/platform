@@ -124,7 +124,6 @@
           "propertyNames": { "format": "regex" },
           "default": {}
         },
-        "propertyNames": { "$ref": "#/definitions/documentSchema" },
         "dependencies": {
           "type": "object",
           "additionalProperties": {
@@ -322,7 +321,6 @@
               "propertyNames": { "format": "regex" },
               "default": {}
             },
-            "propertyNames": { "$ref": "#/definitions/documentSchema" },
             "dependencies": {
               "type": "object",
               "additionalProperties": {
