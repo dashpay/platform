@@ -187,12 +187,18 @@
                   "type": {
                     "anyOf": [
                       {
-                        "enum": ["object", "array"]
+                        "enum": [
+                          "object",
+                          "array"
+                        ]
                       },
                       {
                         "type": "array",
                         "contains": {
-                          "enum": ["object", "array"]
+                          "enum": [
+                            "object",
+                            "array"
+                          ]
                         }
                       }
                     ]
@@ -208,8 +214,36 @@
                 "maximum": 100000
               }
             },
-            "required": ["maxItems"]
+            "required": [
+              "maxItems"
+            ]
           }
+        },
+        "pattern": {
+          "description": "prevent slow pattern matching of large strings",
+          "properties": {
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000
+            }
+          },
+          "required": [
+            "maxLength"
+          ]
+        },
+        "format": {
+          "description": "prevent slow format validation of large strings",
+          "properties": {
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000
+            }
+          },
+          "required": [
+            "maxLength"
+          ]
         }
       },
       "allOf": [

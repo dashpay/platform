@@ -794,7 +794,7 @@ describe('validateDataContractFactory', () => {
         expect(error.keyword).to.equal('additionalProperties');
       });
 
-      it('should return invalid result if remote $ref is used', () => {
+      it('should return invalid result if remote `$ref` is used', () => {
         rawDataContract.documents.indexedDocument = {
           $ref: 'http://remote.com/schema#',
         };
@@ -809,7 +809,7 @@ describe('validateDataContractFactory', () => {
         expect(error.keyword).to.equal('pattern');
       });
 
-      it('should not have propertyNames', () => {
+      it('should not have `propertyNames`', () => {
         rawDataContract.documents.indexedDocument = {
           type: 'object',
           properties: {
@@ -834,7 +834,7 @@ describe('validateDataContractFactory', () => {
         expect(error.params.additionalProperty).to.equal('propertyNames');
       });
 
-      it('should have maxItems if uniqueItems is used', () => {
+      it('should have `maxItems` if `uniqueItems` is used', () => {
         rawDataContract.documents.indexedDocument = {
           type: 'object',
           properties: {
@@ -857,7 +857,7 @@ describe('validateDataContractFactory', () => {
         expect(error.params.missingProperty).to.equal('maxItems');
       });
 
-      it('should have maxItems no bigger than 1000 if uniqueItems is used', () => {
+      it('should have `maxItems` no bigger than 10000 if `uniqueItems` is used', () => {
         rawDataContract.documents.indexedDocument = {
           type: 'object',
           properties: {
@@ -877,6 +877,98 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\'].maxItems');
+        expect(error.keyword).to.equal('maximum');
+      });
+
+      it('should have `maxLength` if `pattern` is used', () => {
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              pattern: 'a',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\']');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('maxLength');
+      });
+
+      it('should have `maxLength` no bigger than 50000 if `pattern` is used', () => {
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              pattern: 'a',
+              maxLength: 60000,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\'].maxLength');
+        expect(error.keyword).to.equal('maximum');
+      });
+
+      it('should have `maxLength` if `format` is used', () => {
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              format: 'url',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\']');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('maxLength');
+      });
+
+      it('should have `maxLength` no bigger than 50000 if `format` is used', () => {
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              format: 'url',
+              maxLength: 60000,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\'].maxLength');
         expect(error.keyword).to.equal('maximum');
       });
     });
