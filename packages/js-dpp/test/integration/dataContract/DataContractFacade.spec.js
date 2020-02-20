@@ -33,8 +33,8 @@ describe('DataContractFacade', () => {
   });
 
   describe('createFromObject', () => {
-    it('should create DataContract from plain object', () => {
-      const result = dpp.dataContract.createFromObject(dataContract.toJSON());
+    it('should create DataContract from plain object', async () => {
+      const result = await dpp.dataContract.createFromObject(dataContract.toJSON());
 
       expect(result).to.be.an.instanceOf(DataContract);
 
@@ -43,8 +43,8 @@ describe('DataContractFacade', () => {
   });
 
   describe('createFromSerialized', () => {
-    it('should create DataContract from string', () => {
-      const result = dpp.dataContract.createFromSerialized(dataContract.serialize());
+    it('should create DataContract from string', async () => {
+      const result = await dpp.dataContract.createFromSerialized(dataContract.serialize());
 
       expect(result).to.be.an.instanceOf(DataContract);
 
@@ -65,8 +65,8 @@ describe('DataContractFacade', () => {
   });
 
   describe('validate', () => {
-    it('should validate DataContract', () => {
-      const result = dpp.dataContract.validate(dataContract.toJSON());
+    it('should validate DataContract', async () => {
+      const result = await dpp.dataContract.validate(dataContract.toJSON());
 
       expect(result).to.be.an.instanceOf(ValidationResult);
     });

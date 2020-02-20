@@ -19,23 +19,27 @@ class DashPlatformProtocol {
   constructor(options = {}) {
     this.dataProvider = options.dataProvider;
 
-    const validator = new JsonSchemaValidator(new Ajv());
+    const jsonSchemaValidator = new JsonSchemaValidator(new Ajv());
 
-    this.initializeFacades(validator);
+    this.initializeFacades(
+      jsonSchemaValidator,
+    );
   }
 
   /**
    * @private
-   * @param {JsonSchemaValidator} validator
+   * @param {JsonSchemaValidator} jsonSchemaValidator
    */
-  initializeFacades(validator) {
-    this.dataContract = new DataContractFacade(validator);
+  initializeFacades(jsonSchemaValidator) {
+    this.dataContract = new DataContractFacade(
+      jsonSchemaValidator,
+    );
 
-    this.document = new DocumentFacade(this.dataProvider, validator);
+    this.document = new DocumentFacade(this.dataProvider, jsonSchemaValidator);
 
-    this.stateTransition = new StateTransitionFacade(this.dataProvider, validator);
+    this.stateTransition = new StateTransitionFacade(this.dataProvider, jsonSchemaValidator);
 
-    this.identity = new IdentityFacade(validator);
+    this.identity = new IdentityFacade(jsonSchemaValidator);
   }
 
   /**

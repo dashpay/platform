@@ -101,9 +101,7 @@ describe('validateDataContractSTStructureFactory', () => {
 
     expect(validateStateTransitionSignatureMock).to.be.not.called();
 
-    expect(validateIdentityExistenceAndTypeMock).to.be.calledOnceWithExactly(
-      dataContract.getId(), [Identity.TYPES.APPLICATION],
-    );
+    expect(validateIdentityExistenceAndTypeMock).to.be.not.called();
   });
 
   it('should return invalid result on invalid signature', async () => {

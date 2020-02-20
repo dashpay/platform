@@ -187,14 +187,14 @@ describe('DocumentFactory', () => {
       this.sinonSandbox.stub(factory, 'createFromObject');
     });
 
-    it('should return new Data Contract from serialized Contract', () => {
+    it('should return new Data Contract from serialized Contract', async () => {
       const serializedDocument = document.serialize();
 
       decodeMock.returns(rawDocument);
 
       factory.createFromObject.returns(document);
 
-      const result = factory.createFromSerialized(serializedDocument);
+      const result = await factory.createFromSerialized(serializedDocument);
 
       expect(result).to.equal(document);
 

@@ -70,7 +70,7 @@ class DocumentFacade {
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @param {boolean} [options.action]
-   * @return {Document}
+   * @return {Promise<Document>}
    */
   async createFromSerialized(payload, options = { }) {
     if (!this.dataProvider && !options.skipValidation) {

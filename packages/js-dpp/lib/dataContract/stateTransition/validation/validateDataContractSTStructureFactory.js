@@ -24,8 +24,12 @@ function validateDataContractSTStructureFactory(
     const result = new ValidationResult();
 
     result.merge(
-      validateDataContract(rawStateTransition.dataContract),
+      await validateDataContract(rawStateTransition.dataContract),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
 
     const dataContract = createDataContract(rawStateTransition.dataContract);
     const dataContractId = dataContract.getId();

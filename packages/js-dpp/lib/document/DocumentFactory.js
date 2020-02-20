@@ -91,9 +91,9 @@ class DocumentFactory {
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @param {boolean} [options.action]
-   * @return {Document}
+   * @return {Promise<Document>}
    */
-  createFromSerialized(payload, options = { }) {
+  async createFromSerialized(payload, options = { }) {
     const rawDocument = decode(payload);
 
     return this.createFromObject(rawDocument, options);

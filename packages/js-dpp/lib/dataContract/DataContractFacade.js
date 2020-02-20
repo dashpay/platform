@@ -1,15 +1,21 @@
+const $RefParser = require('json-schema-ref-parser');
+
 const DataContractFactory = require('./DataContractFactory');
 const validateDataContractFactory = require('./validateDataContractFactory');
 const createDataContract = require('./createDataContract');
 const enrichDataContractWithBaseDocument = require('./enrichDataContractWithBaseDocument');
+const validateDataContractMaxDepthFactory = require('./stateTransition/validation/validateDataContractMaxDepthFactory');
 
 class DataContractFacade {
   /**
-   * @param {JsonSchemaValidator} validator
+   * @param {JsonSchemaValidator} jsonSchemaValidator
    */
-  constructor(validator) {
+  constructor(jsonSchemaValidator) {
+    const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
+
     this.validateDataContract = validateDataContractFactory(
-      validator,
+      jsonSchemaValidator,
+      validateDataContractMaxDepth,
       enrichDataContractWithBaseDocument,
       createDataContract,
     );
@@ -37,9 +43,9 @@ class DataContractFacade {
    * @param {RawDataContract} rawDataContract
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContract}
+   * @return {Promise<DataContract>}
    */
-  createFromObject(rawDataContract, options = { }) {
+  async createFromObject(rawDataContract, options = { }) {
     return this.factory.createFromObject(rawDataContract, options);
   }
 
@@ -49,9 +55,9 @@ class DataContractFacade {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContract}
+   * @return {Promise<DataContract>}
    */
-  createFromSerialized(payload, options = { }) {
+  async createFromSerialized(payload, options = { }) {
     return this.factory.createFromSerialized(payload, options);
   }
 
@@ -69,9 +75,9 @@ class DataContractFacade {
    * Validate Data Contract
    *
    * @param {DataContract|RawDataContract} dataContract
-   * @return {ValidationResult}
+   * @return {Promise<ValidationResult>}
    */
-  validate(dataContract) {
+  async validate(dataContract) {
     return this.validateDataContract(dataContract);
   }
 }

@@ -34,13 +34,13 @@ class DataContractFactory {
    * @param {RawDataContract} rawDataContract
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContract}
+   * @return {Promise<DataContract>}
    */
-  createFromObject(rawDataContract, options = { }) {
+  async createFromObject(rawDataContract, options = { }) {
     const opts = { skipValidation: false, ...options };
 
     if (!opts.skipValidation) {
-      const result = this.validateDataContract(rawDataContract);
+      const result = await this.validateDataContract(rawDataContract);
 
       if (!result.isValid()) {
         throw new InvalidDataContractError(result.getErrors(), rawDataContract);
@@ -56,9 +56,9 @@ class DataContractFactory {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContract}
+   * @return {Promise<DataContract>}
    */
-  createFromSerialized(payload, options = { }) {
+  async createFromSerialized(payload, options = { }) {
     const rawDataContract = decode(payload);
 
     return this.createFromObject(rawDataContract, options);

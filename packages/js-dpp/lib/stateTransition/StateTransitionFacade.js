@@ -1,3 +1,4 @@
+const $RefParser = require('json-schema-ref-parser');
 const MissingOptionError = require('../errors/MissingOptionError');
 
 const StateTransitionFactory = require('./StateTransitionFactory');
@@ -36,6 +37,7 @@ const executeDataTriggersFactory = require('../document/stateTransition/validati
 const validateIdentityExistenceAndTypeFactory = require('./validation/validateIdentityExistenceAndTypeFactory');
 const validateIdentityType = require('../identity/validation/validateIdentityType');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
+const validateDataContractMaxDepthFactory = require('../dataContract/stateTransition/validation/validateDataContractMaxDepthFactory');
 
 class StateTransitionFacade {
   /**
@@ -46,8 +48,11 @@ class StateTransitionFacade {
     this.dataProvider = dataProvider;
     this.validator = validator;
 
+    const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
+
     const validateDataContract = validateDataContractFactory(
       validator,
+      validateDataContractMaxDepth,
       enrichDataContractWithBaseDocument,
       createDataContract,
     );

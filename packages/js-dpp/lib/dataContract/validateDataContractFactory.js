@@ -15,13 +15,15 @@ const systemProperties = ['$id', '$userId'];
 const prebuiltIndices = ['$id'];
 
 /**
- * @param validator
+ * @param {JsonSchemaValidator} jsonSchemaValidator
+ * @param {validateDataContractMaxDepth} validateDataContractMaxDepth
  * @param {enrichDataContractWithBaseDocument} enrichDataContractWithBaseDocument
  * @param {createDataContract} createDataContract
  * @return {validateDataContract}
  */
 module.exports = function validateDataContractFactory(
-  validator,
+  jsonSchemaValidator,
+  validateDataContractMaxDepth,
   enrichDataContractWithBaseDocument,
   createDataContract,
 ) {
@@ -30,7 +32,7 @@ module.exports = function validateDataContractFactory(
    * @param {DataContract|RawDataContract} dataContract
    * @return {ValidationResult}
    */
-  function validateDataContract(dataContract) {
+  async function validateDataContract(dataContract) {
     const rawDataContract = (dataContract instanceof DataContract)
       ? dataContract.toJSON()
       : dataContract;
@@ -39,7 +41,7 @@ module.exports = function validateDataContractFactory(
     // TODO: Use validateSchema
     //  https://github.com/epoberezkin/ajv#validateschemaobject-schema---boolean
 
-    const result = validator.validate(
+    const result = jsonSchemaValidator.validate(
       JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
       rawDataContract,
     );
@@ -47,6 +49,10 @@ module.exports = function validateDataContractFactory(
     if (!result.isValid()) {
       return result;
     }
+
+    result.merge(
+      await validateDataContractMaxDepth(rawDataContract),
+    );
 
     const contractIdentityId = rawDataContract.contractId;
 
@@ -69,7 +75,7 @@ module.exports = function validateDataContractFactory(
       };
 
       result.merge(
-        validator.validateSchema(
+        jsonSchemaValidator.validateSchema(
           documentSchemaRef,
           additionalSchemas,
         ),
