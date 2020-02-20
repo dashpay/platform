@@ -24,7 +24,7 @@ const validateIdentityCreateSTStructureFactory = require('../identity/stateTrans
 const validateStateTransitionSignatureFactory = require('../stateTransition/validation/validateStateTransitionSignatureFactory');
 
 const fetchAndValidateDataContractFactory = require('../document/fetchAndValidateDataContractFactory');
-const enrichDataContractWithBaseDocument = require('../document/enrichDataContractWithBaseDocument');
+const enrichDataContractWithBaseDocument = require('../dataContract/enrichDataContractWithBaseDocument');
 const findDuplicateDocumentsById = require('../document/stateTransition/validation/structure/findDuplicateDocumentsById');
 const findDuplicateDocumentsByIndices = require('../document/stateTransition/validation/structure/findDuplicateDocumentsByIndices');
 
@@ -48,6 +48,8 @@ class StateTransitionFacade {
 
     const validateDataContract = validateDataContractFactory(
       validator,
+      enrichDataContractWithBaseDocument,
+      createDataContract,
     );
 
     const validateStateTransitionSignature = validateStateTransitionSignatureFactory(

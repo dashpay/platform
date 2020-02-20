@@ -1,13 +1,18 @@
 const DataContractFactory = require('./DataContractFactory');
 const validateDataContractFactory = require('./validateDataContractFactory');
 const createDataContract = require('./createDataContract');
+const enrichDataContractWithBaseDocument = require('./enrichDataContractWithBaseDocument');
 
 class DataContractFacade {
   /**
    * @param {JsonSchemaValidator} validator
    */
   constructor(validator) {
-    this.validateDataContract = validateDataContractFactory(validator);
+    this.validateDataContract = validateDataContractFactory(
+      validator,
+      enrichDataContractWithBaseDocument,
+      createDataContract,
+    );
 
     this.factory = new DataContractFactory(
       createDataContract,

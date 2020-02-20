@@ -7,7 +7,7 @@ const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyErr
 const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
 const DataContractRestrictedIdentityError = require('../errors/DataContractRestrictedIdentityError');
-const UniqueIndicesLimitReached = require('../errors/UniqueIndicesLimitReached');
+const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReachedError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
@@ -16,9 +16,15 @@ const prebuiltIndices = ['$id'];
 
 /**
  * @param validator
+ * @param {enrichDataContractWithBaseDocument} enrichDataContractWithBaseDocument
+ * @param {createDataContract} createDataContract
  * @return {validateDataContract}
  */
-module.exports = function validateDataContractFactory(validator) {
+module.exports = function validateDataContractFactory(
+  validator,
+  enrichDataContractWithBaseDocument,
+  createDataContract,
+) {
   /**
    * @typedef validateDataContract
    * @param {DataContract|RawDataContract} dataContract
@@ -49,6 +55,31 @@ module.exports = function validateDataContractFactory(validator) {
       return result;
     }
 
+    // Validate Document JSON Schemas
+    const enrichedRawDataContract = enrichDataContractWithBaseDocument(
+      dataContract,
+    );
+    const enrichedDataContract = createDataContract(enrichedRawDataContract);
+
+    Object.keys(enrichedRawDataContract.documents).forEach((documentType) => {
+      const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(documentType);
+
+      const additionalSchemas = {
+        [enrichedDataContract.getJsonSchemaId()]: enrichedRawDataContract,
+      };
+
+      result.merge(
+        validator.validateSchema(
+          documentSchemaRef,
+          additionalSchemas,
+        ),
+      );
+    });
+
+    if (!result.isValid()) {
+      return result;
+    }
+
     // Validate indices
     Object.entries(rawDataContract.documents).filter(([, documentSchema]) => (
       Object.prototype.hasOwnProperty.call(documentSchema, 'indices')
@@ -62,10 +93,10 @@ module.exports = function validateDataContractFactory(validator) {
           if (!isUniqueIndexLimitReached && indexDefinition.unique) {
             uniqueIndexCount++;
 
-            if (uniqueIndexCount > UniqueIndicesLimitReached.UNIQUE_INDEX_LIMIT) {
+            if (uniqueIndexCount > UniqueIndicesLimitReachedError.UNIQUE_INDEX_LIMIT) {
               isUniqueIndexLimitReached = true;
 
-              result.addError(new UniqueIndicesLimitReached(
+              result.addError(new UniqueIndicesLimitReachedError(
                 rawDataContract,
                 documentType,
               ));

@@ -1,4 +1,4 @@
-const enrichDataContractWithBaseDocument = require('./enrichDataContractWithBaseDocument');
+const enrichDataContractWithBaseDocument = require('../dataContract/enrichDataContractWithBaseDocument');
 const validateDocumentFactory = require('./validateDocumentFactory');
 const fetchAndValidateDataContractFactory = require('./fetchAndValidateDataContractFactory');
 

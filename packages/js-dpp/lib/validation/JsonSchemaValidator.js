@@ -34,6 +34,35 @@ class JsonSchemaValidator {
       (this.ajv.errors || []).map((error) => new JsonSchemaError(error)),
     );
   }
+
+  /**
+   * Validate JSON Schema
+   *
+   * @param {object} schema
+   * @param additionalSchemas
+   * @return {ValidationResult}
+   */
+  validateSchema(schema, additionalSchemas = {}) {
+    const result = new ValidationResult();
+
+    Object.keys(additionalSchemas).forEach((schemaId) => {
+      this.ajv.addSchema(additionalSchemas[schemaId], schemaId);
+    });
+
+    try {
+      this.ajv.compile(schema);
+    } catch (e) {
+      result.addError(
+        new JsonSchemaError(e),
+      );
+    } finally {
+      Object.keys(additionalSchemas).forEach((schemaId) => {
+        this.ajv.removeSchema(schemaId);
+      });
+    }
+
+    return result;
+  }
 }
 
 JsonSchemaValidator.SCHEMAS = {

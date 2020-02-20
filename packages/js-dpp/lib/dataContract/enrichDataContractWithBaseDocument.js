@@ -1,13 +1,17 @@
 const baseDocumentSchema = require('../../schema/base/document');
 
+const DataContract = require('./DataContract');
+
 /**
  * @typedef {enrichDataContractWithBaseDocument}
- * @param {DataContract} dataContract
+ * @param {DataContract|RawDataContract} dataContract
  * @param {string[]} [excludeBaseDocumentProperties]
  * @return {RawDataContract}
  */
 function enrichDataContractWithBaseDocument(dataContract, excludeBaseDocumentProperties = []) {
-  const rawDataContract = dataContract.toJSON();
+  const rawDataContract = (dataContract instanceof DataContract)
+    ? dataContract.toJSON()
+    : dataContract;
 
   const jsonDataContract = JSON.stringify(rawDataContract);
   const clonedDataContract = JSON.parse(jsonDataContract);

@@ -1,13 +1,13 @@
 const AbstractIndexError = require('./AbstractIndexError');
 
-class UniqueIndicesLimitReached extends AbstractIndexError {
+class UniqueIndicesLimitReachedError extends AbstractIndexError {
   /**
    * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    */
   constructor(rawDataContract, documentType) {
     const message = `'${documentType}' document has more `
-      + `than ${UniqueIndicesLimitReached.UNIQUE_INDEX_LIMIT} unique index definitions`;
+      + `than ${UniqueIndicesLimitReachedError.UNIQUE_INDEX_LIMIT} unique index definitions`;
 
     super(
       message,
@@ -18,6 +18,6 @@ class UniqueIndicesLimitReached extends AbstractIndexError {
   }
 }
 
-UniqueIndicesLimitReached.UNIQUE_INDEX_LIMIT = 3;
+UniqueIndicesLimitReachedError.UNIQUE_INDEX_LIMIT = 3;
 
-module.exports = UniqueIndicesLimitReached;
+module.exports = UniqueIndicesLimitReachedError;
