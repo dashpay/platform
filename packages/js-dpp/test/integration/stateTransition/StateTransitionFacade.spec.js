@@ -252,5 +252,14 @@ describe('StateTransitionFacade', () => {
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });
+
+    it('should validate raw state transition data', async () => {
+      const rawStateTransition = dataContractStateTransition.toJSON();
+
+      const result = await dpp.stateTransition.validateData(rawStateTransition);
+
+      expect(result).to.be.an.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.true();
+    });
   });
 });

@@ -249,7 +249,10 @@ class StateTransitionFacade {
   /**
    * Validate State Transition Data
    *
-   * @param {DataContractStateTransition|DocumentsStateTransition} stateTransition
+   * @param {
+   *  DataContractStateTransition|DocumentsStateTransition|IdentityCreateTransition
+   *  |RawDataContractStateTransition|RawDocumentsStateTransition|RawIdentityCreateTransition
+   *  } stateTransition
    * @return {ValidationResult}
    */
   async validateData(stateTransition) {
@@ -260,8 +263,13 @@ class StateTransitionFacade {
         + ' setDataProvider method',
       );
     }
+    let stateTransitionModel = stateTransition;
 
-    return this.validateStateTransitionData(stateTransition);
+    if (!(stateTransition instanceof AbstractStateTransition)) {
+      stateTransitionModel = await this.createFromObject(stateTransition);
+    }
+
+    return this.validateStateTransitionData(stateTransitionModel);
   }
 }
 
