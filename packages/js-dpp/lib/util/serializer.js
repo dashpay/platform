@@ -1,5 +1,9 @@
 const cbor = require('cbor');
 
+const MaxEncodedBytesReachedError = require('./errors/MaxEncodedBytesReachedError');
+
+const MAX_ENCODED_BYTE_LENGTH = 16 * 1024; // 16Kb
+
 /**
  * @typedef serializer
  * @type {{encode(*): Buffer, decode((Buffer|string)): *}}
@@ -11,7 +15,14 @@ module.exports = {
    * @return {Buffer}
    */
   encode(payload) {
-    return cbor.encodeCanonical(payload);
+    const encodedData = cbor.encodeCanonical(payload);
+    const encodedDataByteLength = Buffer.byteLength(encodedData);
+
+    if (encodedDataByteLength >= MAX_ENCODED_BYTE_LENGTH) {
+      throw new MaxEncodedBytesReachedError(payload);
+    }
+
+    return encodedData;
   },
 
   /**
