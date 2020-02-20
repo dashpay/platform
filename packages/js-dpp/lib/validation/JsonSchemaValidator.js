@@ -50,6 +50,8 @@ class JsonSchemaValidator {
     });
 
     try {
+      // TODO: Use validateSchema
+      //  https://github.com/epoberezkin/ajv#validateschemaobject-schema---boolean
       this.ajv.compile(schema);
     } catch (e) {
       result.addError(
