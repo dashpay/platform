@@ -6,7 +6,6 @@ const DuplicateIndexError = require('../errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyError');
 const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
-const DataContractRestrictedIdentityError = require('../errors/DataContractRestrictedIdentityError');
 const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReachedError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
@@ -36,7 +35,6 @@ module.exports = function validateDataContractFactory(
     const rawDataContract = (dataContract instanceof DataContract)
       ? dataContract.toJSON()
       : dataContract;
-    const allowedIdentities = process.env.ALLOWED_IDENTITIES ? process.env.ALLOWED_IDENTITIES.split(',') : [];
 
     // TODO: Use validateSchema
     //  https://github.com/epoberezkin/ajv#validateschemaobject-schema---boolean
@@ -53,13 +51,6 @@ module.exports = function validateDataContractFactory(
     result.merge(
       await validateDataContractMaxDepth(rawDataContract),
     );
-
-    const contractIdentityId = rawDataContract.contractId;
-
-    if (allowedIdentities.length > 0 && !allowedIdentities.includes(contractIdentityId)) {
-      result.addError(new DataContractRestrictedIdentityError(rawDataContract));
-      return result;
-    }
 
     // Validate Document JSON Schemas
     const enrichedRawDataContract = enrichDataContractWithBaseDocument(

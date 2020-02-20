@@ -20,12 +20,9 @@ const InvalidIndexPropertyTypeError = require('../../../lib/errors/InvalidIndexP
 const SystemPropertyIndexAlreadyPresentError = require('../../../lib/errors/SystemPropertyIndexAlreadyPresentError');
 const UniqueIndicesLimitReachedError = require('../../../lib/errors/UniqueIndicesLimitReachedError');
 
-const originalEnv = { ...process.env };
-
 describe('validateDataContractFactory', () => {
   let rawDataContract;
   let validateDataContract;
-  let allowedIdentities;
 
   beforeEach(() => {
     rawDataContract = getDataContractFixture().toJSON();
@@ -34,9 +31,6 @@ describe('validateDataContractFactory', () => {
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
-
-    allowedIdentities = ['1'.repeat(42), '2'.repeat(42)].join(',');
-    process.env = { ...originalEnv };
 
     validateDataContract = validateDataContractFactory(
       jsonSchemaValidator,
@@ -153,30 +147,6 @@ describe('validateDataContractFactory', () => {
 
       expect(error.keyword).to.equal('pattern');
       expect(error.dataPath).to.equal('.contractId');
-    });
-
-    it('should be valid if contractId is in the list of allowed identities', async () => {
-      process.env.ALLOWED_IDENTITIES = allowedIdentities;
-
-      rawDataContract.contractId = '1'.repeat(42);
-
-      const result = await validateDataContract(rawDataContract);
-
-      expect(result.isValid()).to.be.true();
-    });
-
-    it('should not be valid if contractId is not in the list of allowed identities', async () => {
-      process.env.ALLOWED_IDENTITIES = allowedIdentities;
-
-      rawDataContract.contractId = '3'.repeat(42);
-
-      const result = await validateDataContract(rawDataContract);
-
-      const [error] = result.getErrors();
-
-      expect(error.name).to.equal('DataContractRestrictedIdentityError');
-      expect(error.message).to.equal('The identity is not allowed to register contracts');
-      expect(error.getDataContract()).to.be.deep.equal(rawDataContract);
     });
   });
 
