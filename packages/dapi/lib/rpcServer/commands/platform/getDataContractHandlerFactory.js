@@ -31,7 +31,7 @@ function getDataContractHandlerFactory(driveAPI, dpp, validator) {
       throw e;
     }
 
-    const dataContract = dpp.dataContract.createFromObject(
+    const dataContract = await dpp.dataContract.createFromObject(
       dataContractJSON,
       { skipValidation: true },
     );

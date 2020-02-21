@@ -156,13 +156,15 @@ describe('rpcServer', function main() {
     it('should fetch created data contract', async () => {
       const response = await dapiRpc.request('getDataContract', { id: identityCreateTransition.getIdentityId() });
 
-      const fetchedContract = dpp.dataContract.createFromSerialized(
+      const fetchedContract = await dpp.dataContract.createFromSerialized(
         Buffer.from(response.result.dataContract, 'base64'),
         { skipValidation: true },
       );
       expect(
         getDataContractFixture(identityCreateTransition.getIdentityId()).toJSON(),
-      ).to.deep.equal(dpp.dataContract.createFromObject(fetchedContract).toJSON());
+      ).to.deep.equal(
+        (await dpp.dataContract.createFromObject(fetchedContract)).toJSON(),
+      );
     });
 
     it('should return the same result as grpc client', async () => {
@@ -175,13 +177,15 @@ describe('rpcServer', function main() {
 
       expect(contractFromForcedClient).to.be.deep.equal(contractFromGrpc);
 
-      const fetchedContract = dpp.dataContract.createFromSerialized(
+      const fetchedContract = await dpp.dataContract.createFromSerialized(
         contractFromForcedClient,
         { skipValidation: true },
       );
       expect(
         getDataContractFixture(identityCreateTransition.getIdentityId()).toJSON(),
-      ).to.deep.equal(dpp.dataContract.createFromObject(fetchedContract).toJSON());
+      ).to.deep.equal(
+        (await dpp.dataContract.createFromObject(fetchedContract)).toJSON(),
+      );
     });
 
     it('should respond with an error if contract not found', async () => {
