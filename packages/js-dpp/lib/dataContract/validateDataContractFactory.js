@@ -1,4 +1,5 @@
 const JsonSchemaValidator = require('../validation/JsonSchemaValidator');
+const ValidationResult = require('../validation/ValidationResult');
 
 const DataContract = require('./DataContract');
 
@@ -7,8 +8,11 @@ const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyErr
 const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
 const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReachedError');
+const DataContractMaxByteSizeExceededError = require('../errors/DataContractMaxByteSizeExceededError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
+
+const { encode } = require('../util/serializer');
 
 const systemProperties = ['$id', '$userId'];
 const prebuiltIndices = ['$id'];
@@ -36,12 +40,25 @@ module.exports = function validateDataContractFactory(
       ? dataContract.toJSON()
       : dataContract;
 
-    // TODO: Use validateSchema
-    //  https://github.com/epoberezkin/ajv#validateschemaobject-schema---boolean
+    const result = new ValidationResult();
 
-    const result = jsonSchemaValidator.validate(
-      JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
-      rawDataContract,
+    // Validate Data Contract size
+    const serializedDataContract = encode(rawDataContract);
+    const serializedDataContractByteSize = Buffer.byteLength(serializedDataContract);
+
+    if (serializedDataContractByteSize > DataContractMaxByteSizeExceededError.MAX_SIZE) {
+      result.addError(
+        new DataContractMaxByteSizeExceededError(rawDataContract),
+      );
+      return result;
+    }
+
+    // Validate Data Contract schema
+    result.merge(
+      jsonSchemaValidator.validate(
+        JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
+        rawDataContract,
+      ),
     );
 
     if (!result.isValid()) {
