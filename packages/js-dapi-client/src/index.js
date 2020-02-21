@@ -154,12 +154,7 @@ class DAPIClient {
 
     const blockBinaryArray = response.getBlock();
 
-    let block = null;
-    if (blockBinaryArray) {
-      block = Buffer.from(blockBinaryArray);
-    }
-
-    return block;
+    return Buffer.from(blockBinaryArray);
   }
 
   /**
@@ -180,12 +175,7 @@ class DAPIClient {
 
     const blockBinaryArray = response.getBlock();
 
-    let block = null;
-    if (blockBinaryArray) {
-      block = Buffer.from(blockBinaryArray);
-    }
-
-    return block;
+    return Buffer.from(blockBinaryArray);
   }
 
   /**
