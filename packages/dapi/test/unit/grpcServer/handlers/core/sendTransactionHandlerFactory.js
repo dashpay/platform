@@ -49,7 +49,7 @@ describe('sendTransactionHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(SendTransactionResponse);
     expect(result.getTransactionId()).to.equal(transactionId);
-    expect(insightAPIMock.sendTransaction).to.be.calledOnceWith(serializedTransaction);
+    expect(insightAPIMock.sendTransaction).to.be.calledOnceWith(serializedTransaction.toString('hex'));
   });
 
   it('should throw InvalidArgumentGrpcError error if transaction is not specified', async () => {
@@ -77,13 +77,13 @@ describe('sendTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: invalid transaction: transaction txouts empty');
+      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('Invalid argument: invalid transaction:'));
       expect(insightAPIMock.sendTransaction).to.be.not.called();
     }
   });
 
   it('should throw InvalidArgumentGrpcError error if transaction cannot be decoded', async () => {
-    serializedTransaction = 'invalid data';
+    serializedTransaction = new Uint8Array(Buffer.from('invalid data'));
     request.getTransaction.returns(serializedTransaction);
 
     try {
@@ -92,7 +92,7 @@ describe('sendTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: invalid transaction: Invalid Argument: Must provide an object or string to deserialize a transaction');
+      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('Invalid argument: invalid transaction:'));
       expect(insightAPIMock.sendTransaction).to.be.not.called();
     }
   });

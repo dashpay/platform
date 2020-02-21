@@ -26,11 +26,13 @@ function sendTransactionHandlerFactory(insightAPI) {
   async function sendTransactionHandler(call) {
     const { request } = call;
 
-    const serializedTransaction = request.getTransaction();
+    const serializedTransactionBinary = request.getTransaction();
 
-    if (!serializedTransaction) {
+    if (!serializedTransactionBinary) {
       throw new InvalidArgumentGrpcError('transaction is not specified');
     }
+
+    const serializedTransaction = Buffer.from(serializedTransactionBinary);
 
     // check transaction
 
@@ -47,7 +49,16 @@ function sendTransactionHandlerFactory(insightAPI) {
       throw new InvalidArgumentGrpcError(`invalid transaction: ${transactionIsValid}`);
     }
 
-    const transactionId = await insightAPI.sendTransaction(serializedTransaction);
+    let transactionId;
+    try {
+      transactionId = await insightAPI.sendTransaction(serializedTransaction.toString('hex'));
+    } catch (e) {
+      if (e.statusCode === 400) {
+        throw new InvalidArgumentGrpcError(`invalid transaction: ${e.error}`);
+      }
+
+      throw e;
+    }
 
     const response = new SendTransactionResponse();
     response.setTransactionId(transactionId);
