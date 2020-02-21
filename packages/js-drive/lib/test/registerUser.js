@@ -88,7 +88,7 @@ async function registerUser(coreAPI, dapiClient, dpp) {
 
   identityCreateTransition.sign(identityPublicKey, privateKey);
 
-  const validationResult = dpp.stateTransition.validateData(identityCreateTransition);
+  const validationResult = await dpp.stateTransition.validateData(identityCreateTransition);
   if (!validationResult.isValid()) {
     throw new Error('Invalid identity create state transition');
   }

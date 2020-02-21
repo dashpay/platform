@@ -49,7 +49,7 @@ describe('updateSVContractFactory', () => {
 
   it('should maintain SVContract previous revisions and add new one', async () => {
     // Create and store the second contract version
-    const secondDPOContract = dpp.dataContract.createFromObject(contract.toJSON());
+    const secondDPOContract = await dpp.dataContract.createFromObject(contract.toJSON());
     secondDPOContract.setVersion(2);
 
     const secondSVContract = new SVContract(
@@ -62,7 +62,7 @@ describe('updateSVContractFactory', () => {
     await svContractRepository.store(secondSVContract);
 
     // Update to the third contract version
-    const thirdContract = dpp.dataContract.createFromObject(contract.toJSON());
+    const thirdContract = await dpp.dataContract.createFromObject(contract.toJSON());
     thirdContract.setVersion(3);
 
     await updateSVContract(

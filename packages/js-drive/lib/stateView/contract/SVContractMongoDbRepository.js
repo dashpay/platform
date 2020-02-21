@@ -98,7 +98,9 @@ class SVContractMongoDbRepository {
         .toArray();
     }
 
-    return result.map(document => this.createSVContract(document));
+    return Promise.all(
+      result.map(document => this.createSVContract(document)),
+    );
   }
 
   /**
@@ -168,15 +170,15 @@ class SVContractMongoDbRepository {
   /**
    * @typedef createSVContract
    * @param {Object} rawSVContract
-   * @returns {SVContract}
+   * @returns {Promise<SVContract>}
    */
-  createSVContract({
+  async createSVContract({
     contract: serializedRawContract,
     reference,
     isDeleted,
     previousRevisions,
   }) {
-    const contract = this.dpp.dataContract.createFromSerialized(
+    const contract = await this.dpp.dataContract.createFromSerialized(
       serializedRawContract.buffer,
       { skipValidation: true },
     );
