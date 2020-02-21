@@ -2,6 +2,8 @@ const InvalidDataContractError = require('./errors/InvalidDataContractError');
 
 const DataContractStateTransition = require('./stateTransition/DataContractStateTransition');
 
+const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
+
 const { decode } = require('../util/serializer');
 
 class DataContractFactory {
@@ -59,7 +61,17 @@ class DataContractFactory {
    * @return {Promise<DataContract>}
    */
   async createFromSerialized(payload, options = { }) {
-    const rawDataContract = decode(payload);
+    let rawDataContract;
+    try {
+      rawDataContract = decode(payload);
+    } catch (error) {
+      throw new InvalidDataContractError([
+        new SerializedObjectParsingError(
+          payload,
+          error,
+        ),
+      ]);
+    }
 
     return this.createFromObject(rawDataContract, options);
   }

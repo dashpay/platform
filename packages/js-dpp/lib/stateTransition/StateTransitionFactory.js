@@ -1,6 +1,7 @@
 const { decode } = require('../util/serializer');
 
 const InvalidStateTransitionError = require('./errors/InvalidStateTransitionError');
+const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
 
 class StateTransitionFactory {
   /**
@@ -43,7 +44,17 @@ class StateTransitionFactory {
    * @return {DataContractStateTransition|DocumentsStateTransition}
    */
   async createFromSerialized(payload, options = { }) {
-    const rawStateTransition = decode(payload);
+    let rawStateTransition;
+    try {
+      rawStateTransition = decode(payload);
+    } catch (error) {
+      throw new InvalidStateTransitionError([
+        new SerializedObjectParsingError(
+          payload,
+          error,
+        ),
+      ]);
+    }
 
     return this.createFromObject(rawStateTransition, options);
   }

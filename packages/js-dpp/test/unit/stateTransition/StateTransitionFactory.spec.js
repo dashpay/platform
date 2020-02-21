@@ -9,6 +9,7 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 const InvalidStateTransitionError = require('../../../lib/stateTransition/errors/InvalidStateTransitionError');
 
 const ConsensusError = require('../../../lib/errors/ConsensusError');
+const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
 
 describe('StateTransitionFactory', () => {
   let StateTransitionFactory;
@@ -114,6 +115,26 @@ describe('StateTransitionFactory', () => {
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawStateTransition);
 
       expect(decodeMock).to.have.been.calledOnceWith(serializedStateTransition);
+    });
+
+    it('should throw consensus error if `decode` fails', async () => {
+      const parsingError = new Error('Something failed during parsing');
+
+      const serializedStateTransition = stateTransition.serialize();
+
+      decodeMock.throws(parsingError);
+
+      try {
+        await factory.createFromSerialized(serializedStateTransition);
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(InvalidStateTransitionError);
+
+        const [innerError] = e.getErrors();
+        expect(innerError).to.be.an.instanceOf(SerializedObjectParsingError);
+        expect(innerError.getPayload()).to.deep.equal(serializedStateTransition);
+        expect(innerError.getParsingError()).to.deep.equal(parsingError);
+      }
     });
   });
 });

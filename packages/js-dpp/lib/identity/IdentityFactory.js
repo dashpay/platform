@@ -3,6 +3,7 @@ const Identity = require('./Identity');
 const { decode } = require('../util/serializer');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
+const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
 
 class IdentityFactory {
   /**
@@ -59,7 +60,17 @@ class IdentityFactory {
    * @return {Identity}
    */
   createFromSerialized(serializedIdentity, options = {}) {
-    const rawIdentity = decode(serializedIdentity);
+    let rawIdentity;
+    try {
+      rawIdentity = decode(serializedIdentity);
+    } catch (error) {
+      throw new InvalidIdentityError([
+        new SerializedObjectParsingError(
+          serializedIdentity,
+          error,
+        ),
+      ]);
+    }
 
     return this.createFromObject(rawIdentity, options);
   }

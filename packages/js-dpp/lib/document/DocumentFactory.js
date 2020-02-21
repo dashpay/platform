@@ -7,6 +7,7 @@ const DocumentsStateTransition = require('./stateTransition/DocumentsStateTransi
 
 const InvalidDocumentError = require('./errors/InvalidDocumentError');
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
+const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
 
 class DocumentFactory {
   /**
@@ -94,7 +95,17 @@ class DocumentFactory {
    * @return {Promise<Document>}
    */
   async createFromSerialized(payload, options = { }) {
-    const rawDocument = decode(payload);
+    let rawDocument;
+    try {
+      rawDocument = decode(payload);
+    } catch (error) {
+      throw new InvalidDocumentError([
+        new SerializedObjectParsingError(
+          payload,
+          error,
+        ),
+      ]);
+    }
 
     return this.createFromObject(rawDocument, options);
   }

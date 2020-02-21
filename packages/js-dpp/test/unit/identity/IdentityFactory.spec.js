@@ -6,6 +6,7 @@ const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixtur
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 const ConsensusError = require('../../../lib/errors/ConsensusError');
+const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
 
 const InvalidIdentityError = require(
   '../../../lib/identity/errors/InvalidIdentityError',
@@ -108,6 +109,26 @@ describe('IdentityFactory', () => {
       expect(factory.createFromObject).to.have.been.calledOnceWith(identity.toJSON());
 
       expect(decodeMock).to.have.been.calledOnceWith(serializedIdentity);
+    });
+
+    it('should throw consensus error if `decode` fails', () => {
+      const parsingError = new Error('Something failed during parsing');
+
+      const serializedIdentity = identity.serialize();
+
+      decodeMock.throws(parsingError);
+
+      try {
+        factory.createFromSerialized(serializedIdentity);
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(InvalidIdentityError);
+
+        const [innerError] = e.getErrors();
+        expect(innerError).to.be.an.instanceOf(SerializedObjectParsingError);
+        expect(innerError.getPayload()).to.deep.equal(serializedIdentity);
+        expect(innerError.getParsingError()).to.deep.equal(parsingError);
+      }
     });
   });
 });
