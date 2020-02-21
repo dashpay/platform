@@ -31,7 +31,16 @@ function getTransactionHandlerFactory(insightAPI) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
-    const serializedTransaction = await insightAPI.getRawTransactionById(id);
+    let serializedTransaction;
+    try {
+      serializedTransaction = await insightAPI.getRawTransactionById(id);
+    } catch (e) {
+      if (e.statusCode === 404) {
+        throw new InvalidArgumentGrpcError('Transaction not found');
+      }
+
+      throw e;
+    }
 
     const transaction = new Transaction(serializedTransaction);
 
