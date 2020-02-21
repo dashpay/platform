@@ -2,8 +2,6 @@ const {
   GetBlockResponse,
 } = require('@dashevo/dapi-grpc');
 
-const { Block } = require('@dashevo/dashcore-lib');
-
 const {
   server: {
     error: {
@@ -35,15 +33,30 @@ function getBlockHandlerFactory(insightAPI) {
     let serializedBlock;
 
     if (hash) {
-      serializedBlock = await insightAPI.getRawBlockByHash(hash);
+      try {
+        serializedBlock = await insightAPI.getRawBlockByHash(hash);
+      } catch (e) {
+        if (e.statusCode === 404) {
+          throw new InvalidArgumentGrpcError('Invalid block hash');
+        }
+
+        throw e;
+      }
     } else {
-      serializedBlock = await insightAPI.getRawBlockByHeight(height);
+      try {
+        serializedBlock = await insightAPI.getRawBlockByHeight(height);
+      } catch (e) {
+        if (e.statusCode === 400) {
+          throw new InvalidArgumentGrpcError('Invalid block height');
+        }
+
+        throw e;
+      }
     }
 
-    const block = new Block(Buffer.from(serializedBlock, 'hex'));
-
     const response = new GetBlockResponse();
-    response.setBlock(block.toBuffer());
+    const serializedBlockBuffer = Buffer.from(serializedBlock, 'hex');
+    response.setBlock(serializedBlockBuffer);
 
     return response;
   }
