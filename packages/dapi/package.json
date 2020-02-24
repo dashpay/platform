@@ -49,7 +49,7 @@
     "zeromq": "^5.2.0"
   },
   "devDependencies": {
-    "@dashevo/dp-services-ctl": "~0.11.0-dev.1",
+    "@dashevo/dp-services-ctl": "~0.11.0-dev.2",
     "@dashevo/dapi-client": "~0.9.0-dev.6",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",

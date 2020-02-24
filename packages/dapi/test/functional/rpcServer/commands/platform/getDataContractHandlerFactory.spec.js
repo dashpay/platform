@@ -30,7 +30,7 @@ const wait = require('../../../../../lib/utils/wait');
 describe('rpcServer', function main() {
   this.timeout(320000);
 
-  describe('getIdentityHandlerFactory', () => {
+  describe('getDataContractHandlerFactory', () => {
     let removeDapi;
     let dapiClient;
     let dpp;

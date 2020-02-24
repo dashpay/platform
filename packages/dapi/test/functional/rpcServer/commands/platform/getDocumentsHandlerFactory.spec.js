@@ -38,7 +38,7 @@ const wait = require('../../../../../lib/utils/wait');
 describe('rpcServer', function main() {
   this.timeout(200000);
 
-  describe('applyStateTransitionHandlerFactory', () => {
+  describe('getDocumentsHandlerFactory', () => {
     let dpp;
     let removeDapi;
     let dapiClient;
