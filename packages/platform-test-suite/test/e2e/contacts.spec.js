@@ -58,9 +58,11 @@ describe('Contacts app', () => {
           avatarUrl: {
             type: 'string',
             format: 'url',
+            maxLength: 255,
           },
           about: {
             type: 'string',
+            maxLength: 255,
           },
         },
         required: ['avatarUrl', 'about'],
@@ -119,7 +121,7 @@ describe('Contacts app', () => {
         dataContractDocumentSchemas,
       );
 
-      const result = dpp.dataContract.validate(dataContract);
+      const result = await dpp.dataContract.validate(dataContract);
       expect(result.isValid(), 'Contract must be valid').to.be.true();
 
       dataProvider.dataContract = dataContract;
@@ -142,7 +144,7 @@ describe('Contacts app', () => {
       // 5. Fetch Data Contract
       const actualContractSerialized = await dapiClient.getDataContract(dataContract.getId());
 
-      const actualDataContract = dpp.dataContract.createFromSerialized(
+      const actualDataContract = await dpp.dataContract.createFromSerialized(
         actualContractSerialized,
       );
 
@@ -203,7 +205,7 @@ describe('Contacts app', () => {
         Identity.TYPES.USER,
       );
 
-      expect(bobIdentity).to.be.instanceOf(Identity);
+      expect(aliceIdentity).to.be.instanceOf(Identity);
     });
 
     it('should register username');

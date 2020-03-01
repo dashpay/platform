@@ -31,9 +31,9 @@ async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address)
     .fee(668)
     .sign(faucetPrivateKey);
 
-  const transactionId = await dapiClient.sendRawTransaction(transaction.serialize());
+  const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
 
-  await dapiClient.generate(1);
+  await dapiClient.generateToAddress(1, faucetAddress.toString());
   await wait(5000);
 
   return transactionId;
@@ -118,9 +118,9 @@ async function createIdentity(dapiClient, privateKey, type) {
     .fee(668)
     .sign(lockPrivateKey);
 
-  await dapiClient.sendRawTransaction(lockTransaction.serialize());
+  await dapiClient.sendTransaction(lockTransaction.toBuffer());
 
-  await dapiClient.generate(1);
+  await dapiClient.generateToAddress(1, faucetAddress.toString());
   await wait(5000);
 
   const outPoint = lockTransaction.getOutPointBuffer(0)
