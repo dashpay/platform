@@ -13,11 +13,15 @@ describe('getStatusHandlerFactory', function main() {
       remove,
     } = await startDapi();
 
+    const coreAPI = dashCore.getApi();
+
     removeDapi = remove;
 
     dapiClient = dapiCore.getApi();
 
-    await (dashCore.getApi()).generate(1000);
+    const { result: address } = await coreAPI.getNewAddress();
+
+    await dashCore.getApi().generateToAddress(10, address);
   });
 
   afterEach(async () => {
@@ -39,6 +43,6 @@ describe('getStatusHandlerFactory', function main() {
     expect(result).to.have.a.property('errors');
     expect(result).to.have.a.property('network');
 
-    expect(result.blocks).to.equal(1000);
+    expect(result.blocks).to.equal(10);
   });
 });

@@ -26,16 +26,13 @@ describe('getTransactionHandlerFactor', function main() {
 
     const coreAPI = dashCore.getApi();
 
-    await coreAPI.generate(1000);
-
     const { result: fromAddress } = await coreAPI.getNewAddress();
     const { result: privateKeyString } = await coreAPI.dumpPrivKey(fromAddress);
+    const privateKey = new PrivateKey(privateKeyString);
+
     const { result: toAddress } = await coreAPI.getNewAddress();
 
-    const privateKey = new PrivateKey(privateKeyString);
-    await coreAPI.generate(500);
-    await coreAPI.sendToAddress(fromAddress, 10);
-    await coreAPI.generate(10);
+    await coreAPI.generateToAddress(1000, fromAddress);
 
     const { items: unspent } = await dapiClient.getUTXO(fromAddress);
 
@@ -43,10 +40,10 @@ describe('getTransactionHandlerFactor', function main() {
 
     transaction = new Transaction();
 
-    transaction.from(unspent)
+    transaction.from(unspent.slice(-1)[0])
       .to(toAddress, amount)
       .change(fromAddress)
-      .fee(668)
+      .fee(1000)
       .sign(privateKey);
 
     ({ result: transactionId } = await coreAPI.sendRawTransaction(transaction.serialize()));

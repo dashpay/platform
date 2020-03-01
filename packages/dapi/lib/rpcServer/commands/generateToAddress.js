@@ -1,39 +1,43 @@
 const Validator = require('../../utils/Validator');
-const argsSchema = require('../schemas/generate');
+const argsSchema = require('../schemas/generateToAddress');
 
 const validator = new Validator(argsSchema);
 /**
  * @param coreAPI
- * @return {generate}
+ * @return {generateToAddress}
  */
-const generateFactory = (coreAPI) => {
+const generateToAddressFactory = (coreAPI) => {
   /**
    * Layer 1 endpoint
    * WORKS ONLY IN REGTEST MODE.
    * Generates blocks on demand for regression tests.
-   * @typedef generate
+   * @typedef generateToAddress
    * @param args - command arguments
-   * @param {number} args.amount - amount of blocks to generate
+   * @param {number} args.blocksNumber - Number of blocks to generate
+   * @param {string} args.address - The address that will receive the newly generated Dash
+   *
    * @return {Promise<string[]>} - generated block hashes
    */
-  async function generate(args) {
+  async function generateToAddress(args) {
     validator.validate(args);
-    const { amount } = args;
-    return coreAPI.generate(amount);
+
+    const { blocksNumber, address } = args;
+
+    return coreAPI.generateToAddress(blocksNumber, address);
   }
 
-  return generate;
+  return generateToAddress;
 };
 
 /* eslint-disable max-len */
 /**
  * @swagger
- * /generate:
+ * /generateToAddress:
  *   post:
- *      operationId: generate
+ *      operationId: generateToAddress
  *      deprecated: false
  *      summary: generate
- *      description: Generates blocks on demand
+ *      description: Generates blocks on demand sending funds to address
  *      tags:
  *        - L1
  *      responses:
@@ -67,13 +71,17 @@ const generateFactory = (coreAPI) => {
  *                  title: Parameters
  *                  type: object
  *                  required:
- *                    - amount
+ *                    - blocksNumber
+ *                    - address
  *                  properties:
- *                    amount:
+ *                    blocksNumber:
  *                      type: integer
  *                      default: 1
  *                      description: Number of blocks to generate
+ *                    address:
+ *                      type: string
+ *                      description: Address to sends funds to
  */
 /* eslint-enable max-len */
 
-module.exports = generateFactory;
+module.exports = generateToAddressFactory;

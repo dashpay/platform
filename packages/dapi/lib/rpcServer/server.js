@@ -12,7 +12,7 @@ const getBestBlockHash = require('./commands/getBestBlockHash');
 const getBlockHash = require('./commands/getBlockHash');
 const getMnListDiff = require('./commands/getMnListDiff');
 const getUTXO = require('./commands/getUTXO');
-const generate = require('./commands/generate');
+const generateToAddress = require('./commands/generateToAddress');
 const getAddressSummary = require('./commands/getAddressSummary');
 
 const getIdentityHandlerFactory = require('./commands/platform/getIdentityHandlerFactory');
@@ -55,7 +55,7 @@ const createCommands = (
 });
 
 const createRegtestCommands = dashcoreAPI => ({
-  generate: generate(dashcoreAPI),
+  generateToAddress: generateToAddress(dashcoreAPI),
 });
 
 /**

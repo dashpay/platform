@@ -29,13 +29,11 @@ describe('sendTransactionHandlerFactory', function main() {
 
     const { result: fromAddress } = await coreAPI.getNewAddress();
     const { result: privateKeyString } = await coreAPI.dumpPrivKey(fromAddress);
+    const privateKey = new PrivateKey(privateKeyString);
 
     ({ result: toAddress } = await coreAPI.getNewAddress());
 
-    const privateKey = new PrivateKey(privateKeyString);
-    await coreAPI.generate(500);
-    await coreAPI.sendToAddress(fromAddress, 10);
-    await coreAPI.generate(10);
+    await coreAPI.generateToAddress(500, fromAddress);
 
     const { result: unspent } = await coreAPI.listUnspent();
     const inputs = unspent.filter(input => input.address === fromAddress);
@@ -44,7 +42,7 @@ describe('sendTransactionHandlerFactory', function main() {
 
     transaction = new Transaction();
 
-    transaction.from(inputs)
+    transaction.from(inputs.slice(-1)[0])
       .to(toAddress, amount)
       .change(fromAddress)
       .fee(668)

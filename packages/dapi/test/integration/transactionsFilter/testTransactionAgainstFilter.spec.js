@@ -26,9 +26,7 @@ describe('testTransactionAgainstFilter', () => {
     const address = Address.fromString(addressBase58, Networks.testnet);
     const privateKey = new PrivateKey(privateKeyString);
 
-    await coreApi.generate(101);
-    await coreApi.sendtoaddress(addressBase58, 10);
-    await coreApi.generate(7);
+    await coreApi.generateToAddress(101, addressBase58);
 
     const { result: unspent } = await coreApi.listunspent();
     const inputs = unspent.filter(input => input.address === addressBase58);
@@ -50,7 +48,7 @@ describe('testTransactionAgainstFilter', () => {
     // Test transaction with Core
     await coreApi.sendrawtransaction(transaction.serialize());
 
-    await coreApi.generate(1);
+    await coreApi.generateToAddress(1, addressBase58);
 
     const { result: firstBlockHash } = await coreApi.getBlockHash(1);
 

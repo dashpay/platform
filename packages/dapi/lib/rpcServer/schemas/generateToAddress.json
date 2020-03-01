@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "blocksNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "address": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "blocksNumber",
+    "address"
+  ]
+}

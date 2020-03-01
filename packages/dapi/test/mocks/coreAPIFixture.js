@@ -44,7 +44,7 @@ module.exports = {
   async getUTXO(address) { return []; },
   async sendRawTransaction(rawTransaction) { return 'txid'; },
   async sendRawIxTransaction(rawTransaction) { return 'txid'; },
-  async generate(amount) { return new Array(amount); },
+  async generateToAddress(blocksNumber, address) { return new Array(blocksNumber); },
   async sendRawTransition(rawStateTransition) { return 'tsid'; },
   // Todo: not yet final spec so it may change
   async getQuorum() {

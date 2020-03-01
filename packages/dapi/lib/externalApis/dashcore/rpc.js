@@ -13,15 +13,17 @@ const client = new RpcClient(config.dashcore.rpc);
  *  from the set of nodes serving L1 endpoints for privacy reasons
  */
 
-const generate = amount => new Promise((resolve, reject) => { // not exist?
-  client.generate(amount, (err, r) => {
-    if (err) {
-      reject(new DashCoreRpcError(err.message));
-    } else {
-      resolve(r.result);
-    }
+function generateToAddress(blocksNumber, address) {
+  return new Promise((resolve, reject) => { // not exist?
+    client.generateToAddress(blocksNumber, address, (err, r) => {
+      if (err) {
+        reject(new DashCoreRpcError(err.message));
+      } else {
+        resolve(r.result);
+      }
+    });
   });
-});
+}
 
 const getBestBlockHash = () => new Promise((resolve, reject) => {
   client.getbestblockhash((err, r) => {
@@ -272,12 +274,12 @@ const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
  * getMasternodesList: (function(): Promise<any>),
  * getBestBlockHeight: (function(): Promise<any>),
  * sendRawTransition: (function(*=): Promise<any>),
- * generate: (function(*=): Promise<any>),
+ * generateToAddress: (function(*=): Promise<any>),
  * getTransaction: (function(*=): Promise<any>),
  * getMerkleBlocks: (function(string, string, number): Promise<string[]>)}}
  */
 module.exports = {
-  generate,
+  generateToAddress,
   getBestBlockHash,
   getBestBlockHeight,
   getBlockHash,
