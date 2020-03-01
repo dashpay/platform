@@ -93,10 +93,11 @@ class DAPIClient {
   /* Layer 1 commands */
   /**
    * ONLY FOR TESTING PURPOSES WITH REGTEST. WILL NOT WORK ON TESTNET/LIVENET.
-   * @param {number} amount - Number of blocks to generate
+   * @param {number} blocksNumber - Number of blocks to generate
+   * @param {string} address - The address that will receive the newly generated Dash
    * @returns {Promise<string[]>} - block hashes
    */
-  generate(amount) { return this.makeRequestToRandomDAPINode('generate', { amount }); }
+  generateToAddress(blocksNumber, address) { return this.makeRequestToRandomDAPINode('generateToAddress', { blocksNumber, address }); }
 
   /**
    * Returns block hash of chaintip
