@@ -32,7 +32,7 @@
 * `items` and `additionalItems` are required for arrays
 * `properties` and `additionalProperties` are required for objects
 * number of indices limited to 10
-* number if unique indices limited to 3
+* number of unique indices limited to 3
 * number of properties in an index limited to 10
 * required `maxItems` with `uniqueItems` for large non-scalar arrays
 * required `maxLength` in case of `pattern` or `format`
