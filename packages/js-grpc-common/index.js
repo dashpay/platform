@@ -14,6 +14,9 @@ const wrapInErrorHandlerFactory = require('./lib/server/error/wrapInErrorHandler
 const FailedPreconditionGrpcError = require('./lib/server/error/FailedPreconditionGrpcError');
 const InvalidArgumentGrpcError = require('./lib/server/error/InvalidArgumentGrpcError');
 const InternalGrpcError = require('./lib/server/error/InternalGrpcError');
+const ResourceExhaustedGrpcError = require('./lib/server/error/ResourceExhaustedGrpcError');
+const DeadlineExceededGrpcError = require('./lib/server/error/DeadlineExceededGrpcError');
+const NotFoundGrpcError = require('./lib/server/error/NotFoundGrpcError');
 const GrpcError = require('./lib/server/error/GrpcError');
 
 const isObject = require('./lib/utils/isObject');
@@ -45,6 +48,9 @@ module.exports = {
       InternalGrpcError,
       InvalidArgumentGrpcError,
       FailedPreconditionGrpcError,
+      ResourceExhaustedGrpcError,
+      DeadlineExceededGrpcError,
+      NotFoundGrpcError,
     },
   },
   utils: {

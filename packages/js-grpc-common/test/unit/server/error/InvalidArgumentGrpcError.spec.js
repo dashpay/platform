@@ -17,7 +17,7 @@ describe('InvalidArgumentGrpcError', () => {
     it('should return message', () => {
       const result = error.getMessage();
 
-      expect(result).to.equal(`Invalid argument: ${message}`);
+      expect(result).to.equal(message);
     });
   });
 

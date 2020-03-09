@@ -1,13 +1,13 @@
 const GrpcError = require('./GrpcError');
 
-class InvalidArgumentGrpcError extends GrpcError {
+class ResourceExhaustedGrpcError extends GrpcError {
   /**
    * @param {string} message
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.INVALID_ARGUMENT, message, metadata);
+    super(GrpcError.CODES.RESOURCE_EXHAUSTED, message, metadata);
   }
 }
 
-module.exports = InvalidArgumentGrpcError;
+module.exports = ResourceExhaustedGrpcError;

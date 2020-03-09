@@ -47,9 +47,12 @@ class GrpcError extends Error {
 }
 
 GrpcError.CODES = {
-  INTERNAL: 13,
   INVALID_ARGUMENT: 3,
+  DEADLINE_EXCEEDED: 4,
+  NOT_FOUND: 5,
+  RESOURCE_EXHAUSTED: 8,
   FAILED_PRECONDITION: 9,
+  INTERNAL: 13,
 };
 
 module.exports = GrpcError;

@@ -1,13 +1,13 @@
 const GrpcError = require('./GrpcError');
 
-class InvalidArgumentGrpcError extends GrpcError {
+class DeadlineExceededGrpcError extends GrpcError {
   /**
    * @param {string} message
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.INVALID_ARGUMENT, message, metadata);
+    super(GrpcError.CODES.DEADLINE_EXCEEDED, message, metadata);
   }
 }
 
-module.exports = InvalidArgumentGrpcError;
+module.exports = DeadlineExceededGrpcError;

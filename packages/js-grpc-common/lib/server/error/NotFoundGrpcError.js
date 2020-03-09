@@ -1,13 +1,13 @@
 const GrpcError = require('./GrpcError');
 
-class InvalidArgumentGrpcError extends GrpcError {
+class NotFoundGrpcError extends GrpcError {
   /**
    * @param {string} message
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.INVALID_ARGUMENT, message, metadata);
+    super(GrpcError.CODES.NOT_FOUND, message, metadata);
   }
 }
 
-module.exports = InvalidArgumentGrpcError;
+module.exports = NotFoundGrpcError;
