@@ -1,4 +1,4 @@
-# [0.11.0](https://github.com/dashevo/js-dpp/compare/v0.10.0...v0.11.0) (2020-03-08)
+# [0.11.0](https://github.com/dashevo/js-dpp/compare/v0.10.0...v0.11.0) (2020-03-09)
 
 ### Bug Fixes
 
