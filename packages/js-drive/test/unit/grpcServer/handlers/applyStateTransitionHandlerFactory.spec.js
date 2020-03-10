@@ -86,7 +86,7 @@ describe('applyStateTransitionHandlerFactory', () => {
       expect.fail('should throw an InvalidArgumentGrpcError error');
     } catch (error) {
       expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(error.message).to.be.equal('Invalid argument: Block height is not specified');
+      expect(error.message).to.be.equal('Block height is not specified');
       expect(applyStateTransitionMock).to.not.be.called();
     }
   });
@@ -99,7 +99,7 @@ describe('applyStateTransitionHandlerFactory', () => {
       expect.fail('should throw an InvalidArgumentGrpcError error');
     } catch (error) {
       expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(error.message).to.be.equal('Invalid argument: Block hash is not specified');
+      expect(error.message).to.be.equal('Block hash is not specified');
       expect(applyStateTransitionMock).to.not.be.called();
     }
   });
@@ -115,7 +115,7 @@ describe('applyStateTransitionHandlerFactory', () => {
       expect.fail('should throw an InvalidArgumentGrpcError error');
     } catch (error) {
       expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(error.message).to.be.equal('Invalid argument: Invalid State Transition');
+      expect(error.message).to.be.equal('Invalid State Transition');
       expect(applyStateTransitionMock).to.not.be.called();
     }
   });
@@ -134,7 +134,7 @@ describe('applyStateTransitionHandlerFactory', () => {
       expect.fail('should throw an InvalidArgumentGrpcError error');
     } catch (error) {
       expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(error.message).to.equal('Invalid argument: Invalid State Transition');
+      expect(error.message).to.equal('Invalid State Transition');
       expect(error.metadata.get('errors')).to.deep.equal(['[42]']);
       expect(applyStateTransitionMock).to.not.be.called();
     }
