@@ -67,7 +67,7 @@ describe('getTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: id is not specified');
+      expect(e.getMessage()).to.equal('id is not specified');
       expect(insightAPIMock.getRawTransactionById).to.be.not.called();
     }
   });

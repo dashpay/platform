@@ -61,7 +61,7 @@ describe('getBlockHandlerFactory', function main() {
 
       expect.fail('Should throw an invalid argument error');
     } catch (e) {
-      expect(e.message).to.equal('3 INVALID_ARGUMENT: Invalid argument: Invalid block height');
+      expect(e.message).to.equal('3 INVALID_ARGUMENT: Invalid block height');
       expect(e.code).to.equal(3);
     }
   });

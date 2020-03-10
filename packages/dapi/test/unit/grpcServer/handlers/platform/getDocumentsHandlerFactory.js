@@ -111,7 +111,7 @@ describe('getDocumentsHandlerFactory', () => {
       expect.fail('should throw InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: dataContractId is not specified');
+      expect(e.getMessage()).to.equal('dataContractId is not specified');
       expect(driveApiMock.fetchDocuments).to.be.not.called();
       expect(dppMock.document.createFromObject).to.be.not.called();
     }
@@ -127,7 +127,7 @@ describe('getDocumentsHandlerFactory', () => {
       expect.fail('should throw InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: documentType is not specified');
+      expect(e.getMessage()).to.equal('documentType is not specified');
       expect(driveApiMock.fetchDocuments).to.be.not.called();
       expect(dppMock.document.createFromObject).to.be.not.called();
     }
@@ -149,7 +149,7 @@ describe('getDocumentsHandlerFactory', () => {
       expect.fail('should throw InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal(`Invalid argument: ${message}`);
+      expect(e.getMessage()).to.equal(message);
       expect(e.getMetadata()).to.deep.equal(data);
       expect(driveApiMock.fetchDocuments).to.be.calledOnceWith(
         dataContractId,

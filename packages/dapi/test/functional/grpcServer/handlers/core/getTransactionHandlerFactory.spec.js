@@ -65,7 +65,7 @@ describe('getTransactionHandlerFactor', function main() {
       await dapiClient.getTransaction(nonExistentId);
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e.message).to.equal('3 INVALID_ARGUMENT: Invalid argument: Transaction not found');
+      expect(e.message).to.equal('3 INVALID_ARGUMENT: Transaction not found');
     }
   });
 });

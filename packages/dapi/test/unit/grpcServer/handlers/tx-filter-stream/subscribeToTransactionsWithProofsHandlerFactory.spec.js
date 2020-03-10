@@ -121,7 +121,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('Error was not thrown');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: Invalid bloom filter: '
+      expect(e.getMessage()).to.equal('Invalid bloom filter: '
         + '"nHashFuncs" exceeded max size "50"');
 
       expect(call.write).to.not.have.been.called();
@@ -210,7 +210,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       await subscribeToTransactionsWithProofsHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: fromBlockHeight is bigger than block count');
+      expect(e.getMessage()).to.equal('fromBlockHeight is bigger than block count');
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
@@ -229,7 +229,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal(
-        'Invalid argument: count is too big, could not fetch more than blockchain length',
+        'count is too big, could not fetch more than blockchain length',
       );
 
       expect(call.write).to.not.have.been.called();

@@ -3,6 +3,8 @@ const {
     error: {
       InternalGrpcError,
       InvalidArgumentGrpcError,
+      DeadlineExceededGrpcError,
+      ResourceExhaustedGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -19,9 +21,16 @@ function handleAbciResponse(response) {
   const { error: { message, data } } = JSON.parse(response.log);
 
   switch (response.code) {
-    case 2:
+    case 6: // MEMORY_LIMIT_EXCEEDED
+      throw new ResourceExhaustedGrpcError(message, data);
+    case 5: // EXECUTION_TIMED_OUT
+      throw new DeadlineExceededGrpcError(message, data);
+    case 4: // RATE_LIMITER_BANNED
+    case 3: // RATE_LIMITER_QUOTA_EXCEEDED
+      throw new ResourceExhaustedGrpcError(message, data);
+    case 2: // INVALID_ARGUMENT
       throw new InvalidArgumentGrpcError(message, data);
-    case 1:
+    case 1: // INTERNAL
     default: {
       const e = new Error(message);
 

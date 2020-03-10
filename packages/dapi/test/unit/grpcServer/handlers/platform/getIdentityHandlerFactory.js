@@ -88,7 +88,7 @@ describe('getIdentityHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: id is not specified');
+      expect(e.getMessage()).to.equal('id is not specified');
       expect(rpcClientMock.request).to.not.be.called();
       expect(handleResponseMock).to.not.be.called();
     }

@@ -46,7 +46,7 @@ describe('handleAbciResponse', () => {
       expect.fail('should throw InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal(`Invalid argument: ${message}`);
+      expect(e.getMessage()).to.equal(message);
       expect(e.getMetadata()).to.deep.equal(data);
     }
   });

@@ -62,7 +62,7 @@ describe('sendTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid argument: transaction is not specified');
+      expect(e.getMessage()).to.equal('transaction is not specified');
       expect(insightAPIMock.sendTransaction).to.be.not.called();
     }
   });
@@ -77,7 +77,7 @@ describe('sendTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('Invalid argument: invalid transaction:'));
+      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('invalid transaction:'));
       expect(insightAPIMock.sendTransaction).to.be.not.called();
     }
   });
@@ -92,7 +92,7 @@ describe('sendTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('Invalid argument: invalid transaction:'));
+      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('invalid transaction:'));
       expect(insightAPIMock.sendTransaction).to.be.not.called();
     }
   });
