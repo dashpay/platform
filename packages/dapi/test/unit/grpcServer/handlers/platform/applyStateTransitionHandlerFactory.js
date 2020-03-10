@@ -131,4 +131,19 @@ describe('applyStateTransitionHandlerFactory', () => {
       expect(e).to.equal(error);
     }
   });
+
+  it('should throw an error if transaction broadcast returns error', async () => {
+    const error = { code: -1, message: "Something didn't work", data: 'Some data' };
+
+    response.error = error;
+
+    try {
+      await applyStateTransitionHandler(call);
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(Error);
+      expect(e.message).to.equal(error.message);
+      expect(e.data).to.equal(error.data);
+      expect(e.code).to.equal(error.code);
+    }
+  });
 });

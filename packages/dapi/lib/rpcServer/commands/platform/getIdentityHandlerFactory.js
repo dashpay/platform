@@ -18,10 +18,13 @@ function getIdentityHandlerFactory(rpcClient, handleAbciResponse, validator) {
 
     const data = Buffer.from(id).toString('hex');
 
-    const { result, error: errorMessage } = await rpcClient.request('abci_query', { path, data });
+    const { result, error: jsonRpcError } = await rpcClient.request('abci_query', { path, data });
 
-    if (errorMessage) {
-      throw new Error(errorMessage);
+    if (jsonRpcError) {
+      const error = new Error();
+      Object.assign(error, jsonRpcError);
+
+      throw error;
     }
 
     handleAbciResponse(result.response);

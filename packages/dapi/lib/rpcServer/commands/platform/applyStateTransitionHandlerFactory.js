@@ -15,10 +15,13 @@ function applyStateTransitionHandlerFactory(rpcClient, handleAbciResponse, valid
     validator.validate(args);
     const { stateTransition: tx } = args;
 
-    const { result, error: errorMessage } = await rpcClient.request('broadcast_tx_commit', { tx });
+    const { result, error: jsonRpcError } = await rpcClient.request('broadcast_tx_commit', { tx });
 
-    if (errorMessage) {
-      throw new Error(errorMessage);
+    if (jsonRpcError) {
+      const error = new Error();
+      Object.assign(error, jsonRpcError);
+
+      throw error;
     }
 
     const { check_tx: checkTx, deliver_tx: deliverTx } = result;

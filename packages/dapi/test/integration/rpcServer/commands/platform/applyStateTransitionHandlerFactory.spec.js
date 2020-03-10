@@ -34,7 +34,8 @@ describe('applyStateTransitionHandlerFactory', () => {
   });
 
   it('should throw an error if transaction broadcast returns error', async () => {
-    tendermintRpcMock.request.returns({ result: null, error: "Something didn't work" });
+    const error = { code: -1, message: "Something didn't work", data: 'Some data' };
+    tendermintRpcMock.request.returns({ result: null, error });
     const applyStateTransitionHandler = applyStateTransitionHandlerFactory(
       tendermintRpcMock, handleAbciMock, validator,
     );
@@ -44,7 +45,9 @@ describe('applyStateTransitionHandlerFactory', () => {
       await applyStateTransitionHandler({ stateTransition: st });
     } catch (e) {
       expect(e).to.be.an.instanceOf(Error);
-      expect(e.message).to.be.equal("Something didn't work");
+      expect(e.message).to.equal(error.message);
+      expect(e.data).to.equal(error.data);
+      expect(e.code).to.equal(error.code);
     }
   });
 });
