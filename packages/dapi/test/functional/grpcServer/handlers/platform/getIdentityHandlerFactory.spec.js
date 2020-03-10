@@ -135,9 +135,17 @@ describe('getIdentityHandlerFactory', function main() {
     expect(createdIdentity.toJSON()).to.deep.equal(identity.toJSON());
   });
 
-  it('should respond with null if identity not found', async () => {
-    const identity = await dapiClient.getIdentity('unknownId');
+  it('should respond with NOT_FOUND error if identity not found', async () => {
+    let error;
 
-    expect(identity).to.be.null();
+    try {
+      await dapiClient.getIdentity('unknownId');
+
+      expect.fail('NOT_FOUND error was not thrown');
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).to.have.property('message', '5 NOT_FOUND: Identity not found');
   });
 });
