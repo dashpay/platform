@@ -2,6 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -46,6 +47,9 @@ function getIdentityHandlerFactory(rpcClient, handleAbciResponse) {
     handleAbciResponse(result.response);
 
     const { response: { value: identityBase64 } } = result;
+    if (!identityBase64) {
+      throw new NotFoundGrpcError('Identity not found');
+    }
 
     const response = new GetIdentityResponse();
 

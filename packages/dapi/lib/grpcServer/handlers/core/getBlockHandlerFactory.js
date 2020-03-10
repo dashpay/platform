@@ -6,6 +6,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -37,7 +38,7 @@ function getBlockHandlerFactory(insightAPI) {
         serializedBlock = await insightAPI.getRawBlockByHash(hash);
       } catch (e) {
         if (e.statusCode === 404) {
-          throw new InvalidArgumentGrpcError('Invalid block hash');
+          throw new NotFoundGrpcError('Block not found');
         }
 
         throw e;

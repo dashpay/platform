@@ -8,6 +8,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -36,7 +37,7 @@ function getTransactionHandlerFactory(insightAPI) {
       serializedTransaction = await insightAPI.getRawTransactionById(id);
     } catch (e) {
       if (e.statusCode === 404) {
-        throw new InvalidArgumentGrpcError('Transaction not found');
+        throw new NotFoundGrpcError('Transaction not found');
       }
 
       throw e;

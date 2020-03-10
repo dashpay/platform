@@ -2,6 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -135,8 +136,8 @@ describe('getBlockHandlerFactory', () => {
 
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Invalid block hash');
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
+      expect(e.getMessage()).to.equal('Block not found');
       expect(insightAPIMock.getRawBlockByHeight).to.be.not.called();
       expect(insightAPIMock.getRawBlockByHash).to.be.calledOnceWith(hash);
     }

@@ -2,6 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -38,7 +39,7 @@ function getDataContractHandlerFactory(driveAPI, dpp) {
       dataContractJSON = await driveAPI.fetchContract(id);
     } catch (e) {
       if (e instanceof RPCError && e.code === -32602) {
-        throw new InvalidArgumentGrpcError(e.message, e.data);
+        throw new NotFoundGrpcError(e.message, e.data);
       }
 
       throw e;

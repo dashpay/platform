@@ -2,6 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -69,6 +70,22 @@ describe('getTransactionHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('id is not specified');
       expect(insightAPIMock.getRawTransactionById).to.be.not.called();
+    }
+  });
+
+  it('should throw NotFoundGrpcError if transaction is not found', async () => {
+    const error = new Error();
+    error.statusCode = 404;
+    insightAPIMock.getRawTransactionById.throws(error);
+
+    try {
+      await getTransactionHandler(call);
+
+      expect.fail('should thrown InvalidArgumentGrpcError error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
+      expect(e.getMessage()).to.equal('Transaction not found');
+      expect(insightAPIMock.getRawTransactionById).to.be.calledOnceWith(id);
     }
   });
 });
