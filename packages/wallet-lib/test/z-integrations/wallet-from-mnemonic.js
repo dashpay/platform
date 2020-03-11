@@ -11,6 +11,10 @@ describe('Integration - fromMnemonic', function suite() {
     wallet = new Wallet({
       mnemonic: 'local mom grief muffin hurdle stamp glue train satoshi kitchen damage cliff',
       network: 'testnet',
+      transporter: {
+        devnetName: 'palinka',
+        type: 'DAPIClient',
+      },
     });
     expect(wallet.network).to.equal('testnet');
     expect(wallet.walletType).to.equal('hdwallet');
@@ -20,7 +24,7 @@ describe('Integration - fromMnemonic', function suite() {
   });
   it('should get an account', (done) => {
     account = wallet.getAccount({ index: 0 });
-    account.events.on(EVENTS.READY, done);
+    account.on(EVENTS.READY, () => done());
   });
   it('should get addresses', () => {
     expect(account.getAddress(0).address).to.equal('yPemRQzMffYKvDBDXW5Mt64wUPi5ZNdpFW');

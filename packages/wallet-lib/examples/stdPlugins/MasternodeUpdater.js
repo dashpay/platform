@@ -1,5 +1,5 @@
-const { StandardPlugin } = require('../../src/plugins/index');
 const Dashcore = require('@dashevo/dashcore-lib');
+const { StandardPlugin } = require('../../src/plugins/index');
 
 const { Payload } = Dashcore.Transaction;
 const { ProUpRevTxPayload } = Payload;

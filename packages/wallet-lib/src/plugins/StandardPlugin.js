@@ -1,13 +1,22 @@
 const _ = require('lodash');
+const { EventEmitter2: EventEmitter } = require('eventemitter2');
 const { InjectionToPluginUnallowed } = require('../errors');
 const { SAFE_FUNCTIONS, SAFE_PROPERTIES } = require('../CONSTANTS').INJECTION_LISTS;
 
-class StandardPlugin {
+const defaultOpts = {
+  executeOnStart: false,
+};
+
+class StandardPlugin extends EventEmitter {
   constructor(opts = {}) {
+    super({ wildcard: true });
     this.pluginType = _.has(opts, 'type') ? opts.type : 'Standard';
     this.name = _.has(opts, 'name') ? opts.name : 'UnnamedPlugin';
     this.dependencies = _.has(opts, 'dependencies') ? opts.dependencies : [];
-    this.events = null;
+
+    this.executeOnStart = _.has(opts, 'executeOnStart')
+      ? opts.executeOnStart
+      : defaultOpts.executeOnStart;
 
     // Apply other props
     Object.keys(opts).forEach((key) => {
@@ -15,6 +24,16 @@ class StandardPlugin {
         this[key] = opts[key];
       }
     });
+  }
+
+  async startPlugin() {
+    const self = this;
+
+    if (this.executeOnStart === true && this.onStart) {
+      await this.onStart();
+    }
+    const eventType = `PLUGIN/${this.name.toUpperCase()}/STARTED`;
+    self.parentEvents.emit(eventType, { type: eventType, payload: null });
   }
 
   inject(name, obj, allowSensitiveOperations = false) {
@@ -25,10 +44,16 @@ class StandardPlugin {
       throw new Error('Inter-plugin support yet to come');
     } else if (allowSensitiveOperations === true) {
       this[name] = obj;
+    } else if (name === 'parentEvents') {
+      // Called by injectPlugin to setup the parentEvents on/emit fn.
+      // console.log(obj)
+      // this.parentEvents = {on:obj.on, emit:obj.emit};
+      this.parentEvents = obj;
     } else {
       throw new InjectionToPluginUnallowed(name);
     }
     return true;
   }
 }
+
 module.exports = StandardPlugin;

@@ -8,9 +8,7 @@ describe('Storage - configure', async () => {
     let rehydrated = 0;
 
     const self = {
-      events: {
-        emit: noop,
-      },
+      emit: noop,
       autosaveIntervalTime: 1000,
       startWorker: noop,
       rehydrateState: () => (rehydrated += 1),
@@ -32,9 +30,7 @@ describe('Storage - configure', async () => {
   it('should successfully emit', () => {
     const emitted = [];
     const self = {
-      events: {
-        emit: emitType => (emitted.push(emitType)),
-      },
+      emit: (emitType) => (emitted.push(emitType)),
       autosaveIntervalTime: 1000,
       startWorker: noop,
     };
@@ -51,9 +47,7 @@ describe('Storage - configure', async () => {
       autosave: false,
       autosaveIntervalTime: 1000,
       startWorker: () => { workerStarted = true; },
-      events: {
-        emit: noop,
-      },
+      emit: noop,
     };
 
     return configure

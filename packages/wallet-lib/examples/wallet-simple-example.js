@@ -3,7 +3,7 @@ const logger = require('../src/logger');
 
 const wallet = new Wallet();
 
-const account = wallet.getAccount(0);
+const account = wallet.getAccount({ index: 0 });
 
 account.events.on('ready', () => {
   logger.info('Balance', account.getTotalBalance());

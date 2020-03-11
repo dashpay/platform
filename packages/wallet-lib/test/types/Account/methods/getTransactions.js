@@ -6,10 +6,10 @@ const getTransactions = require('../../../../src/types/Account/methods/getTransa
 describe('Account - getTransactions', () => {
   it('should get the transactions', () => {
     const getStore = () => mockedStore;
-    const transactions = getTransactions.call(Object.assign({}, {
+    const transactions = getTransactions.call({
       storage: { getStore },
       walletId: '123456789',
-    }), 'internal');
+    }, 'internal');
     expect(transactions).to.equal(mockedStore.transactions);
   });
 });
@@ -106,7 +106,7 @@ const mockedStore = {
   transactions: {
     '9ab39713e9ce713d41ca6974db83e57bced02402e9516b8a662ed60d5c08f6d1': {
       blockhash: '000000000a84c4703da7a69cfa65837251e4aac80e1621f2a2cc9504e0c149ba',
-      blockheight: 201436,
+      blockHeight: 201436,
       blocktime: 1533525448,
       fees: 1000,
       size: 225,
@@ -164,7 +164,7 @@ const mockedStore = {
     '7ae825f4ecccd1e04e6c123e0c55d236c79cd04c6ab64e839aed2ae0af3003e6': {
       txid: '7ae825f4ecccd1e04e6c123e0c55d236c79cd04c6ab64e839aed2ae0af3003e6',
       blockhash: '000000000388f8a1de91702e25209aad802d28fcd2710ac2e2acd12e9738dbe2',
-      blockheight: 203633,
+      blockHeight: 203633,
       blocktime: 1533827521,
       fees: 1000,
       size: 225,
@@ -221,7 +221,7 @@ const mockedStore = {
     '1d8f924bef2e24d945d7de2ac66e98c8625e4cefeee4e07db2ea334ce17f9c35': {
       txid: '1d8f924bef2e24d945d7de2ac66e98c8625e4cefeee4e07db2ea334ce17f9c35',
       blockhash: '0000000002922d7d0a69ce3e29908dc26aba6565af760d208dac77a8b520fbf3',
-      blockheight: 204161,
+      blockHeight: 204161,
       blocktime: 1533900199,
       fees: 1000,
       size: 226,

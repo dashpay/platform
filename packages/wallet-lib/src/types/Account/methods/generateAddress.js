@@ -1,11 +1,10 @@
-const Dashcore = require('@dashevo/dashcore-lib');
 const EVENTS = require('../../../EVENTS');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 const { is } = require('../../../utils');
 /**
  * Generate an address from a path and import it to the store
  * @param path
- * @return {addressObj} Address information
+ * @return {AddressObject} Address information
  * */
 function generateAddress(path) {
   if (is.undefOrNull(path)) throw new Error('Expected path to generate an address');
@@ -17,22 +16,21 @@ function generateAddress(path) {
   switch (this.walletType) {
     case WALLET_TYPES.HDWALLET:
       // eslint-disable-next-line prefer-destructuring
-      index = parseInt(path.split('/')[5], 10);
+      index = parseInt(path.toString().split('/')[5], 10);
       privateKey = this.keyChain.getKeyForPath(path);
       break;
     case WALLET_TYPES.HDPUBLIC:
-      index = parseInt(path.split('/')[5], 10);
+      index = parseInt(path.toString().split('/')[5], 10);
       privateKey = this.keyChain.getKeyForChild(index);
       break;
     case WALLET_TYPES.SINGLE_ADDRESS:
     default:
-      privateKey = this.keyChain.getKeyForPath(path);
+      privateKey = this.keyChain.getKeyForPath(path.toString());
   }
-
-  const address = new Dashcore.Address(privateKey.publicKey.toAddress(network), network).toString();
+  const address = privateKey.publicKey.toAddress(network).toString();
 
   const addressData = {
-    path,
+    path: path.toString(),
     index,
     address,
     // privateKey,
@@ -43,9 +41,9 @@ function generateAddress(path) {
     fetchedLast: 0,
     used: false,
   };
+
   this.storage.importAddresses(addressData, this.walletId);
-  this.events.emit(EVENTS.GENERATED_ADDRESS, path);
-  // console.log('gen', address,path)
+  this.emit(EVENTS.GENERATED_ADDRESS, { type: EVENTS.GENERATED_ADDRESS, payload: addressData });
   return addressData;
 }
 module.exports = generateAddress;

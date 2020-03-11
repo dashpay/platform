@@ -9,9 +9,9 @@ const updateTransaction = function (transaction) {
   if (!transaction) throw new Error('Expected a transaction to update');
 
   const transactionStore = this.store.transactions;
-  const storeTx = transactionStore[transaction.txid];
+  const storeTx = transactionStore[transaction.hash];
   if (JSON.stringify(storeTx) !== JSON.stringify(transaction)) {
-    transactionStore[transaction.txid] = transaction;
+    transactionStore[transaction.hash] = transaction;
     this.lastModified = Date.now();
   }
   return true;

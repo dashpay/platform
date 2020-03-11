@@ -1,4 +1,3 @@
-const { WALLET_TYPES } = require('../../../CONSTANTS');
 /**
  *
  * @param walletId - The wallet Id where to perform the calculation
@@ -17,8 +16,11 @@ module.exports = function calculateDuffBalance(walletId, accountIndex, type = 't
   subwallets.forEach((subwallet) => {
     const paths = Object.keys(addresses[subwallet])
     // We filter out other potential account
-      .filter((el) => type === WALLET_TYPES.SINGLE_ADDRESS
-            || parseInt(el.split('/')[3], 10) === accountIndex);
+      .filter((el) => {
+        const splitted = el.split('/');
+        const index = parseInt((splitted.length === 1) ? splitted[0] : splitted[3], 10);
+        return index === accountIndex;
+      });
 
     paths.forEach((path) => {
       const address = addresses[subwallet][path];

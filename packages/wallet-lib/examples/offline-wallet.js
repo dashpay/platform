@@ -9,7 +9,7 @@ const walletOpts = {
   // HDPublicKey:
 };
 const wallet = new Wallet(walletOpts);
-const account = wallet.getAccount(0);
+const account = wallet.getAccount({ index: 0 });
 
 /**
  * This simple offline service simulates an offline usage for generating new addresses from an Extended Pub Key.

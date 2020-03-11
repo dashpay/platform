@@ -2,7 +2,7 @@
   "valid": {
     "mainnet": {
       "fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e": {
-        "txid": "fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e",
+        "hash": "fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e",
         "version": 1,
         "locktime": 0,
         "vin": [
@@ -64,7 +64,7 @@
         "txlock": false
       },
       "faa430b0fe84a074d981e6fa3995a13363478415ca029a12f6432bf3d90dfa60": {
-        "txid": "faa430b0fe84a074d981e6fa3995a13363478415ca029a12f6432bf3d90dfa60",
+        "hash": "faa430b0fe84a074d981e6fa3995a13363478415ca029a12f6432bf3d90dfa60",
         "version": 2,
         "locktime": 992824,
         "vin": [

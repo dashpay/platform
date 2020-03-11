@@ -1,8 +1,8 @@
 const _ = require('lodash');
 const logger = require('../../logger');
-const SyncWorker = require('../../plugins/Workers/SyncWorker');
-const ChainWorker = require('../../plugins/Workers/ChainWorker');
-const BIP44Worker = require('../../plugins/Workers/BIP44Worker');
+const SyncWorker = require('../../plugins/Workers/SyncWorker/SyncWorker');
+const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
+const BIP44Worker = require('../../plugins/Workers/BIP44Worker/BIP44Worker');
 const EVENTS = require('../../EVENTS');
 const { WALLET_TYPES } = require('../../CONSTANTS');
 
@@ -11,7 +11,9 @@ async function _initializeAccount(account, userUnsafePlugins) {
   const self = account;
   // We run faster in offlineMode to speed up the process when less happens.
   const readinessIntervalTime = (account.offlineMode) ? 50 : 200;
-  return new Promise((res) => {
+  // TODO: perform rejection with a timeout
+  // eslint-disable-next-line no-async-promise-executor
+  return new Promise(async (resolve) => {
     if (account.injectDefaultPlugins) {
       // TODO: Should check in other accounts if a similar is setup already
       // TODO: We want to sort them by dependencies and deal with the await this way
@@ -20,19 +22,18 @@ async function _initializeAccount(account, userUnsafePlugins) {
       // if yes add to watcher list.
 
       try {
-        if (!account.offlineMode) {
-          account.injectPlugin(ChainWorker, true);
-        }
-
         if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
           // Ideally we should move out from worker to event based
-          account.injectPlugin(BIP44Worker, true);
-        }
-        if (account.type === WALLET_TYPES.SINGLE_ADDRESS) {
-          account.getAddress('0'); // We force what is usually done by the BIP44Worker.
+          await account.injectPlugin(BIP44Worker, true);
         }
         if (!account.offlineMode) {
-          account.injectPlugin(SyncWorker, true);
+          await account.injectPlugin(ChainPlugin, true);
+        }
+        if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
+          await account.getAddress('0'); // We force what is usually done by the BIP44Worker.
+        }
+        if (!account.offlineMode) {
+          await account.injectPlugin(SyncWorker, true);
         }
       } catch (err) {
         logger.error('Failed to perform standard injections', err);
@@ -48,17 +49,17 @@ async function _initializeAccount(account, userUnsafePlugins) {
       }
     });
 
-    self.events.emit(EVENTS.STARTED);
+    self.emit(EVENTS.STARTED, { type: EVENTS.STARTED, payload: null });
 
     const sendReady = () => {
       if (!self.state.isReady) {
-        self.events.emit(EVENTS.READY);
+        self.emit(EVENTS.READY, { type: EVENTS.READY, payload: null });
         self.state.isReady = true;
       }
     };
     const sendInitialized = () => {
       if (!self.state.isInitialized) {
-        self.events.emit(EVENTS.INITIALIZED);
+        self.emit(EVENTS.INITIALIZED, { type: EVENTS.INITIALIZED, payload: null });
         self.state.isInitialized = true;
       }
     };
@@ -83,14 +84,15 @@ async function _initializeAccount(account, userUnsafePlugins) {
 
     // eslint-disable-next-line no-param-reassign,consistent-return
     account.readinessInterval = setInterval(() => {
-      const watchedWorkers = Object.keys(account.plugins.watchers);
-      let readyWorkers = 0;
-      watchedWorkers.forEach((workerName) => {
-        if (account.plugins.watchers[workerName].ready === true) {
-          readyWorkers += 1;
+      const watchedPlugins = Object.keys(account.plugins.watchers);
+      let readyPlugins = 0;
+      watchedPlugins.forEach((pluginName) => {
+        if (account.plugins.watchers[pluginName].ready === true) {
+          readyPlugins += 1;
         }
       });
-      if (readyWorkers === watchedWorkers.length) {
+      logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
+      if (readyPlugins === watchedPlugins.length) {
         // At this stage, our worker are initialized
         sendInitialized();
 
@@ -103,13 +105,23 @@ async function _initializeAccount(account, userUnsafePlugins) {
         const resultSyncWorkerSearch = account.hasPlugins(SyncWorker);
         const isSyncWorkerActive = resultSyncWorkerSearch.found;
 
+        if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
+          account.generateAddress(0);
+          sendReady();
+          return resolve(true);
+        }
+
         if (!resultBIP44WorkerSearch.found) {
+          if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
+            sendReady();
+            return resolve(true);
+          }
           throw new Error('Unable to initialize. BIP44 Worker not found.');
         }
         return recursivelyGenerateAddresses(isSyncWorkerActive)
           .then(() => {
             sendReady();
-            return res(true);
+            return resolve(true);
           })
           .catch((err) => {
             logger.error('Error', err);

@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const { EventEmitter } = require('events');
+const { EventEmitter2: EventEmitter } = require('eventemitter2');
 const logger = require('../../logger');
 const { WALLET_TYPES } = require('../../CONSTANTS');
 const { is } = require('../../utils');
@@ -7,12 +7,34 @@ const EVENTS = require('../../EVENTS');
 const Wallet = require('../Wallet/Wallet.js');
 const { simpleTransactionOptimizedAccumulator } = require('../../utils/coinSelections/strategies');
 
+function getNextUnusedAccountIndexForWallet(wallet) {
+  if (wallet && wallet.accounts) {
+    if (!wallet.accounts.length) return 0;
+
+    const indexes = wallet.accounts.reduce((acc, curr) => {
+      acc.push(curr.index);
+      return acc;
+    }, []).sort();
+    let index;
+    for (let i = 0; i <= indexes[indexes.length - 1] + 1; i += 1) {
+      if (!indexes.includes(i)) {
+        index = i;
+        break;
+      }
+    }
+    return index;
+  }
+  throw new Error('An account is attached to a wallet that has not been provided to the account constructor.');
+}
+
 const defaultOptions = {
   network: 'testnet',
   cacheTx: true,
+  cacheBlockHeaders: true,
   allowSensitiveOperations: false,
   plugins: [],
   injectDefaultPlugins: true,
+  debug: false,
   strategy: simpleTransactionOptimizedAccumulator,
 };
 
@@ -24,13 +46,13 @@ const _loadStrategy = require('./_loadStrategy');
 const getNetwork = require('./_getNetwork');
 const getBIP44Path = require('./_getBIP44Path');
 
-class Account {
+class Account extends EventEmitter {
   constructor(wallet, opts = defaultOptions) {
+    super({ wildcard: true });
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
 
-    this.events = new EventEmitter();
     this.state = {
       isInitialized: false,
       isReady: false,
@@ -38,29 +60,41 @@ class Account {
     };
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
+    this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
+    if (this.debug) process.env.LOG_LEVEL = 'debug';
 
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
 
-    // FIXME : this is wrong, it suppose they have been created sequentially. What if [i:0, i:10]...
-    // We should use the same system that for BIP44 and foreach seq
-    const accountIndex = _.has(opts, 'index') ? opts.index : wallet.accounts[wallet.accounts.length - 1].index + 1;
-    this.index = accountIndex;
+
+    this.index = _.has(opts, 'index') ? opts.index : getNextUnusedAccountIndexForWallet(wallet);
     this.strategy = _loadStrategy(_.has(opts, 'strategy') ? opts.strategy : defaultOptions.strategy);
     this.network = getNetwork(wallet.network).toString();
 
-    this.BIP44PATH = getBIP44Path(this.network, accountIndex);
+    this.BIP44PATH = getBIP44Path(this.network, this.index);
 
     this.transactions = {};
 
     this.label = (opts && opts.label && is.string(opts.label)) ? opts.label : null;
 
-    // If transport is null or invalid, we won't try to fetch anything
-    this.transport = wallet.transport;
+    // If transporter is null or invalid, we won't try to fetch anything
+    this.transporter = wallet.transporter;
 
     this.store = wallet.storage.store;
     this.storage = wallet.storage;
 
+    // Forward all storage event
+    this.storage.on('**', (ev) => {
+      this.emit(ev.type, ev);
+    });
+    if (this.debug) {
+      this.emit = (...args) => {
+        const { type } = args[1];
+        const payload = JSON.stringify(args[1].payload);
+        logger.debug(`${this.walletId}:${this.index} - Emitted event ${type} - ${payload} `);
+        super.emit(...args);
+      };
+    }
     if (this.walletType === WALLET_TYPES.HDWALLET) {
       this.storage.importAccounts({
         label: this.label,
@@ -86,6 +120,9 @@ class Account {
     this.keyChain = wallet.keyChain;
 
     this.cacheTx = (opts.cacheTx) ? opts.cacheTx : defaultOptions.cacheTx;
+    this.cacheBlockHeaders = (opts.cacheBlockHeaders)
+      ? opts.cacheBlockHeaders
+      : defaultOptions.cacheBlockHeaders;
 
     this.plugins = {
       workers: {},
@@ -114,7 +151,7 @@ class Account {
         }
       }
     }
-    this.events.emit(EVENTS.CREATED);
+    this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
     // It's actually Account that mutates wallet.accounts to add itself.
     // We might want to get rid of that as it can be really confusing.
     // It would gives that responsability to createAccount to create
@@ -127,7 +164,7 @@ class Account {
     // eslint-disable-next-line consistent-return
     return new Promise(((resolve) => {
       if (this.state.isInitialized) return resolve(true);
-      this.events.on(EVENTS.INITIALIZED, () => resolve(true));
+      this.on(EVENTS.INITIALIZED, () => resolve(true));
     }));
   }
 
@@ -135,7 +172,7 @@ class Account {
     // eslint-disable-next-line consistent-return
     return new Promise(((resolve) => {
       if (this.state.isReady) return resolve(true);
-      this.events.on(EVENTS.READY, () => resolve(true));
+      this.on(EVENTS.READY, () => resolve(true));
     }));
   }
 }
@@ -149,8 +186,6 @@ Account.prototype.disconnect = require('./methods/disconnect');
 Account.prototype.fetchAddressInfo = require('./methods/fetchAddressInfo');
 Account.prototype.fetchStatus = require('./methods/fetchStatus');
 
-Account.prototype.fetchTransactionInfo = require('./methods/fetchTransactionInfo');
-
 Account.prototype.forceRefreshAccount = require('./methods/forceRefreshAccount');
 
 Account.prototype.encrypt = require('./methods/encrypt');
@@ -162,9 +197,8 @@ Account.prototype.generateAddress = require('./methods/generateAddress');
 Account.prototype.getAddress = require('./methods/getAddress');
 
 Account.prototype.getAddresses = require('./methods/getAddresses');
-
+Account.prototype.getBlockHeader = require('./methods/getBlockHeader');
 Account.prototype.getConfirmedBalance = require('./methods/getConfirmedBalance');
-
 Account.prototype.getUnconfirmedBalance = require('./methods/getUnconfirmedBalance');
 
 Account.prototype.getTotalBalance = require('./methods/getTotalBalance');

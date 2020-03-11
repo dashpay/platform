@@ -13,11 +13,11 @@ const saveState = async function () {
       await this.adapter.setItem('wallets', { ...self.store.wallets });
       await this.adapter.setItem('chains', { ...self.store.chains });
       this.lastSave = +new Date();
-      this.events.emit(SAVE_STATE_SUCCESS);
+      this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
       return true;
     } catch (err) {
       logger.error('Storage#saveState', err);
-      this.events.emit(SAVE_STATE_FAILED, err);
+      this.emit(SAVE_STATE_FAILED, { type: SAVE_STATE_FAILED, payload: err });
       throw err;
     }
   }

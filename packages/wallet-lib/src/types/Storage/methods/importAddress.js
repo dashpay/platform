@@ -17,7 +17,7 @@ const importAddress = function (addressObj, walletId) {
   if (!is.addressObj(addressObj)) throw new InvalidAddressObject(addressObj);
   const { path } = addressObj;
   const modifiedAddressObject = cloneDeep(addressObj);
-  const index = parseInt(path.split('/')[5], 10);
+  const index = (addressObj.index !== undefined) ? addressObj.index : parseInt(path.split('/')[5], 10);
   const typeInt = path.split('/')[4];
   let type;
   switch (typeInt) {

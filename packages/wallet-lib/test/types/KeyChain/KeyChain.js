@@ -75,4 +75,3 @@ describe('Keychain - single privateKey', () => {
     expect(pkKeyChain.getPrivateKey().toString()).to.equal(privateKey);
   });
 });
-

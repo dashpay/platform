@@ -3,8 +3,8 @@
  * @return {Boolean}
  */
 module.exports = function connect() {
-  if (this.transport.isValid) {
-    this.transport.connect();
+  if (this.transporter.isValid) {
+    this.transporter.connect();
   }
   if (this.plugins.workers) {
     const workersKey = Object.keys(this.plugins.workers);

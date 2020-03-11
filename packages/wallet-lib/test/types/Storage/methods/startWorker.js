@@ -1,4 +1,4 @@
-const {expect} = require('chai');
+const { expect } = require('chai');
 const startWorker = require('../../../../src/types/Storage/methods/startWorker');
 
 let testInterval = null;

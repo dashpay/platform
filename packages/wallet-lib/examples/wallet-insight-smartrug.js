@@ -4,7 +4,7 @@ const logger = require('../src/logger');
 const wallet = new Wallet({
   mnemonic: 'smart rug aspect stuff auction bridge title virtual illegal enact black since', // Werner - dev (10 Nov)
   network: 'testnet',
-  transport: 'insight',
+  transporter: 'insight',
 });
 
 

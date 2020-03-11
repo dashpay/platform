@@ -9,7 +9,10 @@ const createChain = function (network) {
   if (!hasProp(this.store.chains, network.toString())) {
     this.store.chains[network.toString()] = {
       name: network.toString(),
-      blockheight: -1,
+      blockHeaders: {},
+      // Map a blockheader to it's height (used by searchBlockheader for speed up the process)
+      mappedBlockHeaderHeights: {},
+      blockHeight: -1,
     };
     return true;
   }

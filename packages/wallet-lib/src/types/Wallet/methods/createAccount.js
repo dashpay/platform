@@ -13,8 +13,12 @@ function createAccount(accountOpts) {
   // eslint-disable-next-line global-require
   const Account = require('../../Account/Account.js');
 
-  const { injectDefaultPlugins, plugins, allowSensitiveOperations } = this;
-  const baseOpts = { injectDefaultPlugins, allowSensitiveOperations, plugins };
+  const {
+    injectDefaultPlugins, debug, plugins, allowSensitiveOperations,
+  } = this;
+  const baseOpts = {
+    injectDefaultPlugins, debug, allowSensitiveOperations, plugins,
+  };
   if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) { baseOpts.privateKey = this.privateKey; }
   const opts = Object.assign(baseOpts, accountOpts);
   return new Account(this, opts);

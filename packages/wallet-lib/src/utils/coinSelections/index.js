@@ -1,3 +1,4 @@
+const { Transaction } = require('@dashevo/dashcore-lib');
 const is = require('../is');
 const STRATEGIES = require('./strategies');
 const InvalidUTXO = require('../../errors/InvalidUTXO');
@@ -12,13 +13,19 @@ module.exports = function coinSelection(utxosList, outputsList, deductFee = fals
 
 
   for (let i = 0; i < utxosList.length; i += 1) {
-    const utxo = utxosList[i];
+    let utxo = utxosList[i];
     if (!is.utxo(utxo)) {
-      throw new InvalidUTXO(utxo);
+      try {
+        // Tries to get retro-compatibility from insight old format
+        // FIXME: Maybe update tests with newer format now.
+        utxo.script = utxo.scriptPubKey;
+        utxo = new Transaction.Output(utxo);
+      } catch (e) {
+        throw new InvalidUTXO(utxo);
+      }
     }
     utxosValue += utxo.satoshis;
   }
-
   if (!outputsList) { throw new Error('An outputsList is required in order to perform a selection'); }
   if (outputsList.constructor.name !== Array.name) { throw new Error('outputsList must be an array of outputs'); }
   if (outputsList.length < 1) { throw new Error('outputsList must contains at least 1 output'); }

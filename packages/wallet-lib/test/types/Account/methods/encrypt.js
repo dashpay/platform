@@ -8,7 +8,7 @@ describe('Account - encrypt', () => {
   let wallet;
   let account;
   beforeEach(() => {
-    wallet = new Wallet();
+    wallet = new Wallet({ offlineMode: true });
     account = wallet.getAccount({ index: 0 });
   });
 

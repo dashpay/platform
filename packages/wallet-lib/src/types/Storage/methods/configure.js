@@ -21,5 +21,5 @@ module.exports = async function configure(opts = {}) {
     this.startWorker();
   }
 
-  this.events.emit(CONFIGURED);
+  this.emit(CONFIGURED, { type: CONFIGURED, payload: null });
 };

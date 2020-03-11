@@ -67,7 +67,7 @@ describe('Wallet - HDPublicKey', () => {
     };
     expect(unusedAddress).to.deep.equal(expectedUnused);
 
-    wallet1.storage.events.on('CONFIGURED', () => {
+    wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
     });
   });

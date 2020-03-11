@@ -10,6 +10,7 @@ describe('Storage - getTransaction', () => {
       store: {
         transactions: {},
       },
+      searchTransaction: () => ({ found: false }),
     };
     expect(() => getTransaction.call(self, validTx.txid)).to.throw(exceptedException1);
   });
@@ -19,6 +20,7 @@ describe('Storage - getTransaction', () => {
       store: {
         transactions: {},
       },
+      searchTransaction: () => ({ found: true, result: validTx }),
     };
     self.store.transactions[validTx.txid] = validTx;
     const { txid } = validTx;

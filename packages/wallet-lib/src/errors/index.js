@@ -17,6 +17,7 @@ const InvalidTransactionObject = require('./InvalidTransactionObject');
 const InvalidUTXO = require('./InvalidUTXO');
 const StorageUnableToAddTransaction = require('./StorageUnableToAddTransaction');
 const TransactionNotInStore = require('./TransactionNotInStore');
+const BlockHeaderNotInStore = require('./BlockHeaderNotInStore');
 
 const UnknownDPA = require('./UnknownDPA');
 const UnknownWorker = require('./UnknownWorker');
@@ -27,6 +28,7 @@ const WalletLibError = require('./WalletLibError');
 
 
 module.exports = {
+  BlockHeaderNotInStore,
   CreateTransactionError,
   CoinSelectionUnsufficientUTXOS,
   InjectionErrorCannotInject,

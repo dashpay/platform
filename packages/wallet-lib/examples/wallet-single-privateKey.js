@@ -11,7 +11,7 @@ const start = async () => {
   });
   console.log('Private:', wallet.exportWallet());
   console.log('Type:', wallet.type);
-  const account = wallet.getAccount(0);
+  const account = wallet.getAccount({ index: 0 });
 
   const address = account.getAddress();
   console.log('Address :', address);

@@ -1,4 +1,5 @@
 const { expect } = require('chai');
+const Dashcore = require('@dashevo/dashcore-lib');
 const knifeMnemonic = require('../../fixtures/knifeeasily');
 const gatherSailMnemonic = require('../../fixtures/gathersail');
 const fluidMnemonic = require('../../fixtures/fluidDepth');
@@ -6,7 +7,6 @@ const cR4t6ePrivateKey = require('../../fixtures/cR4t6e_pk');
 const { WALLET_TYPES } = require('../../../src/CONSTANTS');
 const { Wallet } = require('../../../src');
 const inMem = require('../../../src/adapters/InMem');
-const Dashcore = require('@dashevo/dashcore-lib');
 const fromHDPublicKey = require('../../../src/types/Wallet/methods/fromHDPublicKey');
 const gatherSail = require('../../fixtures/gathersail');
 
@@ -35,15 +35,15 @@ describe('Wallet - class', () => {
     expect(wallet2.mnemonic).to.be.not.equal(wallet1.mnemonic);
     expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
 
-    wallet1.storage.events.on('CONFIGURED', () => {
+    wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
     });
-    wallet2.storage.events.on('CONFIGURED', () => {
+    wallet2.storage.on('CONFIGURED', () => {
       wallet2.disconnect();
     });
   });
   it('should create a wallet with mnemonic', () => {
-    const wallet1 = new Wallet(Object.assign({ mnemonic: knifeMnemonic.mnemonic }, mocks));
+    const wallet1 = new Wallet({ mnemonic: knifeMnemonic.mnemonic, ...mocks });
     expect(wallet1.walletType).to.be.equal(WALLET_TYPES.HDWALLET);
     expect(Dashcore.Mnemonic(wallet1.mnemonic).toString()).to.be.equal(wallet1.mnemonic);
 
@@ -56,21 +56,21 @@ describe('Wallet - class', () => {
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(knifeMnemonic.walletIdTestnet);
 
-    const opts2 = Object.assign({ mnemonic: knifeMnemonic.mnemonic, network: 'livenet' }, mocks);
+    const opts2 = { mnemonic: knifeMnemonic.mnemonic, network: 'livenet', ...mocks };
     const wallet2 = new Wallet(opts2);
     expect(wallet2.walletType).to.be.equal(WALLET_TYPES.HDWALLET);
     expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.mainnet.toString());
     expect(Dashcore.Mnemonic(wallet2.mnemonic).toString()).to.be.equal(wallet2.mnemonic);
     expect(wallet2.walletId).to.be.equal(knifeMnemonic.walletIdMainnet);
-    wallet1.storage.events.on('CONFIGURED', () => {
+    wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
     });
-    wallet2.storage.events.on('CONFIGURED', () => {
+    wallet2.storage.on('CONFIGURED', () => {
       wallet2.disconnect();
     });
   });
   it('should create a wallet with HDPrivateKey', () => {
-    const wallet1 = new Wallet(Object.assign({ HDPrivateKey: knifeMnemonic.HDRootPrivateKeyTestnet, network: 'testnet' }, mocks));
+    const wallet1 = new Wallet({ HDPrivateKey: knifeMnemonic.HDRootPrivateKeyTestnet, network: 'testnet', ...mocks });
     expect(wallet1.walletType).to.be.equal(WALLET_TYPES.HDWALLET);
     expect(wallet1.mnemonic).to.be.equal(null);
 
@@ -82,12 +82,12 @@ describe('Wallet - class', () => {
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(knifeMnemonic.walletIdTestnet);
-    wallet1.storage.events.on('CONFIGURED', () => {
+    wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
     });
   });
   it('should create a wallet with HDPublicKey', () => {
-    const wallet1 = new Wallet(Object.assign({ HDPublicKey: gatherSailMnemonic.testnet.external.hdpubkey, network: 'testnet' }, mocks));
+    const wallet1 = new Wallet({ HDPublicKey: gatherSailMnemonic.testnet.external.hdpubkey, network: 'testnet', ...mocks });
     expect(wallet1.walletType).to.be.equal(WALLET_TYPES.HDPUBLIC);
     expect(wallet1.mnemonic).to.be.equal(null);
 
@@ -99,12 +99,12 @@ describe('Wallet - class', () => {
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(gatherSailMnemonic.testnet.external.walletId);
-    wallet1.storage.events.on('CONFIGURED', () => {
+    wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
     });
   });
   it('should create a wallet with PrivateKey', () => {
-    const wallet1 = new Wallet(Object.assign({ privateKey: cR4t6ePrivateKey.privateKey, network: 'testnet' }, mocks));
+    const wallet1 = new Wallet({ privateKey: cR4t6ePrivateKey.privateKey, network: 'testnet', ...mocks });
     expect(wallet1.walletType).to.be.equal(WALLET_TYPES.SINGLE_ADDRESS);
     expect(wallet1.mnemonic).to.be.equal(null);
 
@@ -117,20 +117,22 @@ describe('Wallet - class', () => {
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(cR4t6ePrivateKey.walletIdTestnet);
 
-    wallet1.storage.events.on('CONFIGURED', () => {
+    wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
     });
   });
   it('should have an offline Mode', () => {
-    const wallet = new Wallet(Object.assign({ offlineMode: true, privateKey: cR4t6ePrivateKey.privateKey, network: 'testnet' }, mocks));
+    const wallet = new Wallet({
+      offlineMode: true, privateKey: cR4t6ePrivateKey.privateKey, network: 'testnet', ...mocks,
+    });
     expect(wallet.offlineMode).to.equal(true);
-    wallet.storage.events.on('CONFIGURED', () => {
+    wallet.storage.on('CONFIGURED', () => {
       wallet.disconnect();
     });
   });
 });
 describe('Wallet - Get/Create Account', () => {
-  const wallet1 = new Wallet(Object.assign({ mnemonic: fluidMnemonic.mnemonic }, mocks));
+  const wallet1 = new Wallet({ mnemonic: fluidMnemonic.mnemonic, ...mocks });
 
   it('should be able to create/get a wallet', () => {
     const acc1 = wallet1.createAccount({ injectDefaultPlugins: false });
@@ -172,7 +174,7 @@ describe('Wallet - Get/Create Account', () => {
     const encryptedHDPriv = walletTestnet.exportWallet('HDPrivateKey');
     const expectedHDPriv = 'tprv8ZgxMBicQKsPcuZMDBeTL2qaBF7gyUPt2wbqbJG2yp8s7yzRE1cRcjRnG3Xmdv3sELwtLGz186VX3EeHQ5we1xr1qH95QN6FRopP6FZqBUJ';
     expect(encryptedHDPriv.toString()).to.equal(expectedHDPriv);
-    walletTestnet.storage.events.on('CONFIGURED', () => {
+    walletTestnet.storage.on('CONFIGURED', () => {
       walletTestnet.disconnect();
     });
   });
@@ -196,7 +198,7 @@ describe('Wallet - Get/Create Account', () => {
     const accountSpecificIndex = walletTestnet.createAccount({ index: 42 });
     expect(accountSpecificIndex.BIP44PATH.split('/')[3]).to.equal('42\'');
     expect(accountSpecificIndex.index).to.equal(42);
-    walletTestnet.storage.events.on('CONFIGURED', () => {
+    walletTestnet.storage.on('CONFIGURED', () => {
       walletTestnet.disconnect();
       done();
     });

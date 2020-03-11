@@ -22,7 +22,7 @@ export declare type Transaction<T extends object = object> = T & {
 export declare type TransactionInfo<T extends object = object> = T & {
     txid:string;
     blockhash:string;
-    blockheight:number
+    blockHeight:number
     blocktime: string
     fees: number;
     size:number;
@@ -63,7 +63,7 @@ export declare type WalletObj = {
     mnemonic?: Mnemonic|string;
     type: WalletType,
     accounts: AccountMap,
-    blockheight: number,
+    blockHeight: number,
     addresses:{
         external: AddressInfoMap,
         internal: AddressInfoMap,

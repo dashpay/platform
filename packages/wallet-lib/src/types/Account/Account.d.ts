@@ -5,6 +5,7 @@ import {HDPrivateKey} from "@dashevo/dashcore-lib";
 export declare class Account {
     constructor(options?: Account.Options);
     index: number;
+    debug?: boolean;
     keyChain: KeyChain;
     state:any;
 
@@ -16,7 +17,6 @@ export declare class Account {
     disconnect(): boolean;
     fetchAddressInfo(addresObj: AddressObj, fetchUtxo?:boolean): Promise<AddressInfo|false>;
     fetchStatus(): Promise<object|false>
-    fetchTransactionInfo(transactionid: transactionId): Promise<TransactionInfo|false>
     forceRefreshAccount(): boolean;
     generateAddress(path:string): AddressObj;
     getAddress(_type: AddressType): AddressObj;
@@ -53,8 +53,11 @@ export declare namespace Account {
     interface Options {
         index?:number,
         network?: Network;
+        debug?: boolean;
         allowSensitiveOperations?: string;
         plugins?: [Plugins];
+        cacheBlockHeaders?: boolean;
+        cacheTx?: boolean;
         injectDefaultPlugins?: string;
         strategy?: Strategy;
     }

@@ -9,7 +9,7 @@ const createWallet = function (walletId = 'squawk7700', network = testnet.toStri
       network,
       mnemonic,
       type,
-      blockheight: 0,
+      blockHeight: 0,
       addresses: {
         external: {},
         internal: {},

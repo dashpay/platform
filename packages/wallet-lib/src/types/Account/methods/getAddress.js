@@ -31,8 +31,7 @@ function getAddress(index = 0, _type = 'external') {
   const { type, path } = getTypePathFromWalletType(this.walletType, _type, index, this.BIP44PATH);
 
   const { wallets } = this.storage.getStore();
-  const addressType = wallets[this.walletId].addresses[type];
-  // console.log(addressType, path)
-  return (addressType[path]) ? addressType[path] : this.generateAddress(path);
+  const matchingTypeAddresses = wallets[this.walletId].addresses[type];
+  return (matchingTypeAddresses[path]) ? matchingTypeAddresses[path] : this.generateAddress(path);
 }
 module.exports = getAddress;

@@ -24,5 +24,5 @@ const transporter = new DAPIClient({
       timeout: 20000,
       retries: 5,
 });
-const wallet = new Wallet({transport:transporter});
+const wallet = new Wallet({transporter:transporter});
 ```

@@ -46,18 +46,18 @@ const mockedStore2 = {
 
 describe('Account - getUTXOS', () => {
   it('should get the proper UTXOS list', () => {
-    const utxos = getUTXOS.call(Object.assign({}, {
+    const utxos = getUTXOS.call({
       store: mockedStoreEmpty,
       getStore: mockedStoreEmpty,
       walletId: '123456789',
-    }));
+    });
     expect(utxos).to.be.deep.equal([]);
 
-    const utxos2 = getUTXOS.call(Object.assign({}, {
+    const utxos2 = getUTXOS.call({
       store: mockedStore2,
       getStore: mockedStore2,
       walletId: '123456789',
-    }));
+    });
 
     expect(utxos2).to.be.deep.equal([
       {

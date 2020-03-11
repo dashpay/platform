@@ -1,15 +1,17 @@
 /**
  * Disconnect all the storage worker and process all account to disconnect their endpoint too.
  */
-function disconnect() {
+async function disconnect() {
   if (this.storage) {
-    this.storage.stopWorker();
+    await this.storage.stopWorker();
   }
   if (this.accounts) {
     const accountPath = Object.keys(this.accounts);
-    accountPath.forEach((path) => {
-      this.accounts[path].disconnect();
-    });
+    // eslint-disable-next-line guard-for-in,no-restricted-syntax
+    for (const path in accountPath) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.accounts[path].disconnect();
+    }
   }
 }
 module.exports = disconnect;

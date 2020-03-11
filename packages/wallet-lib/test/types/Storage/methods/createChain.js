@@ -10,7 +10,15 @@ describe('Storage - createChain', () => {
 
     createChain.call(self, testnet);
 
-    const expected = { store: { chains: { testnet: { name: 'testnet', blockheight: -1 } } } };
+    const expected = {
+      store: {
+        chains: {
+          testnet: {
+            name: 'testnet', blockHeight: -1, blockHeaders: {}, mappedBlockHeaderHeights: {},
+          },
+        },
+      },
+    };
     expect(self).to.be.deep.equal(expected);
   });
 });

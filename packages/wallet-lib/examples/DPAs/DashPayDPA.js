@@ -1,5 +1,5 @@
-const { utils, plugins, CONSTANTS } = require('../../src');
 const Dashcore = require('@dashevo/dashcore-lib');
+const { utils, plugins, CONSTANTS } = require('../../src');
 const dashPaySchema = require('./dashPaySchema.json');
 
 const { DPA } = plugins;
@@ -84,8 +84,8 @@ class DashPayDPA extends DPA {
       .addFundingOutput(funding);
 
     const privateKeys = this.getPrivateKeys(filteredUtxosList
-      .map(item => item.address))
-      .map(hdpk => hdpk.privateKey);
+      .map((item) => item.address))
+      .map((hdpk) => hdpk.privateKey);
 
     const signedTransaction = transaction.sign(privateKeys, Dashcore.crypto.Signature.SIGHASH_ALL);
 

@@ -91,12 +91,23 @@ class TransactionEstimator {
     const inputs = (is.arr(_inputs)) ? _inputs : [_inputs];
     if (inputs.length < 1) return false;
 
-    const addInputs = (input) => {
-      if (!_.has(input, 'script') && !_.has(input, 'scriptPubKey')) throw new Error('Expected script to add input');
+    const addInput = (input) => {
+      if (!is.utxo(input)) {
+        try {
+          // Tries to get retro-compatibility from insight old format
+          // FIXME: Maybe update tests with newer format now.
+          // eslint-disable-next-line no-param-reassign
+          input.script = input.scriptPubKey;
+          // eslint-disable-next-line no-param-reassign
+          input = new Transaction.Output(input);
+        } catch (e) {
+          throw new Error('Expected valid input to import');
+        }
+      }
       self.state.inputs.push(input);
     };
 
-    inputs.forEach(addInputs);
+    inputs.forEach(addInput);
     return inputs;
   }
 

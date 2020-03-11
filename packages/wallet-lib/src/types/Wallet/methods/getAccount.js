@@ -22,9 +22,7 @@ function getAccount(accountOpts = {}) {
   const baseOpts = { index: accountIndex };
 
   const opts = Object.assign(baseOpts, accountOpts);
-  const account = (acc[0]) || this.createAccount(opts);
-  account.storage.attachEvents(account.events);
-  return account;
+  return (acc[0]) || this.createAccount(opts);
 }
 
 module.exports = getAccount;

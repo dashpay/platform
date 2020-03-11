@@ -89,12 +89,7 @@ function createTransaction(opts) {
 
 
   // We parse our inputs, transform them into a Dashcore UTXO object.
-  const inputs = selectedUTXOs.reduce((accumulator, current) => {
-    const unspentoutput = new Dashcore.Transaction.UnspentOutput(current);
-    accumulator.push(unspentoutput);
-
-    return accumulator;
-  }, []);
+  const inputs = selectedUTXOs;
 
   if (!inputs) return tx;
   // We can now add direction our inputs to the Dashcore TX object

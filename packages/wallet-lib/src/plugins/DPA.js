@@ -108,7 +108,7 @@ class DPA extends StandardPlugin {
       .setCreditFee(creditFeeSet)
       .sign(signingKey);
 
-    const txid = await this.transport.transport.sendRawTransition(
+    const txid = await this.transporter.sendTransaction(
       transaction.serialize(),
       stPacket.serialize()
         .toString('hex'),

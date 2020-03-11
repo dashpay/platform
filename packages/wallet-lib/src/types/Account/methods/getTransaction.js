@@ -10,11 +10,20 @@ async function getTransaction(txid = null) {
   if (search.found) {
     return search.result;
   }
-  const tx = await this.fetchTransactionInfo(txid);
-  try {
-    await this.storage.importTransactions(tx);
-  } catch (e) {
-    logger.error('getTransaction', e);
+  const tx = await this.transporter.getTransaction(txid);
+  if (this.cacheTx) {
+    try {
+      await this.storage.importTransactions(tx);
+      if (this.cacheBlockHeaders) {
+        const searchBlockHeader = this.storage.searchBlockHeader(tx.nLockTime);
+        if (!searchBlockHeader.found) {
+          // Trigger caching of blockheader
+          await this.getBlockHeader(tx.nLockTime);
+        }
+      }
+    } catch (e) {
+      logger.error('getTransaction', e);
+    }
   }
   return tx;
 }

@@ -27,7 +27,9 @@ export declare class Wallet {
 export declare namespace Wallet {
 
     interface Options {
+        debug?: boolean;
         offlineMode?: boolean;
+        transporter?: string|object|any;
         network?: Network;
         plugins?: [Plugins];
         passphrase?: string;

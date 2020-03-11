@@ -14,8 +14,8 @@ describe('Account - encode', () => {
   };
 
   it('should encode JSON with cbor', () => {
-    const encodedJSON = encode('cbor', jsonObject)
-    const decoded = cbor.decodeFirstSync(encodedJSON)
+    const encodedJSON = encode('cbor', jsonObject);
+    const decoded = cbor.decodeFirstSync(encodedJSON);
     expect(decoded).to.deep.equal(jsonObject);
   });
 });

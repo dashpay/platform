@@ -6,9 +6,10 @@ const {
   is,
 } = require('../../utils');
 
-const Transporter = require('../../transports/Transporter');
+const transporters = require('../../transporters');
 
 const defaultOptions = {
+  debug: false,
   offlineMode: false,
   network: 'testnet',
   plugins: [],
@@ -56,6 +57,7 @@ class Wallet {
     const passphrase = _.has(opts, 'passphrase') ? opts.passphrase : defaultOptions.passphrase;
     this.passphrase = passphrase;
     this.offlineMode = _.has(opts, 'offlineMode') ? opts.offlineMode : defaultOptions.offlineMode;
+    this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
 
@@ -64,7 +66,6 @@ class Wallet {
       throw new Error(`Un-handled network: ${network}`);
     }
     this.network = Dashcore.Networks[network].toString();
-
     if ('mnemonic' in opts) {
       this.fromMnemonic((opts.mnemonic === null) ? generateNewMnemonic() : opts.mnemonic);
     } else if ('seed' in opts) {
@@ -72,7 +73,9 @@ class Wallet {
     } else if ('HDPrivateKey' in opts) {
       this.fromHDPrivateKey(opts.HDPrivateKey);
     } else if ('privateKey' in opts) {
-      this.fromPrivateKey(opts.privateKey);
+      this.fromPrivateKey((opts.privateKey === null)
+        ? new Dashcore.PrivateKey(network).toString()
+        : opts.privateKey);
     } else if ('HDPublicKey' in opts) {
       this.fromHDPublicKey(opts.HDPublicKey);
     } else {
@@ -108,9 +111,9 @@ class Wallet {
       }
     }
     if (this.offlineMode) {
-      this.transport = { isValid: false };
+      this.transporter = { isValid: false };
     } else {
-      this.transport = (opts.transport) ? new Transporter(opts.transport) : new Transporter();
+      this.transporter = transporters.resolve(opts.transporter);
     }
     this.accounts = [];
     this.interface = opts.interface;
@@ -123,5 +126,6 @@ Wallet.prototype.disconnect = require('./methods/disconnect');
 Wallet.prototype.getAccount = require('./methods/getAccount');
 Wallet.prototype.generateNewWalletId = generateNewWalletId;
 Wallet.prototype.exportWallet = require('./methods/exportWallet');
+Wallet.prototype.sweepWallet = require('./methods/sweepWallet');
 
 module.exports = Wallet;

@@ -3,15 +3,16 @@
  * @param txid
  * @return {{txid: *, found: boolean}}
  */
-const searchTransaction = function (txid) {
+const searchTransaction = function (hash) {
   const search = {
-    txid,
+    hash,
     found: false,
   };
   const store = this.getStore();
-  if (store.transactions[txid]) {
-    const tx = store.transactions[txid];
-    if (tx.txid === txid) {
+
+  if (store.transactions[hash]) {
+    const tx = store.transactions[hash];
+    if (tx.hash === hash) {
       search.found = true;
       search.result = tx;
     }

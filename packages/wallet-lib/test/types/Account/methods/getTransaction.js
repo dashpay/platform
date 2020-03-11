@@ -15,13 +15,14 @@ describe('Account - getTransaction', () => {
       importTransactions: () => null,
     };
     const walletId = Object.keys(mockedStore.wallets)[0];
-    mockedWallet = Object.assign({
+    mockedWallet = {
       walletId,
       index: 0,
       storage: storageHDW,
-      fetchTransactionInfo: () => fetchTransactionInfoCalledNb += 1,
-
-    });
+      transporter: {
+        getTransaction: () => fetchTransactionInfoCalledNb += 1,
+      },
+    };
   });
   it('should correctly get a existing transaction', async () => {
     const tx = await getTransaction.call(mockedWallet, '92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5');
@@ -36,7 +37,7 @@ describe('Account - getTransaction', () => {
 });
 
 const expectedTx = {
-  txid: '92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5',
+  hash: '92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5',
   blockhash: '000000c5d6ca463ebbfddffe9a0a135312b6d8fc4eae2787b82b0fca9de7a554',
   blockheight: 29197,
   blocktime: 1562060795,
@@ -68,7 +69,7 @@ const expectedTx = {
     spentHeight: 29197,
   }],
   vin: [{
-    txid: '0c25c534aeef8a151e8ce325882f80af647621b9f0a54f995f75c0d2994966ad',
+    hash: '0c25c534aeef8a151e8ce325882f80af647621b9f0a54f995f75c0d2994966ad',
     vout: 0,
     sequence: 4294967294,
     n: 0,
@@ -81,7 +82,7 @@ const expectedTx = {
     value: 0.99991512,
     doubleSpentTxID: null,
   }, {
-    txid: '92056b727a3e37f5946dc18aa4f497ba9c0e3a328105e743175629bf7c8f3d37',
+    hash: '92056b727a3e37f5946dc18aa4f497ba9c0e3a328105e743175629bf7c8f3d37',
     vout: 0,
     sequence: 4294967294,
     n: 1,
@@ -94,7 +95,7 @@ const expectedTx = {
     value: 500,
     doubleSpentTxID: null,
   }, {
-    txid: 'be27a3dae2742aaca103fea0967edd9a6d0ef5cf90159af39f80ad5a7a50b7d6',
+    hash: 'be27a3dae2742aaca103fea0967edd9a6d0ef5cf90159af39f80ad5a7a50b7d6',
     vout: 0,
     sequence: 4294967294,
     n: 2,

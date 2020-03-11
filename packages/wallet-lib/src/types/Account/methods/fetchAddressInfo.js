@@ -9,12 +9,12 @@ const { is } = require('../../../utils');
  * @return {Promise<addrInfo>}
  */
 async function fetchAddressInfo(addressObj, fetchUtxo = true) {
-  if (!this.transport.isValid) throw new ValidTransportLayerRequired('fetchAddressInfo');
+  if (!this.transporter.isValid) throw new ValidTransportLayerRequired('fetchAddressInfo');
   const self = this;
   const { address, path, index } = addressObj;
 
   try {
-    const addrSum = await this.transport.getAddressSummary(address);
+    const addrSum = await this.transporter.getAddressSummary(address);
     if (!addrSum) return false;
     const {
       balanceSat, unconfirmedBalanceSat, transactions,
@@ -41,12 +41,10 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
       // If we have cacheTx, then we will check if we know this transactions
       if (self.cacheTx) {
         const promises = [];
-        transactions.forEach((tx) => {
+        transactions.forEach((txid) => {
           const knownTx = Object.keys(self.store.transactions);
-          if (!knownTx.includes(tx)) {
-            const promise = self.fetchTransactionInfo(tx).then((txInfo) => {
-              self.storage.importTransaction(txInfo);
-            });
+          if (!knownTx.includes(txid)) {
+            const promise = self.getTransaction(txid);
             promises.push(promise);
           }
         });
@@ -54,7 +52,7 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
       }
     }
     if (fetchUtxo) {
-      const fetchedUtxoReq = await self.transport.getUTXO(address);
+      const fetchedUtxoReq = await self.transporter.getUTXO(address);
       if (fetchedUtxoReq && fetchedUtxoReq.totalItems) {
         const fetchedUtxo = fetchedUtxoReq.items;
 

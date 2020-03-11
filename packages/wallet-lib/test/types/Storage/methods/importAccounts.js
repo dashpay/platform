@@ -1,6 +1,7 @@
 const { expect } = require('chai');
 const importAccounts = require('../../../../src/types/Storage/methods/importAccounts');
 const Wallet = require('../../../../src/types/Wallet/Wallet');
+const EVENTS = require('../../../../src/EVENTS');
 
 describe('Storage - importAccounts', async function suite() {
   this.timeout(15000);
@@ -13,12 +14,10 @@ describe('Storage - importAccounts', async function suite() {
     expect(() => importAccounts.call({}, walletId)).to.throw(exceptedException1);
   });
   it('should create a wallet if not existing', (done) => {
-
     const wallet = new Wallet({ offlineMode: true });
-    wallet.storage.events.on('CONFIGURED', () => {
+    wallet.storage.on(EVENTS.CONFIGURED, () => {
       const acc = wallet.getAccount();
-      acc.events.on('*', (msg) => { console.log(msg); });
-      acc.events.on('INITIALIZED', () => {
+      acc.on(EVENTS.INITIALIZED, () => {
         let called = 0;
 
         const self = {
@@ -39,7 +38,7 @@ describe('Storage - importAccounts', async function suite() {
   });
   it('should import an account', (done) => {
     const wallet = new Wallet({ offlineMode: true });
-    wallet.storage.events.on('CONFIGURED', () => {
+    wallet.storage.on('CONFIGURED', () => {
       const acc = wallet.getAccount();
       let called = 0;
 
@@ -54,9 +53,11 @@ describe('Storage - importAccounts', async function suite() {
       const walletsKeys = Object.keys(self.store.wallets);
       expect(walletsKeys.length).to.equal(1);
       expect(self.store.wallets[walletsKeys[0]].accounts['m/44\'/1\'/0\''].label).to.equal('Heya!');
-      wallet.disconnect();
-      acc.disconnect();
-      done();
+      setTimeout(() => {
+        wallet.disconnect();
+        acc.disconnect();
+        done();
+      }, 50);
     });
   });
 });

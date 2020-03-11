@@ -12,11 +12,11 @@ describe('Storage - searchWallet', () => {
             network: Dashcore.Networks.testnet,
             mnemonic: null,
             type: null,
-            blockheight: 0,
+            blockHeight: 0,
             addresses: { external: {}, internal: {}, misc: {} },
           },
         },
-        chains: { testnet: { name: 'testnet', blockheight: -1 } },
+        chains: { testnet: { name: 'testnet', blockHeight: -1 } },
       },
     };
     self.getStore = () => self.store;

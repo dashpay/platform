@@ -15,11 +15,11 @@ describe('Account - getTotalBalance', () => {
       mappedAddress: {},
     };
     const walletId = Object.keys(mockedStore.wallets)[0];
-    mockedWallet = Object.assign({
+    mockedWallet = {
       walletId,
       index: 0,
       storage: storageHDW,
-    });
+    };
   });
   it('should correctly get the balance', async () => {
     const balance = await getTotalBalance.call(mockedWallet);

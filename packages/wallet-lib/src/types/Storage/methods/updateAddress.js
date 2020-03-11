@@ -38,7 +38,7 @@ const updateAddress = function (addressObj, walletId) {
   // if(newObject.utxos.length==0 && previousObject.utxos.length>0){
   //
   // }
-  const currentBlockHeight = this.store.chains[walletStore.network].blockheight;
+  const currentBlockHeight = this.store.chains[walletStore.network].blockHeight;
 
   // We calculate here the balanceSat and unconfirmedBalanceSat of our addressObj
   // We do that to avoid getBalance to be slow, so we have to keep that in mind or then
@@ -53,12 +53,15 @@ const updateAddress = function (addressObj, walletId) {
 
     const newUtxos = xor(newObjectUtxosKeys, Object.keys(previousUTXOS));
     // Then we verify the outputs
-
     newUtxos.forEach((utxoKey) => {
+      const [txid, outputIndex] = utxoKey.split('-');
       const utxo = utxos[utxoKey];
+      utxo.txId = txid;
+      utxo.outputIndex = parseInt(outputIndex, 10);
+
       try {
-        const { blockheight } = this.getTransaction(utxo.txid);
-        if (currentBlockHeight - blockheight >= 6) newObject.balanceSat += utxo.satoshis;
+        const { blockHeight } = this.getTransaction(txid);
+        if (currentBlockHeight - blockHeight >= 6) newObject.balanceSat += utxo.satoshis;
         else newObject.unconfirmedBalanceSat += utxo.satoshis;
       } catch (e) {
         logger.error('Error', e);

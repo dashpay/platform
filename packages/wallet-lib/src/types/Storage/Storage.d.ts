@@ -8,7 +8,8 @@ import {
     TransactionInfo,
     WalletObj, WalletType
 } from "../types";
-import {EventEmitter} from "events";
+import { EventEmitter2 as EventEmitter } from 'eventemitter2';
+import {BlockHeader} from "@dashevo/dashcore-lib";
 
 export declare class Storage {
     constructor(options?: Storage.Options);
@@ -18,10 +19,6 @@ export declare class Storage {
     autosaveIntervalTime: number;
     network: Network;
     mappedAddress: MappedAddressMap;
-
-
-    // TODO: param of attachEvent to be an event
-    attachEvent(event: EventEmitter): void;
 
     addNewTxToAddress(tx: TransactionInfo, address: AddressObj): boolean;
 
@@ -64,6 +61,8 @@ export declare class Storage {
     saveState(): boolean;
 
     searchAddress(address: string, forceLoop: boolean): AddressSearchResult;
+
+    searchBlockHeader(identifier: string|number): BlockHeaderSearchResult;
 
     searchAddressesWithTx(txid: number): AddressesSearchResult;
 
@@ -111,6 +110,11 @@ interface AddressSearchResult {
     path?: string,
     result: AddressObj,
     walletId: number
+}
+interface BlockHeaderSearchResult {
+    found: boolean,
+    result: BlockHeader,
+    identifier: number|string
 }
 
 interface AddressesSearchResult {

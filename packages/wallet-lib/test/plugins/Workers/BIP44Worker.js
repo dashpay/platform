@@ -4,7 +4,6 @@
 //
 //
 // const opts = {
-//   events: new EventEmitter(),
 //   workerIntervalTime: 10000,
 //   storage: {
 //     store: {

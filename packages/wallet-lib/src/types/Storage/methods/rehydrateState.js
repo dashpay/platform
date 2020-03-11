@@ -25,9 +25,9 @@ const rehydrateState = async function () {
       this.store.wallets = mergeHelper(this.store.wallets, wallets);
       this.store.chains = mergeHelper(this.store.chains, chains);
       this.lastRehydrate = +new Date();
-      this.events.emit(REHYDRATE_STATE_SUCCESS);
+      this.emit(REHYDRATE_STATE_SUCCESS, { type: REHYDRATE_STATE_SUCCESS, payload: null });
     } catch (e) {
-      this.events.emit(REHYDRATE_STATE_FAILED, e);
+      this.emit(REHYDRATE_STATE_FAILED, { type: REHYDRATE_STATE_FAILED, payload: e });
       throw e;
     }
   }

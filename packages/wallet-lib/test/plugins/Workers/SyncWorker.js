@@ -4,7 +4,6 @@
 // const Transporter = require('../../src/transports/Transporter');
 //
 // const opts = {
-//   events: new EventEmitter(),
 //   workerIntervalTime: 1000,
 //   storage: {
 //     store: {
@@ -19,7 +18,7 @@
 //       },
 //     },
 //   },
-//   transport: new Transporter(),
+//   transporter: new Transporter(),
 //   walletId: 'abc',
 // };
 //

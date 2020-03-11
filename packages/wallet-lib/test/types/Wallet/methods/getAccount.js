@@ -29,7 +29,6 @@ describe('Wallet - getAccount', () => {
   });
   it('should create an account when not existing and get it back', () => {
     let timesCreateAccountCalled = 0;
-    let timesAttachEventsCalled = 0;
     const mockOpts1 = {
       accounts: [],
       storage: {},
@@ -38,9 +37,6 @@ describe('Wallet - getAccount', () => {
         timesCreateAccountCalled += 1;
         const acc = {
           index: opts.index,
-          storage: {
-            attachEvents: () => timesAttachEventsCalled += 1,
-          },
         };
         // This is actually done by Account class
         mockOpts1.accounts.push(acc);
@@ -51,16 +47,13 @@ describe('Wallet - getAccount', () => {
     const acc = getAccount.call(mockOpts1);
     expect(acc.index).to.equal(0);
     expect(timesCreateAccountCalled).to.equal(1);
-    expect(timesAttachEventsCalled).to.equal(1);
     const acc2 = getAccount.call(mockOpts1, { index: 0 });
     expect(acc2.index).to.equal(0);
     expect(timesCreateAccountCalled).to.equal(1);
-    expect(timesAttachEventsCalled).to.equal(2);
     expect(acc2).to.deep.equal(acc);
 
     const acc3 = getAccount.call(mockOpts1, { index: 1 });
     expect(acc3.index).to.equal(1);
     expect(timesCreateAccountCalled).to.equal(2);
-    expect(timesAttachEventsCalled).to.equal(3);
   });
 });

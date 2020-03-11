@@ -1,11 +1,11 @@
 const { expect } = require('chai');
+const Dashcore = require('@dashevo/dashcore-lib');
 const knifeMnemonic = require('../../fixtures/knifeeasily');
 const fluidMnemonic = require('../../fixtures/fluidDepth');
 const cR4t6ePrivateKey = require('../../fixtures/cR4t6e_pk');
 const { WALLET_TYPES } = require('../../../src/CONSTANTS');
 const { Account } = require('../../../src');
 const inMem = require('../../../src/adapters/InMem');
-const Dashcore = require('@dashevo/dashcore-lib');
 
 const mocks = {
   adapter: inMem,
@@ -20,6 +20,8 @@ describe('Account - class', () => {
       this.accounts = [];
       this.network = Dashcore.Networks.testnet;
       this.storage = {
+        on: () => {},
+        emit: () => {},
         store: {},
         getStore: () => {},
         saveState: () => {},
@@ -34,7 +36,6 @@ describe('Account - class', () => {
   it('should create an account', () => {
     const mockWallet = mocks.wallet;
     const account = new Account(mockWallet, { injectDefaultPlugins: false });
-
     expect(account).to.be.deep.equal(mockWallet.accounts[0]);
     expect(account.index).to.be.deep.equal(0);
     expect(account.injectDefaultPlugins).to.be.deep.equal(false);
@@ -52,5 +53,17 @@ describe('Account - class', () => {
     expect(account.readinessInterval._idleTimeout).to.be.equal(200);
 
     account.disconnect();
+  });
+  it('should correctly create the right expected index', () => {
+    const mockWallet = mocks.wallet;
+    const account = new Account(mockWallet, { injectDefaultPlugins: false });
+    const account2 = new Account(mockWallet, { index: 10, injectDefaultPlugins: false });
+    const account3 = new Account(mockWallet, { injectDefaultPlugins: false });
+    expect(account.index).to.be.deep.equal(1);
+    expect(account2.index).to.be.deep.equal(10);
+    expect(account3.index).to.be.deep.equal(2);
+    account.disconnect();
+    account2.disconnect();
+    account3.disconnect();
   });
 });

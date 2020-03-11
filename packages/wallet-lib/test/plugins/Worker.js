@@ -12,7 +12,6 @@ describe('Plugins - Worker', function suite() {
     expect(worker.pluginType).to.equal('Worker');
     expect(worker.name).to.equal('UnnamedPlugin');
     expect(worker.dependencies).to.deep.equal([]);
-    expect(worker.events).to.equal(null);
     expect(worker.workerIntervalTime).to.equal(10000);
     expect(worker.executeOnStart).to.equal(false);
     expect(worker.firstExecutionRequired).to.equal(false);
@@ -23,8 +22,8 @@ describe('Plugins - Worker', function suite() {
   });
   it('should inject an event emitter', () => {
     const emitter = new EventEmitter();
-    worker.inject('events', emitter);
-    expect(worker.events).to.deep.equal(emitter);
+    worker.inject('parentEvents', emitter);
+    expect(worker.parentEvents).to.deep.equal(emitter);
   });
   it('should start and stop', (done) => {
     let didSomething = 0;

@@ -9,7 +9,7 @@ Parameters:
 |------------------------------------------|--------------------|--------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **walletOpts.network**                   | string/Network     | no (def:'testnet') | Use either a string reference to Networks ('livenet', 'testnet') or it's Networks representation                                                           |
 | **walletOpts.mnemonic**                  | string/Mnemonic    | no                 | If sets at null, generate a new mnemonic. If sets to a valid value, create wallet from mnemonic                                                           |
-| **walletOpts.passphrase**                | string             | no                 | If sets, uses it the passphrase to unlock the seed                                                           |
+| **walletOpts.passphrase**                | string             | no                 | If sets at null, generate a new privateKey. It sets to a valid privateKey, uses it (with the passphrase if provided) to unlock the seed                                                           |
 | **walletOpts.offlineMode**               | boolean            | no (def: false)    | Set to true to not perform any request to the network |
 | **walletOpts.injectDefaultPlugins**      | boolean            | no (def: true)     | Use to inject default plugins on loadup (BIP44Worker, ChainWorker and SyncWorker) |
 | **walletOpts.allowSensitiveOperations**  | boolean            | no (def: false)    | If you want a special plugin to access the keychain or other sensitive operation, set this to true. |

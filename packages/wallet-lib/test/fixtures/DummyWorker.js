@@ -5,6 +5,8 @@ class DummyWorker extends Worker {
     super({
       name: 'DummyWorker',
       dependencies: [],
+      executeOnStart: true,
+      workerIntervalTime: 50 * 1000,
     });
   }
 
