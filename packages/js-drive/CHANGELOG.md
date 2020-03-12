@@ -1,4 +1,4 @@
-# [0.8.0](https://github.com/dashevo/drive/compare/v0.7.0...v0.8.0) (2020-03-09)
+# [0.11.0](https://github.com/dashevo/drive/compare/v0.7.0...v0.11.0) (2020-03-09)
 
 ### Bug Fixes
 
