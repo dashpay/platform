@@ -23,6 +23,8 @@
 * prevent of defining remote `$ref` ([34bdb3f](https://github.com/dashevo/js-dpp/commit/34bdb3f9c78cd1f2d01264752a9fb712ca313de8))
 * prevent of using `default` keyword in Data Contract ([7629878](https://github.com/dashevo/js-dpp/commit/762987887112a89d4a153167e89a7ec97429994f))
 * throw error if 16Kb reached for payload in `encode` function ([c6aba8b](https://github.com/dashevo/js-dpp/commit/c6aba8bf38c4a0f8c6dd955624eab6bf07a20a9c))
+* accept `JsonSchemaValidator` as an option ([ee1bb0f](https://github.com/dashevo/js-dpp/commit/ee1bb0f180c8a3550da1f63c7a0200dac19f3966))
+
 
 ### BREAKING CHANGES
 
