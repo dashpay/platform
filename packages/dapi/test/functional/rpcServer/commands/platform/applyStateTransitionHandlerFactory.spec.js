@@ -189,7 +189,7 @@ describe('rpcServer', function main() {
       expect(response.error).to.be.deep.equal({ code: -32602, message: 'Invalid argument: State Transition is invalid' });
     });
 
-    it.skip('client should return same result as grpc method', async () => {
+    it('client should return same result as grpc method', async () => {
       expect(forcedClient.forceJsonRpc).to.be.true();
       const dataContract = getDataContractFixture(identityCreateTransition.getIdentityId());
 

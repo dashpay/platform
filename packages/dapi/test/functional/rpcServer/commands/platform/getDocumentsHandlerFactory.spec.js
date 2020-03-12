@@ -163,7 +163,7 @@ describe('rpcServer', function main() {
       await removeDapi();
     });
 
-    it.skip('should fetch documents', async () => {
+    it('should fetch documents', async () => {
       const docType = 'indexedDocument';
       const documents = [{ type: docType, data: { firstName: 'Test', lastName: 'Demo' } }];
       const identityId = identityCreateTransition.getIdentityId();
@@ -190,7 +190,7 @@ describe('rpcServer', function main() {
       expect(response.result[0]).to.be.deep.equal(documentModels[0].toJSON());
     });
 
-    it.skip('forced client should give the same result as grpc method', async () => {
+    it('forced client should give the same result as grpc method', async () => {
       const docType = 'indexedDocument';
       const documents = [{ type: docType, data: { firstName: 'Test', lastName: 'Demo' } }];
       const identityId = identityCreateTransition.getIdentityId();
