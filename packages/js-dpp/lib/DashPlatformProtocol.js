@@ -15,31 +15,47 @@ class DashPlatformProtocol {
   /**
    * @param {Object} options
    * @param {DataProvider} [options.dataProvider]
+   * @param {JsonSchemaValidator} [options.jsonSchemaValidator]
    */
   constructor(options = {}) {
     this.dataProvider = options.dataProvider;
+    this.jsonSchemaValidator = options.jsonSchemaValidator;
 
-    const jsonSchemaValidator = new JsonSchemaValidator(new Ajv());
+    if (!this.jsonSchemaValidator) {
+      this.jsonSchemaValidator = new JsonSchemaValidator(new Ajv());
+    }
 
-    this.initializeFacades(
-      jsonSchemaValidator,
-    );
+    this.initializeFacades();
   }
 
   /**
    * @private
-   * @param {JsonSchemaValidator} jsonSchemaValidator
    */
-  initializeFacades(jsonSchemaValidator) {
+  initializeFacades() {
     this.dataContract = new DataContractFacade(
-      jsonSchemaValidator,
+      this.jsonSchemaValidator,
     );
 
-    this.document = new DocumentFacade(this.dataProvider, jsonSchemaValidator);
+    this.document = new DocumentFacade(
+      this.dataProvider,
+      this.jsonSchemaValidator,
+    );
 
-    this.stateTransition = new StateTransitionFacade(this.dataProvider, jsonSchemaValidator);
+    this.stateTransition = new StateTransitionFacade(
+      this.dataProvider,
+      this.jsonSchemaValidator,
+    );
 
-    this.identity = new IdentityFacade(jsonSchemaValidator);
+    this.identity = new IdentityFacade(
+      this.jsonSchemaValidator,
+    );
+  }
+
+  /**
+   * @return {JsonSchemaValidator}
+   */
+  getJsonSchemaValidator() {
+    return this.jsonSchemaValidator;
   }
 
   /**
