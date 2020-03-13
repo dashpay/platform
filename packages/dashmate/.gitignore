@@ -1,3 +1,8 @@
-data/core-*
-data/ipfs
-data/mongodb
+# ignore JetBrains IDE project specific files
+.idea
+
+# Env file
+.env
+
+# Tendermint creates `data` dir in configs for some reason
+configs/*/tendermint/data

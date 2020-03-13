@@ -9,15 +9,15 @@
   "servicesConfig": {
     "dashd": {
       "connect": [{
-        "rpchost": "dashcore",
+        "rpchost": "core",
         "rpcport": 20002,
         "rpcuser": "dashrpc",
         "rpcpassword": "password",
-        "zmqpubrawtx": "tcp://dashcore:29998",
-        "zmqpubhashblock": "tcp://dashcore:29998"
+        "zmqpubrawtx":"tcp://core:29998",
+        "zmqpubhashblock": "tcp://core:29998"
       }]
     },
-    "insight-api-dash": {
+    "@dashevo/insight-api": {
       "disableRateLimiter": true
     }
   }
