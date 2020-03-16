@@ -19,6 +19,8 @@ const findNotIndexedOrderByFields = require('../stateView/document/query/findNot
 const getIndexedFieldsFromDocumentSchema = require('../stateView/document/query/getIndexedFieldsFromDocumentSchema');
 const fetchDocumentsMethodFactory = require('../api/methods/fetchDocumentsMethodFactory');
 
+const checkReplicaSetInit = require('../mongoDb/checkReplicaSetInit');
+
 const Logger = require('../../lib/util/Logger');
 
 /**
@@ -55,6 +57,10 @@ class ApiApp {
         useUnifiedTopology: true,
       },
     );
+
+    const mongoDb = this.mongoClient.db(this.options.getStateViewMongoDBDatabase());
+
+    await checkReplicaSetInit(mongoDb);
   }
 
   /**

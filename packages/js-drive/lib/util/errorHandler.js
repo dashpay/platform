@@ -7,4 +7,5 @@
  */
 module.exports = function errorHandler(e) {
   console.error(e);
+  process.exit(1);
 };

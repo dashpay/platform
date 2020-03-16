@@ -60,6 +60,8 @@ const getIndexedFieldsFromDocumentSchema = require('../stateView/document/query/
 const BlockExecutionState = require('../updateState/BlockExecutionState');
 const convertToMongoDbIndices = require('../stateView/contract/convertToMongoDbIndices');
 
+const checkReplicaSetInit = require('../mongoDb/checkReplicaSetInit');
+
 class UpdateStateApp {
   /**
    *
@@ -102,6 +104,8 @@ class UpdateStateApp {
 
     this.stateViewTransaction = new MongoDBTransaction(this.mongoClient);
     this.mongoDb = this.mongoClient.db(this.options.getStateViewMongoDBDatabase());
+
+    await checkReplicaSetInit(this.mongoDb);
 
     const validateQuery = validateQueryFactory(
       findConflictingConditions,
