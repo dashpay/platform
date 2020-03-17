@@ -36,7 +36,7 @@ describe('DPNS Contract', () => {
 
       beforeEach(() => {
         preorderData = {
-          saltedDomainHash: Buffer.alloc(32).toString('hex'),
+          saltedDomainHash: Buffer.alloc(34).toString('hex'),
         };
       });
 
@@ -105,11 +105,11 @@ describe('DPNS Contract', () => {
 
       beforeEach(() => {
         domainData = {
-          nameHash: Buffer.alloc(32).toString('hex'),
+          nameHash: Buffer.alloc(34).toString('hex'),
           label: 'Wallet',
           normalizedLabel: 'wallet',
           normalizedParentDomainName: 'dash',
-          preorderSalt: Buffer.alloc(32, 2).toString('hex'),
+          preorderSalt: 'yTU2B8bTaq1X17Sm4QdTjfgtPQ6MD2Mx2c',
           records: {
             dashIdentity: generateRandomId(),
           },
