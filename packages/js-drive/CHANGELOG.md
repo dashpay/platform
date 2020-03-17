@@ -1,8 +1,15 @@
+## [0.11.1](https://github.com/dashevo/drive/compare/v0.11.0...v0.11.1) (2020-03-17)
+
+### Bug Fixes
+
+* do not validate ST second time in `applyStateTransition` ([d296608](https://github.com/dashevo/drive/commit/d29660886deb7e5556c5346da54506aebc005bfa))
+* check for MongoDb replica set on start ([286074f](https://github.com/dashevo/drive/commit/286074fe297bb693ffe7492523e560aeb2512330))
+
 # [0.11.0](https://github.com/dashevo/drive/compare/v0.7.0...v0.11.0) (2020-03-09)
 
 ### Bug Fixes
 
-* prevent to update dependencies with major version `0` to minor versions ([9f1dd95](https://github.com/dashevo/js-machine/commit/9f1dd95fe2294de2d0a3157807eec9598d0f0db7))
+* prevent to update dependencies with major version `0` to minor versions ([9f1dd95](https://github.com/dashevo/drive/commit/9f1dd95fe2294de2d0a3157807eec9598d0f0db7))
 
 ### Features
 
