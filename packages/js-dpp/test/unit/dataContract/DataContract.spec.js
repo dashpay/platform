@@ -65,7 +65,7 @@ describe('DataContract', () => {
     it('should return JSON Schema $contractId', () => {
       const result = dataContract.getJsonSchemaId();
 
-      expect(result).to.equal('dataContract');
+      expect(result).to.equal(dataContract.getId());
     });
   });
 
@@ -199,7 +199,7 @@ describe('DataContract', () => {
       const result = dataContract.getDocumentSchemaRef(documentType);
 
       expect(result).to.deep.equal({
-        $ref: 'dataContract#/documents/niceDocument',
+        $ref: `${dataContract.getId()}#/documents/niceDocument`,
       });
     });
   });

@@ -32,7 +32,7 @@ class DataContract {
    * @return {string}
    */
   getJsonSchemaId() {
-    return DataContract.SCHEMA_ID;
+    return this.getId();
   }
 
   /**

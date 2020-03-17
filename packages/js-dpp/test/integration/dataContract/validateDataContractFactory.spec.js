@@ -898,10 +898,9 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.message).to.equal(
-          'unknown format "lalala" is used in '
-          + 'schema at path "dataContract#/documents/indexedDocument/properties/something"',
-        );
+        expect(error.message).to.be.a('string').and.satisfy((msg) => (
+          msg.startsWith('unknown format "lalala" is used')
+        ));
       });
 
       it('should have `maxLength` if `pattern` is used', async () => {
