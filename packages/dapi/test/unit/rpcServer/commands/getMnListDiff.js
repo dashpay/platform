@@ -7,6 +7,8 @@ const coreAPIFixture = require('../../../mocks/coreAPIFixture');
 chai.use(chaiAsPromised);
 const { expect } = chai;
 let spy;
+let baseBlockHash;
+let blockHash;
 
 describe('getMNListDiff', () => {
   describe('#factory', () => {
@@ -22,6 +24,10 @@ describe('getMNListDiff', () => {
 
   beforeEach(() => {
     spy.resetHistory();
+
+
+    baseBlockHash = '0000000000000000000000000000000000000000000000000000000000000000';
+    blockHash = '0000000000000000000000000000000000000000000000000000000000000000';
   });
 
   after(() => {
@@ -31,9 +37,6 @@ describe('getMNListDiff', () => {
   it('Should return a masternode list difference list object', async () => {
     const getMNListDiff = getMNListDiffFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
-
-    const baseBlockHash = '0000000000000000000000000000000000000000000000000000000000000000';
-    const blockHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
     const mnDiffList = await getMNListDiff({ baseBlockHash, blockHash });
     expect(mnDiffList).to.be.an('object');

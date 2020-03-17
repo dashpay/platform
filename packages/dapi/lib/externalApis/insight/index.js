@@ -91,7 +91,7 @@ const getAddressUnconfirmedBalance = async address => (
     : get(`/addr/${address}/unconfirmedBalance`)
 );
 
-const getAddressSummary = async (address, noTxList = false, from, to, fromHeight, toHeight) => (
+const getAddressSummary = async (address, noTxList = false, from = '', to = '', fromHeight = '', toHeight = '') => (
   Array.isArray(address)
     ? get(`/addrs/${address.join()}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`)
     : get(`/addr/${address}?noTxList=${+noTxList}&from=${from}&to=${to}&fromHeight=${fromHeight}&to=${toHeight}`)

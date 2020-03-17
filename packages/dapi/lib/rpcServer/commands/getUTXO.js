@@ -2,14 +2,15 @@ const Validator = require('../../utils/Validator');
 const argsSchema = require('../schemas/addresses');
 const ArgumentsValidationError = require('../../errors/ArgumentsValidationError');
 
+const RPCError = require('../RPCError');
+
 const validator = new Validator(argsSchema);
 
-
 /**
- * @param coreAPI
+ * @param {InsightAPI} insightAPI
  * @return {getUTXO}
  */
-const getUTXOFactory = (coreAPI) => {
+const getUTXOFactory = (insightAPI) => {
   /**
    * Layer 1 endpoint
    * Returns unspent outputs for the given address
@@ -30,7 +31,19 @@ const getUTXOFactory = (coreAPI) => {
     if (from !== undefined && to !== undefined && to - from > 1000) {
       throw new ArgumentsValidationError(`"from" (${from}) and "to" (${to}) range should be less than or equal to 1000`);
     }
-    return coreAPI.getUTXO(address, from, to, fromHeight, toHeight);
+
+    let result;
+    try {
+      result = await insightAPI.getUTXO(address, from, to, fromHeight, toHeight);
+    } catch (e) {
+      if (e.statusCode === 400) {
+        throw new RPCError(-32602, e.message || 'Invalid params');
+      }
+
+      throw new RPCError(-32603, e.message || 'Internal error');
+    }
+
+    return result;
   }
 
   return getUTXO;

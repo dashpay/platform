@@ -1,13 +1,15 @@
 const Validator = require('../../utils/Validator');
 const argsSchema = require('../schemas/addresses');
 
+const RPCError = require('../RPCError');
+
 const validator = new Validator(argsSchema);
 
 /**
- * @param coreAPI
+ * @param {InsightAPI} insightAPI
  * @return {getAddressSummary}
  */
-const getAddressSummaryFactory = (coreAPI) => {
+const getAddressSummaryFactory = (insightAPI) => {
   /**
    * Layer 1 endpoint
    * get summary for address
@@ -19,7 +21,20 @@ const getAddressSummaryFactory = (coreAPI) => {
   async function getAddressSummary(args) {
     validator.validate(args);
     const { address } = args;
-    return coreAPI.getAddressSummary(address);
+
+    let result;
+
+    try {
+      result = await insightAPI.getAddressSummary(address);
+    } catch (e) {
+      if (e.statusCode === 400) {
+        throw new RPCError(-32602, e.message || 'Invalid params');
+      }
+
+      throw new RPCError(-32603, e.message || 'Internal error');
+    }
+
+    return result;
   }
 
   return getAddressSummary;

@@ -20,6 +20,7 @@ const getMnListDiffFactory = (coreAPI) => {
   async function getMnListDiff(args) {
     validator.validate(args);
     const { baseBlockHash, blockHash } = args;
+
     return coreAPI.getMnListDiff(baseBlockHash, blockHash);
   }
 

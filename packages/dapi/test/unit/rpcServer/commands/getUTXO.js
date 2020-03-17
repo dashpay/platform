@@ -3,6 +3,7 @@ const chaiAsPromised = require('chai-as-promised');
 const sinon = require('sinon');
 const getUTXOFactory = require('../../../../lib/rpcServer/commands/getUTXO.js');
 const coreAPIFixture = require('../../../mocks/coreAPIFixture');
+const RPCError = require('../../../../lib/rpcServer/RPCError');
 
 const { expect } = chai;
 chai.use(chaiAsPromised);
@@ -71,5 +72,46 @@ describe('getUTXO', () => {
     expect(spy.callCount).to.be.equal(0);
     await expect(getUTXO({ address: 1 })).to.be.rejectedWith('params.address should be array,string');
     expect(spy.callCount).to.be.equal(0);
+  });
+
+  it('should throw RPCError with code -32603', async function it() {
+    const message = 'Some error';
+    const error = new Error(message);
+
+    coreAPIFixture.getUTXO = this.sinon.stub().throws(error);
+    const getUTXO = getUTXOFactory(coreAPIFixture);
+
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w'];
+
+    try {
+      await getUTXO({ address: addressArray, from: 1, to: 1001 });
+
+      expect.fail('should throw RPCError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(RPCError);
+      expect(e.code).to.equal(-32603);
+      expect(e.message).to.equal(message);
+    }
+  });
+
+  it('should throw RPCError with code -32602', async function it() {
+    const message = 'Some error';
+    const error = new Error(message);
+    error.statusCode = 400;
+
+    coreAPIFixture.getUTXO = this.sinon.stub().throws(error);
+    const getUTXO = getUTXOFactory(coreAPIFixture);
+
+    const addressArray = ['XsLdVrfJpzt6Fc8RSUFkqYqtxkLjEv484w'];
+
+    try {
+      await getUTXO({ address: addressArray, from: 1, to: 1001 });
+
+      expect.fail('should throw RPCError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(RPCError);
+      expect(e.code).to.equal(-32602);
+      expect(e.message).to.equal(message);
+    }
   });
 });
