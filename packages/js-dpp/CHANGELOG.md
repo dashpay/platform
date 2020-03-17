@@ -1,3 +1,10 @@
+## [0.11.1](https://github.com/dashevo/js-dpp/compare/v0.11.0...v0.11.1) (2020-03-17)
+
+### Bug Fixes
+
+* documents validate against wrong Data Contract ([0db6e44](https://github.com/dashevo/js-dpp/commit/0db6e44cfa8309d46bb42b5a0174574604861b2b))
+
+
 # [0.11.0](https://github.com/dashevo/js-dpp/compare/v0.10.0...v0.11.0) (2020-03-09)
 
 ### Bug Fixes
