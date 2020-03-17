@@ -59,6 +59,7 @@ module.exports = function applyStateTransitionHandlerFactory(
     try {
       stateTransition = await dpp.stateTransition.createFromSerialized(
         Buffer.from(stateTransitionBinaryArray),
+        { skipValidation: true },
       );
     } catch (e) {
       if (e instanceof InvalidStateTransitionError) {
