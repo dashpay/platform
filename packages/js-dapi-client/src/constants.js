@@ -8,4 +8,7 @@ module.exports = {
   servicesEvents: {
     NEW_BLOCK: 'NEW_BLOCK',
   },
+  responseErrorCodes: {
+    NOT_FOUND: 5,
+  },
 };

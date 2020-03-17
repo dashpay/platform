@@ -23,6 +23,7 @@ const DPP = require('@dashevo/dpp');
 const MNDiscovery = require('./MNDiscovery/index');
 const rpcClient = require('./RPCClient');
 const config = require('./config');
+const { responseErrorCodes } = require('./constants');
 
 class DAPIClient {
   /**
@@ -151,7 +152,16 @@ class DAPIClient {
 
     const client = new CorePromiseClient(urlToConnect);
 
-    const response = await client.getBlock(getBlockRequest);
+    let response;
+    try {
+      response = await client.getBlock(getBlockRequest);
+    } catch (e) {
+      if (e.code === responseErrorCodes.NOT_FOUND) {
+        return null;
+      }
+
+      throw e;
+    }
 
     const blockBinaryArray = response.getBlock();
 
@@ -172,7 +182,16 @@ class DAPIClient {
 
     const client = new CorePromiseClient(urlToConnect);
 
-    const response = await client.getBlock(getBlockRequest);
+    let response;
+    try {
+      response = await client.getBlock(getBlockRequest);
+    } catch (e) {
+      if (e.code === responseErrorCodes.NOT_FOUND) {
+        return null;
+      }
+
+      throw e;
+    }
 
     const blockBinaryArray = response.getBlock();
 
@@ -210,7 +229,16 @@ class DAPIClient {
 
     const client = new CorePromiseClient(urlToConnect);
 
-    const response = await client.getTransaction(getTransactionRequest);
+    let response;
+    try {
+      response = await client.getTransaction(getTransactionRequest);
+    } catch (e) {
+      if (e.code === responseErrorCodes.NOT_FOUND) {
+        return null;
+      }
+
+      throw e;
+    }
 
     const transactionBinaryArray = response.getTransaction();
 
@@ -363,7 +391,17 @@ class DAPIClient {
     const urlToConnect = await this.getGrpcUrl();
 
     const client = new PlatformPromiseClient(urlToConnect);
-    const getIdentityResponse = await client.getIdentity(getIdentityRequest);
+
+    let getIdentityResponse;
+    try {
+      getIdentityResponse = await client.getIdentity(getIdentityRequest);
+    } catch (e) {
+      if (e.code === responseErrorCodes.NOT_FOUND) {
+        return null;
+      }
+
+      throw e;
+    }
 
     const serializedIdentityBinaryArray = getIdentityResponse.getIdentity();
     let identity = null;
@@ -392,7 +430,17 @@ class DAPIClient {
     const urlToConnect = await this.getGrpcUrl();
 
     const client = new PlatformPromiseClient(urlToConnect);
-    const getDataContractResponse = await client.getDataContract(getDataContractRequest);
+
+    let getDataContractResponse;
+    try {
+      getDataContractResponse = await client.getDataContract(getDataContractRequest);
+    } catch (e) {
+      if (e.code === responseErrorCodes.NOT_FOUND) {
+        return null;
+      }
+
+      throw e;
+    }
 
     const serializedDataContractBinaryArray = getDataContractResponse.getDataContract();
 
