@@ -55,7 +55,7 @@ export class SDK {
         this.network = (opts.network !== undefined) ? opts.network.toString() : 'testnet';
         this.apps = Object.assign({
             dpns: {
-                contractId: '2KfMcMxktKimJxAZUeZwYkFUsEcAZhDKEpQs8GMnpUse'
+                contractId: '77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3'
             }
         }, opts.apps);
 

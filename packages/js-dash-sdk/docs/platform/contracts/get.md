@@ -7,6 +7,6 @@ Parameters:
 |-------------------|---------|------------------	| -----------------------------------------------------------------	|
 | **identifier**    | string  | yes                 | Will fetch back the contract matching the identifier |
 
-**Example**: `await sdk.platform.contracts.get('2KfMcMxktKimJxAZUeZwYkFUsEcAZhDKEpQs8GMnpUse')`
+**Example**: `await sdk.platform.contracts.get('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3')`
 
 Returns : Contract (or `null`).

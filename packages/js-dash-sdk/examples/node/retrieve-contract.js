@@ -11,7 +11,7 @@ const getContract = async function () {
 
   platform
       .contracts
-      .get('2KfMcMxktKimJxAZUeZwYkFUsEcAZhDKEpQs8GMnpUse')
+      .get('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3')
       .then((contract) => {
         console.dir({contract},{depth:5});
       });

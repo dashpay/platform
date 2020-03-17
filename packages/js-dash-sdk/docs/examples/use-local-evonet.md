@@ -10,7 +10,7 @@ const sdk = new DashJS.SDK({
   seeds,
   apps: {
     dpns: {
-      contractId: '2KfMcMxktKimJxAZUeZwYkFUsEcAZhDKEpQs8GMnpUse'
+      contractId: '77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3'
     }
   }
 });

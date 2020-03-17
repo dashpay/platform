@@ -2,14 +2,14 @@
 
 When working with other registered contracts, you will need to know their `contractId` and reference it on the SDK constructor.
 
-Assuming a contract DashPay and having a following `contractId: "2KfMcMxktKimJxAZUeZwYkFUsEcAZhDKEpQs8GMnpUse"`. 
+Assuming a contract DashPay and having a following `contractId: "77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3"`. 
 You can then pass it as an options.
 
 ```js
 const sdk = new DashJS.SDK({
   apps: {
     dashpay: {
-      contractId: '2KfMcMxktKimJxAZUeZwYkFUsEcAZhDKEpQs8GMnpUse'
+      contractId: '77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3'
     }
   }
 });
