@@ -17,7 +17,7 @@ class InvalidUTXO extends WalletLibError {
         ['txid', 'txid'],
         ['outputIndex', 'num'],
         ['satoshis', 'num'],
-        ['scriptPubKey', 'string'],
+        ['script', 'string'],
       ];
       const handledTypeVerification = Object.keys(is);
       expectedProps.forEach((prop) => {

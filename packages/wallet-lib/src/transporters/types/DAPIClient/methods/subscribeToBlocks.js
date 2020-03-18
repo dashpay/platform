@@ -2,7 +2,7 @@ const EVENTS = require('../../../../EVENTS');
 
 module.exports = async function subscribeToBlocks() {
   const self = this;
-  const { subscriptions } = this.state;
+  const { executors } = this.state;
 
   const executor = async () => {
     const chainHash = await this.getBestBlockHash();
@@ -13,5 +13,5 @@ module.exports = async function subscribeToBlocks() {
   };
   await executor();
   const refreshBlockInterval = 10 * 1000;// Every 10s
-  subscriptions.blocks = setInterval(() => executor(), refreshBlockInterval);
+  executors.blocks = setInterval(() => executor(), refreshBlockInterval);
 };

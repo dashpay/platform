@@ -12,36 +12,67 @@ const logger = require('../../../../logger');
 // Those are special cases, such as the current unusedAddress for instance,
 // Higher chance of receiving tx, we listen in a quite spammy ways.
 const fastFetchThreshold = 15 * 1000;
+
 // Loop will go through every 15 sec
 
-module.exports = async function subscribeToAddressesTransactions(addressList) {
-  if (!Array.isArray(addressList)) throw new Error('Expected array of addresses');
+async function executor(forcedAddressList = null) {
   const self = this;
-  const { subscriptions } = this.state;
-
-  const executor = async (addr) => {
-    logger.silly(`DAPIClient.subscribeToAddrTx.executor[${addr}]`);
-    if (!self.state.addressesTransactionsMap[addr]) {
-      self.state.addressesTransactionsMap[addr] = {};
-    }
-    const utxos = (await self.getUTXO(addr)).items;
-    utxos.forEach((utxo) => {
-      const { txid, outputIndex } = utxo;
-      if (self.state.addressesTransactionsMap[addr][txid] === undefined) {
-        self.getTransaction(txid).then((tx) => {
-          self.state.addressesTransactionsMap[addr][txid] = outputIndex;
-          self.announce(EVENTS.FETCHED_TRANSACTION, tx);
-        });
-      }
-    });
-    self.announce(EVENTS.FETCHED_ADDRESS, { addr, utxos });
-  };
-  const immediatelyExecutedPromises = [];
+  const { addresses } = self.state.subscriptions;
+  const addressList = forcedAddressList || Object.keys(addresses);
+  logger.silly(`DAPIClient.subscribeToAddrTx.executor[${addressList}]`);
+  const fetchedUtxos = {};
   addressList.forEach((address) => {
-    if (!subscriptions.addresses[address]) {
-      immediatelyExecutedPromises.push(executor(address));
-      subscriptions.addresses[address] = setInterval(() => executor(address), fastFetchThreshold);
+    addresses[address].last = +new Date();
+    fetchedUtxos[address] = [];
+  });
+
+  const utxos = (await self.getUTXO(addressList)).items;
+
+  utxos.forEach((utxo) => {
+    const { address, txid, outputIndex } = utxo;
+    fetchedUtxos[address].push(utxo);
+    if (self.state.addressesTransactionsMap[address][txid] === undefined) {
+      self.getTransaction(txid).then((tx) => {
+        self.state.addressesTransactionsMap[address][txid] = outputIndex;
+        self.announce(EVENTS.FETCHED_TRANSACTION, tx);
+      });
     }
   });
-  await Promise.all(immediatelyExecutedPromises);
+  addressList.forEach((address) => {
+    self.announce(EVENTS.FETCHED_ADDRESS, { address, utxos: fetchedUtxos[address] });
+  });
+}
+
+function startExecutor() {
+  const self = this;
+  logger.silly('DAPIClient.subscribeToAddressesTransactions.startExecutor');
+  this.state.executors.addresses = setInterval(() => executor.call(self), fastFetchThreshold);
+}
+
+// const stopExecutor = (subscriptions) => {
+//   subscriptions.addresses = clearInterval(subscriptions.addresses);
+//   subscriptions.addresses = null;
+// };
+module.exports = async function subscribeToAddressesTransactions(addressList) {
+  logger.silly(`DAPIClient.subscribeToAddressesTransactions[${addressList}]`);
+  if (!Array.isArray(addressList)) throw new Error('Expected array of addresses');
+  const { executors, subscriptions, addressesTransactionsMap } = this.state;
+
+  const immediatelyExecutedAddresses = [];
+  addressList.forEach((address) => {
+    if (!subscriptions.addresses[address]) {
+      if (!addressesTransactionsMap[address]) {
+        addressesTransactionsMap[address] = {};
+      }
+      immediatelyExecutedAddresses.push(address);
+      subscriptions.addresses[address] = { priority: 1, last: null };
+    }
+  });
+
+  if (!executors.addresses) {
+    startExecutor.call(this);
+  }
+  if (immediatelyExecutedAddresses.length) {
+    await Promise.resolve(executor.call(this, immediatelyExecutedAddresses));
+  }
 };

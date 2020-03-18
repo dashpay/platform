@@ -19,7 +19,7 @@ export declare class Account {
     fetchStatus(): Promise<object|false>
     forceRefreshAccount(): boolean;
     generateAddress(path:string): AddressObj;
-    getAddress(_type: AddressType): AddressObj;
+    getAddress(index:number, _type: AddressType): AddressObj;
     getAddresses(rawtx: string, isIS: boolean): [AddressObj];
     getTotalBalance(displayDuffs?:boolean): number;
     getConfirmedBalance(displayDuffs?:boolean): number;

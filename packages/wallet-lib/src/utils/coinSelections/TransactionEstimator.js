@@ -96,11 +96,15 @@ class TransactionEstimator {
         try {
           // Tries to get retro-compatibility from insight old format
           // FIXME: Maybe update tests with newer format now.
+          if (input.scriptPubKey) {
           // eslint-disable-next-line no-param-reassign
-          input.script = input.scriptPubKey;
+            input.script = input.scriptPubKey;
+          }
+
           // eslint-disable-next-line no-param-reassign
-          input = new Transaction.Output(input);
+          input = new Transaction.UnspentOutput(input);
         } catch (e) {
+          console.error(e);
           throw new Error('Expected valid input to import');
         }
       }

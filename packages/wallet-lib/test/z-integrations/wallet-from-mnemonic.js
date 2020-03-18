@@ -12,7 +12,6 @@ describe('Integration - fromMnemonic', function suite() {
       mnemonic: 'local mom grief muffin hurdle stamp glue train satoshi kitchen damage cliff',
       network: 'testnet',
       transporter: {
-        devnetName: 'palinka',
         type: 'DAPIClient',
       },
     });

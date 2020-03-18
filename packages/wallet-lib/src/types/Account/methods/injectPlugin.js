@@ -4,6 +4,7 @@ const {
   InjectionErrorCannotInjectUnknownDependency: InjectionErrorCannotInjectUnknownDep,
 } = require('../../../errors');
 const { is } = require('../../../utils');
+const logger = require('../../../logger');
 /**
  * Will try to inject a given plugin. If needed, it will construct the object first (new).
  * @param UnsafePlugin - Either a child object, or it's parent class to inject
@@ -26,7 +27,7 @@ module.exports = async function injectPlugin(
       const plugin = (isInit) ? UnsafePlugin : new UnsafePlugin();
 
       const pluginName = plugin.name.toLowerCase();
-
+      logger.debug(`Account.injectPlugin(${pluginName}) - starting injection`);
       if (_.isEmpty(plugin)) reject(new InjectionErrorCannotInject(pluginName, 'Empty plugin'));
 
       // All plugins will require the event object
@@ -87,8 +88,10 @@ module.exports = async function injectPlugin(
               // eslint-disable-next-line no-return-assign,no-param-reassign
               const setReadyWatch = (_watcher) => _watcher.ready = true;
 
-              const onStartedEvent = () => startWatcher(watcher);
-              const onExecuteEvent = () => setReadyWatch(watcher);
+              const onStartedEvent = () => startWatcher(watcher)
+                  && logger.silly(`WORKER/${pluginName.toUpperCase()}/STARTED`);
+              const onExecuteEvent = () => setReadyWatch(watcher)
+                  && logger.silly(`WORKER/${pluginName.toUpperCase()}/EXECUTED`);
 
               self.on(`WORKER/${pluginName.toUpperCase()}/STARTED`, onStartedEvent);
               self.on(`WORKER/${pluginName.toUpperCase()}/EXECUTED`, onExecuteEvent);
@@ -131,7 +134,7 @@ module.exports = async function injectPlugin(
       if (pluginType === 'DPA' && plugin.verifyOnInjected) {
         await plugin.verifyDPA(this.transporter.transport);
       }
-
+      logger.debug(`Account.injectPlugin(${pluginName}) - successfully injected`);
       return resolve(plugin);
     } catch (e) {
       return reject(e);

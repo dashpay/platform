@@ -6,11 +6,15 @@ class BaseTransporter extends EventEmitter {
     this.type = props.type;
     this.state = {
       block: null,
-      blockHeader: null,
-      addressesTransactionsMap: {},
-      subscriptions: {
+      blockHeaders: null,
+      // Executors are Interval
+      executors: {
         blocks: null,
         blockHeaders: null,
+        addresses: null,
+      },
+      addressesTransactionsMap: {},
+      subscriptions: {
         addresses: {},
       },
     };

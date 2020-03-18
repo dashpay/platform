@@ -13,7 +13,7 @@ describe('transporters - DAPIClient - .subscribeToBlocks', function suite() {
   this.timeout(21000);
   let transporter;
   before(() => {
-    transporter = transporters.resolve({ type: 'DAPIClient', devnetName: 'palinka' });
+    transporter = transporters.resolve({ type: 'DAPIClient' });
   });
   it('should works', async () => new Promise(async (resolve, reject) => {
     let getBestBlockHashCalled = 0;

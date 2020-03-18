@@ -38,7 +38,6 @@ describe('Wallet - sweepWallet', function suite() {
     emptyWallet = new Wallet({
       privateKey: paperWallet.privateKey,
       network: 'testnet',
-      transporter: { type: 'DAPIClient', devnetName: 'palinka' },
     });
     emptyAccount = emptyWallet.getAccount();
     await emptyAccount.isReady();
@@ -46,7 +45,6 @@ describe('Wallet - sweepWallet', function suite() {
     fullWallet = new Wallet({
       privateKey: testnetPaperWallet.privateKey,
       network: 'testnet',
-      transporter: { type: 'DAPIClient', devnetName: 'palinka' },
     });
     fullAccount = fullWallet.getAccount();
     await fullAccount.isReady();
@@ -101,7 +99,7 @@ describe('Wallet - sweepWallet', function suite() {
         toBeSweptWallet = new Wallet({
           privateKey: toBeSweptPaperWallet.privateKey,
           network: 'testnet',
-          transporter: { type: 'DAPIClient', devnetName: 'palinka' },
+          transporter: { type: 'DAPIClient' },
         });
         toBeSweptAccount = toBeSweptWallet.getAccount();
         await toBeSweptAccount.isReady();
@@ -110,7 +108,7 @@ describe('Wallet - sweepWallet', function suite() {
         toBeSweptWallet2 = new Wallet({
           privateKey: toBeSweptPaperWallet2.privateKey,
           network: 'testnet',
-          transporter: { type: 'DAPIClient', devnetName: 'palinka' },
+          transporter: { type: 'DAPIClient' },
         });
         toBeSweptAccount2 = toBeSweptWallet2.getAccount();
         await toBeSweptAccount2.isReady();
@@ -139,7 +137,7 @@ describe('Wallet - sweepWallet', function suite() {
     const walletVerification = new Wallet({
       mnemonic,
       network: 'testnet',
-      transporter: { type: 'DAPIClient', devnetName: 'palinka' },
+      transporter: { type: 'DAPIClient' },
     });
     const account = walletVerification.getAccount({ index: 0 });
     await account.isReady();

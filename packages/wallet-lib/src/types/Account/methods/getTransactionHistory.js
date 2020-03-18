@@ -170,8 +170,8 @@ async function getTransactionHistory() {
     };
 
     _.each(tx.vout, (vout) => {
-      if (vout.scriptPubKey && vout.scriptPubKey.addresses) {
-        const address = vout.scriptPubKey.addresses[0];
+      if (vout.script && vout.script.addresses) {
+        const address = vout.script.addresses[0];
         const isChange = changeAddressList.includes(address);
         const isExternal = externalAddressesList.includes(address);
         const isOtherAccount = otherAccountAddressesList.includes(address);

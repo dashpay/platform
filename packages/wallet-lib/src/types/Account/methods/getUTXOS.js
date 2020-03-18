@@ -1,7 +1,6 @@
 const _ = require('lodash');
 /**
  * Return all the utxos (unspendable included)
- * @param {Boolean} onlyAvailable - Only return available utxos (spendable)
  * @return {Array}
  */
 function getUTXOS(onlyAvailable = true) {
@@ -21,8 +20,6 @@ function getUTXOS(onlyAvailable = true) {
           if (addrUtxoIds.length > 0) {
             Object.keys(addrUtxo).forEach((utxoid) => {
               const modifiedUtxo = _.cloneDeep(addrUtxo[utxoid]);
-              // eslint-disable-next-line no-param-reassign
-              modifiedUtxo.address = address.address;
               utxos = utxos.concat(modifiedUtxo);
             });
           }

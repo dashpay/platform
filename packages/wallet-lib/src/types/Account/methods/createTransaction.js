@@ -6,6 +6,13 @@ const { CreateTransactionError } = require('../../../errors');
 const { dashToDuffs, coinSelection, is } = require('../../../utils');
 const _loadStrategy = require('../_loadStrategy');
 
+const parseUtxos = (utxos) => {
+  // We do not allow mixmatch types (output, object together) utxo list
+  if (utxos[0] && utxos[0].constructor !== Dashcore.Transaction.UnspentOutput) {
+    return utxos.map((utxo) => new Dashcore.Transaction.UnspentOutput(utxo));
+  }
+  return utxos;
+};
 /**
  * Create a transaction based around on the provided information
  * @param opts - Options object
@@ -58,7 +65,7 @@ function createTransaction(opts) {
     : this.strategy;
 
 
-  const utxosList = _.has(opts, 'utxos') ? opts.utxos : this.getUTXOS();
+  const utxosList = _.has(opts, 'utxos') ? parseUtxos(opts.utxos) : this.getUTXOS();
 
   utxosList.map((utxo) => {
     const utxoTx = self.storage.searchTransaction(utxo.txid);
@@ -107,9 +114,9 @@ function createTransaction(opts) {
 
   tx.fee(finalFees);
   const addressList = selectedUTXOs.map((el) => {
-    if (el.address) return el.address;
+    if (el.address) return el.address.toString();
     return Dashcore.Script
-      .fromHex(el.scriptPubKey)
+      .fromHex(el.script)
       .toAddress(this.getNetwork())
       .toString();
   });

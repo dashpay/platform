@@ -11,7 +11,7 @@ const fixtures = [
 
 describe('transporters - DAPIClient - .subscribeToBlockHeaders', function suite() {
   this.timeout(21000);
-  const transporter = transporters.resolve({ type: 'DAPIClient', devnetName: 'palinka' });
+  const transporter = transporters.resolve({ type: 'DAPIClient' });
   it('should works', async () => new Promise(async (resolve, reject) => {
     let getBestBlockHashCalled = 0;
     const blockHeaderAnnounced = [];

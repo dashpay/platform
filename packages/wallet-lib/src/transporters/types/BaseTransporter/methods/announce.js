@@ -2,6 +2,7 @@ const EVENTS = require('../../../../EVENTS');
 const logger = require('../../../../logger');
 
 module.exports = function announce(eventName, args) {
+  logger.silly(`Transporter.announce(${eventName})`);
   switch (eventName) {
     case EVENTS.BLOCKHEADER:
       this.emit(EVENTS.BLOCKHEADER, { type: EVENTS.BLOCKHEADER, payload: args });

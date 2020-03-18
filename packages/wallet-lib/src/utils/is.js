@@ -36,7 +36,7 @@ const is = {
   dashcoreTransaction: (tx) => is.type(tx, Transaction.name),
   feeRate: (feeRate) => is.obj(feeRate) && is.string(feeRate.type) && is.int(feeRate.value),
   txid: (txid) => is.string(txid) && txid.length === 64,
-  utxo: (utxo) => is.type(utxo, Transaction.Output.name),
+  utxo: (utxo) => is.type(utxo, Transaction.UnspentOutput.name),
   output: (output) => is.obj(output) && is.num(output.satoshis) && is.address(output.address),
   rawtx: (rawtx) => is.def(rawtx) && is.hex(rawtx) && (() => { try { Transaction(rawtx); return true; } catch (e) { return false; } })(),
 };

@@ -23,8 +23,9 @@ module.exports = async function initialSyncUp() {
     const addrList = this.getAddressListToSync().map((addr) => addr.address);
     const expectedAddrNumberToFetch = addrList.length;
     let expectedTxNumberToFetch = 0;
-    let numberOfFetchedAddr = 0;
     let numberOfFetchedTx = 0;
+    let fetchedAddresses = 0;
+    logger.silly(`SyncWorker - initialSyncUp - addr fetched : ${fetchedAddresses}/${expectedAddrNumberToFetch}`);
 
     const waiterTxFetchedListernerFn = async () => {
       numberOfFetchedTx += 1;
@@ -39,11 +40,13 @@ module.exports = async function initialSyncUp() {
     const waiterAddressFetchedListenerFn = async (ev) => {
       const { payload: address } = ev;
 
-      numberOfFetchedAddr += 1;
-      expectedTxNumberToFetch += address.utxos.length;
-      logger.silly(`SyncWorker - init addrWaiter : fetched : ${numberOfFetchedAddr}/${expectedAddrNumberToFetch}`);
+      fetchedAddresses += 1;
 
-      if (numberOfFetchedAddr >= expectedAddrNumberToFetch) {
+      expectedTxNumberToFetch += address.utxos.length;
+      logger.silly(`SyncWorker - init addrWaiter : fetched : ${fetchedAddresses}/${expectedAddrNumberToFetch}`);
+
+      if (fetchedAddresses >= expectedAddrNumberToFetch) {
+        logger.silly(`SyncWorker - initialSyncUp - tx fetched : ${numberOfFetchedTx}/${expectedTxNumberToFetch}`);
         if (expectedTxNumberToFetch === 0) {
           self.transporter.removeListener(EVENTS.FETCHED_TRANSACTION, waiterTxFetchedListernerFn);
           resolve(true);

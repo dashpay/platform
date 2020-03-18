@@ -60,6 +60,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
     const sendInitialized = () => {
       if (!self.state.isInitialized) {
         self.emit(EVENTS.INITIALIZED, { type: EVENTS.INITIALIZED, payload: null });
+        logger.debug(`Initialized with ${Object.keys(account.plugins.watchers).length} plugins`);
         self.state.isInitialized = true;
       }
     };

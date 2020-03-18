@@ -2,6 +2,7 @@ const EVENTS = require('../../../EVENTS');
 const logger = require('../../../logger');
 
 module.exports = function announce(type, el) {
+  logger.silly(`SyncWorker.announce(${type})`);
   switch (type) {
     case EVENTS.BLOCK:
       this.parentEvents.emit(EVENTS.BLOCK, { type: EVENTS.BLOCK, payload: el });

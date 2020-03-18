@@ -64,7 +64,7 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
               txid: utxo.txid,
               address: utxo.address,
               outputIndex: utxo.outputIndex,
-              scriptPubKey: utxo.script,
+              script: utxo.script,
               // scriptSig: utxo.scriptSig,
             });
           });

@@ -17,7 +17,7 @@ describe('Wallet - sweepWallet', function suite() {
       privateKey: paperWallet.privateKey,
       network: 'testnet',
       // offlineMode: true,
-      transporter: { type: 'DAPIClient', devnetName: 'palinka' },
+      transporter: { type: 'DAPIClient' },
     });
     emptyAccount = emptyWallet.getAccount();
   });
