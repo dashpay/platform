@@ -62,7 +62,7 @@ services:
       - TENDERMINT_RPC_PORT=26657
       - DPNS_CONTRACT_ID=${DPNS_CONTRACT_ID}
       - DPNS_TOP_LEVEL_IDENTITY=${DPNS_TOP_LEVEL_IDENTITY}
-    command: sh -c "sleep 10 && npm run updateState"
+    command: sh -c "sleep 15 && npm run updateState"
 
   drive_api:
     image: dashpay/drive:${DRIVE_VERSION:-latest}
@@ -79,7 +79,7 @@ services:
       - API_RPC_PORT=6000
       - TENDERMINT_RPC_HOST=tendermint
       - TENDERMINT_RPC_PORT=26657
-    command: npm run api
+    command: sh -c "sleep 15 && npm run api"
 
   machine:
     image: dashpay/js-machine:${MACHINE_VERSION:-latest}
