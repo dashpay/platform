@@ -2,7 +2,7 @@
 
 The Dash Platform provide a technology stack on top of the Dash Network allowing the creation of feature-rich decentralized application. 
 
-You will learn more on the [Dash Platform Documentation - What is Dash Platform ?](https://dashplatform.readme.io/v0.0.2/docs/introduction-what-is-dash-platform).
+You will learn more on the [Dash Platform Documentation - What is Dash Platform ?](https://dashplatform.readme.io/docs/introduction-what-is-dash-platform).
 
 ### Platform components
 
