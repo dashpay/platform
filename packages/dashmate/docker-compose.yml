@@ -7,11 +7,11 @@ services:
     ports:
       - 20001:20001 # P2P
     volumes:
-      - ./configs/${PRESET:?err}/core/dashd.conf:/dashd.conf
+      - ./configs/${PRESET:?err}/core/dashd.conf:/dash/.dashcore/dash.conf
       - ./data/${PRESET:?err}/core:/data
     command:
       - dashd
-      - -conf=/dashd.conf
+      - -conf=/dash/.dashcore/dash.conf
       - -datadir=/data
       - -masternodeblsprivkey=${CORE_MASTERNODE_BLS_PRIV_KEY:?err}
       - -externalip=${CORE_EXTERNAL_IP:?err}
