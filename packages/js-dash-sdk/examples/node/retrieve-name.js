@@ -1,11 +1,11 @@
-const DashJS = require('dash');
+const Dash = require('dash');
 
-const sdkOpts = {
+const clientOpts = {
   network: 'testnet'
 };
-const sdk = new DashJS.SDK(sdkOpts);
+const client = new Dash.Client(clientOpts);
 
-const platform = sdk.platform;
+const platform = client.platform;
 
 async function retrieveName(){
   const user = await platform.names.get('alice');

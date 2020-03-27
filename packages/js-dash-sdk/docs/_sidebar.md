@@ -14,6 +14,7 @@
     - [Fetch an identity from its name](/examples/fetch-an-identity-from-its-name.md) 
     - [Publishing a new contract](/examples/publishing-a-new-contract.md) 
     - [Use another BIP44 account](/examples/use-different-account.md) 
+    - [Sign and verify messages](/examples/sign-and-verify-messages.md) 
     
 - Tutorial
     - [Register an identity](https://dashplatform.readme.io/docs/tutorial-register-an-identity)

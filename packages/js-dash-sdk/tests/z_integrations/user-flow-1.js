@@ -1,10 +1,10 @@
 const {expect} = require('chai');
-const DashJS = require('../../dist/dash.cjs.min.js');
+const Dash = require('../../dist/dash.cjs.min.js');
 const fixtures = require('../fixtures/user-flow-1');
 const Chance = require('chance');
 const chance = new Chance();
 
-let sdkInstance;
+let clientInstance;
 let hasBalance=false;
 let hasDuplicate=true;
 let createdIdentityId;
@@ -14,53 +14,53 @@ const year = chance.birthday({string: true}).slice(-2);
 const firstname = chance.first();
 const username = `test-${firstname}${year}`;
 
-const sdkOpts = {
+const clientOpts = {
   network: fixtures.network,
   mnemonic: fixtures.mnemonic
 };
 describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite() {
   this.timeout(240000);
 
-  it('should init a SDK', async () => {
-    sdkInstance = new DashJS.SDK(sdkOpts);
-    expect(sdkInstance.network).to.equal('testnet');
-    expect(sdkInstance.accountIndex).to.equal(0);
-    expect(sdkInstance.apps).to.deep.equal({dpns: {contractId: "77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3"}});
-    expect(sdkInstance.wallet.network).to.equal('testnet');
-    expect(sdkInstance.wallet.offlineMode).to.equal(false);
-    expect(sdkInstance.wallet.mnemonic).to.equal(fixtures.mnemonic);
-    expect(sdkInstance.wallet.walletId).to.equal('6afaad2189');
-    expect(sdkInstance.account.index).to.equal(0);
-    expect(sdkInstance.account.walletId).to.equal('6afaad2189');
-    expect(sdkInstance.account.getUnusedAddress().address).to.equal('yj8sq7ogzz6JtaxpBQm5Hg9YaB5cKExn5T');
+  it('should init a Client', async () => {
+    clientInstance = new Dash.Client(clientOpts);
+    expect(clientInstance.network).to.equal('testnet');
+    expect(clientInstance.accountIndex).to.equal(0);
+    expect(clientInstance.apps).to.deep.equal({dpns: {contractId: "77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3"}});
+    expect(clientInstance.wallet.network).to.equal('testnet');
+    expect(clientInstance.wallet.offlineMode).to.equal(false);
+    expect(clientInstance.wallet.mnemonic).to.equal(fixtures.mnemonic);
+    expect(clientInstance.wallet.walletId).to.equal('6afaad2189');
+    expect(clientInstance.account.index).to.equal(0);
+    expect(clientInstance.account.walletId).to.equal('6afaad2189');
+    expect(clientInstance.account.getUnusedAddress().address).to.equal('yj8sq7ogzz6JtaxpBQm5Hg9YaB5cKExn5T');
 
-    expect(sdkInstance.platform.dpp).to.exist;
-    expect(sdkInstance.platform.client).to.exist;
+    expect(clientInstance.platform.dpp).to.exist;
+    expect(clientInstance.platform.client).to.exist;
   });
   it('should be ready quickly', (done) => {
     let timer = setTimeout(() => {
       done(new Error('Should have been initialized in time'));
     }, 15000);
-    sdkInstance.isReady().then(() => {
+    clientInstance.isReady().then(() => {
       clearTimeout(timer);
-      expect(sdkInstance.account.state).to.deep.equal({isInitialized: true, isReady: true, isDisconnecting: false});
-      expect(sdkInstance.state).to.deep.equal({isReady: true, isAccountReady: true});
-      expect(sdkInstance.apps['dpns']).to.exist;
-      expect(sdkInstance.apps['dpns'].contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
-      expect(sdkInstance.apps['dpns'].contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
+      expect(clientInstance.account.state).to.deep.equal({isInitialized: true, isReady: true, isDisconnecting: false});
+      expect(clientInstance.state).to.deep.equal({isReady: true, isAccountReady: true});
+      expect(clientInstance.apps['dpns']).to.exist;
+      expect(clientInstance.apps['dpns'].contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
+      expect(clientInstance.apps['dpns'].contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
       return done();
     })
   });
   it('should have a balance', function (done) {
-    const balance = (sdkInstance.account.getConfirmedBalance());
+    const balance = (clientInstance.account.getTotalBalance());
     if(balance<10000){
-      return done(new Error(`You need to fund this address : ${sdkInstance.account.getUnusedAddress().address}. Insuffisiant balance: ${balance}`));
+      return done(new Error(`You need to fund this address : ${clientInstance.account.getUnusedAddress().address}. Insuffisiant balance: ${balance}`));
     }
     hasBalance = true;
     return done();
   });
   it('should check it\'s DPNS reg is available' , async function () {
-    const getDocument = await sdkInstance.platform.names.get(username);
+    const getDocument = await clientInstance.platform.names.get(username);
     expect(getDocument).to.equal(null);
     hasDuplicate = false;
   });
@@ -68,7 +68,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     if(!hasBalance){
       throw new Error('Insufficient balance to perform this test')
     }
-    createdIdentityId = await sdkInstance.platform.identities.register();
+    createdIdentityId = await clientInstance.platform.identities.register();
     expect(createdIdentityId).to.not.equal(null);
     expect(createdIdentityId.length).to.gte(42);
     expect(createdIdentityId.length).to.lte(44);
@@ -78,7 +78,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     if(!createdIdentityId){
       throw new Error('Can\'t perform the test. Failed to create identity');
     }
-    const fetchIdentity = await sdkInstance.platform.identities.get(createdIdentityId);
+    const fetchIdentity = await clientInstance.platform.identities.get(createdIdentityId);
 
     expect(fetchIdentity).to.exist;
     expect(fetchIdentity.id).to.equal(createdIdentityId);
@@ -92,7 +92,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     if(hasDuplicate){
       throw new Error(`Duplicate username ${username} registered. Skipping.`)
     }
-    const createDocument = await sdkInstance.platform.names.register(username, createdIdentity);
+    const createDocument = await clientInstance.platform.names.register(username, createdIdentity);
     expect(createDocument.action).to.equal(1);
     expect(createDocument.type).to.equal('domain');
     expect(createDocument.userId).to.equal(createdIdentityId);
@@ -105,7 +105,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     if(!createdIdentity){
       throw new Error('Can\'t perform the test. Failed to fetch identity & did not reg name');
     }
-    const [doc] = await sdkInstance.platform.documents.get('dpns.domain', {where:[
+    const [doc] = await clientInstance.platform.documents.get('dpns.domain', {where:[
         ["normalizedParentDomainName","==","dash"],
         ["normalizedLabel","==",username.toLowerCase()],
       ]})
@@ -117,7 +117,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     expect(doc.data.normalizedParentDomainName).to.equal('dash');
   });
   it('should disconnect', async function () {
-    await sdkInstance.disconnect();
+    await clientInstance.disconnect();
   });
 });
 

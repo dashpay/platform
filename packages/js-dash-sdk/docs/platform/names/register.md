@@ -1,4 +1,4 @@
-**Usage**: `sdk.platform.names.register(name, identity)`    
+**Usage**: `client.platform.names.register(name, identity)`    
 **Description**: This method will create a DPNS record matching your identity to the user or appname defined.
 
 Parameters: 
@@ -9,4 +9,4 @@ Parameters:
 | **identity**              | Identity  | yes            | A valid [registered identity](/platform/identities/register.md)               |
 
 
-**Example**: `await sdk.platform.identities.register('alice', identity)`
+**Example**: `await client.platform.identities.register('alice', identity)`

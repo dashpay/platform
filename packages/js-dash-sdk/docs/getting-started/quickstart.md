@@ -10,10 +10,10 @@ npm install dash
 ```
 ## Initialization
 
-Let's create a DashJS SDK instance specifying both our mnemonic and the schema we wish to work with.
+Let's create a Dash SDK client instance specifying both our mnemonic and the schema we wish to work with.
 
 ```js
-const DashJS = require("../src");
+const Dash = require("../src");
 const opts = {
   network: 'testnet',
   apps: {
@@ -24,24 +24,24 @@ const opts = {
   },
   mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
 };
-const sdk = new DashJS.SDK(opts);
-sdk.isReady().then(()=>{
-    const {account} = sdk;
+const client = new Dash.Client(opts);
+client.isReady().then(()=>{
+    const {account} = client;
     // Do something
  });
 ```
 
 Quick note :
-- If no mnemonic is provided, the subinstance `sdk.Wallet` will not be initiated (write function for platforms won't be usable).
+- If no mnemonic is provided, the subinstance `client.Wallet` will not be initiated (write function for platforms won't be usable).
 
-If you do not have any mnemonic, you can pass `null` to get one generated or omit that parameter to only use DashJS in `read-only`.  
+If you do not have any mnemonic, you can pass `null` to get one generated or omit that parameter to only use Dash.Client in `read-only`.  
 
 
 ## Make a payment
 
 ```js
-sdk.isReady().then(()=>{
-     const {account} = sdk;
+client.isReady().then(()=>{
+     const {account} = client;
 
     account
       .createTransaction({
@@ -56,8 +56,8 @@ sdk.isReady().then(()=>{
 At time of writing, you will need to have registered dashpay yourself, see on [publishing a new contract](/examples/publishing-a-new-contract.md).
 
 ```js
-sdk.isReady().then(async ()=>{
-    const {account} = sdk;
+client.isReady().then(async ()=>{
+    const {account} = client;
     const bobProfile = await account.platform.documents.fetch('dashpay.profile', {name:'bob'})
   });
 ```

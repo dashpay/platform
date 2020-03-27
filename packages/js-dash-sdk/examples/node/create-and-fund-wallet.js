@@ -1,12 +1,12 @@
-const DashJS = require('dash');
-const sdkOpts = {
+const Dash = require('dash');
+const clientOpts = {
   network: 'testnet',
   mnemonic: null,// Will generate a new address, you should keep it.
 };
-const sdk = new DashJS.SDK(sdkOpts);
+const client = new Dash.Client(clientOpts);
 
 const displayFundingAddress = async function () {
-  const {account, wallet} = sdk;
+  const {account, wallet} = client;
 
   const mnemonic = wallet.exportWallet();
   const address = account.getUnusedAddress().address;
@@ -16,11 +16,11 @@ const displayFundingAddress = async function () {
   // Fund this address using the faucet : http://devnet-evonet-1117662964.us-west-2.elb.amazonaws.com/
 };
 const onReceivedTransaction = function(data){
-  const {account} = sdk;
+  const {account} = client;
   console.log('Received tx',data.txid);
   console.log('Total pending confirmation',  account.getUnconfirmedBalance());
   console.log('Total balance',  account.getTotalBalance());
 }
-sdk.account.events.on('FETCHED/UNCONFIRMED_TRANSACTION',onReceivedTransaction)
-sdk.isReady().then(displayFundingAddress);
+client.account.on('FETCHED/UNCONFIRMED_TRANSACTION',onReceivedTransaction)
+client.isReady().then(displayFundingAddress);
 

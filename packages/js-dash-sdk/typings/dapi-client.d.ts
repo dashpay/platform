@@ -1,7 +1,7 @@
 declare module "@dashevo/dapi-client";
 
 /**
- * @param options
+ * @param options - DAPI client options
  * @param {Array<Object>} [options.seeds] - seeds. If no seeds provided
  * default seed will be used.
  * @param {number} [options.port=3000] - default port for connection to the DAPI
@@ -9,14 +9,15 @@ declare module "@dashevo/dapi-client";
  * @param {number} [options.timeout=2000] - timeout for connection to the DAPI
  * @param {number} [options.retries=3] - num of retries if there is no response from DAPI node
  */
+
+ /**
+ * Class for DAPI Client
+ */
 declare class DAPIClient {
-    constructor(options: {
-        seeds?: object[];
-        port?: number;
-        nativeGrpcPort?: number;
-        timeout?: number;
-        retries?: number;
-    });
+    /**
+     * Construct an instance of DAPI client
+     */
+    constructor(options: { retries: number; seeds: [string] | { service: string }[]; timeout: number; network: string });
 
     /**
      * Estimate fee
@@ -258,5 +259,3 @@ declare class DAPIClient {
         count?: number;
     }): Promise<any>;
 }
-
-

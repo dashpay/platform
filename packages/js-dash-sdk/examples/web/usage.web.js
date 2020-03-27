@@ -8,9 +8,9 @@ const opts = {
     }
   }
 };
-const sdk = new DashJS.SDK(opts);
-sdk.isReady().then(()=>{
-  const {account, platform} = sdk;
+const client = new Dash.Client(opts);
+client.isReady().then(()=>{
+  const {account, platform} = client;
 
   async function sendPayment() {
     const tx = await account.createTransaction({recipient: 'yNPbcFfabtNmmxKdGwhHomdYfVs6gikbPf', satoshis: 12000});

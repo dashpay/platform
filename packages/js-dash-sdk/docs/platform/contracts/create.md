@@ -1,4 +1,4 @@
-**Usage**: `sdk.platform.contracts.create(contractDefinitions, identity)`    
+**Usage**: `client.platform.contracts.create(contractDefinitions, identity)`    
 **Description**: This method will return a Contract object initialized with the parameters defined and apply to the used identity. 
 
 Parameters: 
@@ -12,8 +12,8 @@ Parameters:
 ```js
   const identityId = '';// Your identity identifier.
   const json = {};// Your valid json contract definitions
-  const identity = await sdk.platform.identities.get(identityId);
-  const contract = sdk.platform.contracts.create(json, identity);
+  const identity = await client.platform.identities.get(identityId);
+  const contract = client.platform.contracts.create(json, identity);
 ```
 
 Returns : Contract.

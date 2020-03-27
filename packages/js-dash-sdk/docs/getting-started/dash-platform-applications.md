@@ -1,6 +1,6 @@
 ## DPNS
 
-DPNS is handled in DashJS under the namespace `sdk.names.*'`. [Read more here](/platform/names)
+DPNS is handled in Dash SDK's Client under the namespace `client.names.*'`. [Read more here](/platform/names)
 
 ## DashPay
 

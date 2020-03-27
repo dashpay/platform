@@ -1,4 +1,4 @@
-**Usage**: `sdk.platform.document.broadcast(document, identity)`    
+**Usage**: `client.platform.document.broadcast(document, identity)`    
 **Description**: This method will broadcast the document on the Application Chain
 
 Parameters: 

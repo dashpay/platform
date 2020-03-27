@@ -1,0 +1,28 @@
+{
+  "ratePhezApp": {
+    "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+    "contractId": "HXJKwhqFe43KCkHt4cCu8z2NPgNjx49KEyZhbb8Rcpdd",
+    "version": 1,
+    "documents": {
+      "howCoolIsPhez": {
+        "properties": {
+          "rating": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 10
+          }
+        },
+        "indices": [
+          {
+            "properties": [
+              {
+                "rating": "desc"
+              }
+            ]
+          }
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

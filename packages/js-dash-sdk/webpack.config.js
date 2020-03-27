@@ -40,7 +40,7 @@ const webConfig = Object.assign({}, baseConfig, {
   output: {
     ...baseConfig.output,
     libraryTarget: 'umd',
-    library: 'DashJS',
+    library: 'Dash',
     filename: 'dash.min.js',
     // fixes ReferenceError: window is not defined
     globalObject: "(typeof self !== 'undefined' ? self : this)"

@@ -1,0 +1,24 @@
+# [2.0.0](https://github.com/dashevo/DashJS/compare/v2.0.0...v1.1.2) (2020-03-27)
+
+- **breaking:**
+  - renamed DashJS namespace to SDK namespace.
+  - renamed SDK namespace to Client namespace (DashJS.SDK -> SDK.Client).
+  - moved L1 primitive namespace from `SDK.*` to `SDK.Core.*`.
+  - moved L2 primitive namespace from `SDK.*` to `SDK.Platform.*`.
+  - exported file for web environment is now `Dash` instead of `DashJS`
+- **feat**:
+  - Sign and verify message (#24)
+- **impr**: 
+  - Typings documentation (#30)
+  - Code cleanup (#31)
+  - Export all Dashcore Primitives (under `SDK.Core.*`)
+- **fix**:
+  - fix(contracts): pass data contract without array (#32 in #31)
+  - fix: remove .serialize() before broadcasting records (#e047d515a12d0d14ff69b4fe3ea5b8b10bd6f890)
+  - Identity/register: updated getUTXOS usages on (#afda5bbafb940b2e15d5e773d0e8fc5fbc48ee13)
+  - fix(StateTransitionBuilder): records type detection (#b49f74b4b8e03e9d1020dd789c62f4310a4fc1ad)
+  - broadcasting of contracts (#f4b63e6be692841f1b138e5b058e531a0873f456, #4aa31fec0e5579d7ef8b9222576863a069b95fd3)
+- **chore**: 
+  - updated for new evonet (updated wallet-lib to 6.0.0)
+  -  updated dapi-client to 0.11 (#fba4d55d3281bec5e65605787dd23a6ca3517476)
+  - updated DPNS contractID on evonet (#d0cf11d30cf7c9aaef1ffa4a2b8a955fbf5b1184)

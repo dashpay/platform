@@ -1,0 +1,38 @@
+{
+  "readme": {
+    "id": "98EpHfn7KJvHEtPztwaoS6ukAgBoNkNabgGL7nf2hkLu",
+    "type": 1,
+    "publicKeys": [
+      {
+        "id": 1,
+        "type": 1,
+        "data": "A4k1moBor/sGMUdp465Z+o3U7cFB4kSEYh5BvNFyOg5d",
+        "isEnabled": true
+      }
+    ]
+  },
+  "ratePhezApp": {
+    "id": "HXJKwhqFe43KCkHt4cCu8z2NPgNjx49KEyZhbb8Rcpdd",
+    "type": 2,
+    "publicKeys": [
+      {
+        "id": 1,
+        "type": 1,
+        "data": "A2AXIu93hht/yM/tYGg+mQ5pppT4v7jOf4ngG9htwS4Q",
+        "isEnabled": true
+      }
+    ]
+  },
+  "bob": {
+    "id": "Fvpr7GKiC3i6tDHiGdN4uuLsAFRUMbUnmnYcNTPW5z62",
+    "type": 1,
+    "publicKeys": [
+      {
+        "id": 1,
+        "type": 1,
+        "data": "A2AXIu93hht/yM/tYGg+mQ5pppT4v7jOf4ngG9htwS4Q",
+        "isEnabled": true
+      }
+    ]
+  }
+}

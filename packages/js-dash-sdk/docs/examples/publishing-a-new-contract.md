@@ -11,22 +11,22 @@ and [attached to a name](https://dashplatform.readme.io/docs/tutorial-register-a
 
 ```js
 const schema = {};// You JSON schema defining the app.
-const sdk = new DashJS.SDK({
+const client = new Dash.Client({
   mnemonic: ''// Your app mnemonic, which holds the app identity
 });
 
 // This is the name previously registered in DPNS.
 const appName = 'MyApp';
-sdk.isReady().then(registerContract);
+client.isReady().then(registerContract);
 
 async function getIdentity(idName) {
-    const {identities, names} = sdk.platform;
+    const {identities, names} = client.platform;
     const identityId = (await names.get(idName)).data.records.dashIdentity;
     const identity = await identities.get(identityId);
     return identity
 }
 async function registerContract() {
-    const {platform} = sdk;
+    const {platform} = client;
     const identity = await getIdentity(appName);
     const contract = platform.contracts.create(schema, identity)
     const contractId = await platform.contracts.broadcast(contract, identity);
@@ -39,7 +39,7 @@ async function registerContract() {
 const schema = {};// You JSON schema defining the app.
 
 // This is the name previously registered in DPNS.
-const sdk = new DashJS.SDK({
+const client = new Dash.Client({
   mnemonic: "",// Your app mnemonic, which holds the app identity
   apps:{
     myapp:{
@@ -48,16 +48,16 @@ const sdk = new DashJS.SDK({
   }
 });
 
-sdk.isReady().then(getDocuments);
+client.isReady().then(getDocuments);
 
 async function getDocuments() {
-    const {documents} = sdk.platform;
+    const {documents} = client.platform;
     const docs = await documents.fetch('myapp.myfield',{});
 }
 
 async function publishDocument(){
     const identity = await getIdentity(appName);
-    const {documents} = sdk.platform;
+    const {documents} = client.platform;
     const doc = await documents.create('myapp.myfield',identity, {myproperties:'my value'});
     await documents.broadcast(doc, identity)
 }

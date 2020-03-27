@@ -1,3 +1,2 @@
-import DashJS from './DashJS/DashJS'
-// export { DashJS as default };
-export = DashJS;
+import SDK from './SDK'
+export = SDK;

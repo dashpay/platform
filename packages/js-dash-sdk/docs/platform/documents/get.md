@@ -1,4 +1,4 @@
-**Usage**: `sdk.platform.documents.get(dotLocator, opts)`    
+**Usage**: `client.platform.documents.get(dotLocator, opts)`    
 **Description**: This method will allow you to fetch back a documents from params passed. 
 
 Parameters: 
@@ -27,5 +27,5 @@ Parameters:
              ['normalizedParentDomainName', '==', 'dash'],
          ],
      };
-  await sdk.platform.documents.get('dpns.domain', queryOpts);
+  await client.platform.documents.get('dpns.domain', queryOpts);
 ```

@@ -1,4 +1,4 @@
-Contributing to DashJS
+Contributing to Dash SDK
 ======================
 
 First off, thanks for taking the time to contribute!
@@ -55,7 +55,7 @@ Don't hesitate to use commit messages to explain more about the changes.
 
 #### Issues
 
-* Demonstrating the issue by creating a JSFiddle (you can inherit DashJS from unpkg) is definitely welcome. 
+* Demonstrating the issue by creating a JSFiddle (you can inherit Dash SDK from unpkg) is definitely welcome. 
 * **Use a clear and descriptive title** for the issue to identify the suggestion.
 * **Provide a comprehensive description of the suggested enhancement** in as much detail as possible. (a template is automatically generated for you when creating an issue / pr)
 * (If applicable) **Provide specific examples to demonstrate the steps**.

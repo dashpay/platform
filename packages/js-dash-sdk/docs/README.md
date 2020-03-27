@@ -1,4 +1,4 @@
-## DashJS
+## Dash SDK
 
 [![Package Version](https://img.shields.io/github/package-json/v/dashevo/dashjs.svg?&style=flat-square)](https://www.npmjs.org/package/dash)
 [![Build Status](https://img.shields.io/travis/com/dashevo/dashjs.svg?branch=master&style=flat-square)](https://travis-ci.com/dashevo/dashjs)
@@ -7,7 +7,7 @@
 
 ---
 
-DashJS is intended to provide, in a single entry-point all the different features, classes & utils you might need to interface with the Dash network.
+Dash SDK is intended to provide, in a single entry-point all the different features, classes & utils you might need to interface with the Dash network.
 
 ## Install
 
@@ -30,15 +30,15 @@ npm install dash
 ### Usage 
 
 ```
-const DashJS = require("dash");
+const Dash = require("dash");
 
-const sdk = new DashJS.SDK({
+const client = new Dash.Client({
   network: "testnet",
   mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
 });
 
-sdk.isReady().then(async () => {
-  const {account, platform} = sdk;
+client.isReady().then(async () => {
+  const {account, platform} = client;
   console.log("Funding address", account.getUnusedAddress().address);
   console.log("Confirmed Balance", account.getConfirmedBalance());
   console.log(await platform.names.get('alice'));

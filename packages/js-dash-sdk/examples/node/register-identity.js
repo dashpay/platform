@@ -1,14 +1,14 @@
-const DashJS = require('dash');
-const sdkOpts = {
+const Dash = require('dash');
+const clientOpts = {
   network: 'testnet',
   mnemonic:'your mnemonic here'
 };
-const sdk = new DashJS.SDK(sdkOpts);
+const client = new Dash.Client(clientOpts);
 
 const createIdentity = async function () {
-  await sdk.isReady();
+  await client.isReady();
 
-  let platform = sdk.platform;
+  let platform = client.platform;
 
   platform
       .identities

@@ -1,4 +1,4 @@
-**Usage**: `sdk.platform.documents.create(typeLocator, identity, documentOpts)`    
+**Usage**: `client.platform.documents.create(typeLocator, identity, documentOpts)`    
 **Description**: This method will return a Document object initialized with the parameters defined and apply to the used identity. 
 
 Parameters: 
@@ -13,5 +13,5 @@ Parameters:
 ```js
   // See https://github.com/dashevo/dpns-contract on how to get those value.
   const dpnsDocOpts =  {nameHash, label,normalizedLabel,normalizedParentDomainName,preorderSalt,records };
-  const document = sdk.platform.documents.create('dpns.domain', identity, dpnsDocOpts);
+  const document = client.platform.documents.create('dpns.domain', identity, dpnsDocOpts);
 ```

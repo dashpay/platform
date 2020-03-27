@@ -1,13 +1,13 @@
-const DashJS = require('dash');
+const Dash = require('dash');
 
-const sdkOpts = {
+const clientOpts = {
   network: 'testnet'
 };
-const sdk = new DashJS.SDK(sdkOpts);
+const client = new Dash.Client(clientOpts);
 
 const getDocuments = async function () {
-  let platform = sdk.platform;
-  await sdk.isReady();
+  let platform = client.platform;
+  await client.isReady();
 
   const queryOpts = {
     where: [

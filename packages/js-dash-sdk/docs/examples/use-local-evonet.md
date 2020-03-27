@@ -6,7 +6,7 @@ You will then need to pass the seed ip, and [register the DPNS contract](https:/
 
 ```js
 const seeds = [{service: '54.245.133.124'}];
-const sdk = new DashJS.SDK({
+const client = new Dash.Client({
   seeds,
   apps: {
     dpns: {

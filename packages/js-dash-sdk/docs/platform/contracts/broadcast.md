@@ -1,4 +1,4 @@
-**Usage**: `sdk.platform.contracts.broadcast(contract, identity)`    
+**Usage**: `client.platform.contracts.broadcast(contract, identity)`    
 **Description**: This method will sign and broadcast any valid contract. 
 
 Parameters: 

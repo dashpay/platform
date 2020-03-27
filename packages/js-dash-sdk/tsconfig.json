@@ -6,6 +6,7 @@
     "outDir": "./build",
     "strict": true,
     "allowUmdGlobalAccess": true,
+    "noImplicitAny": false,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "allowJs": true,

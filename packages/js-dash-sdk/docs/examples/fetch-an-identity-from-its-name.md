@@ -4,16 +4,16 @@ Assuming you have created an identity and attached a name to it (see how to [reg
 You will then be able to directly recover an identity from its names. See below: 
 
 ```js
-const sdk = new DashJS.SDK({
+const client = new Dash.Client({
   mnemonic: ''// Your app mnemonic, which holds the app identity
 });
 
 // This is the name previously registered in DPNS.
 const identityName = 'alice';
-sdk.isReady().then(getIdentity);
+client.isReady().then(getIdentity);
 
 async function getIdentity() {
-    const {identities, names} = sdk.platform;
+    const {identities, names} = client.platform;
     const identityId = (await names.get(identityName)).data.records.dashIdentity;
     const identity = await identities.get(identityId);
 }
