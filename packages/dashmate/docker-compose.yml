@@ -92,12 +92,6 @@ services:
       - DRIVE_UPDATE_STATE_PORT=5000
       - DRIVE_API_HOST=drive_api
       - DRIVE_API_PORT=6000
-      - RATE_LIMITER_ACTIVE=false
-      - RATE_LIMITER_MAX_TRANSITIONS_PER_ID=100
-      - RATE_LIMITER_PER_BLOCK_INTERVAL=36
-      - RATE_LIMITER_PER_BAN_INTERVAL=17280
-      - RATE_LIMITER_INTERVAL_PREFIX='ratelimiter.interval'
-      - RATE_LIMITER_BAN_PREFIX='ratelimiter.ban'
     volumes:
       - machine_leveldb:/usr/src/app/db
     command: npm run abci
