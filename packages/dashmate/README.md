@@ -28,6 +28,7 @@ Package contains Docker Compose file and configuration presets.
 Package contains several configuration presets:
  - Local - standalone masternode for local development
  - Evonet - masternode with Evonet configuration
+ - Testnet - masternode with testnet configuration
 
 There are two ways to apply a present:
  1. Rename corresponding dotenv file (i.e. `.env.local`) to `.env`
