@@ -25,9 +25,6 @@ function handleAbciResponse(response) {
       throw new ResourceExhaustedGrpcError(message, data);
     case 5: // EXECUTION_TIMED_OUT
       throw new DeadlineExceededGrpcError(message, data);
-    case 4: // RATE_LIMITER_BANNED
-    case 3: // RATE_LIMITER_QUOTA_EXCEEDED
-      throw new ResourceExhaustedGrpcError(message, data);
     case 2: // INVALID_ARGUMENT
       throw new InvalidArgumentGrpcError(message, data);
     case 1: // INTERNAL
