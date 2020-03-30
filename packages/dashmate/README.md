@@ -1,6 +1,6 @@
 # MN Bootstrap
 
-> Distribution package for Dash Evolution Masternode installation
+> Distribution package for Dash Masternode installation
 
 ## Table of Contents
 
