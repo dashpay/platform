@@ -10,7 +10,7 @@
 
 # TCP or UNIX socket address of the ABCI application,
 # or the name of an ABCI application compiled in with the Tendermint binary
-proxy_app = "tcp://machine:26658"
+proxy_app = "tcp://drive_abci:26658"
 
 # A custom human readable name for this node
 #moniker = ""

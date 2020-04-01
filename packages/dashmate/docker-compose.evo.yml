@@ -16,68 +16,29 @@ services:
       - ./scripts/initiate_mongodb_replica.sh:/initiate_mongodb_replica.sh
     entrypoint: /initiate_mongodb_replica.sh
 
-  drive_update_state:
+  drive_abci:
     image: dashpay/drive:${DRIVE_VERSION:-latest}
     restart: always
     depends_on:
       - drive_mongodb_replica_init
       - core
+    volumes:
+      - drive_leveldb:/usr/src/app/db
     environment:
       - DASHCORE_JSON_RPC_USER=dashrpc
       - DASHCORE_JSON_RPC_PASS=password
       - DASHCORE_JSON_RPC_HOST=core
       - DASHCORE_JSON_RPC_PORT=20002
-      - STATEVIEW_MONGODB_URL=mongodb://drive_mongodb:27017
-      - UPDATE_STATE_GRPC_PORT=5000
-      - TENDERMINT_RPC_HOST=tendermint
-      - TENDERMINT_RPC_PORT=26657
+      - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017
       - DPNS_CONTRACT_ID=${DPNS_CONTRACT_ID}
       - DPNS_TOP_LEVEL_IDENTITY=${DPNS_TOP_LEVEL_IDENTITY}
-    command: sh -c "sleep 15 && npm run updateState"
-
-  drive_api:
-    image: dashpay/drive:${DRIVE_VERSION:-latest}
-    restart: always
-    depends_on:
-      - drive_mongodb_replica_init
-      - core
-    environment:
-      - DASHCORE_JSON_RPC_USER=dashrpc
-      - DASHCORE_JSON_RPC_PASS=password
-      - DASHCORE_JSON_RPC_HOST=core
-      - DASHCORE_JSON_RPC_PORT=20002
-      - STATEVIEW_MONGODB_URL=mongodb://drive_mongodb:27017
-      - API_RPC_PORT=6000
-      - TENDERMINT_RPC_HOST=tendermint
-      - TENDERMINT_RPC_PORT=26657
-    command: sh -c "sleep 15 && npm run api"
-
-  machine:
-    image: dashpay/js-machine:${MACHINE_VERSION:-latest}
-    restart: always
-    depends_on:
-      - drive_api
-      - drive_update_state
-    environment:
-      - DRIVE_UPDATE_STATE_HOST=drive_update_state
-      - DRIVE_UPDATE_STATE_PORT=5000
-      - DRIVE_API_HOST=drive_api
-      - DRIVE_API_PORT=6000
-      - RATE_LIMITER_ACTIVE=false
-      - RATE_LIMITER_MAX_TRANSITIONS_PER_ID=100
-      - RATE_LIMITER_PER_BLOCK_INTERVAL=36
-      - RATE_LIMITER_PER_BAN_INTERVAL=17280
-      - RATE_LIMITER_INTERVAL_PREFIX='ratelimiter.interval'
-      - RATE_LIMITER_BAN_PREFIX='ratelimiter.ban'
-    volumes:
-      - machine_leveldb:/usr/src/app/db
-    command: npm run abci
+    command: sh -c "sleep 15 && npm run abci"
 
   tendermint:
     image: tendermint/tendermint:${TENDERMINT_VERSION:-v0.32.8}
     restart: always
     depends_on:
-      - machine
+      - drive_abci
     ports:
       - 26656:26656 # P2P
     volumes:
@@ -100,7 +61,6 @@ services:
       - tendermint
       - dapi_insight
       - core
-      - drive_api
     environment:
       - INSIGHT_URI=http://dapi_insight:3001/insight-api
       - API_JSON_RPC_PORT=3004
@@ -114,11 +74,9 @@ services:
       - DASHCORE_P2P_HOST=core
       - DASHCORE_P2P_PORT=20001
       - DASHCORE_P2P_NETWORK=devnet
-      - DRIVE_RPC_HOST=drive_api
-      - DRIVE_RPC_PORT=6000
       - NETWORK=devnet
-      - TENDERMINT_CORE_HOST=tendermint
-      - TENDERMINT_CORE_PORT=26657
+      - TENDERMINT_RPC_HOST=tendermint
+      - TENDERMINT_RPC_PORT=26657
     command: npm run api
 
   dapi_tx_filter_stream:
@@ -126,7 +84,7 @@ services:
     restart: always
     depends_on:
       - core
-      - drive_api
+      - dapi_insight
     environment:
       - INSIGHT_URI=http://dapi_insight:3001/insight-api
       - TX_FILTER_STREAM_GRPC_PORT=3006
@@ -139,8 +97,6 @@ services:
       - DASHCORE_P2P_HOST=core
       - DASHCORE_P2P_PORT=20001
       - DASHCORE_P2P_NETWORK=devnet
-      - DRIVE_RPC_HOST=drive_api
-      - DRIVE_RPC_PORT=6000
       - NETWORK=devnet
     command: npm run tx-filter-stream
 
@@ -170,4 +126,4 @@ services:
 
 volumes:
   drive_mongodb:
-  machine_leveldb:
+  drive_leveldb:
