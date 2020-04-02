@@ -66,9 +66,6 @@ async function main() {
     networkType: config.network,
     insightAPI,
     dashcoreAPI: dashCoreRpcClient,
-    driveAPI,
-    tendermintRpcClient: rpcClient,
-    dpp,
     log,
   });
   log.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);

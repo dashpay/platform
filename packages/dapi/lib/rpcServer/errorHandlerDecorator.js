@@ -9,7 +9,6 @@ const RPCError = require('./RPCError');
 const ArgumentsValidationError = require('../errors/ArgumentsValidationError');
 const DashCoreRpcError = require('../errors/DashCoreRpcError');
 
-
 function isOperationalError(error) {
   return (
     (error instanceof ArgumentsValidationError)

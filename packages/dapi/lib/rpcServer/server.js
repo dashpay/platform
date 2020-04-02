@@ -1,12 +1,6 @@
 const jayson = require('jayson/promise');
 const { isRegtest, isDevnet } = require('../utils');
-const Validator = require('../utils/Validator');
 const errorHandlerDecorator = require('./errorHandlerDecorator');
-
-const getIdentityArgsSchema = require('./commands/platform/schemas/getIdentity');
-const getDocumentsArgsSchema = require('./commands/platform/schemas/getDocuments');
-const getDataContractArgsSchema = require('./commands/platform/schemas/getDataContract');
-const applyIdentityArgsSchema = require('./commands/platform/schemas/applyStateTransition');
 
 const getBestBlockHash = require('./commands/getBestBlockHash');
 const getBlockHash = require('./commands/getBlockHash');
@@ -15,43 +9,18 @@ const getUTXO = require('./commands/getUTXO');
 const generateToAddress = require('./commands/generateToAddress');
 const getAddressSummary = require('./commands/getAddressSummary');
 
-const getIdentityHandlerFactory = require('./commands/platform/getIdentityHandlerFactory');
-const applyStateTransitionHandlerFactory = require('./commands/platform/applyStateTransitionHandlerFactory');
-const getDataContractHandlerFactory = require('./commands/platform/getDataContractHandlerFactory');
-const getDocumentsHandlerFactory = require('./commands/platform/getDocumentsHandlerFactory');
-
-const handleAbciResponse = require('../grpcServer/handlers/handleAbciResponse');
-
-
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
 
 const createCommands = (
   insightAPI,
   dashcoreAPI,
-  driveAPI,
-  tendermintRpcClient,
-  dpp,
 ) => ({
   getBestBlockHash: getBestBlockHash(dashcoreAPI),
   getBlockHash: getBlockHash(dashcoreAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
   getUTXO: getUTXO(insightAPI),
   getAddressSummary: getAddressSummary(insightAPI),
-
-  getIdentity: getIdentityHandlerFactory(
-    tendermintRpcClient, handleAbciResponse, new Validator(getIdentityArgsSchema),
-  ),
-  applyStateTransition: applyStateTransitionHandlerFactory(
-    tendermintRpcClient, handleAbciResponse, new Validator(applyIdentityArgsSchema),
-  ),
-  getDataContract: getDataContractHandlerFactory(
-    driveAPI, dpp, new Validator(getDataContractArgsSchema),
-  ),
-  getDocuments: getDocumentsHandlerFactory(
-    driveAPI, dpp, new Validator(getDocumentsArgsSchema),
-  ),
-
 });
 
 const createRegtestCommands = dashcoreAPI => ({
@@ -75,17 +44,11 @@ const start = ({
   networkType,
   insightAPI,
   dashcoreAPI,
-  driveAPI,
-  tendermintRpcClient,
-  dpp,
   log,
 }) => {
   const commands = createCommands(
     insightAPI,
     dashcoreAPI,
-    driveAPI,
-    tendermintRpcClient,
-    dpp,
   );
 
   const areRegtestCommandsEnabled = isRegtest(networkType) || isDevnet(networkType);
