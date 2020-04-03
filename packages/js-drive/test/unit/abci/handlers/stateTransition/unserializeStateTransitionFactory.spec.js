@@ -2,6 +2,8 @@ const getIdentityCreateSTFixture = require('@dashevo/dpp/lib/test/fixtures/getId
 
 const ConsensusError = require('@dashevo/dpp/lib/errors/ConsensusError');
 const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
+const BalanceNotEnoughError = require('@dashevo/dpp/lib/errors/BalanceIsNotEnoughError');
+const ValidatorResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
 const unserializeStateTransitionFactory = require('../../../../../lib/abci/handlers/stateTransition/unserializeStateTransitionFactory');
 
@@ -9,6 +11,7 @@ const AbciError = require('../../../../../lib/abci/errors/AbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const ExecutionTimedOutError = require('../../../../../lib/abci/errors/ExecutionTimedOutError');
 const MemoryLimitExceededError = require('../../../../../lib/abci/errors/MemoryLimitExceededError');
+const InsufficientFundsError = require('../../../../../lib/abci/errors/InsufficientFundsError');
 
 describe('unserializeStateTransitionFactory', () => {
   let unserializeStateTransition;
@@ -23,6 +26,7 @@ describe('unserializeStateTransitionFactory', () => {
       dispose: this.sinon.stub(),
       stateTransition: {
         createFromSerialized: this.sinon.stub(),
+        validateFee: this.sinon.stub(),
       },
     };
 
@@ -43,6 +47,7 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect(createIsolatedDppMock).to.not.be.called();
       expect(isolatedDppMock.dispose).to.not.be.called();
+      expect(isolatedDppMock.stateTransition.validateFee).to.not.be.called();
     }
   });
 
@@ -69,6 +74,7 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect(createIsolatedDppMock).to.be.calledOnce();
       expect(isolatedDppMock.dispose).to.be.calledOnce();
+      expect(isolatedDppMock.stateTransition.validateFee).to.not.be.called();
     }
   });
 
@@ -85,6 +91,7 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect(createIsolatedDppMock).to.be.calledOnce();
       expect(isolatedDppMock.dispose).to.be.calledOnce();
+      expect(isolatedDppMock.stateTransition.validateFee).to.not.be.called();
     }
   });
 
@@ -101,6 +108,7 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect(createIsolatedDppMock).to.be.calledOnce();
       expect(isolatedDppMock.dispose).to.be.calledOnce();
+      expect(isolatedDppMock.stateTransition.validateFee).to.not.be.called();
     }
   });
 
@@ -117,6 +125,29 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect(createIsolatedDppMock).to.be.calledOnce();
       expect(isolatedDppMock.dispose).to.be.calledOnce();
+      expect(isolatedDppMock.stateTransition.validateFee).to.not.be.called();
+    }
+  });
+
+  it('should throw InsufficientFundsError in case if identity has not enough credits', async () => {
+    const balance = 1000;
+    const error = new BalanceNotEnoughError(balance);
+
+    isolatedDppMock.stateTransition.validateFee.resolves(
+      new ValidatorResult([error]),
+    );
+
+    try {
+      await unserializeStateTransition(stateTransitionFixture);
+
+      expect.fail('should throw an InsufficientFundsError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InsufficientFundsError);
+      expect(e.getData().balance).to.equal(balance);
+
+      expect(createIsolatedDppMock).to.be.calledOnce();
+      expect(isolatedDppMock.dispose).to.be.calledOnce();
+      expect(isolatedDppMock.stateTransition.validateFee).to.be.calledOnce();
     }
   });
 
@@ -125,8 +156,12 @@ describe('unserializeStateTransitionFactory', () => {
 
     isolatedDppMock.stateTransition.createFromSerialized.resolves(stateTransition);
 
+    isolatedDppMock.stateTransition.validateFee.resolves(new ValidatorResult());
+
     const result = await unserializeStateTransition(stateTransitionFixture);
 
     expect(result).to.deep.equal(stateTransition);
+
+    expect(isolatedDppMock.stateTransition.validateFee).to.be.calledOnceWith(stateTransition);
   });
 });

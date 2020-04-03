@@ -20,12 +20,14 @@ describe('commitHandlerFactory', () => {
   let documentsDatabaseManagerMock;
   let dataContract;
   let blockchainStateMock;
+  let accumulativeFees;
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
 
     blockchainStateMock = {
       setLastBlockAppHash: this.sinon.stub(),
+      setCreditsDistributionPool: this.sinon.stub(),
     };
 
     dataContract = getDataContractFixture();
@@ -38,6 +40,7 @@ describe('commitHandlerFactory', () => {
     blockExecutionStateMock = new BlockExecutionStateMock(this.sinon);
 
     blockExecutionStateMock.getDataContracts.returns([dataContract]);
+    blockExecutionStateMock.getAccumulativeFees.returns(accumulativeFees);
 
     documentsDatabaseManagerMock = {
       create: this.sinon.stub(),
@@ -66,6 +69,11 @@ describe('commitHandlerFactory', () => {
     expect(blockExecutionDBTransactionsMock.commit).to.be.calledOnce();
 
     expect(blockchainStateMock.setLastBlockAppHash).to.be.calledOnceWith(appHash);
+
+
+    expect(blockchainStateMock.setCreditsDistributionPool).to.be.calledOnceWith(accumulativeFees);
+
+    expect(blockExecutionStateMock.getAccumulativeFees).to.be.calledOnce();
 
     expect(blockchainStateRepositoryMock.store).to.be.calledOnceWith(blockchainStateMock);
     expect(blockExecutionStateMock.reset).to.be.calledOnce();

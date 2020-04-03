@@ -3,6 +3,7 @@ const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/er
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 const MemoryLimitExceededError = require('../../errors/MemoryLimitExceededError');
 const ExecutionTimedOutError = require('../../errors/ExecutionTimedOutError');
+const InsufficientFundsError = require('../../errors/InsufficientFundsError');
 
 /**
  * @param {createIsolatedDpp} createIsolatedDpp
@@ -44,6 +45,14 @@ function unserializeStateTransitionFactory(createIsolatedDpp) {
       throw e;
     } finally {
       isolatedDpp.dispose();
+    }
+
+    const result = await isolatedDpp.stateTransition.validateFee(stateTransition);
+
+    if (!result.isValid()) {
+      const [error] = result.getErrors();
+
+      throw new InsufficientFundsError(error.getBalance());
     }
 
     return stateTransition;

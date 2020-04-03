@@ -44,6 +44,20 @@ function deliverTxHandlerFactory(
       blockExecutionState.addDataContract(stateTransition.getDataContract());
     }
 
+    // Reduce an identity balance and accumulate fees for all STs in the block
+    // in order to store them in credits distribution pool
+    const stateTransitionFee = stateTransition.calculateFee();
+
+    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
+      stateTransition.getOwnerId(),
+    );
+
+    identity.reduceBalance(stateTransitionFee);
+
+    await transactionalDpp.getStateRepository().storeIdentity(identity);
+
+    blockExecutionState.incrementAccumulativeFees(stateTransitionFee);
+
     return new ResponseDeliverTx();
   }
 

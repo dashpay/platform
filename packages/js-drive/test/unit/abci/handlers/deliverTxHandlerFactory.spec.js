@@ -6,7 +6,10 @@ const {
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const BlockExecutionStateMock = require('../../../../lib/test/mock/BlockExecutionStateMock');
@@ -22,7 +25,9 @@ describe('deliverTxHandlerFactory', () => {
   let deliverTxHandler;
   let dataContractRequest;
   let documentRequest;
+  let identity;
   let dppMock;
+  let stateRepositoryMock;
   let documentsBatchTransitionFixture;
   let dataContractCreateTransitionFixture;
   let dpp;
@@ -58,6 +63,14 @@ describe('deliverTxHandlerFactory', () => {
         isValid: this.sinon.stub().returns(true),
       });
 
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
+
+    identity = getIdentityFixture();
+
+    stateRepositoryMock.fetchIdentity.resolves(identity);
+
+    dppMock.getStateRepository.returns(stateRepositoryMock);
+
     unserializeStateTransitionMock = this.sinon.stub();
 
     blockExecutionStateMock = new BlockExecutionStateMock(this.sinon);
@@ -87,6 +100,20 @@ describe('deliverTxHandlerFactory', () => {
       documentsBatchTransitionFixture,
     );
     expect(blockExecutionStateMock.addDataContract).to.not.be.called();
+
+    const stateTransitionFee = documentsBatchTransitionFixture.calculateFee();
+
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
+      documentsBatchTransitionFixture.getOwnerId(),
+    );
+
+    identity.reduceBalance(stateTransitionFee);
+
+    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWith(identity);
+
+    expect(blockExecutionStateMock.incrementAccumulativeFees).to.be.calledOnceWith(
+      stateTransitionFee,
+    );
   });
 
   it('should apply a DataContractCreateTransition, add it to block execution state and return ResponseDeliverTx', async () => {
@@ -109,6 +136,10 @@ describe('deliverTxHandlerFactory', () => {
     expect(blockExecutionStateMock.addDataContract).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.getDataContract(),
     );
+
+    expect(blockExecutionStateMock.incrementAccumulativeFees).to.be.calledOnceWith(
+      dataContractCreateTransitionFixture.calculateFee(),
+    );
   });
 
   it('should throw InvalidArgumentAbciError if a state transition is not valid', async () => {
@@ -128,6 +159,7 @@ describe('deliverTxHandlerFactory', () => {
       expect(e.getMessage()).to.equal('Invalid state transition');
       expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
       expect(e.getData()).to.deep.equal({ errors: [error] });
+      expect(blockExecutionStateMock.incrementAccumulativeFees).to.not.be.called();
     }
   });
 });

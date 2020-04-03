@@ -44,6 +44,9 @@ function commitHandlerFactory(
       // Update blockchain state
       blockchainState.setLastBlockAppHash(appHash);
 
+      // Store ST fees from the block to distribution pool
+      blockchainState.setCreditsDistributionPool(blockExecutionState.getAccumulativeFees());
+
       await blockchainStateRepository.store(blockchainState);
     } catch (e) {
       // Abort DB transactions

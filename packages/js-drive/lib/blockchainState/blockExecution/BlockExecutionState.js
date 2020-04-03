@@ -1,6 +1,7 @@
 class BlockExecutionState {
   constructor() {
     this.dataContracts = [];
+    this.accumulativeFees = 0;
   }
 
   /**
@@ -22,10 +23,29 @@ class BlockExecutionState {
   }
 
   /**
+   * @return {number}
+   */
+  getAccumulativeFees() {
+    return this.accumulativeFees;
+  }
+
+  /**
+   * Increment accumulative fees
+   *
+   * @param {number} fee
+   */
+  incrementAccumulativeFees(fee) {
+    this.accumulativeFees += fee;
+
+    return this;
+  }
+
+  /**
    * Reset state
    */
   reset() {
     this.dataContracts = [];
+    this.accumulativeFees = 0;
   }
 }
 
