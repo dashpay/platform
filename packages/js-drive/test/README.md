@@ -1,10 +1,9 @@
-# Dash Drive Tests
+# Drive Tests
 
 We believe in [Test Pyramid](http://verraes.net/2015/01/economy-of-tests/).
 
 ## Structure
 
- - `e2e/` - [End-to-end (e2e, system) tests](https://en.wikipedia.org/wiki/System_testing)
  - `integration/` - [Integration tests](https://en.wikipedia.org/wiki/Integration_testing)
  - `unit/` - [Unit tests](https://en.wikipedia.org/wiki/Unit_testing)
 
@@ -30,12 +29,6 @@ Run integration tests:
 npm run test:integration
 ```
 
-Run e2e tests:
-
-```bash
-npm run test:e2e
-```
-
 ## How to write tests
 
 We use:
@@ -55,16 +48,6 @@ All tools are [bootstrapped](../lib/test/bootstrap.js) before tests:
 
 ## Evolution helpers
 We use [js-evo-services-ctl](https://github.com/dashevo/js-evo-services-ctl) library to manipulate Evolution's services.
-
-## Fixtures
-
-Fixtures are located in [fixtures/](fixtures) directory:
-- [blocks.json](fixtures/blocks.json)
-
-There are several helpers for loading fixtures:
-- [getBlockFixtures](../lib/test/fixtures/getBlocksFixture.js)
-- [getStateTransitionsFixture](../lib/test/fixtures/getStateTransitionsFixture.js)
-- [getSTPacketsFixture](../lib/test/fixtures/getSTPacketsFixture.js)
 
 ## Other tools
 

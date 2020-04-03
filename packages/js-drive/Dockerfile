@@ -2,7 +2,8 @@ FROM node:12-alpine
 
 RUN apk update && \
     apk --no-cache upgrade && \
-    apk add --no-cache git \
+    apk add --no-cache linux-headers \
+                       git \
                        openssh-client \
                        python \
                        alpine-sdk \
@@ -37,4 +38,4 @@ RUN cp .env.example .env
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
-EXPOSE 6000 9229
+EXPOSE 26658

@@ -6,9 +6,20 @@
  * @param {number} ms
  * @return {Promise<any>}
  */
-module.exports = function rejectAfter(promise, error, ms) {
-  return Promise.race([
-    promise,
-    new Promise((resolve, reject) => setTimeout(() => reject(error), ms)),
-  ]);
+module.exports = async function rejectAfter(promise, error, ms) {
+  let timeout;
+  let res;
+  try {
+    res = await Promise.race([
+      promise,
+      new Promise((resolve, reject) => {
+        timeout = setTimeout(() => reject(error), ms);
+      }),
+    ]);
+  } finally {
+    // noinspection JSUnusedAssignment
+    clearTimeout(timeout);
+  }
+
+  return res;
 };

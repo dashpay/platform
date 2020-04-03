@@ -1,19 +1,39 @@
 {
   "name": "@dashevo/drive",
-  "version": "0.11.1",
-  "description": "Decentralized application storage on the Dash network",
+  "version": "0.12.0-dev.1",
+  "description": "Replicated state machine for Dash Platform",
   "engines": {
-    "node": ">=8"
+    "node": ">=12"
   },
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "ivan@shumkov.ru",
+      "url": "https://github.com/shumkov"
+    },
+    {
+      "name": "Djavid Gabibiyan",
+      "email": "djavid@dash.org",
+      "url": "https://github.com/jawid-h"
+    },
+    {
+      "name": "Anton Suprunchuk",
+      "email": "anton.suprunchuk@dash.org",
+      "url": "https://github.com/antouhou"
+    },
+    {
+      "name": "Konstantin Shuplenkov",
+      "email": "konstantin.shuplenkov@dash.org",
+      "url": "https://github.com/shuplenkov"
+    }
+  ],
   "scripts": {
-    "api": "node scripts/api",
-    "updateState": "node scripts/updateState",
+    "abci": "node scripts/abci",
     "lint": "eslint .",
-    "test": "(EXIT_CODE=0; npm run test:coverage || EXIT_CODE=$?; npm run test:functional || EXIT_CODE=$?; exit $EXIT_CODE)",
+    "test": "npm run test:coverage",
     "test:coverage": "nyc --check-coverage --stmts=95 --branch=86 --funcs=93 --lines=95 mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'",
-    "test:functional": "mocha './test/functional/**/*.spec.js'",
     "check-package": "npm run check-package:name && npm run check-package:version",
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)"
@@ -33,30 +53,36 @@
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
     "eslint": "^6.8.0",
-    "eslint-config-airbnb-base": "^13.1.0",
-    "eslint-plugin-import": "^2.16.0",
-    "mocha": "^5.2.0",
-    "mocha-sinon": "^2.1.0",
+    "eslint-config-airbnb-base": "^14.1.0",
+    "eslint-plugin-import": "^2.20.2",
+    "levelup": "^4.3.2",
+    "memdown": "^5.1.0",
+    "mocha": "^7.1.1",
     "nyc": "^15.0.0",
-    "proxyquire": "^2.1.0",
-    "sinon": "^7.3.0",
-    "sinon-chai": "^3.3.0"
+    "sinon": "^9.0.1",
+    "sinon-chai": "^3.5.0"
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.18.0",
     "@dashevo/dashd-rpc": "^2.0.0",
-    "@dashevo/dpp": "~0.11.1",
-    "@dashevo/drive-grpc": "~0.3.0",
-    "@dashevo/grpc-common": "~0.2.1",
+    "@dashevo/dpp": "github:dashevo/js-dpp#v0.12-dev",
+    "abci": "^5.0.1",
     "ajv": "^6.10.0",
+    "awilix": "^4.2.5",
+    "browserify": "^16.5.1",
     "bs58": "^4.0.1",
-    "connect": "^3.6.6",
-    "dotenv-expand": "^4.2.0",
-    "dotenv-safe": "^6.1.0",
-    "grpc": "^1.24.0",
-    "grpc-health-check": "^1.7.0",
-    "jayson": "^2.1.2",
+    "cbor": "^5.0.1",
+    "dotenv-expand": "^5.1.0",
+    "dotenv-safe": "^8.2.0",
+    "find-my-way": "^2.2.2",
+    "isolated-vm": "github:antouhou/isolated-vm",
+    "level-rocksdb": "^4.0.0",
+    "level-transactions": "^2.1.4",
     "lodash.escaperegexp": "^4.1.2",
-    "mongodb": "^3.3.3"
+    "long": "^4.0.0",
+    "lru-cache": "^5.1.1",
+    "mongodb": "^3.5.5",
+    "setimmediate": "^1.0.5",
+    "through2": "^3.0.1"
   }
 }

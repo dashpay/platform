@@ -1,7 +1,12 @@
 const ReplicaSetInitError = require('./errors/ReplicaSetInitError');
 
-async function checkReplicaSetInit(db) {
-  const status = await db
+/**
+ *
+ * @param {MongoClient} documentMongoDBClient
+ * @return {Promise<void>}
+ */
+async function checkReplicaSetInit(documentMongoDBClient) {
+  const status = await documentMongoDBClient.db('test')
     .admin()
     .command({ replSetGetStatus: 1 });
 
@@ -9,7 +14,7 @@ async function checkReplicaSetInit(db) {
     throw new ReplicaSetInitError('Replica set status is empty', status);
   }
 
-  if (!status.members) {
+  if (!status.members || !status.members[0]) {
     throw new ReplicaSetInitError('Replica set have no members', status);
   }
 

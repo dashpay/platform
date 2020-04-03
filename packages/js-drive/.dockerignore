@@ -2,5 +2,4 @@
 .dockerignore
 .idea
 bin
-docker
 node_modules

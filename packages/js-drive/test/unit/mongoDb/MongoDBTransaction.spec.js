@@ -31,13 +31,13 @@ describe('MongoDBTransaction', () => {
       expect(sessionMock.startTransaction).to.be.calledOnce();
     });
 
-    it('should throw an error, if transaction is already started', () => {
+    it('should throw TransactionIsAlreadyStartedError if transaction is already started', () => {
       mongoDBTransaction.start();
 
       try {
         mongoDBTransaction.start();
 
-        expect.fail('should throw "Transaction is already started" error');
+        expect.fail('should throw TransactionIsAlreadyStartedError error');
       } catch (error) {
         expect(error).to.be.an.instanceOf(TransactionIsAlreadyStartedError);
         expect(error.message).to.be.equal('Transaction is already started');
@@ -67,11 +67,11 @@ describe('MongoDBTransaction', () => {
       expect(mongoDBTransaction.isTransactionStarted).to.be.false();
     });
 
-    it('should throw an error if transaction is not started', async () => {
+    it('should throw TransactionIsNotStartedError if transaction is not started', async () => {
       try {
         await mongoDBTransaction.commit();
 
-        expect.fail('should throw "Transaction is not started" error');
+        expect.fail('should throw TransactionIsNotStartedError error');
       } catch (error) {
         expect(error).to.be.an.instanceOf(TransactionIsNotStartedError);
         expect(error.message).to.be.equal('Transaction is not started');
