@@ -2,7 +2,6 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
-      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -10,8 +9,6 @@ const {
 const {
   GetDataContractResponse,
 } = require('@dashevo/dapi-grpc');
-
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
@@ -21,16 +18,16 @@ const getDataContractHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/platform/getDataContractHandlerFactory',
 );
 
-const RPCError = require('../../../../../lib/rpcServer/RPCError');
+const AbciResponseError = require('../../../../../lib/errors/AbciResponseError');
 
 describe('getDataContractHandlerFactory', () => {
   let call;
   let getDataContractHandler;
-  let driveApiMock;
+  let driveStateRepositoryMock;
   let request;
   let id;
   let dataContractFixture;
-  let dppMock;
+  let handleAbciResponseErrorMock;
 
   beforeEach(function beforeEach() {
     id = 1;
@@ -42,14 +39,16 @@ describe('getDataContractHandlerFactory', () => {
 
     dataContractFixture = getDataContractFixture();
 
-    driveApiMock = {
-      fetchContract: this.sinon.stub().resolves(dataContractFixture.toJSON()),
+    driveStateRepositoryMock = {
+      fetchDataContract: this.sinon.stub().resolves(dataContractFixture.serialize()),
     };
 
-    dppMock = createDPPMock(this.sinon);
-    dppMock.dataContract.createFromObject.returns(dataContractFixture);
+    handleAbciResponseErrorMock = this.sinon.stub();
 
-    getDataContractHandler = getDataContractHandlerFactory(driveApiMock, dppMock);
+    getDataContractHandler = getDataContractHandlerFactory(
+      driveStateRepositoryMock,
+      handleAbciResponseErrorMock,
+    );
   });
 
   it('should return valid data', async () => {
@@ -60,13 +59,11 @@ describe('getDataContractHandlerFactory', () => {
     const contractBinary = result.getDataContract();
     expect(contractBinary).to.be.an.instanceOf(Buffer);
 
-    expect(dppMock.dataContract.createFromObject).to.be.calledOnceWith(
-      dataContractFixture.toJSON(),
-    );
+    expect(handleAbciResponseErrorMock).to.not.be.called();
 
     expect(contractBinary).to.deep.equal(dataContractFixture.serialize());
 
-    expect(driveApiMock.fetchContract).to.be.calledOnceWith(id);
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {
@@ -80,52 +77,46 @@ describe('getDataContractHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('id is not specified');
-      expect(driveApiMock.fetchContract).to.be.not.called();
-      expect(dppMock.dataContract.createFromObject).to.be.not.called();
+      expect(driveStateRepositoryMock.fetchDataContract).to.be.not.called();
+      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 
-  it('should throw InvalidArgumentGrpcError if driveAPI throws RPCError with code -32602', async () => {
-    const code = -32602;
-    const message = 'message';
-    const data = {
-      data: 'some data',
-    };
-    const error = new RPCError(code, message, data);
+  it('should throw InvalidArgumentGrpcError if driveStateRepository throws AbciResponseError', async () => {
+    const code = 2;
+    const message = 'Some error';
+    const data = 42;
+    const abciResponseError = new AbciResponseError(code, { message, data });
 
-    driveApiMock.fetchContract.throws(error);
+    const handleError = new InvalidArgumentGrpcError('Another error');
+
+    handleAbciResponseErrorMock.throws(handleError);
+
+    driveStateRepositoryMock.fetchDataContract.throws(abciResponseError);
 
     try {
       await getDataContractHandler(call);
 
-      expect.fail('should throw InvalidArgumentGrpcError error');
+      expect.fail('should throw InvalidArgumentGrpcError');
     } catch (e) {
-      expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(message);
-      expect(e.getMetadata()).to.deep.equal(data);
-      expect(driveApiMock.fetchContract).to.be.calledOnceWith(id);
-      expect(dppMock.document.createFromObject).to.be.not.called();
+      expect(e).to.equal(handleError);
+      expect(handleAbciResponseErrorMock).to.be.calledOnceWith(abciResponseError);
     }
   });
 
-  it('should throw error if driveAPI throws RPCError with code not equal -32602', async () => {
-    const code = -32600;
-    const message = 'message';
-    const data = {
-      data: 'some data',
-    };
-    const error = new RPCError(code, message, data);
+  it('should throw error if driveStateRepository throws unknown error', async () => {
+    const message = 'Some error';
+    const abciResponseError = new Error(message);
 
-    driveApiMock.fetchContract.throws(error);
+    driveStateRepositoryMock.fetchDataContract.throws(abciResponseError);
 
     try {
       await getDataContractHandler(call);
 
       expect.fail('should throw error');
     } catch (e) {
-      expect(e).to.equal(error);
-      expect(driveApiMock.fetchContract).to.be.calledOnceWith(id);
-      expect(dppMock.document.createFromObject).to.be.not.called();
+      expect(e).to.equal(abciResponseError);
+      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 });

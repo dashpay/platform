@@ -10,16 +10,21 @@ const {
   ApplyStateTransitionResponse,
 } = require('@dashevo/dapi-grpc');
 
+const AbciResponseError = require('../../../errors/AbciResponseError');
+
 /**
- *
  * @param {jaysonClient} rpcClient
- * @param {handleAbciResponse} handleAbciResponse
+ * @param {handleAbciResponseError} handleAbciResponseError
+ *
  * @returns {applyStateTransitionHandler}
  */
-function applyStateTransitionHandlerFactory(rpcClient, handleAbciResponse) {
+function applyStateTransitionHandlerFactory(rpcClient, handleAbciResponseError) {
   /**
    * @typedef applyStateTransitionHandler
+   *
    * @param {Object} call
+   *
+   * @return {Promise<ApplyStateTransitionResponse>}
    */
   async function applyStateTransitionHandler(call) {
     const { request } = call;
@@ -42,9 +47,21 @@ function applyStateTransitionHandlerFactory(rpcClient, handleAbciResponse) {
 
     const { check_tx: checkTx, deliver_tx: deliverTx } = result;
 
-    handleAbciResponse(checkTx);
+    if (checkTx.code !== undefined && checkTx.code !== 0) {
+      const { error: abciError } = JSON.parse(checkTx.log);
 
-    handleAbciResponse(deliverTx);
+      handleAbciResponseError(
+        new AbciResponseError(checkTx.code, abciError),
+      );
+    }
+
+    if (deliverTx.code !== undefined && deliverTx.code !== 0) {
+      const { error: abciError } = JSON.parse(deliverTx.log);
+
+      handleAbciResponseError(
+        new AbciResponseError(deliverTx.code, abciError),
+      );
+    }
 
     return new ApplyStateTransitionResponse();
   }

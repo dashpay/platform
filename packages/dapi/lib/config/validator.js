@@ -45,8 +45,8 @@ function validateConfig(config) {
   validationResults.push(validatePort(config.dashcore.rpc.port, 'DASHCORE_RPC_PORT'));
   validationResults.push(validateHost(config.dashcore.zmq.host, 'DASHCORE_ZMQ_HOST'));
   validationResults.push(validatePort(config.dashcore.zmq.port, 'DASHCORE_ZMQ_PORT'));
-  validationResults.push(validateHost(config.drive.host, 'DRIVE_RPC_HOST'));
-  validationResults.push(validatePort(config.drive.port, 'DRIVE_RPC_PORT'));
+  validationResults.push(validateHost(config.tendermintCore.host, 'TENDERMINT_RPC_HOST'));
+  validationResults.push(validatePort(config.tendermintCore.port, 'TENDERMINT_RPC_PORT'));
   validationResults.push(validatePort(config.rpcServer.port.toString(), 'API_JSON_RPC_PORT'));
   validationResults.push(validatePort(config.grpcServer.port.toString(), 'API_GRPC_PORT'));
   validationResults.push(validatePort(config.txFilterStream.grpcServer.port.toString(), 'TX_FILTER_STREAM_GRPC_PORT'));

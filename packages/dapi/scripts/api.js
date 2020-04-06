@@ -13,8 +13,6 @@ const {
   getPlatformDefinition,
 } = require('@dashevo/dapi-grpc');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-
 const { client: RpcClient } = require('jayson/promise');
 
 // Load config from .env
@@ -24,7 +22,7 @@ const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
 const log = require('../lib/log');
 const rpcServer = require('../lib/rpcServer/server');
-const DriveAdapter = require('../lib/externalApis/driveAdapter');
+const DriveStateRepository = require('../lib/externalApis/drive/DriveStateRepository');
 const insightAPI = require('../lib/externalApis/insight');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 
@@ -36,10 +34,6 @@ const platformHandlersFactory = require(
 );
 
 async function main() {
-  const dpp = new DashPlatformProtocol({
-    dataProvider: undefined,
-  });
-
   /* Application start */
   const configValidationResult = validateConfig(config);
   if (!configValidationResult.isValid) {
@@ -49,9 +43,9 @@ async function main() {
   }
 
   log.info('Connecting to Drive');
-  const driveAPI = new DriveAdapter({
-    host: config.drive.host,
-    port: config.drive.port,
+  const driveStateRepository = new DriveStateRepository({
+    host: config.tendermintCore.host,
+    port: config.tendermintCore.port,
   });
 
   const rpcClient = RpcClient.http({
@@ -74,7 +68,7 @@ async function main() {
   log.info('Starting GRPC server');
 
   const coreHandlers = coreHandlersFactory(insightAPI);
-  const platformHandlers = platformHandlersFactory(rpcClient, driveAPI, dpp);
+  const platformHandlers = platformHandlersFactory(rpcClient, driveStateRepository);
 
   const grpcApiServer = createServer(getCoreDefinition(), coreHandlers);
 

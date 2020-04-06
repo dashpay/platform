@@ -16,7 +16,7 @@ module.exports = {
           host: '123',
         },
       },
-      drive: {
+      tendermintCore: {
         host: '123',
         port: '123',
       },

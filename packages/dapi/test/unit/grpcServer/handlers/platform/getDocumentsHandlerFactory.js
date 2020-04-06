@@ -12,8 +12,6 @@ const {
   GetDocumentsResponse,
 } = require('@dashevo/dapi-grpc');
 
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
@@ -22,12 +20,12 @@ const getDocumentsHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/platform/getDocumentsHandlerFactory',
 );
 
-const RPCError = require('../../../../../lib/rpcServer/RPCError');
+const AbciResponseError = require('../../../../../lib/errors/AbciResponseError');
 
 describe('getDocumentsHandlerFactory', () => {
   let call;
   let getDocumentsHandler;
-  let driveApiMock;
+  let driveStateRepositoryMock;
   let request;
   let documentsFixture;
   let dataContractId;
@@ -37,8 +35,8 @@ describe('getDocumentsHandlerFactory', () => {
   let limit;
   let startAfter;
   let startAt;
-  let dppMock;
-  let documentsJSONFixture;
+  let handleAbciResponseErrorMock;
+  let documentsSerialized;
 
   beforeEach(function beforeEach() {
     dataContractId = 'contractId';
@@ -65,16 +63,18 @@ describe('getDocumentsHandlerFactory', () => {
 
     documentsFixture = [document];
 
-    documentsJSONFixture = documentsFixture.map(documentItem => documentItem.toJSON());
+    documentsSerialized = documentsFixture.map(documentItem => documentItem.serialize());
 
-    driveApiMock = {
-      fetchDocuments: this.sinon.stub().resolves(documentsJSONFixture),
+    driveStateRepositoryMock = {
+      fetchDocuments: this.sinon.stub().resolves(documentsSerialized),
     };
 
-    dppMock = createDPPMock(this.sinon);
-    dppMock.document.createFromObject.returns(document);
+    handleAbciResponseErrorMock = this.sinon.stub();
 
-    getDocumentsHandler = getDocumentsHandlerFactory(driveApiMock, dppMock);
+    getDocumentsHandler = getDocumentsHandlerFactory(
+      driveStateRepositoryMock,
+      handleAbciResponseErrorMock,
+    );
   });
 
   it('should return valid result', async () => {
@@ -86,19 +86,20 @@ describe('getDocumentsHandlerFactory', () => {
     expect(documentsBinary).to.be.an('array');
     expect(documentsBinary).to.have.lengthOf(documentsFixture.length);
 
-    expect(dppMock.document.createFromObject).to.be.calledOnceWith(
-      documentsJSONFixture[0],
+    expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
+      dataContractId,
+      documentType,
+      {
+        where,
+        orderBy,
+        limit,
+        startAfter,
+        startAt: undefined,
+      },
     );
 
-    expect(driveApiMock.fetchDocuments).to.be.calledOnceWith(dataContractId, documentType, {
-      where,
-      orderBy,
-      limit,
-      startAfter,
-      startAt: undefined,
-    });
-
-    expect(documentsBinary[0]).to.deep.equal(documentsFixture[0].serialize());
+    expect(documentsBinary[0]).to.deep.equal(documentsSerialized[0]);
+    expect(handleAbciResponseErrorMock).to.be.not.called();
   });
 
   it('should throw InvalidArgumentGrpcError if dataContractId is not specified', async () => {
@@ -112,8 +113,8 @@ describe('getDocumentsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('dataContractId is not specified');
-      expect(driveApiMock.fetchDocuments).to.be.not.called();
-      expect(dppMock.document.createFromObject).to.be.not.called();
+      expect(driveStateRepositoryMock.fetchDocuments).to.be.not.called();
+      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 
@@ -128,72 +129,44 @@ describe('getDocumentsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('documentType is not specified');
-      expect(driveApiMock.fetchDocuments).to.be.not.called();
-      expect(dppMock.document.createFromObject).to.be.not.called();
+      expect(driveStateRepositoryMock.fetchDocuments).to.be.not.called();
+      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 
-  it('should throw InvalidArgumentGrpcError if driveAPI throws RPCError with code -32602', async () => {
-    const code = -32602;
-    const message = 'message';
-    const data = {
-      data: 'some data',
-    };
-    const error = new RPCError(code, message, data);
+  it('should throw InvalidArgumentGrpcError if fetchDocuments throws AbciResponseError', async () => {
+    const code = 2;
+    const message = 'Some error';
+    const data = 42;
+    const abciResponseError = new AbciResponseError(code, { message, data });
+    const handleError = new InvalidArgumentGrpcError('Another error');
 
-    driveApiMock.fetchDocuments.throws(error);
+    handleAbciResponseErrorMock.throws(handleError);
+
+    driveStateRepositoryMock.fetchDocuments.throws(abciResponseError);
 
     try {
       await getDocumentsHandler(call);
 
       expect.fail('should throw InvalidArgumentGrpcError error');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal(message);
-      expect(e.getMetadata()).to.deep.equal(data);
-      expect(driveApiMock.fetchDocuments).to.be.calledOnceWith(
-        dataContractId,
-        documentType,
-        {
-          where,
-          orderBy,
-          limit,
-          startAfter,
-          startAt: undefined,
-        },
-      );
-      expect(dppMock.document.createFromObject).to.be.not.called();
+      expect(e).to.equal(handleError);
+      expect(handleAbciResponseErrorMock).to.be.calledOnceWith(abciResponseError);
     }
   });
 
-  it('should throw error if driveAPI throws RPCError with code not equal -32602', async () => {
-    const code = -32600;
-    const message = 'message';
-    const data = {
-      data: 'some data',
-    };
-    const error = new RPCError(code, message, data);
+  it('should throw error if fetchDocuments throws unknown error', async () => {
+    const error = new Error('Some error');
 
-    driveApiMock.fetchDocuments.throws(error);
+    driveStateRepositoryMock.fetchDocuments.throws(error);
 
     try {
       await getDocumentsHandler(call);
 
-      expect.fail('should throw error');
+      expect.fail('should throw InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveApiMock.fetchDocuments).to.be.calledOnceWith(
-        dataContractId,
-        documentType,
-        {
-          where,
-          orderBy,
-          limit,
-          startAfter,
-          startAt: undefined,
-        },
-      );
-      expect(dppMock.document.createFromObject).to.be.not.called();
+      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 });

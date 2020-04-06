@@ -2,7 +2,6 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
-      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -11,18 +10,20 @@ const {
   GetDataContractResponse,
 } = require('@dashevo/dapi-grpc');
 
-const RPCError = require('../../../rpcServer/RPCError');
+const AbciResponseError = require('../../../errors/AbciResponseError');
 
 /**
+ * @param {DriveStateRepository} driveStateRepository
+ * @param {handleAbciResponseError} handleAbciResponseError
  *
- * @param {DriveAdapter} driveAPI
- * @param {DashPlatformProtocol} dpp
  * @returns {getDataContractHandler}
  */
-function getDataContractHandlerFactory(driveAPI, dpp) {
+function getDataContractHandlerFactory(driveStateRepository, handleAbciResponseError) {
   /**
    * @typedef getDataContractHandler
+   *
    * @param {Object} call
+   *
    * @returns {Promise<GetDocumentsResponse>}
    */
   async function getDataContractHandler(call) {
@@ -33,25 +34,19 @@ function getDataContractHandlerFactory(driveAPI, dpp) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
-    let dataContractJSON;
-
+    let dataContractBuffer;
     try {
-      dataContractJSON = await driveAPI.fetchContract(id);
+      dataContractBuffer = await driveStateRepository.fetchDataContract(id);
     } catch (e) {
-      if (e instanceof RPCError && e.code === -32602) {
-        throw new NotFoundGrpcError(e.message, e.data);
+      if (e instanceof AbciResponseError) {
+        handleAbciResponseError(e);
       }
-
       throw e;
     }
 
-    const dataContract = await dpp.dataContract.createFromObject(
-      dataContractJSON,
-      { skipValidation: true },
-    );
-
     const response = new GetDataContractResponse();
-    response.setDataContract(dataContract.serialize());
+
+    response.setDataContract(dataContractBuffer);
 
     return response;
   }

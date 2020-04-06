@@ -32,7 +32,7 @@ const {
 
 const log = require('../../../log');
 
-const handleAbciResponse = require('../handleAbciResponse');
+const handleAbciResponseError = require('../handleAbciResponseError');
 
 const getIdentityHandlerFactory = require(
   './getIdentityHandlerFactory',
@@ -49,17 +49,16 @@ const getDataContractHandlerFactory = require(
 
 /**
  * @param {jaysonClient} rpcClient
- * @param {DriveAdapter} driveAPI
- * @param {DashPlatformProtocol} dpp
+ * @param {DriveStateRepository} driveStateRepository
  * @returns {Object<string, function>}
  */
-function platformHandlersFactory(rpcClient, driveAPI, dpp) {
+function platformHandlersFactory(rpcClient, driveStateRepository) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
 
   // applyStateTransition
   const applyStateTransitionHandler = applyStateTransitionHandlerFactory(
     rpcClient,
-    handleAbciResponse,
+    handleAbciResponseError,
   );
 
   const wrappedApplyStateTransition = jsonToProtobufHandlerWrapper(
@@ -74,7 +73,9 @@ function platformHandlersFactory(rpcClient, driveAPI, dpp) {
   );
 
   // getIdentity
-  const getIdentityHandler = getIdentityHandlerFactory(rpcClient, handleAbciResponse);
+  const getIdentityHandler = getIdentityHandlerFactory(
+    driveStateRepository, handleAbciResponseError,
+  );
 
   const wrappedGetIdentity = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
@@ -88,7 +89,9 @@ function platformHandlersFactory(rpcClient, driveAPI, dpp) {
   );
 
   // getDocuments
-  const getDocumentsHandler = getDocumentsHandlerFactory(driveAPI, dpp);
+  const getDocumentsHandler = getDocumentsHandlerFactory(
+    driveStateRepository, handleAbciResponseError,
+  );
 
   const wrappedGetDocuments = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
@@ -101,9 +104,10 @@ function platformHandlersFactory(rpcClient, driveAPI, dpp) {
     wrapInErrorHandler(getDocumentsHandler),
   );
 
-
   // getDataContract
-  const getDataContractHandler = getDataContractHandlerFactory(driveAPI, dpp);
+  const getDataContractHandler = getDataContractHandlerFactory(
+    driveStateRepository, handleAbciResponseError,
+  );
 
   const wrappedGetDataContract = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(

@@ -10,27 +10,28 @@ const {
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
-const { convertSatoshiToCredits } = require(
-  '@dashevo/dpp/lib/identity/creditsConverter',
+const getDataContractFixture = require(
+  '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
 );
 
 const wait = require('../../../../../lib/utils/wait');
 
-describe('getIdentityHandlerFactory', function main() {
+describe('getDataContractHandlerFactory', function main() {
   this.timeout(200000);
 
   let removeDapi;
   let dapiClient;
   let dpp;
   let identityCreateTransition;
-  let identity;
+  let publicKeyId;
+  let dataContract;
 
   before(async () => {
     const {
       dapiCore,
       dashCore,
       remove,
-    } = await startDapi();
+    } = await startDapi({});
 
     removeDapi = remove;
 
@@ -53,8 +54,8 @@ describe('getIdentityHandlerFactory', function main() {
       .toString('base64');
 
     // eslint-disable-next-line no-underscore-dangle
-    const publicKeyHash = PublicKey.fromBuffer(Buffer.from(pubKeyBase, 'base64'))
-      ._getID();
+    const publicKeyHash = PublicKey.fromBuffer(Buffer.from(pubKeyBase, 'base64'))._getID();
+    publicKeyId = 1;
 
     await coreAPI.generateToAddress(500, addressString);
 
@@ -77,7 +78,7 @@ describe('getIdentityHandlerFactory', function main() {
 
     const outPoint = transaction.getOutPointBuffer(0);
 
-    identity = dpp.identity.create(
+    const identity = dpp.identity.create(
       outPoint,
       [publicKey],
     );
@@ -85,34 +86,42 @@ describe('getIdentityHandlerFactory', function main() {
     identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
     identityCreateTransition.signByPrivateKey(privateKey);
 
+    dataContract = getDataContractFixture(identityCreateTransition.getIdentityId());
+
+    const dataContractCreateTransition = dpp.dataContract.createStateTransition(dataContract);
+    dataContractCreateTransition.sign(identity.getPublicKeyById(publicKeyId), privateKey);
+
+    // Create Identity
     await dapiClient.applyStateTransition(identityCreateTransition);
+
+    // Create Data Contract
+    await dapiClient.applyStateTransition(dataContractCreateTransition);
   });
 
   after(async () => {
     await removeDapi();
   });
 
-  it('should fetch created identity', async () => {
-    const serializedIdentity = await dapiClient.getIdentity(
-      identityCreateTransition.getIdentityId(),
+  it('should fetch created data contract', async () => {
+    const serializedDataContract = await dapiClient.getDataContract(
+      dataContract.getId(),
     );
 
-    expect(serializedIdentity).to.be.not.null();
+    expect(serializedDataContract).to.be.not.null();
 
-    const receivedIdentity = dpp.identity.createFromSerialized(
-      serializedIdentity,
+    const receivedDataContract = await dpp.dataContract.createFromSerialized(
+      serializedDataContract,
       { skipValidation: true },
     );
 
-    expect({
-      ...identity.toJSON(),
-      balance: convertSatoshiToCredits(10000) - identityCreateTransition.calculateFee(),
-    }).to.deep.equal(receivedIdentity.toJSON());
+    expect(dataContract.toJSON()).to.deep.equal(receivedDataContract.toJSON());
   });
 
-  it('should respond with NOT_FOUND error if identity not found', async () => {
-    const serializedIdentity = await dapiClient.getIdentity('unknownId');
+  it('should respond with null if data contract not found', async () => {
+    const serializedDataContract = await dapiClient.getDataContract(
+      'unknownId',
+    );
 
-    expect(serializedIdentity).to.be.null();
+    expect(serializedDataContract).to.be.null();
   });
 });

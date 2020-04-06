@@ -12,18 +12,21 @@ const {
   GetDocumentsResponse,
 } = require('@dashevo/dapi-grpc');
 
-const RPCError = require('../../../rpcServer/RPCError');
+const AbciResponseError = require('../../../errors/AbciResponseError');
 
 /**
  *
- * @param {DriveAdapter} driveAPI
- * @param {DashPlatformProtocol} dpp
+ * @param {DriveStateRepository} driveStateRepository
+ * @param {handleAbciResponseError} handleAbciResponseError
+ *
  * @returns {getDocumentsHandler}
  */
-function getDocumentsHandlerFactory(driveAPI, dpp) {
+function getDocumentsHandlerFactory(driveStateRepository, handleAbciResponseError) {
   /**
    * @typedef getDocumentsHandler
+   *
    * @param {Object} call
+   *
    * @returns {Promise<GetDocumentsResponse>}
    */
   async function getDocumentsHandler(call) {
@@ -102,26 +105,21 @@ function getDocumentsHandlerFactory(driveAPI, dpp) {
       startAt,
     };
 
-    let documentsJSON;
+    let documentBuffers;
     try {
-      documentsJSON = await driveAPI.fetchDocuments(dataContractId, documentType, options);
+      documentBuffers = await driveStateRepository.fetchDocuments(
+        dataContractId, documentType, options,
+      );
     } catch (e) {
-      if (e instanceof RPCError && e.code === -32602) {
-        throw new InvalidArgumentGrpcError(e.message, e.data);
+      if (e instanceof AbciResponseError) {
+        handleAbciResponseError(e);
       }
-
       throw e;
     }
 
-    const documents = await Promise.all(
-      documentsJSON.map(documentJSON => dpp.document.createFromObject(
-        documentJSON,
-        { skipValidation: true },
-      )),
-    );
-
     const response = new GetDocumentsResponse();
-    response.setDocumentsList(documents.map(document => document.serialize()));
+
+    response.setDocumentsList(documentBuffers);
 
     return response;
   }

@@ -10,19 +10,22 @@ const {
   GetIdentityResponse,
 } = require('@dashevo/dapi-grpc');
 
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+
 const getIdentityHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityHandlerFactory');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
+const AbciResponseError = require('../../../../../lib/errors/AbciResponseError');
+
+
 describe('getIdentityHandlerFactory', () => {
   let call;
-  let rpcClientMock;
+  let driveStateRepositoryMock;
   let id;
-  let handleResponseMock;
+  let handleAbciResponseErrorMock;
   let getIdentityHandler;
-  let response;
-  let rpcResponse;
-  let hexId;
+  let identity;
 
   beforeEach(function beforeEach() {
     id = '5poV8Vdi27VksX2RAzAgXmjAh14y87JN2zLvyAwmepRK';
@@ -30,53 +33,27 @@ describe('getIdentityHandlerFactory', () => {
       getId: this.sinon.stub().returns(id),
     });
 
-    handleResponseMock = this.sinon.stub();
+    identity = getIdentityFixture();
 
-    const code = 0;
+    handleAbciResponseErrorMock = this.sinon.stub();
 
-    const log = JSON.stringify({
-      error: {
-        message: 'some message',
-        data: {
-          error: 'some data',
-        },
-      },
-    });
-
-    const value = Buffer.from('value');
-
-    response = {
-      value,
-      log,
-      code,
+    driveStateRepositoryMock = {
+      fetchIdentity: this.sinon.stub().resolves(identity.serialize()),
     };
 
-    rpcResponse = {
-      id: '',
-      jsonrpc: '2.0',
-      error: '',
-      result: {
-        response,
-      },
-    };
-
-    hexId = Buffer.from(id).toString('hex');
-
-    rpcClientMock = {
-      request: this.sinon.stub().resolves(rpcResponse),
-      getId: this.sinon.stub(),
-    };
-
-    getIdentityHandler = getIdentityHandlerFactory(rpcClientMock, handleResponseMock);
+    getIdentityHandler = getIdentityHandlerFactory(
+      driveStateRepositoryMock,
+      handleAbciResponseErrorMock,
+    );
   });
 
   it('should return valid result', async () => {
     const result = await getIdentityHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
-
-    expect(rpcClientMock.request).to.be.calledOnceWith('abci_query', { path: '/identity', data: hexId });
-    expect(handleResponseMock).to.be.calledOnceWith(response);
+    expect(result.getIdentity()).to.deep.equal(identity.serialize());
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
+    expect(handleAbciResponseErrorMock).to.not.be.called();
   });
 
   it('should throw an InvalidArgumentGrpcError if id is not specified', async () => {
@@ -89,14 +66,36 @@ describe('getIdentityHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('id is not specified');
-      expect(rpcClientMock.request).to.not.be.called();
-      expect(handleResponseMock).to.not.be.called();
+      expect(driveStateRepositoryMock.fetchIdentity).to.not.be.called();
+      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 
-  it('should throw an error when handleResponse throws an error', async () => {
-    const error = new Error();
-    handleResponseMock.throws(error);
+  it('should throw an error when fetchIdentity throws an AbciResponseError', async () => {
+    const code = 2;
+    const message = 'Some error';
+    const data = 42;
+    const abciResponseError = new AbciResponseError(code, { message, data });
+    const handleError = new InvalidArgumentGrpcError('Another error');
+
+    driveStateRepositoryMock.fetchIdentity.throws(abciResponseError);
+    handleAbciResponseErrorMock.throws(handleError);
+
+    try {
+      await getIdentityHandler(call);
+
+      expect.fail('should throw an error');
+    } catch (e) {
+      expect(e).to.equal(handleError);
+      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
+      expect(handleAbciResponseErrorMock).to.be.calledOnceWith(abciResponseError);
+    }
+  });
+
+  it('should throw an error when fetchIdentity throws unknown error', async () => {
+    const error = new Error('Unknown error');
+
+    driveStateRepositoryMock.fetchIdentity.throws(error);
 
     try {
       await getIdentityHandler(call);
@@ -104,7 +103,8 @@ describe('getIdentityHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(handleResponseMock).to.be.calledOnceWith(response);
+      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
+      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 });

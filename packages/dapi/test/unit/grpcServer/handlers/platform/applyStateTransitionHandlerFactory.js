@@ -27,7 +27,7 @@ describe('applyStateTransitionHandlerFactory', () => {
   let stateTransitionFixture;
   let log;
   let code;
-  let handleResponseMock;
+  let handleAbciResponseErrorMock;
 
   beforeEach(async function beforeEach() {
     const dpp = new DashPlatformProtocol();
@@ -67,11 +67,11 @@ describe('applyStateTransitionHandlerFactory', () => {
       request: this.sinon.stub().resolves(response),
     };
 
-    handleResponseMock = this.sinon.stub();
+    handleAbciResponseErrorMock = this.sinon.stub();
 
     applyStateTransitionHandler = applyStateTransitionHandlerFactory(
       rpcClientMock,
-      handleResponseMock,
+      handleAbciResponseErrorMock,
     );
   });
 
@@ -90,7 +90,7 @@ describe('applyStateTransitionHandlerFactory', () => {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('State Transition is not specified');
       expect(rpcClientMock.request).to.not.be.called();
-      expect(handleResponseMock).to.not.be.called();
+      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 
@@ -101,34 +101,43 @@ describe('applyStateTransitionHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(ApplyStateTransitionResponse);
     expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
-    expect(handleResponseMock).to.be.calledTwice();
-    expect(handleResponseMock).to.be.calledWith({ code, log });
+    expect(handleAbciResponseErrorMock).to.not.be.called();
   });
 
-  it('should throw error if handleResponseMock throws an error', async () => {
-    const error = new Error();
+  it('should throw error if checkTx.code !== 0', async () => {
+    const error = new InvalidArgumentGrpcError('Some error');
+    code = 2;
 
-    handleResponseMock.throws(error);
+    response.result.check_tx.code = code;
+
+    handleAbciResponseErrorMock.throws(error);
+
+    rpcClientMock.request.resolves(response);
 
     try {
       await applyStateTransitionHandler(call);
 
       expect.fail('InternalGrpcError was not thrown');
     } catch (e) {
-      expect(e).to.equal(error);
+      expect(e).to.be.equal(error);
     }
   });
+  it('should throw error if deliverTx.code !== 0', async () => {
+    const error = new InvalidArgumentGrpcError('Some error');
+    code = 2;
 
-  it('should throw an error when handleResponse throws an error', async () => {
-    const error = new Error();
-    handleResponseMock.throws(error);
+    response.result.deliver_tx.code = code;
+
+    handleAbciResponseErrorMock.throws(error);
+
+    rpcClientMock.request.resolves(response);
 
     try {
       await applyStateTransitionHandler(call);
 
-      expect.fail('should throw an error');
+      expect.fail('InternalGrpcError was not thrown');
     } catch (e) {
-      expect(e).to.equal(error);
+      expect(e).to.be.equal(error);
     }
   });
 
@@ -140,7 +149,6 @@ describe('applyStateTransitionHandlerFactory', () => {
     try {
       await applyStateTransitionHandler(call);
     } catch (e) {
-      expect(e).to.be.an.instanceOf(Error);
       expect(e.message).to.equal(error.message);
       expect(e.data).to.equal(error.data);
       expect(e.code).to.equal(error.code);

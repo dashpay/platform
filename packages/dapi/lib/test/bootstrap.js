@@ -7,14 +7,11 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
-const DriveApiOptions = require('@dashevo/dp-services-ctl/lib/services/drive/api/DriveApiOptions');
-const DriveUpdateStateOptions = require('@dashevo/dp-services-ctl/lib/services/drive/updateState/DriveUpdateStateOptions');
-
+const DriveAbciOptions = require('@dashevo/dp-services-ctl/lib/services/drive/abci/DriveAbciOptions');
 const DapiCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/core/DapiCoreOptions');
 const DapiTxFilterStreamOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/txFilterStream/DapiTxFilterStreamOptions');
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 const InsightApiOptions = require('@dashevo/dp-services-ctl/lib/services/insightApi/InsightApiOptions');
-const MachineOptions = require('@dashevo/dp-services-ctl/lib/services/machine/MachineOptions');
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -53,12 +50,7 @@ DapiCoreOptions.setDefaultCustomOptions(dapiOptions);
 DapiTxFilterStreamOptions.setDefaultCustomOptions(dapiOptions);
 
 if (process.env.SERVICE_IMAGE_DRIVE) {
-  DriveApiOptions.setDefaultCustomOptions({
-    container: {
-      image: process.env.SERVICE_IMAGE_DRIVE,
-    },
-  });
-  DriveUpdateStateOptions.setDefaultCustomOptions({
+  DriveAbciOptions.setDefaultCustomOptions({
     container: {
       image: process.env.SERVICE_IMAGE_DRIVE,
     },
@@ -77,14 +69,6 @@ if (process.env.SERVICE_IMAGE_INSIGHT) {
   InsightApiOptions.setDefaultCustomOptions({
     container: {
       image: process.env.SERVICE_IMAGE_INSIGHT,
-    },
-  });
-}
-
-if (process.env.SERVICE_IMAGE_MACHINE) {
-  MachineOptions.setDefaultCustomOptions({
-    container: {
-      image: process.env.SERVICE_IMAGE_MACHINE,
     },
   });
 }

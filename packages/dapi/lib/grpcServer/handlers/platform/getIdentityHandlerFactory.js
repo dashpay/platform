@@ -2,7 +2,6 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
-      NotFoundGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -11,16 +10,21 @@ const {
   GetIdentityResponse,
 } = require('@dashevo/dapi-grpc');
 
+const AbciResponseError = require('../../../errors/AbciResponseError');
+
 /**
+ * @param {DriveStateRepository} driveStateRepository
+ * @param {handleAbciResponseError} handleAbciResponseError
  *
- * @param {jaysonClient} rpcClient
- * @param {handleAbciResponse} handleAbciResponse
  * @returns {getIdentityHandler}
  */
-function getIdentityHandlerFactory(rpcClient, handleAbciResponse) {
+function getIdentityHandlerFactory(driveStateRepository, handleAbciResponseError) {
   /**
    * @typedef getIdentityHandler
+   *
    * @param {Object} call
+   *
+   * @return {Promise<GetIdentityResponse>}
    */
   async function getIdentityHandler(call) {
     const { request } = call;
@@ -31,29 +35,19 @@ function getIdentityHandlerFactory(rpcClient, handleAbciResponse) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
-    const path = '/identity';
-
-    const data = Buffer.from(id).toString('hex');
-
-    const { result, error: jsonRpcError } = await rpcClient.request('abci_query', { path, data });
-
-    if (jsonRpcError) {
-      const error = new Error();
-      Object.assign(error, jsonRpcError);
-
-      throw error;
-    }
-
-    handleAbciResponse(result.response);
-
-    const { response: { value: identityBase64 } } = result;
-    if (!identityBase64) {
-      throw new NotFoundGrpcError('Identity not found');
+    let identityBuffer;
+    try {
+      identityBuffer = await driveStateRepository.fetchIdentity(id);
+    } catch (e) {
+      if (e instanceof AbciResponseError) {
+        handleAbciResponseError(e);
+      }
+      throw e;
     }
 
     const response = new GetIdentityResponse();
 
-    response.setIdentity(identityBase64);
+    response.setIdentity(identityBuffer);
 
     return response;
   }

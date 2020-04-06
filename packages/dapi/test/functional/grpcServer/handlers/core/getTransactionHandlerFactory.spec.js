@@ -59,13 +59,11 @@ describe('getTransactionHandlerFactor', function main() {
     expect(receivedTx.toString('hex')).to.deep.equal(transaction.serialize());
   });
 
-  it('should respond with an invalid argument error if no transaction were found', async () => {
+  it('should respond with null if transaction was not found', async () => {
     const nonExistentId = Buffer.alloc(32).toString('hex');
-    try {
-      await dapiClient.getTransaction(nonExistentId);
-      expect.fail('Error was not thrown');
-    } catch (e) {
-      expect(e.message).to.equal('5 NOT_FOUND: Transaction not found');
-    }
+
+    const result = await dapiClient.getTransaction(nonExistentId);
+
+    expect(result).to.be.null();
   });
 });
