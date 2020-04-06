@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/drive",
-  "version": "0.12.0-dev.1",
+  "version": "0.12.0-dev.2",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -65,7 +65,7 @@
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.18.0",
     "@dashevo/dashd-rpc": "^2.0.0",
-    "@dashevo/dpp": "github:dashevo/js-dpp#v0.12-dev",
+    "@dashevo/dpp": "~0.12.0-dev.8",
     "abci": "^5.0.1",
     "ajv": "^6.10.0",
     "awilix": "^4.2.5",
