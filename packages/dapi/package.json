@@ -33,7 +33,7 @@
     "@dashevo/dapi-grpc": "~0.12.1",
     "@dashevo/dashcore-lib": "~0.18.0",
     "@dashevo/dashd-rpc": "^2.0.0",
-    "@dashevo/dpp": "github:dashevo/js-dpp#v0.12-dev",
+    "@dashevo/dpp": "~0.12.0-dev.7",
     "@dashevo/grpc-common": "~0.2.1",
     "ajv": "^6.4.0",
     "bs58": "^4.0.1",
