@@ -6,6 +6,7 @@ const {
       DeadlineExceededGrpcError,
       ResourceExhaustedGrpcError,
       NotFoundGrpcError,
+      FailedPreconditionGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -24,6 +25,8 @@ function handleAbciResponseError(error) {
       throw new ResourceExhaustedGrpcError(message, data);
     case 5: // EXECUTION_TIMED_OUT
       throw new DeadlineExceededGrpcError(message, data);
+    case 4: // INSUFFICIENT_FUNDS
+      throw new FailedPreconditionGrpcError(message, data);
     case 3: // NOT_FOUND
       throw new NotFoundGrpcError(message, data);
     case 2: // INVALID_ARGUMENT
