@@ -1,6 +1,7 @@
 const jsutil = require('@dashevo/dashcore-lib').util.js;
 const preconditionsUtil = require('@dashevo/dashcore-lib').util.preconditions;
 const cbor = require('cbor');
+
 const {
   CorePromiseClient,
   PlatformPromiseClient,
@@ -16,9 +17,7 @@ const {
   GetTransactionRequest,
   SendTransactionRequest,
 } = require('@dashevo/dapi-grpc');
-const {
-  ApplyStateTransitionResponse,
-} = require('@dashevo/dapi-grpc');
+
 const DPP = require('@dashevo/dpp');
 const MNDiscovery = require('./MNDiscovery/index');
 const rpcClient = require('./RPCClient');
@@ -34,14 +33,12 @@ class DAPIClient {
    * @param {number} [options.nativeGrpcPort=3010] - Native GRPC port for connection to the DAPI
    * @param {number} [options.timeout=2000] - timeout for connection to the DAPI
    * @param {number} [options.retries=3] - num of retries if there is no response from DAPI node
-   * @param {boolean} [options.forceJsonRpc] - use json rpc even when grpc endpoint is available
    */
   constructor(options = {}) {
     this.MNDiscovery = new MNDiscovery(options.seeds, options.port);
     this.DAPIPort = options.port || config.Api.port;
     this.nativeGrpcPort = options.nativeGrpcPort || config.grpc.nativePort;
     this.timeout = options.timeout || 2000;
-    this.forceJsonRpc = options.forceJsonRpc;
     preconditionsUtil.checkArgument(jsutil.isUnsignedInteger(this.timeout),
       'Expect timeout to be an unsigned integer');
     this.retries = options.retries ? options.retries : 3;
@@ -352,16 +349,10 @@ class DAPIClient {
   /**
    * Send State Transition to machine
    *
-   * @param {DataContractStateTransition|DocumentsStateTransition} stateTransition
+   * @param {AbstractStateTransition} stateTransition
    * @returns {Promise<!ApplyStateTransitionResponse>}
    */
   async applyStateTransition(stateTransition) {
-    if (this.forceJsonRpc) {
-      await this.makeRequestToRandomDAPINode('applyStateTransition', {
-        stateTransition: stateTransition.serialize().toString('base64'),
-      });
-      return new ApplyStateTransitionResponse();
-    }
     const applyStateTransitionRequest = new ApplyStateTransitionRequest();
     applyStateTransitionRequest.setStateTransition(stateTransition.serialize());
 
@@ -378,13 +369,6 @@ class DAPIClient {
    * @returns {Promise<!Buffer|null>}
    */
   async getIdentity(id) {
-    if (this.forceJsonRpc) {
-      const result = await this.makeRequestToRandomDAPINode('getIdentity', { id });
-      if (!result.identity) {
-        return null;
-      }
-      return Buffer.from(result.identity, 'base64');
-    }
     const getIdentityRequest = new GetIdentityRequest();
     getIdentityRequest.setId(id);
 
@@ -419,10 +403,6 @@ class DAPIClient {
    * @returns {Promise<Buffer>}
    */
   async getDataContract(contractId) {
-    if (this.forceJsonRpc) {
-      const result = await this.makeRequestToRandomDAPINode('getDataContract', { id: contractId });
-      return Buffer.from(result.dataContract, 'base64');
-    }
     const getDataContractRequest = new GetDataContractRequest();
 
     getDataContractRequest.setId(contractId);
@@ -482,20 +462,6 @@ class DAPIClient {
     let orderBySerialized;
     if (orderBy) {
       orderBySerialized = cbor.encode(orderBy);
-    }
-
-    if (this.forceJsonRpc) {
-      const result = await this.makeRequestToRandomDAPINode('getDocuments', {
-        dataContractId: contractId,
-        documentType: type,
-        ...options,
-      });
-      const docModels = await Promise.all(result.map(
-        (documentJson) => this.dpp.document.createFromObject(
-          documentJson, { skipValidation: true },
-        ),
-      ));
-      return docModels.map((document) => document.serialize());
     }
 
     const getDocumentsRequest = new GetDocumentsRequest();
