@@ -48,4 +48,21 @@ describe('handleAbciResponseError', () => {
       }
     });
   });
+
+  it('should throw DeadlineExceededGrpcError if internal timeout error have been received', () => {
+    try {
+      handleAbciResponseError(
+        new AbciResponseError(
+          1,
+          {
+            message: 'Internal error',
+            data: 'Timed out waiting for tx to be included in a block',
+          },
+        ),
+      );
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(DeadlineExceededGrpcError);
+      expect(e.getMessage()).to.equal('Timed out waiting for tx to be included in a block');
+    }
+  });
 });
