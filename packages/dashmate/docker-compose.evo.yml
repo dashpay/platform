@@ -25,10 +25,10 @@ services:
     volumes:
       - drive_leveldb:/usr/src/app/db
     environment:
-      - DASHCORE_JSON_RPC_USER=dashrpc
-      - DASHCORE_JSON_RPC_PASS=password
-      - DASHCORE_JSON_RPC_HOST=core
-      - DASHCORE_JSON_RPC_PORT=20002
+      - CORE_JSON_RPC_USERNAME=dashrpc
+      - CORE_JSON_RPC_PASSWORD=password
+      - CORE_JSON_RPC_HOST=core
+      - CORE_JSON_RPC_PORT=20002
       - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017
       - DPNS_CONTRACT_ID=${DPNS_CONTRACT_ID}
       - DPNS_TOP_LEVEL_IDENTITY=${DPNS_TOP_LEVEL_IDENTITY}
