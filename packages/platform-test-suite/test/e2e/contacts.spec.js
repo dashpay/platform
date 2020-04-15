@@ -1,6 +1,5 @@
 const DAPIClient = require('@dashevo/dapi-client');
 const DashPlatformProtocol = require('@dashevo/dpp');
-const Document = require('@dashevo/dpp/lib/document/Document');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
@@ -8,8 +7,9 @@ const { PrivateKey } = require('@dashevo/dashcore-lib');
 const createIdentity = require('../../lib/test/createIdentity');
 const throwGrpcErrorWithMetadata = require('../../lib/test/throwGrpcErrorWithMetadata');
 
-describe('Contacts app', () => {
-  const testTimeout = 600000;
+describe('Contacts', function contacts() {
+  this.timeout(150000);
+  this.retries(3);
 
   let dpp;
   let dataContract;
@@ -26,10 +26,10 @@ describe('Contacts app', () => {
 
   let dataContractDocumentSchemas;
 
-  let dataProvider;
+  let stateRepository;
 
   before(() => {
-    dataProvider = {
+    stateRepository = {
       dataContract: null,
       fetchDataContract() {
         return this.dataContract;
@@ -37,7 +37,7 @@ describe('Contacts app', () => {
     };
 
     dpp = new DashPlatformProtocol({
-      dataProvider,
+      stateRepository,
     });
 
     const seeds = process.env.DAPI_CLIENT_SEEDS
@@ -52,7 +52,7 @@ describe('Contacts app', () => {
     dataContractDocumentSchemas = {
       profile: {
         indices: [
-          { properties: [{ $userId: 'asc' }], unique: true },
+          { properties: [{ $ownerId: 'asc' }], unique: true },
         ],
         properties: {
           avatarUrl: {
@@ -70,7 +70,7 @@ describe('Contacts app', () => {
       },
       contact: {
         indices: [
-          { properties: [{ $userId: 'asc' }, { toUserId: 'asc' }], unique: true },
+          { properties: [{ $ownerId: 'asc' }, { toUserId: 'asc' }], unique: true },
         ],
         properties: {
           toUserId: {
@@ -87,51 +87,36 @@ describe('Contacts app', () => {
   });
 
   describe('Bob', () => {
-    it('should create user identity', async function it() {
-      this.timeout(70000);
-
+    it('should create user identity', async () => {
       bobPrivateKey = new PrivateKey();
 
       bobIdentity = await createIdentity(
+        dpp,
         dapiClient,
         bobPrivateKey,
-        Identity.TYPES.USER,
       );
 
       expect(bobIdentity).to.be.instanceOf(Identity);
     });
 
-    it('should register username');
-
-    it('should publish "Contacts" data contract', async function it() {
-      this.timeout(testTimeout);
-
-      // 1. Create Data Contract Identity
-      const dataContractPrivateKey = new PrivateKey();
-
-      const dataContractIdentity = await createIdentity(
-        dapiClient,
-        dataContractPrivateKey,
-        Identity.TYPES.APPLICATION,
-      );
-
-      // 2. Create Data Contract
+    it('should publish "Contacts" data contract', async () => {
+      // 1. Create Data Contract
       dataContract = dpp.dataContract.create(
-        dataContractIdentity.getId(),
+        bobIdentity.getId(),
         dataContractDocumentSchemas,
       );
 
       const result = await dpp.dataContract.validate(dataContract);
       expect(result.isValid(), 'Contract must be valid').to.be.true();
 
-      dataProvider.dataContract = dataContract;
+      stateRepository.dataContract = dataContract;
 
       // 3. Create State Transition
       const stateTransition = dpp.dataContract.createStateTransition(dataContract);
 
       stateTransition.sign(
-        dataContractIdentity.getPublicKeyById(1),
-        dataContractPrivateKey,
+        bobIdentity.getPublicKeyById(1),
+        bobPrivateKey,
       );
 
       // 4. Send State Transition
@@ -151,9 +136,7 @@ describe('Contacts app', () => {
       expect(actualDataContract.toJSON()).to.be.deep.equal(dataContract.toJSON());
     });
 
-    it('should create profile in "Contacts" app', async function it() {
-      this.timeout(testTimeout);
-
+    it('should create profile in "Contacts" app', async () => {
       // 1. Create profile
       const profile = dpp.document.create(dataContract, bobIdentity.getId(), 'profile', {
         avatarUrl: 'http://test.com/bob.jpg',
@@ -164,7 +147,9 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Profile must be valid').to.be.true();
 
       // 2. Create State Transition
-      const stateTransition = dpp.document.createStateTransition([profile]);
+      const stateTransition = dpp.document.createStateTransition({
+        create: [profile],
+      });
 
       stateTransition.sign(
         bobIdentity.getPublicKeyById(1),
@@ -194,25 +179,19 @@ describe('Contacts app', () => {
   });
 
   describe('Alice', () => {
-    it('should create user identity', async function it() {
-      this.timeout(70000);
-
+    it('should create user identity', async () => {
       alicePrivateKey = new PrivateKey();
 
       aliceIdentity = await createIdentity(
+        dpp,
         dapiClient,
         alicePrivateKey,
-        Identity.TYPES.USER,
       );
 
       expect(aliceIdentity).to.be.instanceOf(Identity);
     });
 
-    it('should register username');
-
-    it('should create profile in "Contacts" app', async function it() {
-      this.timeout(testTimeout);
-
+    it('should create profile in "Contacts" app', async () => {
       // 1. Create Profile
       aliceProfile = dpp.document.create(dataContract, aliceIdentity.getId(), 'profile', {
         avatarUrl: 'http://test.com/alice.jpg',
@@ -223,7 +202,9 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Profile must be valid').to.be.true();
 
       // 2. Create State Transition
-      const stateTransition = dpp.document.createStateTransition([aliceProfile]);
+      const stateTransition = dpp.document.createStateTransition({
+        create: [aliceProfile],
+      });
 
       stateTransition.sign(
         aliceIdentity.getPublicKeyById(1),
@@ -251,19 +232,17 @@ describe('Contacts app', () => {
       expect(actualAliceProfile.toJSON()).to.be.deep.equal(aliceProfile.toJSON());
     });
 
-    it('should be able to update her profile', async function it() {
-      this.timeout(testTimeout);
-
+    it('should be able to update her profile', async () => {
       // 1. Update profile document
-      aliceProfile.setAction(Document.ACTIONS.REPLACE);
-      aliceProfile.setRevision(2);
       aliceProfile.set('avatarUrl', 'http://test.com/alice2.jpg');
 
       const result = await dpp.document.validate(aliceProfile);
       expect(result.isValid(), 'Profile must be valid').to.be.true();
 
       // 2. Create State Transition
-      const stateTransition = dpp.document.createStateTransition([aliceProfile]);
+      const stateTransition = dpp.document.createStateTransition({
+        replace: [aliceProfile],
+      });
 
       stateTransition.sign(
         aliceIdentity.getPublicKeyById(1),
@@ -293,9 +272,7 @@ describe('Contacts app', () => {
   });
 
   describe('Bob', () => {
-    it('should be able to send contact request', async function it() {
-      this.timeout(testTimeout);
-
+    it('should be able to send contact request', async () => {
       // 1. Create contact document
       bobContactRequest = dpp.document.create(dataContract, bobIdentity.getId(), 'contact', {
         toUserId: aliceIdentity.getId(),
@@ -306,7 +283,9 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Contact request must be valid').to.be.true();
 
       // 2. Create State Transition
-      const stateTransition = dpp.document.createStateTransition([bobContactRequest]);
+      const stateTransition = dpp.document.createStateTransition({
+        create: [bobContactRequest],
+      });
 
       stateTransition.sign(
         bobIdentity.getPublicKeyById(1),
@@ -336,9 +315,7 @@ describe('Contacts app', () => {
   });
 
   describe('Alice', () => {
-    it('should be able to approve contact request', async function it() {
-      this.timeout(testTimeout);
-
+    it('should be able to approve contact request', async () => {
       // 1. Create approve contract
       aliceContactAcceptance = dpp.document.create(dataContract, aliceIdentity.getId(), 'contact', {
         toUserId: bobIdentity.getId(),
@@ -349,7 +326,9 @@ describe('Contacts app', () => {
       expect(result.isValid(), 'Contact acceptance must be valid').to.be.true();
 
       // 2. Create State Transition
-      const stateTransition = dpp.document.createStateTransition([aliceContactAcceptance]);
+      const stateTransition = dpp.document.createStateTransition({
+        create: [aliceContactAcceptance],
+      });
 
       stateTransition.sign(
         aliceIdentity.getPublicKeyById(1),
@@ -379,19 +358,11 @@ describe('Contacts app', () => {
       );
     });
 
-    it('should be able to remove contact approvement', async function it() {
-      this.timeout(testTimeout);
-
-      // 1. Remove contract approvement
-      aliceContactAcceptance.setData({});
-      aliceContactAcceptance.setAction(Document.ACTIONS.DELETE);
-      aliceContactAcceptance.setRevision(2);
-
-      const result = await dpp.document.validate(aliceContactAcceptance);
-      expect(result.isValid(), 'Contact acceptance must be valid').to.be.true();
-
-      // 2. Create State Transition
-      const stateTransition = dpp.document.createStateTransition([aliceContactAcceptance]);
+    it('should be able to remove contact approvement', async () => {
+      // 1. Create State Transition
+      const stateTransition = dpp.document.createStateTransition({
+        delete: [aliceContactAcceptance],
+      });
 
       stateTransition.sign(
         aliceIdentity.getPublicKeyById(1),

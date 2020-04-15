@@ -4,12 +4,6 @@ const {
   PublicKey,
 } = require('@dashevo/dashcore-lib');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-
-const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
-const IdentityCreateTransition = require('@dashevo/dpp/lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-
 const wait = require('../wait');
 
 /**
@@ -41,45 +35,12 @@ async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address)
 
 /**
  *
- * @param {DAPIClient} dapiClient
- * @param {string} outPoint
- * @param {number} type
- * @param {PrivateKey} privateKey
- * @param {IdentityPublicKey} identityPublicKey
- * @return {Promise<IdentityCreateTransition>}
- */
-async function applyIdentityCreateTransition(
-  dapiClient,
-  outPoint,
-  type,
-  privateKey,
-  identityPublicKey,
-) {
-  const identityCreateTransition = new IdentityCreateTransition({
-    protocolVersion: 0,
-    type: stateTransitionTypes.IDENTITY_CREATE,
-    lockedOutPoint: outPoint,
-    identityType: type,
-    publicKeys: [
-      identityPublicKey.toJSON(),
-    ],
-  });
-
-  identityCreateTransition.sign(identityPublicKey, privateKey);
-
-  await dapiClient.applyStateTransition(identityCreateTransition);
-
-  return identityCreateTransition;
-}
-
-/**
- *
+ * @param {DashPlatformProtocol} dpp
  * @param {DAPIClient} dapiClient
  * @param {PrivateKey} privateKey
- * @param {number} type
  * @return {Promise<Identity>}
  */
-async function createIdentity(dapiClient, privateKey, type) {
+async function createIdentity(dpp, dapiClient, privateKey) {
   const network = process.env.NETWORK === 'devnet' ? 'testnet' : process.env.NETWORK;
 
   // Prepare keys for a new Identity
@@ -91,11 +52,6 @@ async function createIdentity(dapiClient, privateKey, type) {
 
   // eslint-disable-next-line no-underscore-dangle
   const publicKeyHash = PublicKey.fromBuffer(Buffer.from(publicKeyBase, 'base64'))._getID();
-
-  const identityPublicKey = new IdentityPublicKey()
-    .setId(1)
-    .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
-    .setData(publicKeyBase);
 
   // Found and create a lock transaction
   const lockPrivateKey = new PrivateKey();
@@ -123,23 +79,19 @@ async function createIdentity(dapiClient, privateKey, type) {
   await dapiClient.generateToAddress(1, faucetAddress.toString());
   await wait(5000);
 
-  const outPoint = lockTransaction.getOutPointBuffer(0)
-    .toString('base64');
+  const outPoint = lockTransaction.getOutPointBuffer(0);
 
   // Apply Identity Create Transition
-  const identityCreateTransition = await applyIdentityCreateTransition(
-    dapiClient,
-    outPoint,
-    type,
-    privateKey,
-    identityPublicKey,
-  );
+  const identity = dpp.identity.create(outPoint, [publicKey]);
+
+  const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
+
+  identityCreateTransition.signByPrivateKey(privateKey);
+
+  await dapiClient.applyStateTransition(identityCreateTransition);
 
   // Get Identity back
   const identityBuffer = await dapiClient.getIdentity(identityCreateTransition.getIdentityId());
-
-  // Wrap into model
-  const dpp = new DashPlatformProtocol();
 
   return dpp.identity.createFromSerialized(identityBuffer);
 }
