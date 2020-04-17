@@ -2,23 +2,23 @@ const ConsensusError = require('./ConsensusError');
 
 class InvalidDocumentRevisionError extends ConsensusError {
   /**
-   * @param {Document} document
+   * @param {DocumentReplaceTransition} documentTransition
    * @param {Document} fetchedDocument
    */
-  constructor(document, fetchedDocument) {
+  constructor(documentTransition, fetchedDocument) {
     super('Invalid Document revision');
 
-    this.document = document;
+    this.documentTransition = documentTransition;
     this.fetchedDocument = fetchedDocument;
   }
 
   /**
-   * Get Document
+   * Get Document replace transition
    *
-   * @return {Document}
+   * @return {DocumentReplaceTransition}
    */
-  getDocument() {
-    return this.document;
+  getDocumentTransition() {
+    return this.documentTransition;
   }
 
   /**

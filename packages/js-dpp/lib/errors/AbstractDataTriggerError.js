@@ -7,13 +7,13 @@ class AbstractDataTriggerError extends ConsensusError {
   /**
    * @param {string} message
    * @param {DataContract} dataContract
-   * @param {string} userId
+   * @param {string} ownerId
    */
-  constructor(message, dataContract, userId) {
+  constructor(message, dataContract, ownerId) {
     super(message);
 
     this.dataContract = dataContract;
-    this.userId = userId;
+    this.ownerId = ownerId;
   }
 
   /**
@@ -26,12 +26,12 @@ class AbstractDataTriggerError extends ConsensusError {
   }
 
   /**
-   * Get data trigger user id
+   * Get data trigger owner id
    *
    * @return {string}
    */
-  getUserId() {
-    return this.userId;
+  getOwnerId() {
+    return this.ownerId;
   }
 }
 

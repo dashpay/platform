@@ -1,18 +1,19 @@
 /**
- * @param {DataProvider} dataProvider
+ * @param {StateRepository} stateRepository
  * @return {fetchDocuments}
  */
-function fetchDocumentsFactory(dataProvider) {
+function fetchDocumentsFactory(stateRepository) {
   /**
    * @typedef fetchDocuments
-   * @param {Document[]} documents
+   * @param {string} dataContractId
+   * @param {DocumentCreateTransition[]
+   *        |DocumentReplaceTransition[]
+   *        |DocumentDeleteTransition[]} documentTransitions
    * @return {Document[]}
    */
-  async function fetchDocuments(documents) {
-    const dataContractId = documents[0].getDataContractId();
-
+  async function fetchDocuments(dataContractId, documentTransitions) {
     // Group Document IDs by types
-    const documentIdsByTypes = documents.reduce((obj, document) => {
+    const documentIdsByTypes = documentTransitions.reduce((obj, document) => {
       if (!obj[document.getType()]) {
         // eslint-disable-next-line no-param-reassign
         obj[document.getType()] = [];
@@ -32,7 +33,7 @@ function fetchDocumentsFactory(dataProvider) {
         where: [['$id', 'in', ids]],
       };
 
-      return dataProvider.fetchDocuments(
+      return stateRepository.fetchDocuments(
         dataContractId,
         type,
         options,

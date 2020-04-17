@@ -16,10 +16,10 @@ class StateTransitionFactory {
   /**
    * Create State Transition from plain object
    *
-   * @param {RawDataContractStateTransition|RawDocumentsStateTransition} rawStateTransition
+   * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContractStateTransition|DocumentsStateTransition}
+   * @return {RawDataContractCreateTransition|DocumentsBatchTransition}
    */
   async createFromObject(rawStateTransition, options = {}) {
     const opts = { skipValidation: false, ...options };
@@ -41,7 +41,7 @@ class StateTransitionFactory {
    * @param {Buffer|string} payload
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
-   * @return {DataContractStateTransition|DocumentsStateTransition}
+   * @return {RawDataContractCreateTransition|DocumentsBatchTransition}
    */
   async createFromSerialized(payload, options = { }) {
     let rawStateTransition;

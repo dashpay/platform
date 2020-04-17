@@ -5,16 +5,15 @@ const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
 class DataContract {
   /**
-   * @param {string} contractId
-   * @param {Object<string, Object>} documents
+   * @param {RawDataContract} rawDataContract
    */
-  constructor(contractId, documents) {
-    this.contractId = contractId;
+  constructor(rawDataContract) {
+    this.id = rawDataContract.$id;
+    this.ownerId = rawDataContract.ownerId;
 
-    this.setVersion(DataContract.DEFAULTS.VERSION);
-    this.setJsonMetaSchema(DataContract.DEFAULTS.SCHEMA);
-    this.setDocuments(documents);
-    this.setDefinitions({});
+    this.setJsonMetaSchema(rawDataContract.$schema);
+    this.setDocuments(rawDataContract.documents);
+    this.setDefinitions(rawDataContract.definitions);
   }
 
   /**
@@ -23,7 +22,16 @@ class DataContract {
    * @return {string}
    */
   getId() {
-    return this.contractId;
+    return this.id;
+  }
+
+  /**
+   * Get owner id
+   *
+   * @return {string}
+   */
+  getOwnerId() {
+    return this.ownerId;
   }
 
   /**
@@ -33,27 +41,6 @@ class DataContract {
    */
   getJsonSchemaId() {
     return this.getId();
-  }
-
-  /**
-   * Set version
-   *
-   * @param {number} version
-   * @return {DataContract}
-   */
-  setVersion(version) {
-    this.version = version;
-
-    return this;
-  }
-
-  /**
-   * Get version
-   *
-   * @return {number}
-   */
-  getVersion() {
-    return this.version;
   }
 
   /**
@@ -165,15 +152,15 @@ class DataContract {
    */
   toJSON() {
     const json = {
+      $id: this.getId(),
       $schema: this.getJsonMetaSchema(),
-      contractId: this.getId(),
-      version: this.getVersion(),
+      ownerId: this.getOwnerId(),
       documents: this.getDocuments(),
     };
 
     const definitions = this.getDefinitions();
 
-    if (Object.getOwnPropertyNames(definitions).length) {
+    if (definitions && Object.getOwnPropertyNames(definitions).length) {
       json.definitions = definitions;
     }
 
@@ -197,13 +184,40 @@ class DataContract {
   hash() {
     return hash(this.serialize()).toString('hex');
   }
+
+  /**
+   * Set Data Contract entropy
+   *
+   * @param {string} entropy
+   * @return {DataContract}
+   */
+  setEntropy(entropy) {
+    this.entropy = entropy;
+
+    return this;
+  }
+
+  /**
+   * Get Data Contract entropy
+   *
+   * @return {string}
+   */
+  getEntropy() {
+    return this.entropy;
+  }
 }
 
+/**
+ * @typedef {Object} RawDataContract
+ * @property {string} $id
+ * @property {string} $schema
+ * @property {string} ownerId
+ * @property {Object<string, Object>} documents
+ * @property {Object<string, Object>|undefined} definitions
+ */
+
 DataContract.DEFAULTS = {
-  VERSION: 1,
   SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract',
 };
-
-DataContract.SCHEMA_ID = 'dataContract';
 
 module.exports = DataContract;

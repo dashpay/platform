@@ -2,7 +2,9 @@ const rewiremock = require('rewiremock/node');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const DataContractStateTransition = require('../../../lib/dataContract/stateTransition/DataContractStateTransition');
+const DataContract = require('../../../lib/dataContract/DataContract');
+
+const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
@@ -14,10 +16,11 @@ describe('DataContractFactory', () => {
   let DataContractFactory;
   let decodeMock;
   let validateDataContractMock;
-  let createDataContractMock;
+  let DataContractMock;
   let factory;
   let dataContract;
   let rawDataContract;
+  let entropyMock;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -25,7 +28,11 @@ describe('DataContractFactory', () => {
 
     decodeMock = this.sinonSandbox.stub();
     validateDataContractMock = this.sinonSandbox.stub();
-    createDataContractMock = this.sinonSandbox.stub().returns(dataContract);
+    DataContractMock = this.sinonSandbox.stub().returns(dataContract);
+    DataContractMock.DEFAULTS = DataContract.DEFAULTS;
+    entropyMock = {
+      generate: this.sinonSandbox.stub(),
+    };
 
     // Require Factory module for webpack
     // eslint-disable-next-line global-require
@@ -33,27 +40,32 @@ describe('DataContractFactory', () => {
 
     DataContractFactory = rewiremock.proxy('../../../lib/dataContract/DataContractFactory', {
       '../../../lib/util/serializer': { decode: decodeMock },
-      '../../../lib/dataContract/stateTransition/DataContractStateTransition': DataContractStateTransition,
+      '../../../lib/util/entropy': entropyMock,
+      '../../../lib/dataContract/stateTransition/DataContractCreateTransition': DataContractCreateTransition,
+      '../../../lib/dataContract/DataContract': DataContractMock,
     });
 
     factory = new DataContractFactory(
-      createDataContractMock,
       validateDataContractMock,
     );
   });
 
   describe('create', () => {
     it('should return new Data Contract with specified name and documents definition', () => {
+      entropyMock.generate.returns(dataContract.getEntropy());
       const result = factory.create(
-        rawDataContract.contractId,
+        rawDataContract.ownerId,
         rawDataContract.documents,
       );
 
       expect(result).to.equal(dataContract);
 
-      expect(createDataContractMock).to.have.been.calledOnceWith({
-        contractId: rawDataContract.contractId,
+      expect(DataContractMock).to.have.been.calledOnceWith({
+        $schema: DataContract.DEFAULTS.SCHEMA,
+        $id: rawDataContract.$id,
+        ownerId: rawDataContract.ownerId,
         documents: rawDataContract.documents,
+        definitions: {},
       });
     });
   });
@@ -68,7 +80,7 @@ describe('DataContractFactory', () => {
 
       expect(validateDataContractMock).to.have.been.calledOnceWith(rawDataContract);
 
-      expect(createDataContractMock).to.have.been.calledOnceWith(rawDataContract);
+      expect(DataContractMock).to.have.been.calledOnceWith(rawDataContract);
     });
 
     it('should return new Data Contract without validation if "skipValidation" option is passed', async () => {
@@ -78,7 +90,7 @@ describe('DataContractFactory', () => {
 
       expect(validateDataContractMock).to.have.not.been.called();
 
-      expect(createDataContractMock).to.have.been.calledOnceWith(rawDataContract);
+      expect(DataContractMock).to.have.been.calledOnceWith(rawDataContract);
     });
 
     it('should throw an error if passed object is not valid', async () => {
@@ -104,7 +116,7 @@ describe('DataContractFactory', () => {
 
       expect(validateDataContractMock).to.have.been.calledOnceWith(rawDataContract);
 
-      expect(createDataContractMock).to.have.not.been.called();
+      expect(DataContractMock).to.have.not.been.called();
     });
   });
 
@@ -152,11 +164,11 @@ describe('DataContractFactory', () => {
   });
 
   describe('createStateTransition', () => {
-    it('should return new DataContractStateTransition with passed DataContract', () => {
+    it('should return new DataContractCreateTransition with passed DataContract', () => {
       const result = factory.createStateTransition(dataContract);
 
-      expect(result).to.be.an.instanceOf(DataContractStateTransition);
-      expect(result.getDataContract()).to.equal(dataContract);
+      expect(result).to.be.an.instanceOf(DataContractCreateTransition);
+      expect(result.getDataContract().toJSON()).to.deep.equal(dataContract.toJSON());
     });
   });
 });

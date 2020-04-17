@@ -2,12 +2,10 @@ const ValidationResult = require('../../../validation/ValidationResult');
 const IdentityStateTransition = require('./IdentityCreateTransition');
 
 /**
- * @param {validateIdentityType} validateIdentityType
  * @param {validatePublicKeys} validatePublicKeys
  * @return {validateIdentityCreateST}
  */
 function validateIdentityCreateSTStructureFactory(
-  validateIdentityType,
   validatePublicKeys,
 ) {
   /**
@@ -25,10 +23,6 @@ function validateIdentityCreateSTStructureFactory(
     }
 
     const result = new ValidationResult();
-
-    result.merge(
-      validateIdentityType(rawIdentityStateTransition.identityType),
-    );
 
     result.merge(
       validatePublicKeys(rawIdentityStateTransition.publicKeys),

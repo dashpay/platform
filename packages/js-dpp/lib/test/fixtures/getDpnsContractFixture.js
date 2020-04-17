@@ -1,13 +1,14 @@
 const dpnsDocuments = require('@dashevo/dpns-contract/src/schema/dpns-documents');
-const DataContract = require('../../dataContract/DataContract');
+const DataContractFactory = require('../../dataContract/DataContractFactory');
 
 const generateRandomId = require('../utils/generateRandomId');
 
-const contractId = generateRandomId();
+const ownerId = generateRandomId();
 
 /**
  * @return {DataContract}
  */
 module.exports = function getDataContractFixture() {
-  return new DataContract(contractId, dpnsDocuments);
+  const factory = new DataContractFactory(() => {});
+  return factory.create(ownerId, dpnsDocuments);
 };

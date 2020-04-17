@@ -1,29 +1,30 @@
 const ConsensusError = require('./ConsensusError');
 
-const Document = require('../document/Document');
+const AbstractDocumentTransition = require('../document/stateTransition/documentTransition/AbstractDocumentTransition');
 
 class DocumentNotFoundError extends ConsensusError {
   /**
-   * @param {Document} document
+   * @param {DocumentReplaceTransition
+   *        |DocumentDeleteTransition} documentTransition
    */
-  constructor(document) {
+  constructor(documentTransition) {
     const noun = {
-      [Document.ACTIONS.REPLACE]: 'Updated',
-      [Document.ACTIONS.DELETE]: 'Deleted',
+      [AbstractDocumentTransition.ACTIONS.REPLACE]: 'Updated',
+      [AbstractDocumentTransition.ACTIONS.DELETE]: 'Deleted',
     };
 
-    super(`${noun[document.getAction()]} Document not found`);
+    super(`${noun[documentTransition.getAction()]} Document not found`);
 
-    this.document = document;
+    this.documentTransition = documentTransition;
   }
 
   /**
-   * Get Document
+   * Get Document Transition
    *
-   * @return {Document}
+   * @return {DocumentReplaceTransition|DocumentDeleteTransition}
    */
-  getDocument() {
-    return this.document;
+  getDocumentTransition() {
+    return this.documentTransition;
   }
 }
 

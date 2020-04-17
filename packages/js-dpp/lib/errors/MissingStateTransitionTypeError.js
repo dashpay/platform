@@ -10,7 +10,7 @@ class MissingStateTransitionTypeError extends ConsensusError {
   /**
    * Get raw State Transition
    *
-   * @return {RawDataContractStateTransition}
+   * @return {RawDataContractCreateTransition}
    */
   getRawStateTransition() {
     return this.rawStateTransition;

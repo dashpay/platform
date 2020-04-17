@@ -1,6 +1,6 @@
 const fetchAndValidateDataContractFactory = require('../../../lib/document/fetchAndValidateDataContractFactory');
 
-const createDataProviderMock = require('../../../lib/test/mocks/createDataProviderMock');
+const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
@@ -13,7 +13,7 @@ const DataContractNotPresentError = require('../../../lib/errors/DataContractNot
 const { expectValidationError } = require('../../../lib/test/expect/expectError');
 
 describe('fetchAndValidateDataContractFactory', () => {
-  let dataProviderMock;
+  let stateRepositoryMock;
   let fetchAndValidateDataContract;
   let document;
 
@@ -22,19 +22,19 @@ describe('fetchAndValidateDataContractFactory', () => {
 
     const dataContract = getDataContractFixture();
 
-    dataProviderMock = createDataProviderMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    dataProviderMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
     fetchAndValidateDataContract = fetchAndValidateDataContractFactory(
-      dataProviderMock,
+      stateRepositoryMock,
     );
   });
 
-  it('should return with invalid result if $contractId is not present', async () => {
+  it('should return with invalid result if $dataContractId is not present', async () => {
     const rawDocument = document.toJSON();
 
-    delete rawDocument.$contractId;
+    delete rawDocument.$dataContractId;
 
     const result = await fetchAndValidateDataContract(rawDocument);
 
@@ -46,7 +46,7 @@ describe('fetchAndValidateDataContractFactory', () => {
   });
 
   it('should return with invalid result if Data Contract is not present', async () => {
-    dataProviderMock.fetchDataContract.resolves(null);
+    stateRepositoryMock.fetchDataContract.resolves(null);
 
     const result = await fetchAndValidateDataContract(document);
 

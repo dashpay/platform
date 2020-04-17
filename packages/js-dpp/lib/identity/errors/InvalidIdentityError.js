@@ -7,7 +7,10 @@ class InvalidIdentityError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid Identity';
+    this.message = `Invalid Identity: "${errors[0].message}"`;
+    if (errors.length > 1) {
+      this.message = `${this.message} and ${errors.length - 1} more`;
+    }
 
     this.errors = errors;
     this.rawIdentity = rawIdentity;

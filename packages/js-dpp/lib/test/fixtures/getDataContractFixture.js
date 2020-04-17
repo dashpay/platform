@@ -1,13 +1,15 @@
 const generateRandomId = require('../utils/generateRandomId');
 
-const DataContract = require('../../dataContract/DataContract');
+const DataContractFactory = require('../../dataContract/DataContractFactory');
 
-const contractId = generateRandomId();
+const randomOwnerId = generateRandomId();
 
 /**
+ *
+ * @param {string} [ownerId]
  * @return {DataContract}
  */
-module.exports = function getDataContractFixture() {
+module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
   const documents = {
     niceDocument: {
       properties: {
@@ -30,14 +32,14 @@ module.exports = function getDataContractFixture() {
       indices: [
         {
           properties: [
-            { $userId: 'asc' },
+            { $ownerId: 'asc' },
             { firstName: 'desc' },
           ],
           unique: true,
         },
         {
           properties: [
-            { $userId: 'asc' },
+            { $ownerId: 'asc' },
             { lastName: 'desc' },
           ],
           unique: true,
@@ -62,7 +64,11 @@ module.exports = function getDataContractFixture() {
     },
   };
 
-  const dataContract = new DataContract(contractId, documents);
+  const factory = new DataContractFactory(
+    () => {},
+  );
+
+  const dataContract = factory.create(ownerId, documents);
 
   dataContract.setDefinitions({
     lastName: {

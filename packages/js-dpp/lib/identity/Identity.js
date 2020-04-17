@@ -8,10 +8,11 @@ class Identity {
    */
   constructor(rawIdentity = undefined) {
     this.publicKeys = [];
+    this.balance = 0;
 
     if (rawIdentity) {
       this.id = rawIdentity.id;
-      this.type = rawIdentity.type;
+      this.balance = rawIdentity.balance;
 
       if (rawIdentity.publicKeys) {
         this.setPublicKeys(
@@ -26,13 +27,6 @@ class Identity {
    */
   getId() {
     return this.id;
-  }
-
-  /**
-   * @return {number}
-   */
-  getType() {
-    return this.type;
   }
 
   /**
@@ -59,7 +53,7 @@ class Identity {
    * @return {IdentityPublicKey}
    */
   getPublicKeyById(keyId) {
-    return this.publicKeys.find((publicKey) => publicKey.getId() === keyId);
+    return this.publicKeys.find((k) => k.getId() === keyId);
   }
 
   /**
@@ -68,9 +62,9 @@ class Identity {
   toJSON() {
     return {
       id: this.getId(),
-      type: this.getType(),
       publicKeys: this.getPublicKeys()
         .map((publicKey) => publicKey.toJSON()),
+      balance: this.getBalance(),
     };
   }
 
@@ -88,15 +82,71 @@ class Identity {
     return hash(this.serialize())
       .toString('hex');
   }
+
+  /**
+   * Returns balance
+   * @returns {number}
+   */
+  getBalance() {
+    return this.balance;
+  }
+
+  /**
+   * Set Identity balance
+   *
+   * @param {number} balance
+   * @return {Identity}
+   */
+  setBalance(balance) {
+    this.balance = balance;
+
+    return this;
+  }
+
+  /**
+   * Increase balance
+   *
+   * @param {number} amount
+   * @return {Identity}
+   */
+  increaseBalance(amount) {
+    this.balance += amount;
+
+    return this.balance;
+  }
+
+  /**
+   * Reduce balance
+   *
+   * @param {number} amount
+   * @return {Identity}
+   */
+  reduceBalance(amount) {
+    this.balance -= amount;
+
+    return this.balance;
+  }
+
+  /**
+   * Set locked out point
+   *
+   * @param {Buffer} lockedOutPoint
+   * @return {Identity}
+   */
+  setLockedOutPoint(lockedOutPoint) {
+    this.lockedOutPoint = lockedOutPoint;
+
+    return this;
+  }
+
+  /**
+   * Get locked out point
+   *
+   * @return {Buffer}
+   */
+  getLockedOutPoint() {
+    return this.lockedOutPoint;
+  }
 }
-
-Identity.TYPES = {
-  USER: 1,
-  APPLICATION: 2,
-};
-
-Identity.MAX_RESERVED_TYPE = 32767;
-
-Identity.TYPES_ENUM = Object.values(Identity.TYPES);
 
 module.exports = Identity;

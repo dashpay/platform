@@ -1,13 +1,16 @@
 class InvalidStateTransitionError extends Error {
   /**
    * @param {ConsensusError[]} errors
-   * @param {RawDataContractStateTransition|RawDocumentsStateTransition} rawStateTransition
+   * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
    */
   constructor(errors, rawStateTransition) {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid State Transition';
+    this.message = `Invalid State Transition: "${errors[0].message}"`;
+    if (errors.length > 1) {
+      this.message = `${this.message} and ${errors.length - 1} more`;
+    }
 
     this.errors = errors;
     this.rawStateTransition = rawStateTransition;
@@ -29,7 +32,7 @@ class InvalidStateTransitionError extends Error {
   /**
    * Get raw State Transition
    *
-   * @return {RawDataContractStateTransition|RawDocumentsStateTransition}
+   * @return {RawDataContractCreateTransition|RawDocumentsBatchTransition}
    */
   getRawStateTransition() {
     return this.rawStateTransition;

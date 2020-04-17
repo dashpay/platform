@@ -8,7 +8,7 @@ const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTrig
 const { getParentDocumentFixture, getChildDocumentFixture } = require('../../../../lib/test/fixtures/getDpnsDocumentFixture');
 const getPreorderDocumentFixture = require('../../../../lib/test/fixtures/getPreorderDocumentFixture');
 const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsContractFixture');
-const createDataProviderMock = require('../../../../lib/test/mocks/createDataProviderMock');
+const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
 const multihash = require('../../../../lib/util/multihashDoubleSHA256');
 
@@ -19,7 +19,7 @@ describe('createDomainDataTrigger', () => {
   let childDocument;
   let preorderDocument;
   let context;
-  let dataProviderMock;
+  let stateRepositoryMock;
   let dataContract;
   let topLevelIdentity;
 
@@ -38,9 +38,9 @@ describe('createDomainDataTrigger', () => {
       Buffer.from(normalizedParentDomainName),
     ).toString('hex');
 
-    dataProviderMock = createDataProviderMock(this.sinonSandbox);
-    dataProviderMock.fetchDocuments.resolves([]);
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDocuments.resolves([]);
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         childDocument.getType(),
@@ -57,7 +57,7 @@ describe('createDomainDataTrigger', () => {
       saltedDomainHashBuffer,
     ).toString('hex');
 
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         'preorder',
@@ -65,21 +65,21 @@ describe('createDomainDataTrigger', () => {
       )
       .resolves([preorderDocument.toJSON()]);
 
-    dataProviderMock.fetchTransaction.resolves(null);
+    stateRepositoryMock.fetchTransaction.resolves(null);
 
-    dataProviderMock.fetchTransaction
+    stateRepositoryMock.fetchTransaction
       .withArgs(
         records.dashIdentity,
       )
       .resolves({ confirmations: 10 });
 
     context = new DataTriggerExecutionContext(
-      dataProviderMock,
+      stateRepositoryMock,
       records.dashIdentity,
       dataContract,
     );
 
-    topLevelIdentity = context.getUserId();
+    topLevelIdentity = context.getOwnerId();
   });
 
   it('should successfully execute if document is valid', async () => {
@@ -92,7 +92,7 @@ describe('createDomainDataTrigger', () => {
     childDocument = getChildDocumentFixture({
       nameHash: multihash.hash(Buffer.from('invalidHash')).toString('hex'),
     });
-    dataProviderMock.fetchTransaction
+    stateRepositoryMock.fetchTransaction
       .withArgs(
         childDocument.getData().records.dashIdentity,
       )
@@ -112,7 +112,7 @@ describe('createDomainDataTrigger', () => {
 
   it('should fail with invalid normalizedLabel', async () => {
     childDocument = getChildDocumentFixture({ normalizedLabel: childDocument.getData().label });
-    dataProviderMock.fetchTransaction
+    stateRepositoryMock.fetchTransaction
       .withArgs(
         childDocument.getData().records.dashIdentity,
       )
@@ -137,7 +137,7 @@ describe('createDomainDataTrigger', () => {
       normalizedParentDomainName: 'invalidname',
     });
 
-    dataProviderMock.fetchTransaction
+    stateRepositoryMock.fetchTransaction
       .withArgs(
         childDocument.getData().records.dashIdentity,
       )
@@ -154,7 +154,7 @@ describe('createDomainDataTrigger', () => {
     expect(error.message).to.equal('Can\'t find parent domain matching parent hash');
   });
 
-  it('should fail with invalid userId', async () => {
+  it('should fail with invalid ownerId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
         dashIdentity: 'invalidHash',
@@ -169,7 +169,7 @@ describe('createDomainDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('userId doesn\'t match dashIdentity');
+    expect(error.message).to.equal('ownerId doesn\'t match dashIdentity');
   });
 
   it('should fail with preorder document was not found', async () => {

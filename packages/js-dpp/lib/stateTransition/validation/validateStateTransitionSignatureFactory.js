@@ -7,23 +7,23 @@ const MissingPublicKeyError = require('../../errors/MissingPublicKeyError');
 /**
  * Validate state transition signature
  *
- * @param {DataProvider} dataProvider
+ * @param {StateRepository} stateRepository
  * @returns {validateStateTransitionSignature}
  */
-function validateStateTransitionSignatureFactory(dataProvider) {
+function validateStateTransitionSignatureFactory(stateRepository) {
   /**
    * @typedef validateStateTransitionSignature
    * @param {
-   * DataContractStateTransition|
-   * DocumentsStateTransition
+   * DataContractCreateTransition|
+   * DocumentsBatchTransition
    * } stateTransition
-   * @param {string} userId
+   * @param {string} ownerId
    * @returns {Promise<ValidationResult>}
    */
-  async function validateStateTransitionSignature(stateTransition, userId) {
+  async function validateStateTransitionSignature(stateTransition, ownerId) {
     const result = new ValidationResult();
 
-    const identity = await dataProvider.fetchIdentity(userId);
+    const identity = await stateRepository.fetchIdentity(ownerId);
 
     const publicKey = identity.getPublicKeyById(stateTransition.getSignaturePublicKeyId());
 

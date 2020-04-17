@@ -1,13 +1,15 @@
 class InvalidDocumentActionError extends Error {
   /**
-   * @param {Document} document
+   * @param {
+   *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
+   * } documentTransition
    */
-  constructor(document) {
+  constructor(documentTransition) {
     super();
 
     this.name = this.constructor.name;
-    this.message = `Invalid Document action ${document.getAction()}`;
-    this.document = document;
+    this.message = `Invalid Document action ${documentTransition.getAction()}`;
+    this.documentTransition = documentTransition;
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
@@ -15,12 +17,14 @@ class InvalidDocumentActionError extends Error {
   }
 
   /**
-   * Get Document
+   * Get Document transition
    *
-   * @return {Document}
+   * @return {
+   *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
+   * }
    */
-  getDocument() {
-    return this.document;
+  getDocumentTransition() {
+    return this.documentTransition;
   }
 }
 

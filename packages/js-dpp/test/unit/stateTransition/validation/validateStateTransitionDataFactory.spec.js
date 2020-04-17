@@ -8,7 +8,7 @@ const getDataContractFixture = require('../../../../lib/test/fixtures/getDataCon
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
-const DataContractStateTransition = require('../../../../lib/dataContract/stateTransition/DataContractStateTransition');
+const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition');
 
 const InvalidStateTransitionTypeError = require('../../../../lib/errors/InvalidStateTransitionTypeError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
@@ -21,7 +21,7 @@ describe('validateStateTransitionDataFactory', () => {
     validateDataContractSTDataMock = this.sinonSandbox.stub();
 
     validateStateTransitionData = validateStateTransitionDataFactory({
-      [stateTransitionTypes.DATA_CONTRACT]: validateDataContractSTDataMock,
+      [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractSTDataMock,
     });
   });
 
@@ -56,7 +56,10 @@ describe('validateStateTransitionDataFactory', () => {
     validateDataContractSTDataMock.resolves(dataContractResult);
 
     const dataContract = getDataContractFixture();
-    const stateTransition = new DataContractStateTransition(dataContract);
+    const stateTransition = new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
 
     const result = await validateStateTransitionData(stateTransition);
 
@@ -75,7 +78,10 @@ describe('validateStateTransitionDataFactory', () => {
     validateDataContractSTDataMock.resolves(dataContractResult);
 
     const dataContract = getDataContractFixture();
-    const stateTransition = new DataContractStateTransition(dataContract);
+    const stateTransition = new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
 
     const result = await validateStateTransitionData(stateTransition);
 

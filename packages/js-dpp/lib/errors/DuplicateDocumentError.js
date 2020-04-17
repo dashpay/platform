@@ -2,23 +2,23 @@ const ConsensusError = require('./ConsensusError');
 
 class DuplicateDocumentError extends ConsensusError {
   /**
-   * @param {Document} document
+   * @param {DocumentCreateTransition|DocumentReplaceTransition} documentTransition
    * @param {Object} indexDefinition
    */
-  constructor(document, indexDefinition) {
+  constructor(documentTransition, indexDefinition) {
     super('Duplicate Document found');
 
-    this.document = document;
+    this.documentTransition = documentTransition;
     this.indexDefinition = indexDefinition;
   }
 
   /**
-   * Get Document
+   * Get document action transition
    *
-   * @return {Document}
+   * @return {DocumentCreateTransition|DocumentReplaceTransition}
    */
-  getDocument() {
-    return this.document;
+  getDocumentTransition() {
+    return this.documentTransition;
   }
 
   /**

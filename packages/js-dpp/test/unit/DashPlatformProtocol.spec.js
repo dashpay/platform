@@ -3,19 +3,19 @@ const Ajv = require('ajv');
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
 const JsonSchemaValidator = require('../../lib/validation/JsonSchemaValidator');
 
-const createDataProviderMock = require('../../lib/test/mocks/createDataProviderMock');
+const createStateRepositoryMock = require('../../lib/test/mocks/createStateRepositoryMock');
 
 describe('DashPlatformProtocol', () => {
   let dpp;
-  let dataProviderMock;
+  let stateRepositoryMock;
   let jsonSchemaValidatorMock;
 
   beforeEach(function beforeEach() {
-    dataProviderMock = createDataProviderMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     jsonSchemaValidatorMock = {};
 
     dpp = new DashPlatformProtocol({
-      dataProvider: dataProviderMock,
+      stateRepository: stateRepositoryMock,
       jsonSchemaValidator: jsonSchemaValidatorMock,
     });
   });
@@ -31,11 +31,11 @@ describe('DashPlatformProtocol', () => {
     });
   });
 
-  describe('getDataProvider', () => {
-    it('should return DataProvider', () => {
-      const result = dpp.getDataProvider();
+  describe('getStateRepository', () => {
+    it('should return StateRepository', () => {
+      const result = dpp.getStateRepository();
 
-      expect(result).to.equal(dataProviderMock);
+      expect(result).to.equal(stateRepositoryMock);
     });
   });
 

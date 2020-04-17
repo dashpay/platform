@@ -1,9 +1,8 @@
-const bs58 = require('bs58');
 const rewiremock = require('rewiremock/node');
 
 const generateRandomId = require('../../../lib/test/utils/generateRandomId');
 
-const DataIsNotAllowedWithActionDeleteError = require('../../../lib/document/errors/DataIsNotAllowedWithActionDeleteError');
+const DocumentCreateTransition = require('../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition');
 
 describe('Document', () => {
   let lodashGetMock;
@@ -29,21 +28,35 @@ describe('Document', () => {
     });
 
     rawDocument = {
+      $id: 'D3AT6rBtyTqx3hXFckwtP81ncu49y5ndE7ot9JkuNSeB',
       $type: 'test',
-      $contractId: generateRandomId(),
-      $userId: generateRandomId(),
-      $entropy: 'ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgzh',
-      $rev: Document.DEFAULTS.REVISION,
+      $dataContractId: generateRandomId(),
+      $ownerId: generateRandomId(),
+      $revision: DocumentCreateTransition.INITIAL_REVISION,
     };
 
     document = new Document(rawDocument);
-
-    document.setAction(Document.DEFAULTS.ACTION);
   });
 
   describe('constructor', () => {
     beforeEach(function beforeEach() {
       Document.prototype.setData = this.sinonSandbox.stub();
+    });
+
+    it('should create Document with $id and data if present', () => {
+      const data = {
+        test: 1,
+      };
+
+      rawDocument = {
+        $id: 'id',
+        ...data,
+      };
+
+      document = new Document(rawDocument);
+
+      expect(document.id).to.equal(rawDocument.$id);
+      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with $type and data if present', () => {
@@ -62,51 +75,35 @@ describe('Document', () => {
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
-    it('should create Document with $contractId and data if present', () => {
+    it('should create Document with $dataContractId and data if present', () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $contractId: generateRandomId(),
+        $dataContractId: generateRandomId(),
         ...data,
       };
 
       document = new Document(rawDocument);
 
-      expect(document.contractId).to.equal(rawDocument.$contractId);
+      expect(document.dataContractId).to.equal(rawDocument.$dataContractId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
-    it('should create Document with $userId and data if present', () => {
+    it('should create Document with $ownerId and data if present', () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $userId: generateRandomId(),
+        $ownerId: generateRandomId(),
         ...data,
       };
 
       document = new Document(rawDocument);
 
-      expect(document.userId).to.equal(rawDocument.$userId);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
-    });
-
-    it('should create Document with $entropy and data if present', () => {
-      const data = {
-        test: 1,
-      };
-
-      rawDocument = {
-        $entropy: 'test',
-        ...data,
-      };
-
-      document = new Document(rawDocument);
-
-      expect(document.entropy).to.equal(rawDocument.$entropy);
+      expect(document.ownerId).to.equal(rawDocument.$ownerId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
@@ -125,43 +122,25 @@ describe('Document', () => {
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
-    it('should create Document with $rev and data if present', () => {
+    it('should create Document with $revision and data if present', () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $rev: 'test',
+        $revision: 'test',
         ...data,
       };
 
       document = new Document(rawDocument);
 
-      expect(document.revision).to.equal(rawDocument.$rev);
+      expect(document.revision).to.equal(rawDocument.$revision);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
   });
 
   describe('#getId', () => {
-    it('should calculate and return ID', () => {
-      const idBuffer = Buffer.from('123');
-      const id = bs58.encode(idBuffer);
-
-      hashMock.returns(idBuffer);
-
-      const actualId = document.getId();
-
-      expect(hashMock).to.have.been.calledOnceWith(
-        rawDocument.$contractId
-        + rawDocument.$userId
-        + rawDocument.$type
-        + rawDocument.$entropy,
-      );
-
-      expect(id).to.equal(actualId);
-    });
-
-    it('should return already calculated ID', () => {
+    it('should return ID', () => {
       const id = '123';
 
       document.id = id;
@@ -180,51 +159,20 @@ describe('Document', () => {
     });
   });
 
-  describe('#getUserId', () => {
-    it('should return $userId', () => {
-      expect(document.getUserId()).to.equal(rawDocument.$userId);
+  describe('#getOwnerId', () => {
+    it('should return $ownerId', () => {
+      expect(document.getOwnerId()).to.equal(rawDocument.$ownerId);
     });
   });
 
-  describe('#getContractId', () => {
-    it('should return $contractId', () => {
-      expect(document.getUserId()).to.equal(rawDocument.$userId);
-    });
-  });
-
-  describe('#setAction', () => {
-    it('should set $action', () => {
-      const result = document.setAction(Document.ACTIONS.DELETE);
-
-      expect(result).to.equal(document);
-
-      expect(document.action).to.equal(Document.ACTIONS.DELETE);
-    });
-
-    it('should throw an error if data is set and the $action is DELETE', () => {
-      document.data = {
-        test: 1,
-      };
-
-      try {
-        document.setAction(Document.ACTIONS.DELETE);
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(DataIsNotAllowedWithActionDeleteError);
-        expect(e.getDocument()).to.deep.equal(document);
-      }
-    });
-  });
-
-  describe('#getAction', () => {
-    it('should return $action', () => {
-      document.action = Document.ACTIONS.DELETE;
-
-      expect(document.getAction()).to.equal(Document.ACTIONS.DELETE);
+  describe('#getDataContractId', () => {
+    it('should return $dataContractId', () => {
+      expect(document.getOwnerId()).to.equal(rawDocument.$ownerId);
     });
   });
 
   describe('#setRevision', () => {
-    it('should set $rev', () => {
+    it('should set $revision', () => {
       const revision = 5;
 
       const result = document.setRevision(revision);
@@ -236,7 +184,7 @@ describe('Document', () => {
   });
 
   describe('#getRevision', () => {
-    it('should return $rev', () => {
+    it('should return $revision', () => {
       const revision = 5;
 
       document.revision = revision;
@@ -290,20 +238,6 @@ describe('Document', () => {
       expect(result).to.equal(document);
 
       expect(lodashSetMock).to.have.been.calledOnceWith(document.data, path, value);
-    });
-
-    it('should throw an error if $action is already set to DELETE', () => {
-      document.setAction(Document.ACTIONS.DELETE);
-
-      const path = 'test[0].$my';
-      const value = 2;
-
-      try {
-        document.set(path, value);
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(DataIsNotAllowedWithActionDeleteError);
-        expect(e.getDocument()).to.deep.equal(document);
-      }
     });
   });
 

@@ -1,3 +1,4 @@
+const AbstractDocumentTransition = require('../../../lib/document/stateTransition/documentTransition/AbstractDocumentTransition');
 const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
 const DataTriggerExecutionContext = require('../../../lib/dataTrigger/DataTriggerExecutionContext');
 const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
@@ -25,21 +26,21 @@ describe('DataTrigger', () => {
       dataContractMock,
     );
 
-    topLevelIdentity = context.getUserId();
+    topLevelIdentity = context.getOwnerId();
   });
 
   it('should check trigger fields', () => {
     const trigger = new DataTrigger(
       dataContractMock.getId(),
       document.getType(),
-      document.getAction(),
+      AbstractDocumentTransition.ACTIONS.CREATE,
       triggerStub,
       topLevelIdentity,
     );
 
     expect(trigger.dataContractId).to.equal(dataContractMock.getId());
     expect(trigger.documentType).to.equal(document.getType());
-    expect(trigger.documentAction).to.equal(document.getAction());
+    expect(trigger.transitionAction).to.equal(AbstractDocumentTransition.ACTIONS.CREATE);
     expect(trigger.trigger).to.equal(triggerStub);
     expect(trigger.topLevelIdentity).to.equal(topLevelIdentity);
   });
@@ -49,7 +50,7 @@ describe('DataTrigger', () => {
       const trigger = new DataTrigger(
         dataContractMock.getId(),
         document.getType(),
-        document.getAction(),
+        AbstractDocumentTransition.ACTIONS.CREATE,
         triggerStub,
         topLevelIdentity,
       );
@@ -71,7 +72,7 @@ describe('DataTrigger', () => {
       const trigger = new DataTrigger(
         dataContractMock.getId(),
         document.getType(),
-        document.getAction(),
+        AbstractDocumentTransition.ACTIONS.CREATE,
         triggerStub,
         topLevelIdentity,
       );
@@ -90,7 +91,7 @@ describe('DataTrigger', () => {
       const trigger = new DataTrigger(
         dataContractMock.getId(),
         document.getType(),
-        document.getAction(),
+        AbstractDocumentTransition.ACTIONS.CREATE,
         triggerStub,
         topLevelIdentity,
       );
@@ -108,7 +109,7 @@ describe('DataTrigger', () => {
       const trigger = new DataTrigger(
         dataContractMock.getId(),
         document.getType(),
-        document.getAction(),
+        AbstractDocumentTransition.ACTIONS.CREATE,
         triggerStub,
         topLevelIdentity,
       );

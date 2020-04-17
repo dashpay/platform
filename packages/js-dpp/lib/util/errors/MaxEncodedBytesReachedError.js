@@ -1,14 +1,16 @@
 class MaxEncodedBytesReachedError extends Error {
   /**
    * @param {*} payload
+   * @param {number} maxSizeKBytes
    */
-  constructor(payload) {
+  constructor(payload, maxSizeKBytes) {
     super();
 
-    this.message = 'Payload reached a 16Kb limit';
+    this.message = `Payload reached a ${maxSizeKBytes}Kb limit`;
     this.name = this.constructor.name;
 
     this.payload = payload;
+    this.maxSizeKBytes = maxSizeKBytes;
   }
 
   /**
@@ -16,6 +18,14 @@ class MaxEncodedBytesReachedError extends Error {
    */
   getPayload() {
     return this.payload;
+  }
+
+  /**
+   * Get max payload size
+   * @returns {number}
+   */
+  getMaxSizeKBytes() {
+    return this.maxSizeKBytes;
   }
 }
 

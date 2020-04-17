@@ -1,33 +1,47 @@
 const InvalidDataContractError = require('./errors/InvalidDataContractError');
 
-const DataContractStateTransition = require('./stateTransition/DataContractStateTransition');
+const DataContract = require('./DataContract');
+const generateDataContractId = require('./generateDataContractId');
+
+const DataContractCreateTransition = require('./stateTransition/DataContractCreateTransition');
 
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
+
+const entropy = require('../util/entropy');
 
 const { decode } = require('../util/serializer');
 
 class DataContractFactory {
   /**
-   * @param {createDataContract} createDataContract
    * @param {validateDataContract} validateDataContract
    */
-  constructor(createDataContract, validateDataContract) {
-    this.createDataContract = createDataContract;
+  constructor(validateDataContract) {
     this.validateDataContract = validateDataContract;
   }
 
   /**
    * Create Data Contract
    *
-   * @param {string} contractId
+   * @param {string} ownerId
    * @param {Object} documents
    * @return {DataContract}
    */
-  create(contractId, documents) {
-    return this.createDataContract({
-      contractId,
+  create(ownerId, documents) {
+    const dataContractEntropy = entropy.generate();
+
+    const dataContractId = generateDataContractId(ownerId, dataContractEntropy);
+
+    const dataContract = new DataContract({
+      $schema: DataContract.DEFAULTS.SCHEMA,
+      $id: dataContractId,
+      ownerId,
       documents,
+      definitions: {},
     });
+
+    dataContract.setEntropy(dataContractEntropy);
+
+    return dataContract;
   }
 
   /**
@@ -49,7 +63,7 @@ class DataContractFactory {
       }
     }
 
-    return this.createDataContract(rawDataContract);
+    return new DataContract(rawDataContract);
   }
 
   /**
@@ -80,10 +94,13 @@ class DataContractFactory {
    * Create Data Contract State Transition
    *
    * @param {DataContract} dataContract
-   * @return {DataContractStateTransition}
+   * @return {DataContractCreateTransition}
    */
   createStateTransition(dataContract) {
-    return new DataContractStateTransition(dataContract);
+    return new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
   }
 }
 

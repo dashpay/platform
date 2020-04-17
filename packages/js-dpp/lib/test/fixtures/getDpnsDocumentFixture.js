@@ -1,20 +1,16 @@
-const { Transaction, PrivateKey } = require('@dashevo/dashcore-lib');
-const entropy = require('../../../lib/util/entropy');
-const multihash = require('../../../lib/util/multihashDoubleSHA256');
+const entropy = require('../../util/entropy');
+const multihash = require('../../util/multihashDoubleSHA256');
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
+const generateRandomId = require('../utils/generateRandomId');
 
-const transaction = new Transaction().setType(Transaction.TYPES.TRANSACTION_SUBTX_REGISTER);
-transaction.extraPayload.setUserName('MyUser').setPubKeyIdFromPrivateKey(new PrivateKey());
-
-const userId = transaction.hash;
+const ownerId = generateRandomId();
+const dataContract = getDpnsContractFixture();
 
 /**
  * @return {Document}
  */
 function getParentDocumentFixture(options = {}) {
-  const dataContract = getDpnsContractFixture();
-
   const factory = new DocumentFactory(
     () => {},
     () => {},
@@ -30,20 +26,18 @@ function getParentDocumentFixture(options = {}) {
     normalizedParentDomainName: 'grandparent',
     preorderSalt: entropy.generate(),
     records: {
-      dashIdentity: transaction.hash,
+      dashIdentity: ownerId,
     },
     ...options,
   };
 
-  return factory.create(dataContract, userId, 'domain', data);
+  return factory.create(dataContract, ownerId, 'domain', data);
 }
 
 /**
  * @return {Document}
  */
 function getChildDocumentFixture(options = {}) {
-  const dataContract = getDpnsContractFixture();
-
   const factory = new DocumentFactory(
     () => {},
     () => {},
@@ -61,15 +55,17 @@ function getChildDocumentFixture(options = {}) {
     normalizedParentDomainName: parentDomainName,
     preorderSalt: entropy.generate(),
     records: {
-      dashIdentity: userId,
+      dashIdentity: ownerId,
     },
     ...options,
   };
 
-  return factory.create(dataContract, userId, 'domain', data);
+  return factory.create(dataContract, ownerId, 'domain', data);
 }
 
 module.exports = {
   getParentDocumentFixture,
   getChildDocumentFixture,
 };
+
+module.exports.dataContract = dataContract;

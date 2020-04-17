@@ -4,10 +4,10 @@ class DataTriggerInvalidResultError extends AbstractDataTriggerError {
   /**
    * @param {DataTrigger} dataTrigger
    * @param {DataContract} dataContract
-   * @param {string} userId
+   * @param {string} ownerId
    */
-  constructor(dataTrigger, dataContract, userId) {
-    super('Data trigger have not returned any result', dataContract, userId);
+  constructor(dataTrigger, dataContract, ownerId) {
+    super('Data trigger have not returned any result', dataContract, ownerId);
 
     this.dataTrigger = dataTrigger;
   }

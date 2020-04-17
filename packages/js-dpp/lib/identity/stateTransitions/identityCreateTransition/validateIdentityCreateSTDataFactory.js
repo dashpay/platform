@@ -3,10 +3,11 @@ const ValidationResult = require('../../../validation/ValidationResult');
 const IdentityAlreadyExistsError = require('../../../errors/IdentityAlreadyExistsError');
 
 /**
- * @param {DataProvider} dataProvider
+ * @param {StateRepository} stateRepository
+ * @param {validateLockTransaction} validateLockTransaction
  * @return {validateIdentityCreateSTData}
  */
-function validateIdentityCreateSTDataFactory(dataProvider) {
+function validateIdentityCreateSTDataFactory(stateRepository, validateLockTransaction) {
   /**
    *
    * Do we need to check that key ids are incremental?
@@ -26,13 +27,19 @@ function validateIdentityCreateSTDataFactory(dataProvider) {
 
     // Check if identity with such id already exists
     const identityId = identityCreateTransition.getIdentityId();
-    const identity = await dataProvider.fetchIdentity(identityId);
+    const identity = await stateRepository.fetchIdentity(identityId);
 
     if (identity) {
       result.addError(new IdentityAlreadyExistsError(identityCreateTransition));
     }
 
-    // TODO: Here we need to fetch lock transaction, extract pubkey from it and verify signature
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      await validateLockTransaction(identityCreateTransition),
+    );
 
     return result;
   }

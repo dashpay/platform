@@ -6,28 +6,33 @@ const ValidationResult = require('../../validation/ValidationResult');
 
 const MissingStateTransitionTypeError = require('../../errors/MissingStateTransitionTypeError');
 const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransitionTypeError');
+const StateTransitionMaxSizeExceededError = require('../../errors/StateTransitionMaxSizeExceededError');
+const MaxEncodedBytesReachedError = require('../../util/errors/MaxEncodedBytesReachedError');
 
-const baseSchema = require('../../../schema/stateTransition/base');
+const baseSchema = require('../../../schema/stateTransition/stateTransitionBase');
 
 /**
  * @param {JsonSchemaValidator} validator
  * @param {Object.<number, {validationFunction: Function, schema: Object}>} typeExtensions
+ * @param {createStateTransition} createStateTransition
  * @return {validateStateTransitionStructure}
  */
-function validateStateTransitionStructureFactory(validator, typeExtensions) {
+function validateStateTransitionStructureFactory(validator, typeExtensions, createStateTransition) {
   /**
    * @typedef validateStateTransitionStructure
    * @param {
-   * RawDataContractStateTransition
-   * |DataContractStateTransition
-   * |RawDocumentsStateTransition|
-   * DocumentsStateTransition} stateTransition
+   * RawDataContractCreateTransition
+   * |DataContractCreateTransition
+   * |RawDocumentsBatchTransition|
+   * DocumentsBatchTransition} stateTransition
    */
   async function validateStateTransitionStructure(stateTransition) {
     let rawStateTransition;
+    let stateTransitionModel;
 
     if (stateTransition instanceof AbstractStateTransition) {
       rawStateTransition = stateTransition.toJSON();
+      stateTransitionModel = stateTransition;
     } else {
       rawStateTransition = stateTransition;
     }
@@ -70,6 +75,26 @@ function validateStateTransitionStructureFactory(validator, typeExtensions) {
     result.merge(
       await validationFunction(rawStateTransition),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (!stateTransitionModel) {
+      stateTransitionModel = createStateTransition(rawStateTransition);
+    }
+
+    try {
+      stateTransitionModel.serialize();
+    } catch (e) {
+      if (e instanceof MaxEncodedBytesReachedError) {
+        result.addError(
+          new StateTransitionMaxSizeExceededError(rawStateTransition, e.getMaxSizeKBytes()),
+        );
+      } else {
+        throw e;
+      }
+    }
 
     return result;
   }

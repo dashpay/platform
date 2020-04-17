@@ -1,4 +1,4 @@
-const Document = require('../document/Document');
+const AbstractDocumentTransition = require('../document/stateTransition/documentTransition/AbstractDocumentTransition');
 
 const DataTrigger = require('./DataTrigger');
 
@@ -16,21 +16,21 @@ function getDataTriggersFactory() {
     new DataTrigger(
       process.env.DPNS_CONTRACT_ID,
       'domain',
-      Document.ACTIONS.CREATE,
+      AbstractDocumentTransition.ACTIONS.CREATE,
       createDomainDataTrigger,
       process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
     new DataTrigger(
       process.env.DPNS_CONTRACT_ID,
       'domain',
-      Document.ACTIONS.REPLACE,
+      AbstractDocumentTransition.ACTIONS.REPLACE,
       updateDomainDataTrigger,
       process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
     new DataTrigger(
       process.env.DPNS_CONTRACT_ID,
       'domain',
-      Document.ACTIONS.DELETE,
+      AbstractDocumentTransition.ACTIONS.DELETE,
       deleteDomainDataTrigger,
       process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
@@ -43,16 +43,16 @@ function getDataTriggersFactory() {
    *
    * @param {string} dataContractId
    * @param {string} documentType
-   * @param {number} documentAction
+   * @param {number} transitionAction
    *
    * @returns {DataTrigger[]}
    */
-  function getDataTriggers(dataContractId, documentType, documentAction) {
+  function getDataTriggers(dataContractId, documentType, transitionAction) {
     return dataTriggers.filter(
       (dataTrigger) => dataTrigger.isMatchingTriggerForData(
         dataContractId,
         documentType,
-        documentAction,
+        transitionAction,
       ),
     );
   }

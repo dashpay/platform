@@ -2,23 +2,23 @@ const ConsensusError = require('./ConsensusError');
 
 class DocumentAlreadyPresentError extends ConsensusError {
   /**
-   * @param {Document} document
+   * @param {DocumentCreateTransition} documentTransition
    * @param {Document} fetchedDocument
    */
-  constructor(document, fetchedDocument) {
+  constructor(documentTransition, fetchedDocument) {
     super('Document with the same ID is already present');
 
-    this.document = document;
+    this.documentTransition = documentTransition;
     this.fetchedDocument = fetchedDocument;
   }
 
   /**
-   * Get Document
+   * Get document create transition
    *
-   * @return {Document}
+   * @return {DocumentCreateTransition}
    */
-  getDocument() {
-    return this.document;
+  getDocumentTransition() {
+    return this.documentTransition;
   }
 
   /**

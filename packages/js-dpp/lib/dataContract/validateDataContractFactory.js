@@ -3,32 +3,29 @@ const ValidationResult = require('../validation/ValidationResult');
 
 const DataContract = require('./DataContract');
 
+const baseDocumentSchema = require('../../schema/document/documentBase');
+
 const DuplicateIndexError = require('../errors/DuplicateIndexError');
 const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyError');
 const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
 const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReachedError');
-const DataContractMaxByteSizeExceededError = require('../errors/DataContractMaxByteSizeExceededError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
-const { encode } = require('../util/serializer');
-
-const systemProperties = ['$id', '$userId'];
+const systemProperties = ['$id', '$ownerId'];
 const prebuiltIndices = ['$id'];
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validateDataContractMaxDepth} validateDataContractMaxDepth
- * @param {enrichDataContractWithBaseDocument} enrichDataContractWithBaseDocument
- * @param {createDataContract} createDataContract
+ * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
  * @return {validateDataContract}
  */
 module.exports = function validateDataContractFactory(
   jsonSchemaValidator,
   validateDataContractMaxDepth,
-  enrichDataContractWithBaseDocument,
-  createDataContract,
+  enrichDataContractWithBaseSchema,
 ) {
   /**
    * @typedef validateDataContract
@@ -41,17 +38,6 @@ module.exports = function validateDataContractFactory(
       : dataContract;
 
     const result = new ValidationResult();
-
-    // Validate Data Contract size
-    const serializedDataContract = encode(rawDataContract);
-    const serializedDataContractByteSize = Buffer.byteLength(serializedDataContract);
-
-    if (serializedDataContractByteSize > DataContractMaxByteSizeExceededError.MAX_SIZE) {
-      result.addError(
-        new DataContractMaxByteSizeExceededError(rawDataContract),
-      );
-      return result;
-    }
 
     // Validate Data Contract schema
     result.merge(
@@ -70,10 +56,11 @@ module.exports = function validateDataContractFactory(
     );
 
     // Validate Document JSON Schemas
-    const enrichedRawDataContract = enrichDataContractWithBaseDocument(
+    const enrichedRawDataContract = enrichDataContractWithBaseSchema(
       dataContract,
+      baseDocumentSchema,
     );
-    const enrichedDataContract = createDataContract(enrichedRawDataContract);
+    const enrichedDataContract = new DataContract(enrichedRawDataContract);
 
     Object.keys(enrichedRawDataContract.documents).forEach((documentType) => {
       const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(documentType);

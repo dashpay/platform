@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "type": "object",
+  "properties": {
+    "$id": {
+      "type": "string",
+      "minLength": 42,
+      "maxLength": 44,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+    },
+    "$type": {
+      "type": "string"
+    },
+    "$action": {
+      "type": "integer",
+      "enum": [0, 1, 3]
+    },
+    "$dataContractId": {
+      "type": "string",
+      "minLength": 42,
+      "maxLength": 44,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+    }
+  },
+  "required": [
+    "$id",
+    "$type",
+    "$action",
+    "$dataContractId"
+  ],
+  "additionalProperties": false
+}

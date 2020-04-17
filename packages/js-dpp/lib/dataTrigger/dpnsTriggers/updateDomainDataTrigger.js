@@ -16,7 +16,7 @@ async function updateDomainDataTrigger(document, context) {
     new DataTriggerConditionError(
       document,
       context.getDataContract(),
-      context.getUserId(),
+      context.getOwnerId(),
       'Update action is not allowed',
     ),
   );

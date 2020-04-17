@@ -1,49 +1,32 @@
 const Document = require('./Document');
-
-const documentBaseSchema = require('../../schema/base/document');
+const baseDocumentSchema = require('../../schema/document/documentBase');
 
 const ValidationResult = require('../validation/ValidationResult');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const MissingDocumentTypeError = require('../errors/MissingDocumentTypeError');
-const InvalidDocumentEntropyError = require('../errors/InvalidDocumentEntropyError');
 const MismatchDocumentContractIdAndDataContractError = require('../errors/MismatchDocumentContractIdAndDataContractError');
-
-const entropy = require('../util/entropy');
 
 /**
  * @param {JsonSchemaValidator} validator
- * @param {enrichDataContractWithBaseDocument} enrichDataContractWithBaseDocument
+ * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
  * @return {validateDocument}
  */
 module.exports = function validateDocumentFactory(
   validator,
-  enrichDataContractWithBaseDocument,
+  enrichDataContractWithBaseSchema,
 ) {
   /**
    * @typedef validateDocument
    * @param {Document|RawDocument} document
    * @param {DataContract} dataContract
-   * @param {Object} [options]
-   * @param {boolean} [options.action]
    * @return {ValidationResult}
    */
-  function validateDocument(document, dataContract, options = { }) {
+  function validateDocument(document, dataContract) {
     /**
      * @type {RawDocument}
      */
-    let rawDocument;
-    let { action } = options;
-
-    if (document instanceof Document) {
-      rawDocument = document.toJSON();
-
-      if (action === undefined) {
-        action = document.getAction();
-      }
-    } else {
-      rawDocument = document;
-    }
+    const rawDocument = (document instanceof Document) ? document.toJSON() : document;
 
     const result = new ValidationResult();
 
@@ -63,44 +46,30 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    if (action === Document.ACTIONS.DELETE) {
-      const schemaValidationResult = validator.validate(
-        documentBaseSchema,
-        rawDocument,
-      );
+    const documentSchemaRef = dataContract.getDocumentSchemaRef(rawDocument.$type);
 
-      result.merge(schemaValidationResult);
-    } else {
-      const documentSchemaRef = dataContract.getDocumentSchemaRef(rawDocument.$type);
+    const enrichedDataContract = enrichDataContractWithBaseSchema(
+      dataContract,
+      baseDocumentSchema,
+    );
 
-      const enrichedDataContract = enrichDataContractWithBaseDocument(
-        dataContract,
-      );
+    const additionalSchemas = {
+      [dataContract.getJsonSchemaId()]: enrichedDataContract,
+    };
 
-      const additionalSchemas = {
-        [dataContract.getJsonSchemaId()]: enrichedDataContract,
-      };
-
-      const schemaValidationResult = validator.validate(
+    result.merge(
+      validator.validate(
         documentSchemaRef,
         rawDocument,
         additionalSchemas,
-      );
-
-      result.merge(schemaValidationResult);
-    }
-
-    if (!entropy.validate(rawDocument.$entropy)) {
-      result.addError(
-        new InvalidDocumentEntropyError(rawDocument),
-      );
-    }
+      ),
+    );
 
     if (!result.isValid()) {
       return result;
     }
 
-    if (rawDocument.$contractId !== dataContract.getId()) {
+    if (rawDocument.$dataContractId !== dataContract.getId()) {
       result.addError(
         new MismatchDocumentContractIdAndDataContractError(rawDocument, dataContract),
       );

@@ -1,5 +1,5 @@
 const Ajv = require('ajv');
-const $RefParser = require('json-schema-ref-parser');
+const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
 const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator');
 
@@ -7,8 +7,7 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const validateDataContractFactory = require('../../../lib/dataContract/validateDataContractFactory');
 const validateDataContractMaxDepthFactory = require('../../../lib/dataContract/stateTransition/validation/validateDataContractMaxDepthFactory');
-const enrichDataContractWithBaseDocument = require('../../../lib/dataContract/enrichDataContractWithBaseDocument');
-const createDataContract = require('../../../lib/dataContract/createDataContract');
+const enrichDataContractWithBaseSchema = require('../../../lib/dataContract/enrichDataContractWithBaseSchema');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
@@ -19,14 +18,15 @@ const UndefinedIndexPropertyError = require('../../../lib/errors/UndefinedIndexP
 const InvalidIndexPropertyTypeError = require('../../../lib/errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../../../lib/errors/SystemPropertyIndexAlreadyPresentError');
 const UniqueIndicesLimitReachedError = require('../../../lib/errors/UniqueIndicesLimitReachedError');
-const DataContractMaxByteSizeExceededError = require('../../../lib/errors/DataContractMaxByteSizeExceededError');
 
 describe('validateDataContractFactory', () => {
+  let dataContract;
   let rawDataContract;
   let validateDataContract;
 
   beforeEach(() => {
-    rawDataContract = getDataContractFixture().toJSON();
+    dataContract = getDataContractFixture();
+    rawDataContract = dataContract.toJSON();
 
     const ajv = new Ajv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
@@ -36,8 +36,7 @@ describe('validateDataContractFactory', () => {
     validateDataContract = validateDataContractFactory(
       jsonSchemaValidator,
       validateDataContractMaxDepth,
-      enrichDataContractWithBaseDocument,
-      createDataContract,
+      enrichDataContractWithBaseSchema,
     );
   });
 
@@ -83,9 +82,9 @@ describe('validateDataContractFactory', () => {
     });
   });
 
-  describe('contractId', () => {
+  describe('ownerId', () => {
     it('should be present', async () => {
-      delete rawDataContract.contractId;
+      delete rawDataContract.ownerId;
 
       const result = await validateDataContract(rawDataContract);
 
@@ -95,11 +94,11 @@ describe('validateDataContractFactory', () => {
 
       expect(error.dataPath).to.equal('');
       expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('contractId');
+      expect(error.params.missingProperty).to.equal('ownerId');
     });
 
     it('should be a string', async () => {
-      rawDataContract.contractId = 1;
+      rawDataContract.ownerId = 1;
 
       const result = await validateDataContract(rawDataContract);
 
@@ -107,12 +106,12 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.contractId');
+      expect(error.dataPath).to.equal('.ownerId');
       expect(error.keyword).to.equal('type');
     });
 
     it('should be no less than 42 chars', async () => {
-      rawDataContract.contractId = '1'.repeat(41);
+      rawDataContract.ownerId = '1'.repeat(41);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -120,12 +119,12 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.contractId');
+      expect(error.dataPath).to.equal('.ownerId');
       expect(error.keyword).to.equal('minLength');
     });
 
     it('should be no longer than 44 chars', async () => {
-      rawDataContract.contractId = '1'.repeat(45);
+      rawDataContract.ownerId = '1'.repeat(45);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -133,12 +132,12 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.contractId');
+      expect(error.dataPath).to.equal('.ownerId');
       expect(error.keyword).to.equal('maxLength');
     });
 
     it('should be base58 encoded', async () => {
-      rawDataContract.contractId = '&'.repeat(44);
+      rawDataContract.ownerId = '&'.repeat(44);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -147,13 +146,13 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('pattern');
-      expect(error.dataPath).to.equal('.contractId');
+      expect(error.dataPath).to.equal('.ownerId');
     });
   });
 
-  describe('version', () => {
+  describe('$id', () => {
     it('should be present', async () => {
-      delete rawDataContract.version;
+      delete rawDataContract.$id;
 
       const result = await validateDataContract(rawDataContract);
 
@@ -163,11 +162,11 @@ describe('validateDataContractFactory', () => {
 
       expect(error.dataPath).to.equal('');
       expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('version');
+      expect(error.params.missingProperty).to.equal('$id');
     });
 
-    it('should be a number', async () => {
-      rawDataContract.version = 'wrong';
+    it('should be a string', async () => {
+      rawDataContract.$id = 1;
 
       const result = await validateDataContract(rawDataContract);
 
@@ -175,12 +174,12 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.version');
+      expect(error.dataPath).to.equal('.$id');
       expect(error.keyword).to.equal('type');
     });
 
-    it('should be an integer', async () => {
-      rawDataContract.version = 1.2;
+    it('should be no less than 42 chars', async () => {
+      rawDataContract.$id = '1'.repeat(41);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -188,12 +187,12 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.version');
-      expect(error.keyword).to.equal('multipleOf');
+      expect(error.dataPath).to.equal('.$id');
+      expect(error.keyword).to.equal('minLength');
     });
 
-    it('should be greater or equal to one', async () => {
-      rawDataContract.version = 0;
+    it('should be no longer than 44 chars', async () => {
+      rawDataContract.$id = '1'.repeat(45);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -201,8 +200,21 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.version');
-      expect(error.keyword).to.equal('minimum');
+      expect(error.dataPath).to.equal('.$id');
+      expect(error.keyword).to.equal('maxLength');
+    });
+
+    it('should be base58 encoded', async () => {
+      rawDataContract.$id = '&'.repeat(44);
+
+      const result = await validateDataContract(rawDataContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.keyword).to.equal('pattern');
+      expect(error.dataPath).to.equal('.$id');
     });
   });
 
@@ -1172,7 +1184,7 @@ describe('validateDataContractFactory', () => {
 
           it('should have property values only "asc" or "desc"', async () => {
             rawDataContract.documents.indexedDocument.indices[0]
-              .properties[0].$userId = 'wrong';
+              .properties[0].$ownerId = 'wrong';
 
             const result = await validateDataContract(rawDataContract);
 
@@ -1181,7 +1193,7 @@ describe('validateDataContractFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal(
-              '.documents[\'indexedDocument\'].indices[0].properties[0][\'$userId\']',
+              '.documents[\'indexedDocument\'].indices[0].properties[0][\'$ownerId\']',
             );
             expect(error.keyword).to.equal('enum');
           });
@@ -1419,21 +1431,6 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
     });
-  });
-
-  it('should return an invalid result if data contract byte size is bigger than 15 Kb', async () => {
-    const hugeDataContract = {};
-    for (let i = 0; i < 2200; i++) {
-      hugeDataContract[i] = i;
-    }
-
-    const result = await validateDataContract(hugeDataContract);
-
-    expectValidationError(result, DataContractMaxByteSizeExceededError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getDataContract()).to.deep.equal(hugeDataContract);
   });
 
   it('should return invalid result with circular $ref pointer', async () => {

@@ -1,17 +1,16 @@
 const bs58 = require('bs58');
 
 const hash = require('../../../util/hash');
-const AbstractIdentityStateTransition = require('../AbstractIdentityStateTransition');
+const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
-const Identity = require('../../Identity');
 const IdentityPublicKey = require('../../IdentityPublicKey');
 
-class IdentityCreateTransition extends AbstractIdentityStateTransition {
+class IdentityCreateTransition extends AbstractStateTransition {
   /**
    * @param {RawIdentityCreateTransition} [rawIdentityCreateTransition]
    */
   constructor(rawIdentityCreateTransition) {
-    super();
+    super(rawIdentityCreateTransition);
 
     this.publicKeys = [];
 
@@ -24,7 +23,6 @@ class IdentityCreateTransition extends AbstractIdentityStateTransition {
       }
 
       this
-        .setIdentityType(rawIdentityCreateTransition.identityType)
         .setLockedOutPoint(rawIdentityCreateTransition.lockedOutPoint);
     }
   }
@@ -62,25 +60,6 @@ class IdentityCreateTransition extends AbstractIdentityStateTransition {
   }
 
   /**
-   * Sets the identity type.
-   * For more info please check identity documentation
-   * @param {number} identityType
-   * @return {IdentityCreateTransition}
-   */
-  setIdentityType(identityType) {
-    this.identityType = identityType;
-
-    return this;
-  }
-
-  /**
-   * @return {number}
-   */
-  getIdentityType() {
-    return this.identityType;
-  }
-
-  /**
    * @return {IdentityPublicKey[]}
    */
   getPublicKeys() {
@@ -110,11 +89,20 @@ class IdentityCreateTransition extends AbstractIdentityStateTransition {
   }
 
   /**
-   * Returns base64 representation of the future identity id
+   * Returns base58 representation of the future identity id
    *
    * @return {string}
    */
   getIdentityId() {
+    return this.identityId;
+  }
+
+  /**
+   * Returns Owner ID
+   *
+   * @return {string}
+   */
+  getOwnerId() {
     return this.identityId;
   }
 
@@ -127,14 +115,11 @@ class IdentityCreateTransition extends AbstractIdentityStateTransition {
   toJSON(options) {
     return {
       ...super.toJSON(options),
-      identityType: this.getIdentityType(),
       lockedOutPoint: this.getLockedOutPoint(),
       publicKeys: this.getPublicKeys()
         .map((publicKey) => publicKey.toJSON()),
     };
   }
 }
-
-IdentityCreateTransition.IdentityTypes = Identity.TYPES;
 
 module.exports = IdentityCreateTransition;

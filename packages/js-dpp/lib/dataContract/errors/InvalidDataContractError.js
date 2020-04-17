@@ -7,7 +7,10 @@ class InvalidDataContractError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid Data Contract';
+    this.message = `Invalid Data Contract: "${errors[0].message}"`;
+    if (errors.length > 1) {
+      this.message = `${this.message} and ${errors.length - 1} more`;
+    }
 
     this.errors = errors;
     this.rawDataContract = rawDataContract;

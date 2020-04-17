@@ -1,44 +1,48 @@
 const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const fetchDocumentsByDocumentsFactory = require('../../../../../lib/document/stateTransition/validation/data/fetchDocumentsFactory');
+const fetchDocumentsFactory = require('../../../../../lib/document/stateTransition/validation/data/fetchDocumentsFactory');
 
-const createDataProviderMock = require('../../../../../lib/test/mocks/createDataProviderMock');
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
-  let dataProviderMock;
+  let stateRepositoryMock;
+  let documentTransitions;
   let documents;
   let dataContract;
 
   beforeEach(function beforeEach() {
-    dataProviderMock = createDataProviderMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    fetchDocuments = fetchDocumentsByDocumentsFactory(dataProviderMock);
+    fetchDocuments = fetchDocumentsFactory(stateRepositoryMock);
 
     documents = getDocumentsFixture();
-    dataContract = getContractFixture();
+    documentTransitions = getDocumentTransitionsFixture({
+      create: documents,
+    });
+    dataContract = getDocumentsFixture.dataContract;
   });
 
-  it('should fetch specified Documents using DataProvider', async () => {
-    dataProviderMock.fetchDocuments.withArgs(
+  it('should fetch specified Documents using StateRepository', async () => {
+    stateRepositoryMock.fetchDocuments.withArgs(
       dataContract.getId(),
-      documents[0].getType(),
+      documentTransitions[0].getType(),
     ).resolves([documents[0]]);
 
-    dataProviderMock.fetchDocuments.withArgs(
+    stateRepositoryMock.fetchDocuments.withArgs(
       dataContract.getId(),
-      documents[1].getType(),
+      documentTransitions[1].getType(),
     ).resolves([documents[1], documents[2]]);
 
-    dataProviderMock.fetchDocuments.withArgs(
+    stateRepositoryMock.fetchDocuments.withArgs(
       dataContract.getId(),
-      documents[3].getType(),
+      documentTransitions[3].getType(),
     ).resolves([documents[3], documents[4]]);
 
-    const fetchedDocuments = await fetchDocuments(documents);
+    const fetchedDocuments = await fetchDocuments(dataContract.getId(), documentTransitions);
 
-    expect(dataProviderMock.fetchDocuments).to.have.been.calledThrice();
+    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
 
     const callArgsOne = [
       dataContract.getId(),
@@ -77,8 +81,8 @@ describe('fetchDocumentsFactory', () => {
     ];
 
     const callsArgs = [];
-    for (let i = 0; i < dataProviderMock.fetchDocuments.callCount; i++) {
-      const call = dataProviderMock.fetchDocuments.getCall(i);
+    for (let i = 0; i < stateRepositoryMock.fetchDocuments.callCount; i++) {
+      const call = stateRepositoryMock.fetchDocuments.getCall(i);
       callsArgs.push(call.args);
     }
 

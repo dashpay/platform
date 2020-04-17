@@ -2,25 +2,29 @@ const ValidationResult = require('../../../../validation/ValidationResult');
 const DuplicateDocumentError = require('../../../../errors/DuplicateDocumentError');
 
 /**
- * @param {DataProvider} dataProvider
+ * @param {StateRepository} stateRepository
  * @return {validateDocumentsUniquenessByIndices}
  */
-function validateDocumentsUniquenessByIndicesFactory(dataProvider) {
+function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
   /**
    * @typedef validateDocumentsUniquenessByIndices
-   * @param {Document[]} documents
+   * @param {string} ownerId
+   * @param {DocumentCreateTransition[]
+   *         |DocumentReplaceTransition[]} documentTransitions
    * @param {DataContract} dataContract
    * @return {ValidationResult}
    */
-  async function validateDocumentsUniquenessByIndices(documents, dataContract) {
+  async function validateDocumentsUniquenessByIndices(
+    ownerId,
+    documentTransitions,
+    dataContract,
+  ) {
     const result = new ValidationResult();
 
-    const userId = documents[0].getUserId();
-
     // 1. Prepare fetchDocuments queries from indexed properties
-    const documentIndexQueries = documents
-      .reduce((queries, document) => {
-        const documentSchema = dataContract.getDocumentSchema(document.getType());
+    const documentIndexQueries = documentTransitions
+      .reduce((queries, documentTransition) => {
+        const documentSchema = dataContract.getDocumentSchema(documentTransition.getType());
 
         if (!documentSchema.indices) {
           return queries;
@@ -34,19 +38,19 @@ function validateDocumentsUniquenessByIndicesFactory(dataProvider) {
                 const propertyName = Object.keys(property)[0];
 
                 let propertyValue;
-                if (propertyName === '$userId') {
-                  propertyValue = userId;
+                if (propertyName === '$ownerId') {
+                  propertyValue = ownerId;
                 } else {
-                  propertyValue = document.get(propertyName);
+                  propertyValue = documentTransition.getData()[propertyName];
                 }
 
                 return [propertyName, '==', propertyValue];
               });
 
             queries.push({
-              type: document.getType(),
+              type: documentTransition.getType(),
               indexDefinition,
-              originDocument: document,
+              documentTransition,
               where,
             });
           });
@@ -60,33 +64,33 @@ function validateDocumentsUniquenessByIndicesFactory(dataProvider) {
         type,
         where,
         indexDefinition,
-        originDocument,
+        documentTransition,
       }) => (
-        dataProvider.fetchDocuments(
+        stateRepository.fetchDocuments(
           dataContract.getId(),
           type,
           { where },
         )
           .then((doc) => Object.assign(doc, {
             indexDefinition,
-            originDocument,
+            documentTransition,
           }))
       ));
 
-    const fetchedRawDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
+    const fetchedDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
 
     // 3. Create errors if duplicates found
-    fetchedRawDocumentsByIndices
+    fetchedDocumentsByIndices
       .filter((docs) => {
         const isEmpty = docs.length === 0;
         const onlyOriginDocument = docs.length === 1
-          && docs[0].getId() === docs.originDocument.getId();
+          && docs[0].getId() === docs.documentTransition.getId();
 
         return !isEmpty && !onlyOriginDocument;
       }).forEach((rawDocuments) => {
         result.addError(
           new DuplicateDocumentError(
-            rawDocuments.originDocument,
+            rawDocuments.documentTransition,
             rawDocuments.indexDefinition,
           ),
         );

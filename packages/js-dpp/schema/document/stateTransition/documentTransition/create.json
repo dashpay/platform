@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "type": "object",
+  "properties": {
+    "$entropy": {
+      "type": "string",
+      "minLength": 26,
+      "maxLength": 35
+    }
+  },
+  "required": [
+    "$entropy"
+  ],
+  "additionalProperties": false
+}

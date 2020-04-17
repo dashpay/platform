@@ -24,6 +24,7 @@ module.exports = function createDPPMock(sinonSandbox) {
     validate: sinonSandbox.stub(),
     validateStructure: sinonSandbox.stub(),
     validateData: sinonSandbox.stub(),
+    apply: sinonSandbox.stub(),
   };
 
   const identity = {
@@ -38,11 +39,10 @@ module.exports = function createDPPMock(sinonSandbox) {
     document,
     stateTransition,
     identity,
-    getUserId: sinonSandbox.stub(),
-    setUserId: sinonSandbox.stub(),
+    getOwnerId: sinonSandbox.stub(),
+    setOwnerId: sinonSandbox.stub(),
     getDataContract: sinonSandbox.stub(),
     setDataContract: sinonSandbox.stub(),
-    getDataProvider: sinonSandbox.stub(),
-    setDataProvider: sinonSandbox.stub(),
+    getStateRepository: sinonSandbox.stub(),
   };
 };

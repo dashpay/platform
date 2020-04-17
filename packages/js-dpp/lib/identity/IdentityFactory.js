@@ -1,6 +1,13 @@
+const bs58 = require('bs58');
+
+const hash = require('../util/hash');
+
 const Identity = require('./Identity');
 
 const { decode } = require('../util/serializer');
+
+const IdentityPublicKey = require('./IdentityPublicKey');
+const IdentityCreateTransition = require('./stateTransitions/identityCreateTransition/IdentityCreateTransition');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
@@ -16,17 +23,30 @@ class IdentityFactory {
   /**
    * Create Identity
    *
-   * @param {string} id
-   * @param {number} type
-   * @param {IdentityPublicKey[]} [publicKeys]
+   * @param {Buffer} lockedOutPoint
+   * @param {PublicKey[]} [publicKeys]
    * @return {Identity}
    */
-  create(id, type, publicKeys = []) {
-    return new Identity({
+  create(lockedOutPoint, publicKeys = []) {
+    const id = bs58.encode(
+      hash(lockedOutPoint),
+    );
+
+    const identity = new Identity({
       id,
-      type,
-      publicKeys: publicKeys.map((p) => p.toJSON()),
+      balance: 0,
+      publicKeys: publicKeys.map((publicKey, i) => ({
+        id: i,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: publicKey.toBuffer()
+          .toString('base64'),
+        isEnabled: true,
+      })),
     });
+
+    identity.setLockedOutPoint(lockedOutPoint);
+
+    return identity;
   }
 
   /**
@@ -73,6 +93,24 @@ class IdentityFactory {
     }
 
     return this.createFromObject(rawIdentity, options);
+  }
+
+  /**
+   * Create identity create transition
+   *
+   * @param {Identity} identity
+   * @return {IdentityCreateTransition}
+   */
+  createIdentityCreateTransition(identity) {
+    const lockedOutPoint = identity.getLockedOutPoint().toString('base64');
+
+    const stateTransition = new IdentityCreateTransition({
+      lockedOutPoint,
+    });
+
+    stateTransition.setPublicKeys(identity.getPublicKeys());
+
+    return stateTransition;
   }
 }
 

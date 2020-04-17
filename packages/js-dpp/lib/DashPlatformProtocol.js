@@ -14,11 +14,11 @@ const IdentityFacade = require('./identity/IdentityFacade');
 class DashPlatformProtocol {
   /**
    * @param {Object} options
-   * @param {DataProvider} [options.dataProvider]
+   * @param {StateRepository} [options.stateRepository]
    * @param {JsonSchemaValidator} [options.jsonSchemaValidator]
    */
   constructor(options = {}) {
-    this.dataProvider = options.dataProvider;
+    this.stateRepository = options.stateRepository;
     this.jsonSchemaValidator = options.jsonSchemaValidator;
 
     if (!this.jsonSchemaValidator) {
@@ -37,12 +37,12 @@ class DashPlatformProtocol {
     );
 
     this.document = new DocumentFacade(
-      this.dataProvider,
+      this.stateRepository,
       this.jsonSchemaValidator,
     );
 
     this.stateTransition = new StateTransitionFacade(
-      this.dataProvider,
+      this.stateRepository,
       this.jsonSchemaValidator,
     );
 
@@ -59,12 +59,12 @@ class DashPlatformProtocol {
   }
 
   /**
-   * Get Data Provider
+   * Get State Repository
    *
-   * @return {DataProvider}
+   * @return {StateRepository}
    */
-  getDataProvider() {
-    return this.dataProvider;
+  getStateRepository() {
+    return this.stateRepository;
   }
 }
 

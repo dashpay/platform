@@ -4,13 +4,11 @@ const Identity = require('../Identity');
 
 /**
  * @param {JsonSchemaValidator} validator
- * @param {validateIdentityType} validateIdentityType
  * @param {validatePublicKeys} validatePublicKeys
  * @return {validateIdentity}
  */
 function validateIdentityFactory(
   validator,
-  validateIdentityType,
   validatePublicKeys,
 ) {
   /**
@@ -35,10 +33,6 @@ function validateIdentityFactory(
     if (!result.isValid()) {
       return result;
     }
-
-    result.merge(
-      validateIdentityType(rawIdentity.type),
-    );
 
     result.merge(
       validatePublicKeys(rawIdentity.publicKeys),

@@ -6,16 +6,18 @@ class DataTrigger {
   /**
    * @param {string} dataContractId
    * @param {string} documentType
-   * @param {number} documentAction
+   * @param {number} transitionAction
    * @param {
-   * function(Document, DataTriggerExecutionContext, string):DataTriggerExecutionResult
+   * function(DocumentCreateTransition[]
+   *    |DocumentReplaceTransition[]
+   *    |DocumentDeleteTransition[], DataTriggerExecutionContext, string):DataTriggerExecutionResult
    * } trigger
    * @param {string} topLevelIdentity
    */
-  constructor(dataContractId, documentType, documentAction, trigger, topLevelIdentity) {
+  constructor(dataContractId, documentType, transitionAction, trigger, topLevelIdentity) {
     this.dataContractId = dataContractId;
     this.documentType = documentType;
-    this.documentAction = documentAction;
+    this.transitionAction = transitionAction;
     this.trigger = trigger;
     this.topLevelIdentity = topLevelIdentity;
   }
@@ -25,33 +27,35 @@ class DataTrigger {
    *
    * @param {string} dataContractId
    * @param {string} documentType
-   * @param {number} documentAction
+   * @param {number} transitionAction
    *
    * @return {boolean}
    */
-  isMatchingTriggerForData(dataContractId, documentType, documentAction) {
+  isMatchingTriggerForData(dataContractId, documentType, transitionAction) {
     return this.dataContractId === dataContractId
       && this.documentType === documentType
-      && this.documentAction === documentAction;
+      && this.transitionAction === transitionAction;
   }
 
   /**
    * Execute data trigger
    *
-   * @param {Document} document
+   * @param {DocumentCreateTransition[]
+   *        |DocumentReplaceTransition[]
+   *        |DocumentDeleteTransition[]} documentTransition
    * @param {DataTriggerExecutionContext} context
    *
    * @returns {Promise<DataTriggerExecutionResult>}
    */
-  async execute(document, context) {
+  async execute(documentTransition, context) {
     let result = new DataTriggerExecutionResult();
 
     try {
-      result = await this.trigger(document, context, this.topLevelIdentity);
+      result = await this.trigger(documentTransition, context, this.topLevelIdentity);
     } catch (e) {
       result.addError(
         new DataTriggerExecutionError(
-          this, context.getDataContract(), context.getUserId(), e,
+          this, context.getDataContract(), context.getOwnerId(), e,
         ),
       );
     }
@@ -60,7 +64,7 @@ class DataTrigger {
       result = new DataTriggerExecutionResult();
       result.addError(
         new DataTriggerInvalidResultError(
-          this, context.getDataContract(), context.getUserId(),
+          this, context.getDataContract(), context.getOwnerId(),
         ),
       );
     }

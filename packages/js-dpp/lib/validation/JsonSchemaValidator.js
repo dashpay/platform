@@ -1,4 +1,4 @@
-const dataContractMetaSchema = require('../../schema/meta/data-contract');
+const dataContractMetaSchema = require('../../schema/dataContract/dataContractMeta');
 
 const ValidationResult = require('./ValidationResult');
 const JsonSchemaError = require('../errors/JsonSchemaError');

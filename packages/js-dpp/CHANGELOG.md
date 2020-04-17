@@ -1,3 +1,59 @@
+# [0.12.0](https://github.com/dashevo/js-dpp/compare/v0.11.0...v0.12.0) (2020-04-17)
+
+### Bug Fixes
+
+* do not allow to change `ownerId` and `entropy` ([bff5807](https://github.com/dashevo/js-dpp/commit/bff580701322e2100e484989c476d583d26af38a))
+* json schema for `signaturePublicKeyId` ([#161](https://github.com/dashevo/js-dpp/issues/161))
+* wrong entropy size ([#157](https://github.com/dashevo/js-dpp/issues/157))
+* data contract definitions might be `null` or `undefined` ([#153](https://github.com/dashevo/js-dpp/issues/153))
+* identity existence validation in data contract structure validation ([#149](https://github.com/dashevo/js-dpp/issues/149))
+* state transition signature validation in data contract structure validation ([#150](https://github.com/dashevo/js-dpp/pull/150))
+
+### Code Refactoring
+
+* rename `$rev` to `$revision` ([#140](https://github.com/dashevo/js-dpp/issues/140))
+* rename `userId` to `ownerId` ([b9a5e83](https://github.com/dashevo/js-dpp/commit/b9a5e839608f94c964ff791bcbae4cb03a46028d))
+* remove `type` from Identity ([227dc4d](https://github.com/dashevo/js-dpp/commit/227dc4d96e72172fd17cc44b46dd3ca0ef3da301))
+* remove `version` from Data Contract ([f856ecc](https://github.com/dashevo/js-dpp/commit/f856ecc1b00e8f0962f96a9f84d84bd2322ad374))
+* rename `$ownerId` to `ownerId` in Data Contract ([#160](https://github.com/dashevo/js-dpp/pull/160))
+* rename `$contractId` to `$dataContractId` in Document ([158](https://github.com/dashevo/js-dpp/pull/158))
+* split document model and it's state transitions ([#126](https://github.com/dashevo/js-dpp/issues/126), [#156](https://github.com/dashevo/js-dpp/pull/156))
+* store document ID as a part of the document ([3d10a01](https://github.com/dashevo/js-dpp/commit/3d10a01577ca871cbf3fb1c4ea5f39904a27ca33))
+* Data Contract Create Transition now accepts raw data ([#136](https://github.com/dashevo/js-dpp/issues/136))
+* start types and indices from `0` instead of `1` ([#155](https://github.com/dashevo/js-dpp/pull/155))
+* put JSON Schemas into order ([#135](https://github.com/dashevo/js-dpp/pull/135))
+
+### Features
+
+* implement apply state transition function ([#138](https://github.com/dashevo/js-dpp/issues/138), [#139](https://github.com/dashevo/js-dpp/issues/139), [#142](https://github.com/dashevo/js-dpp/issues/142), [#141](https://github.com/dashevo/js-dpp/issues/141), [#147](https://github.com/dashevo/js-dpp/issues/147), [#143](https://github.com/dashevo/js-dpp/issues/143))
+* generate Data Contract ID from `ownerId` and entropy ([4c0dae1](https://github.com/dashevo/js-dpp/commit/4c0dae1a248d5a8af92f1023cdeed58377e51aae))
+* introduce balance to Identities ([#137](https://github.com/dashevo/js-dpp/issues/137), [b13a9bb](https://github.com/dashevo/js-dpp/commit/b13a9bb2dfb22ea355620e064675a600a3908018), [#146](https://github.com/dashevo/js-dpp/issues/146))
+* validate ST size is less than 16 Kb ([ff7aa51](https://github.com/dashevo/js-dpp/commit/ff7aa51dd88d4047637fb69e048a896dd92f3fd0), [70c3c54](https://github.com/dashevo/js-dpp/commit/70c3c541920a5bdc73845ac1ef835d7b21dfa92b))
+* validate state transition fee ([48c9fda](https://github.com/dashevo/js-dpp/commit/48c9fda5cf958eb2046c8a5a98e09e78c1e8085f), [#145](https://github.com/dashevo/js-dpp/issues/145), [0cb1d6f](https://github.com/dashevo/js-dpp/commit/0cb1d6f69650e91ed944a11f77aeb6541e5755f4))
+* create Identity factory now accepts locked out point and public keys ([#151](https://github.com/dashevo/js-dpp/issues/151))
+* `getDataContractFixture` accepts `ownerId` ([#148](https://github.com/dashevo/js-dpp/issues/148))
+* implement create identity create transition factory ([#152](https://github.com/dashevo/js-dpp/issues/152))
+* introduce `signByPrivateKey` and `verifySignatureByPublicKey` methods to ST ([4eb5cdc](https://github.com/dashevo/js-dpp/commit/4eb5cdc408df8fe95294f668743c75da17ac0083))
+* verbose invalid data errors ([#134](https://github.com/dashevo/js-dpp/pull/134))
+
+### BREAKING CHANGES
+
+* Data Contract ID is ownerId + entropy. You don't need to create an additional identity anymore.
+* Data Contract Create Transition now accepts raw data
+* size of serialized state transition must be less than 16 Kb
+* `type` removed from Identity due to Data Contract doesn't require it anymore
+* `version` removed from Data Contract
+* `userId` renamed to `ownerId`
+* Documents State Transition renamed to and it's structure is changed
+* `applyStateTransition` methods no longer a part of identity, data contract and document facades
+* renamed `$rev` field to `$revision` in raw document model
+* applyIdentityStateTransition is now asynchronous
+* Documents State Transition is now happening through separate state transition classes and renamed to Documents Batch Transition. Hence document class no longer have `$action` field. `$action` is now starting from 0. `$entropy` field is now a part of document create state transition. `createStateTransition` method of a document factory now accepts a map with actions as keys (`create`, `replace`, `delete`) and document arrays as values respectively.
+* create Identity factory accepts locked out point and public keys instead of ID and `IndentityPublicKey`
+* types and indices now starts from `0` instead of `1`
+* Data Provider renamed to State Repository and store/remove functions introduced
+
+
 ## [0.11.1](https://github.com/dashevo/js-dpp/compare/v0.11.0...v0.11.1) (2020-03-17)
 
 ### Bug Fixes

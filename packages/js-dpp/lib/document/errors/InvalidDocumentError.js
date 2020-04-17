@@ -7,7 +7,10 @@ class InvalidDocumentError extends Error {
     super();
 
     this.name = this.constructor.name;
-    this.message = 'Invalid Document';
+    this.message = `Invalid Document: "${errors[0].message}"`;
+    if (errors.length > 1) {
+      this.message = `${this.message} and ${errors.length - 1} more`;
+    }
 
     this.errors = errors;
     this.rawDocument = rawDocument;

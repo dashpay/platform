@@ -38,7 +38,7 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
+        context.getOwnerId(),
         'Full domain name length can not be more than 253 characters long',
       ),
     );
@@ -51,7 +51,7 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
+        context.getOwnerId(),
         'nameHash is not a valid multihash',
       ),
     );
@@ -62,7 +62,7 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
+        context.getOwnerId(),
         'Document nameHash doesn\'t match actual hash',
       ),
     );
@@ -73,19 +73,19 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
+        context.getOwnerId(),
         'Normalized label doesn\'t match label',
       ),
     );
   }
 
-  if (context.getUserId() !== records.dashIdentity) {
+  if (context.getOwnerId() !== records.dashIdentity) {
     result.addError(
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
-        'userId doesn\'t match dashIdentity',
+        context.getOwnerId(),
+        'ownerId doesn\'t match dashIdentity',
       ),
     );
   }
@@ -95,18 +95,18 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
+        context.getOwnerId(),
         'Parent domain name is not normalized (e.g. contains non-lowercase letter)',
       ),
     );
   }
 
-  if (normalizedParentDomainName.length === 0 && document.getUserId() !== topLevelIdentity) {
+  if (normalizedParentDomainName.length === 0 && document.getOwnerId() !== topLevelIdentity) {
     result.addError(
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
+        context.getOwnerId(),
         'Can\'t create top level domain for this identity',
       ),
     );
@@ -116,7 +116,7 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
     const parentDomainHash = multihash.hash(Buffer.from(normalizedParentDomainName))
       .toString('hex');
 
-    const [parentDomain] = await context.getDataProvider().fetchDocuments(
+    const [parentDomain] = await context.getStateRepository().fetchDocuments(
       context.getDataContract().getId(),
       document.getType(),
       { where: [['nameHash', '==', parentDomainHash]] },
@@ -127,7 +127,7 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
         new DataTriggerConditionError(
           document,
           context.getDataContract(),
-          context.getUserId(),
+          context.getOwnerId(),
           'Can\'t find parent domain matching parent hash',
         ),
       );
@@ -142,7 +142,7 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
   const saltedDomainHash = multihash.hash(saltedPreorderDomainNameHashBuffer)
     .toString('hex');
 
-  const [preorderDocument] = await context.getDataProvider()
+  const [preorderDocument] = await context.getStateRepository()
     .fetchDocuments(
       context.getDataContract().getId(),
       'preorder',
@@ -154,7 +154,7 @@ async function createDomainDataTrigger(document, context, topLevelIdentity) {
       new DataTriggerConditionError(
         document,
         context.getDataContract(),
-        context.getUserId(),
+        context.getOwnerId(),
         'preorderDocument was not found',
       ),
     );

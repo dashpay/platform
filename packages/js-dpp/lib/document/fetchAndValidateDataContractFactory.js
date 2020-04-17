@@ -6,10 +6,10 @@ const DataContractNotPresentError = require('../errors/DataContractNotPresentErr
 const ValidationResult = require('../validation/ValidationResult');
 
 /**
- * @param {DataProvider} dataProvider
+ * @param {StateRepository} stateRepository
  * @return {fetchAndValidateDataContract}
  */
-function fetchAndValidateDataContractFactory(dataProvider) {
+function fetchAndValidateDataContractFactory(stateRepository) {
   /**
    * @typedef fetchAndValidateDataContract
    * @param {Document|RawDocument} document
@@ -20,7 +20,7 @@ function fetchAndValidateDataContractFactory(dataProvider) {
 
     const result = new ValidationResult();
 
-    if (!Object.prototype.hasOwnProperty.call(rawDocument, '$contractId')) {
+    if (!Object.prototype.hasOwnProperty.call(rawDocument, '$dataContractId')) {
       result.addError(
         new MissingDocumentContractIdError(rawDocument),
       );
@@ -30,9 +30,9 @@ function fetchAndValidateDataContractFactory(dataProvider) {
       return result;
     }
 
-    const dataContractId = rawDocument.$contractId;
+    const dataContractId = rawDocument.$dataContractId;
 
-    const dataContract = await dataProvider.fetchDataContract(dataContractId);
+    const dataContract = await stateRepository.fetchDataContract(dataContractId);
 
     if (!dataContract) {
       result.addError(

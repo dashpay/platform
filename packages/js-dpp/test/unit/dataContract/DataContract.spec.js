@@ -12,6 +12,8 @@ describe('DataContract', () => {
   let documentSchema;
   let documents;
   let dataContract;
+  let ownerId;
+  let entropy;
   let contractId;
 
   beforeEach(function beforeEach() {
@@ -38,18 +40,36 @@ describe('DataContract', () => {
       [documentType]: documentSchema,
     };
 
-    contractId = generateRandomId();
+    ownerId = generateRandomId();
+    entropy = 'ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgzh';
+    contractId = 'ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgza';
 
-    dataContract = new DataContract(contractId, documents);
+    dataContract = new DataContract({
+      $schema: DataContract.DEFAULTS.SCHEMA,
+      $id: contractId,
+      ownerId,
+      documents,
+      definitions: {},
+    });
   });
 
   describe('constructor', () => {
     it('should create new DataContract', () => {
-      dataContract = new DataContract(contractId, documents);
+      const id = '5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq';
 
-      expect(dataContract.version).to.equal(DataContract.DEFAULTS.VERSION);
+      dataContract = new DataContract({
+        $schema: DataContract.DEFAULTS.SCHEMA,
+        $id: id,
+        ownerId,
+        documents,
+        definitions: {},
+      });
+
+      expect(dataContract.id).to.equal(id);
+      expect(dataContract.ownerId).to.equal(ownerId);
       expect(dataContract.schema).to.equal(DataContract.DEFAULTS.SCHEMA);
       expect(dataContract.documents).to.equal(documents);
+      expect(dataContract.definitions).to.deep.equal({});
     });
   });
 
@@ -62,29 +82,13 @@ describe('DataContract', () => {
   });
 
   describe('#getJsonSchemaId', () => {
-    it('should return JSON Schema $contractId', () => {
+    it('should return JSON Schema ID', () => {
+      const hashed = Buffer.from(ownerId + entropy);
+      hashMock.returns(hashed);
+
       const result = dataContract.getJsonSchemaId();
 
       expect(result).to.equal(dataContract.getId());
-    });
-  });
-
-  describe('#setVersion', () => {
-    it('should set version', () => {
-      const version = 1;
-
-      const result = dataContract.setVersion(version);
-
-      expect(result).to.equal(dataContract);
-      expect(dataContract.version).to.equal(version);
-    });
-  });
-
-  describe('#getVersion', () => {
-    it('should return version', () => {
-      const result = dataContract.getVersion();
-
-      expect(result).to.equal(dataContract.version);
     });
   });
 
@@ -196,10 +200,13 @@ describe('DataContract', () => {
     });
 
     it('should return schema with $ref to Document schema', () => {
+      const hashed = Buffer.from(ownerId + entropy);
+      hashMock.returns(hashed);
+
       const result = dataContract.getDocumentSchemaRef(documentType);
 
       expect(result).to.deep.equal({
-        $ref: `${dataContract.getId()}#/documents/niceDocument`,
+        $ref: `${dataContract.getJsonSchemaId()}#/documents/niceDocument`,
       });
     });
   });
@@ -228,9 +235,9 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
+        $id: contractId,
         $schema: DataContract.DEFAULTS.SCHEMA,
-        contractId,
-        version: DataContract.DEFAULTS.VERSION,
+        ownerId,
         documents,
       });
     });
@@ -246,8 +253,8 @@ describe('DataContract', () => {
 
       expect(result).to.deep.equal({
         $schema: DataContract.DEFAULTS.SCHEMA,
-        contractId,
-        version: DataContract.DEFAULTS.VERSION,
+        $id: contractId,
+        ownerId,
         documents,
         definitions,
       });
@@ -288,6 +295,25 @@ describe('DataContract', () => {
       expect(DataContract.prototype.serialize).to.have.been.calledOnce();
 
       expect(hashMock).to.have.been.calledOnceWith(serializedDataContract);
+    });
+  });
+
+  describe('#setEntropy', () => {
+    it('should set entropy', () => {
+      const result = dataContract.setEntropy(entropy);
+
+      expect(result).to.equal(dataContract);
+      expect(dataContract.entropy).to.equal(entropy);
+    });
+  });
+
+  describe('#getEntropy', () => {
+    it('should return entropy', () => {
+      dataContract.entropy = entropy;
+
+      const result = dataContract.getEntropy();
+
+      expect(result).to.equal(dataContract.entropy);
     });
   });
 });

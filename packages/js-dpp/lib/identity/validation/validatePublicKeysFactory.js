@@ -4,7 +4,7 @@ const IdentityPublicKey = require('../IdentityPublicKey');
 
 const ValidationResult = require('../../validation/ValidationResult');
 
-const publicKeySchema = require('../../../schema/identity/public-key.json');
+const publicKeySchema = require('../../../schema/identity/publicKey.json');
 
 const InvalidIdentityPublicKeyDataError = require(
   '../../errors/InvalidIdentityPublicKeyDataError',

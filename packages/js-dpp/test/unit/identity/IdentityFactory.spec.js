@@ -1,6 +1,13 @@
 const rewiremock = require('rewiremock/node');
+const bs58 = require('bs58');
+const crypto = require('crypto');
+
+const { PublicKey } = require('@dashevo/dashcore-lib');
+
+const hash = require('../../../lib/util/hash');
 
 const Identity = require('../../../lib/identity/Identity');
+const IdentityCreateTransition = require('../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
@@ -30,6 +37,7 @@ describe('IdentityFactory', () => {
           decode: decodeMock,
         },
         '../../../lib/identity/Identity': Identity,
+        '../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition': IdentityCreateTransition,
       },
     );
 
@@ -45,15 +53,28 @@ describe('IdentityFactory', () => {
   });
 
   describe('#create', () => {
-    it('should create Identity with specified id, type and public keys', () => {
+    it('should create Identity from transaction out point and public keys', () => {
+      const lockedOutPoint = crypto.randomBytes(64);
+
+      identity.id = bs58.encode(
+        hash(lockedOutPoint),
+      );
+
+      identity.setBalance(0);
+
+      const publicKeys = identity.getPublicKeys().map((identityPublicKey) => {
+        const publicKeyData = Buffer.from(identityPublicKey.getData(), 'base64');
+
+        return new PublicKey(publicKeyData);
+      });
+
       const result = factory.create(
-        identity.getId(),
-        identity.getType(),
-        identity.getPublicKeys(),
+        lockedOutPoint,
+        publicKeys,
       );
 
       expect(result).to.be.an.instanceOf(Identity);
-      expect(result).to.deep.equal(identity);
+      expect(result.toJSON()).to.deep.equal(identity.toJSON());
     });
   });
 
@@ -129,6 +150,20 @@ describe('IdentityFactory', () => {
         expect(innerError.getPayload()).to.deep.equal(serializedIdentity);
         expect(innerError.getParsingError()).to.deep.equal(parsingError);
       }
+    });
+  });
+
+  describe('#createIdentityCreateTransition', () => {
+    it('should create IdentityCreateTransition from Identity model', () => {
+      const lockedOutPoint = crypto.randomBytes(64);
+
+      identity.setLockedOutPoint(lockedOutPoint);
+
+      const stateTransition = factory.createIdentityCreateTransition(identity);
+
+      expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
+      expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
+      expect(stateTransition.getLockedOutPoint()).to.equal(lockedOutPoint.toString('base64'));
     });
   });
 });

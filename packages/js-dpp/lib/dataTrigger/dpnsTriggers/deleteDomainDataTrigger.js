@@ -16,7 +16,7 @@ async function deleteDomainDataTrigger(document, context) {
     new DataTriggerConditionError(
       document,
       context.getDataContract(),
-      context.getUserId(),
+      context.getOwnerId(),
       'Delete action is not allowed',
     ),
   );

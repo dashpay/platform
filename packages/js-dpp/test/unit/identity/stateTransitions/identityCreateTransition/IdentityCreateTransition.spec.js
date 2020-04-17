@@ -1,6 +1,5 @@
 const rewiremock = require('rewiremock/node');
 
-const Identity = require('../../../../../lib/identity/Identity');
 const IdentityPublicKey = require('../../../../../lib/identity/IdentityPublicKey');
 
 const stateTransitionTypes = require(
@@ -17,10 +16,9 @@ describe('IdentityCreateTransition', () => {
   beforeEach(function beforeEach() {
     rawStateTransition = {
       lockedOutPoint: 'c3BlY2lhbEJ1ZmZlcg==',
-      identityType: Identity.TYPES.USER,
       publicKeys: [
         {
-          id: 1,
+          id: 0,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
           data: 'someString',
           isEnabled: true,
@@ -32,8 +30,8 @@ describe('IdentityCreateTransition', () => {
     hashMock.returns(Buffer.alloc(32));
 
     signerMock = {
-      sign: this.sinonSandbox.stub(),
-      verifySignature: this.sinonSandbox.stub(),
+      signByPrivateKey: this.sinonSandbox.stub(),
+      verifySignatureByPublicKey: this.sinonSandbox.stub(),
     };
 
     IdentityCreateTransition = rewiremock.proxy(
@@ -53,12 +51,10 @@ describe('IdentityCreateTransition', () => {
     it('should create an instance with default values if nothing specified', () => {
       stateTransition = new IdentityCreateTransition();
 
-      expect(stateTransition.identityType).to.be.undefined();
       expect(stateTransition.publicKeys).to.deep.equal([]);
     });
 
     it('should create an instance with specified data from specified raw transition', () => {
-      expect(stateTransition.identityType).to.equal(1);
       expect(stateTransition.lockedOutPoint).to.deep.equal(
         rawStateTransition.lockedOutPoint,
       );
@@ -100,19 +96,6 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe('#setIdentityType', () => {
-    it('should set identity type', () => {
-      stateTransition.setIdentityType(42);
-      expect(stateTransition.identityType).to.equal(42);
-    });
-  });
-
-  describe('#getIdentityType', () => {
-    it('should return identity type', () => {
-      expect(stateTransition.getIdentityType()).to.equal(1);
-    });
-  });
-
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
       const publicKeys = [new IdentityPublicKey(), new IdentityPublicKey()];
@@ -142,9 +125,17 @@ describe('IdentityCreateTransition', () => {
   });
 
   describe('#getIdentityId', () => {
-    it('should return set identity id', () => {
+    it('should return identity id', () => {
       expect(stateTransition.getIdentityId()).to.equal(
         '11111111111111111111111111111111',
+      );
+    });
+  });
+
+  describe('#getOwnerId', () => {
+    it('should return owner id', () => {
+      expect(stateTransition.getOwnerId()).to.equal(
+        stateTransition.getIdentityId(),
       );
     });
   });
@@ -156,11 +147,9 @@ describe('IdentityCreateTransition', () => {
       expect(jsonWithASig).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_CREATE,
-        identityType: Identity.TYPES.USER,
         lockedOutPoint: rawStateTransition.lockedOutPoint,
         publicKeys: rawStateTransition.publicKeys,
         signature: null,
-        signaturePublicKeyId: null,
       });
 
       const jsonWithSig = stateTransition.toJSON({ skipSignature: true });
@@ -168,7 +157,6 @@ describe('IdentityCreateTransition', () => {
       expect(jsonWithSig).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_CREATE,
-        identityType: Identity.TYPES.USER,
         lockedOutPoint: rawStateTransition.lockedOutPoint,
         publicKeys: rawStateTransition.publicKeys,
       });

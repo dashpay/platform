@@ -1,20 +1,22 @@
 /**
  * Execute data triggers for a document sequentially
  *
- * @param {Document} document
+ * @param {DocumentCreateTransition[]
+ *        |DocumentReplaceTransition[]
+ *        |DocumentDeleteTransition[]} documentTransition
  * @param {DataTrigger[]} dataTriggers
  * @param {DataTriggerExecutionContext} context
  * @param {DataTriggerExecutionResult[]} results
  *
  * @return {Promise<DataTriggerExecutionResult>}
  */
-async function executeTriggersSequentially(document, dataTriggers, context, results) {
+async function executeTriggersSequentially(documentTransition, dataTriggers, context, results) {
   return dataTriggers.reduce(async (previousPromise, dataTrigger) => {
     const result = await previousPromise;
     if (result) {
       results.push(result);
     }
-    return dataTrigger.execute(document, context);
+    return dataTrigger.execute(documentTransition, context);
   }, Promise.resolve()).then((lastResult) => results.push(lastResult));
 }
 
@@ -31,30 +33,32 @@ function executeDataTriggersFactory(getDataTriggers) {
    *
    * @typedef executeDataTriggers
    *
-   * @param {Document[]} documents
+   * @param {DocumentCreateTransition[]
+   *        |DocumentReplaceTransition[]
+   *        |DocumentDeleteTransition[]} documentTransitions
    * @param {DataTriggerExecutionContext} context
    *
    * @return {DataTriggerExecutionResult[]}
    */
-  async function executeDataTriggers(documents, context) {
+  async function executeDataTriggers(documentTransitions, context) {
     const dataContractId = context.getDataContract().getId();
 
     const results = [];
 
-    await documents.reduce(async (previousPromise, document) => {
+    await documentTransitions.reduce(async (previousPromise, documentTransition) => {
       await previousPromise;
 
       const dataTriggers = getDataTriggers(
         dataContractId,
-        document.getType(),
-        document.getAction(),
+        documentTransition.getType(),
+        documentTransition.getAction(),
       );
 
       if (dataTriggers.length === 0) {
         return Promise.resolve();
       }
 
-      return executeTriggersSequentially(document, dataTriggers, context, results);
+      return executeTriggersSequentially(documentTransition, dataTriggers, context, results);
     }, Promise.resolve());
 
     return results;

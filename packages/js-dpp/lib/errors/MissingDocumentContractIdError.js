@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class MissingDocumentContractIdError extends ConsensusError {
   constructor(rawDocument) {
-    super('$contractId is not present');
+    super('$dataContractId is not present');
 
     this.rawDocument = rawDocument;
   }

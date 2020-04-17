@@ -1,11 +1,11 @@
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
-const hash = require('../../../lib/util/hash');
-const entropy = require('../../../lib/util/entropy');
+const hash = require('../../util/hash');
+const entropy = require('../../util/entropy');
 
 const generateRandomId = require('../utils/generateRandomId');
 
-const userId = generateRandomId();
+const ownerId = generateRandomId();
 
 /**
  * @return {Document}
@@ -27,12 +27,12 @@ function getPreorderDocumentFixture(options = {}) {
     parentDomainHash: '',
     preorderSalt: entropy.generate(),
     records: {
-      dashIdentity: userId,
+      dashIdentity: ownerId,
     },
     ...options,
   };
 
-  return factory.create(dataContract, userId, 'preorder', data);
+  return factory.create(dataContract, ownerId, 'preorder', data);
 }
 
 module.exports = getPreorderDocumentFixture;

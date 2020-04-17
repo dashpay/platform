@@ -1,4 +1,4 @@
-const enrichDataContractWithBaseDocument = require('../dataContract/enrichDataContractWithBaseDocument');
+const enrichDataContractWithBaseSchema = require('../dataContract/enrichDataContractWithBaseSchema');
 const validateDocumentFactory = require('./validateDocumentFactory');
 const fetchAndValidateDataContractFactory = require('./fetchAndValidateDataContractFactory');
 
@@ -8,19 +8,19 @@ const MissingOptionError = require('../errors/MissingOptionError');
 
 class DocumentFacade {
   /**
-   * @param {DataProvider} dataProvider
+   * @param {StateRepository} stateRepository
    * @param {JsonSchemaValidator} validator
    */
-  constructor(dataProvider, validator) {
-    this.dataProvider = dataProvider;
+  constructor(stateRepository, validator) {
+    this.stateRepository = stateRepository;
 
     this.validateDocument = validateDocumentFactory(
       validator,
-      enrichDataContractWithBaseDocument,
+      enrichDataContractWithBaseSchema,
     );
 
     this.fetchAndValidateDataContract = fetchAndValidateDataContractFactory(
-      dataProvider,
+      stateRepository,
     );
 
     this.factory = new DocumentFactory(
@@ -33,13 +33,13 @@ class DocumentFacade {
    * Create Document
    *
    * @param {DataContract} dataContract
-   * @param {string} userId
+   * @param {string} ownerId
    * @param {string} type
    * @param {Object} [data]
    * @return {Document}
    */
-  create(dataContract, userId, type, data = {}) {
-    return this.factory.create(dataContract, userId, type, data);
+  create(dataContract, ownerId, type, data = {}) {
+    return this.factory.create(dataContract, ownerId, type, data);
   }
 
   /**
@@ -52,10 +52,10 @@ class DocumentFacade {
    * @return {Document}
    */
   async createFromObject(rawDocument, options = {}) {
-    if (!this.dataProvider && !options.skipValidation) {
+    if (!this.stateRepository && !options.skipValidation) {
       throw new MissingOptionError(
-        'dataProvider',
-        'Can\'t create Document because Data Provider is not set in'
+        'stateRepository',
+        'Can\'t create Document because State Repository is not set in'
         + ' DashPlatformProtocol options',
       );
     }
@@ -73,10 +73,10 @@ class DocumentFacade {
    * @return {Promise<Document>}
    */
   async createFromSerialized(payload, options = { }) {
-    if (!this.dataProvider && !options.skipValidation) {
+    if (!this.stateRepository && !options.skipValidation) {
       throw new MissingOptionError(
-        'dataProvider',
-        'Can\'t create Document because Data Provider is not set in'
+        'stateRepository',
+        'Can\'t create Document because State Repository is not set in'
         + ' DashPlatformProtocol options',
       );
     }
@@ -87,8 +87,12 @@ class DocumentFacade {
   /**
    * Create Documents State Transition
    *
-   * @param {Document[]} documents
-   * @return {DocumentsStateTransition}
+   * @param {Object} documents
+   * @param {Document[]} [documents.create]
+   * @param {Document[]} [documents.replace]
+   * @param {Document[]} [documents.delete]
+   *
+   * @return {DocumentsBatchTransition}
    */
   createStateTransition(documents) {
     return this.factory.createStateTransition(documents);
@@ -103,10 +107,10 @@ class DocumentFacade {
    * @return {ValidationResult}
    */
   async validate(document, options = {}) {
-    if (!this.dataProvider) {
+    if (!this.stateRepository) {
       throw new MissingOptionError(
-        'dataProvider',
-        'Can\'t validate Document because Data Provider is not set in'
+        'stateRepository',
+        'Can\'t validate Document because State Repository is not set in'
         + ' DashPlatformProtocol options',
       );
     }

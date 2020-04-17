@@ -2,7 +2,7 @@ const rewiremock = require('rewiremock/node');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const DataContractStateTransition = require('../../../lib/dataContract/stateTransition/DataContractStateTransition');
+const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
@@ -23,7 +23,10 @@ describe('StateTransitionFactory', () => {
   beforeEach(function beforeEach() {
     const dataContract = getDataContractFixture();
 
-    stateTransition = new DataContractStateTransition(dataContract);
+    stateTransition = new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
     rawStateTransition = stateTransition.toJSON();
 
     decodeMock = this.sinonSandbox.stub();

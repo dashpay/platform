@@ -1,30 +1,30 @@
 class DataTriggerExecutionContext {
   /**
-   * @param {DataProvider} dataProvider
-   * @param {string} userId
+   * @param {StateRepository} stateRepository
+   * @param {string} ownerId
    * @param {DataContract} dataContract
    */
-  constructor(dataProvider, userId, dataContract) {
+  constructor(stateRepository, ownerId, dataContract) {
     /**
-     * @type {DataProvider}
+     * @type {StateRepository}
      */
-    this.dataProvider = dataProvider;
-    this.userId = userId;
+    this.stateRepository = stateRepository;
+    this.ownerId = ownerId;
     this.dataContract = dataContract;
   }
 
   /**
-   * @returns {DataProvider}
+   * @returns {StateRepository}
    */
-  getDataProvider() {
-    return this.dataProvider;
+  getStateRepository() {
+    return this.stateRepository;
   }
 
   /**
    * @returns {string}
    */
-  getUserId() {
-    return this.userId;
+  getOwnerId() {
+    return this.ownerId;
   }
 
   /**

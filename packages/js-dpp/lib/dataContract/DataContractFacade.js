@@ -1,9 +1,8 @@
-const $RefParser = require('json-schema-ref-parser');
+const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
 const DataContractFactory = require('./DataContractFactory');
 const validateDataContractFactory = require('./validateDataContractFactory');
-const createDataContract = require('./createDataContract');
-const enrichDataContractWithBaseDocument = require('./enrichDataContractWithBaseDocument');
+const enrichDataContractWithBaseSchema = require('./enrichDataContractWithBaseSchema');
 const validateDataContractMaxDepthFactory = require('./stateTransition/validation/validateDataContractMaxDepthFactory');
 
 class DataContractFacade {
@@ -16,12 +15,10 @@ class DataContractFacade {
     this.validateDataContract = validateDataContractFactory(
       jsonSchemaValidator,
       validateDataContractMaxDepth,
-      enrichDataContractWithBaseDocument,
-      createDataContract,
+      enrichDataContractWithBaseSchema,
     );
 
     this.factory = new DataContractFactory(
-      createDataContract,
       this.validateDataContract,
     );
   }
@@ -29,12 +26,12 @@ class DataContractFacade {
   /**
    * Create Data Contract
    *
-   * @param {string} contractId
+   * @param {string} ownerId
    * @param {Object} documents
    * @return {DataContract}
    */
-  create(contractId, documents) {
-    return this.factory.create(contractId, documents);
+  create(ownerId, documents) {
+    return this.factory.create(ownerId, documents);
   }
 
   /**
@@ -65,7 +62,7 @@ class DataContractFacade {
    * Create Data Contract State Transition
    *
    * @param {DataContract} dataContract
-   * @return {DataContractStateTransition}
+   * @return {DataContractCreateTransition}
    */
   createStateTransition(dataContract) {
     return this.factory.createStateTransition(dataContract);

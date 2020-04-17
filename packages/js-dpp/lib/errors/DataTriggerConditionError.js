@@ -4,11 +4,11 @@ class DataTriggerConditionError extends AbstractDataTriggerError {
   /**
    * @param {Document} document
    * @param {DataContract} dataContract
-   * @param {string} userId
+   * @param {string} ownerId
    * @param {string} message
    */
-  constructor(document, dataContract, userId, message) {
-    super(message, dataContract, userId);
+  constructor(document, dataContract, ownerId, message) {
+    super(message, dataContract, ownerId);
 
     this.document = document;
   }

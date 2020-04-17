@@ -6,7 +6,7 @@ describe('IdentityPublicKey', () => {
 
   beforeEach(() => {
     rawPublicKey = {
-      id: 1,
+      id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: 'somePublicKey',
       isEnabled: true,

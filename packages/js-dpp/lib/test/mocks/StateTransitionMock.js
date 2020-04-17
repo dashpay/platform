@@ -1,9 +1,9 @@
-const AbstractStateTransition = require('../../stateTransition/AbstractStateTransition');
+const AbstractStateTransitionIdentitySigned = require('../../stateTransition/AbstractStateTransitionIdentitySigned');
 const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes');
 
-class StateTransitionMock extends AbstractStateTransition {
+class StateTransitionMock extends AbstractStateTransitionIdentitySigned {
   getType() {
-    return stateTransitionTypes.DATA_CONTRACT;
+    return stateTransitionTypes.DATA_CONTRACT_CREATE;
   }
 
   toJSON(options = {}) {

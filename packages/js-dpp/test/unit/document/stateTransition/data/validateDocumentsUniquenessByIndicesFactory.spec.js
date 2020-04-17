@@ -2,32 +2,37 @@ const verifyDocumentsUniquenessByIndicesFactory = require('../../../../../lib/do
 
 const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
 const getContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
 const { expectValidationError } = require('../../../../../lib/test/expect/expectError');
-const createDataProviderMock = require('../../../../../lib/test/mocks/createDataProviderMock');
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const ValidationResult = require('../../../../../lib/validation/ValidationResult');
 
 const DuplicateDocumentError = require('../../../../../lib/errors/DuplicateDocumentError');
 
 describe('validateDocumentsUniquenessByIndices', () => {
-  let dataProviderMock;
+  let stateRepositoryMock;
   let validateDocumentsUniquenessByIndices;
   let documents;
+  let documentTransitions;
   let dataContract;
-  let userId;
+  let ownerId;
 
   beforeEach(function beforeEach() {
-    ({ userId } = getDocumentsFixture);
+    ({ ownerId } = getDocumentsFixture);
 
     documents = getDocumentsFixture();
+    documentTransitions = getDocumentTransitionsFixture({
+      create: documents,
+    });
     dataContract = getContractFixture();
 
-    dataProviderMock = createDataProviderMock(this.sinonSandbox);
-    dataProviderMock.fetchDocuments.resolves([]);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDocuments.resolves([]);
 
     validateDocumentsUniquenessByIndices = verifyDocumentsUniquenessByIndicesFactory(
-      dataProviderMock,
+      stateRepositoryMock,
     );
   });
 
@@ -36,33 +41,35 @@ describe('validateDocumentsUniquenessByIndices', () => {
   it('should return valid result if Document has unique indices and there are no duplicates', async () => {
     const [, , , william] = documents;
 
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         william.getType(),
         {
           where: [
-            ['$userId', '==', userId],
+            ['$ownerId', '==', ownerId],
             ['firstName', '==', william.get('firstName')],
           ],
         },
       )
       .resolves([william]);
 
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         william.getType(),
         {
           where: [
-            ['$userId', '==', userId],
+            ['$ownerId', '==', ownerId],
             ['lastName', '==', william.get('lastName')],
           ],
         },
       )
       .resolves([william]);
 
-    const result = await validateDocumentsUniquenessByIndices(documents, dataContract);
+    const result = await validateDocumentsUniquenessByIndices(
+      ownerId, documentTransitions, dataContract,
+    );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
@@ -73,69 +80,71 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     const indicesDefinition = dataContract.getDocumentSchema(william.getType()).indices;
 
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         william.getType(),
         {
           where: [
-            ['$userId', '==', userId],
+            ['$ownerId', '==', ownerId],
             ['firstName', '==', william.get('firstName')],
           ],
         },
       )
       .resolves([leon]);
 
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         william.getType(),
         {
           where: [
-            ['$userId', '==', userId],
+            ['$ownerId', '==', ownerId],
             ['lastName', '==', william.get('lastName')],
           ],
         },
       )
       .resolves([leon]);
 
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         leon.getType(),
         {
           where: [
-            ['$userId', '==', userId],
+            ['$ownerId', '==', ownerId],
             ['firstName', '==', leon.get('firstName')],
           ],
         },
       )
       .resolves([william]);
 
-    dataProviderMock.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         leon.getType(),
         {
           where: [
-            ['$userId', '==', userId],
+            ['$ownerId', '==', ownerId],
             ['lastName', '==', leon.get('lastName')],
           ],
         },
       )
       .resolves([william]);
 
-    const result = await validateDocumentsUniquenessByIndices(documents, dataContract);
+    const result = await validateDocumentsUniquenessByIndices(
+      ownerId, documentTransitions, dataContract,
+    );
 
     expectValidationError(result, DuplicateDocumentError, 4);
 
     const errors = result.getErrors();
 
-    expect(errors.map((e) => e.getDocument())).to.have.deep.members([
-      william,
-      william,
-      leon,
-      leon,
+    expect(errors.map((e) => e.getDocumentTransition())).to.have.deep.members([
+      documentTransitions[3],
+      documentTransitions[3],
+      documentTransitions[4],
+      documentTransitions[4],
     ]);
 
     expect(errors.map((e) => e.getIndexDefinition())).to.have.deep.members([

@@ -11,11 +11,11 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
-const DataContractStateTransition = require(
-  '../../lib/dataContract/stateTransition/DataContractStateTransition',
+const DataContractCreateTransition = require(
+  '../../lib/dataContract/stateTransition/DataContractCreateTransition',
 );
-const DocumentsStateTransition = require(
-  '../../lib/document/stateTransition/DocumentsStateTransition',
+const DocumentsBatchTransition = require(
+  '../../lib/document/stateTransition/DocumentsBatchTransition',
 );
 
 const getDataContractFixture = require('../../lib/test/fixtures/getDataContractFixture');
@@ -56,9 +56,9 @@ async function registerUser(coreApi) {
     .fee(668)
     .sign(privateKey);
 
-  const { result: userId } = await coreApi.sendrawtransaction(transaction.serialize());
+  const { result } = await coreApi.sendrawtransaction(transaction.serialize());
 
-  return userId;
+  return result;
 }
 
 describe.skip('validateStateTransition', function main() {
@@ -104,22 +104,25 @@ describe.skip('validateStateTransition', function main() {
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture();
 
-    const userId = await registerUser(coreApi);
+    const ownerId = await registerUser(coreApi);
 
-    dataContract.contractId = userId;
+    dataContract.contractId = ownerId;
 
     documents.forEach((d) => {
       // eslint-disable-next-line
-      d.contractId = userId;
+      d.contractId = ownerId;
       // eslint-disable-next-line
-      d.userId = userId;
+      d.ownerId = ownerId;
     });
   });
 
   it('should validate contract state transition without a blockchain user', async () => {
     dataContract.contractId = Buffer.alloc(32).toString('hex');
 
-    const stateTransition = new DataContractStateTransition(dataContract);
+    const stateTransition = new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
 
     await withinBlock(async (blockHeight, blockHash) => {
       const request = new ApplyStateTransitionRequest();
@@ -139,7 +142,10 @@ describe.skip('validateStateTransition', function main() {
   });
 
   it('should validate contract state transition when it submitted twice', async () => {
-    const stateTransition = new DataContractStateTransition(dataContract);
+    const stateTransition = new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
 
     await withinBlock(async (blockHeight, blockHash) => {
       const request = new ApplyStateTransitionRequest();
@@ -170,7 +176,10 @@ describe.skip('validateStateTransition', function main() {
 
     anotherDocument.set('lastName', 'Birkin');
 
-    const stateTransition = new DataContractStateTransition(dataContract);
+    const stateTransition = new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
 
     await withinBlock(async (blockHeight, blockHash) => {
       const request = new ApplyStateTransitionRequest();
@@ -181,13 +190,13 @@ describe.skip('validateStateTransition', function main() {
       await driveUpdateStateApi.applyStateTransition(request);
     });
 
-    const documentsStateTransition = new DocumentsStateTransition([indexDocument]);
+    const documentsBatchTransition = new DocumentsBatchTransition([indexDocument]);
 
-    const duplicateStateTransition = new DocumentsStateTransition([anotherDocument]);
+    const duplicateStateTransition = new DocumentsBatchTransition([anotherDocument]);
 
     await withinBlock(async (blockHeight, blockHash) => {
       const request = new ApplyStateTransitionRequest();
-      request.setStateTransition(documentsStateTransition.serialize());
+      request.setStateTransition(documentsBatchTransition.serialize());
       request.setBlockHeight(blockHeight);
       request.setBlockHash(blockHash);
 
@@ -207,7 +216,7 @@ describe.skip('validateStateTransition', function main() {
         expect(error.indexDefinition).to.deep.equal({
           unique: true,
           properties: [
-            { $userId: 'asc' },
+            { $ownerId: 'asc' },
             { lastName: 'desc' },
           ],
         });
@@ -216,7 +225,10 @@ describe.skip('validateStateTransition', function main() {
   });
 
   it('should successfully submit valid contract and documents', async () => {
-    const stateTransition = new DataContractStateTransition(dataContract);
+    const stateTransition = new DataContractCreateTransition({
+      dataContract: dataContract.toJSON(),
+      entropy: dataContract.getEntropy(),
+    });
 
     await withinBlock(async (blockHeight, blockHash) => {
       const request = new ApplyStateTransitionRequest();
@@ -227,11 +239,11 @@ describe.skip('validateStateTransition', function main() {
       await driveUpdateStateApi.applyStateTransition(request);
     });
 
-    const documentsStateTransition = new DocumentsStateTransition(documents);
+    const documentsBatchTransition = new DocumentsBatchTransition(documents);
 
     await withinBlock(async (blockHeight, blockHash) => {
       const request = new ApplyStateTransitionRequest();
-      request.setStateTransition(documentsStateTransition.serialize());
+      request.setStateTransition(documentsBatchTransition.serialize());
       request.setBlockHeight(blockHeight);
       request.setBlockHash(blockHash);
 

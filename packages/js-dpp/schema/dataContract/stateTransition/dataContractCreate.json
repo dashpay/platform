@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "properties": {
+    "dataContract": {
+      "type": "object"
+    },
+    "entropy": {
+      "type": "string",
+      "minLength": 26,
+      "maxLength": 35,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+    }
+  },
+  "required": [
+    "dataContract",
+    "entropy"
+  ]
+}
