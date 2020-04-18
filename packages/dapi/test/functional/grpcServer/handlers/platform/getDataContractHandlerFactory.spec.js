@@ -55,7 +55,7 @@ describe('getDataContractHandlerFactory', function main() {
 
     // eslint-disable-next-line no-underscore-dangle
     const publicKeyHash = PublicKey.fromBuffer(Buffer.from(pubKeyBase, 'base64'))._getID();
-    publicKeyId = 1;
+    publicKeyId = 0;
 
     await coreAPI.generateToAddress(500, addressString);
 

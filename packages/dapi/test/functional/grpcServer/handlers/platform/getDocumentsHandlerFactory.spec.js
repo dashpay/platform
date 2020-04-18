@@ -35,6 +35,7 @@ describe('getDocumentsHandlerFactory', function main() {
   let dataContract;
   let identityPrivateKey;
   let accumulatedFee;
+  let publicKeyId;
 
   before(async () => {
     const {
@@ -62,6 +63,7 @@ describe('getDocumentsHandlerFactory', function main() {
     });
     const pubKeyBase = publicKey.toBuffer()
       .toString('base64');
+    publicKeyId = 0;
 
     identityPrivateKey = privateKey;
 
@@ -107,7 +109,7 @@ describe('getDocumentsHandlerFactory', function main() {
     dataContract = getDataContractFixture(identity.getId());
 
     const dataContractStateTransition = dpp.dataContract.createStateTransition(dataContract);
-    dataContractStateTransition.sign(identity.getPublicKeyById(1), identityPrivateKey);
+    dataContractStateTransition.sign(identity.getPublicKeyById(publicKeyId), identityPrivateKey);
 
     accumulatedFee += dataContractStateTransition.calculateFee();
 
@@ -128,7 +130,7 @@ describe('getDocumentsHandlerFactory', function main() {
     const documentTransition = dpp.document.createStateTransition({
       create: [document],
     });
-    documentTransition.sign(identity.getPublicKeyById(1), identityPrivateKey);
+    documentTransition.sign(identity.getPublicKeyById(publicKeyId), identityPrivateKey);
 
     accumulatedFee += documentTransition.calculateFee();
 
@@ -153,7 +155,7 @@ describe('getDocumentsHandlerFactory', function main() {
     const documentTransition = dpp.document.createStateTransition({
       create: [document],
     });
-    documentTransition.sign(identity.getPublicKeyById(1), identityPrivateKey);
+    documentTransition.sign(identity.getPublicKeyById(publicKeyId), identityPrivateKey);
 
     try {
       await dapiClient.applyStateTransition(documentTransition);
