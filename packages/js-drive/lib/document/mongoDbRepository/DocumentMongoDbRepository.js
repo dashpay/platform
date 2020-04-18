@@ -253,7 +253,7 @@ class DocumentMongoDbRepository {
     return new Document({
       $id: _id,
       $type: this.documentType,
-      $contractId: this.contractId,
+      $dataContractId: this.contractId,
       $ownerId: ownerId,
       $revision: revision,
       ...data,
