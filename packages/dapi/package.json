@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi",
-  "version": "0.12.0-dev.3",
+  "version": "0.12.0",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -33,7 +33,7 @@
     "@dashevo/dapi-grpc": "~0.12.1",
     "@dashevo/dashcore-lib": "~0.18.0",
     "@dashevo/dashd-rpc": "^2.0.0",
-    "@dashevo/dpp": "~0.12.0-dev.7",
+    "@dashevo/dpp": "~0.12.0",
     "@dashevo/grpc-common": "~0.2.1",
     "ajv": "^6.4.0",
     "bs58": "^4.0.1",
@@ -49,7 +49,7 @@
     "zeromq": "^5.2.0"
   },
   "devDependencies": {
-    "@dashevo/dapi-client": "~0.11.0",
+    "@dashevo/dapi-client": "~0.12.0-dev.1",
     "@dashevo/dp-services-ctl": "dashevo/js-dp-services-ctl#v0.12-dev",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",

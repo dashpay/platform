@@ -1,3 +1,28 @@
+# [0.12.0](https://github.com/dashevo/dapi/compare/v0.11.1...v0.12.0) (2020-04-18)
+
+### Bug Fixes
+
+* in case of `Timed out waiting for tx to be included in a block` DAPI responds with Internal error ([#258](https://github.com/dashevo/dapi/issues/258))
+
+### Code Refactoring
+
+* remove Platform JSON RPC endpoints ([#256](https://github.com/dashevo/dapi/issues/256))
+* rename `TENDERMINT_CORE_...` envs to `TENDERMINT_RPC_...` ([98c6ad0](https://github.com/dashevo/dapi/commit/98c6ad02c1f8cf2ad76f30bec052f9a1f6eac34f))
+* remove rate limiter errors ([#254]((https://github.com/dashevo/dapi/issues/254)))
+
+### Features
+
+* handle insufficient funds ABCI error ([#257](https://github.com/dashevo/dapi/issues/257))
+* update deploy script to tag image for every Semver segment ([#260](https://github.com/dashevo/dapi/issues/260))
+* update according to merge of Drive and Machine ([#255](https://github.com/dashevo/dapi/issues/255), [#259](https://github.com/dashevo/dapi/issues/259))
+
+### BREAKING CHANGES
+
+* `fetchDocuments`, `fetchDataContract`, `fetchIdentity`, `applyStateTransition` JSON RPC endpoints are removed. Use gRPC analogues.
+* rename `TENDERMINT_CORE_...` envs to `TENDERMINT_RPC_...`
+* see [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.12.0)
+
+
 ## [0.11.1](https://github.com/dashevo/dapi/compare/v0.11.0...v0.11.1) (2020-03-17)
 
 ### Bug Fixes
