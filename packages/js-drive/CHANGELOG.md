@@ -1,3 +1,17 @@
+# [0.12.0](https://github.com/dashevo/drive/compare/v0.11.1...v0.12.0) (2020-04-18)
+
+### Features
+
+* publish docker image with tag for every Semver segment ([#332](https://github.com/dashevo/drive/issues/332))
+* introduce ABCI and Machine logic, remove API and upgrade to DPP 0.12 ([#328](https://github.com/dashevo/drive/issues/328))
+* validate fee, reduce balance and move fees to distribution pool ([#329](https://github.com/dashevo/drive/issues/329))
+
+### BREAKING CHANGES
+
+* JSON RPC and gRPC endpoints are removed. Use Tendermint ABCI query endpoint in order to fetch data
+* see [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.12.0)
+
+
 ## [0.11.1](https://github.com/dashevo/drive/compare/v0.11.0...v0.11.1) (2020-03-17)
 
 ### Bug Fixes
