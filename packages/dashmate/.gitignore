@@ -5,4 +5,4 @@
 .env
 
 # Tendermint creates `data` dir in configs for some reason
-configs/*/tendermint/data
+configs/*/drive/tendermint/data

@@ -34,7 +34,7 @@ services:
       - DPNS_TOP_LEVEL_IDENTITY=${DPNS_TOP_LEVEL_IDENTITY}
     command: sh -c "sleep 15 && npm run abci"
 
-  tendermint:
+  drive_tendermint:
     image: tendermint/tendermint:${TENDERMINT_VERSION:-v0.32.8}
     restart: always
     depends_on:
@@ -42,8 +42,8 @@ services:
     ports:
       - 26656:26656 # P2P
     volumes:
-      - ./configs/${PRESET:?err}/tendermint:/tendermint
-      - ./data/${PRESET:?err}/tendermint:/data
+      - ./configs/${PRESET:?err}/drive/tendermint:/tendermint
+      - ./data/${PRESET:?err}/drive/tendermint:/data
     entrypoint: sh -c "sleep 30 && /usr/bin/tendermint init && /usr/bin/tendermint node"
 
   dapi_insight:
@@ -52,13 +52,13 @@ services:
     depends_on:
       - core
     volumes:
-      - ./configs/${PRESET:?err}/dapi-insight/dashcore-node.json:/insight/dashcore-node.json
+      - ./configs/${PRESET:?err}/dapi/insight/dashcore-node.json:/insight/dashcore-node.json
 
   dapi_api:
     image: dashpay/dapi:${DAPI_VERSION:-latest}
     restart: always
     depends_on:
-      - tendermint
+      - drive_tendermint
       - dapi_insight
       - core
     environment:
@@ -75,7 +75,7 @@ services:
       - DASHCORE_P2P_PORT=20001
       - DASHCORE_P2P_NETWORK=devnet
       - NETWORK=devnet
-      - TENDERMINT_RPC_HOST=tendermint
+      - TENDERMINT_RPC_HOST=drive_tendermint
       - TENDERMINT_RPC_PORT=26657
     command: npm run api
 
@@ -107,7 +107,7 @@ services:
       - dapi_api
       - dapi_tx_filter_stream
     volumes:
-      - ./configs/${PRESET:?err}/envoy/grpc.yaml:/etc/envoy/envoy.yaml
+      - ./configs/${PRESET:?err}/dapi/envoy/grpc.yaml:/etc/envoy/envoy.yaml
 
   dapi_nginx:
     image: nginx:${DAPI_NGINX_VERSION:-latest}
@@ -120,9 +120,9 @@ services:
       - 3000:80 # JSON RPC and gRPC Web
       - 3010:50051 # gRPC Native
     volumes:
-      - ./configs/${PRESET:?err}/dapi-nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - ./configs/${PRESET:?err}/dapi-nginx/grpc.conf:/etc/nginx/conf.d/grpc.conf
-      - ./configs/${PRESET:?err}/dapi-nginx/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
+      - ./configs/${PRESET:?err}/dapi/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./configs/${PRESET:?err}/dapi/nginx/grpc.conf:/etc/nginx/conf.d/grpc.conf
+      - ./configs/${PRESET:?err}/dapi/nginx/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
 
 volumes:
   drive_mongodb:
