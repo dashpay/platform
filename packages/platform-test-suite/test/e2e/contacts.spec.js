@@ -40,9 +40,9 @@ describe('Contacts', function contacts() {
       stateRepository,
     });
 
-    const seeds = process.env.DAPI_CLIENT_SEEDS
+    const seeds = process.env.DAPI_SEED
       .split(',')
-      .map(ip => ({ service: `${ip}:${process.env.DAPI_CLIENT_PORT}` }));
+      .map(seed => ({ service: `${seed}` }));
 
     dapiClient = new DAPIClient({
       seeds,

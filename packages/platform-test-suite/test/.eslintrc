@@ -7,6 +7,7 @@
     "import/no-extraneous-dependencies": "off"
   },
   "globals": {
-    "expect": true
+    "expect": true,
+    "dashClient": true
   }
 }
