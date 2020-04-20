@@ -1,3 +1,16 @@
+# [0.12.0](https://github.com/dashevo/dapi-client/compare/v0.11.0...v0.12.0) (2020-04-20)
+
+
+### Code Refactoring
+
+* remove `forceJsonRpc` option ([#126](https://github.com/dashevo/dapi-client/issues/126))
+
+
+### BREAKING CHANGES
+
+* platform methods no longer available through JSON RPC
+
+
 # [0.11.0](https://github.com/dashevo/dapi-client/compare/v0.8.0...v0.11.0) (2020-03-01)
 
 ### Bug Fixes
