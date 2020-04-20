@@ -7,6 +7,8 @@ node_js:
 branches:
   only:
     - master
+    - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)-dev$/
+    - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
 
 services:
   - docker
@@ -30,3 +32,10 @@ script:
   - ~/.local/bin/dash-network test $DEVNET
   - cd $TRAVIS_BUILD_DIR
   - npm run test
+
+deploy:
+  provider: script
+  script: bash bin/travis-deploy.sh
+  on:
+    tags: true
+    repo: dashevo/platform-test-suite
