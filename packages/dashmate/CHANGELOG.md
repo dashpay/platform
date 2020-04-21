@@ -1,9 +1,17 @@
+## [0.12.1](https://github.com/dashevo/mn-bootstrap/compare/v0.11.1...v0.12.0) (2020-04-21)
+
+
+## Bug Fixes
+
+* `latest` envoy docker image tag is not present anymore ([#29](https://github.com/dashevo/mn-bootstrap/issues/29))
+
+
 # [0.12.0](https://github.com/dashevo/mn-bootstrap/compare/v0.11.1...v0.12.0) (2020-04-19)
 
 
 ### Bug Fixes
 
-* dash-cli doesn't work without default config ([#18](https://github.com/dashevo/mn-bootstrap/pull/18))
+* dash-cli doesn't work without default config ([#18](https://github.com/dashevo/mn-bootstrap/issues/18))
 * explicitly load core conf file ([#23](https://github.com/dashevo/mn-bootstrap/issues/23))
 * invalid gRPC Web configuration ([#25](https://github.com/dashevo/mn-bootstrap/issues/25), [#26](https://github.com/dashevo/mn-bootstrap/issues/26))
 * remove spork private key from сore config ([#11](https://github.com/dashevo/mn-bootstrap/issues/11))
