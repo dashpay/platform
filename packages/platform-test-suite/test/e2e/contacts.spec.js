@@ -9,7 +9,6 @@ const throwGrpcErrorWithMetadata = require('../../lib/test/throwGrpcErrorWithMet
 
 describe('Contacts', function contacts() {
   this.timeout(150000);
-  this.retries(3);
 
   let dpp;
   let dataContract;
@@ -115,7 +114,7 @@ describe('Contacts', function contacts() {
       const stateTransition = dpp.dataContract.createStateTransition(dataContract);
 
       stateTransition.sign(
-        bobIdentity.getPublicKeyById(1),
+        bobIdentity.getPublicKeyById(0),
         bobPrivateKey,
       );
 
@@ -152,7 +151,7 @@ describe('Contacts', function contacts() {
       });
 
       stateTransition.sign(
-        bobIdentity.getPublicKeyById(1),
+        bobIdentity.getPublicKeyById(0),
         bobPrivateKey,
       );
 
@@ -207,7 +206,7 @@ describe('Contacts', function contacts() {
       });
 
       stateTransition.sign(
-        aliceIdentity.getPublicKeyById(1),
+        aliceIdentity.getPublicKeyById(0),
         alicePrivateKey,
       );
 
@@ -245,7 +244,7 @@ describe('Contacts', function contacts() {
       });
 
       stateTransition.sign(
-        aliceIdentity.getPublicKeyById(1),
+        aliceIdentity.getPublicKeyById(0),
         alicePrivateKey,
       );
 
@@ -267,7 +266,10 @@ describe('Contacts', function contacts() {
         actualAliceProfileSerialized,
       );
 
-      expect(actualAliceProfile.toJSON()).to.be.deep.equal(aliceProfile.toJSON());
+      expect(actualAliceProfile.toJSON()).to.be.deep.equal({
+        ...aliceProfile.toJSON(),
+        $revision: 2,
+      });
     });
   });
 
@@ -276,7 +278,7 @@ describe('Contacts', function contacts() {
       // 1. Create contact document
       bobContactRequest = dpp.document.create(dataContract, bobIdentity.getId(), 'contact', {
         toUserId: aliceIdentity.getId(),
-        publicKey: bobIdentity.getPublicKeyById(1).getData(),
+        publicKey: bobIdentity.getPublicKeyById(0).getData(),
       });
 
       const result = await dpp.document.validate(bobContactRequest);
@@ -288,7 +290,7 @@ describe('Contacts', function contacts() {
       });
 
       stateTransition.sign(
-        bobIdentity.getPublicKeyById(1),
+        bobIdentity.getPublicKeyById(0),
         bobPrivateKey,
       );
 
@@ -319,7 +321,7 @@ describe('Contacts', function contacts() {
       // 1. Create approve contract
       aliceContactAcceptance = dpp.document.create(dataContract, aliceIdentity.getId(), 'contact', {
         toUserId: bobIdentity.getId(),
-        publicKey: aliceIdentity.getPublicKeyById(1).getData(),
+        publicKey: aliceIdentity.getPublicKeyById(0).getData(),
       });
 
       const result = await dpp.document.validate(aliceContactAcceptance);
@@ -331,7 +333,7 @@ describe('Contacts', function contacts() {
       });
 
       stateTransition.sign(
-        aliceIdentity.getPublicKeyById(1),
+        aliceIdentity.getPublicKeyById(0),
         alicePrivateKey,
       );
 
@@ -365,7 +367,7 @@ describe('Contacts', function contacts() {
       });
 
       stateTransition.sign(
-        aliceIdentity.getPublicKeyById(1),
+        aliceIdentity.getPublicKeyById(0),
         alicePrivateKey,
       );
 
