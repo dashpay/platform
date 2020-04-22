@@ -1,3 +1,11 @@
+## [0.12.2](https://github.com/dashevo/mn-bootstrap/compare/v0.12.1...v0.12.2) (2020-04-22)
+
+
+### Bug Fixes
+
+* update DPNS identities for evonet ([#31](https://github.com/dashevo/mn-bootstrap/issues/31))
+
+
 ## [0.12.1](https://github.com/dashevo/mn-bootstrap/compare/v0.11.1...v0.12.0) (2020-04-21)
 
 
