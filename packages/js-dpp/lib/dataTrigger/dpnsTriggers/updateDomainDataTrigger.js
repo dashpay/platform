@@ -4,17 +4,17 @@ const DataTriggerConditionError = require('../../errors/DataTriggerConditionErro
 /**
  * Data trigger for domain update process
  *
- * @param {Document} document
+ * @param {DocumentReplaceTransition} documentTransition
  * @param {DataTriggerExecutionContext} context
  *
  * @return {Promise<DataTriggerExecutionResult>}
  */
-async function updateDomainDataTrigger(document, context) {
+async function updateDomainDataTrigger(documentTransition, context) {
   const result = new DataTriggerExecutionResult();
 
   result.addError(
     new DataTriggerConditionError(
-      document,
+      documentTransition,
       context.getDataContract(),
       context.getOwnerId(),
       'Update action is not allowed',

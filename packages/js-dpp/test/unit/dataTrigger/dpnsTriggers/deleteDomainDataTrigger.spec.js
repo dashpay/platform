@@ -3,17 +3,23 @@ const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTri
 const { getChildDocumentFixture } = require('../../../../lib/test/fixtures/getDpnsDocumentFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsContractFixture');
+const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 
 describe('deleteDomainDataTrigger', () => {
-  let document;
+  let documentTransition;
   let context;
   let stateRepositoryMock;
   let dataContract;
 
   beforeEach(function beforeEach() {
     dataContract = getDpnsContractFixture();
-    document = getChildDocumentFixture();
+    const document = getChildDocumentFixture();
+
+    [documentTransition] = getDocumentTransitionFixture({
+      create: [],
+      delete: [document],
+    });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     context = new DataTriggerExecutionContext(
@@ -24,7 +30,7 @@ describe('deleteDomainDataTrigger', () => {
   });
 
   it('should always fail', async () => {
-    const result = await deleteDomainDataTrigger(document, context);
+    const result = await deleteDomainDataTrigger(documentTransition, context);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.getErrors()[0].message).to.equal('Delete action is not allowed');

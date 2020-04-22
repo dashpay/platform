@@ -2,24 +2,28 @@ const AbstractDataTriggerError = require('./AbstractDataTriggerError');
 
 class DataTriggerConditionError extends AbstractDataTriggerError {
   /**
-   * @param {Document} document
+   * @param {
+   *   DocumentCreateTransition|DocumentReplaceTranition|DocumentDeleteTransition
+   * } documentTransition
    * @param {DataContract} dataContract
    * @param {string} ownerId
    * @param {string} message
    */
-  constructor(document, dataContract, ownerId, message) {
+  constructor(documentTransition, dataContract, ownerId, message) {
     super(message, dataContract, ownerId);
 
-    this.document = document;
+    this.documentTransition = documentTransition;
   }
 
   /**
-   * Get document
+   * Get document transition
    *
-   * @returns {Document}
+   * @returns {
+   *   DocumentCreateTransition|DocumentReplaceTranition|DocumentDeleteTransition
+   * }
    */
-  getDocument() {
-    return this.document;
+  getDocumentTransiton() {
+    return this.documentTransition;
   }
 }
 

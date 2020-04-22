@@ -3,17 +3,25 @@ const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTri
 const { getChildDocumentFixture } = require('../../../../lib/test/fixtures/getDpnsDocumentFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsContractFixture');
+const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 
 describe('updateDomainDataTrigger', () => {
-  let document;
+  let documentTransition;
   let context;
   let stateRepositoryMock;
   let dataContract;
 
   beforeEach(function beforeEach() {
     dataContract = getDpnsContractFixture();
-    document = getChildDocumentFixture();
+
+    const document = getChildDocumentFixture();
+
+    [documentTransition] = getDocumentTransitionFixture({
+      create: [],
+      replace: [document],
+    });
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
@@ -23,7 +31,7 @@ describe('updateDomainDataTrigger', () => {
   });
 
   it('should always fail', async () => {
-    const result = await domainUpdateDataTrigger(document, context);
+    const result = await domainUpdateDataTrigger(documentTransition, context);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.getErrors()[0].message).to.equal('Update action is not allowed');

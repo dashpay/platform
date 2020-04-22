@@ -1,4 +1,13 @@
+## [0.12.1](https://github.com/dashevo/js-dpp/compare/v0.12.0...v0.12.1) (2020-04-22)
+
+
+### Bug Fixes
+
+* data trigger should accept document transition ([#164](https://github.com/dashevo/js-dpp/issues/164))
+
+
 # [0.12.0](https://github.com/dashevo/js-dpp/compare/v0.11.0...v0.12.0) (2020-04-17)
+
 
 ### Bug Fixes
 
@@ -8,6 +17,7 @@
 * data contract definitions might be `null` or `undefined` ([#153](https://github.com/dashevo/js-dpp/issues/153))
 * identity existence validation in data contract structure validation ([#149](https://github.com/dashevo/js-dpp/issues/149))
 * state transition signature validation in data contract structure validation ([#150](https://github.com/dashevo/js-dpp/pull/150))
+
 
 ### Code Refactoring
 
@@ -23,6 +33,7 @@
 * start types and indices from `0` instead of `1` ([#155](https://github.com/dashevo/js-dpp/pull/155))
 * put JSON Schemas into order ([#135](https://github.com/dashevo/js-dpp/pull/135))
 
+
 ### Features
 
 * implement apply state transition function ([#138](https://github.com/dashevo/js-dpp/issues/138), [#139](https://github.com/dashevo/js-dpp/issues/139), [#142](https://github.com/dashevo/js-dpp/issues/142), [#141](https://github.com/dashevo/js-dpp/issues/141), [#147](https://github.com/dashevo/js-dpp/issues/147), [#143](https://github.com/dashevo/js-dpp/issues/143))
@@ -35,6 +46,7 @@
 * implement create identity create transition factory ([#152](https://github.com/dashevo/js-dpp/issues/152))
 * introduce `signByPrivateKey` and `verifySignatureByPublicKey` methods to ST ([4eb5cdc](https://github.com/dashevo/js-dpp/commit/4eb5cdc408df8fe95294f668743c75da17ac0083))
 * verbose invalid data errors ([#134](https://github.com/dashevo/js-dpp/pull/134))
+
 
 ### BREAKING CHANGES
 
@@ -56,6 +68,7 @@
 
 ## [0.11.1](https://github.com/dashevo/js-dpp/compare/v0.11.0...v0.11.1) (2020-03-17)
 
+
 ### Bug Fixes
 
 * documents validate against wrong Data Contract ([0db6e44](https://github.com/dashevo/js-dpp/commit/0db6e44cfa8309d46bb42b5a0174574604861b2b))
@@ -63,11 +76,13 @@
 
 # [0.11.0](https://github.com/dashevo/js-dpp/compare/v0.10.0...v0.11.0) (2020-03-09)
 
+
 ### Bug Fixes
 
 * missing public key during ST signature validation ([667402d](https://github.com/dashevo/js-dpp/commit/667402dd659d50d7c2d9da5c61c32f2964a4c8b8))
 * add npmignore ([c2e5f5d](https://github.com/dashevo/js-dpp/commit/c2e5f5d5b6c891b3280d02da659fb8eda613a43c))
 * prevent to update dependencies with major version `0` to minor versions ([ea7de93](https://github.com/dashevo/js-dpp/commit/ea7de9379a38b856f4a7b779786986afacd75b0d))
+
 
 ### Features
 

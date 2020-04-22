@@ -4,17 +4,17 @@ const DataTriggerConditionError = require('../../errors/DataTriggerConditionErro
 /**
  * Data trigger for domain deletion process
  *
- * @param {Document} document
+ * @param {DocumentDeleteTransition} documentTransition
  * @param {DataTriggerExecutionContext} context
  *
  * @return {Promise<DataTriggerExecutionResult>}
  */
-async function deleteDomainDataTrigger(document, context) {
+async function deleteDomainDataTrigger(documentTransition, context) {
   const result = new DataTriggerExecutionResult();
 
   result.addError(
     new DataTriggerConditionError(
-      document,
+      documentTransition,
       context.getDataContract(),
       context.getOwnerId(),
       'Delete action is not allowed',
