@@ -52,10 +52,8 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
       }
     }
     if (fetchUtxo) {
-      const fetchedUtxoReq = await self.transporter.getUTXO(address);
-      if (fetchedUtxoReq && fetchedUtxoReq.totalItems) {
-        const fetchedUtxo = fetchedUtxoReq.items;
-
+      const fetchedUtxo = await self.transporter.getUTXO(address);
+      if (fetchedUtxo.length) {
         const utxos = [];
         if (balanceSat > 0) {
           fetchedUtxo.forEach((utxo) => {

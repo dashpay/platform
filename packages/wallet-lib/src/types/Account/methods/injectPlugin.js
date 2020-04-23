@@ -56,7 +56,6 @@ module.exports = async function injectPlugin(
       const deps = plugin.dependencies || [];
 
       const injectedPlugins = Object.keys(this.plugins.standard).map((key) => key.toLowerCase());
-      const injectedDPAs = Object.keys(this.plugins.DPAs).map((key) => key.toLowerCase());
       deps.forEach((dependencyName) => {
         if (_.has(self, dependencyName)) {
           plugin.inject(dependencyName, self[dependencyName], allowSensitiveOperations);
@@ -66,8 +65,6 @@ module.exports = async function injectPlugin(
           const loweredDependencyName = dependencyName.toLowerCase();
           if (injectedPlugins.includes(loweredDependencyName)) {
             plugin.inject(dependencyName, this.plugins.standard[loweredDependencyName], true);
-          } else if (injectedDPAs.includes(loweredDependencyName)) {
-            plugin.inject(dependencyName, this.plugins.DPAs[loweredDependencyName], true);
           } else reject(new InjectionErrorCannotInjectUnknownDep(pluginName, dependencyName));
         }
       });
@@ -99,9 +96,6 @@ module.exports = async function injectPlugin(
             await plugin.startWorker();
           }
           break;
-        case 'DPA':
-          self.plugins.DPAs[pluginName] = plugin;
-          break;
         case 'Standard':
           if (plugin.executeOnStart === true) {
             if (plugin.firstExecutionRequired === true) {
@@ -131,9 +125,6 @@ module.exports = async function injectPlugin(
         else plugin.onInjected();
       }
 
-      if (pluginType === 'DPA' && plugin.verifyOnInjected) {
-        await plugin.verifyDPA(this.transporter.transport);
-      }
       logger.debug(`Account.injectPlugin(${pluginName}) - successfully injected`);
       return resolve(plugin);
     } catch (e) {

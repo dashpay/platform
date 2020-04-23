@@ -23,6 +23,8 @@ class BaseTransporter extends EventEmitter {
 BaseTransporter.prototype.announce = require('./methods/announce');
 BaseTransporter.prototype.disconnect = require('./methods/disconnect');
 BaseTransporter.prototype.getAddressSummary = require('./methods/getAddressSummary');
+BaseTransporter.prototype.getBestBlock = require('./methods/getBestBlock');
+BaseTransporter.prototype.getBestBlockHeader = require('./methods/getBestBlockHeader');
 BaseTransporter.prototype.getBestBlockHash = require('./methods/getBestBlockHash');
 BaseTransporter.prototype.getBestBlockHeight = require('./methods/getBestBlockHeight');
 BaseTransporter.prototype.getBlockByHash = require('./methods/getBlockByHash');

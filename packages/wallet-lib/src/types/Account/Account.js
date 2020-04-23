@@ -126,7 +126,6 @@ class Account extends EventEmitter {
 
     this.plugins = {
       workers: {},
-      DPAs: {},
       standard: {},
       watchers: {},
     };
@@ -202,8 +201,6 @@ Account.prototype.getConfirmedBalance = require('./methods/getConfirmedBalance')
 Account.prototype.getUnconfirmedBalance = require('./methods/getUnconfirmedBalance');
 
 Account.prototype.getTotalBalance = require('./methods/getTotalBalance');
-
-Account.prototype.getDPA = require('./methods/getDPA');
 
 Account.prototype.getPlugin = require('./methods/getPlugin');
 

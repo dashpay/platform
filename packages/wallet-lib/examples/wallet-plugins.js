@@ -3,9 +3,6 @@ const logger = require('../src/logger');
 // This is a ColdStorage worker. It ran each X, verify a condition (execute function), and
 const ColdStorageWorker = require('./workers/ColdStorageWorker');
 
-// This is a DPA showcasing a DOC notarization
-const DPADoc = require('./DPAs/DPADoc');
-
 // Wallet Consolidator is a standard plugin, when added it will offer new
 // functionnalities to the account. Such as 'consolidateWallet' method.
 const WalletConsolidator = require('./stdPlugins/WalletConsolidator');
@@ -20,7 +17,7 @@ const wallet = new Wallet({
   injectDefaultPlugins: false, // Will not inject default plugins (BIP44, SyncWorker)
   // Will add these plugin instead, one is already init to show that both are fine to used.
   // The order has it's importance, here ColdStorageWorker will use WalletConsolidator as a depts.
-  plugins: [WalletConsolidator, DPADoc, new ColdStorageWorker({ address: coldStorageAddress })],
+  plugins: [WalletConsolidator, new ColdStorageWorker({ address: coldStorageAddress })],
 });
 
 const account = wallet.getAccount({ index: 0 });
@@ -30,7 +27,6 @@ const start = async () => {
   logger.info('Funding address', account.getUnusedAddress().address);
 
   // await showcasePlugin();
-  // await showcaseDPA();
 };
 
 
@@ -43,12 +39,5 @@ const showcasePlugin = async () => {
   // logger.info('Broadcast', await preparedTransaction.broadcast());
 };
 
-const showcaseDPA = async () => {
-  const dpaDoc = account.getDPA('DPADoc');
-  const documentPath = `${__dirname}/document.txt`;
-  const notarize = await dpaDoc.notarizeDocument(documentPath);
-
-  logger.info('Notarized ?', notarize);
-};
 
 account.events.on('ready', start);

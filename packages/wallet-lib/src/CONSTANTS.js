@@ -59,7 +59,6 @@ const CONSTANTS = {
       'fetchAddressInfo',
       'fetchStatus',
       'getPlugin',
-      'getDPA',
       'sign',
       'getTransactions',
       'getTransactionHistory',

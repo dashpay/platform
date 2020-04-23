@@ -1,3 +1,18 @@
+# [6.1.0](https://github.com/dashevo/wallet-lib/compare/v6.1.0...v6.0.0) (2020-04-23)
+
+- **Features:** 
+    - Feat(Transporter): added .getBestBlock / .getBestBlockHeader (#110 )
+
+- **Fixes:**
+    - Fix : Support for DAPIClient.getUTXO with more than 1000 utxos (#111 )
+    - Fix: Empty confirmed balance (#109)
+    - Refact: Removed Identity Types + dpp (#114)
+    - Fix: Removed palinka, updated seeds (#117)
+
+- **Chore, Docs & Tests:**
+    - Doc: fixed link and duplicates (#113)
+    - Tests: refactorate + fakenet (#115)
+
 # [6.0.0](https://github.com/dashevo/wallet-lib/compare/v5.0.3...v6.0.0) (2020-03-10)
 
 

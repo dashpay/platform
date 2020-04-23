@@ -16,7 +16,6 @@ For more granularity, you could do it as a parameter of `getAccount(accId, accOp
 There are three different types of plugins that can be used in the wallet-library:
 
 - Workers : A worker plugins is a plugin that inherits from Worker class. It distinguish itself by having a execute method that will be executed each `workerIntervalTime`.
-- DPA :  A DPA plugins inherits from DPA class and is only require to have a init method.
 - Standard : These are mostly enhancers of the wallet library functionalities.
 
 ## Dependencies
@@ -36,11 +35,10 @@ class MyPlugin extends StandardPlugin {
 
 This will allow to access the walletId property; the same thing is doable with the account function.
 
-## Accessing a plugin / DPA
+## Accessing a plugin 
 
 
 ```
 const account = wallet.getAccount(0);
 account.getPlugin('pluginName');
-account.getDPA('dpaName');
 ```

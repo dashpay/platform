@@ -16,11 +16,12 @@ And thus allowing you to use the wallet-library without connectivity.
 
 See here [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/offline-wallet.js) 
 
-## Server usage
+## Offline message signing : 
 
-See here [sample code](/examples/server-usage.md) 
-
+See here [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/offline-wallet-signing-message.js) 
 
 ## Client usage
 
-See here [sample code](/examples/client-usage.md) 
+- From Mnemonic: [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/client-usage.js) 
+- From PrivateKey: [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/client-usage-single-privateKey.js) 
+

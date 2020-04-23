@@ -19,7 +19,6 @@ const StorageUnableToAddTransaction = require('./StorageUnableToAddTransaction')
 const TransactionNotInStore = require('./TransactionNotInStore');
 const BlockHeaderNotInStore = require('./BlockHeaderNotInStore');
 
-const UnknownDPA = require('./UnknownDPA');
 const UnknownWorker = require('./UnknownWorker');
 const UnknownPlugin = require('./UnknownPlugin');
 
@@ -45,7 +44,6 @@ module.exports = {
   InvalidUTXO,
   StorageUnableToAddTransaction,
   TransactionNotInStore,
-  UnknownDPA,
   UnknownPlugin,
   UnknownWorker,
   ValidTransportLayerRequired,

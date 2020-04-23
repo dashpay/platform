@@ -1,18 +1,7 @@
 const { is } = require('../../utils');
 
-const evonetSeeds = [
-  '52.24.198.145',
-  '52.13.92.167',
-  '34.212.245.91',
-];
-const palinkaSeeds = [
-  '34.214.221.50',
-  '54.213.18.11',
-  '34.211.149.102',
-  '52.38.244.67',
-];
 const defaultDAPIOpts = {
-  seeds: evonetSeeds.map((ip) => ({ service: `${ip}:3000` })),
+  seeds: [{ service: 'seed.evonet.networks.dash.org' }],
   timeout: 20000,
   retries: 5,
 };
@@ -22,8 +11,8 @@ const defaultDAPIOpts = {
  *
  * @param {String|Object|Transporter} props - name of the transporter or options object
  * @param {String} props.type - name of the transporter
- * @param {String} props.devnetName - name of the devnet to connect ('evonet' (def),"palinka")
- * @return {boolean}
+ * @param {String} props.devnetName - name of the devnet to connect ('evonet' (def))
+ * @return {Transporter}
  */
 module.exports = function resolve(props = { type: 'DAPIClient' }) {
   let opts = {};
@@ -45,9 +34,6 @@ module.exports = function resolve(props = { type: 'DAPIClient' }) {
     // TODO: Remove me when DAPIClient has correct seed
     if (Transporter === this.DAPIClient && !props.seeds) {
       opts = defaultDAPIOpts;
-      if (props.devnetName === 'palinka') {
-        opts.seeds = palinkaSeeds.map((ip) => ({ service: `${ip}:3000` }));
-      }
     }
     opts = Object.assign(opts, props);
   } else {

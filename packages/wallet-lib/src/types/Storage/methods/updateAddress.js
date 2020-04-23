@@ -38,7 +38,7 @@ const updateAddress = function (addressObj, walletId) {
   // if(newObject.utxos.length==0 && previousObject.utxos.length>0){
   //
   // }
-  const currentBlockHeight = this.store.chains[walletStore.network].blockHeight;
+  // const currentBlockHeight = this.store.chains[walletStore.network].blockHeight;
 
   // We calculate here the balanceSat and unconfirmedBalanceSat of our addressObj
   // We do that to avoid getBalance to be slow, so we have to keep that in mind or then
@@ -60,15 +60,13 @@ const updateAddress = function (addressObj, walletId) {
       utxo.outputIndex = parseInt(outputIndex, 10);
 
       try {
-        const { blockHeight } = this.getTransaction(txid);
-        if (currentBlockHeight - blockHeight >= 6) newObject.balanceSat += utxo.satoshis;
-        else newObject.unconfirmedBalanceSat += utxo.satoshis;
+        this.getTransaction(txid);
+        // TODO : We removed here the confirmations verification
+        // We should ensure we had a locked block before being able to really spend those.
+        newObject.balanceSat += utxo.satoshis;
       } catch (e) {
-        logger.error('Error', e);
-        if (e instanceof TransactionNotInStore) {
-          // TODO : We consider unconfirmed a transaction that we don't know of, should we ?
-          newObject.unconfirmedBalanceSat += utxo.satoshis;
-        } else throw e;
+        logger.error(`Unable to find locally ${txid}`);
+        if (!(e instanceof TransactionNotInStore)) throw e;
       }
     });
   }
