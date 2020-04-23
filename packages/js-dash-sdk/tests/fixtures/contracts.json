@@ -1,14 +1,14 @@
 {
-  "ratePhezApp": {
+  "ratePlatform": {
+    "$id": "ATU1EJjKhWZzhmuRdCvuNbpos7nwpbDqtrZ3yvxxjpKL",
+    "ownerId": "2ThFDAUqVp3PvHudj8xWUNL7rAdAVfHnmWyWp2AzSFQ8",
     "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
-    "contractId": "HXJKwhqFe43KCkHt4cCu8z2NPgNjx49KEyZhbb8Rcpdd",
-    "version": 1,
     "documents": {
-      "howCoolIsPhez": {
+      "rate": {
         "properties": {
           "rating": {
             "type": "integer",
-            "minimum": 8,
+            "minimum": 0,
             "maximum": 10
           }
         },

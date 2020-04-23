@@ -83,7 +83,7 @@ export class Client {
         this.network = (opts.network !== undefined) ? opts.network.toString() : 'testnet';
         this.apps = Object.assign({
             dpns: {
-                contractId: '77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3'
+                contractId: '295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW'
             }
         }, opts.apps);
 
@@ -147,6 +147,7 @@ export class Client {
             })
             .catch((e) => {
                 console.error('SDK apps fetching : failed to init', e);
+                throw e;
             });
 
     }

@@ -11,14 +11,13 @@
       }
     ]
   },
-  "ratePhezApp": {
-    "id": "HXJKwhqFe43KCkHt4cCu8z2NPgNjx49KEyZhbb8Rcpdd",
-    "type": 2,
+  "ratePlatformOwner": {
+    "id": "2ThFDAUqVp3PvHudj8xWUNL7rAdAVfHnmWyWp2AzSFQ8",
     "publicKeys": [
       {
-        "id": 1,
-        "type": 1,
-        "data": "A2AXIu93hht/yM/tYGg+mQ5pppT4v7jOf4ngG9htwS4Q",
+        "id": 0,
+        "type": 0,
+        "data": "AySBYCeIUNMZ2i0apbHzpwxQPFgxtSTjUm34u8ojg7bv",
         "isEnabled": true
       }
     ]

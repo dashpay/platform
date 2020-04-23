@@ -13,14 +13,14 @@ describe('SDK', function suite() {
     instanceWithoutWallet = new Dash.Client();
     expect(instanceWithoutWallet.network).to.equal('testnet');
     expect(instanceWithoutWallet.apps).to.deep.equal({
-          dpns: { contractId: '77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3' }
+          dpns: { contractId: '295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW' }
         }
     );
 
     instanceWithWallet = new Dash.Client({mnemonic:null});
     expect(instanceWithWallet.network).to.equal('testnet');
     expect(instanceWithWallet.apps).to.deep.equal({
-          dpns: { contractId: '77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3' }
+          dpns: { contractId: '295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW' }
         }
     );
     expect(instanceWithWallet.wallet.mnemonic).to.exist;

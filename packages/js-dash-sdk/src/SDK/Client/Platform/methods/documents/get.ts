@@ -16,7 +16,7 @@ declare interface fetchOpts {
 
 /**
  * Get documents from the platform
- * 
+ *
  * @param {Platform} this bound instance class
  * @param {string} typeLocator type locator
  * @param {fetchOpts} opts - MongoDB style query
@@ -44,10 +44,11 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
 
         for (const rawData of rawDataList) {
             try {
-                const doc = await this.dpp.document.createFromSerialized(rawData, {skipValidation: true})
+                const doc = await this.dpp.document.createFromSerialized(rawData, {skipValidation: true});
                 documents.push(doc);
             } catch (e) {
                 console.error('Document creation: failure', e);
+                throw e;
             }
         }
         return documents

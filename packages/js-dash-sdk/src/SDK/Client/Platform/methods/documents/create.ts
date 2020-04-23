@@ -10,10 +10,9 @@ declare interface createOpts {
  * @param {Platform} this - bound instance class
  * @param {string} typeLocator - type locator
  * @param identity - identity
- * @param {createOpts} opts - options
- * @param {[string]:any} [opts.name] - documents names
+ * @param {Object} [data] - options
  */
-export async function create(this: Platform, typeLocator: string, identity: any, opts: createOpts): Promise<any> {
+export async function create(this: Platform, typeLocator: string, identity: any, data: createOpts = {}): Promise<any> {
     const { dpp } = this;
 
     const appNames = Object.keys(this.apps);
@@ -24,12 +23,14 @@ export async function create(this: Platform, typeLocator: string, identity: any,
     if(!this.apps[appName] || !this.apps[appName]){
         throw new Error(`Cannot find contractId for ${appName}`);
     }
+
     const dataContract = await this.contracts.get(this.apps[appName].contractId);
+
     return dpp.document.create(
         dataContract,
         identity.getId(),
         fieldType,
-        opts,
+        data,
     );
 }
 

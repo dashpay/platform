@@ -1,0 +1,19 @@
+{
+  "rate": {
+    "properties": {
+      "rating": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    },
+    "indices": [{
+      "properties": [
+        {
+          "rating": "desc"
+        }
+      ]
+    }],
+    "additionalProperties": false
+  }
+};

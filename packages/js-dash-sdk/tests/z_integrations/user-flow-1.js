@@ -25,7 +25,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     clientInstance = new Dash.Client(clientOpts);
     expect(clientInstance.network).to.equal('testnet');
     expect(clientInstance.accountIndex).to.equal(0);
-    expect(clientInstance.apps).to.deep.equal({dpns: {contractId: "77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3"}});
+    expect(clientInstance.apps).to.deep.equal({dpns: {contractId: "295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW"}});
     expect(clientInstance.wallet.network).to.equal('testnet');
     expect(clientInstance.wallet.offlineMode).to.equal(false);
     expect(clientInstance.wallet.mnemonic).to.equal(fixtures.mnemonic);
@@ -46,8 +46,8 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
       expect(clientInstance.account.state).to.deep.equal({isInitialized: true, isReady: true, isDisconnecting: false});
       expect(clientInstance.state).to.deep.equal({isReady: true, isAccountReady: true});
       expect(clientInstance.apps['dpns']).to.exist;
-      expect(clientInstance.apps['dpns'].contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
-      expect(clientInstance.apps['dpns'].contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
+      expect(clientInstance.apps['dpns'].contractId).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
+      expect(clientInstance.apps['dpns'].contractId).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
       return done();
     })
   });
@@ -68,7 +68,11 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     if(!hasBalance){
       throw new Error('Insufficient balance to perform this test')
     }
-    createdIdentityId = await clientInstance.platform.identities.register();
+
+    createdIdentity = await clientInstance.platform.identities.register();
+
+    createdIdentityId = createdIdentity.getId();
+
     expect(createdIdentityId).to.not.equal(null);
     expect(createdIdentityId.length).to.gte(42);
     expect(createdIdentityId.length).to.lte(44);
@@ -78,11 +82,12 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     if(!createdIdentityId){
       throw new Error('Can\'t perform the test. Failed to create identity');
     }
+
     const fetchIdentity = await clientInstance.platform.identities.get(createdIdentityId);
 
     expect(fetchIdentity).to.exist;
-    expect(fetchIdentity.id).to.equal(createdIdentityId);
-    expect(fetchIdentity.type).to.equal(1);
+    expect(fetchIdentity.getId()).to.equal(createdIdentityId);
+
     createdIdentity = fetchIdentity;
   });
   it('should register a name', async function () {
@@ -92,29 +97,32 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     if(hasDuplicate){
       throw new Error(`Duplicate username ${username} registered. Skipping.`)
     }
+
     const createDocument = await clientInstance.platform.names.register(username, createdIdentity);
-    expect(createDocument.action).to.equal(1);
-    expect(createDocument.type).to.equal('domain');
-    expect(createDocument.userId).to.equal(createdIdentityId);
-    expect(createDocument.contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
-    expect(createDocument.data.label).to.equal(username)
-    expect(createDocument.data.normalizedParentDomainName).to.equal('dash');
+    expect(createDocument.getType()).to.equal('domain');
+    expect(createDocument.getOwnerId()).to.equal(createdIdentityId);
+    expect(createDocument.getDataContractId()).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
+    expect(createDocument.get('label')).to.equal(username);
+    expect(createDocument.get('normalizedParentDomainName')).to.equal('dash');
   });
 
   it('should retrieve itself by document', async function () {
     if(!createdIdentity){
       throw new Error('Can\'t perform the test. Failed to fetch identity & did not reg name');
     }
+
     const [doc] = await clientInstance.platform.documents.get('dpns.domain', {where:[
         ["normalizedParentDomainName","==","dash"],
         ["normalizedLabel","==",username.toLowerCase()],
-      ]})
-    expect(doc.revision).to.equal(1);
-    expect(doc.type).to.equal('domain');
-    expect(doc.userId).to.equal(createdIdentityId);
-    expect(doc.contractId).to.equal('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3');
-    expect(doc.data.label).to.equal(username)
-    expect(doc.data.normalizedParentDomainName).to.equal('dash');
+      ]});
+
+    expect(doc).to.exist;
+    expect(doc.getRevision()).to.equal(1);
+    expect(doc.getType()).to.equal('domain');
+    expect(doc.getOwnerId()).to.equal(createdIdentityId);
+    expect(doc.getDataContractId()).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
+    expect(doc.get('label')).to.equal(username);
+    expect(doc.get('normalizedParentDomainName')).to.equal('dash');
   });
   it('should disconnect', async function () {
     await clientInstance.disconnect();

@@ -12,7 +12,7 @@ const createIdentity = async function () {
 
   platform
       .identities
-      .register('user')
+      .register()
       .then((identityId) => {
         console.log({identityId});
       });

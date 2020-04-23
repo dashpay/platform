@@ -1,11 +1,6 @@
-import {PublicKey, PrivateKey, Transaction} from "@dashevo/dashcore-lib";
+import { Transaction } from "@dashevo/dashcore-lib";
 // @ts-ignore
 import {utils} from "@dashevo/wallet-lib";
-
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const IdentityCreateTransition = require('@dashevo/dpp/lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 
 import {Platform} from "../../Platform";
 
@@ -13,23 +8,20 @@ import {Platform} from "../../Platform";
  * Register identities to the platform
  *
  * @param {Platform} this - bound instance class
- * @param {string} identityType - identity type (non case sensitive), default value is set to 'USER'
- * @returns registered identities
+ * @returns {Identity}
  */
-export async function register(this: Platform, identityType: string = 'USER'): Promise<any> {
-    const { account, client } = this;
+export async function register(this: Platform): Promise<any> {
+    const { account, client, dpp } = this;
 
     const burnAmount = 10000;
-
-    if (!Identity.TYPES[identityType.toUpperCase()]) {
-        throw new Error(`Create identity of ${identityType}. Wrong type. Expected one of ${Object.keys(Identity.TYPES)}`);
-    }
 
     if (account === undefined) {
         throw new Error(`A initialized wallet is required to create an Identity.`);
     }
+
     //TODO : Here, we always use index 0. We might want to increment.
-    const identityHDPrivateKey = account.getIdentityHDKey(0, identityType.toLowerCase());
+    // @ts-ignore
+    const identityHDPrivateKey = account.getIdentityHDKey(0);
 
     // @ts-ignore
     const identityPrivateKey = identityHDPrivateKey.privateKey;
@@ -68,7 +60,7 @@ export async function register(this: Platform, identityType: string = 'USER'): P
             .addBurnOutput(output.satoshis, identityPublicKey._getID())
             // @ts-ignore
             .change(changeAddress)
-            .fee(selection.estimatedFee)
+            .fee(selection.estimatedFee);
 
         const UTXOHDPrivateKey = account.getPrivateKeys(selection.utxos.map((utxo: any) => utxo.address.toString()));
 
@@ -81,38 +73,33 @@ export async function register(this: Platform, identityType: string = 'USER'): P
         const signedLockTransaction = lockTransaction.sign(signingKeys);
 
         // @ts-ignore
-        const txId = await account.broadcastTransaction(signedLockTransaction);
+        await account.broadcastTransaction(signedLockTransaction);
 
         // @ts-ignore
-        const outPoint = signedLockTransaction.getOutPointBuffer(0).toString('base64');
+        const outPoint = signedLockTransaction.getOutPointBuffer(0);
 
-        // FIXME
-        const publicKeyId = 1;
+        const identity = dpp.identity.create(outPoint, [identityPublicKey]);
 
-        const identityPublicKeyModel = new IdentityPublicKey()
-            .setId(publicKeyId)
-            .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
-            .setData(identityPublicKey.toBuffer().toString('base64'));
+        const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
 
-        const identityCreateTransition = new IdentityCreateTransition({
-            protocolVersion: 0,
-            type: stateTransitionTypes.IDENTITY_CREATE,
-            lockedOutPoint: outPoint,
-            identityType: Identity.TYPES[identityType.toUpperCase()],
-            publicKeys: [
-                identityPublicKeyModel.toJSON(),
-            ],
-        });
         // FIXME : Need dpp to be a dependency of wallet-lib to deal with signing IdentityPublicKey (validation)
         // account.sign(identityPublicKeyModel, identityPrivateKey);
-        identityCreateTransition.sign(identityPublicKeyModel, identityPrivateKey);
-        // @ts-ignore
+
+        identityCreateTransition.signByPrivateKey(identityPrivateKey);
+
+        const result = await dpp.stateTransition.validateStructure(identityCreateTransition);
+
+        if (!result.isValid()) {
+            throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
+        }
+
         await client.applyStateTransition(identityCreateTransition);
 
         // @ts-ignore
-        return identityCreateTransition.getIdentityId();
+        return identity;
     } catch (e) {
-        throw e
+        console.error(`Identity registration failed:`,e);
+        throw e;
     }
 }
 

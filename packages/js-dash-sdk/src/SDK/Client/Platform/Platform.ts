@@ -1,14 +1,11 @@
 // @ts-ignore
 import DashPlatformProtocol from "@dashevo/dpp";
-// @ts-ignore
-import DAPIClient from "@dashevo/dapi-client"
+
 import {ClientDependencies, ClientApps} from "../Client";
 
 import broadcastDocument from "./methods/documents/broadcast";
 import createDocument from "./methods/documents/create";
 import getDocument from "./methods/documents/get";
-
-import broadcastRecords from "./methods/broadcastRecords";
 
 import broadcastContract from "./methods/contracts/broadcast";
 import createContract from "./methods/contracts/create";
@@ -110,14 +107,22 @@ export class Platform {
         this.names = {
             register: registerName.bind(this),
             get: getName.bind(this),
-        }
+        };
         this.identities = {
             register: registerIdentity.bind(this),
             get: getIdentity.bind(this),
         };
 
-        const dataProvider = {fetchIdentity: getIdentity.bind(this), fetchDataContract: getContract.bind(this)};
-        this.dpp = new DashPlatformProtocol({...platformOpts, dataProvider});
+        const stateRepository = {
+            fetchIdentity: getIdentity.bind(this),
+            fetchDataContract: getContract.bind(this)
+        };
+
+        this.dpp = new DashPlatformProtocol({
+            ...platformOpts,
+            stateRepository,
+        });
+
         this.client = platformOpts.client;
         this.apps = platformOpts.apps;
         this.network = platformOpts.network;
