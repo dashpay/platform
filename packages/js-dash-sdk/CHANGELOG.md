@@ -1,3 +1,29 @@
+# [3.0.1](https://github.com/dashevo/DashJS/compare/v3.0.1...v3.0.0) (2020-04-27)
+
+- **fix**:
+  - changed dpp.documents (undefined) to dpp.document (#48)
+
+# [3.0.0](https://github.com/dashevo/DashJS/compare/v3.0.0...v2.0.0) (2020-04-24)
+
+- **breaking:**
+  - Identity registration will use HDKeys(0) instead 1 (https://github.com/dashevo/DashJS/pull/41/commits/4bbc54d265c679affbd043b03a88f8ed2f1d52fb)
+  - contract.broadcast() now returns dataContract (https://github.com/dashevo/DashJS/pull/41/commits/6f7e9225f317525388fb7701619da74b5d76222b#diff-486b5234782255b516fe9c1868c7d3b0R19)
+  - identities.broadcast() now return identity (https://github.com/dashevo/DashJS/pull/41/commits/4bbc54d265c679affbd043b03a88f8ed2f1d52fb#diff-27f47e1bd838b3993aed5eaa396a00e5R90)
+  - document.broadcast() creation is now performed via passing documents to be created in an array of property create. `{create:[document]}` (https://github.com/dashevo/DashJS/commit/91127d774a339c4204891f5863c91a64d521ddb8#diff-0202b3d53936b94585a8c0cfa0481bccR10)
+
+- **feat**:
+  - added replacement of a document. (#41)
+  - added deletion of a document (#41)
+
+- **impr**: 
+  - update to dpp 0.12 (#41)
+
+- **fix**:
+  - properly release (throw) catched error (#41)
+
+- **Chore, Docs & Tests:**
+  - bumped wallet-lib to 6.1 (#41)
+ 
 # [2.0.0](https://github.com/dashevo/DashJS/compare/v2.0.0...v1.1.2) (2020-03-27)
 
 - **breaking:**

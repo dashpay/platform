@@ -14,8 +14,8 @@ import broadcastStateTransition from '../../broadcastStateTransition';
 export default async function broadcast(this: Platform, documents: { create: any[], replace: any[], delete: any[]}, identity: any): Promise<any> {
     const { dpp } = this;
 
-    const documentsBatchTransition = dpp.documents.createStateTransition(documents);
-
+    const documentsBatchTransition = dpp.document.createStateTransition(documents);
+    
     await broadcastStateTransition(this, documentsBatchTransition, identity);
 
     return documents;
