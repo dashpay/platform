@@ -15,7 +15,6 @@ const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTyp
 const InvalidDocumentError = require('../../../lib/document/errors/InvalidDocumentError');
 const InvalidActionNameError = require('../../../lib/document/errors/InvalidActionNameError');
 const NoDocumentsSuppliedError = require('../../../lib/document/errors/NoDocumentsSuppliedError');
-const MismatchContractIdsError = require('../../../lib/document/errors/MismatchContractIdsError');
 const MismatchOwnerIdsError = require('../../../lib/document/errors/MismatchOwnerIdsError');
 const InvalidInitialRevisionError = require('../../../lib/document/errors/InvalidInitialRevisionError');
 const ConsensusError = require('../../../lib/errors/ConsensusError');
@@ -258,19 +257,6 @@ describe('DocumentFactory', () => {
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
-      }
-    });
-
-    it('should throw and error if documents have mixed contract ids', () => {
-      documents[0].dataContractId = generateRandomId();
-      try {
-        factory.createStateTransition({
-          create: documents,
-        });
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MismatchContractIdsError);
-        expect(e.getDocuments()).to.have.deep.members(documents);
       }
     });
 

@@ -10,7 +10,6 @@ const DocumentCreateTransition = require('./stateTransition/documentTransition/D
 
 const InvalidActionNameError = require('./errors/InvalidActionNameError');
 const NoDocumentsSuppliedError = require('./errors/NoDocumentsSuppliedError');
-const MismatchContractIdsError = require('./errors/MismatchContractIdsError');
 const MismatchOwnerIdsError = require('./errors/MismatchOwnerIdsError');
 const InvalidInitialRevisionError = require('./errors/InvalidInitialRevisionError');
 
@@ -162,30 +161,17 @@ class DocumentFactory {
     // Check that documents are not mixed
     const [aDocument] = documentsFlattened;
 
-    const contractId = aDocument.getDataContractId();
     const ownerId = aDocument.getOwnerId();
 
-    const {
-      mismatchedContractIdsLength,
-      mismatchedOwnerIdsLength,
-    } = documentsFlattened
+    const mismatchedOwnerIdsLength = documentsFlattened
       .reduce((result, document) => {
-        if (document.getDataContractId() !== contractId) {
-          // eslint-disable-next-line no-param-reassign
-          result.mismatchedContractIdsLength += 1;
-        }
-
         if (document.getOwnerId() !== ownerId) {
           // eslint-disable-next-line no-param-reassign
-          result.mismatchedOwnerIdsLength += 1;
+          result += 1;
         }
 
         return result;
-      }, { mismatchedContractIdsLength: 0, mismatchedOwnerIdsLength: 0 });
-
-    if (mismatchedContractIdsLength > 0) {
-      throw new MismatchContractIdsError(documentsFlattened);
-    }
+      }, 0);
 
     if (mismatchedOwnerIdsLength > 0) {
       throw new MismatchOwnerIdsError(documentsFlattened);

@@ -10,7 +10,7 @@ const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRe
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const MissingDocumentContractIdError = require('../../../lib/errors/MissingDocumentContractIdError');
+const MissingDataContractIdError = require('../../../lib/errors/MissingDataContractIdError');
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('DocumentFacade', () => {
@@ -155,7 +155,7 @@ describe('DocumentFacade', () => {
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(MissingDocumentContractIdError);
+      expect(error).to.be.an.instanceOf(MissingDataContractIdError);
     });
   });
 });

@@ -28,14 +28,11 @@ function applyDocumentsBatchTransitionFactory(
    * @return {Promise<*>}
    */
   async function applyDocumentsBatchTransition(stateTransition) {
-    const dataContractId = stateTransition.getTransitions()[0].getDataContractId();
-
+    // Fetch documents for replace transitions
     const replaceTransitions = stateTransition.getTransitions()
       .filter((dt) => dt.getAction() === AbstractDocumentTransition.ACTIONS.REPLACE);
 
-    const fetchedDocuments = await fetchDocuments(
-      dataContractId, replaceTransitions,
-    );
+    const fetchedDocuments = await fetchDocuments(replaceTransitions);
 
     const fetchedDocumentsById = fetchedDocuments.reduce((result, document) => (
       {
@@ -52,7 +49,7 @@ function applyDocumentsBatchTransitionFactory(
           const newDocument = new Document({
             $id: documentTransition.getId(),
             $type: documentTransition.getType(),
-            $dataContractId: dataContractId,
+            $dataContractId: documentTransition.getDataContractId(),
             $ownerId: stateTransition.getOwnerId(),
             ...documentTransition.getData(),
           });
@@ -76,7 +73,7 @@ function applyDocumentsBatchTransitionFactory(
         }
         case AbstractDocumentTransition.ACTIONS.DELETE: {
           return stateRepository.removeDocument(
-            dataContractId,
+            documentTransition.getDataContractId(),
             documentTransition.getType(),
             documentId,
           );

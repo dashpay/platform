@@ -5,12 +5,13 @@ const fetchDocumentsFactory = require('../../../../../lib/document/stateTransiti
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
+const generateRandomId = require('../../../../../lib/test/utils/generateRandomId');
+
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
   let stateRepositoryMock;
   let documentTransitions;
   let documents;
-  let dataContract;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
@@ -21,31 +22,35 @@ describe('fetchDocumentsFactory', () => {
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,
     });
-    dataContract = getDocumentsFixture.dataContract;
   });
 
   it('should fetch specified Documents using StateRepository', async () => {
+    const firstDocumentDataContractId = generateRandomId();
+
+    documentTransitions[0].dataContractId = firstDocumentDataContractId;
+    documents[0].dataContractId = firstDocumentDataContractId;
+
     stateRepositoryMock.fetchDocuments.withArgs(
-      dataContract.getId(),
+      documentTransitions[0].getDataContractId(),
       documentTransitions[0].getType(),
     ).resolves([documents[0]]);
 
     stateRepositoryMock.fetchDocuments.withArgs(
-      dataContract.getId(),
+      documentTransitions[1].getDataContractId(),
       documentTransitions[1].getType(),
     ).resolves([documents[1], documents[2]]);
 
     stateRepositoryMock.fetchDocuments.withArgs(
-      dataContract.getId(),
+      documentTransitions[3].getDataContractId(),
       documentTransitions[3].getType(),
     ).resolves([documents[3], documents[4]]);
 
-    const fetchedDocuments = await fetchDocuments(dataContract.getId(), documentTransitions);
+    const fetchedDocuments = await fetchDocuments(documentTransitions);
 
     expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
 
     const callArgsOne = [
-      dataContract.getId(),
+      documents[0].getDataContractId(),
       documents[0].getType(),
       {
         where: [
@@ -55,7 +60,7 @@ describe('fetchDocumentsFactory', () => {
     ];
 
     const callArgsTwo = [
-      dataContract.getId(),
+      documents[1].getDataContractId(),
       documents[1].getType(),
       {
         where: [
@@ -68,7 +73,7 @@ describe('fetchDocumentsFactory', () => {
     ];
 
     const callArgsThree = [
-      dataContract.getId(),
+      documents[3].getDataContractId(),
       documents[3].getType(),
       {
         where: [

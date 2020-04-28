@@ -48,7 +48,6 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
     stateTransition = new DocumentsBatchTransition({
       ownerId,
-      contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
     });
 
@@ -71,7 +70,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
   });
 
   it('should return invalid result if data contract was not found', async () => {
-    stateRepositoryMock.fetchDataContract.resolves(undefined);
+    stateRepositoryMock.fetchDataContract.resolves(null);
 
     const result = await validateData(stateTransition);
 
@@ -107,7 +106,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), documentTransitions,
+      documentTransitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -139,7 +138,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), documentTransitions,
+      documentTransitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -171,7 +170,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), documentTransitions,
+      documentTransitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -209,7 +208,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), documentTransitions,
+      documentTransitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -250,7 +249,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), documentTransitions,
+      documentTransitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -283,7 +282,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       );
 
       expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        dataContract.getId(), stateTransition.transitions,
+        stateTransition.transitions,
       );
 
       expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -311,7 +310,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), stateTransition.transitions,
+      stateTransition.transitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
@@ -353,7 +352,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), stateTransition.transitions,
+      stateTransition.transitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
@@ -411,7 +410,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      dataContract.getId(), stateTransition.transitions,
+      stateTransition.transitions,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(

@@ -26,17 +26,16 @@ function validateDocumentsBatchTransitionDataFactory(
   executeDataTriggers,
 ) {
   /**
-   * @typedef validateDocumentsBatchTransitionData
-   * @param {DocumentsBatchTransition} stateTransition
-   * @return {ValidationResult}
+   *
+   * @param {string} dataContractId
+   * @param {string} ownerId
+   * @param {AbstractDocumentTransition} documentTransitions
+   * @return {Promise<ValidationResult>}
    */
-  async function validateDocumentsBatchTransitionData(stateTransition) {
+  async function validateDocumentTransitions(dataContractId, ownerId, documentTransitions) {
     const result = new ValidationResult();
 
-    const ownerId = stateTransition.getOwnerId();
-
     // Data contract must exist
-    const dataContractId = stateTransition.getTransitions()[0].getDataContractId();
     const dataContract = await stateRepository.fetchDataContract(dataContractId);
 
     if (!dataContract) {
@@ -50,8 +49,7 @@ function validateDocumentsBatchTransitionDataFactory(
     }
 
     // Validate document action, ownerId and revision
-    const documentTransitions = stateTransition.getTransitions();
-    const fetchedDocuments = await fetchDocuments(dataContractId, documentTransitions);
+    const fetchedDocuments = await fetchDocuments(documentTransitions);
 
     documentTransitions
       .forEach((documentTransition) => {
@@ -138,6 +136,39 @@ function validateDocumentsBatchTransitionDataFactory(
         result.addError(...dataTriggerExecutionResult.getErrors());
       }
     });
+
+    return result;
+  }
+  /**
+   * @typedef validateDocumentsBatchTransitionData
+   * @param {DocumentsBatchTransition} stateTransition
+   * @return {ValidationResult}
+   */
+  async function validateDocumentsBatchTransitionData(stateTransition) {
+    const result = new ValidationResult();
+
+    const ownerId = stateTransition.getOwnerId();
+
+    // Group document transitions by data contracts
+    const documentTransitionsByContracts = stateTransition.getTransitions()
+      .reduce((obj, documentTransition) => {
+        if (!obj[documentTransition.getDataContractId()]) {
+          // eslint-disable-next-line no-param-reassign
+          obj[documentTransition.getDataContractId()] = [];
+        }
+
+        obj[documentTransition.getDataContractId()].push(documentTransition);
+
+        return obj;
+      }, {});
+
+    const documentTransitionResultsPromises = Object.entries(documentTransitionsByContracts)
+      .map(([dataContractId, documentTransitions]) => (
+        validateDocumentTransitions(dataContractId, ownerId, documentTransitions)
+      ));
+
+    const documentTransitionResults = await Promise.all(documentTransitionResultsPromises);
+    documentTransitionResults.forEach(result.merge.bind(result));
 
     return result;
   }

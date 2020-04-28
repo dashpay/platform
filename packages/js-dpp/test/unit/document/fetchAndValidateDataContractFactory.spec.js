@@ -7,7 +7,7 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
-const MissingDocumentContractIdError = require('../../../lib/errors/MissingDocumentContractIdError');
+const MissingDataContractIdError = require('../../../lib/errors/MissingDataContractIdError');
 const DataContractNotPresentError = require('../../../lib/errors/DataContractNotPresentError');
 
 const { expectValidationError } = require('../../../lib/test/expect/expectError');
@@ -38,7 +38,7 @@ describe('fetchAndValidateDataContractFactory', () => {
 
     const result = await fetchAndValidateDataContract(rawDocument);
 
-    expectValidationError(result, MissingDocumentContractIdError);
+    expectValidationError(result, MissingDataContractIdError);
 
     const [error] = result.getErrors();
 

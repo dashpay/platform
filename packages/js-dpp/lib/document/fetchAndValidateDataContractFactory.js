@@ -1,6 +1,6 @@
 const Document = require('./Document');
 
-const MissingDocumentContractIdError = require('../errors/MissingDocumentContractIdError');
+const MissingDataContractIdError = require('../errors/MissingDataContractIdError');
 const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
 
 const ValidationResult = require('../validation/ValidationResult');
@@ -22,7 +22,7 @@ function fetchAndValidateDataContractFactory(stateRepository) {
 
     if (!Object.prototype.hasOwnProperty.call(rawDocument, '$dataContractId')) {
       result.addError(
-        new MissingDocumentContractIdError(rawDocument),
+        new MissingDataContractIdError(rawDocument),
       );
     }
 
