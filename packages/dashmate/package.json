@@ -1,0 +1,90 @@
+{
+  "name": "@dashevo/mn-bootstrap",
+  "version": "0.13.0-dev.1",
+  "description": "Distribution package for Dash Masternode installation",
+  "main": "src/index.js",
+  "scripts": {
+    "lint": "eslint src/**",
+    "postpack": "rm -f oclif.manifest.json",
+    "posttest": "eslint .",
+    "prepack": "oclif-dev manifest && oclif-dev readme",
+    "version": "oclif-dev readme && git add README.md"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/mn-bootstrap.git"
+  },
+  "bin": {
+    "mn": "bin/mn"
+  },
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "ivan@shumkov.ru",
+      "url": "https://github.com/shumkov"
+    },
+    {
+      "name": "Djavid Gabibiyan",
+      "email": "djavid@dash.org",
+      "url": "https://github.com/jawid-h"
+    },
+    {
+      "name": "Anton Suprunchuk",
+      "email": "anton.suprunchuk@dash.org",
+      "url": "https://github.com/antouhou"
+    },
+    {
+      "name": "Konstantin Shuplenkov",
+      "email": "konstantin.shuplenkov@dash.org",
+      "url": "https://github.com/shuplenkov"
+    }
+  ],
+  "engines": {
+    "node": ">=12"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dashevo/mn-bootstrap/issues"
+  },
+  "homepage": "https://github.com/dashevo/mn-bootstrap#readme",
+  "dependencies": {
+    "@dashevo/dashcore-lib": "^0.18.0",
+    "@dashevo/dashd-rpc": "dashevo/dashd-rpc",
+    "@oclif/command": "^1.5.19",
+    "@oclif/config": "^1.15.1",
+    "@oclif/plugin-help": "^2.2.3",
+    "awilix": "^4.2.6",
+    "bls-signatures": "^0.1.9",
+    "docker-compose": "^0.23.3",
+    "dockerode": "^3.2.0",
+    "hasbin": "^1.2.3",
+    "listr": "^0.14.3",
+    "node-graceful": "^3.0.0",
+    "rxjs": "latest",
+    "semver": "^7.3.2"
+  },
+  "devDependencies": {
+    "@oclif/dev-cli": "^1.22.2",
+    "eslint": "^5.16.0",
+    "eslint-config-airbnb-base": "^14.1.0",
+    "eslint-plugin-import": "^2.20.2",
+    "globby": "^10.0.2"
+  },
+  "files": [
+    "/bin",
+    "/oclif.manifest.json",
+    "/src"
+  ],
+  "oclif": {
+    "commands": "./src/commands",
+    "bin": "mn",
+    "plugins": [
+      "@oclif/plugin-help"
+    ],
+    "topics": {
+      "wallet": {
+        "description": "Wallet related commands"
+      }
+    }
+  }
+}

@@ -6,3 +6,14 @@
 
 # Tendermint creates `data` dir in configs for some reason
 configs/*/drive/tendermint/data
+
+# NodeJs dependencies
+node_modules
+
+# Oclif
+*-debug.log
+*-error.log
+.nyc_output
+.yo-repository
+dist
+tmp
