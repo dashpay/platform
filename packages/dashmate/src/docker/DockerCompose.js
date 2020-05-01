@@ -143,7 +143,6 @@ class DockerCompose {
   getPlaceholderEmptyEnvOptions() {
     return {
       CORE_EXTERNAL_IP: '127.0.0.1',
-      CORE_MASTERNODE_BLS_PRIV_KEY: 'bls',
     };
   }
 }

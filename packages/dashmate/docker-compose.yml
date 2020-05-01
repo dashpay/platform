@@ -14,7 +14,7 @@ services:
       - -conf=/dash/.dashcore/dash.conf
       - -datadir=/dash/data
       - -port=${CORE_P2P_PORT:?err}
-      - -masternodeblsprivkey=${CORE_MASTERNODE_BLS_PRIV_KEY:?err}
+      - -masternodeblsprivkey=${CORE_MASTERNODE_BLS_PRIV_KEY}
       - -externalip=${CORE_EXTERNAL_IP:?err}
 
   sentinel:
