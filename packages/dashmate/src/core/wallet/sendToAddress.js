@@ -19,7 +19,7 @@ async function sendToAddress(
   address,
   amount,
 ) {
-  const fee = 10000;
+  const fee = 2100000;
 
   const amountToSend = toSatoshi(amount);
 

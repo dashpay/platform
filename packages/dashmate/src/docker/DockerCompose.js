@@ -24,10 +24,10 @@ class DockerCompose {
    * @param {string} preset
    * @param {string} serviceName
    * @param {array} [command]
-   * @param {Object} [options]
+   * @param {array} [options]
    * @return {Promise<Container>}
    */
-  async runService(preset, serviceName, command = [], options = {}) {
+  async runService(preset, serviceName, command = [], options = []) {
     if (await this.isServiceRunning(preset, serviceName)) {
       throw new ServiceAlreadyRunningError(preset, serviceName);
     }
@@ -58,10 +58,10 @@ class DockerCompose {
    * Is service running?
    *
    * @param {string} preset
-   * @param {string} serviceName
+   * @param {string} [serviceName]
    * @return {Promise<boolean>}
    */
-  async isServiceRunning(preset, serviceName) {
+  async isServiceRunning(preset, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
 
     let psOutput;
@@ -92,6 +92,27 @@ class DockerCompose {
     }
 
     return false;
+  }
+
+  /**
+   * Down docker compose
+   *
+   * @param {string} preset
+   * @return {Promise<void>}
+   */
+  async down(preset) {
+    await this.throwErrorIfNotInstalled();
+
+    const env = this.getPlaceholderEmptyEnvOptions();
+
+    try {
+      await dockerCompose.down({
+        ...this.getOptions(preset, env),
+        commandOptions: ['-v'],
+      });
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
   }
 
   /**
@@ -128,7 +149,6 @@ class DockerCompose {
 
     return {
       cwd: path.join(__dirname, '../../'),
-      config: 'docker-compose.yml',
       composeOptions: [
         '--env-file', `.env.${preset}`,
       ],

@@ -60,6 +60,7 @@
     "hasbin": "^1.2.3",
     "listr": "^0.14.3",
     "node-graceful": "^3.0.0",
+    "rimraf": "^3.0.2",
     "rxjs": "latest",
     "semver": "^7.3.2"
   },
