@@ -26,7 +26,8 @@
     "curly": [
       "error",
       "all"
-    ]
+    ],
+    "require-await": "error"
   },
   "globals": {
     "expect": true
