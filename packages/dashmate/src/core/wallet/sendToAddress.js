@@ -19,7 +19,8 @@ async function sendToAddress(
   address,
   amount,
 ) {
-  const fee = 2100000;
+  const maxFee = 200000;
+  const feePerKb = 1000;
 
   const amountToSend = toSatoshi(amount);
 
@@ -40,13 +41,13 @@ async function sendToAddress(
     sum += input.satoshis;
 
     ++i;
-  } while (sum < amountToSend + fee && i < sortedUtxos.length);
+  } while (sum < amountToSend + maxFee && i < sortedUtxos.length);
 
   const transaction = new Transaction();
   transaction.from(inputs)
     .to(address, amountToSend)
     .change(fundSourceAddress)
-    .fee(fee)
+    .feePerKb(feePerKb)
     .sign(fundSourcePrivateKey);
 
   const { result: hash } = await coreService
