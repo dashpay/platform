@@ -95,6 +95,41 @@ class DockerCompose {
   }
 
   /**
+   * Up docker compose
+   *
+   * @param {string} preset
+   * @param {Object} envs
+   * @return {Promise<void>}
+   */
+  async up(preset, envs = {}) {
+    await this.throwErrorIfNotInstalled();
+
+    try {
+      await dockerCompose.upAll(this.getOptions(preset, envs));
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+  }
+
+  /**
+   * Stop all docker compose containers
+   *
+   * @param {string} preset
+   * @return {Promise<void>}
+   */
+  async stop(preset) {
+    await this.throwErrorIfNotInstalled();
+
+    const envs = this.getPlaceholderEmptyEnvOptions();
+
+    try {
+      await dockerCompose.stop(this.getOptions(preset, envs));
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+  }
+
+  /**
    * Down docker compose
    *
    * @param {string} preset
