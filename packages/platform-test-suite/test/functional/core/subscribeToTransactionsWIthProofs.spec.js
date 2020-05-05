@@ -1,0 +1,5 @@
+describe('Core', () => {
+  describe('subscribeToTransactionsWIthProofs', () => {
+
+  });
+});

@@ -26,6 +26,8 @@ Usage: test <seed> [options]
 
 DAPI_SEED="$1"
 
+DIR="$( cd -P "$( dirname "$BASH_SOURCE[0]" )" >/dev/null 2>&1 && pwd )"
+
 if [ -z "$DAPI_SEED" ] || [[ $DAPI_SEED == -* ]]
 then
   echo "Seed is not specified"
@@ -53,12 +55,52 @@ done
 
 if [ -n "$npm_package_to_install" ]
 then
-  cd .. && npm install "$npm_package_to_install"
+  cd "$DIR"/.. && npm install "$npm_package_to_install"
 fi
+
+
 
 if [ -n "$scope" ]
 then
-  cd .. && DAPI_SEED="$DAPI_SEED" FAUCET_PRIVATE_KEY="$faucet_key" npm run test:"$scope"
+  scope_dirs=""
+
+  IFS=', ' read -r -a scopes <<< "$scope"
+
+  for scope in "${scopes[@]}"
+    do
+      case $scope in
+        e2e)
+          scope_dirs="${scope_dirs} test/e2e/**/*.spec.js"
+        ;;
+        functional)
+          scope_dirs="${scope_dirs} test/functional/**/*.spec.js"
+        ;;
+        core)
+          scope_dirs="${scope_dirs} test/functional/core/**/*.spec.js test/e2e/**/*.spec.js"
+        ;;
+        platform)
+          scope_dirs="${scope_dirs} test/functional/platform/**/*.spec.js test/e2e/**/*.spec.js"
+        ;;
+        e2e:dpns)
+          scope_dirs="${scope_dirs} test/e2e/dpns.spec.js"
+        ;;
+        e2e:contacts)
+          scope_dirs="${scope_dirs} test/e2e/contacts.spec.js"
+        ;;
+        functional:core)
+          scope_dirs="${scope_dirs} test/functional/core/**/*.spec.js"
+        ;;
+        functional:platform)
+          scope_dirs="${scope_dirs} test/functional/platform/**/*.spec.js"
+        ;;
+      *)
+      echo "Unknown scope $scope"
+      exit 0
+      ;;
+    esac
+  done
+
+  cd "$DIR"/.. && DAPI_SEED=${DAPI_SEED} FAUCET_PRIVATE_KEY=${faucet_key} NODE_ENV=test node_modules/.bin/mocha ${scope_dirs}
 else
-  cd .. && DAPI_SEED="$DAPI_SEED" FAUCET_PRIVATE_KEY="$faucet_key" npm run test
+  cd "$DIR"/.. && DAPI_SEED=${DAPI_SEED} FAUCET_PRIVATE_KEY=${faucet_key} npm run test
 fi

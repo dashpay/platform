@@ -1,0 +1,5 @@
+describe('Platform', () => {
+  describe('Document', () => {
+
+  });
+});
