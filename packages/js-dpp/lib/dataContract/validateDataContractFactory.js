@@ -15,6 +15,7 @@ const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
 const systemProperties = ['$id', '$ownerId'];
 const prebuiltIndices = ['$id'];
+const contractValidationPrefixId = 'contract_';
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -62,16 +63,33 @@ module.exports = function validateDataContractFactory(
     );
     const enrichedDataContract = new DataContract(enrichedRawDataContract);
 
+    const enrichedRawDataContractForValidation = {
+      ...enrichedRawDataContract,
+      $id: `${contractValidationPrefixId}${enrichedRawDataContract.$id}`,
+    };
+    const enrichedDataContractForValidation = new DataContract(
+      enrichedRawDataContractForValidation,
+    );
+
     Object.keys(enrichedRawDataContract.documents).forEach((documentType) => {
       const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(documentType);
 
+      // This is needed to prevent ajv caching, please refer to
+      // 'should not cache contract with the same schema it preventing
+      // further sts from being validated'
+      // test in StateTransitionFacade.spec.js
+      const docSchemaRefForValidation = {
+        ...documentSchemaRef,
+        $ref: `${contractValidationPrefixId}${documentSchemaRef.$ref}`,
+      };
+
       const additionalSchemas = {
-        [enrichedDataContract.getJsonSchemaId()]: enrichedRawDataContract,
+        [enrichedDataContractForValidation.getJsonSchemaId()]: enrichedRawDataContractForValidation,
       };
 
       result.merge(
         jsonSchemaValidator.validateSchema(
-          documentSchemaRef,
+          docSchemaRefForValidation,
           additionalSchemas,
         ),
       );
