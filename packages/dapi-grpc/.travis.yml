@@ -21,10 +21,6 @@ addons:
     packages:
       - docker-ce
 
-before_install:
-  # Add token for @dashevo private npm registry
-  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
-
 install: npm ci
 
 before_script: npm run build
@@ -33,6 +29,10 @@ script:
   - npm run lint
   - npm run test
   - npm run check-package
+
+before_deploy:
+  # Add token for @dashevo private npm registry
+  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 deploy:
   provider: script
