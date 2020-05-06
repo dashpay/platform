@@ -1,3 +1,8 @@
+# [3.0.2](https://github.com/dashevo/DashJS/compare/v3.0.2...v3.0.1) (2020-05-06)
+
+- **fix**:
+  - typescript support (#46)
+
 # [3.0.1](https://github.com/dashevo/DashJS/compare/v3.0.1...v3.0.0) (2020-04-27)
 
 - **fix**:
