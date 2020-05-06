@@ -152,3 +152,46 @@ docker run -v "$PROTO_PATH:$PROTO_PATH" \
            --proto_path="$PROTO_PATH" \
            -I "$PROTO_PATH" \
            "transactions_filter_stream.proto"
+
+# Generate GRPC Python client for `Core`
+
+PYTHON_OUT_PATH="$CLIENTS_PATH/python"
+
+rm -rf "$PYTHON_OUT_PATH/*"
+
+docker run -v "$PROTO_PATH:$PROTO_PATH" \
+           -v "$PYTHON_OUT_PATH:$PYTHON_OUT_PATH" \
+           --rm \
+           znly/protoc \
+           --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
+           --python_out="$PYTHON_OUT_PATH" \
+           --grpc_out="$PYTHON_OUT_PATH" \
+           --proto_path="$PROTO_PATH" \
+           -I "$PROTO_PATH" \
+           "core.proto"
+
+# Generate GRPC Python client for `Platform`
+
+docker run -v "$PROTO_PATH:$PROTO_PATH" \
+          -v "$PYTHON_OUT_PATH:$PYTHON_OUT_PATH" \
+          --rm \
+          znly/protoc \
+          --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
+          --python_out="$PYTHON_OUT_PATH" \
+          --grpc_out="$PYTHON_OUT_PATH" \
+          --proto_path="$PROTO_PATH" \
+          -I "$PROTO_PATH" \
+          "platform.proto"
+
+# Generate GRPC Python client for `TransactionsFilterStream`
+
+docker run -v "$PROTO_PATH:$PROTO_PATH" \
+          -v "$PYTHON_OUT_PATH:$PYTHON_OUT_PATH" \
+          --rm \
+          znly/protoc \
+          --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
+          --python_out="$PYTHON_OUT_PATH" \
+          --grpc_out="$PYTHON_OUT_PATH" \
+          --proto_path="$PROTO_PATH" \
+          -I "$PROTO_PATH" \
+          "transactions_filter_stream.proto"
