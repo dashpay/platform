@@ -1,4 +1,5 @@
 const GrpcError = require('./GrpcError');
+const GrpcErrorCodes = require('./GrpcErrorCodes');
 
 class FailedPreconditionGrpcError extends GrpcError {
   /**
@@ -6,7 +7,7 @@ class FailedPreconditionGrpcError extends GrpcError {
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.FAILED_PRECONDITION, `Failed precondition: ${message}`, metadata);
+    super(GrpcErrorCodes.FAILED_PRECONDITION, `Failed precondition: ${message}`, metadata);
   }
 }
 

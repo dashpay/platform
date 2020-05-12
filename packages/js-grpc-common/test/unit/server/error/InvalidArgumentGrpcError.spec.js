@@ -1,4 +1,4 @@
-const GrpcError = require('../../../../lib/server/error/GrpcError');
+const GrpcErrorCodes = require('../../../../lib/server/error/GrpcErrorCodes');
 const InvalidArgumentGrpcError = require('../../../../lib/server/error/InvalidArgumentGrpcError');
 
 describe('InvalidArgumentGrpcError', () => {
@@ -25,7 +25,7 @@ describe('InvalidArgumentGrpcError', () => {
     it('should return INVALID_ARGUMENT error code', () => {
       const result = error.getCode();
 
-      expect(result).to.equal(GrpcError.CODES.INVALID_ARGUMENT);
+      expect(result).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
     });
   });
 

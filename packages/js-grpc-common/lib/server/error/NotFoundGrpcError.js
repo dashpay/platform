@@ -1,4 +1,5 @@
 const GrpcError = require('./GrpcError');
+const GrpcErrorCodes = require('./GrpcErrorCodes');
 
 class NotFoundGrpcError extends GrpcError {
   /**
@@ -6,7 +7,7 @@ class NotFoundGrpcError extends GrpcError {
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.NOT_FOUND, message, metadata);
+    super(GrpcErrorCodes.NOT_FOUND, message, metadata);
   }
 }
 

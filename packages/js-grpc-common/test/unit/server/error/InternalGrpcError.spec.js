@@ -1,4 +1,4 @@
-const GrpcError = require('../../../../lib/server/error/GrpcError');
+const GrpcErrorCodes = require('../../../../lib/server/error/GrpcErrorCodes');
 const InternalGrpcError = require('../../../../lib/server/error/InternalGrpcError');
 
 describe('InternalGrpcError', () => {
@@ -23,7 +23,7 @@ describe('InternalGrpcError', () => {
     it('should return INTERNAL error code', () => {
       const result = internalError.getCode();
 
-      expect(result).to.equal(GrpcError.CODES.INTERNAL);
+      expect(result).to.equal(GrpcErrorCodes.INTERNAL);
     });
   });
 });

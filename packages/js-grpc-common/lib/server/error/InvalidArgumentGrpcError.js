@@ -1,4 +1,5 @@
 const GrpcError = require('./GrpcError');
+const GrpcErrorCodes = require('./GrpcErrorCodes');
 
 class InvalidArgumentGrpcError extends GrpcError {
   /**
@@ -6,7 +7,7 @@ class InvalidArgumentGrpcError extends GrpcError {
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.INVALID_ARGUMENT, message, metadata);
+    super(GrpcErrorCodes.INVALID_ARGUMENT, message, metadata);
   }
 }
 

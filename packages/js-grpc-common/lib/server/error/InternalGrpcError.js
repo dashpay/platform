@@ -1,4 +1,5 @@
 const GrpcError = require('./GrpcError');
+const GrpcErrorCodes = require('./GrpcErrorCodes');
 
 class InternalGrpcError extends GrpcError {
   /**
@@ -6,7 +7,7 @@ class InternalGrpcError extends GrpcError {
    * @param {Object} [metadata]
    */
   constructor(error, metadata = undefined) {
-    super(GrpcError.CODES.INTERNAL, 'Internal error', metadata);
+    super(GrpcErrorCodes.INTERNAL, 'Internal error', metadata);
 
     this.error = error;
   }

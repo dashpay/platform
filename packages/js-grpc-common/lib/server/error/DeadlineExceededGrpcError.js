@@ -1,4 +1,5 @@
 const GrpcError = require('./GrpcError');
+const GrpcErrorCodes = require('./GrpcErrorCodes');
 
 class DeadlineExceededGrpcError extends GrpcError {
   /**
@@ -6,7 +7,7 @@ class DeadlineExceededGrpcError extends GrpcError {
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.DEADLINE_EXCEEDED, message, metadata);
+    super(GrpcErrorCodes.DEADLINE_EXCEEDED, message, metadata);
   }
 }
 

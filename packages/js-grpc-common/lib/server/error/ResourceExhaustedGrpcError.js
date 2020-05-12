@@ -1,4 +1,5 @@
 const GrpcError = require('./GrpcError');
+const GrpcErrorCodes = require('./GrpcErrorCodes');
 
 class ResourceExhaustedGrpcError extends GrpcError {
   /**
@@ -6,7 +7,7 @@ class ResourceExhaustedGrpcError extends GrpcError {
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcError.CODES.RESOURCE_EXHAUSTED, message, metadata);
+    super(GrpcErrorCodes.RESOURCE_EXHAUSTED, message, metadata);
   }
 }
 

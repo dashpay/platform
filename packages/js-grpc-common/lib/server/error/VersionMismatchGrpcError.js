@@ -1,4 +1,5 @@
 const GrpcError = require('./GrpcError');
+const GrpcErrorCodes = require('./GrpcErrorCodes');
 
 class VersionMismatchGrpcError extends GrpcError {
   /**
@@ -6,7 +7,7 @@ class VersionMismatchGrpcError extends GrpcError {
    */
   constructor(metadata = undefined) {
     super(
-      GrpcError.CODES.VERSION_MISMATCH,
+      GrpcErrorCodes.VERSION_MISMATCH,
       'client and server versions mismatch',
       metadata,
     );
