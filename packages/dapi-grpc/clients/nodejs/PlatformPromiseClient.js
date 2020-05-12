@@ -9,6 +9,7 @@ const {
   client: {
     interceptors: {
       jsonToProtobufInterceptorFactory,
+      protocolVersionInterceptorFactory,
     },
     converters: {
       jsonToProtobufFactory,
@@ -49,65 +50,10 @@ const getPlatformDefinition = require('../../lib/getPlatformDefinition');
 
 const PlatformNodeJSClient = getPlatformDefinition();
 
-const applyStateTransitionOptions = {
-  interceptors: [
-    jsonToProtobufInterceptorFactory(
-      jsonToProtobufFactory(
-        ProtocApplyStateTransitionResponse,
-        PBJSApplyStateTransitionResponse,
-      ),
-      protobufToJsonFactory(
-        PBJSApplyStateTransitionRequest,
-      ),
-    ),
-  ],
-};
-
-const getIdentityOptions = {
-  interceptors: [
-    jsonToProtobufInterceptorFactory(
-      jsonToProtobufFactory(
-        ProtocGetIdentityResponse,
-        PBJSGetIdentityResponse,
-      ),
-      protobufToJsonFactory(
-        PBJSGetIdentityRequest,
-      ),
-    ),
-  ],
-};
-
-const getDataContractOptions = {
-  interceptors: [
-    jsonToProtobufInterceptorFactory(
-      jsonToProtobufFactory(
-        ProtocGetDataContractResponse,
-        PBJSGetDataContractResponse,
-      ),
-      protobufToJsonFactory(
-        PBJSGetDataContractRequest,
-      ),
-    ),
-  ],
-};
-
-const getDocumentsOptions = {
-  interceptors: [
-    jsonToProtobufInterceptorFactory(
-      jsonToProtobufFactory(
-        ProtocGetDocumentsRequest,
-        PBJSGetDocumentsResponse,
-      ),
-      protobufToJsonFactory(
-        PBJSGetDocumentsRequest,
-      ),
-    ),
-  ],
-};
-
 class PlatformPromiseClient {
   /**
    * @param {string} hostname
+   * @param {string} version
    * @param {?Object} credentials
    * @param {?Object} options
    */
@@ -129,6 +75,8 @@ class PlatformPromiseClient {
     this.client.getDocuments = promisify(
       this.client.getDocuments.bind(this.client),
     );
+
+    this.protocolVersion = undefined;
   }
 
   /**
@@ -144,7 +92,20 @@ class PlatformPromiseClient {
     return this.client.applyStateTransition(
       applyStateTransitionRequest,
       convertObjectToMetadata(metadata),
-      applyStateTransitionOptions,
+      {
+        interceptors: [
+          protocolVersionInterceptorFactory(this.protocolVersion),
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocApplyStateTransitionResponse,
+              PBJSApplyStateTransitionResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSApplyStateTransitionRequest,
+            ),
+          ),
+        ],
+      },
     );
   }
 
@@ -161,7 +122,20 @@ class PlatformPromiseClient {
     return this.client.getIdentity(
       getIdentityRequest,
       convertObjectToMetadata(metadata),
-      getIdentityOptions,
+      {
+        interceptors: [
+          protocolVersionInterceptorFactory(this.protocolVersion),
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityResponse,
+              PBJSGetIdentityResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityRequest,
+            ),
+          ),
+        ],
+      },
     );
   }
 
@@ -179,7 +153,20 @@ class PlatformPromiseClient {
     return this.client.getDataContract(
       getDataContractRequest,
       convertObjectToMetadata(metadata),
-      getDataContractOptions,
+      {
+        interceptors: [
+          protocolVersionInterceptorFactory(this.protocolVersion),
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetDataContractResponse,
+              PBJSGetDataContractResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetDataContractRequest,
+            ),
+          ),
+        ],
+      },
     );
   }
 
@@ -197,8 +184,28 @@ class PlatformPromiseClient {
     return this.client.getDocuments(
       getDocumentsRequest,
       convertObjectToMetadata(metadata),
-      getDocumentsOptions,
+      {
+        interceptors: [
+          protocolVersionInterceptorFactory(this.protocolVersion),
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetDocumentsRequest,
+              PBJSGetDocumentsResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetDocumentsRequest,
+            ),
+          ),
+        ],
+      },
     );
+  }
+
+  /**
+   * @param {string} protocolVersion
+   */
+  setProtocolVersion(protocolVersion) {
+    this.setProtocolVersion = protocolVersion;
   }
 }
 
