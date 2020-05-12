@@ -43,7 +43,7 @@ function jsonToProtobufHandlerWrapper(jsonToProtobuf, protobufToJson, rpcMethod)
    * @typedef wrappedMethodHandler
    *
    * @param {grpc.Call} call
-   * @param {function(Error|null, jspb.Message|null)} callback
+   * @param {function(Error|null, jspb.Message|null, grpc.Metadata|null)} callback
    *
    * @returns {*}
    */
@@ -52,12 +52,12 @@ function jsonToProtobufHandlerWrapper(jsonToProtobuf, protobufToJson, rpcMethod)
 
     let interceptedCallback;
     if (callback) {
-      interceptedCallback = (err, message) => {
+      interceptedCallback = (err, message, metadata) => {
         let convertedMessage = null;
         if (message) {
           convertedMessage = protobufToJson(message);
         }
-        callback(err, convertedMessage);
+        callback(err, convertedMessage, metadata);
       };
     }
 

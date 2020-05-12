@@ -3,11 +3,15 @@ const protobufToJsonFactory = require('./lib/client/converters/protobufToJsonFac
 const jsonToProtobufInterceptorFactory = require(
   './lib/client/interceptors/jsonToProtobufInterceptorFactory',
 );
+const protocolVersionInterceptorFactory = require(
+  './lib/client/interceptors/protocolVersionInterceptorFactory',
+);
 
 const createServer = require('./lib/server/createServer');
 const jsonToProtobufHandlerWrapper = require(
   './lib/server/jsonToProtobufHandlerWrapper',
 );
+const checkVersionWrapperFactory = require('./lib/server/checks/checkVersionWrapperFactory');
 const AcknowledgingWritable = require('./lib/server/stream/AcknowledgingWritable');
 const wrapInErrorHandlerFactory = require('./lib/server/error/wrapInErrorHandlerFactory');
 
@@ -34,6 +38,7 @@ module.exports = {
     },
     interceptors: {
       jsonToProtobufInterceptorFactory,
+      protocolVersionInterceptorFactory,
     },
   },
   server: {
@@ -51,6 +56,9 @@ module.exports = {
       ResourceExhaustedGrpcError,
       DeadlineExceededGrpcError,
       NotFoundGrpcError,
+    },
+    checks: {
+      checkVersionWrapperFactory,
     },
   },
   utils: {

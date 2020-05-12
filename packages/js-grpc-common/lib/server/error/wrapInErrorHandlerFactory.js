@@ -3,9 +3,10 @@ const InternalGrpcError = require('./InternalGrpcError');
 
 /**
  * @param {Object} logger
+ * @param {Metadata} [metadata]
  * @return wrapInErrorHandler
  */
-module.exports = function wrapInErrorHandlerFactory(logger) {
+module.exports = function wrapInErrorHandlerFactory(logger, metadata = undefined) {
   /**
    * Wrap RPC method in error handler
    *
@@ -16,14 +17,14 @@ module.exports = function wrapInErrorHandlerFactory(logger) {
   function wrapInErrorHandler(method) {
     /**
      * @param {grpc.ServerWriteableStream} call
-     * @param {function(Error, *)} [callback]
+     * @param {function(Error, *, Metadata?)} [callback]
      */
     async function rpcMethodErrorHandler(call, callback = undefined) {
       try {
         const result = await method(call);
 
         if (callback) {
-          callback(null, result);
+          callback(null, result, metadata);
         }
       } catch (e) {
         let error = e;
@@ -36,6 +37,16 @@ module.exports = function wrapInErrorHandlerFactory(logger) {
         // Log only internal GRPC errors
         if (error instanceof InternalGrpcError) {
           logger.error(error.getError());
+        }
+
+        if (metadata) {
+          if (error.metadata) {
+            Object.entries(metadata.getMap()).forEach(([key, value]) => {
+              error.metadata.set(key, value);
+            });
+          } else {
+            error.metadata = metadata;
+          }
         }
 
         if (callback) {

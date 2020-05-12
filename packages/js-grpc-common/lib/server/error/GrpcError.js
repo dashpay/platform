@@ -63,6 +63,7 @@ GrpcError.CODES = {
   UNAVAILABLE: 14,
   DATA_LOSS: 15,
   UNAUTHENTICATED: 16,
+  VERSION_MISMATCH: 100,
 };
 
 module.exports = GrpcError;
