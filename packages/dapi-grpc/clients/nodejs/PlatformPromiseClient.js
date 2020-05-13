@@ -9,7 +9,6 @@ const {
   client: {
     interceptors: {
       jsonToProtobufInterceptorFactory,
-      protocolVersionInterceptorFactory,
     },
     converters: {
       jsonToProtobufFactory,
@@ -94,7 +93,6 @@ class PlatformPromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(this.protocolVersion),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocApplyStateTransitionResponse,
@@ -124,7 +122,6 @@ class PlatformPromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(this.protocolVersion),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetIdentityResponse,
@@ -155,7 +152,6 @@ class PlatformPromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(this.protocolVersion),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetDataContractResponse,
@@ -186,7 +182,6 @@ class PlatformPromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(this.protocolVersion),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetDocumentsRequest,

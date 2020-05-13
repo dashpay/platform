@@ -9,7 +9,6 @@ const {
   client: {
     interceptors: {
       jsonToProtobufInterceptorFactory,
-      protocolVersionInterceptorFactory,
     },
     converters: {
       jsonToProtobufFactory,
@@ -103,9 +102,6 @@ class CorePromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(
-            this.protocolVersion,
-          ),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetStatusResponse,
@@ -135,9 +131,6 @@ class CorePromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(
-            this.protocolVersion,
-          ),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetBlockResponse,
@@ -167,9 +160,6 @@ class CorePromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(
-            this.protocolVersion,
-          ),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocSendTransactionResponse,
@@ -199,9 +189,6 @@ class CorePromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(
-            this.protocolVersion,
-          ),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetTransactionResponse,
@@ -231,9 +218,6 @@ class CorePromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(
-            this.protocolVersion,
-          ),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetEstimatedTransactionFeeResponse,
@@ -264,9 +248,6 @@ class CorePromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(
-            this.protocolVersion,
-          ),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocBlockHeadersWithChainLocksResponse,

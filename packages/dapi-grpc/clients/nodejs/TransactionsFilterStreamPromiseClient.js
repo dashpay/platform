@@ -8,7 +8,6 @@ const {
   client: {
     interceptors: {
       jsonToProtobufInterceptorFactory,
-      protocolVersionInterceptorFactory,
     },
     converters: {
       jsonToProtobufFactory,
@@ -71,7 +70,6 @@ class TransactionsFilterStreamPromiseClient {
       convertObjectToMetadata(metadata),
       {
         interceptors: [
-          protocolVersionInterceptorFactory(this.protocolVersion),
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocTransactionsWithProofsResponse,
