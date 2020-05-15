@@ -1,6 +1,8 @@
 # MN Bootstrap
 
-> Distribution package for Dash Masternode installation
+> Distribution package for Dash masternode installation
+
+> Note: This Docker Compose project creates a full node. Additional steps are required to register a masternode, as described in the [setup instructions](https://docs.dash.org/en/stable/masternodes/setup.html#register-your-masternode). It is not currently necessary to complete these registration steps for local development with Dash Platform services or to participate as a full node on Evonet.
 
 ## Table of Contents
 
@@ -13,7 +15,9 @@
 ## Pre-requisites
 
 * [Docker](https://docs.docker.com/engine/installation/)
-* [Docker compose](https://docs.docker.com/compose/install/) (v1.25.0+)
+* [Docker Compose](https://docs.docker.com/compose/install/) (v1.25.0+)
+
+For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run Docker commands with `sudo`.
 
 ## Install
 

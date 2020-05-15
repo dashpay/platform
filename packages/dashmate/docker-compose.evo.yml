@@ -6,6 +6,8 @@ services:
     restart: always
     volumes:
       - drive_mongodb:/data/db
+    extra_hosts:
+      - "drive_mongodb:127.0.0.1"
     command: mongod --replSet driveDocumentIndices --bind_ip_all
 
   drive_mongodb_replica_init:
@@ -29,10 +31,10 @@ services:
       - CORE_JSON_RPC_PASSWORD=password
       - CORE_JSON_RPC_HOST=core
       - CORE_JSON_RPC_PORT=20002
-      - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017
+      - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017?replicaSet=driveDocumentIndices
       - DPNS_CONTRACT_ID=${DPNS_CONTRACT_ID}
       - DPNS_TOP_LEVEL_IDENTITY=${DPNS_TOP_LEVEL_IDENTITY}
-    command: sh -c "sleep 15 && npm run abci"
+    command: sh -c "sleep 25 && npm run abci"
 
   drive_tendermint:
     image: tendermint/tendermint:${TENDERMINT_VERSION:-v0.32.8}
@@ -44,7 +46,7 @@ services:
     volumes:
       - ./configs/${PRESET:?err}/drive/tendermint:/tendermint
       - ./data/${PRESET:?err}/drive/tendermint:/data
-    entrypoint: sh -c "sleep 30 && /usr/bin/tendermint init && /usr/bin/tendermint node"
+    entrypoint: sh -c "sleep 45 && /usr/bin/tendermint init && /usr/bin/tendermint node"
 
   dapi_insight:
     image: dashpay/insight-api:${DAPI_INSIGHT_VERSION:-latest}

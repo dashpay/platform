@@ -1,3 +1,31 @@
+# [0.12.5](https://github.com/dashevo/mn-bootstrap/compare/v0.12.4...v0.12.5) (2020-05-01)
+
+
+### Bug Fixes
+
+* use updated sentinel image ([#41](https://github.com/dashevo/mn-bootstrap/issues/41))
+
+
+
+# [0.12.4](https://github.com/dashevo/mn-bootstrap/compare/v0.12.3...v0.12.4) (2020-04-30)
+
+
+### Bug Fixes
+
+* MongoDB replica set doesn't work sometimes ([#40](https://github.com/dashevo/mn-bootstrap/issues/40)) ([a5e31cd](https://github.com/dashevo/mn-bootstrap/commit/a5e31cd341bfd3e18240e3ee4c8f5dfeebfd249c))
+
+
+
+# [0.12.3](https://github.com/dashevo/mn-bootstrap/compare/v0.12.2...v0.12.3) (2020-04-28)
+
+
+### Bug Fixes
+
+* outdated genesis config for Tendermint ([#37](https://github.com/dashevo/mn-bootstrap/issues/37))
+* outdated persistent node IDs in Tendermint config ([#38](https://github.com/dashevo/mn-bootstrap/issues/38))
+
+
+
 ## [0.12.2](https://github.com/dashevo/mn-bootstrap/compare/v0.12.1...v0.12.2) (2020-04-22)
 
 

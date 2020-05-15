@@ -18,7 +18,7 @@ services:
       - -externalip=${CORE_EXTERNAL_IP:?err}
 
   sentinel:
-    image: ablock/sentinel
+    image: strophy/sentinel
     restart: always
     depends_on:
       - core
