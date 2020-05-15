@@ -103,7 +103,7 @@ class CachedStateRepositoryDecorator {
    * Fetch transaction by ID
    *
    * @param {string} id
-   * @returns {Promise<{ confirmations: number }|null>}
+   * @returns {Promise<Object|null>}
    */
   async fetchTransaction(id) {
     return this.stateRepository.fetchTransaction(id);
