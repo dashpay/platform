@@ -93,6 +93,38 @@ describe('IdentityPublicKey', () => {
     });
   });
 
+  describe('#hash', () => {
+    it('should return original public key hash', () => {
+      publicKey = new IdentityPublicKey({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: '033eef80bf531c4d9ed67abccf02bdf20c793b2e93ae8de9c5cf0f431240fa84f1',
+        isEnabled: true,
+      });
+
+      const result = publicKey.hash();
+
+      expect(result).to.deep.equal('24940ae1982187675fc3ad95aac68769322d95f2');
+    });
+
+    it('should throw invalid argument error if data was not originally provided', () => {
+      publicKey = new IdentityPublicKey({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        isEnabled: true,
+      });
+
+      try {
+        publicKey.hash();
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal(
+          'Invalid Argument: First argument is required, please include public key data.',
+        );
+      }
+    });
+  });
+
   describe('#toJSON', () => {
     it('should return JSON representation', () => {
       const json = publicKey.toJSON();

@@ -1,3 +1,5 @@
+const { PublicKey } = require('@dashevo/dashcore-lib');
+
 class IdentityPublicKey {
   /**
    * @param {RawIdentityPublicKey} [rawIdentityPublicKey]
@@ -95,6 +97,16 @@ class IdentityPublicKey {
    */
   isEnabled() {
     return this.enabled;
+  }
+
+  /**
+   * Get original public key hash
+   *
+   * @returns {string}
+   */
+  hash() {
+    return new PublicKey(this.getData()).hash
+      .toString('hex');
   }
 
   /**
