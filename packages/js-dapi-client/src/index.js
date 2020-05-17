@@ -3,9 +3,6 @@ const preconditionsUtil = require('@dashevo/dashcore-lib').util.preconditions;
 const cbor = require('cbor');
 
 const {
-  CorePromiseClient,
-  PlatformPromiseClient,
-  TransactionsFilterStreamPromiseClient,
   TransactionsWithProofsRequest,
   BloomFilter: BloomFilterMessage,
   ApplyStateTransitionRequest,
@@ -18,9 +15,8 @@ const {
   SendTransactionRequest,
 } = require('@dashevo/dapi-grpc');
 
-const DPP = require('@dashevo/dpp');
 const MNDiscovery = require('./MNDiscovery/index');
-const rpcClient = require('./RPCClient');
+const TransportManager = require('./transport/TransportManager');
 const config = require('./config');
 const { responseErrorCodes } = require('./constants');
 
@@ -38,54 +34,18 @@ class DAPIClient {
     this.MNDiscovery = new MNDiscovery(options.seeds, options.port);
     this.DAPIPort = options.port || config.Api.port;
     this.nativeGrpcPort = options.nativeGrpcPort || config.grpc.nativePort;
+
     this.timeout = options.timeout || 2000;
     preconditionsUtil.checkArgument(jsutil.isUnsignedInteger(this.timeout),
       'Expect timeout to be an unsigned integer');
+
     this.retries = options.retries ? options.retries : 3;
     preconditionsUtil.checkArgument(jsutil.isUnsignedInteger(this.retries),
       'Expect retries to be an unsigned integer');
-    this.dpp = new DPP();
-  }
 
-  /**
-   * @private
-   * @param {string} method
-   * @param {Object} params
-   * @param {string[]} [excludedIps]
-   * @returns {Promise<*>}
-   */
-  async makeRequestToRandomDAPINode(method, params, excludedIps = []) {
-    this.makeRequest.callCount = 0;
-
-    return this.makeRequestWithRetries(method, params, this.retries, excludedIps);
-  }
-
-  async makeRequest(method, params, excludedIps) {
-    this.makeRequest.callCount += 1;
-    const randomMasternode = await this.MNDiscovery.getRandomMasternode(excludedIps);
-    return rpcClient.request({
-      host: randomMasternode.service.split(':')[0],
-      port: this.DAPIPort,
-    }, method, params, { timeout: this.timeout });
-  }
-
-  async makeRequestWithRetries(method, params, retriesCount = 0, excludedIps) {
-    try {
-      return await this.makeRequest(method, params, excludedIps);
-    } catch (err) {
-      if (err.code !== 'ECONNABORTED' && err.code !== 'ECONNREFUSED') {
-        throw err;
-      }
-      if (retriesCount > 0) {
-        let excludedOnNextTry = [];
-        if (err.address) {
-          excludedOnNextTry = Array.isArray(excludedIps)
-            ? excludedIps.slice().push(err.address) : excludedOnNextTry.push(err.address);
-        }
-        return this.makeRequestWithRetries(method, params, retriesCount - 1, excludedOnNextTry);
-      }
-      throw new Error('max retries to connect to DAPI node reached');
-    }
+    this.transportManager = new TransportManager(
+      this.MNDiscovery, this.DAPIPort, this.nativeGrpcPort,
+    );
   }
 
   /* Layer 1 commands */
@@ -95,20 +55,38 @@ class DAPIClient {
    * @param {string} address - The address that will receive the newly generated Dash
    * @returns {Promise<string[]>} - block hashes
    */
-  generateToAddress(blocksNumber, address) { return this.makeRequestToRandomDAPINode('generateToAddress', { blocksNumber, address }); }
+  generateToAddress(blocksNumber, address) {
+    return this.transportManager.get(TransportManager.JSON_RPC)
+      .makeRequest(
+        'generateToAddress', { blocksNumber, address },
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
+  }
 
   /**
    * Returns block hash of chaintip
    * @returns {Promise<string>}
    */
-  getBestBlockHash() { return this.makeRequestToRandomDAPINode('getBestBlockHash', {}); }
+  getBestBlockHash() {
+    return this.transportManager.get(TransportManager.JSON_RPC)
+      .makeRequest(
+        'getBestBlockHash', {},
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
+  }
 
   /**
    * Returns block hash for the given height
    * @param {number} height
    * @returns {Promise<string>} - block hash
    */
-  getBlockHash(height) { return this.makeRequestToRandomDAPINode('getBlockHash', { height }); }
+  getBlockHash(height) {
+    return this.transportManager.get(TransportManager.JSON_RPC)
+      .makeRequest(
+        'getBlockHash', { height },
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
+  }
 
   /**
    * Get deterministic masternodelist diff
@@ -116,7 +94,13 @@ class DAPIClient {
    * @param {string} blockHash - hash or height of end block
    * @return {Promise<object>}
    */
-  getMnListDiff(baseBlockHash, blockHash) { return this.makeRequestToRandomDAPINode('getMnListDiff', { baseBlockHash, blockHash }); }
+  getMnListDiff(baseBlockHash, blockHash) {
+    return this.transportManager.get(TransportManager.JSON_RPC)
+      .makeRequest(
+        'getMnListDiff', { baseBlockHash, blockHash },
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
+  }
 
   /**
    * Returns a summary (balance, txs) for a given address
@@ -129,10 +113,13 @@ class DAPIClient {
    * @returns {Promise<Object>} - an object with basic address info
    */
   getAddressSummary(address, noTxList, from, to, fromHeight, toHeight) {
-    return this.makeRequestToRandomDAPINode('getAddressSummary',
+    return this.transportManager.get(TransportManager.JSON_RPC).makeRequest(
+      'getAddressSummary',
       {
         address, noTxList, from, to, fromHeight, toHeight,
-      });
+      },
+      { retriesCount: this.retries, client: { timeout: this.timeout } },
+    );
   }
 
   /**
@@ -145,13 +132,13 @@ class DAPIClient {
     const getBlockRequest = new GetBlockRequest();
     getBlockRequest.setHeight(height);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new CorePromiseClient(urlToConnect);
-
     let response;
     try {
-      response = await client.getBlock(getBlockRequest);
+      response = await this.transportManager.get(TransportManager.GRPC_CORE)
+        .makeRequest(
+          'getBlock', getBlockRequest,
+          { retriesCount: this.retries, client: { timeout: this.timeout } },
+        );
     } catch (e) {
       if (e.code === responseErrorCodes.NOT_FOUND) {
         return null;
@@ -175,13 +162,13 @@ class DAPIClient {
     const getBlockRequest = new GetBlockRequest();
     getBlockRequest.setHash(hash);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new CorePromiseClient(urlToConnect);
-
     let response;
     try {
-      response = await client.getBlock(getBlockRequest);
+      response = await this.transportManager.get(TransportManager.GRPC_CORE)
+        .makeRequest(
+          'getBlock', getBlockRequest,
+          { retriesCount: this.retries, client: { timeout: this.timeout } },
+        );
     } catch (e) {
       if (e.code === responseErrorCodes.NOT_FOUND) {
         return null;
@@ -203,11 +190,11 @@ class DAPIClient {
   async getStatus() {
     const getStatusRequest = new GetStatusRequest();
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new CorePromiseClient(urlToConnect);
-
-    const response = await client.getStatus(getStatusRequest);
+    const response = await this.transportManager.get(TransportManager.GRPC_CORE)
+      .makeRequest(
+        'getStatus', getStatusRequest,
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
 
     return response.toObject();
   }
@@ -222,13 +209,13 @@ class DAPIClient {
     const getTransactionRequest = new GetTransactionRequest();
     getTransactionRequest.setId(id);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new CorePromiseClient(urlToConnect);
-
     let response;
     try {
-      response = await client.getTransaction(getTransactionRequest);
+      response = await this.transportManager.get(TransportManager.GRPC_CORE)
+        .makeRequest(
+          'getTransaction', getTransactionRequest,
+          { retriesCount: this.retries, client: { timeout: this.timeout } },
+        );
     } catch (e) {
       if (e.code === responseErrorCodes.NOT_FOUND) {
         return null;
@@ -262,11 +249,11 @@ class DAPIClient {
     sendTransactionRequest.setAllowHighFees(options.allowHighFees || false);
     sendTransactionRequest.setBypassLimits(options.bypassLimits || false);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new CorePromiseClient(urlToConnect);
-
-    const response = await client.sendTransaction(sendTransactionRequest);
+    const response = await this.transportManager.get(TransportManager.GRPC_CORE)
+      .makeRequest(
+        'sendTransaction', sendTransactionRequest,
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
 
     return response.getTransactionId();
   }
@@ -281,10 +268,13 @@ class DAPIClient {
    * @returns {Promise<object>} - Object with pagination info and array of unspent outputs
    */
   getUTXO(address, from, to, fromHeight, toHeight) {
-    return this.makeRequestToRandomDAPINode('getUTXO',
+    return this.transportManager.get(TransportManager.JSON_RPC).makeRequest(
+      'getUTXO',
       {
         address, from, to, fromHeight, toHeight,
-      });
+      },
+      { retriesCount: this.retries, client: { timeout: this.timeout } },
+    );
   }
 
   /* gRPC methods */
@@ -337,11 +327,11 @@ class DAPIClient {
 
     request.setCount(options.count);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new TransactionsFilterStreamPromiseClient(urlToConnect);
-
-    return client.subscribeToTransactionsWithProofs(request);
+    return this.transportManager.get(TransportManager.GRPC_TX)
+      .makeRequest(
+        'subscribeToTransactionsWithProofs', request,
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
   }
 
   /* Platform gRPC methods */
@@ -356,11 +346,11 @@ class DAPIClient {
     const applyStateTransitionRequest = new ApplyStateTransitionRequest();
     applyStateTransitionRequest.setStateTransition(stateTransition.serialize());
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new PlatformPromiseClient(urlToConnect);
-
-    return client.applyStateTransition(applyStateTransitionRequest);
+    return this.transportManager.get(TransportManager.GRPC_PLATFORM)
+      .makeRequest(
+        'applyStateTransition', applyStateTransitionRequest,
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
   }
 
   /**
@@ -372,13 +362,13 @@ class DAPIClient {
     const getIdentityRequest = new GetIdentityRequest();
     getIdentityRequest.setId(id);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new PlatformPromiseClient(urlToConnect);
-
     let getIdentityResponse;
     try {
-      getIdentityResponse = await client.getIdentity(getIdentityRequest);
+      getIdentityResponse = await this.transportManager.get(TransportManager.GRPC_PLATFORM)
+        .makeRequest(
+          'getIdentity', getIdentityRequest,
+          { retriesCount: this.retries, client: { timeout: this.timeout } },
+        );
     } catch (e) {
       if (e.code === responseErrorCodes.NOT_FOUND) {
         return null;
@@ -407,13 +397,13 @@ class DAPIClient {
 
     getDataContractRequest.setId(contractId);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new PlatformPromiseClient(urlToConnect);
-
     let getDataContractResponse;
     try {
-      getDataContractResponse = await client.getDataContract(getDataContractRequest);
+      getDataContractResponse = await this.transportManager.get(TransportManager.GRPC_PLATFORM)
+        .makeRequest(
+          'getDataContract', getDataContractRequest,
+          { retriesCount: this.retries, client: { timeout: this.timeout } },
+        );
     } catch (e) {
       if (e.code === responseErrorCodes.NOT_FOUND) {
         return null;
@@ -473,30 +463,13 @@ class DAPIClient {
     getDocumentsRequest.setStartAfter(startAfter);
     getDocumentsRequest.setStartAt(startAt);
 
-    const urlToConnect = await this.getGrpcUrl();
-
-    const client = new PlatformPromiseClient(urlToConnect);
-
-    const getDocumentsResponse = await client.getDocuments(getDocumentsRequest);
+    const getDocumentsResponse = await this.transportManager.get(TransportManager.GRPC_PLATFORM)
+      .makeRequest(
+        'getDocuments', getDocumentsRequest,
+        { retriesCount: this.retries, client: { timeout: this.timeout } },
+      );
 
     return getDocumentsResponse.getDocumentsList().map((document) => Buffer.from(document));
-  }
-
-  /**
-   * Get gRPC url to connect
-   * @private
-   * @returns {Promise<string>}
-   */
-  async getGrpcUrl() {
-    const nodeToConnect = await this.MNDiscovery.getRandomMasternode();
-
-    if (typeof process !== 'undefined'
-      && process.versions != null
-      && process.versions.node != null) {
-      return `${nodeToConnect.getIp()}:${this.nativeGrpcPort}`;
-    }
-
-    return `http://${nodeToConnect.getIp()}:${this.DAPIPort}`;
   }
 }
 

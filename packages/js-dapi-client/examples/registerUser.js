@@ -3,7 +3,7 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
-const Api = require('../');
+const Api = require('../index');
 
 const log = console;
 const userName = Math.random().toString(36).substring(7);
