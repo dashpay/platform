@@ -43,7 +43,7 @@ function getLockedTransactionOutputFactory(
       throw new IdentityLockTransactionNotFoundError(transactionHash);
     }
 
-    const transaction = new Transaction(rawTransaction);
+    const transaction = new Transaction(rawTransaction.hex);
 
     if (!transaction.outputs[outputIndex]) {
       throw new InvalidIdentityOutPointError(`Output with index ${outputIndex} not found`);
