@@ -1,6 +1,7 @@
 class DriveStateRepository {
   /**
    * @param {IdentityLevelDBRepository} identityRepository
+   * @param {PublicKeyIdentityIdMapLevelDBRepository} publicKeyIdentityIdMapLevelDBRepository
    * @param {DataContractLevelDBRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
    * @param {createDocumentMongoDbRepository} createDocumentRepository
@@ -9,6 +10,7 @@ class DriveStateRepository {
    */
   constructor(
     identityRepository,
+    publicKeyIdentityIdMapLevelDBRepository,
     dataContractRepository,
     fetchDocuments,
     createDocumentRepository,
@@ -16,6 +18,7 @@ class DriveStateRepository {
     blockExecutionDBTransactions = undefined,
   ) {
     this.identityRepository = identityRepository;
+    this.publicKeyIdentityIdMapLevelDBRepository = publicKeyIdentityIdMapLevelDBRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
     this.createDocumentRepository = createDocumentRepository;
@@ -46,6 +49,35 @@ class DriveStateRepository {
     const transaction = this.getDBTransaction('identity');
 
     await this.identityRepository.store(identity, transaction);
+  }
+
+  /**
+   * Store public key hash and identity id pair
+   *
+   * @param {string} publicKeyHash
+   * @param {string} identityId
+   *
+   * @returns {Promise<void>}
+   */
+  async storePublicKeyIdentityId(publicKeyHash, identityId) {
+    const transaction = this.getDBTransaction('identity');
+
+    await this.publicKeyIdentityIdMapLevelDBRepository.store(
+      publicKeyHash, identityId, transaction,
+    );
+  }
+
+  /**
+   * Fetch identity id by public key hash
+   *
+   * @param {string} publicKeyHash
+   *
+   * @returns {Promise<null|string>}
+   */
+  async fetchPublicKeyIdentityId(publicKeyHash) {
+    const transaction = this.getDBTransaction('identity');
+
+    return this.publicKeyIdentityIdMapLevelDBRepository.fetch(publicKeyHash, transaction);
   }
 
   /**

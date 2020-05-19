@@ -24,6 +24,9 @@ const Logger = require('./util/Logger');
 const sanitizeUrl = require('./util/sanitizeUrl');
 
 const IdentityLevelDBRepository = require('./identity/IdentityLevelDBRepository');
+const PublicKeyIdentityIdMapLevelDBRepository = require(
+  './identity/PublicKeyIdentityIdMapLevelDBRepository',
+);
 
 const DataContractLevelDBRepository = require('./dataContract/DataContractLevelDBRepository');
 
@@ -157,6 +160,8 @@ async function createDIContainer(options) {
     identityTransaction: asFunction((identityRepository) => (
       identityRepository.createTransaction()
     )).singleton(),
+
+    publicKeyIdentityIdRepository: asClass(PublicKeyIdentityIdMapLevelDBRepository).singleton(),
   });
 
   /**
@@ -258,6 +263,7 @@ async function createDIContainer(options) {
 
     stateRepository: asFunction((
       identityRepository,
+      publicKeyIdentityIdRepository,
       dataContractRepository,
       fetchDocuments,
       createDocumentRepository,
@@ -266,6 +272,7 @@ async function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
+        publicKeyIdentityIdRepository,
         dataContractRepository,
         fetchDocuments,
         createDocumentRepository,
@@ -277,6 +284,7 @@ async function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
+      publicKeyIdentityIdRepository,
       dataContractRepository,
       fetchDocuments,
       createDocumentRepository,
@@ -286,6 +294,7 @@ async function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
+        publicKeyIdentityIdRepository,
         dataContractRepository,
         fetchDocuments,
         createDocumentRepository,

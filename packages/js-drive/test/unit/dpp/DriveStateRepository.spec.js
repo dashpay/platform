@@ -1,12 +1,14 @@
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 
 describe('DriveStateRepository', () => {
   let stateRepository;
   let identityRepositoryMock;
+  let publicKeyIdentityIdRepositoryMock;
   let dataContractRepositoryMock;
   let fetchDocumentsMock;
   let createDocumentRepositoryMock;
@@ -20,6 +22,14 @@ describe('DriveStateRepository', () => {
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
+    identity.publicKeys = [
+      new IdentityPublicKey({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: '02c18a9df635941906c9b4cb8b49fe1070b7469c38d4a5c8723049104d8e008976',
+        isEnabled: true,
+      }),
+    ];
     documents = getDocumentsFixture();
     dataContract = getDataContractFixture();
     id = 'id';
@@ -38,6 +48,11 @@ describe('DriveStateRepository', () => {
       store: this.sinon.stub(),
     };
 
+    publicKeyIdentityIdRepositoryMock = {
+      fetch: this.sinon.stub(),
+      store: this.sinon.stub(),
+    };
+
     blockExecutionDBTransactionsMock = {
       getTransaction: this.sinon.stub(),
     };
@@ -48,6 +63,7 @@ describe('DriveStateRepository', () => {
 
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
+      publicKeyIdentityIdRepositoryMock,
       dataContractRepositoryMock,
       fetchDocumentsMock,
       createDocumentRepositoryMock,
@@ -98,6 +114,53 @@ describe('DriveStateRepository', () => {
 
       expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('identity');
       expect(identityRepositoryMock.store).to.be.calledOnceWith(identity, transactionMock);
+    });
+  });
+
+  describe('#storePublicKeyIdentityId', () => {
+    it('should store public key hash and identity id pair to repository', async () => {
+      await stateRepository.storePublicKeyIdentityId(
+        identity.getPublicKeyById(0).hash(), identity.getId(),
+      );
+
+      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('identity');
+      expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledOnceWithExactly(
+        identity.getPublicKeyById(0).hash(),
+        identity.getId(),
+        transactionMock,
+      );
+    });
+  });
+
+  describe('#fetchPublicKeyIdentityId', () => {
+    it('should fetch previously stored public key hash and identity id pair', async () => {
+      const publicKeyHash = identity.getPublicKeyById(0).hash();
+
+      publicKeyIdentityIdRepositoryMock
+        .fetch
+        .withArgs(publicKeyHash)
+        .resolves(identity.getId());
+
+      const result = await stateRepository.fetchPublicKeyIdentityId(
+        identity.getPublicKeyById(0).hash(),
+      );
+
+      expect(result).to.deep.equal(identity.getId());
+    });
+
+    it('should return null if pair was not found', async () => {
+      const publicKeyHash = identity.getPublicKeyById(0).hash();
+
+      publicKeyIdentityIdRepositoryMock
+        .fetch
+        .withArgs(publicKeyHash)
+        .resolves(null);
+
+      const result = await stateRepository.fetchPublicKeyIdentityId(
+        identity.getPublicKeyById(0).hash(),
+      );
+
+      expect(result).to.be.null();
     });
   });
 
