@@ -1,5 +1,7 @@
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
+const EmptyPublicKeyDataError = require('./errors/EmptyPublicKeyDataError');
+
 class IdentityPublicKey {
   /**
    * @param {RawIdentityPublicKey} [rawIdentityPublicKey]
@@ -105,7 +107,15 @@ class IdentityPublicKey {
    * @returns {string}
    */
   hash() {
-    return new PublicKey(this.getData()).hash
+    if (!this.getData()) {
+      throw new EmptyPublicKeyDataError();
+    }
+
+    const originalPublicKey = new PublicKey(
+      Buffer.from(this.getData(), 'base64'),
+    );
+
+    return originalPublicKey.hash
       .toString('hex');
   }
 

@@ -1,4 +1,5 @@
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
+const EmptyPublicKeyDataError = require('../../../lib/identity/errors/EmptyPublicKeyDataError');
 
 describe('IdentityPublicKey', () => {
   let rawPublicKey;
@@ -98,7 +99,7 @@ describe('IdentityPublicKey', () => {
       publicKey = new IdentityPublicKey({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: '033eef80bf531c4d9ed67abccf02bdf20c793b2e93ae8de9c5cf0f431240fa84f1',
+        data: 'Az7vgL9THE2e1nq8zwK98gx5Oy6Tro3pxc8PQxJA+oTx',
         isEnabled: true,
       });
 
@@ -118,8 +119,9 @@ describe('IdentityPublicKey', () => {
         publicKey.hash();
         expect.fail('Error was not thrown');
       } catch (e) {
+        expect(e).to.be.an.instanceOf(EmptyPublicKeyDataError);
         expect(e.message).to.equal(
-          'Invalid Argument: First argument is required, please include public key data.',
+          'Public key data is not set',
         );
       }
     });
