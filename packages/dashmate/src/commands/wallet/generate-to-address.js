@@ -5,7 +5,7 @@ const { flags: flagTypes } = require('@oclif/command');
 
 const BaseCommand = require('../../oclif/command/BaseCommand');
 const UpdateRendererWithOutput = require('../../oclif/renderer/UpdateRendererWithOutput');
-const MutedError = require('../../oclif/errors/MutedError');
+const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
 const PRESETS = require('../../presets');
 
@@ -132,8 +132,7 @@ class GenerateToAddressCommand extends BaseCommand {
         address,
       });
     } catch (e) {
-      // we already output errors through listr
-      throw new MutedError(e);
+      throw new MuteOneLineError(e);
     }
   }
 }

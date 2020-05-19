@@ -1,11 +1,17 @@
 const AbstractError = require('../../errors/AbstractError');
 
-class MutedError extends AbstractError {
+class MuteOneLineError extends AbstractError {
   /**
    * @param {Error} error
    */
   constructor(error) {
     super('SIGINT');
+
+    if (error.message.trimEnd().includes('\n')) {
+      this.name = error.name;
+      this.message = error.message;
+      this.stack = error.stack;
+    }
 
     this.error = error;
   }
@@ -19,4 +25,4 @@ class MutedError extends AbstractError {
   }
 }
 
-module.exports = MutedError;
+module.exports = MuteOneLineError;

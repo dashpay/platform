@@ -6,7 +6,7 @@ const BaseCommand = require('../oclif/command/BaseCommand');
 
 const UpdateRendererWithOutput = require('../oclif/renderer/UpdateRendererWithOutput');
 
-const MutedError = require('../oclif/errors/MutedError');
+const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
 const PRESETS = require('../presets');
 
@@ -20,6 +20,8 @@ class StartCommand extends BaseCommand {
   async runWithDependencies(
     {
       preset,
+      'external-ip': externalIp,
+      'core-p2p-port': coreP2pPort,
     },
     {
       'full-node': isFullNode,
@@ -43,6 +45,8 @@ class StartCommand extends BaseCommand {
 
           await dockerCompose.up(preset, {
             CORE_MASTERNODE_BLS_PRIV_KEY,
+            CORE_P2P_PORT: coreP2pPort,
+            CORE_EXTERNAL_IP: externalIp,
           });
         },
       },
@@ -52,8 +56,7 @@ class StartCommand extends BaseCommand {
     try {
       await tasks.run();
     } catch (e) {
-      // we already output errors through listr
-      throw new MutedError(e);
+      throw new MuteOneLineError(e);
     }
   }
 }
@@ -73,9 +76,9 @@ StartCommand.args = [{
   required: true,
   description: 'masternode external IP',
 }, {
-  name: 'port',
+  name: 'core-p2p-port',
   required: true,
-  description: 'masternode P2P port',
+  description: 'Core P2P port',
 }];
 
 StartCommand.flags = {
