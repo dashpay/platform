@@ -4,13 +4,13 @@ const { convertSatoshiToCredits } = require('../../creditsConverter');
 
 /**
  * @param {StateRepository} stateRepository
- * @param {getLockedTransactionOutput} getLockedTransactionOutput
+ * @param {fetchConfirmedLockTransactionOutput} fetchConfirmedLockTransactionOutput
  *
  * @returns {applyIdentityCreateTransition}
  */
 function applyIdentityCreateTransitionFactory(
   stateRepository,
-  getLockedTransactionOutput,
+  fetchConfirmedLockTransactionOutput,
 ) {
   /**
    * Apply identity state transition
@@ -22,7 +22,7 @@ function applyIdentityCreateTransitionFactory(
    * @return {Promise<void>}
    */
   async function applyIdentityCreateTransition(stateTransition) {
-    const output = await getLockedTransactionOutput(stateTransition.getLockedOutPoint());
+    const output = await fetchConfirmedLockTransactionOutput(stateTransition.getLockedOutPoint());
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
 
     const identity = new Identity({

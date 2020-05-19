@@ -12,12 +12,12 @@ const calculateStateTransitionFee = require('../calculateStateTransitionFee');
  * Validate state transition fee
  *
  * @param {StateRepository} stateRepository
- * @param {getLockedTransactionOutput} getLockedTransactionOutput
+ * @param {fetchConfirmedLockTransactionOutput} fetchConfirmedLockTransactionOutput
  * @return {validateStateTransitionFee}
  */
 function validateStateTransitionFeeFactory(
   stateRepository,
-  getLockedTransactionOutput,
+  fetchConfirmedLockTransactionOutput,
 ) {
   /**
    * @typedef validateStateTransitionFee
@@ -38,7 +38,7 @@ function validateStateTransitionFeeFactory(
       case stateTransitionTypes.IDENTITY_CREATE: {
         let output;
         try {
-          output = await getLockedTransactionOutput(stateTransition.getLockedOutPoint());
+          output = await fetchConfirmedLockTransactionOutput(stateTransition.getLockedOutPoint());
         } catch (e) {
           if (e instanceof ConsensusError) {
             result.addError(e);

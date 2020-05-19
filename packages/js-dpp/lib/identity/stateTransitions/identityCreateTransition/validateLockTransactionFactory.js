@@ -4,12 +4,13 @@ const ValidationResult = require('../../../validation/ValidationResult');
 const ConsensusError = require('../../../errors/ConsensusError');
 const InvalidIdentityLockTransactionOutputError = require('../../../errors/InvalidIdentityLockTransactionOutputError');
 const InvalidStateTransitionSignatureError = require('../../../errors/InvalidStateTransitionSignatureError');
+
 /**
  *
- * @param {getLockedTransactionOutput} getLockedTransactionOutput
+ * @param {fetchConfirmedLockTransactionOutput} fetchConfirmedLockTransactionOutput
  * @return {validateLockTransaction}
  */
-function validateLockTransactionFactory(getLockedTransactionOutput) {
+function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
   /**
    * Validates identityCreateTransition signature against lock transaction
    *
@@ -25,7 +26,9 @@ function validateLockTransactionFactory(getLockedTransactionOutput) {
     let output;
 
     try {
-      output = await getLockedTransactionOutput(identityCreateTransition.getLockedOutPoint());
+      output = await fetchConfirmedLockTransactionOutput(
+        identityCreateTransition.getLockedOutPoint(),
+      );
     } catch (e) {
       if (e instanceof ConsensusError) {
         result.addError(e);

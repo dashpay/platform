@@ -2,9 +2,14 @@ const validateLockTransactionFactory = require('../../../../../lib/identity/stat
 const IdentityCreateTransition = require('../../../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 
-const InvalidIdentityLockTransactionOutputError = require('../../../../../lib/errors/InvalidIdentityLockTransactionOutputError');
+const InvalidIdentityLockTransactionOutputError = require(
+  '../../../../../lib/errors/InvalidIdentityLockTransactionOutputError',
+);
 const InvalidStateTransitionSignatureError = require(
   '../../../../../lib/errors/InvalidStateTransitionSignatureError',
+);
+const IdentityLockTransactionNotFoundError = require(
+  '../../../../../lib/errors/IdentityLockTransactionNotFoundError',
 );
 const { expectValidationError } = require(
   '../../../../../lib/test/expect/expectError',
@@ -14,7 +19,7 @@ describe('validateLockTransactionFactory', () => {
   let validateLockTransaction;
   let stateTransition;
   let privateKey;
-  let getLockedTransactionOutputMock;
+  let fetchConfirmedLockTransactionOutputMock;
   let output;
 
   beforeEach(function beforeEach() {
@@ -46,10 +51,10 @@ describe('validateLockTransactionFactory', () => {
       script,
     };
 
-    getLockedTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
+    fetchConfirmedLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
 
     validateLockTransaction = validateLockTransactionFactory(
-      getLockedTransactionOutputMock,
+      fetchConfirmedLockTransactionOutputMock,
     );
   });
 
@@ -58,7 +63,7 @@ describe('validateLockTransactionFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(
+    expect(fetchConfirmedLockTransactionOutputMock).to.be.calledOnceWithExactly(
       stateTransition.getLockedOutPoint(),
     );
   });
@@ -112,5 +117,20 @@ describe('validateLockTransactionFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.getRawStateTransition()).to.deep.equal(stateTransition);
+  });
+
+  it('should return an invalid result if transaction is not found', async () => {
+    const transactionHash = 'f1c1cbc37b5d5543eeb126a53de7863ea2b9d5dbd03b981337bbda76cc6d771c';
+    const notFoundError = new IdentityLockTransactionNotFoundError(transactionHash);
+
+    fetchConfirmedLockTransactionOutputMock.throws(notFoundError);
+
+    const result = await validateLockTransaction(stateTransition);
+
+    expectValidationError(result, IdentityLockTransactionNotFoundError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getTransactionHash()).to.equal(transactionHash);
   });
 });

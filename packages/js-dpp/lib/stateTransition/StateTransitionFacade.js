@@ -25,7 +25,7 @@ const validateLockTransactionFactory = require('../identity/stateTransitions/ide
 const validateIdentityCreateSTStructureFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTStructureFactory');
 const validateStateTransitionSignatureFactory = require('./validation/validateStateTransitionSignatureFactory');
 const validateStateTransitionFeeFactory = require('./validation/validateStateTransitionFeeFactory');
-const getLockedTransactionOutputFactory = require('./getLockedTransactionOutputFactory');
+const fetchConfirmedLockTransactionOutputFactory = require('./fetchConfirmedLockTransactionOutputFactory');
 
 const enrichDataContractWithBaseSchema = require('../dataContract/enrichDataContractWithBaseSchema');
 const findDuplicatesById = require('../document/stateTransition/validation/structure/findDuplicatesById');
@@ -57,9 +57,10 @@ const applyIdentityCreateTransitionFactory = require(
 class StateTransitionFacade {
   /**
    * @param {StateRepository} stateRepository
+   * @param {boolean} [enableLockTxOneBlockConfirmationFallback]
    * @param {JsonSchemaValidator} validator
    */
-  constructor(stateRepository, validator) {
+  constructor(stateRepository, validator, enableLockTxOneBlockConfirmationFallback = undefined) {
     this.stateRepository = stateRepository;
     this.validator = validator;
 
@@ -132,13 +133,14 @@ class StateTransitionFacade {
         stateRepository,
       );
 
-    const getLockedTransactionOutput = getLockedTransactionOutputFactory(
+    const fetchConfirmedLockTransactionOutput = fetchConfirmedLockTransactionOutputFactory(
       stateRepository,
       Transaction.parseOutPointBuffer,
+      enableLockTxOneBlockConfirmationFallback,
     );
 
     const validateLockTransaction = validateLockTransactionFactory(
-      getLockedTransactionOutput,
+      fetchConfirmedLockTransactionOutput,
     );
 
     const validateIdentityCreateSTData = validateIdentityCreateSTDataFactory(
@@ -175,7 +177,7 @@ class StateTransitionFacade {
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
       stateRepository,
-      getLockedTransactionOutput,
+      fetchConfirmedLockTransactionOutput,
     );
 
     this.factory = new StateTransitionFactory(
@@ -194,7 +196,7 @@ class StateTransitionFacade {
 
     const applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
       stateRepository,
-      getLockedTransactionOutput,
+      fetchConfirmedLockTransactionOutput,
     );
 
     this.applyStateTransition = applyStateTransitionFactory(
