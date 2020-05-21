@@ -76,6 +76,6 @@ class PublicKeyIdentityIdMapLevelDBRepository {
   }
 }
 
-PublicKeyIdentityIdMapLevelDBRepository.KEY_PREFIX = 'publicKeyIdentityId:';
+PublicKeyIdentityIdMapLevelDBRepository.KEY_PREFIX = 'publicKeyIdentityId';
 
 module.exports = PublicKeyIdentityIdMapLevelDBRepository;

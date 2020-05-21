@@ -79,6 +79,6 @@ class IdentityLevelDBRepository {
   }
 }
 
-IdentityLevelDBRepository.KEY_PREFIX = 'identity:';
+IdentityLevelDBRepository.KEY_PREFIX = 'identity';
 
 module.exports = IdentityLevelDBRepository;
