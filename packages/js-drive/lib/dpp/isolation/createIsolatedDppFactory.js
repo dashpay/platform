@@ -8,12 +8,14 @@ const IsolatedJsonSchemaValidator = require('./IsolatedJsonSchemaValidator');
  * @param [isolatedSTUnserializationOptions.timeout] - Timeout ms
  * @param [isolatedSTUnserializationOptions.memoryLimit] - Memory limit mb
  * @param {StateRepository} stateRepository
+ * @param {Object} dppOptions
  * @return {createIsolatedDpp}
  */
 function createIsolatedDppFactory(
   isolatedJsonSchemaValidatorSnapshot,
   isolatedSTUnserializationOptions,
   stateRepository,
+  dppOptions,
 ) {
   /**
    * @typedef {createIsolatedDpp}
@@ -32,8 +34,11 @@ function createIsolatedDppFactory(
       );
 
       return new IsolatedDashPlatformProtocol(
-        isolate,
-        { stateRepository, jsonSchemaValidator },
+        isolate, {
+          ...dppOptions,
+          stateRepository,
+          jsonSchemaValidator,
+        },
       );
     } catch (e) {
       if (!isolate.isDisposed) {

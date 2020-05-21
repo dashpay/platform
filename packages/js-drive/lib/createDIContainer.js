@@ -49,7 +49,6 @@ const BlockExecutionState = require('./blockchainState/blockExecution/BlockExecu
 const BlockchainStateLevelDBRepository = require('./blockchainState/BlockchainStateLevelDBRepository');
 const BlockExecutionDBTransactions = require('./blockchainState/blockExecution/BlockExecutionDBTransactions');
 
-
 const createIsolatedValidatorSnapshot = require('./dpp/isolation/createIsolatedValidatorSnapshot');
 const createIsolatedDppFactory = require('./dpp/isolation/createIsolatedDppFactory');
 const unserializeStateTransitionFactory = require(
@@ -88,6 +87,7 @@ const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
  * @param {string} options.CORE_JSON_RPC_PASSWORD
+ * @param {string} options.IDENTITY_ENABLE_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK
  *
  * @return {AwilixContainer}
  */
@@ -121,13 +121,28 @@ async function createDIContainer(options) {
   });
 
   /**
+   * Register global DPP options
+   */
+  container.register({
+    dppOptions: asValue({
+      identities: {
+        enableLockTxOneBlockConfirmationFallback: options
+          .IDENTITY_ENABLE_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK === 'true',
+      },
+    }),
+  });
+
+  /**
    * Register common services
    */
   container.register({
     logger: asFunction(() => new Logger(console)).singleton(),
 
-    noStateDpp: asFunction(() => (
-      new DashPlatformProtocol({ stateRepository: undefined })
+    noStateDpp: asFunction((dppOptions) => (
+      new DashPlatformProtocol({
+        ...dppOptions,
+        stateRepository: undefined,
+      })
     )).singleton(),
 
     sanitizeUrl: asValue(sanitizeUrl),
@@ -309,11 +324,13 @@ async function createDIContainer(options) {
       isolatedJsonSchemaValidatorSnapshot,
       isolatedSTUnserializationOptions,
       stateRepository,
+      dppOptions,
     ) => {
       const createIsolatedDpp = createIsolatedDppFactory(
         isolatedJsonSchemaValidatorSnapshot,
         isolatedSTUnserializationOptions,
         stateRepository,
+        dppOptions,
       );
 
       return unserializeStateTransitionFactory(createIsolatedDpp);
@@ -323,18 +340,23 @@ async function createDIContainer(options) {
       isolatedJsonSchemaValidatorSnapshot,
       isolatedSTUnserializationOptions,
       transactionalStateRepository,
+      dppOptions,
     ) => {
       const createIsolatedDpp = createIsolatedDppFactory(
         isolatedJsonSchemaValidatorSnapshot,
         isolatedSTUnserializationOptions,
         transactionalStateRepository,
+        dppOptions,
       );
 
       return unserializeStateTransitionFactory(createIsolatedDpp);
     }).singleton(),
 
-    transactionalDpp: asFunction((transactionalStateRepository) => (
-      new DashPlatformProtocol({ stateRepository: transactionalStateRepository })
+    transactionalDpp: asFunction((transactionalStateRepository, dppOptions) => (
+      new DashPlatformProtocol({
+        ...dppOptions,
+        stateRepository: transactionalStateRepository,
+      })
     )).singleton(),
   });
 
