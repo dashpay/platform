@@ -163,7 +163,7 @@ class DriveStateRepository {
    */
   async fetchTransaction(id) {
     try {
-      const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, true);
+      const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, 1);
 
       return transaction;
     } catch (e) {

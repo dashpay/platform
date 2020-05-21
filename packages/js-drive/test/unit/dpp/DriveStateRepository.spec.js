@@ -228,7 +228,7 @@ describe('DriveStateRepository', () => {
       const result = await stateRepository.fetchTransaction(id);
 
       expect(result).to.deep.equal(rawTransaction);
-      expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWithExactly(id, true);
+      expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWithExactly(id, 1);
     });
 
     it('should return null if core throws Invalid address or key error', async () => {
