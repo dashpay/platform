@@ -17,7 +17,7 @@ module.exports = function getIdentityCreateSTFixture() {
       {
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.alloc(240).toString('base64'),
+        data: 'AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di',
         isEnabled: true,
       },
     ],

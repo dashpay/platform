@@ -26,6 +26,7 @@ const validateIdentityTopUpTransitionDataFactory = require('../identity/stateTra
 const validateLockTransactionFactory = require('../identity/stateTransitions/identityCreateTransition/validateLockTransactionFactory');
 const validateIdentityCreateSTStructureFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTStructureFactory');
 const validateIdentityTopUpTransitionStructure = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionStructure');
+const validateIdentityPublicKeyUniquenessFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityPublicKeyUniquenessFactory');
 const validateStateTransitionSignatureFactory = require('./validation/validateStateTransitionSignatureFactory');
 const validateStateTransitionFeeFactory = require('./validation/validateStateTransitionFeeFactory');
 const fetchConfirmedLockTransactionOutputFactory = require('./fetchConfirmedLockTransactionOutputFactory');
@@ -154,9 +155,14 @@ class StateTransitionFacade {
       fetchConfirmedLockTransactionOutput,
     );
 
+    const validateIdentityPublicKeyUniqueness = validateIdentityPublicKeyUniquenessFactory(
+      stateRepository,
+    );
+
     const validateIdentityCreateSTData = validateIdentityCreateSTDataFactory(
       stateRepository,
       validateLockTransaction,
+      validateIdentityPublicKeyUniqueness,
     );
 
     const validateIdentityTopUpTransitionData = validateIdentityTopUpTransitionDataFactory(

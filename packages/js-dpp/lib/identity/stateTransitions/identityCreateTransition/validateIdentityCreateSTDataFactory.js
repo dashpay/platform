@@ -5,9 +5,14 @@ const IdentityAlreadyExistsError = require('../../../errors/IdentityAlreadyExist
 /**
  * @param {StateRepository} stateRepository
  * @param {validateLockTransaction} validateLockTransaction
+ * @param {validateIdentityPublicKeyUniqueness} validateIdentityPublicKeyUniqueness
  * @return {validateIdentityCreateSTData}
  */
-function validateIdentityCreateSTDataFactory(stateRepository, validateLockTransaction) {
+function validateIdentityCreateSTDataFactory(
+  stateRepository,
+  validateLockTransaction,
+  validateIdentityPublicKeyUniqueness,
+) {
   /**
    *
    * Do we need to check that key ids are incremental?
@@ -39,6 +44,18 @@ function validateIdentityCreateSTDataFactory(stateRepository, validateLockTransa
 
     result.merge(
       await validateLockTransaction(identityCreateTransition),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    const [firstPublicKey] = identityCreateTransition.getPublicKeys();
+
+    result.merge(
+      await validateIdentityPublicKeyUniqueness(
+        firstPublicKey,
+      ),
     );
 
     return result;

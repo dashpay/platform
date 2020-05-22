@@ -22,15 +22,19 @@ describe('validateIdentityCreateSTDataFactory', () => {
   let stateTransition;
   let stateRepositoryMock;
   let validateLockTransactionMock;
+  let validateIdentityPublicKeyUniquenessMock;
 
   beforeEach(function beforeEach() {
     const privateKey = 'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837';
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     validateLockTransactionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    validateIdentityPublicKeyUniquenessMock = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
 
     validateIdentityCreateSTData = validateIdentityCreateSTDataFactory(
       stateRepositoryMock,
       validateLockTransactionMock,
+      validateIdentityPublicKeyUniquenessMock,
     );
 
     stateTransition = new IdentityCreateTransition({
@@ -66,13 +70,6 @@ describe('validateIdentityCreateSTDataFactory', () => {
     expect(error.getStateTransition()).to.deep.equal(stateTransition);
   });
 
-  it('should return valid result if state transition is valid', async () => {
-    const result = await validateIdentityCreateSTData(stateTransition);
-
-    expect(result.isValid()).to.be.true();
-  });
-
-
   it('should return invalid result if lock transaction is invalid', async () => {
     const validationError = new Error('Some error');
 
@@ -86,5 +83,26 @@ describe('validateIdentityCreateSTDataFactory', () => {
 
     const [error] = result.getErrors();
     expect(error).to.deep.equal(validationError);
+  });
+
+  it('should return invalid result if identity public key already exists', async () => {
+    const validationError = new Error('Some error');
+
+    const validationResult = new ValidationResult([
+      validationError,
+    ]);
+
+    validateIdentityPublicKeyUniquenessMock.returns(validationResult);
+
+    const result = await validateIdentityCreateSTData(stateTransition);
+
+    const [error] = result.getErrors();
+    expect(error).to.deep.equal(validationError);
+  });
+
+  it('should return valid result if state transition is valid', async () => {
+    const result = await validateIdentityCreateSTData(stateTransition);
+
+    expect(result.isValid()).to.be.true();
   });
 });

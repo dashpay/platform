@@ -89,3 +89,24 @@
  * @param {Identity} identity
  * @returns {Promise<void>}
  */
+
+/**
+ * Store public key hash and identity id pair
+ *
+ * @async
+ * @method
+ * @name StateRepository#storePublicKeyIdentityId
+ * @param {string} publicKeyHash
+ * @param {string} identityId
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Fetch identity id by public key hash
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchPublicKeyIdentityId
+ * @param {string} publicKeyHash
+ * @returns {Promise<string|null>}
+ */

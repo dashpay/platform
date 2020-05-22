@@ -32,6 +32,12 @@ function applyIdentityCreateTransitionFactory(
     });
 
     await stateRepository.storeIdentity(identity);
+
+    const [firstPublicKey] = identity.getPublicKeys();
+    await stateRepository.storePublicKeyIdentityId(
+      firstPublicKey.hash(),
+      identity.getId(),
+    );
   }
 
   return applyIdentityCreateTransition;
