@@ -21,7 +21,8 @@ class AbstractStateTransition {
    * @param {
    * RawDataContractCreateTransition|
    * RawDocumentsBatchTransition|
-   * RawIdentityCreateTransition
+   * RawIdentityCreateTransition|
+   * RawIdentityTopUpTransition
    * } [rawStateTransition]
    */
   constructor(rawStateTransition = {}) {
@@ -160,5 +161,12 @@ class AbstractStateTransition {
     return calculateStateTransitionFee(this);
   }
 }
+
+/**
+ * @typedef RawStateTransition
+ * @property {number} protocolVersion
+ * @property {number} type
+ * @property {string|null} signature
+ */
 
 module.exports = AbstractStateTransition;

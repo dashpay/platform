@@ -8,6 +8,7 @@ const { decode } = require('../util/serializer');
 
 const IdentityPublicKey = require('./IdentityPublicKey');
 const IdentityCreateTransition = require('./stateTransitions/identityCreateTransition/IdentityCreateTransition');
+const IdentityTopUpTransition = require('./stateTransitions/identityTopUpTransition/IdentityTopUpTransition');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
@@ -111,6 +112,22 @@ class IdentityFactory {
     stateTransition.setPublicKeys(identity.getPublicKeys());
 
     return stateTransition;
+  }
+
+  /**
+   * Create identity top up transition
+   *
+   * @param {string} identityId - identity to top up, base58 encoded
+   * @param {Buffer} lockedOutPointBuffer - pointer to outpoint of funding transaction
+   * @return {IdentityTopUpTransition}
+   */
+  createIdentityTopUpTransition(identityId, lockedOutPointBuffer) {
+    const lockedOutPoint = lockedOutPointBuffer.toString('base64');
+
+    return new IdentityTopUpTransition({
+      identityId,
+      lockedOutPoint,
+    });
   }
 }
 

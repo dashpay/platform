@@ -15,10 +15,10 @@ function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
    * Validates identityCreateTransition signature against lock transaction
    *
    * @typedef validateLockTransaction
-   * @param {IdentityCreateTransition} identityCreateTransition
+   * @param {IdentityCreateTransition|IdentityTopUpTransition} identityStateTransition
    * @returns {Promise<ValidationResult>}
    */
-  async function validateLockTransaction(identityCreateTransition) {
+  async function validateLockTransaction(identityStateTransition) {
     // fetch lock transaction output, extract pubkey from it and verify signature
 
     const result = new ValidationResult();
@@ -27,7 +27,7 @@ function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
 
     try {
       output = await fetchConfirmedLockTransactionOutput(
-        identityCreateTransition.getLockedOutPoint(),
+        identityStateTransition.getLockedOutPoint(),
       );
     } catch (e) {
       if (e instanceof ConsensusError) {
@@ -61,8 +61,8 @@ function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
 
     try {
       signatureIsVerified = verifyHashSignature(
-        Buffer.from(identityCreateTransition.hash({ skipSignature: true }), 'hex'),
-        Buffer.from(identityCreateTransition.getSignature(), 'base64'),
+        Buffer.from(identityStateTransition.hash({ skipSignature: true }), 'hex'),
+        Buffer.from(identityStateTransition.getSignature(), 'base64'),
         publicKeyHash,
       );
     } catch (e) {
@@ -70,7 +70,7 @@ function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
     }
 
     if (!signatureIsVerified) {
-      result.addError(new InvalidStateTransitionSignatureError(identityCreateTransition));
+      result.addError(new InvalidStateTransitionSignatureError(identityStateTransition));
     }
 
     return result;

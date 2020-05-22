@@ -12,6 +12,7 @@ const stateTransitionTypes = require('./stateTransitionTypes');
 const dataContractCreateTransitionSchema = require('../../schema/dataContract/stateTransition/dataContractCreate');
 const documentsBatchTransitionSchema = require('../../schema/document/stateTransition/documentsBatch');
 const identityCreateTransitionSchema = require('../../schema/identity/stateTransition/identityCreate');
+const identityTopUpTransitionSchema = require('../../schema/identity/stateTransition/identityTopUp');
 
 const createStateTransitionFactory = require('./createStateTransitionFactory');
 const validateDataContractFactory = require('../dataContract/validateDataContractFactory');
@@ -21,8 +22,10 @@ const validateDataContractCreateTransitionDataFactory = require('../dataContract
 const validateStateTransitionDataFactory = require('./validation/validateStateTransitionDataFactory');
 const validateDocumentsBatchTransitionStructureFactory = require('../document/stateTransition/validation/structure/validateDocumentsBatchTransitionStructureFactory');
 const validateIdentityCreateSTDataFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTDataFactory');
+const validateIdentityTopUpTransitionDataFactory = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionDataFactory');
 const validateLockTransactionFactory = require('../identity/stateTransitions/identityCreateTransition/validateLockTransactionFactory');
 const validateIdentityCreateSTStructureFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTStructureFactory');
+const validateIdentityTopUpTransitionStructure = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionStructure');
 const validateStateTransitionSignatureFactory = require('./validation/validateStateTransitionSignatureFactory');
 const validateStateTransitionFeeFactory = require('./validation/validateStateTransitionFeeFactory');
 const fetchConfirmedLockTransactionOutputFactory = require('./fetchConfirmedLockTransactionOutputFactory');
@@ -52,6 +55,10 @@ const applyDocumentsBatchTransitionFactory = require(
 
 const applyIdentityCreateTransitionFactory = require(
   '../identity/stateTransitions/identityCreateTransition/applyIdentityCreateTransitionFactory',
+);
+
+const applyIdentityTopUpTransitionFactory = require(
+  '../identity/stateTransitions/identityTopUpTransition/applyIdentityTopUpTransitionFactory',
 );
 
 class StateTransitionFacade {
@@ -120,6 +127,10 @@ class StateTransitionFacade {
         validationFunction: validateIdentityCreateSTStructure,
         schema: identityCreateTransitionSchema,
       },
+      [stateTransitionTypes.IDENTITY_TOP_UP]: {
+        validationFunction: validateIdentityTopUpTransitionStructure,
+        schema: identityTopUpTransitionSchema,
+      },
     };
 
     this.validateStateTransitionStructure = validateStateTransitionStructureFactory(
@@ -148,6 +159,11 @@ class StateTransitionFacade {
       validateLockTransaction,
     );
 
+    const validateIdentityTopUpTransitionData = validateIdentityTopUpTransitionDataFactory(
+      validateLockTransaction,
+      validateIdentityExistence,
+    );
+
     const fetchDocuments = fetchDocumentsFactory(
       stateRepository,
     );
@@ -173,6 +189,7 @@ class StateTransitionFacade {
       [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractCreateTransitionData,
       [stateTransitionTypes.DOCUMENTS_BATCH]: validateDocumentsSTData,
       [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateSTData,
+      [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionData,
     });
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
@@ -199,10 +216,16 @@ class StateTransitionFacade {
       fetchConfirmedLockTransactionOutput,
     );
 
+    const applyIdentityTopUpTransition = applyIdentityTopUpTransitionFactory(
+      stateRepository,
+      fetchConfirmedLockTransactionOutput,
+    );
+
     this.applyStateTransition = applyStateTransitionFactory(
       applyDataContractCreateTransition,
       applyDocumentsBatchTransition,
       applyIdentityCreateTransition,
+      applyIdentityTopUpTransition,
     );
   }
 
@@ -302,6 +325,7 @@ class StateTransitionFacade {
    * @param {
    *  DataContractCreateTransition|DocumentsBatchTransition|IdentityCreateTransition
    *  |RawDataContractCreateTransition|RawDocumentsBatchTransition|RawIdentityCreateTransition
+   *  |RawIdentityTopUpTransition
    *  } stateTransition
    * @return {ValidationResult}
    */

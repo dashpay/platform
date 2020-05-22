@@ -8,6 +8,7 @@ const hash = require('../../../lib/util/hash');
 
 const Identity = require('../../../lib/identity/Identity');
 const IdentityCreateTransition = require('../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
+const IdentityTopUpTransition = require('../../../lib/identity/stateTransitions/identityTopUpTransition/IdentityTopUpTransition');
 
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
@@ -38,6 +39,7 @@ describe('IdentityFactory', () => {
         },
         '../../../lib/identity/Identity': Identity,
         '../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition': IdentityCreateTransition,
+        '../../../lib/identity/stateTransitions/identityTopUpTransition/IdentityTopUpTransition': IdentityTopUpTransition,
       },
     );
 
@@ -163,6 +165,21 @@ describe('IdentityFactory', () => {
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
       expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
+      expect(stateTransition.getLockedOutPoint()).to.equal(lockedOutPoint.toString('base64'));
+    });
+  });
+
+  describe('#createIdentityTopUpTransition', () => {
+    it('should create IdentityTopUpTransition from identity id and outpoint', () => {
+      const lockedOutPoint = crypto.randomBytes(64);
+
+      identity.setLockedOutPoint(lockedOutPoint);
+
+      const stateTransition = factory
+        .createIdentityTopUpTransition(identity.getId(), lockedOutPoint);
+
+      expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
+      expect(stateTransition.getIdentityId()).to.be.equal(identity.getId());
       expect(stateTransition.getLockedOutPoint()).to.equal(lockedOutPoint.toString('base64'));
     });
   });

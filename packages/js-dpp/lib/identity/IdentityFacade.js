@@ -75,6 +75,17 @@ class IdentityFacade {
   createIdentityCreateTransition(identity) {
     return this.factory.createIdentityCreateTransition(identity);
   }
+
+  /**
+   * Create identity top up transition
+   *
+   * @param {string} identityId - identity id to top up
+   * @param {Buffer} lockedOutPointBuffer - outpoint of the top up output of the L1 transaction
+   * @return {IdentityTopUpTransition}
+   */
+  createIdentityTopUpTransition(identityId, lockedOutPointBuffer) {
+    return this.factory.createIdentityTopUpTransition(identityId, lockedOutPointBuffer);
+  }
 }
 
 module.exports = IdentityFacade;
