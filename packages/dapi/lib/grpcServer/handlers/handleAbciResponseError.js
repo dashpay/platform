@@ -33,7 +33,7 @@ function handleAbciResponseError(error) {
       throw new InvalidArgumentGrpcError(message, data);
     case 1: // INTERNAL
     default: {
-      if (data.toString() === 'Timed out waiting for tx to be included in a block') {
+      if (data && data.toString() === 'Timed out waiting for tx to be included in a block') {
         throw new DeadlineExceededGrpcError(data.toString(), {});
       }
 

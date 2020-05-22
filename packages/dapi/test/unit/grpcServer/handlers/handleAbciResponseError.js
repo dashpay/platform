@@ -65,4 +65,20 @@ describe('handleAbciResponseError', () => {
       expect(e.getMessage()).to.equal('Timed out waiting for tx to be included in a block');
     }
   });
+
+  it('should throw InternalGrpcError if error without data have been received', async () => {
+    try {
+      handleAbciResponseError(
+        new AbciResponseError(
+          1,
+          {
+            message: 'Internal error',
+          },
+        ),
+      );
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InternalGrpcError);
+      expect(e.getMessage()).to.equal('Internal error');
+    }
+  });
 });
