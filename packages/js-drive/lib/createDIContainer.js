@@ -61,6 +61,8 @@ const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecor
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
+const identityByFirstPublicKeyQueryHandlerFactory = require('./abci/handlers/query/identityByFirstPublicKeyQueryHandlerFactory');
+const identityIdByFirstPublicKeyQueryHandlerFactory = require('./abci/handlers/query/identityIdByFirstPublicKeyQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
@@ -367,11 +369,17 @@ async function createDIContainer(options) {
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
     dataContractQueryHandler: asFunction(dataContractQueryHandlerFactory).singleton(),
     documentQueryHandler: asFunction(documentQueryHandlerFactory).singleton(),
+    identityByFirstPublicKeyQueryHandler:
+      asFunction(identityByFirstPublicKeyQueryHandlerFactory).singleton(),
+    identityIdByFirstPublicKeyQueryHandler:
+      asFunction(identityIdByFirstPublicKeyQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
       identityQueryHandler,
       dataContractQueryHandler,
       documentQueryHandler,
+      identityByFirstPublicKeyQueryHandler,
+      identityIdByFirstPublicKeyQueryHandler,
     ) => {
       const router = findMyWay({
         ignoreTrailingSlash: true,
@@ -380,6 +388,8 @@ async function createDIContainer(options) {
       router.on('GET', '/identities/:id', identityQueryHandler);
       router.on('GET', '/dataContracts/:id', dataContractQueryHandler);
       router.on('GET', '/dataContracts/:contractId/documents/:type', documentQueryHandler);
+      router.on('GET', '/identities/by-first-public-key/:publicKeyHash', identityByFirstPublicKeyQueryHandler);
+      router.on('GET', '/identities/by-first-public-key/:publicKeyHash/id', identityIdByFirstPublicKeyQueryHandler);
 
       return router;
     }).singleton(),

@@ -23,7 +23,7 @@ describe('PublicKeyIdentityIdMapLevelDBRepository', () => {
     publicKey = new IdentityPublicKey({
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: '02c18a9df635941906c9b4cb8b49fe1070b7469c38d4a5c8723049104d8e008976',
+      data: 'A3NCyQmImEGgr7j2kR+rTumHLORpCGYC6XeCqVODZgSm',
       isEnabled: true,
     });
 
