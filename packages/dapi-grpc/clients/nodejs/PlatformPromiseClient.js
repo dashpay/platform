@@ -31,6 +31,10 @@ const {
             GetDataContractResponse: PBJSGetDataContractResponse,
             GetDocumentsRequest: PBJSGetDocumentsRequest,
             GetDocumentsResponse: PBJSGetDocumentsResponse,
+            GetIdentityByFirstPublicKeyRequest: PBJSGetIdentityByFirstPublicKeyRequest,
+            GetIdentityByFirstPublicKeyResponse: PBJSGetIdentityByFirstPublicKeyResponse,
+            GetIdentityIdByFirstPublicKeyRequest: PBJSGetIdentityIdByFirstPublicKeyRequest,
+            GetIdentityIdByFirstPublicKeyResponse: PBJSGetIdentityIdByFirstPublicKeyResponse,
           },
         },
       },
@@ -42,7 +46,9 @@ const {
   ApplyStateTransitionResponse: ProtocApplyStateTransitionResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
-  GetDocumentsResponse: ProtocGetDocumentsRequest,
+  GetDocumentsResponse: ProtocGetDocumentsResponse,
+  GetIdentityByFirstPublicKeyResponse: ProtocGetIdentityByFirstPublicKeyResponse,
+  GetIdentityIdByFirstPublicKeyResponse: ProtocGetIdentityIdByFirstPublicKeyResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../lib/getPlatformDefinition');
@@ -52,7 +58,6 @@ const PlatformNodeJSClient = getPlatformDefinition();
 class PlatformPromiseClient {
   /**
    * @param {string} hostname
-   * @param {string} version
    * @param {?Object} credentials
    * @param {?Object} options
    */
@@ -73,6 +78,14 @@ class PlatformPromiseClient {
 
     this.client.getDocuments = promisify(
       this.client.getDocuments.bind(this.client),
+    );
+
+    this.client.getIdentityByFirstPublicKey = promisify(
+      this.client.getIdentityByFirstPublicKey.bind(this.client),
+    );
+
+    this.client.getIdentityIdByFirstPublicKey = promisify(
+      this.client.getIdentityIdByFirstPublicKey.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -184,7 +197,7 @@ class PlatformPromiseClient {
         interceptors: [
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
-              ProtocGetDocumentsRequest,
+              ProtocGetDocumentsResponse,
               PBJSGetDocumentsResponse,
             ),
             protobufToJsonFactory(
@@ -201,6 +214,67 @@ class PlatformPromiseClient {
    */
   setProtocolVersion(protocolVersion) {
     this.setProtocolVersion = protocolVersion;
+  }
+
+  /**
+   *
+   * @param {!GetIdentityByFirstPublicKeyRequest} getIdentityByFirstPublicKeyRequest
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!GetDocumentsResponse>}
+   */
+  getIdentityByFirstPublicKey(getIdentityByFirstPublicKeyRequest, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityByFirstPublicKey(
+      getIdentityByFirstPublicKeyRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityByFirstPublicKeyResponse,
+              PBJSGetIdentityByFirstPublicKeyResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityByFirstPublicKeyRequest,
+            ),
+          ),
+        ],
+      },
+    );
+  }
+
+
+  /**
+   *
+   * @param {!GetIdentityIdByFirstPublicKeyRequest} getIdentityIdByFirstPublicKeyRequest
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!GetDocumentsResponse>}
+   */
+  getIdentityIdByFirstPublicKey(getIdentityIdByFirstPublicKeyRequest, metadata = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityIdByFirstPublicKey(
+      getIdentityIdByFirstPublicKeyRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityIdByFirstPublicKeyResponse,
+              PBJSGetIdentityIdByFirstPublicKeyResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityIdByFirstPublicKeyRequest,
+            ),
+          ),
+        ],
+      },
+    );
   }
 }
 

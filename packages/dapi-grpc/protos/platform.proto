@@ -7,6 +7,8 @@ service Platform {
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
+  rpc getIdentityByFirstPublicKey (GetIdentityByFirstPublicKeyRequest) returns (GetIdentityByFirstPublicKeyResponse);
+  rpc getIdentityIdByFirstPublicKey (GetIdentityIdByFirstPublicKeyRequest) returns (GetIdentityIdByFirstPublicKeyResponse);
 }
 
 message ApplyStateTransitionRequest {
@@ -50,4 +52,20 @@ message GetDocumentsRequest {
 
 message GetDocumentsResponse {
   repeated bytes documents = 1;
+}
+
+message GetIdentityByFirstPublicKeyRequest {
+  bytes public_key_hash = 1;
+}
+
+message GetIdentityByFirstPublicKeyResponse {
+  bytes identity = 1;
+}
+
+message GetIdentityIdByFirstPublicKeyRequest {
+  bytes public_key_hash = 1;
+}
+
+message GetIdentityIdByFirstPublicKeyResponse {
+  string id = 1;
 }

@@ -34,6 +34,16 @@ class PlatformStub(object):
         request_serializer=platform__pb2.GetDocumentsRequest.SerializeToString,
         response_deserializer=platform__pb2.GetDocumentsResponse.FromString,
         )
+    self.getIdentityByFirstPublicKey = channel.unary_unary(
+        '/org.dash.platform.dapi.v0.Platform/getIdentityByFirstPublicKey',
+        request_serializer=platform__pb2.GetIdentityByFirstPublicKeyRequest.SerializeToString,
+        response_deserializer=platform__pb2.GetIdentityByFirstPublicKeyResponse.FromString,
+        )
+    self.getIdentityIdByFirstPublicKey = channel.unary_unary(
+        '/org.dash.platform.dapi.v0.Platform/getIdentityIdByFirstPublicKey',
+        request_serializer=platform__pb2.GetIdentityIdByFirstPublicKeyRequest.SerializeToString,
+        response_deserializer=platform__pb2.GetIdentityIdByFirstPublicKeyResponse.FromString,
+        )
 
 
 class PlatformServicer(object):
@@ -68,6 +78,20 @@ class PlatformServicer(object):
     context.set_details('Method not implemented!')
     raise NotImplementedError('Method not implemented!')
 
+  def getIdentityByFirstPublicKey(self, request, context):
+    # missing associated documentation comment in .proto file
+    pass
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
+  def getIdentityIdByFirstPublicKey(self, request, context):
+    # missing associated documentation comment in .proto file
+    pass
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
   rpc_method_handlers = {
@@ -90,6 +114,16 @@ def add_PlatformServicer_to_server(servicer, server):
           servicer.getDocuments,
           request_deserializer=platform__pb2.GetDocumentsRequest.FromString,
           response_serializer=platform__pb2.GetDocumentsResponse.SerializeToString,
+      ),
+      'getIdentityByFirstPublicKey': grpc.unary_unary_rpc_method_handler(
+          servicer.getIdentityByFirstPublicKey,
+          request_deserializer=platform__pb2.GetIdentityByFirstPublicKeyRequest.FromString,
+          response_serializer=platform__pb2.GetIdentityByFirstPublicKeyResponse.SerializeToString,
+      ),
+      'getIdentityIdByFirstPublicKey': grpc.unary_unary_rpc_method_handler(
+          servicer.getIdentityIdByFirstPublicKey,
+          request_deserializer=platform__pb2.GetIdentityIdByFirstPublicKeyRequest.FromString,
+          response_serializer=platform__pb2.GetIdentityIdByFirstPublicKeyResponse.SerializeToString,
       ),
   }
   generic_handler = grpc.method_handlers_generic_handler(

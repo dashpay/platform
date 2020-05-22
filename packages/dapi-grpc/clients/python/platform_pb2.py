@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='platform.proto',
   package='org.dash.platform.dapi.v0',
   syntax='proto3',
-  serialized_pb=_b('\n\x0eplatform.proto\x12\x19org.dash.platform.dapi.v0\"7\n\x1b\x41pplyStateTransitionRequest\x12\x18\n\x10state_transition\x18\x01 \x01(\x0c\"\x1e\n\x1c\x41pplyStateTransitionResponse\" \n\x12GetIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\t\"\'\n\x13GetIdentityResponse\x12\x10\n\x08identity\x18\x01 \x01(\x0c\"$\n\x16GetDataContractRequest\x12\n\n\x02id\x18\x01 \x01(\t\"0\n\x17GetDataContractResponse\x12\x15\n\rdata_contract\x18\x01 \x01(\x0c\"\xaa\x01\n\x13GetDocumentsRequest\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\t\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12\r\n\x05where\x18\x03 \x01(\x0c\x12\x10\n\x08order_by\x18\x04 \x01(\x0c\x12\r\n\x05limit\x18\x05 \x01(\r\x12\x15\n\x0bstart_after\x18\x06 \x01(\rH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\rH\x00\x42\x07\n\x05start\")\n\x14GetDocumentsResponse\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\x32\xed\x03\n\x08Platform\x12\x87\x01\n\x14\x61pplyStateTransition\x12\x36.org.dash.platform.dapi.v0.ApplyStateTransitionRequest\x1a\x37.org.dash.platform.dapi.v0.ApplyStateTransitionResponse\x12l\n\x0bgetIdentity\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a..org.dash.platform.dapi.v0.GetIdentityResponse\x12x\n\x0fgetDataContract\x12\x31.org.dash.platform.dapi.v0.GetDataContractRequest\x1a\x32.org.dash.platform.dapi.v0.GetDataContractResponse\x12o\n\x0cgetDocuments\x12..org.dash.platform.dapi.v0.GetDocumentsRequest\x1a/.org.dash.platform.dapi.v0.GetDocumentsResponseb\x06proto3')
+  serialized_pb=_b('\n\x0eplatform.proto\x12\x19org.dash.platform.dapi.v0\"7\n\x1b\x41pplyStateTransitionRequest\x12\x18\n\x10state_transition\x18\x01 \x01(\x0c\"\x1e\n\x1c\x41pplyStateTransitionResponse\" \n\x12GetIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\t\"\'\n\x13GetIdentityResponse\x12\x10\n\x08identity\x18\x01 \x01(\x0c\"$\n\x16GetDataContractRequest\x12\n\n\x02id\x18\x01 \x01(\t\"0\n\x17GetDataContractResponse\x12\x15\n\rdata_contract\x18\x01 \x01(\x0c\"\xaa\x01\n\x13GetDocumentsRequest\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\t\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12\r\n\x05where\x18\x03 \x01(\x0c\x12\x10\n\x08order_by\x18\x04 \x01(\x0c\x12\r\n\x05limit\x18\x05 \x01(\r\x12\x15\n\x0bstart_after\x18\x06 \x01(\rH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\rH\x00\x42\x07\n\x05start\")\n\x14GetDocumentsResponse\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\"=\n\"GetIdentityByFirstPublicKeyRequest\x12\x17\n\x0fpublic_key_hash\x18\x01 \x01(\x0c\"7\n#GetIdentityByFirstPublicKeyResponse\x12\x10\n\x08identity\x18\x01 \x01(\x0c\"?\n$GetIdentityIdByFirstPublicKeyRequest\x12\x17\n\x0fpublic_key_hash\x18\x01 \x01(\x0c\"3\n%GetIdentityIdByFirstPublicKeyResponse\x12\n\n\x02id\x18\x01 \x01(\t2\xb1\x06\n\x08Platform\x12\x87\x01\n\x14\x61pplyStateTransition\x12\x36.org.dash.platform.dapi.v0.ApplyStateTransitionRequest\x1a\x37.org.dash.platform.dapi.v0.ApplyStateTransitionResponse\x12l\n\x0bgetIdentity\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a..org.dash.platform.dapi.v0.GetIdentityResponse\x12x\n\x0fgetDataContract\x12\x31.org.dash.platform.dapi.v0.GetDataContractRequest\x1a\x32.org.dash.platform.dapi.v0.GetDataContractResponse\x12o\n\x0cgetDocuments\x12..org.dash.platform.dapi.v0.GetDocumentsRequest\x1a/.org.dash.platform.dapi.v0.GetDocumentsResponse\x12\x9c\x01\n\x1bgetIdentityByFirstPublicKey\x12=.org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyRequest\x1a>.org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyResponse\x12\xa2\x01\n\x1dgetIdentityIdByFirstPublicKey\x12?.org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyRequest\x1a@.org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyResponseb\x06proto3')
 )
 
 
@@ -310,6 +310,130 @@ _GETDOCUMENTSRESPONSE = _descriptor.Descriptor(
   serialized_end=511,
 )
 
+
+_GETIDENTITYBYFIRSTPUBLICKEYREQUEST = _descriptor.Descriptor(
+  name='GetIdentityByFirstPublicKeyRequest',
+  full_name='org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='public_key_hash', full_name='org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyRequest.public_key_hash', index=0,
+      number=1, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=513,
+  serialized_end=574,
+)
+
+
+_GETIDENTITYBYFIRSTPUBLICKEYRESPONSE = _descriptor.Descriptor(
+  name='GetIdentityByFirstPublicKeyResponse',
+  full_name='org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='identity', full_name='org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyResponse.identity', index=0,
+      number=1, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=576,
+  serialized_end=631,
+)
+
+
+_GETIDENTITYIDBYFIRSTPUBLICKEYREQUEST = _descriptor.Descriptor(
+  name='GetIdentityIdByFirstPublicKeyRequest',
+  full_name='org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='public_key_hash', full_name='org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyRequest.public_key_hash', index=0,
+      number=1, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=633,
+  serialized_end=696,
+)
+
+
+_GETIDENTITYIDBYFIRSTPUBLICKEYRESPONSE = _descriptor.Descriptor(
+  name='GetIdentityIdByFirstPublicKeyResponse',
+  full_name='org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='id', full_name='org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyResponse.id', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=698,
+  serialized_end=749,
+)
+
 _GETDOCUMENTSREQUEST.oneofs_by_name['start'].fields.append(
   _GETDOCUMENTSREQUEST.fields_by_name['start_after'])
 _GETDOCUMENTSREQUEST.fields_by_name['start_after'].containing_oneof = _GETDOCUMENTSREQUEST.oneofs_by_name['start']
@@ -324,6 +448,10 @@ DESCRIPTOR.message_types_by_name['GetDataContractRequest'] = _GETDATACONTRACTREQ
 DESCRIPTOR.message_types_by_name['GetDataContractResponse'] = _GETDATACONTRACTRESPONSE
 DESCRIPTOR.message_types_by_name['GetDocumentsRequest'] = _GETDOCUMENTSREQUEST
 DESCRIPTOR.message_types_by_name['GetDocumentsResponse'] = _GETDOCUMENTSRESPONSE
+DESCRIPTOR.message_types_by_name['GetIdentityByFirstPublicKeyRequest'] = _GETIDENTITYBYFIRSTPUBLICKEYREQUEST
+DESCRIPTOR.message_types_by_name['GetIdentityByFirstPublicKeyResponse'] = _GETIDENTITYBYFIRSTPUBLICKEYRESPONSE
+DESCRIPTOR.message_types_by_name['GetIdentityIdByFirstPublicKeyRequest'] = _GETIDENTITYIDBYFIRSTPUBLICKEYREQUEST
+DESCRIPTOR.message_types_by_name['GetIdentityIdByFirstPublicKeyResponse'] = _GETIDENTITYIDBYFIRSTPUBLICKEYRESPONSE
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 ApplyStateTransitionRequest = _reflection.GeneratedProtocolMessageType('ApplyStateTransitionRequest', (_message.Message,), dict(
@@ -382,6 +510,34 @@ GetDocumentsResponse = _reflection.GeneratedProtocolMessageType('GetDocumentsRes
   ))
 _sym_db.RegisterMessage(GetDocumentsResponse)
 
+GetIdentityByFirstPublicKeyRequest = _reflection.GeneratedProtocolMessageType('GetIdentityByFirstPublicKeyRequest', (_message.Message,), dict(
+  DESCRIPTOR = _GETIDENTITYBYFIRSTPUBLICKEYREQUEST,
+  __module__ = 'platform_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyRequest)
+  ))
+_sym_db.RegisterMessage(GetIdentityByFirstPublicKeyRequest)
+
+GetIdentityByFirstPublicKeyResponse = _reflection.GeneratedProtocolMessageType('GetIdentityByFirstPublicKeyResponse', (_message.Message,), dict(
+  DESCRIPTOR = _GETIDENTITYBYFIRSTPUBLICKEYRESPONSE,
+  __module__ = 'platform_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityByFirstPublicKeyResponse)
+  ))
+_sym_db.RegisterMessage(GetIdentityByFirstPublicKeyResponse)
+
+GetIdentityIdByFirstPublicKeyRequest = _reflection.GeneratedProtocolMessageType('GetIdentityIdByFirstPublicKeyRequest', (_message.Message,), dict(
+  DESCRIPTOR = _GETIDENTITYIDBYFIRSTPUBLICKEYREQUEST,
+  __module__ = 'platform_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyRequest)
+  ))
+_sym_db.RegisterMessage(GetIdentityIdByFirstPublicKeyRequest)
+
+GetIdentityIdByFirstPublicKeyResponse = _reflection.GeneratedProtocolMessageType('GetIdentityIdByFirstPublicKeyResponse', (_message.Message,), dict(
+  DESCRIPTOR = _GETIDENTITYIDBYFIRSTPUBLICKEYRESPONSE,
+  __module__ = 'platform_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityIdByFirstPublicKeyResponse)
+  ))
+_sym_db.RegisterMessage(GetIdentityIdByFirstPublicKeyResponse)
+
 
 
 _PLATFORM = _descriptor.ServiceDescriptor(
@@ -390,8 +546,8 @@ _PLATFORM = _descriptor.ServiceDescriptor(
   file=DESCRIPTOR,
   index=0,
   options=None,
-  serialized_start=514,
-  serialized_end=1007,
+  serialized_start=752,
+  serialized_end=1569,
   methods=[
   _descriptor.MethodDescriptor(
     name='applyStateTransition',
@@ -427,6 +583,24 @@ _PLATFORM = _descriptor.ServiceDescriptor(
     containing_service=None,
     input_type=_GETDOCUMENTSREQUEST,
     output_type=_GETDOCUMENTSRESPONSE,
+    options=None,
+  ),
+  _descriptor.MethodDescriptor(
+    name='getIdentityByFirstPublicKey',
+    full_name='org.dash.platform.dapi.v0.Platform.getIdentityByFirstPublicKey',
+    index=4,
+    containing_service=None,
+    input_type=_GETIDENTITYBYFIRSTPUBLICKEYREQUEST,
+    output_type=_GETIDENTITYBYFIRSTPUBLICKEYRESPONSE,
+    options=None,
+  ),
+  _descriptor.MethodDescriptor(
+    name='getIdentityIdByFirstPublicKey',
+    full_name='org.dash.platform.dapi.v0.Platform.getIdentityIdByFirstPublicKey',
+    index=5,
+    containing_service=None,
+    input_type=_GETIDENTITYIDBYFIRSTPUBLICKEYREQUEST,
+    output_type=_GETIDENTITYIDBYFIRSTPUBLICKEYRESPONSE,
     options=None,
   ),
 ])
@@ -474,6 +648,16 @@ try:
           request_serializer=GetDocumentsRequest.SerializeToString,
           response_deserializer=GetDocumentsResponse.FromString,
           )
+      self.getIdentityByFirstPublicKey = channel.unary_unary(
+          '/org.dash.platform.dapi.v0.Platform/getIdentityByFirstPublicKey',
+          request_serializer=GetIdentityByFirstPublicKeyRequest.SerializeToString,
+          response_deserializer=GetIdentityByFirstPublicKeyResponse.FromString,
+          )
+      self.getIdentityIdByFirstPublicKey = channel.unary_unary(
+          '/org.dash.platform.dapi.v0.Platform/getIdentityIdByFirstPublicKey',
+          request_serializer=GetIdentityIdByFirstPublicKeyRequest.SerializeToString,
+          response_deserializer=GetIdentityIdByFirstPublicKeyResponse.FromString,
+          )
 
 
   class PlatformServicer(object):
@@ -508,6 +692,20 @@ try:
       context.set_details('Method not implemented!')
       raise NotImplementedError('Method not implemented!')
 
+    def getIdentityByFirstPublicKey(self, request, context):
+      # missing associated documentation comment in .proto file
+      pass
+      context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+      context.set_details('Method not implemented!')
+      raise NotImplementedError('Method not implemented!')
+
+    def getIdentityIdByFirstPublicKey(self, request, context):
+      # missing associated documentation comment in .proto file
+      pass
+      context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+      context.set_details('Method not implemented!')
+      raise NotImplementedError('Method not implemented!')
+
 
   def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -530,6 +728,16 @@ try:
             servicer.getDocuments,
             request_deserializer=GetDocumentsRequest.FromString,
             response_serializer=GetDocumentsResponse.SerializeToString,
+        ),
+        'getIdentityByFirstPublicKey': grpc.unary_unary_rpc_method_handler(
+            servicer.getIdentityByFirstPublicKey,
+            request_deserializer=GetIdentityByFirstPublicKeyRequest.FromString,
+            response_serializer=GetIdentityByFirstPublicKeyResponse.SerializeToString,
+        ),
+        'getIdentityIdByFirstPublicKey': grpc.unary_unary_rpc_method_handler(
+            servicer.getIdentityIdByFirstPublicKey,
+            request_deserializer=GetIdentityIdByFirstPublicKeyRequest.FromString,
+            response_serializer=GetIdentityIdByFirstPublicKeyResponse.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -558,6 +766,14 @@ try:
       pass
       context.code(beta_interfaces.StatusCode.UNIMPLEMENTED)
     def getDocuments(self, request, context):
+      # missing associated documentation comment in .proto file
+      pass
+      context.code(beta_interfaces.StatusCode.UNIMPLEMENTED)
+    def getIdentityByFirstPublicKey(self, request, context):
+      # missing associated documentation comment in .proto file
+      pass
+      context.code(beta_interfaces.StatusCode.UNIMPLEMENTED)
+    def getIdentityIdByFirstPublicKey(self, request, context):
       # missing associated documentation comment in .proto file
       pass
       context.code(beta_interfaces.StatusCode.UNIMPLEMENTED)
@@ -591,6 +807,16 @@ try:
       pass
       raise NotImplementedError()
     getDocuments.future = None
+    def getIdentityByFirstPublicKey(self, request, timeout, metadata=None, with_call=False, protocol_options=None):
+      # missing associated documentation comment in .proto file
+      pass
+      raise NotImplementedError()
+    getIdentityByFirstPublicKey.future = None
+    def getIdentityIdByFirstPublicKey(self, request, timeout, metadata=None, with_call=False, protocol_options=None):
+      # missing associated documentation comment in .proto file
+      pass
+      raise NotImplementedError()
+    getIdentityIdByFirstPublicKey.future = None
 
 
   def beta_create_Platform_server(servicer, pool=None, pool_size=None, default_timeout=None, maximum_timeout=None):
@@ -604,18 +830,24 @@ try:
       ('org.dash.platform.dapi.v0.Platform', 'getDataContract'): GetDataContractRequest.FromString,
       ('org.dash.platform.dapi.v0.Platform', 'getDocuments'): GetDocumentsRequest.FromString,
       ('org.dash.platform.dapi.v0.Platform', 'getIdentity'): GetIdentityRequest.FromString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityByFirstPublicKey'): GetIdentityByFirstPublicKeyRequest.FromString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityIdByFirstPublicKey'): GetIdentityIdByFirstPublicKeyRequest.FromString,
     }
     response_serializers = {
       ('org.dash.platform.dapi.v0.Platform', 'applyStateTransition'): ApplyStateTransitionResponse.SerializeToString,
       ('org.dash.platform.dapi.v0.Platform', 'getDataContract'): GetDataContractResponse.SerializeToString,
       ('org.dash.platform.dapi.v0.Platform', 'getDocuments'): GetDocumentsResponse.SerializeToString,
       ('org.dash.platform.dapi.v0.Platform', 'getIdentity'): GetIdentityResponse.SerializeToString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityByFirstPublicKey'): GetIdentityByFirstPublicKeyResponse.SerializeToString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityIdByFirstPublicKey'): GetIdentityIdByFirstPublicKeyResponse.SerializeToString,
     }
     method_implementations = {
       ('org.dash.platform.dapi.v0.Platform', 'applyStateTransition'): face_utilities.unary_unary_inline(servicer.applyStateTransition),
       ('org.dash.platform.dapi.v0.Platform', 'getDataContract'): face_utilities.unary_unary_inline(servicer.getDataContract),
       ('org.dash.platform.dapi.v0.Platform', 'getDocuments'): face_utilities.unary_unary_inline(servicer.getDocuments),
       ('org.dash.platform.dapi.v0.Platform', 'getIdentity'): face_utilities.unary_unary_inline(servicer.getIdentity),
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityByFirstPublicKey'): face_utilities.unary_unary_inline(servicer.getIdentityByFirstPublicKey),
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityIdByFirstPublicKey'): face_utilities.unary_unary_inline(servicer.getIdentityIdByFirstPublicKey),
     }
     server_options = beta_implementations.server_options(request_deserializers=request_deserializers, response_serializers=response_serializers, thread_pool=pool, thread_pool_size=pool_size, default_timeout=default_timeout, maximum_timeout=maximum_timeout)
     return beta_implementations.server(method_implementations, options=server_options)
@@ -632,18 +864,24 @@ try:
       ('org.dash.platform.dapi.v0.Platform', 'getDataContract'): GetDataContractRequest.SerializeToString,
       ('org.dash.platform.dapi.v0.Platform', 'getDocuments'): GetDocumentsRequest.SerializeToString,
       ('org.dash.platform.dapi.v0.Platform', 'getIdentity'): GetIdentityRequest.SerializeToString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityByFirstPublicKey'): GetIdentityByFirstPublicKeyRequest.SerializeToString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityIdByFirstPublicKey'): GetIdentityIdByFirstPublicKeyRequest.SerializeToString,
     }
     response_deserializers = {
       ('org.dash.platform.dapi.v0.Platform', 'applyStateTransition'): ApplyStateTransitionResponse.FromString,
       ('org.dash.platform.dapi.v0.Platform', 'getDataContract'): GetDataContractResponse.FromString,
       ('org.dash.platform.dapi.v0.Platform', 'getDocuments'): GetDocumentsResponse.FromString,
       ('org.dash.platform.dapi.v0.Platform', 'getIdentity'): GetIdentityResponse.FromString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityByFirstPublicKey'): GetIdentityByFirstPublicKeyResponse.FromString,
+      ('org.dash.platform.dapi.v0.Platform', 'getIdentityIdByFirstPublicKey'): GetIdentityIdByFirstPublicKeyResponse.FromString,
     }
     cardinalities = {
       'applyStateTransition': cardinality.Cardinality.UNARY_UNARY,
       'getDataContract': cardinality.Cardinality.UNARY_UNARY,
       'getDocuments': cardinality.Cardinality.UNARY_UNARY,
       'getIdentity': cardinality.Cardinality.UNARY_UNARY,
+      'getIdentityByFirstPublicKey': cardinality.Cardinality.UNARY_UNARY,
+      'getIdentityIdByFirstPublicKey': cardinality.Cardinality.UNARY_UNARY,
     }
     stub_options = beta_implementations.stub_options(host=host, metadata_transformer=metadata_transformer, request_serializers=request_serializers, response_deserializers=response_deserializers, thread_pool=pool, thread_pool_size=pool_size)
     return beta_implementations.dynamic_stub(channel, 'org.dash.platform.dapi.v0.Platform', cardinalities, options=stub_options)

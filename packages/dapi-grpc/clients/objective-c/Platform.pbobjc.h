@@ -167,6 +167,54 @@ typedef GPB_ENUM(GetDocumentsResponse_FieldNumber) {
 
 @end
 
+#pragma mark - GetIdentityByFirstPublicKeyRequest
+
+typedef GPB_ENUM(GetIdentityByFirstPublicKeyRequest_FieldNumber) {
+  GetIdentityByFirstPublicKeyRequest_FieldNumber_PublicKeyHash = 1,
+};
+
+@interface GetIdentityByFirstPublicKeyRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHash;
+
+@end
+
+#pragma mark - GetIdentityByFirstPublicKeyResponse
+
+typedef GPB_ENUM(GetIdentityByFirstPublicKeyResponse_FieldNumber) {
+  GetIdentityByFirstPublicKeyResponse_FieldNumber_Identity = 1,
+};
+
+@interface GetIdentityByFirstPublicKeyResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
+
+@end
+
+#pragma mark - GetIdentityIdByFirstPublicKeyRequest
+
+typedef GPB_ENUM(GetIdentityIdByFirstPublicKeyRequest_FieldNumber) {
+  GetIdentityIdByFirstPublicKeyRequest_FieldNumber_PublicKeyHash = 1,
+};
+
+@interface GetIdentityIdByFirstPublicKeyRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHash;
+
+@end
+
+#pragma mark - GetIdentityIdByFirstPublicKeyResponse
+
+typedef GPB_ENUM(GetIdentityIdByFirstPublicKeyResponse_FieldNumber) {
+  GetIdentityIdByFirstPublicKeyResponse_FieldNumber_Id_p = 1,
+};
+
+@interface GetIdentityIdByFirstPublicKeyResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *id_p;
+
+@end
+
 NS_ASSUME_NONNULL_END
 
 CF_EXTERN_C_END
