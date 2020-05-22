@@ -13,6 +13,8 @@ const {
   GetStatusRequest,
   GetTransactionRequest,
   SendTransactionRequest,
+  GetIdentityByFirstPublicKeyRequest,
+  GetIdentityIdByFirstPublicKeyRequest,
 } = require('@dashevo/dapi-grpc');
 
 const MNDiscovery = require('./MNDiscovery/index');
@@ -470,6 +472,69 @@ class DAPIClient {
       );
 
     return getDocumentsResponse.getDocumentsList().map((document) => Buffer.from(document));
+  }
+
+  /**
+   * Fetch the identity by public key hash
+   * @param {string} publicKeyHash
+   * @return {Promise<!Buffer|null>}
+   */
+  async getIdentityByFirstPublicKey(publicKeyHash) {
+    const getIdentityByFirstPublicKeyRequest = new GetIdentityByFirstPublicKeyRequest();
+    getIdentityByFirstPublicKeyRequest.setPublicKeyHash(Buffer.from(publicKeyHash, 'hex'));
+
+    let getIdentityByFirstPublicKeyResponse;
+    try {
+      getIdentityByFirstPublicKeyResponse = await this.transportManager
+        .get(TransportManager.GRPC_PLATFORM)
+        .makeRequest(
+          'getIdentityByFirstPublicKey', getIdentityByFirstPublicKeyRequest,
+          { retriesCount: this.retries, client: { timeout: this.timeout } },
+        );
+    } catch (e) {
+      if (e.code === responseErrorCodes.NOT_FOUND) {
+        return null;
+      }
+
+      throw e;
+    }
+
+    const serializedIdentityBinaryArray = getIdentityByFirstPublicKeyResponse.getIdentity();
+    let identity = null;
+
+    if (serializedIdentityBinaryArray) {
+      identity = Buffer.from(serializedIdentityBinaryArray);
+    }
+
+    return identity;
+  }
+
+  /**
+   * Fetch the identity id by public key hash
+   * @param {string} publicKeyHash
+   * @return {Promise<!string|null>}
+   */
+  async getIdentityIdByFirstPublicKey(publicKeyHash) {
+    const getIdentityIdByFirstPublicKeyRequest = new GetIdentityIdByFirstPublicKeyRequest();
+    getIdentityIdByFirstPublicKeyRequest.setPublicKeyHash(Buffer.from(publicKeyHash, 'hex'));
+
+    let getIdentityIdByFirstPublicKeyResponse;
+    try {
+      getIdentityIdByFirstPublicKeyResponse = await this.transportManager
+        .get(TransportManager.GRPC_PLATFORM)
+        .makeRequest(
+          'getIdentityIdByFirstPublicKey', getIdentityIdByFirstPublicKeyRequest,
+          { retriesCount: this.retries, client: { timeout: this.timeout } },
+        );
+    } catch (e) {
+      if (e.code === responseErrorCodes.NOT_FOUND) {
+        return null;
+      }
+
+      throw e;
+    }
+
+    return getIdentityIdByFirstPublicKeyResponse.getId();
   }
 }
 

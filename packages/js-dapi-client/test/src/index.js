@@ -16,6 +16,8 @@ const {
   GetTransactionResponse,
   SendTransactionRequest,
   SendTransactionResponse,
+  GetIdentityByFirstPublicKeyResponse,
+  GetIdentityIdByFirstPublicKeyResponse,
 } = require('@dashevo/dapi-grpc');
 const chai = require('chai');
 const { EventEmitter } = require('events');
@@ -823,6 +825,84 @@ describe('api', () => {
 
       const client = new DAPIClient();
       const result = await client.getDataContract(contractId);
+
+      expect(result).to.equal(null);
+    });
+  });
+
+  describe('#getIdentityByFirstPublicKey', () => {
+    let getIdentityByFirstPublicKeyStub;
+    let publicKeyHash;
+
+    beforeEach(() => {
+      getIdentityByFirstPublicKeyStub = sinon
+        .stub(PlatformPromiseClient.prototype, 'getIdentityByFirstPublicKey');
+
+      publicKeyHash = '556c2910d46fda2b327ef9d9bda850cc84d30db0';
+    });
+
+    afterEach(() => {
+      getIdentityByFirstPublicKeyStub.restore();
+    });
+
+    it('should return Buffer', async () => {
+      const response = new GetIdentityByFirstPublicKeyResponse();
+      response.setIdentity(Buffer.from('identity'));
+      getIdentityByFirstPublicKeyStub.resolves(response);
+
+      const client = new DAPIClient();
+      const result = await client.getIdentityByFirstPublicKey(publicKeyHash);
+
+      expect(result).to.be.instanceof(Buffer);
+    });
+
+    it('should return null if identity is not found', async () => {
+      const error = new Error('Not found');
+      error.code = responseErrorCodes.NOT_FOUND;
+      getIdentityByFirstPublicKeyStub.throws(error);
+
+      const client = new DAPIClient();
+      const result = await client.getIdentityByFirstPublicKey(publicKeyHash);
+
+      expect(result).to.equal(null);
+    });
+  });
+
+  describe('#getIdentityIdByFirstPublicKey', () => {
+    let getIdentityIdByFirstPublicKeyStub;
+    let id;
+    let publicKeyHash;
+
+    beforeEach(() => {
+      getIdentityIdByFirstPublicKeyStub = sinon
+        .stub(PlatformPromiseClient.prototype, 'getIdentityIdByFirstPublicKey');
+
+      id = '4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176';
+      publicKeyHash = '556c2910d46fda2b327ef9d9bda850cc84d30db0';
+    });
+
+    afterEach(() => {
+      getIdentityIdByFirstPublicKeyStub.restore();
+    });
+
+    it('should return string', async () => {
+      const response = new GetIdentityIdByFirstPublicKeyResponse();
+      response.setId(id);
+      getIdentityIdByFirstPublicKeyStub.resolves(response);
+
+      const client = new DAPIClient();
+      const result = await client.getIdentityIdByFirstPublicKey(publicKeyHash);
+
+      expect(result).to.equal(id);
+    });
+
+    it('should return null if identity is not found', async () => {
+      const error = new Error('Not found');
+      error.code = responseErrorCodes.NOT_FOUND;
+      getIdentityIdByFirstPublicKeyStub.throws(error);
+
+      const client = new DAPIClient();
+      const result = await client.getIdentityIdByFirstPublicKey(publicKeyHash);
 
       expect(result).to.equal(null);
     });
