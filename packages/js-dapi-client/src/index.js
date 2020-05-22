@@ -22,16 +22,16 @@ const TransportManager = require('./transport/TransportManager');
 const config = require('./config');
 const { responseErrorCodes } = require('./constants');
 
+/**
+ * @param options
+ * @param {Array<object>} [options.seeds] - seeds. If no seeds provided
+ * default seed will be used.
+ * @param {number} [options.port=3000] - default port for connection to the DAPI
+ * @param {number} [options.nativeGrpcPort=3010] - Native GRPC port for connection to the DAPI
+ * @param {number} [options.timeout=2000] - timeout for connection to the DAPI
+ * @param {number} [options.retries=3] - num of retries if there is no response from DAPI node
+ */
 class DAPIClient {
-  /**
-   * @param options
-   * @param {Array<Object>} [options.seeds] - seeds. If no seeds provided
-   * default seed will be used.
-   * @param {number} [options.port=3000] - default port for connection to the DAPI
-   * @param {number} [options.nativeGrpcPort=3010] - Native GRPC port for connection to the DAPI
-   * @param {number} [options.timeout=2000] - timeout for connection to the DAPI
-   * @param {number} [options.retries=3] - num of retries if there is no response from DAPI node
-   */
   constructor(options = {}) {
     this.MNDiscovery = new MNDiscovery(options.seeds, options.port);
     this.DAPIPort = options.port || config.Api.port;
@@ -53,6 +53,7 @@ class DAPIClient {
   /* Layer 1 commands */
   /**
    * ONLY FOR TESTING PURPOSES WITH REGTEST. WILL NOT WORK ON TESTNET/LIVENET.
+   *
    * @param {number} blocksNumber - Number of blocks to generate
    * @param {string} address - The address that will receive the newly generated Dash
    * @returns {Promise<string[]>} - block hashes
@@ -67,6 +68,7 @@ class DAPIClient {
 
   /**
    * Returns block hash of chaintip
+   *
    * @returns {Promise<string>}
    */
   getBestBlockHash() {
@@ -79,6 +81,7 @@ class DAPIClient {
 
   /**
    * Returns block hash for the given height
+   *
    * @param {number} height
    * @returns {Promise<string>} - block hash
    */
@@ -92,9 +95,10 @@ class DAPIClient {
 
   /**
    * Get deterministic masternodelist diff
+   *
    * @param {string} baseBlockHash - hash or height of start block
    * @param {string} blockHash - hash or height of end block
-   * @return {Promise<object>}
+   * @returns {Promise<object>}
    */
   getMnListDiff(baseBlockHash, blockHash) {
     return this.transportManager.get(TransportManager.JSON_RPC)
@@ -106,13 +110,14 @@ class DAPIClient {
 
   /**
    * Returns a summary (balance, txs) for a given address
+   *
    * @param {string|string[]} address or array of addresses
    * @param {boolean} [noTxList=false] - true if a list of all txs should NOT be included in result
    * @param {number} [from] - start of range for the tx to be included in the tx list
    * @param {number} [to] - end of range for the tx to be included in the tx list
    * @param {number} [fromHeight] - which height to start from (optional, overriding from/to)
    * @param {number} [toHeight] - on which height to end (optional, overriding from/to)
-   * @returns {Promise<Object>} - an object with basic address info
+   * @returns {Promise<object>} - an object with basic address info
    */
   getAddressSummary(address, noTxList, from, to, fromHeight, toHeight) {
     return this.transportManager.get(TransportManager.JSON_RPC).makeRequest(
@@ -128,7 +133,7 @@ class DAPIClient {
    * Get block by height
    *
    * @param {number} height
-   * @return {Promise<null|Buffer>}
+   * @returns {Promise<null|Buffer>}
    */
   async getBlockByHeight(height) {
     const getBlockRequest = new GetBlockRequest();
@@ -158,7 +163,7 @@ class DAPIClient {
    * Get block by hash
    *
    * @param {string} hash
-   * @return {Promise<null|Buffer>}
+   * @returns {Promise<null|Buffer>}
    */
   async getBlockByHash(hash) {
     const getBlockRequest = new GetBlockRequest();
@@ -187,7 +192,7 @@ class DAPIClient {
   /**
    * Get Core chain status
    *
-   * @return {Promise<Object>}
+   * @returns {Promise<object>}
    */
   async getStatus() {
     const getStatusRequest = new GetStatusRequest();
@@ -205,7 +210,7 @@ class DAPIClient {
    * Get Transaction by ID
    *
    * @param {string} id
-   * @return {Promise<null|Buffer>}
+   * @returns {Promise<null|Buffer>}
    */
   async getTransaction(id) {
     const getTransactionRequest = new GetTransactionRequest();
@@ -240,10 +245,10 @@ class DAPIClient {
    * Send Transaction
    *
    * @param {Buffer} transaction
-   * @param {Object} [options]
-   * @param {Object} [options.allowHighFees=false]
-   * @param {Object} [options.bypassLimits=false]
-   * @return {string}
+   * @param {object} [options]
+   * @param {object} [options.allowHighFees=false]
+   * @param {object} [options.bypassLimits=false]
+   * @returns {string}
    */
   async sendTransaction(transaction, options = {}) {
     const sendTransactionRequest = new SendTransactionRequest();
@@ -262,6 +267,7 @@ class DAPIClient {
 
   /**
    * Returns UTXO for a given address or multiple addresses (max result 1000)
+   *
    * @param {string|string[]} address or array of addresses
    * @param {number} [from] - start of range in the ordered list of latest UTXO (optional)
    * @param {number} [to] - end of range in the ordered list of latest UTXO (optional)
@@ -283,7 +289,7 @@ class DAPIClient {
 
   /* txFilterStream methods */
   /**
-   * @param {Object} bloomFilter
+   * @param {object} bloomFilter
    * @param {Uint8Array|Array} bloomFilter.vData - The filter itself is simply a bit
    * field of arbitrary byte-aligned size. The maximum size is 36,000 bytes.
    * @param {number} bloomFilter.nHashFuncs - The number of hash functions to use in this filter.
@@ -292,7 +298,7 @@ class DAPIClient {
    * hash function used by the bloom filter.
    * @param {number} bloomFilter.nFlags - A set of flags that control how matched items
    * are added to the filter.
-   * @param {Object} [options]
+   * @param {object} [options]
    * @param {string} [options.fromBlockHash] - Specifies block hash to start syncing from
    * @param {number} [options.fromBlockHeight] - Specifies block height to start syncing from
    * @param {number} [options.count=0] - Number of blocks to sync,
@@ -357,6 +363,7 @@ class DAPIClient {
 
   /**
    * Fetch the identity by id
+   *
    * @param {string} id
    * @returns {Promise<!Buffer|null>}
    */
@@ -391,6 +398,7 @@ class DAPIClient {
 
   /**
    * Fetch Data Contract by id
+   *
    * @param {string} contractId
    * @returns {Promise<Buffer>}
    */
@@ -427,15 +435,16 @@ class DAPIClient {
 
   /**
    * Fetch Documents from Drive
+   *
    * @param {string} contractId
    * @param {string} type - Dap objects type to fetch
-   * @param options
-   * @param {Object} options.where - Mongo-like query
-   * @param {Object} options.orderBy - Mongo-like sort field
+   * @param {object} options
+   * @param {object} options.where - Mongo-like query
+   * @param {object} options.orderBy - Mongo-like sort field
    * @param {number} options.limit - how many objects to fetch
    * @param {number} options.startAt - number of objects to skip
    * @param {number} options.startAfter - exclusive skip
-   * @return {Promise<Buffer[]>}
+   * @returns {Promise<Buffer[]>}
    */
   async getDocuments(contractId, type, options) {
     const {
