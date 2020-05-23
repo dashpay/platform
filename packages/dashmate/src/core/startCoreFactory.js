@@ -37,6 +37,10 @@ function startCoreFactory(
       coreCommand.push('--disablewallet=0');
     }
 
+    if (options.addressindex) {
+      coreCommand.push('--addressindex=1');
+    }
+
     const coreContainer = await dockerCompose.runService(
       preset,
       'core',

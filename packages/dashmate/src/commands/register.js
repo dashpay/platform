@@ -62,7 +62,7 @@ class RegisterCommand extends BaseCommand {
             {
               title: 'Start Core',
               task: async (ctx) => {
-                ctx.coreService = await startCore(preset, { wallet: true });
+                ctx.coreService = await startCore(preset, { wallet: true, addressindex: true });
               },
             },
             {
