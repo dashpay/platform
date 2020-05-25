@@ -1,6 +1,6 @@
 const ConsensusError = require('./ConsensusError');
 
-class IdentityLockTransactionIsNotFinalizedError extends ConsensusError {
+class IdentityAssetLockTransactionIsNotConfirmedError extends ConsensusError {
   /**
    * @param {string} transactionHash
    */
@@ -20,4 +20,4 @@ class IdentityLockTransactionIsNotFinalizedError extends ConsensusError {
   }
 }
 
-module.exports = IdentityLockTransactionIsNotFinalizedError;
+module.exports = IdentityAssetLockTransactionIsNotConfirmedError;

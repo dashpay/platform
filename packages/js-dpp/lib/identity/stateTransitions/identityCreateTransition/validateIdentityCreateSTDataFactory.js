@@ -4,13 +4,13 @@ const IdentityAlreadyExistsError = require('../../../errors/IdentityAlreadyExist
 
 /**
  * @param {StateRepository} stateRepository
- * @param {validateLockTransaction} validateLockTransaction
+ * @param {validateAssetLockTransaction} validateAssetLockTransaction
  * @param {validateIdentityPublicKeyUniqueness} validateIdentityPublicKeyUniqueness
  * @return {validateIdentityCreateSTData}
  */
 function validateIdentityCreateSTDataFactory(
   stateRepository,
-  validateLockTransaction,
+  validateAssetLockTransaction,
   validateIdentityPublicKeyUniqueness,
 ) {
   /**
@@ -43,7 +43,7 @@ function validateIdentityCreateSTDataFactory(
     }
 
     result.merge(
-      await validateLockTransaction(identityCreateTransition),
+      await validateAssetLockTransaction(identityCreateTransition),
     );
 
     if (!result.isValid()) {

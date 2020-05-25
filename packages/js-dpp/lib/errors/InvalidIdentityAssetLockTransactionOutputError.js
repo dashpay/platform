@@ -1,6 +1,6 @@
 const ConsensusError = require('./ConsensusError');
 
-class InvalidIdentityLockTransactionOutputError extends ConsensusError {
+class InvalidIdentityAssetLockTransactionOutputError extends ConsensusError {
   /**
    * @param {string} message
    * @param {Object} output
@@ -21,4 +21,4 @@ class InvalidIdentityLockTransactionOutputError extends ConsensusError {
   }
 }
 
-module.exports = InvalidIdentityLockTransactionOutputError;
+module.exports = InvalidIdentityAssetLockTransactionOutputError;

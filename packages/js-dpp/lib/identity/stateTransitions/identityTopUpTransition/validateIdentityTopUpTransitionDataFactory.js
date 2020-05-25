@@ -1,12 +1,12 @@
 const ValidationResult = require('../../../validation/ValidationResult');
 
 /**
- * @param {validateLockTransaction} validateLockTransaction
+ * @param {validateAssetLockTransaction} validateAssetLockTransaction
  * @param {validateIdentityExistence} validateIdentityExistence
  * @return {validateIdentityTopUpTransitionData}
  */
 function validateIdentityTopUpTransitionDataFactory(
-  validateLockTransaction,
+  validateAssetLockTransaction,
   validateIdentityExistence,
 ) {
   /**
@@ -35,7 +35,7 @@ function validateIdentityTopUpTransitionDataFactory(
     }
 
     result.merge(
-      await validateLockTransaction(identityTopUpTransition),
+      await validateAssetLockTransaction(identityTopUpTransition),
     );
 
     return result;

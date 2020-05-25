@@ -21,19 +21,19 @@ describe('validateIdentityCreateSTDataFactory', () => {
   let validateIdentityCreateSTData;
   let stateTransition;
   let stateRepositoryMock;
-  let validateLockTransactionMock;
+  let validateAssetLockTransactionMock;
   let validateIdentityPublicKeyUniquenessMock;
 
   beforeEach(function beforeEach() {
     const privateKey = 'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837';
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    validateLockTransactionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    validateAssetLockTransactionMock = this.sinonSandbox.stub().returns(new ValidationResult());
     validateIdentityPublicKeyUniquenessMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
     validateIdentityCreateSTData = validateIdentityCreateSTDataFactory(
       stateRepositoryMock,
-      validateLockTransactionMock,
+      validateAssetLockTransactionMock,
       validateIdentityPublicKeyUniquenessMock,
     );
 
@@ -77,7 +77,7 @@ describe('validateIdentityCreateSTDataFactory', () => {
       validationError,
     ]);
 
-    validateLockTransactionMock.returns(validationResult);
+    validateAssetLockTransactionMock.returns(validationResult);
 
     const result = await validateIdentityCreateSTData(stateTransition);
 

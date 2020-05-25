@@ -23,13 +23,13 @@ const validateStateTransitionDataFactory = require('./validation/validateStateTr
 const validateDocumentsBatchTransitionStructureFactory = require('../document/stateTransition/validation/structure/validateDocumentsBatchTransitionStructureFactory');
 const validateIdentityCreateSTDataFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTDataFactory');
 const validateIdentityTopUpTransitionDataFactory = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionDataFactory');
-const validateLockTransactionFactory = require('../identity/stateTransitions/identityCreateTransition/validateLockTransactionFactory');
+const validateAssetLockTransactionFactory = require('../identity/stateTransitions/identityCreateTransition/validateAssetLockTransactionFactory');
 const validateIdentityCreateSTStructureFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTStructureFactory');
 const validateIdentityTopUpTransitionStructure = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionStructure');
 const validateIdentityPublicKeyUniquenessFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityPublicKeyUniquenessFactory');
 const validateStateTransitionSignatureFactory = require('./validation/validateStateTransitionSignatureFactory');
 const validateStateTransitionFeeFactory = require('./validation/validateStateTransitionFeeFactory');
-const fetchConfirmedLockTransactionOutputFactory = require('./fetchConfirmedLockTransactionOutputFactory');
+const fetchConfirmedAssetLockTransactionOutputFactory = require('./fetchConfirmedAssetLockTransactionOutputFactory');
 
 const enrichDataContractWithBaseSchema = require('../dataContract/enrichDataContractWithBaseSchema');
 const findDuplicatesById = require('../document/stateTransition/validation/structure/findDuplicatesById');
@@ -65,10 +65,10 @@ const applyIdentityTopUpTransitionFactory = require(
 class StateTransitionFacade {
   /**
    * @param {StateRepository} stateRepository
-   * @param {boolean} [enableLockTxOneBlockConfirmationFallback]
+   * @param {boolean} [enableAssetLockTxOneBlockConfirmationFallback=false]
    * @param {JsonSchemaValidator} validator
    */
-  constructor(stateRepository, validator, enableLockTxOneBlockConfirmationFallback = undefined) {
+  constructor(stateRepository, validator, enableAssetLockTxOneBlockConfirmationFallback = false) {
     this.stateRepository = stateRepository;
     this.validator = validator;
 
@@ -145,14 +145,15 @@ class StateTransitionFacade {
         stateRepository,
       );
 
-    const fetchConfirmedLockTransactionOutput = fetchConfirmedLockTransactionOutputFactory(
+    // eslint-disable-next-line max-len
+    const fetchConfirmedAssetLockTransactionOutput = fetchConfirmedAssetLockTransactionOutputFactory(
       stateRepository,
       Transaction.parseOutPointBuffer,
-      enableLockTxOneBlockConfirmationFallback,
+      enableAssetLockTxOneBlockConfirmationFallback,
     );
 
-    const validateLockTransaction = validateLockTransactionFactory(
-      fetchConfirmedLockTransactionOutput,
+    const validateAssetLockTransaction = validateAssetLockTransactionFactory(
+      fetchConfirmedAssetLockTransactionOutput,
     );
 
     const validateIdentityPublicKeyUniqueness = validateIdentityPublicKeyUniquenessFactory(
@@ -161,12 +162,12 @@ class StateTransitionFacade {
 
     const validateIdentityCreateSTData = validateIdentityCreateSTDataFactory(
       stateRepository,
-      validateLockTransaction,
+      validateAssetLockTransaction,
       validateIdentityPublicKeyUniqueness,
     );
 
     const validateIdentityTopUpTransitionData = validateIdentityTopUpTransitionDataFactory(
-      validateLockTransaction,
+      validateAssetLockTransaction,
       validateIdentityExistence,
     );
 
@@ -200,7 +201,7 @@ class StateTransitionFacade {
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
       stateRepository,
-      fetchConfirmedLockTransactionOutput,
+      fetchConfirmedAssetLockTransactionOutput,
     );
 
     this.factory = new StateTransitionFactory(
@@ -219,12 +220,12 @@ class StateTransitionFacade {
 
     const applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
       stateRepository,
-      fetchConfirmedLockTransactionOutput,
+      fetchConfirmedAssetLockTransactionOutput,
     );
 
     const applyIdentityTopUpTransition = applyIdentityTopUpTransitionFactory(
       stateRepository,
-      fetchConfirmedLockTransactionOutput,
+      fetchConfirmedAssetLockTransactionOutput,
     );
 
     this.applyStateTransition = applyStateTransitionFactory(

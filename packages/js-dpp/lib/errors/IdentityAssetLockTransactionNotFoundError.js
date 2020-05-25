@@ -1,6 +1,6 @@
 const ConsensusError = require('./ConsensusError');
 
-class IdentityLockTransactionNotFoundError extends ConsensusError {
+class IdentityAssetLockTransactionNotFoundError extends ConsensusError {
   /**
    * @param {string} transactionHash
    */
@@ -20,4 +20,4 @@ class IdentityLockTransactionNotFoundError extends ConsensusError {
   }
 }
 
-module.exports = IdentityLockTransactionNotFoundError;
+module.exports = IdentityAssetLockTransactionNotFoundError;

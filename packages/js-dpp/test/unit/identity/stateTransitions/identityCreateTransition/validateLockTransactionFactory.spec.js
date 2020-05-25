@@ -1,25 +1,25 @@
-const validateLockTransactionFactory = require('../../../../../lib/identity/stateTransitions/identityCreateTransition/validateLockTransactionFactory');
+const validateAssetLockTransactionFactory = require('../../../../../lib/identity/stateTransitions/identityCreateTransition/validateAssetLockTransactionFactory');
 const IdentityCreateTransition = require('../../../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 
-const InvalidIdentityLockTransactionOutputError = require(
-  '../../../../../lib/errors/InvalidIdentityLockTransactionOutputError',
+const InvalidIdentityAssetLockTransactionOutputError = require(
+  '../../../../../lib/errors/InvalidIdentityAssetLockTransactionOutputError',
 );
 const InvalidStateTransitionSignatureError = require(
   '../../../../../lib/errors/InvalidStateTransitionSignatureError',
 );
-const IdentityLockTransactionNotFoundError = require(
-  '../../../../../lib/errors/IdentityLockTransactionNotFoundError',
+const IdentityAssetLockTransactionNotFoundError = require(
+  '../../../../../lib/errors/IdentityAssetLockTransactionNotFoundError',
 );
 const { expectValidationError } = require(
   '../../../../../lib/test/expect/expectError',
 );
 
-describe('validateLockTransactionFactory', () => {
-  let validateLockTransaction;
+describe('validateAssetLockTransactionFactory', () => {
+  let validateAssetLockTransaction;
   let stateTransition;
   let privateKey;
-  let fetchConfirmedLockTransactionOutputMock;
+  let fetchConfirmedAssetLockTransactionOutputMock;
   let output;
 
   beforeEach(function beforeEach() {
@@ -51,19 +51,19 @@ describe('validateLockTransactionFactory', () => {
       script,
     };
 
-    fetchConfirmedLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
+    fetchConfirmedAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
 
-    validateLockTransaction = validateLockTransactionFactory(
-      fetchConfirmedLockTransactionOutputMock,
+    validateAssetLockTransaction = validateAssetLockTransactionFactory(
+      fetchConfirmedAssetLockTransactionOutputMock,
     );
   });
 
   it('should return valid result', async () => {
-    const result = await validateLockTransaction(stateTransition);
+    const result = await validateAssetLockTransaction(stateTransition);
 
     expect(result.isValid()).to.be.true();
 
-    expect(fetchConfirmedLockTransactionOutputMock).to.be.calledOnceWithExactly(
+    expect(fetchConfirmedAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
       stateTransition.getLockedOutPoint(),
     );
   });
@@ -71,9 +71,9 @@ describe('validateLockTransactionFactory', () => {
   it('should check transaction output is a valid OP_RETURN output', async () => {
     output.script.isDataOut.returns(false);
 
-    const result = await validateLockTransaction(stateTransition);
+    const result = await validateAssetLockTransaction(stateTransition);
 
-    expectValidationError(result, InvalidIdentityLockTransactionOutputError);
+    expectValidationError(result, InvalidIdentityAssetLockTransactionOutputError);
 
     const [error] = result.getErrors();
 
@@ -84,9 +84,9 @@ describe('validateLockTransactionFactory', () => {
   it('should return invalid result if transaction output script data has size < 20', async () => {
     output.script.getData.returns(Buffer.from('1'.repeat(19)));
 
-    const result = await validateLockTransaction(stateTransition);
+    const result = await validateAssetLockTransaction(stateTransition);
 
-    expectValidationError(result, InvalidIdentityLockTransactionOutputError);
+    expectValidationError(result, InvalidIdentityAssetLockTransactionOutputError);
 
     const [error] = result.getErrors();
 
@@ -97,9 +97,9 @@ describe('validateLockTransactionFactory', () => {
   it('should return invalid result if transaction output script data has size > 20', async () => {
     output.script.getData.returns(Buffer.from('1'.repeat(21)));
 
-    const result = await validateLockTransaction(stateTransition);
+    const result = await validateAssetLockTransaction(stateTransition);
 
-    expectValidationError(result, InvalidIdentityLockTransactionOutputError);
+    expectValidationError(result, InvalidIdentityAssetLockTransactionOutputError);
 
     const [error] = result.getErrors();
 
@@ -110,7 +110,7 @@ describe('validateLockTransactionFactory', () => {
   it('should return invalid result if state transition has wrong signature', async () => {
     stateTransition.signByPrivateKey('17bc80e9cc3d9082925502342acd2e308ab391c45f753f619b05029b4a487d8f');
 
-    const result = await validateLockTransaction(stateTransition);
+    const result = await validateAssetLockTransaction(stateTransition);
 
     expectValidationError(result, InvalidStateTransitionSignatureError);
 
@@ -121,13 +121,13 @@ describe('validateLockTransactionFactory', () => {
 
   it('should return an invalid result if transaction is not found', async () => {
     const transactionHash = 'f1c1cbc37b5d5543eeb126a53de7863ea2b9d5dbd03b981337bbda76cc6d771c';
-    const notFoundError = new IdentityLockTransactionNotFoundError(transactionHash);
+    const notFoundError = new IdentityAssetLockTransactionNotFoundError(transactionHash);
 
-    fetchConfirmedLockTransactionOutputMock.throws(notFoundError);
+    fetchConfirmedAssetLockTransactionOutputMock.throws(notFoundError);
 
-    const result = await validateLockTransaction(stateTransition);
+    const result = await validateAssetLockTransaction(stateTransition);
 
-    expectValidationError(result, IdentityLockTransactionNotFoundError);
+    expectValidationError(result, IdentityAssetLockTransactionNotFoundError);
 
     const [error] = result.getErrors();
 

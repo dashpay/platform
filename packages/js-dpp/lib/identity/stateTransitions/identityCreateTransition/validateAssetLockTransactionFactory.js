@@ -2,23 +2,23 @@ const { Signer: { verifyHashSignature } } = require('@dashevo/dashcore-lib');
 const ValidationResult = require('../../../validation/ValidationResult');
 
 const ConsensusError = require('../../../errors/ConsensusError');
-const InvalidIdentityLockTransactionOutputError = require('../../../errors/InvalidIdentityLockTransactionOutputError');
+const InvalidIdentityAssetLockTransactionOutputError = require('../../../errors/InvalidIdentityAssetLockTransactionOutputError');
 const InvalidStateTransitionSignatureError = require('../../../errors/InvalidStateTransitionSignatureError');
 
 /**
  *
- * @param {fetchConfirmedLockTransactionOutput} fetchConfirmedLockTransactionOutput
- * @return {validateLockTransaction}
+ * @param {fetchConfirmedAssetLockTransactionOutput} fetchConfirmedAssetLockTransactionOutput
+ * @return {validateAssetLockTransaction}
  */
-function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
+function validateAssetLockTransactionFactory(fetchConfirmedAssetLockTransactionOutput) {
   /**
    * Validates identityCreateTransition signature against lock transaction
    *
-   * @typedef validateLockTransaction
+   * @typedef validateAssetLockTransaction
    * @param {IdentityCreateTransition|IdentityTopUpTransition} identityStateTransition
    * @returns {Promise<ValidationResult>}
    */
-  async function validateLockTransaction(identityStateTransition) {
+  async function validateAssetLockTransaction(identityStateTransition) {
     // fetch lock transaction output, extract pubkey from it and verify signature
 
     const result = new ValidationResult();
@@ -26,7 +26,7 @@ function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
     let output;
 
     try {
-      output = await fetchConfirmedLockTransactionOutput(
+      output = await fetchConfirmedAssetLockTransactionOutput(
         identityStateTransition.getLockedOutPoint(),
       );
     } catch (e) {
@@ -44,13 +44,17 @@ function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
     const { script } = output;
 
     if (!script.isDataOut()) {
-      result.addError(new InvalidIdentityLockTransactionOutputError('Output is not a valid standard OP_RETURN output', output));
+      result.addError(
+        new InvalidIdentityAssetLockTransactionOutputError('Output is not a valid standard OP_RETURN output', output),
+      );
     }
 
     const publicKeyHash = script.getData();
 
     if (publicKeyHash.length !== 20) {
-      result.addError(new InvalidIdentityLockTransactionOutputError('Output has invalid public key hash', output));
+      result.addError(
+        new InvalidIdentityAssetLockTransactionOutputError('Output has invalid public key hash', output),
+      );
     }
 
     if (!result.isValid()) {
@@ -76,7 +80,7 @@ function validateLockTransactionFactory(fetchConfirmedLockTransactionOutput) {
     return result;
   }
 
-  return validateLockTransaction;
+  return validateAssetLockTransaction;
 }
 
-module.exports = validateLockTransactionFactory;
+module.exports = validateAssetLockTransactionFactory;
