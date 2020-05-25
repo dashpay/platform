@@ -18,6 +18,8 @@ const {
   GetIdentityRequest,
   GetDataContractRequest,
   GetDocumentsRequest,
+  GetIdentityByFirstPublicKeyRequest,
+  GetIdentityIdByFirstPublicKeyRequest,
   pbjs: {
     ApplyStateTransitionRequest: PBJSApplyStateTransitionRequest,
     ApplyStateTransitionResponse: PBJSApplyStateTransitionResponse,
@@ -27,6 +29,10 @@ const {
     GetDataContractResponse: PBJSGetDataContractResponse,
     GetDocumentsRequest: PBJSGetDocumentsRequest,
     GetDocumentsResponse: PBJSGetDocumentsResponse,
+    GetIdentityByFirstPublicKeyResponse: PBJSGetIdentityByFirstPublicKeyResponse,
+    GetIdentityByFirstPublicKeyRequest: PBJSGetIdentityByFirstPublicKeyRequest,
+    GetIdentityIdByFirstPublicKeyResponse: PBJSGetIdentityIdByFirstPublicKeyResponse,
+    GetIdentityIdByFirstPublicKeyRequest: PBJSGetIdentityIdByFirstPublicKeyRequest,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -45,6 +51,12 @@ const getDocumentsHandlerFactory = require(
 );
 const getDataContractHandlerFactory = require(
   './getDataContractHandlerFactory',
+);
+const getIdentityByFirstPublicKeyHandlerFactory = require(
+  './getIdentityByFirstPublicKeyHandlerFactory',
+);
+const getIdentityIdByFirstPublicKeyHandlerFactory = require(
+  './getIdentityIdByFirstPublicKeyHandlerFactory',
 );
 
 /**
@@ -120,11 +132,45 @@ function platformHandlersFactory(rpcClient, driveStateRepository) {
     wrapInErrorHandler(getDataContractHandler),
   );
 
+  // getIdentityByFirstPublicKey
+  const getIdentityByFirstPublicKeyHandler = getIdentityByFirstPublicKeyHandlerFactory(
+    driveStateRepository, handleAbciResponseError,
+  );
+
+  const wrappedGetIdentityByFirstPublicKey = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityByFirstPublicKeyRequest,
+      PBJSGetIdentityByFirstPublicKeyRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityByFirstPublicKeyResponse,
+    ),
+    wrapInErrorHandler(getIdentityByFirstPublicKeyHandler),
+  );
+
+  // getIdentityIdByFirstPublicKey
+  const getIdentityIdByFirstPublicKeyHandler = getIdentityIdByFirstPublicKeyHandlerFactory(
+    driveStateRepository, handleAbciResponseError,
+  );
+
+  const wrappedGetIdentityIdByFirstPublicKey = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityIdByFirstPublicKeyRequest,
+      PBJSGetIdentityIdByFirstPublicKeyRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityIdByFirstPublicKeyResponse,
+    ),
+    wrapInErrorHandler(getIdentityIdByFirstPublicKeyHandler),
+  );
+
   return {
     applyStateTransition: wrappedApplyStateTransition,
     getIdentity: wrappedGetIdentity,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
+    getIdentityByFirstPublicKey: wrappedGetIdentityByFirstPublicKey,
+    getIdentityIdByFirstPublicKey: wrappedGetIdentityIdByFirstPublicKey,
   };
 }
 

@@ -8,13 +8,7 @@ const {
   Transaction,
 } = require('@dashevo/dashcore-lib');
 
-const {
-  server: {
-    error: {
-      GrpcError,
-    },
-  },
-} = require('@dashevo/grpc-common');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
@@ -161,7 +155,7 @@ describe('getDocumentsHandlerFactory', function main() {
       await dapiClient.applyStateTransition(documentTransition);
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e.code).to.equal(GrpcError.CODES.FAILED_PRECONDITION);
+      expect(e.code).to.equal(GrpcErrorCodes.FAILED_PRECONDITION);
       expect(e.details).to.equal('Failed precondition: Not enough credits');
 
       const initialBalance = convertSatoshiToCredits(2);

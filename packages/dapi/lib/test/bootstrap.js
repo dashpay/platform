@@ -53,6 +53,9 @@ if (process.env.SERVICE_IMAGE_DRIVE) {
   DriveAbciOptions.setDefaultCustomOptions({
     container: {
       image: process.env.SERVICE_IMAGE_DRIVE,
+      envs: [
+        'IDENTITY_ENABLE_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK=true',
+      ],
     },
   });
 }
