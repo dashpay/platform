@@ -9,6 +9,16 @@ const errorHandler = require('../lib/errorHandler');
 (async function main() {
   const container = await createDIContainer(process.env);
 
+  const logger = container.resolve('logger');
+
+  logger.info('Connecting to Core');
+  const checkCoreSyncFinished = container.resolve('checkCoreSyncFinished');
+  await checkCoreSyncFinished((currentBlockHeight, currentHeaderNumber) => {
+    logger.info(
+      `waiting for Core to finish sync ${currentBlockHeight}/${currentHeaderNumber}`,
+    );
+  });
+
   const server = createServer(
     container.resolve('abciHandlers'),
   );
@@ -17,6 +27,8 @@ const errorHandler = require('../lib/errorHandler');
     container.resolve('abciPort'),
     container.resolve('abciHost'),
   );
+
+  logger.info(`Drive ABCI is listening on port ${container.resolve('abciPort')}`);
 }());
 
 process

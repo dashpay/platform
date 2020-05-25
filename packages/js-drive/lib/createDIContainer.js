@@ -72,6 +72,8 @@ const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 
+const checkCoreSyncFinishedFactory = require('./core/checkCoreSyncFinishedFactory');
+
 /**
  *
  * @param {Object} options
@@ -360,6 +362,13 @@ async function createDIContainer(options) {
         stateRepository: transactionalStateRepository,
       })
     )).singleton(),
+  });
+
+  /**
+   * Register check functions
+   */
+  container.register({
+    checkCoreSyncFinished: asFunction(checkCoreSyncFinishedFactory).singleton(),
   });
 
   /**
