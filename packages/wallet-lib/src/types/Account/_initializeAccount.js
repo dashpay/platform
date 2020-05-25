@@ -36,7 +36,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
           await account.injectPlugin(SyncWorker, true);
         }
       } catch (err) {
-        logger.error('Failed to perform standard injections', err);
+        throw new Error(`Failed to perform standard injections with reason: ${err.message}`);
       }
     }
 
@@ -44,8 +44,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
       try {
         account.injectPlugin(UnsafePlugin, account.allowSensitiveOperations);
       } catch (e) {
-        logger.error('Failed to inject plugin:', UnsafePlugin.name);
-        logger.error(e);
+        throw new Error(`Failed to inject plugin: ${UnsafePlugin.name}, reason: ${e.message}`);
       }
     });
 
@@ -125,7 +124,6 @@ async function _initializeAccount(account, userUnsafePlugins) {
             return resolve(true);
           })
           .catch((err) => {
-            logger.error('Error', err);
             throw new Error(`Unable to generate addresses :${err}`);
           });
       }

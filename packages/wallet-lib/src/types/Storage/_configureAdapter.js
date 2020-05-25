@@ -1,4 +1,3 @@
-const logger = require('../../logger');
 const { InvalidStorageAdapter } = require('../../errors');
 
 module.exports = async function configureAdapter(argAdapter) {
@@ -14,7 +13,7 @@ module.exports = async function configureAdapter(argAdapter) {
       try {
         await adapter.config({ name: 'dashevo-wallet-lib' });
       } catch (e) {
-        logger.error('Tried to config the adapter. Failed', e.message);
+        throw new Error(`Tried to config the adapter. Failed with reason ${e.message}`);
       }
     } else if (adapter.createInstance) await adapter.createInstance({ name: 'dashevo-wallet-lib' });
   } else if (argAdapterContructorName === 'Object') {

@@ -116,8 +116,6 @@ module.exports = async function injectPlugin(
           break;
         default:
           throw new Error(`Unable to inject plugin: ${pluginType}`);
-          // self.plugins.standard[pluginName] = plugin;
-          // await plugin.startPlugin();
       }
 
       if (is.fn(plugin.onInjected)) {

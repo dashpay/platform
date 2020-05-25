@@ -144,7 +144,6 @@ class Account extends EventEmitter {
         try {
           this.storage.importTransactions(opts.cache.transactions);
         } catch (e) {
-          logger.error(e);
           this.disconnect();
           throw e;
         }

@@ -22,7 +22,7 @@ class ColdStorageWorker extends Worker {
     const { walletConsolidator } = this;
     const utxos = this.getUTXOS();
     if (utxos.length === 0) {
-      logger.error('ColdStorageWorker : We did not found any utxos. Doing nothing');
+      throw new Error('ColdStorageWorker : We did not found any utxos. Doing nothing');
     } else {
       const balance = this.getConfirmedBalance();
       logger.info('Found inputs to move');

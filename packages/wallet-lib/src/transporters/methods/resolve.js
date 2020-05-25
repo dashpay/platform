@@ -28,7 +28,6 @@ module.exports = function resolve(props = { type: 'DAPIClient' }) {
     try {
       Transporter = this.getByName(props);
     } catch (e) {
-      console.error('Error:', e.message);
       Transporter = this.getByName('BaseTransporter');
     }
     // TODO: Remove me when DAPIClient has correct seed

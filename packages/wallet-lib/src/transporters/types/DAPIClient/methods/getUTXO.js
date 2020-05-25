@@ -14,8 +14,7 @@ module.exports = async function getUTXO(address) {
       const req = await this.client.getUTXO(address, _from, _to);
       return { ...req, size: req.items.length };
     } catch (e) {
-      logger.error(`Error fetching UTXO ${address}:{_from}:{_to} - ${e.message}`);
-      throw e;
+      throw new Error(`Error fetching UTXO ${address}:{_from}:{_to} - ${e.message}`);
     }
   };
 

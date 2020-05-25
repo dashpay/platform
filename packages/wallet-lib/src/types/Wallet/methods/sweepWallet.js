@@ -43,7 +43,6 @@ async function sweepWallet(opts = {}) {
 
       return resolve(newWallet);
     } catch (err) {
-      logger.error(`Failed to sweep wallet - ${err}`);
       await newWallet.disconnect();
       return reject(err);
     }

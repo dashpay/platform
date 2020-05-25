@@ -1,5 +1,4 @@
 const { cloneDeep, xor } = require('lodash');
-const logger = require('../../../logger');
 const { InvalidAddressObject, TransactionNotInStore } = require('../../../errors');
 const { is } = require('../../../utils');
 const EVENTS = require('../../../EVENTS');
@@ -65,7 +64,6 @@ const updateAddress = function (addressObj, walletId) {
         // We should ensure we had a locked block before being able to really spend those.
         newObject.balanceSat += utxo.satoshis;
       } catch (e) {
-        logger.error(`Unable to find locally ${txid}`);
         if (!(e instanceof TransactionNotInStore)) throw e;
       }
     });

@@ -1,6 +1,5 @@
 const logger = require('../../logger');
 const { StandardPlugin } = require('../');
-const { ValidTransportLayerRequired } = require('../../errors');
 const EVENTS = require('../../EVENTS');
 
 const defaultOpts = {
@@ -50,26 +49,19 @@ class ChainPlugin extends StandardPlugin {
    * @return {Promise<boolean|*>}
    */
   async execStatusFetch() {
-    try {
-      const res = await this.fetchStatus();
-      if (!res) {
-        return false;
-      }
-      const { blocks } = res;
-      const { network } = this.storage.store.wallets[this.walletId];
-      logger.debug('ChainPlugin - Setting up starting blockHeight', blocks);
-      this.storage.store.chains[network.toString()].blockHeight = blocks;
-
-      const bestBlock = await this.transporter.getBlockHeaderByHeight(blocks);
-      await this.storage.importBlockHeader(bestBlock);
-
-      return true;
-    } catch (err) {
-      if (err instanceof ValidTransportLayerRequired) {
-        logger.error('Error', err);
-      }
-      return err;
+    const res = await this.fetchStatus();
+    if (!res) {
+      return false;
     }
+    const { blocks } = res;
+    const { network } = this.storage.store.wallets[this.walletId];
+    logger.debug('ChainPlugin - Setting up starting blockHeight', blocks);
+    this.storage.store.chains[network.toString()].blockHeight = blocks;
+
+    const bestBlock = await this.transporter.getBlockHeaderByHeight(blocks);
+    await this.storage.importBlockHeader(bestBlock);
+
+    return true;
   }
 
   async onStart() {

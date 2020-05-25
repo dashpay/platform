@@ -104,7 +104,6 @@ class TransactionEstimator {
           // eslint-disable-next-line no-param-reassign
           input = new Transaction.UnspentOutput(input);
         } catch (e) {
-          console.error(e);
           throw new Error('Expected valid input to import');
         }
       }
