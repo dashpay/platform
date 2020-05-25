@@ -33,6 +33,29 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Store public key hash and identity id pair
+   *
+   * @param {string} publicKeyHash
+   * @param {string} identityId
+   *
+   * @returns {Promise<void>}
+   */
+  async storePublicKeyIdentityId(publicKeyHash, identityId) {
+    return this.stateRepository.storePublicKeyIdentityId(publicKeyHash, identityId);
+  }
+
+  /**
+   * Fetch identity id by public key hash
+   *
+   * @param {string} publicKeyHash
+   *
+   * @returns {Promise<null|string>}
+   */
+  async fetchPublicKeyIdentityId(publicKeyHash) {
+    return this.stateRepository.fetchPublicKeyIdentityId(publicKeyHash);
+  }
+
+  /**
    * Fetch Data Contract by ID
    *
    * @param {string} id
