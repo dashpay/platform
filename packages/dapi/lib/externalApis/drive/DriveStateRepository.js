@@ -98,6 +98,17 @@ class DriveStateRepository {
   async fetchIdentity(id) {
     return this.request(`/identities/${id}`);
   }
+
+  /**
+   * Fetch identity id by public key hash
+   *
+   * @param {string} publicKeyHash
+   *
+   * @returns {Promise<Buffer>}
+   */
+  async fetchPublicKeyIdentityId(publicKeyHash) {
+    return this.request(`/identities/by-first-public-key/${publicKeyHash}/id`);
+  }
 }
 
 module.exports = DriveStateRepository;

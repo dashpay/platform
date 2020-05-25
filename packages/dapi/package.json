@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@dashevo/dapi-client": "~0.12.0-dev.1",
-    "@dashevo/dp-services-ctl": "dashevo/js-dp-services-ctl#v0.12-dev",
+    "@dashevo/dp-services-ctl": "~0.13.0-dev.1",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",

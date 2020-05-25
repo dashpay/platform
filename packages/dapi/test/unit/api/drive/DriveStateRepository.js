@@ -151,4 +151,28 @@ describe('DriveStateRepository', () => {
       expect(result).to.be.deep.equal(buffer);
     });
   });
+
+  describe('#fetchPublicKeyIdentityId', () => {
+    it('Should call \'fetchPublicKeyIdentityId\' RPC with the given parameters', async () => {
+      const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+
+      const publicKeyHash = 'somePkHash';
+      const buffer = Buffer.from('someData');
+
+      sinon.stub(drive.client, 'request')
+        .resolves({
+          result: {
+            response: { code: 0, value: buffer.toString('base64') },
+          },
+        });
+
+      const result = await drive.fetchPublicKeyIdentityId(publicKeyHash);
+
+      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
+        path: `/identities/by-first-public-key/${publicKeyHash}/id`,
+        data: cbor.encode({}).toString('hex'), // cbor encoded empty object
+      });
+      expect(result).to.be.deep.equal(buffer);
+    });
+  });
 });
