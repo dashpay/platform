@@ -5,7 +5,9 @@ So the first thing will be on accessing your account :
 
 ```js
 const client = new Dash.Client({
-  mnemonic: "maximum blast eight orchard waste wood gospel siren parent deer athlete impact",
+  wallet: {
+    mnemonic: "maximum blast eight orchard waste wood gospel siren parent deer athlete impact",
+  },
 });
 client.isReady().then(()=>{
   const {account} = client;

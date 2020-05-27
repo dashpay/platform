@@ -2,7 +2,9 @@ const Dash = require('dash');
 
 const clientOpts = {
   network: 'testnet',
-  mnemonic: null,
+  wallet: {
+    mnemonic: null,
+  },
 };
 
 const client = new Dash.Client(clientOpts);

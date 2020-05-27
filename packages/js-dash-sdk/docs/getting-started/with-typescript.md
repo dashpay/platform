@@ -1,12 +1,14 @@
 In order to use Dash SDK with TypeScript.    
 
-Create a index.ts file  
+Create an index.ts file  
 
 ```js
 import Dash from 'dash';
 const clientOpts = {
   network: 'testnet',
-  mnemonic: null,// Will generate a new address, you should keep it.
+  wallet: {
+    mnemonic: null, // Will generate a new address, you should keep it.
+  },
 };
 const client = new Dash.Client(clientOpts);
 

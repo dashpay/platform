@@ -6,7 +6,6 @@ Having [NodeJS](https://nodejs.org/) installed, just type :
 
 ```bash
 npm install dash
-## Initialize
 ```
 ## Initialization
 
@@ -22,7 +21,9 @@ const opts = {
       schema: require('schema.json')
     },
   },
-  mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
+  wallet: {
+    mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
+  },
 };
 const client = new Dash.Client(opts);
 client.isReady().then(()=>{

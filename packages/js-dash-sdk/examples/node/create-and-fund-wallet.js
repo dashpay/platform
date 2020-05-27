@@ -1,7 +1,9 @@
 const Dash = require('dash');
 const clientOpts = {
   network: 'testnet',
-  mnemonic: null,// Will generate a new address, you should keep it.
+  wallet: {
+    mnemonic: null, // Will generate a new address, you should keep it.
+  },
 };
 const client = new Dash.Client(clientOpts);
 

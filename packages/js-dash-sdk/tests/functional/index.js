@@ -17,7 +17,11 @@ describe('SDK', function suite() {
         }
     );
 
-    instanceWithWallet = new Dash.Client({mnemonic:null});
+    instanceWithWallet = new Dash.Client({
+      wallet: {
+        mnemonic: null,
+      },
+    });
     expect(instanceWithWallet.network).to.equal('testnet');
     expect(instanceWithWallet.apps).to.deep.equal({
           dpns: { contractId: '295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW' }

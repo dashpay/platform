@@ -23,14 +23,14 @@ export type DPASchema = object
  *
  * @param {[string]?} [seeds] - wallet seeds
  * @param {Network? | string?} [network] - evonet network
- * @param {Mnemonic? | string? | null?} [mnemonic] - mnemonic passphrase
+ * @param {Wallet.Options? | null?} [wallet] - wallet options
  * @param {SDKApps?} [apps] - applications
  * @param {number?} [accountIndex] - account index number
  */
 export interface ClientOpts {
     seeds?: [string];
     network?: Network | string,
-    mnemonic?: Mnemonic | string | null,
+    wallet?: Wallet.Options | null,
     apps?: ClientApps,
     accountIndex?: number,
 }
@@ -101,10 +101,20 @@ export class Client {
                 network: this.network
             })
         };
+
         // We accept null as parameter for a new generated mnemonic
-        if (opts.mnemonic !== undefined) {
+        if (opts.wallet !== undefined) {
             // @ts-ignore
-            this.wallet = new Wallet({...opts, transport: this.clients.dapi});
+            this.wallet = new Wallet({
+                transporter: {
+                    seeds: seeds,
+                    timeout: 1000,
+                    retries: 5,
+                    network: this.network,
+                    type: 'dapi',
+                },
+                ...opts.wallet,
+            });
             if (this.wallet) {
                 let accountIndex = (opts.accountIndex !== undefined) ? opts.accountIndex : 0;
                 this.account = this.wallet.getAccount({index: accountIndex});

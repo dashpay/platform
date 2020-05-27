@@ -1,7 +1,9 @@
 const Dash = require('dash');
 const clientOpts = {
   network: 'testnet',
-  mnemonic:'your mnemonic here'
+  wallet: {
+    mnemonic: 'your mnemonic here',
+  },
 };
 const identityId = 'your identity id';
 const client = new Dash.Client(clientOpts);

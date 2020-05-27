@@ -5,13 +5,15 @@ Below, you will be proposed two options allowing you to create a new mnemonic, d
 
 ## Dash.Client
 
-By passing `null` to the mnemonic value, you can get Wallet-lib to generate a new mnemonic for you. 
+By passing `null` to the mnemonic value of the wallet options, you can get Wallet-lib to generate a new mnemonic for you. 
 
 ```js
 const Dash = require("dash");
 const client = new Dash.Client({
   network: "testnet",
-  mnemonic: null,
+  wallet: {
+    mnemonic: null,
+  },
 });
 const mnemonic = client.wallet.exportWallet();
 console.log({mnemonic});

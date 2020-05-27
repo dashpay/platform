@@ -38,7 +38,9 @@ const Dash = require("dash");
 
 const client = new Dash.Client({
   network: "testnet",
-  mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
+  wallet: {
+    mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
+  },
 });
 
 client.isReady().then(async () => {

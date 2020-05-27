@@ -2,7 +2,9 @@ const DashJS = require('dash');
 
 const sdkOpts = {
   network: 'testnet',
-  mnemonic:'your mnemonic here'
+  wallet: {
+    mnemonic: 'your mnemonic here',
+  },
 };
 const sdk = new DashJS.Client(sdkOpts);
 

@@ -16,7 +16,9 @@ const username = `test-${firstname}${year}`;
 
 const clientOpts = {
   network: fixtures.network,
-  mnemonic: fixtures.mnemonic
+  wallet: {
+    mnemonic: fixtures.mnemonic,
+  },
 };
 describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite() {
   this.timeout(240000);
