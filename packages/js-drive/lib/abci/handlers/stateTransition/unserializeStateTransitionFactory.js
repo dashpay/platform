@@ -1,4 +1,5 @@
 const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
+const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/BalanceIsNotEnoughError');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 const MemoryLimitExceededError = require('../../errors/MemoryLimitExceededError');
@@ -50,9 +51,12 @@ function unserializeStateTransitionFactory(createIsolatedDpp) {
     const result = await isolatedDpp.stateTransition.validateFee(stateTransition);
 
     if (!result.isValid()) {
-      const [error] = result.getErrors();
-
-      throw new InsufficientFundsError(error.getBalance());
+      const errors = result.getErrors();
+      if (errors.length === 1 && errors[0] instanceof BalanceIsNotEnoughError) {
+        throw new InsufficientFundsError(errors[0].getBalance());
+      } else {
+        throw new InvalidArgumentAbciError('State Transition is invalid', { errors: result.getErrors() });
+      }
     }
 
     return stateTransition;
