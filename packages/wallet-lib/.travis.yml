@@ -6,10 +6,11 @@ node_js:
   - "12"
   - "14"
 
-branches: 
+branches:
   only:
     - master
     - develop
+    - /^v(\d+\.)?(\d+\.)?(\*|\d+)$/
 
 script:
   - npm run check-package
