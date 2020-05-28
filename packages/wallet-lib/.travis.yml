@@ -27,4 +27,4 @@ deploy:
     script: bash scripts/travis-deploy.sh
     on:
       repo: dashevo/wallet-lib
-      branch: master
+      tags: true
