@@ -54,7 +54,7 @@ if (process.env.SERVICE_IMAGE_DRIVE) {
     container: {
       image: process.env.SERVICE_IMAGE_DRIVE,
       envs: [
-        'IDENTITY_ENABLE_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK=true',
+        'IDENTITY_ENABLE_ASSET_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK=true',
       ],
     },
   });
