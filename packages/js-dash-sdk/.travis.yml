@@ -6,9 +6,6 @@ node_js:
   - "10"
   - "12"
 
-before_install:
-  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
-
 install:
   - npm ci
 
@@ -18,6 +15,10 @@ after_install:
 script:
   - npm run check-package
   - npm run test
+
+before_deploy:
+  # Add token for @dashevo private npm registry
+  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 deploy:
   - provider: script
