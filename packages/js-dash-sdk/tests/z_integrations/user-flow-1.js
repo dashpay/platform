@@ -27,7 +27,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     clientInstance = new Dash.Client(clientOpts);
     expect(clientInstance.network).to.equal('testnet');
     expect(clientInstance.accountIndex).to.equal(0);
-    expect(clientInstance.apps).to.deep.equal({dpns: {contractId: "295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW"}});
+    expect(clientInstance.apps).to.deep.equal({dpns: {contractId: "7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM"}});
     expect(clientInstance.wallet.network).to.equal('testnet');
     expect(clientInstance.wallet.offlineMode).to.equal(false);
     expect(clientInstance.wallet.mnemonic).to.equal(fixtures.mnemonic);
@@ -48,8 +48,8 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
       expect(clientInstance.account.state).to.deep.equal({isInitialized: true, isReady: true, isDisconnecting: false});
       expect(clientInstance.state).to.deep.equal({isReady: true, isAccountReady: true});
       expect(clientInstance.apps['dpns']).to.exist;
-      expect(clientInstance.apps['dpns'].contractId).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
-      expect(clientInstance.apps['dpns'].contractId).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
+      expect(clientInstance.apps['dpns'].contractId).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
+      expect(clientInstance.apps['dpns'].contractId).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
       return done();
     })
   });
@@ -103,7 +103,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     const createDocument = await clientInstance.platform.names.register(username, createdIdentity);
     expect(createDocument.getType()).to.equal('domain');
     expect(createDocument.getOwnerId()).to.equal(createdIdentityId);
-    expect(createDocument.getDataContractId()).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
+    expect(createDocument.getDataContractId()).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
     expect(createDocument.get('label')).to.equal(username);
     expect(createDocument.get('normalizedParentDomainName')).to.equal('dash');
   });
@@ -122,7 +122,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     expect(doc.getRevision()).to.equal(1);
     expect(doc.getType()).to.equal('domain');
     expect(doc.getOwnerId()).to.equal(createdIdentityId);
-    expect(doc.getDataContractId()).to.equal('295xRRRMGYyAruG39XdAibaU9jMAzxhknkkAxFE7uVkW');
+    expect(doc.getDataContractId()).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
     expect(doc.get('label')).to.equal(username);
     expect(doc.get('normalizedParentDomainName')).to.equal('dash');
   });
