@@ -35,6 +35,7 @@ function validateStateTransitionFeeFactory(
     let balance;
 
     switch (stateTransition.getType()) {
+      case stateTransitionTypes.IDENTITY_TOP_UP:
       case stateTransitionTypes.IDENTITY_CREATE: {
         let output;
         try {
@@ -54,6 +55,12 @@ function validateStateTransitionFeeFactory(
         }
 
         balance = convertSatoshiToCredits(output.satoshis);
+
+        if (stateTransition.getType() === stateTransitionTypes.IDENTITY_TOP_UP) {
+          const identityId = stateTransition.getOwnerId();
+          const identity = await stateRepository.fetchIdentity(identityId);
+          balance += identity.getBalance();
+        }
 
         break;
       }

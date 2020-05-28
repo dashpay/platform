@@ -65,8 +65,8 @@ const applyIdentityTopUpTransitionFactory = require(
 class StateTransitionFacade {
   /**
    * @param {StateRepository} stateRepository
-   * @param {boolean} [enableAssetLockTxOneBlockConfirmationFallback=false]
    * @param {JsonSchemaValidator} validator
+   * @param {boolean} [enableAssetLockTxOneBlockConfirmationFallback=false]
    */
   constructor(stateRepository, validator, enableAssetLockTxOneBlockConfirmationFallback = false) {
     this.stateRepository = stateRepository;

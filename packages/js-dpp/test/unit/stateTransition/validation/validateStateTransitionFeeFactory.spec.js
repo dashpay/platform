@@ -7,6 +7,7 @@ const getDataContractFixture = require('../../../../lib/test/fixtures/getDataCon
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 const getIdentityCreateSTFixture = require('../../../../lib/test/fixtures/getIdentityCreateSTFixture');
 const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getIdentityTopUpTransitionFixture = require('../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
 const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition');
 const DocumentsBatchTransition = require('../../../../lib/document/stateTransition/DocumentsBatchTransition');
@@ -26,11 +27,13 @@ describe('validateStateTransitionFeeFactory', () => {
   let dataContract;
   let documents;
   let identityCreateST;
+  let identityTopUpST;
   let getLockedTransactionOutputMock;
   let output;
 
   beforeEach(function beforeEach() {
     identityCreateST = getIdentityCreateSTFixture();
+    identityTopUpST = getIdentityTopUpTransitionFixture();
 
     const stSize = Buffer.byteLength(identityCreateST.serialize({ skipSignature: true }));
 
@@ -83,6 +86,7 @@ describe('validateStateTransitionFeeFactory', () => {
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       dataContract.getOwnerId(),
     );
+    expect(getLockedTransactionOutputMock).to.be.not.called();
   });
 
   it('should return valid result for DocumentsBatchTransition', async () => {
@@ -103,6 +107,7 @@ describe('validateStateTransitionFeeFactory', () => {
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       getDocumentsFixture.ownerId,
     );
+    expect(getLockedTransactionOutputMock).to.be.not.called();
   });
 
   it('should return valid result for IdentityCreateStateTransition', async () => {
@@ -111,6 +116,19 @@ describe('validateStateTransitionFeeFactory', () => {
     expect(result.isValid()).to.be.true();
     expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(
       identityCreateST.getLockedOutPoint(),
+    );
+    expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
+  });
+
+  it('should return valid result for IdentityTopUpTransition', async () => {
+    const result = await validateStateTransitionFee(identityTopUpST);
+
+    expect(result.isValid()).to.be.true();
+    expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(
+      identityTopUpST.getLockedOutPoint(),
+    );
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      identityTopUpST.getIdentityId(),
     );
   });
 
