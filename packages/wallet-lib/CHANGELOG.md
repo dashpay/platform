@@ -1,4 +1,18 @@
-# [6.1.0](https://github.com/dashevo/wallet-lib/compare/v6.1.0...v6.0.0) (2020-04-23)
+# [6.1.2](https://github.com/dashevo/wallet-lib/compare/v6.1.1...v6.1.2) (2020-05-22)
+
+- **Fixes:**
+    - fix: update evonet seeds (#120)
+    
+- **Chore, Docs & Tests:**
+    - tests: added karma and functional browser test (#121)
+    - style: removed logger.error & improved error message (#118)
+    
+# [6.1.1](https://github.com/dashevo/wallet-lib/compare/v6.1.0...v6.1.1) (2020-05-22)
+
+- **Fixes:**
+    - fix: update evonet seeds (#120)
+    
+# [6.1.0](https://github.com/dashevo/wallet-lib/compare/v6.0.0...v6.1.0) (2020-04-23)
 
 - **Features:** 
     - Feat(Transporter): added .getBestBlock / .getBestBlockHeader (#110 )
