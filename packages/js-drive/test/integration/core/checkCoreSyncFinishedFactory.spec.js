@@ -8,20 +8,27 @@ describe('checkCoreSyncFinishedFactory', function main() {
   let mongoDB;
   let firstDashCore;
   let secondDashCore;
+  let thirdDashCore;
   let container;
   let checkCoreSyncFinished;
 
   before(async () => {
     mongoDB = await startMongoDb();
-    firstDashCore = await startDashCore();
-    const { result: randomAddress } = await firstDashCore.getApi().getNewAddress();
-    await firstDashCore.getApi().generateToAddress(1000, randomAddress);
   });
 
   after(async () => {
     await mongoDB.remove();
-    await firstDashCore.remove();
-    await secondDashCore.remove();
+    if (firstDashCore) {
+      await firstDashCore.remove();
+    }
+
+    if (secondDashCore) {
+      await secondDashCore.remove();
+    }
+
+    if (thirdDashCore) {
+      await thirdDashCore.remove();
+    }
   });
 
   afterEach(async () => {
@@ -30,7 +37,11 @@ describe('checkCoreSyncFinishedFactory', function main() {
     }
   });
 
-  it('should wait until Dash Core is synced', async () => {
+  it('should wait until Dash Core in regtest mode with peers is synced', async () => {
+    firstDashCore = await startDashCore();
+    const { result: randomAddress } = await firstDashCore.getApi().getNewAddress();
+    await firstDashCore.getApi().generateToAddress(1000, randomAddress);
+
     secondDashCore = await startDashCore();
     await secondDashCore.connect(firstDashCore);
 
@@ -50,5 +61,27 @@ describe('checkCoreSyncFinishedFactory', function main() {
 
     expect(currentBlockHeight).to.equal(1000);
     expect(currentHeadersNumber).to.equal(1000);
+  });
+
+  it('shouldn\'t wait if Dash Core in regtest mode without peers', async () => {
+    thirdDashCore = await startDashCore();
+
+    container = await createTestDIContainer(mongoDB, thirdDashCore);
+
+    checkCoreSyncFinished = container.resolve('checkCoreSyncFinished');
+
+    await checkCoreSyncFinished(() => {});
+
+    const api = thirdDashCore.getApi();
+
+    const {
+      result: {
+        blocks: currentBlockHeight,
+        headers: currentHeadersNumber,
+      },
+    } = await api.getBlockchainInfo();
+
+    expect(currentBlockHeight).to.equal(0);
+    expect(currentHeadersNumber).to.equal(0);
   });
 });
