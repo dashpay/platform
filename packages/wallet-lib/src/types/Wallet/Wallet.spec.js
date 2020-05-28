@@ -14,7 +14,8 @@ const mocks = {
   adapter: inMem,
   offlineMode: true,
 };
-describe('Wallet - class', () => {
+describe('Wallet - class', function suite() {
+  this.timeout(10000);
   it('should create a wallet without parameters', () => {
     const wallet1 = new Wallet(mocks);
     expect(wallet1.walletType).to.be.equal(WALLET_TYPES.HDWALLET);
@@ -131,7 +132,8 @@ describe('Wallet - class', () => {
     });
   });
 });
-describe('Wallet - Get/Create Account', () => {
+describe('Wallet - Get/Create Account',  function suite() {
+  this.timeout(10000);
   const wallet1 = new Wallet({ mnemonic: fluidMnemonic.mnemonic, ...mocks });
 
   it('should be able to create/get a wallet', () => {

@@ -44,7 +44,8 @@ const mockedStore2 = {
   },
 };
 
-describe('Account - getUTXOS', () => {
+describe('Account - getUTXOS', function suite() {
+  this.timeout(10000);
   it('should get the proper UTXOS list', () => {
     const utxos = getUTXOS.call({
       store: mockedStoreEmpty,

@@ -36,7 +36,8 @@ const tx = new Transaction({
     },
   ],
 });
-describe('Storage - updateTransaction', () => {
+describe('Storage - updateTransaction',function suite() {
+  this.timeout(10000);
   it('should throw on failed update', () => {
     const exceptedException1 = 'Expected a transaction to update';
     const self = {

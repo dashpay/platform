@@ -5,7 +5,8 @@ const searchTransaction = require('../../Storage/methods/searchTransaction');
 
 let mockedWallet;
 let fetchTransactionInfoCalledNb = 0;
-describe('Account - getTransaction', () => {
+describe('Account - getTransaction', function suite() {
+  this.timeout(10000);
   before(() => {
     const storageHDW = {
       store: mockedStore,

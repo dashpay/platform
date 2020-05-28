@@ -5,7 +5,8 @@ const validRawTxs = require('../../../../fixtures/rawtx').valid;
 const invalidRawTxs = require('../../../../fixtures/rawtx').invalid;
 const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
 
-describe('Account - broadcastTransaction', () => {
+describe('Account - broadcastTransaction', function suite() {
+  this.timeout(10000);
   it('should throw error on missing transport', async () => {
     const expectedException1 = 'A transport layer is needed to perform a broadcast';
     const self = {

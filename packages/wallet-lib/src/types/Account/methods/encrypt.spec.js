@@ -4,7 +4,8 @@ const { Wallet } = require('../../../index');
 
 const derivationPath = "m/44'/1'/0'/0";
 
-describe('Account - encrypt', () => {
+describe('Account - encrypt',  function suite() {
+  this.timeout(10000);
   let wallet;
   let account;
   beforeEach(() => {

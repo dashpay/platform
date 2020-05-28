@@ -3,7 +3,8 @@ const fromHDPrivateKey = require('./fromHDPrivateKey');
 const knifeFixture = require('../../../../fixtures/knifeeasily');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-describe('Wallet - fromHDPrivateKey', () => {
+describe('Wallet - fromHDPrivateKey', function suite() {
+  this.timeout(10000);
   it('should indicate missing data', () => {
     const mockOpts1 = { };
     const exceptedException1 = 'Expected a valid HDPrivateKey (typeof HDPrivateKey or String)';

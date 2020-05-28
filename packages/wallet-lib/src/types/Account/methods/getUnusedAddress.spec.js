@@ -9,7 +9,8 @@ const mockedStore = require('../../../../fixtures/duringdevelop-fullstore-snapsh
 
 const HDRootKeyMockedStore = 'tprv8ZgxMBicQKsPfEan1JB7NF4STbvnjGvP9318CN7FPGZp5nsUTBqmerxtDVpsJjFufyfkTgoe6QfHcDhMqjN3ZoFKtb8SnXFeubNjQreZSq6';
 
-describe('Account - getUnusedAddress', () => {
+describe('Account - getUnusedAddress', function suite() {
+  this.timeout(10000);
   it('should get the proper unused address', () => {
     const self = {
       store: mockedStore,

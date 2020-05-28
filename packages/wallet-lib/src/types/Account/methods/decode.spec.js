@@ -2,7 +2,8 @@ const { expect } = require('chai');
 const cbor = require('cbor');
 const decode = require('./decode');
 
-describe('Account - decode', () => {
+describe('Account - decode', function suite() {
+  this.timeout(10000);
   const jsonObject = {
     string: 'string',
     list: ['a', 'b', 'c', 'd'],

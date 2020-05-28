@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const varInt = require('./varInt');
 
-describe('Utils - varInt', () => {
+describe('Utils - varInt', function suite() {
+  this.timeout(10000);
   it('should get varint of size from length', () => {
     expect(varInt.varIntSizeBytesFromLength()).to.equal(1);
     expect(varInt.varIntSizeBytesFromLength(1)).to.equal(1);

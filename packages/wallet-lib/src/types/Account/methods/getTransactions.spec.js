@@ -3,7 +3,8 @@ const Dashcore = require('@dashevo/dashcore-lib');
 const getTransactions = require('./getTransactions');
 
 
-describe('Account - getTransactions', () => {
+describe('Account - getTransactions', function suite() {
+  this.timeout(10000);
   it('should get the transactions', () => {
     const getStore = () => mockedStore;
     const transactions = getTransactions.call({

@@ -9,7 +9,8 @@ const block = {
   },
   transactions: [],
 };
-describe('transporters - DAPIClient - .getBestBlock', () => {
+describe('transporters - DAPIClient - .getBestBlock', function suite() {
+  this.timeout(10000);
   const transporter = transporters.resolve('DAPIClient');
 
   it('should works', async () => {

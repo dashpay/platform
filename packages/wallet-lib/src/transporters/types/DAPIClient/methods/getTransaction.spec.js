@@ -3,7 +3,8 @@ const transporters = require('../../../index');
 
 const fixture = '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0502b924010effffffff0240c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac40c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac00000000460200b9240000476416132511031b71167f4bb7658eab5c3957d79636767f83e0e18e2b9ed7f80000000000000000000000000000000000000000000000000000000000000000';
 
-describe('transporters - DAPIClient .getTransaction', () => {
+describe('transporters - DAPIClient .getTransaction', function suite() {
+  this.timeout(10000);
   const transporter = transporters.resolve('DAPIClient');
 
   it('should works', async () => {

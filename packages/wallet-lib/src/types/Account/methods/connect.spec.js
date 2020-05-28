@@ -5,7 +5,8 @@ const DummyWorker = require('../../../../fixtures/DummyWorker');
 let transportConnected = false;
 const emitted = [];
 
-describe('Account - connect', () => {
+describe('Account - connect', function suite() {
+  this.timeout(10000);
   it('should connect to transport and worker', () => {
     const self = {
       emit: (eventName) => emitted.push(eventName),

@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const transporters = require('../index');
 
-describe('transporters', () => {
+describe('transporters', function suite() {
+  this.timeout(10000);
   it('should resolve dapi as default transporter', () => {
     const defaultTransporter = transporters.resolve();
     expect(defaultTransporter).to.be.instanceOf(transporters.DAPIClient);

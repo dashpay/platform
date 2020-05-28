@@ -6,7 +6,8 @@ const getUnconfirmedBalance = require('./getUnconfirmedBalance');
 const calculateDuffBalance = require('../../Storage/methods/calculateDuffBalance');
 
 let mockedWallet;
-describe('Account - getTotalBalance', () => {
+describe('Account - getTotalBalance', function suite() {
+  this.timeout(10000);
   before(() => {
     const storageHDW = {
       store: mockedStore,

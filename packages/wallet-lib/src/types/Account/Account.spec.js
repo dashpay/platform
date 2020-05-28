@@ -13,7 +13,8 @@ const mocks = {
 };
 
 
-describe('Account - class', () => {
+describe('Account - class', function suite() {
+  this.timeout(10000);
   before(() => {
     mocks.wallet = (new (function Wallet() {
       this.walletId = '1234567891';
@@ -49,8 +50,10 @@ describe('Account - class', () => {
     expect(account.plugins).to.be.deep.equal({
       workers: {}, standard: {}, watchers: {},
     });
-    expect(account.readinessInterval.constructor.name).to.be.equal('Timeout');
-    expect(account.readinessInterval._idleTimeout).to.be.equal(200);
+    if(!process.browser){
+      expect(account.readinessInterval.constructor.name).to.be.equal('Timeout');
+      expect(account.readinessInterval._idleTimeout).to.be.equal(200);
+    }
 
     account.disconnect();
   });

@@ -4,7 +4,7 @@ const logger = require('../src/logger');
 const ColdStorageWorker = require('./workers/ColdStorageWorker');
 
 // Wallet Consolidator is a standard plugin, when added it will offer new
-// functionnalities to the account. Such as 'consolidateWallet' method.
+// functionalities to the account. Such as 'consolidateWallet' method.
 const WalletConsolidator = require('./stdPlugins/WalletConsolidator');
 
 // This will be used by the coldStorageWorker which is responsible for performing cold-storage on

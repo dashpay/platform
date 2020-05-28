@@ -11,7 +11,8 @@ const { WALLET_TYPES } = require('../../../CONSTANTS');
  *
  * @type {string}
  */
-describe('Wallet - HDPublicKey', () => {
+describe('Wallet - HDPublicKey', function suite() {
+  this.timeout(10000);
   const gatherTestnet = gatherSail.testnet;
   it('should detect wrong parameters', () => {
     const mockOpts1 = {};

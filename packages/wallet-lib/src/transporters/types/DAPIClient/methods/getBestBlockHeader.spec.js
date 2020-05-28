@@ -19,7 +19,8 @@ const block = {
     extraPayload: '02008c300000cead425668f38cfbb8dc028ad53d163fcee7282ede84d9a577ac6851a847ebc80000000000000000000000000000000000000000000000000000000000000000',
   }],
 };
-describe('transporters - DAPIClient - .getBestBlock', () => {
+describe('transporters - DAPIClient - .getBestBlock', function suite() {
+  this.timeout(10000);
   const transporter = transporters.resolve('DAPIClient');
 
   it('should works', async () => {

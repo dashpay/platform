@@ -14,10 +14,11 @@ const validStore = require('../../../../fixtures/walletStore').valid.orange.stor
 
 const craftedGenerousMinerStrategy = require('../../../../fixtures/strategies/craftedGenerousMinerStrategy');
 
-describe('Account - createTransaction', () => {
+describe('Account - createTransaction', function suite() {
+  this.timeout(10000);
   let mockWallet;
 
-  it('sould warn on missing inputs', () => {
+  it('sould warn on missing inputs', function () {
     const self = {
       store: validStore,
       walletId: 'a3771aaf93',
@@ -39,7 +40,13 @@ describe('Account - createTransaction', () => {
     expect(() => createTransaction.call(self, mockOpts2)).to.throw(expectedException2);
     expect(() => createTransaction.call(self, mockOpts3)).to.throw(expectedException3);
   });
+
   it('should create valid and deterministic transactions', async function () {
+    if(process.browser){
+      // FakeNet relies heavily on fs.existSync and fs.readFile which are not available on browser
+      this.skip('FakeNet do not support browser environment due to FS intensive usage');
+      return;
+    }
     const transporter = new FakeNet();
     transporter.setHeight(21546);
     const utxos = await transporter.getUTXO.call(transporter, ['yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22']);
@@ -115,6 +122,11 @@ describe('Account - createTransaction', () => {
     expect(tx2.toString('hex')).to.equal(expectedTx2);
   });
   it('should be able to create transaction with specific strategy', async function () {
+    if(process.browser){
+      // FakeNet relies heavily on fs.existSync and fs.readFile which are not available on browser
+      this.skip('FakeNet do not support browser environment due to FS intensive usage');
+      return;
+    }
     const expectedTxStd = '0300000001b64e23b6bd8c1016c8595ab6256e97ac5a33a95b5c68cc99410bf88867023910000000006a47304402200f8851bfcba02f1375c9d14cc1e4a1f442a6ba04dade5060124b6d245738eb1502206f2655f5e3714e9a1aa46de58124ec44d4da36884db0f1a39e6cad912ce009fc012103987110fc08c848657176385b37a77fb7f6d89bc873bb4334146ffe44ac126566ffffffff0250c30000000000001976a9140a6a961f1c664a9cd004c593381dd4d9f1f5463588acb9059a3b000000001976a9140a6a961f1c664a9cd004c593381dd4d9f1f5463588ac00000000';
     const expectedTxStrat = '0300000001b64e23b6bd8c1016c8595ab6256e97ac5a33a95b5c68cc99410bf88867023910000000006a4730440220171da851d2915f7faa20a7d7aa66383c93cca6b623d12cdb1919d913abe558aa0220154f7edac296e3e2cd393e46f18baf9f4463aaa0a6d2ce5259055280ed05d878012103987110fc08c848657176385b37a77fb7f6d89bc873bb4334146ffe44ac126566ffffffff0250c30000000000001976a9140a6a961f1c664a9cd004c593381dd4d9f1f5463588acad059a3b000000001976a9140a6a961f1c664a9cd004c593381dd4d9f1f5463588ac00000000';
 

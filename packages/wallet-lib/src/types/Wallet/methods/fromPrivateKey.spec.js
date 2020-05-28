@@ -3,7 +3,8 @@ const fromPrivateKey = require('./fromPrivateKey');
 const cR4t6eFixture = require('../../../../fixtures/cR4t6e_pk');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-describe('Wallet - fromPrivateKey', () => {
+describe('Wallet - fromPrivateKey', function suite() {
+  this.timeout(10000);
   it('should indicate missing data', () => {
     const mockOpts1 = { };
     const exceptedException1 = 'Expected a valid private key (typeof PrivateKey or String)';

@@ -5,7 +5,8 @@ const { WALLET_TYPES } = require('../../../CONSTANTS');
 const cR4t6ePrivateKey = require('../../../../fixtures/cR4t6e_pk');
 const knifeMnemonic = require('../../../../fixtures/knifeeasily');
 
-describe('Wallet - export Wallet', () => {
+describe('Wallet - export Wallet', function suite() {
+  this.timeout(10000);
   it('should indicate on missing data', () => {
     const mockOpts1 = {};
     const mockOpts2 = { walletType: WALLET_TYPES.SINGLE_ADDRESS };
@@ -37,7 +38,8 @@ describe('Wallet - export Wallet', () => {
     expect(exportWallet.call(mockOpts3)).to.equal(knifeMnemonic.HDRootPrivateKeyMainnet);
   });
 });
-describe('Wallet - exportWallet - integration', () => {
+describe('Wallet - exportWallet - integration', function suite() {
+  this.timeout(10000);
   describe('fromMnemonic', () => {
     const wallet = new Wallet({
       offlineMode: true,

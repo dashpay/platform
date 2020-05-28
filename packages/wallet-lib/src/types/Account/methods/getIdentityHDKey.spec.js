@@ -10,7 +10,8 @@ let expectedIdentityPrivateKey1;
 let walletMock;
 let account;
 
-describe('Account - getIdentityHDKey', () => {
+describe('Account - getIdentityHDKey', function suite() {
+  this.timeout(10000);
   beforeEach(() => {
     mnemonic = 'during develop before curtain hazard rare job language become verb message travel';
 

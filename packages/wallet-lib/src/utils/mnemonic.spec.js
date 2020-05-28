@@ -55,7 +55,8 @@ const expectedPassSeed1 = 'f637c95a551647f3f49c707c2f40ea0ee38a70995ab108004529a
 const expectedPrivate1Mainnet = 'xprv9s21ZrQH143K3hVMJ7XzM4uiV1PndeSqGVzowkGjRpnSesDkmb3p5iGp8scGgAPjLw8Z3WZZr2BcbN2kfzqSYRG3VKSQgSszEdijEoWSDAC';
 const expectedPrivate1Testnet = 'tprv8ZgxMBicQKsPeWisxgPVWiXho8ozsAUqc3uvpAhBuoGvSTxqkxPZbTeG43mvgXn3iNfL3cBL1NmR4DaVoDBPMUXe1xeiLoc39jU9gRTVBd2';
 
-describe('Utils - mnemonic', () => {
+describe('Utils - mnemonic', function suite() {
+  this.timeout(20000);
   it('should generate new mnemonic', () => {
     const result = generateNewMnemonic();
     expect(result.constructor.name).to.be.equal('Mnemonic');

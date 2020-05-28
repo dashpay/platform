@@ -5,7 +5,8 @@ const { WALLET_TYPES } = require('../../../CONSTANTS');
 const exceptedException1 = 'getAccount expected index integer to be a property of accountOptions';
 
 
-describe('Wallet - getAccount', () => {
+describe('Wallet - getAccount', function suite() {
+  this.timeout(10000);
   it('should warn on trying to pass arg as number', () => {
     let timesCreateAccountCalled = 0;
     let timesAttachEventsCalled = 0;

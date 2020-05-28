@@ -3,7 +3,8 @@ const Dashcore = require('@dashevo/dashcore-lib');
 const createWallet = require('./createWallet');
 const createChain = require('./createChain');
 
-describe('Storage - createWallet', () => {
+describe('Storage - createWallet', function suite() {
+  this.timeout(10000);
   it('should create a wallet', () => {
     const self = {
       store: { wallets: {}, chains: {} },

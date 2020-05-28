@@ -4,8 +4,7 @@ const getUTXOS = require('../../../types/Account/methods/getUTXOS');
 const duringDevelopStore = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1549310417');
 
 console.error('coinSelection.strategies.simpleTransactionOptimizedAccumulator needs a rebuilt store');
-return;
-describe('CoinSelection - Strategy - simpleTransactionOptimizedAccumulator', () => {
+describe.skip('CoinSelection - Strategy - simpleTransactionOptimizedAccumulator', () => {
   it('should work as expected', () => {
     const self = {
     };

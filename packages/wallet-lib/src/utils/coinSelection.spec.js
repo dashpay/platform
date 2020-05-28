@@ -26,7 +26,8 @@ const outputs = {
     address: 'ybefxSHaEbDATvq5gVCxjV375NWus3ttV7',
   },
 };
-describe('Utils - coinSelection', () => {
+describe('Utils - coinSelection', function suite() {
+  this.timeout(10000);
   it('should require a utxosList', () => {
     expect(() => coinSelection()).to.throw('A utxosList is required');
   });

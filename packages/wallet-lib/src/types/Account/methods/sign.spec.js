@@ -3,7 +3,8 @@ const Dashcore = require('@dashevo/dashcore-lib');
 const { Wallet } = require('../../../index');
 
 
-describe('Account - sign', () => {
+describe('Account - sign', function suite() {
+  this.timeout(10000);
   let wallet;
   let account;
   beforeEach(() => {

@@ -6,7 +6,8 @@ const { mnemonicToHDPrivateKey } = require('../../utils/mnemonic');
 let keychain;
 const mnemonic = 'during develop before curtain hazard rare job language become verb message travel';
 const pk = '4226d5e2fe8cbfe6f5beb7adf5a5b08b310f6c4a67fc27826779073be6f5699e';
-describe('Keychain', () => {
+describe('Keychain', function suite() {
+  this.timeout(10000);
   it('should create a keychain', () => {
     const expectedException1 = 'Expect privateKey, HDPublicKey or HDPrivateKey';
     expect(() => new KeyChain()).to.throw(expectedException1);
@@ -47,14 +48,16 @@ describe('Keychain', () => {
 
   });
 });
-describe('Keychain - clone', () => {
+describe('Keychain - clone', function suite() {
+  this.timeout(10000);
   it('should clone', () => {
     const keychain2 = new KeyChain(keychain);
     expect(keychain2).to.deep.equal(keychain);
     expect(keychain2.keys).to.deep.equal(keychain.keys);
   });
 });
-describe('Keychain - single privateKey', () => {
+describe('Keychain - single privateKey', function suite() {
+  this.timeout(10000);
   it('should correctly errors out when not a HDPublicKey (privateKey)', () => {
     const privateKey = Dashcore.PrivateKey().toString();
     const network = 'livenet';

@@ -5,7 +5,8 @@ const gatherSail = require('../../../../fixtures/gathersail');
 const cR4t6ePrivateKey = require('../../../../fixtures/cR4t6e_pk');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-describe('Wallet - generateNewWalletId', () => {
+describe('Wallet - generateNewWalletId', function suite() {
+  this.timeout(10000);
   it('should indicate on missing data', () => {
     const mockOpts1 = { };
     const mockOpts2 = { walletType: WALLET_TYPES.HDWALLET };

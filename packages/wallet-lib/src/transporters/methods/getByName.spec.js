@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const transporters = require('../index');
 
-describe('transporters', () => {
+describe('transporters',function suite() {
+  this.timeout(10000);
   it('should warn on unfound Transporter class', () => {
     const expectedException1 = 'Not supported : Transport StarlinkClient';
     expect(() => transporters.getByName('StarlinkClient')).to.throw(expectedException1);

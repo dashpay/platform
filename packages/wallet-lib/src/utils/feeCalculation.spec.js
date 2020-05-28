@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const feeCalculation = require('./feeCalculation');
 
-describe('Utils - feeCalculation', () => {
+describe('Utils - feeCalculation', function suite() {
+  this.timeout(10000);
   it('should get feeRate for an instantSend transaction', () => {
     const result = feeCalculation('instantSend');
     const expectedResult = {

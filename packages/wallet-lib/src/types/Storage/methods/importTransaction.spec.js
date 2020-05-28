@@ -40,7 +40,8 @@ const tx = new Transaction({
   nLockTime: 0,
 });
 
-describe('Storage - importTransaction', () => {
+describe('Storage - importTransaction', function suite() {
+  this.timeout(10000);
   it('should throw on failed import', () => {
     const mockOpts1 = { };
     const mockOpts2 = '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23';

@@ -12,7 +12,8 @@ const {
 const knifeEasilyFixture = require('../../fixtures/knifeeasily');
 const figureBridgeFixture = require('../../fixtures/figurebridge');
 
-describe('Utils', () => {
+describe('Utils', function suite() {
+  this.timeout(10000);
   it('should handle dash2Duff', () => {
     expect(dashToDuffs(2000)).to.equal(200000000000);
     expect(dashToDuffs(-2000)).to.equal(-200000000000);

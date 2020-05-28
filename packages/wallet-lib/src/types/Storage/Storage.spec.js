@@ -5,7 +5,8 @@ const Dashcore = require('@dashevo/dashcore-lib');
 const Storage = require('./Storage');
 const { CONFIGURED } = require('../../EVENTS');
 
-describe('Storage - constructor', () => {
+describe('Storage - constructor', function suite() {
+  this.timeout(10000);
   it('It should create a storage', () => {
     const storage = new Storage();
     expect(storage.store).to.deep.equal({ wallets: {}, transactions: {}, chains: {} });
@@ -27,7 +28,12 @@ describe('Storage - constructor', () => {
     expect(configuredEvent).to.equal(true);
     storage.stopWorker();
   });
-  it('should handle bad adapter', async () => {
+  it('should handle bad adapter', async function () {
+    if (process.browser){
+      // Local forage is  valid adapter on browser.
+      this.skip('LocalForage is a valid adapter on browser')
+      return;
+    }
     const expectedException1 = 'Invalid Storage Adapter : No available storage method found.';
     const storageOpts1 = { adapter: localForage };
     const storage = new Storage();

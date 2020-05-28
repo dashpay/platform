@@ -4,8 +4,7 @@ const getUTXOS = require('../../../types/Account/methods/getUTXOS');
 const duringDevelopStore = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1549310417');
 
 console.error('coinSelection.strategies.simpleDescendingAccumulator needs a rebuilt store');
-return;
-describe('CoinSelection - Strategy - simpleDescendingAccumulator', () => {
+describe.skip('CoinSelection - Strategy - simpleDescendingAccumulator', () => {
   it('should work as expected', () => {
     const self = {
     };

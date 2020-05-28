@@ -3,7 +3,8 @@ const configure = require('./configure');
 
 const noop = () => {};
 
-describe('Storage - configure', async () => {
+describe('Storage - configure', async function suite() {
+  this.timeout(10000);
   it('should set save/rehydrate settings', () => {
     let rehydrated = 0;
 

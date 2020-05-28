@@ -1,18 +1,23 @@
-os: linux
+dist: bionic
 language: node_js
+
+# Support Active LTS versions of Node.js
 node_js:
-  - "10"
   - "12"
+  - "14"
+
+branches:
+  only:
+    - master
+    - develop
 
 before_install:
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
-jobs:
-  include:
-    - stage: lint
-      script: npm run lint
-    - stage: size
-      script: npm run size
+script:
+  - npm run check-package
+  - npm run build:prod
+  - npm run test
 
 deploy:
   - provider: script

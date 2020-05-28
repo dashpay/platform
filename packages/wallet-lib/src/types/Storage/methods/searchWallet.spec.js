@@ -2,7 +2,8 @@ const { expect } = require('chai');
 const Dashcore = require('@dashevo/dashcore-lib');
 const searchWallet = require('./searchWallet');
 
-describe('Storage - searchWallet', () => {
+describe('Storage - searchWallet', function suite() {
+  this.timeout(10000);
   it('should find a wallet', () => {
     const self = {
       store: {

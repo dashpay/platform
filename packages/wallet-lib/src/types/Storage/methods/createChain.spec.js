@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const createChain = require('./createChain');
 
-describe('Storage - createChain', () => {
+describe('Storage - createChain', function suite() {
+  this.timeout(10000);
   it('should create a chain', () => {
     const self = {
       store: { chains: {} },

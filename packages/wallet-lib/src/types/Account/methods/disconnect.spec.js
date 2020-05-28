@@ -6,7 +6,8 @@ const DummyWorker = require('../../../../fixtures/DummyWorker');
 let transportConnected = false;
 const emitted = [];
 
-describe('Account - disconnect', () => {
+describe('Account - disconnect', function suite() {
+  this.timeout(10000);
   const self = {
     emit: (eventName) => emitted.push(eventName),
     removeAllListeners: () => null,

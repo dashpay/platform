@@ -4,7 +4,8 @@ const fromMnemonic = require('./fromMnemonic');
 const knifeFixture = require('../../../../fixtures/knifeeasily');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-describe('Wallet - fromMnemonic', () => {
+describe('Wallet - fromMnemonic', function suite() {
+  this.timeout(10000);
   it('should indicate missing data', () => {
     const mockOpts1 = {};
     const exceptedException1 = 'Expected a valid mnemonic (typeof String or Mnemonic)';
@@ -50,7 +51,8 @@ describe('Wallet - fromMnemonic', () => {
     });
   });
 });
-describe('Wallet - fromMnemonic - with passphrase', () => {
+describe('Wallet - fromMnemonic - with passphrase', function suite() {
+  this.timeout(10000);
   it('should correctly works with passphrase', () => {
     const self1 = {
       network: 'livenet',

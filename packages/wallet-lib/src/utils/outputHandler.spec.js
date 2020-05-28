@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const outputHandler = require('./outputHandler');
 
-describe('Utils - outputHandler', () => {
+describe('Utils - outputHandler', function suite() {
+  this.timeout(10000);
   it('should works', () => {
     const outputs = [{
       amount: 9.9999,

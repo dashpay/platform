@@ -2,7 +2,8 @@ const { expect } = require('chai');
 const updateAddress = require('./updateAddress');
 const orangeWStore = require('../../../../fixtures/walletStore').valid.orange.store;
 
-describe('Storage - updateAddress', () => {
+describe('Storage - updateAddress', function suite() {
+  this.timeout(10000);
   it('should throw errors on failed update', () => {
     const self = {};
     expect(() => updateAddress.call(self)).to.throw('Expected walletId to update an address');

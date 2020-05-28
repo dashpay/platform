@@ -16,7 +16,8 @@ const fixture = {
     },
   ],
 };
-describe('transporters - DAPIClient - .getUTXO', () => {
+describe('transporters - DAPIClient - .getUTXO', function suite() {
+  this.timeout(10000);
   const transporter = transporters.resolve('DAPIClient');
   it('should works', async () => {
     transporter.client.getUTXO = () => fixture;

@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const clearState = require('./clearAll');
 
-describe('Storage - clearAll', () => {
+describe('Storage - clearAll', function suite() {
+  this.timeout(10000);
   it('should clear the whole state', () => {
     let called = 0;
     const self = {

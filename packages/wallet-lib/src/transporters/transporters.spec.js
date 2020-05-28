@@ -9,7 +9,8 @@ const pluginRequiredKeys = [
   'subscribeToAddresses',
 ];
 
-describe('Transporter', () => {
+describe('Transporter', function suite() {
+  this.timeout(10000);
   it('should create a new transporter', () => {
     const transporterDAPI = transporters.resolve('dapi');
     expect(transporterDAPI.isValid).to.equal(true);

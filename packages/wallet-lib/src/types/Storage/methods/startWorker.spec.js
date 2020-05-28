@@ -10,12 +10,18 @@ const simulateChangeEvery = function (ms) {
 };
 describe('Storage - startWorker', function suite() {
   this.timeout(60000);
-  it('should set an interval', () => {
+  it('should set an interval', function () {
     const defaultIntervalValue = 10000;
     const self = {
       autosaveIntervalTime: defaultIntervalValue,
     };
     startWorker.call(self);
+    if (process.browser){
+      this.skip('doesn\'t work in browser')
+      // Need to clear to not hang-on forever
+      clearInterval(self.interval);
+      return;
+    }
     expect(self.interval.constructor.name).to.be.equal('Timeout');
     expect(self.interval._repeat).to.be.equal(defaultIntervalValue); // Timeout are null btw
     clearInterval(self.interval);

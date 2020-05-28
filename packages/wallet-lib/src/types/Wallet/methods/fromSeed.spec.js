@@ -4,7 +4,8 @@ const fromHDPrivateKey = require('./fromHDPrivateKey');
 const knifeFixture = require('../../../../fixtures/knifeeasily');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-describe('Wallet - fromSeed', () => {
+describe('Wallet - fromSeed', function suite() {
+  this.timeout(10000);
   it('should indicate missing data', () => {
     const mockOpts1 = { };
     const exceptedException1 = 'Expected a valid seed (typeof string)';
