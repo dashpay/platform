@@ -6,18 +6,19 @@ node_js:
   - "12"
   - "14"
 
-branches:
+branches: 
   only:
     - master
     - develop
-
-before_install:
-  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 script:
   - npm run check-package
   - npm run build:prod
   - npm run test
+
+before_deploy:
+  # Add token for @dashevo private npm registry & deployement
+  - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 deploy:
   - provider: script
