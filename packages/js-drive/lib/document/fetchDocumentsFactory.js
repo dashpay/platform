@@ -23,7 +23,7 @@ function fetchDocumentsFactory(
    * @returns {Promise<Document[]>}
    */
   async function fetchDocuments(contractId, type, options, dbTransaction = undefined) {
-    const documentRepository = createDocumentRepository(contractId, type);
+    const documentRepository = await createDocumentRepository(contractId, type);
 
     let dataContract = dataContractCache.get(contractId);
 

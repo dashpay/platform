@@ -46,9 +46,10 @@ describe('fetchDocumentsFactory', () => {
     );
 
     const documentsMongoDBPrefix = 'test';
+    const connectToDocumentMongoDB = async () => mongoClient;
 
     const getDocumentDatabase = getDocumentDatabaseFactory(
-      mongoClient,
+      connectToDocumentMongoDB,
       documentsMongoDBPrefix,
     );
 
@@ -96,7 +97,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch Documents for specified contract ID and document type', async () => {
-    const documentRepository = createDocumentMongoDbRepository(contractId, documentType);
+    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const result = await fetchDocuments(contractId, documentType);
@@ -116,7 +117,7 @@ describe('fetchDocumentsFactory', () => {
 
     expect(result).to.deep.equal([]);
 
-    const documentRepository = createDocumentMongoDbRepository(contractId, documentType);
+    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const query = { where: [['name', '==', document.get('name')]] };
@@ -133,7 +134,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should return empty array for specified contract ID, document type and name not exist', async () => {
-    const documentRepository = createDocumentMongoDbRepository(contractId, documentType);
+    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const query = { where: [['name', '==', 'unknown']] };
@@ -144,7 +145,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if contract ID does not exist', async () => {
-    const documentRepository = createDocumentMongoDbRepository(contractId, documentType);
+    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
 
     await documentRepository.store(document);
 
@@ -166,7 +167,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if type does not exist', async () => {
-    const documentRepository = createDocumentMongoDbRepository(contractId, documentType);
+    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
 
     await documentRepository.store(document);
 
@@ -188,7 +189,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if searching by non indexed fields', async () => {
-    const documentRepository = createDocumentMongoDbRepository(contractId, documentType);
+    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const query = { where: [['lastName', '==', 'unknown']] };

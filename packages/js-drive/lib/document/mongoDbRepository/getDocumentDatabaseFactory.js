@@ -1,16 +1,17 @@
 /**
  *
- * @param {MongoClient} documentMongoDBClient
+ * @param {connectToMongoDB} connectToDocumentMongoDB
  * @param {string} documentMongoDBPrefix
  * @return {getDocumentDatabase}
  */
-function getDocumentDatabaseFactory(documentMongoDBClient, documentMongoDBPrefix) {
+function getDocumentDatabaseFactory(connectToDocumentMongoDB, documentMongoDBPrefix) {
   /**
    * @typedef getDocumentDatabase
    * @param {string} dataContractId
    * @return {Db}
    */
-  function getDocumentDatabase(dataContractId) {
+  async function getDocumentDatabase(dataContractId) {
+    const documentMongoDBClient = await connectToDocumentMongoDB();
     return documentMongoDBClient.db(`${documentMongoDBPrefix}${dataContractId}`);
   }
 

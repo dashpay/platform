@@ -16,8 +16,10 @@ class BlockExecutionDBTransactions {
   /**
    * Start transactions
    */
-  start() {
-    Object.values(this.transactions).map((t) => t.start());
+  async start() {
+    await Promise.all(
+      Object.values(this.transactions).map((t) => t.start()),
+    );
   }
 
   /**

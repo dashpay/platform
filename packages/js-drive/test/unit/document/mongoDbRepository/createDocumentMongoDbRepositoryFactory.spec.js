@@ -22,7 +22,7 @@ describe('createDocumentMongoDbRepositoryFactory', () => {
 
     convertWhereToMongoDbQuery = this.sinon.stub();
     validateQuery = this.sinon.stub();
-    getDocumentsDatabaseMock = this.sinon.stub().returns(mongoDb);
+    getDocumentsDatabaseMock = this.sinon.stub().resolves(mongoDb);
 
     createDocumentMongoDbRepository = createDocumentMongoDbRepositoryFactory(
       convertWhereToMongoDbQuery,
@@ -32,7 +32,7 @@ describe('createDocumentMongoDbRepositoryFactory', () => {
   });
 
   it('should create a MongoDb database with a prefix + contractId', async () => {
-    const result = createDocumentMongoDbRepository(contractId, documentType);
+    const result = await createDocumentMongoDbRepository(contractId, documentType);
 
     expect(result).to.be.an.instanceof(DocumentMongoDbRepository);
     expect(result.mongoDatabase).to.deep.equal(mongoDb);

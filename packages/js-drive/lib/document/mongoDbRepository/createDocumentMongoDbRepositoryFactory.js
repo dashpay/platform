@@ -17,10 +17,10 @@ function createDocumentMongoDbRepositoryFactory(
    * @typedef {Promise} createDocumentMongoDbRepository
    * @param {string} dataContractId
    * @param {string} documentType
-   * @returns {DocumentMongoDbRepository}
+   * @returns {Promise<DocumentMongoDbRepository>}
    */
-  function createDocumentMongoDbRepository(dataContractId, documentType) {
-    const documentsMongoDatabase = getDocumentDatabase(dataContractId);
+  async function createDocumentMongoDbRepository(dataContractId, documentType) {
+    const documentsMongoDatabase = await getDocumentDatabase(dataContractId);
 
     return new DocumentMongoDbRepository(
       documentsMongoDatabase,

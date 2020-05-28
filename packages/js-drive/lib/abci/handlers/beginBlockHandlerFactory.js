@@ -27,7 +27,7 @@ function beginBlockHandlerFactory(
   async function beginBlockHandler({ header: { height } }) {
     blockchainState.setLastBlockHeight(height);
 
-    blockExecutionDBTransactions.start();
+    await blockExecutionDBTransactions.start();
 
     blockExecutionState.reset();
 

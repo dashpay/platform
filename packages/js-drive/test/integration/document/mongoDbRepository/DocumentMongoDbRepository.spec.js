@@ -132,7 +132,9 @@ describe('DocumentMongoDbRepository', function main() {
       document.getType(),
     );
 
-    stateViewTransaction = new MongoDBTransaction(mongoClient);
+    const connectToDocumentMongoDB = async () => mongoClient;
+
+    stateViewTransaction = new MongoDBTransaction(connectToDocumentMongoDB);
   });
 
   describe('#store', () => {
@@ -150,7 +152,7 @@ describe('DocumentMongoDbRepository', function main() {
     it('should store Document in transaction', async () => {
       await documentRepository.delete(document.getId());
 
-      stateViewTransaction.start();
+      await stateViewTransaction.start();
 
       await documentRepository.store(document, stateViewTransaction);
 
@@ -188,7 +190,7 @@ describe('DocumentMongoDbRepository', function main() {
     });
 
     it('should fetch Documents in transaction', async () => {
-      stateViewTransaction.start();
+      await stateViewTransaction.start();
 
       const result = await documentRepository.fetch({}, {}, stateViewTransaction);
 
@@ -641,7 +643,7 @@ describe('DocumentMongoDbRepository', function main() {
     });
 
     it('should delete Document in transaction', async () => {
-      stateViewTransaction.start();
+      await stateViewTransaction.start();
 
       await documentRepository.delete(document.getId(), stateViewTransaction);
 
@@ -663,7 +665,7 @@ describe('DocumentMongoDbRepository', function main() {
     });
 
     it('should restore document if transaction aborted', async () => {
-      stateViewTransaction.start();
+      await stateViewTransaction.start();
 
       await documentRepository.delete(document.getId(), stateViewTransaction);
 

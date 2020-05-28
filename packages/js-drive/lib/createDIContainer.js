@@ -11,8 +11,6 @@ const level = require('level-rocksdb');
 
 const LRUCache = require('lru-cache');
 
-const { MongoClient } = require('mongodb');
-
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
@@ -35,7 +33,6 @@ const findNotIndexedFields = require('./document/query/findNotIndexedFields');
 const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 
-const checkReplicaSetInit = require('./mongoDb/checkReplicaSetInit');
 const getDocumentDatabaseFactory = require('./document/mongoDbRepository/getDocumentDatabaseFactory');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 const convertWhereToMongoDbQuery = require('./document/mongoDbRepository/convertWhereToMongoDbQuery');
@@ -44,6 +41,7 @@ const DocumentDatabaseManager = require('./document/mongoDbRepository/DocumentDa
 const convertToMongoDbIndicesFunction = require('./document/mongoDbRepository/convertToMongoDbIndices');
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const MongoDBTransaction = require('./mongoDb/MongoDBTransaction');
+const connectToMongoDBFactory = require('./mongoDb/connectToMongoDBFactory');
 
 const BlockExecutionState = require('./blockchainState/blockExecution/BlockExecutionState');
 const BlockchainStateLevelDBRepository = require('./blockchainState/BlockchainStateLevelDBRepository');
@@ -205,16 +203,10 @@ async function createDIContainer(options) {
   /**
    * Register Document
    */
-  const mongoClient = await MongoClient.connect(
-    options.DOCUMENT_MONGODB_URL, {
-      useUnifiedTopology: true,
-    },
-  );
-
-  await checkReplicaSetInit(mongoClient);
-
   container.register({
-    documentMongoDBClient: asValue(mongoClient),
+    connectToDocumentMongoDB: asFunction((documentMongoDBUrl) => (
+      connectToMongoDBFactory(documentMongoDBUrl)
+    )).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
     getIndexedFieldsFromDocumentSchema: asValue(getIndexedFieldsFromDocumentSchema),
@@ -236,10 +228,7 @@ async function createDIContainer(options) {
       convertToMongoDbIndices,
       getDocumentDatabase,
     )),
-    documentTransaction: asFunction((documentMongoDBClient) => (
-      new MongoDBTransaction(documentMongoDBClient)
-    )),
-
+    documentTransaction: asClass(MongoDBTransaction).singleton(),
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
   });
 

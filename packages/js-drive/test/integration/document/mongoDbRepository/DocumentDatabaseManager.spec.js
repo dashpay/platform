@@ -20,6 +20,7 @@ describe('DocumentDatabaseManager', function main() {
   let getDocumentDatabase;
   let dataContract;
   let mongoDB;
+  let connectToDocumentMongoDB;
 
   before(async () => {
     mongoDB = await startMongoDb();
@@ -38,8 +39,10 @@ describe('DocumentDatabaseManager', function main() {
       findNotIndexedOrderByFields,
     );
 
+    connectToDocumentMongoDB = async () => mongoClient;
+
     getDocumentDatabase = getDocumentDatabaseFactory(
-      mongoClient,
+      connectToDocumentMongoDB,
       documentMongoDBPrefix,
     );
 
@@ -67,7 +70,8 @@ describe('DocumentDatabaseManager', function main() {
 
     await documentDatabaseManager.create(dataContract);
 
-    const createdCollections = await getDocumentDatabase(dataContract.getId()).collections();
+    const db = await getDocumentDatabase(dataContract.getId());
+    const createdCollections = await db.collections();
     expect(createdCollections).to.have.lengthOf(Object.keys(dataContract.documents).length);
 
     const createdCollectionNames = createdCollections
@@ -89,12 +93,13 @@ describe('DocumentDatabaseManager', function main() {
 
     await documentDatabaseManager.create(dataContract);
 
-    let dbCollections = await getDocumentDatabase(dataContract.getId()).collections();
+    const db = await getDocumentDatabase(dataContract.getId());
+    let dbCollections = await db.collections();
     expect(dbCollections).to.have.lengthOf(Object.keys(dataContract.documents).length);
 
     await documentDatabaseManager.drop(dataContract);
 
-    dbCollections = await getDocumentDatabase(dataContract.getId()).collections();
+    dbCollections = await db.collections();
     expect(dbCollections).to.have.lengthOf(0);
   });
 });

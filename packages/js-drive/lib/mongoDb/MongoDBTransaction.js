@@ -3,22 +3,24 @@ const TransactionIsAlreadyStartedError = require('./errors/TransactionIsAlreadyS
 
 class MongoDBTransaction {
   /**
-   *
-   * @param {MongoClient} mongoClient
+   * @param {connectToMongoDB} connectToDocumentMongoDB
    */
-  constructor(mongoClient) {
-    this.mongoClient = mongoClient;
+  constructor(connectToDocumentMongoDB) {
+    this.connectToDocumentMongoDB = connectToDocumentMongoDB;
     this.session = null;
+    this.mongoClient = null;
     this.isTransactionStarted = false;
   }
 
   /**
    * Start new transaction
    */
-  start() {
+  async start() {
     if (this.isTransactionStarted) {
       throw new TransactionIsAlreadyStartedError();
     }
+
+    this.mongoClient = await this.connectToDocumentMongoDB();
 
     if (!this.session || this.session.hasEnded) {
       this.session = this.mongoClient.startSession();

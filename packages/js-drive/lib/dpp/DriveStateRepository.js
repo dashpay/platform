@@ -128,7 +128,7 @@ class DriveStateRepository {
   async storeDocument(document) {
     const transaction = this.getDBTransaction('document');
 
-    const repository = this.createDocumentRepository(
+    const repository = await this.createDocumentRepository(
       document.getDataContractId(),
       document.getType(),
     );

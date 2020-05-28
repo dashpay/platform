@@ -7,6 +7,7 @@ describe('MongoDBTransaction', () => {
   let mongoDBTransaction;
   let sessionMock;
   let transactionFunctionMock;
+  let connectToDocumentMongoDBMock;
 
   beforeEach(function beforeEach() {
     sessionMock = {
@@ -19,23 +20,25 @@ describe('MongoDBTransaction', () => {
       startSession: this.sinon.stub().returns(sessionMock),
     };
 
-    mongoDBTransaction = new MongoDBTransaction(mongoClientMock);
+    connectToDocumentMongoDBMock = this.sinon.stub().resolves(mongoClientMock);
+
+    mongoDBTransaction = new MongoDBTransaction(connectToDocumentMongoDBMock);
     transactionFunctionMock = this.sinon.stub().resolves(this.sinon.stub());
   });
 
   describe('#start', () => {
-    it('should start transaction', () => {
-      mongoDBTransaction.start();
+    it('should start transaction', async () => {
+      await mongoDBTransaction.start();
 
       expect(mongoClientMock.startSession).to.be.calledOnce();
       expect(sessionMock.startTransaction).to.be.calledOnce();
     });
 
-    it('should throw TransactionIsAlreadyStartedError if transaction is already started', () => {
-      mongoDBTransaction.start();
+    it('should throw TransactionIsAlreadyStartedError if transaction is already started', async () => {
+      await mongoDBTransaction.start();
 
       try {
-        mongoDBTransaction.start();
+        await mongoDBTransaction.start();
 
         expect.fail('should throw TransactionIsAlreadyStartedError error');
       } catch (error) {
@@ -49,7 +52,7 @@ describe('MongoDBTransaction', () => {
 
   describe('#commit', () => {
     it('should commit transaction', async () => {
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.commit();
 
       expect(sessionMock.commitTransaction).to.be.calledOnce();
@@ -57,10 +60,10 @@ describe('MongoDBTransaction', () => {
     });
 
     it('should commit two transactions one after another', async () => {
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.commit();
 
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.commit();
 
       expect(sessionMock.commitTransaction).to.be.calledTwice();
@@ -86,7 +89,7 @@ describe('MongoDBTransaction', () => {
         errorLabels: [ERRORS.UNKNOWN_TRANSACTION_COMMIT_RESULT],
       });
 
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.commit();
 
       expect(sessionMock.commitTransaction).to.be.calledTwice();
@@ -95,7 +98,7 @@ describe('MongoDBTransaction', () => {
     it('should throw an error', async () => {
       sessionMock.commitTransaction.throws('UnknownError');
 
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
 
       try {
         await mongoDBTransaction.commit();
@@ -109,7 +112,7 @@ describe('MongoDBTransaction', () => {
 
   describe('#abort', () => {
     it('should abort session', async () => {
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.abort();
 
       expect(sessionMock.abortTransaction).to.be.calledOnce();
@@ -117,10 +120,10 @@ describe('MongoDBTransaction', () => {
     });
 
     it('should commit new transaction after aborted transaction', async () => {
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.abort();
 
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.commit();
 
       expect(sessionMock.abortTransaction).to.be.calledOnce();
@@ -142,7 +145,7 @@ describe('MongoDBTransaction', () => {
 
   describe('#runWithTransaction', async () => {
     it('should run function with transaction', async () => {
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.runWithTransaction(transactionFunctionMock);
 
       expect(transactionFunctionMock).to.be.calledOnce();
@@ -155,7 +158,7 @@ describe('MongoDBTransaction', () => {
         errorLabels: [ERRORS.TRANSIENT_TRANSACTION_ERROR],
       });
 
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
       await mongoDBTransaction.runWithTransaction(transactionFunctionMock);
 
       expect(transactionFunctionMock).to.be.calledTwice();
@@ -164,7 +167,7 @@ describe('MongoDBTransaction', () => {
     it('should throw an error', async () => {
       transactionFunctionMock.throws('UnknownError');
 
-      mongoDBTransaction.start();
+      await mongoDBTransaction.start();
 
       try {
         await mongoDBTransaction.runWithTransaction(transactionFunctionMock);

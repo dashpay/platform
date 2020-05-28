@@ -19,14 +19,14 @@ class DocumentDatabaseManager {
   async create(dataContract) {
     const documentTypes = Object.keys(dataContract.getDocuments());
 
-    const promises = documentTypes.map((documentType) => {
+    const promises = documentTypes.map(async (documentType) => {
       const documentSchema = dataContract.getDocumentSchema(documentType);
       let indices;
       if (documentSchema.indices) {
         indices = this.convertToMongoDbIndices(documentSchema.indices);
       }
 
-      const documentRepository = this.createDocumentRepository(
+      const documentRepository = await this.createDocumentRepository(
         dataContract.getId(),
         documentType,
       );
@@ -44,7 +44,8 @@ class DocumentDatabaseManager {
    * @returns {Promise<*[]>}
    */
   async drop(dataContract) {
-    return this.getDocumentDatabase(dataContract.getId()).dropDatabase();
+    const db = await this.getDocumentDatabase(dataContract.getId());
+    return db.dropDatabase();
   }
 }
 
