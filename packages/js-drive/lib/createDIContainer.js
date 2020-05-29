@@ -71,7 +71,7 @@ const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 
-const checkCoreSyncFinishedFactory = require('./core/checkCoreSyncFinishedFactory');
+const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 
 /**
  *
@@ -358,7 +358,7 @@ async function createDIContainer(options) {
    * Register check functions
    */
   container.register({
-    checkCoreSyncFinished: asFunction(checkCoreSyncFinishedFactory).singleton(),
+    waitForCoreSync: asFunction(waitForCoreSyncFactory).singleton(),
   });
 
   container.register({

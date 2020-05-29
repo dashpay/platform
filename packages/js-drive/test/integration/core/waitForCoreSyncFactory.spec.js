@@ -2,7 +2,7 @@ const { startMongoDb, startDashCore } = require('@dashevo/dp-services-ctl');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
-describe('checkCoreSyncFinishedFactory', function main() {
+describe('waitForCoreSyncFactory', function main() {
   this.timeout(90000);
 
   let mongoDB;
@@ -10,7 +10,7 @@ describe('checkCoreSyncFinishedFactory', function main() {
   let secondDashCore;
   let thirdDashCore;
   let container;
-  let checkCoreSyncFinished;
+  let waitForCoreSync;
 
   before(async () => {
     mongoDB = await startMongoDb();
@@ -46,9 +46,9 @@ describe('checkCoreSyncFinishedFactory', function main() {
     await secondDashCore.connect(firstDashCore);
 
     container = await createTestDIContainer(mongoDB, secondDashCore);
-    checkCoreSyncFinished = container.resolve('checkCoreSyncFinished');
+    waitForCoreSync = container.resolve('waitForCoreSync');
 
-    await checkCoreSyncFinished(() => {});
+    await waitForCoreSync(() => {});
 
     const secondApi = secondDashCore.getApi();
 
@@ -68,9 +68,9 @@ describe('checkCoreSyncFinishedFactory', function main() {
 
     container = await createTestDIContainer(mongoDB, thirdDashCore);
 
-    checkCoreSyncFinished = container.resolve('checkCoreSyncFinished');
+    waitForCoreSync = container.resolve('waitForCoreSync');
 
-    await checkCoreSyncFinished(() => {});
+    await waitForCoreSync(() => {});
 
     const api = thirdDashCore.getApi();
 
