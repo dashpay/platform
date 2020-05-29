@@ -36,7 +36,7 @@ function errorHandlerDecorator(command, log) {
         if (log && typeof log.error === 'function') {
           log.error(e);
         }
-        throw new RPCError(-32602, 'Internal error');
+        throw new RPCError(-32603, 'Internal error');
       });
   };
 }
