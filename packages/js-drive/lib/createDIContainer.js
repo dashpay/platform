@@ -42,6 +42,7 @@ const convertToMongoDbIndicesFunction = require('./document/mongoDbRepository/co
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const MongoDBTransaction = require('./mongoDb/MongoDBTransaction');
 const connectToMongoDBFactory = require('./mongoDb/connectToMongoDBFactory');
+const waitReplicaSetInitializeFactory = require('./mongoDb/waitReplicaSetInitializeFactory');
 
 const BlockExecutionState = require('./blockchainState/blockExecution/BlockExecutionState');
 const BlockchainStateLevelDBRepository = require('./blockchainState/BlockchainStateLevelDBRepository');
@@ -358,6 +359,10 @@ async function createDIContainer(options) {
    */
   container.register({
     checkCoreSyncFinished: asFunction(checkCoreSyncFinishedFactory).singleton(),
+  });
+
+  container.register({
+    waitReplicaSetInitialize: asFunction(waitReplicaSetInitializeFactory).singleton(),
   });
 
   /**
