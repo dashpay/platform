@@ -31,7 +31,7 @@ async function request(url, method, params, options = {}) {
   }
   const { data } = res;
   if (data.error) {
-    throw new RPCError(`DAPI RPC error: ${method}: ${data.error.message}`, data.error.data);
+    throw new RPCError(data.error.code, `DAPI RPC error: ${method}: ${data.error.message}`, data.error.data);
   }
   return data.result;
 }

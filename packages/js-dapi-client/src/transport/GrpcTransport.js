@@ -46,7 +46,8 @@ class GrpcTransport {
     } catch (e) {
       if (e.code !== GrpcErrorCodes.DEADLINE_EXCEEDED
             && e.code !== GrpcErrorCodes.UNAVAILABLE
-            && e.code !== GrpcErrorCodes.INTERNAL) {
+            && e.code !== GrpcErrorCodes.INTERNAL
+            && e.code !== GrpcErrorCodes.CANCELLED) {
         throw e;
       }
 

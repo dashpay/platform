@@ -292,7 +292,7 @@ describe('api', () => {
             if (address === validAddressWithoutOutputs) {
               return [];
             }
-            throw new RPCError('DAPI RPC error: getBlockHash: Error: Address not found');
+            throw new RPCError(-32602, 'DAPI RPC error: getBlockHash: Error: Address not found');
           }
           if (method === 'getAddressSummary') {
             return validAddressSummary;
@@ -304,7 +304,7 @@ describe('api', () => {
             if (height === 0) {
               return validBaseBlockHash;
             }
-            throw new RPCError('DAPI RPC error: getBlockHash: Error: Invalid block height');
+            throw new RPCError(-32602, 'DAPI RPC error: getBlockHash: Error: Invalid block height');
           }
           if (method === 'getMnListDiff') {
             if (baseBlockHash === validBaseBlockHash || config.nullHash && blockHash === validBlockHash) {
