@@ -46,6 +46,26 @@ In order to run a masternode use Docker Compose:
 $ docker-compose up
 ```
 
+### Start Evonet node
+
+Start Core:
+
+```bash
+$ docker-compose --env-file=.env.evonet up -d core
+```
+
+Wait for Core sync (`isSynced: true`):
+
+```bash
+$ docker-compose --env-file=.env.evonet exec core dash-cli mnsync status
+```
+
+Start the rest of services:
+
+```bash
+$ docker-compose --env-file=.env.evonet up -d
+```
+
 ## Contributing
 
 Feel free to dive in! [Open an issue](https://github.com/dashevo/mn-bootstrap/issues/new) or submit PRs.
