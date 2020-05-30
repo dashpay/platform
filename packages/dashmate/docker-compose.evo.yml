@@ -34,7 +34,7 @@ services:
       - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017?replicaSet=driveDocumentIndices
       - DPNS_CONTRACT_ID=${DPNS_CONTRACT_ID}
       - DPNS_TOP_LEVEL_IDENTITY=${DPNS_TOP_LEVEL_IDENTITY}
-    command: sh -c "sleep 25 && npm run abci"
+    command: npm run abci
 
   drive_tendermint:
     image: tendermint/tendermint:${TENDERMINT_VERSION:-v0.32.8}
@@ -46,7 +46,7 @@ services:
     volumes:
       - ./configs/${PRESET:?err}/drive/tendermint:/tendermint
       - ./data/${PRESET:?err}/drive/tendermint:/data
-    entrypoint: sh -c "sleep 45 && /usr/bin/tendermint init && /usr/bin/tendermint node"
+    entrypoint: sh -c "/usr/bin/tendermint init && /usr/bin/tendermint node"
 
   dapi_insight:
     image: dashpay/insight-api:${DAPI_INSIGHT_VERSION:-latest}
