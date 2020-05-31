@@ -90,7 +90,7 @@ const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
  * @param {string} options.CORE_JSON_RPC_PASSWORD
- * @param {string} options.IDENTITY_ENABLE_ASSET_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK
+ * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  *
  * @return {AwilixContainer}
  */
@@ -129,8 +129,8 @@ async function createDIContainer(options) {
   container.register({
     dppOptions: asValue({
       identities: {
-        enableAssetLockTxOneBlockConfirmationFallback: options
-          .IDENTITY_ENABLE_ASSET_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK === 'true',
+        skipAssetLockConfirmationValidation: options
+          .IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION === 'true',
       },
     }),
   });
