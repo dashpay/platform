@@ -10,13 +10,13 @@ const IdentityAssetLockTransactionIsNotConfirmedError = require('../errors/Ident
  *
  * @param {StateRepository} stateRepository
  * @param {function} parseTransactionOutPointBuffer
- * @param {boolean} [enableAssetLockTxOneBlockConfirmationFallback]
+ * @param {boolean} [skipAssetLockConfirmationValidation]
  * @return {fetchConfirmedAssetLockTransactionOutput}
  */
 function fetchConfirmedAssetLockTransactionOutputFactory(
   stateRepository,
   parseTransactionOutPointBuffer,
-  enableAssetLockTxOneBlockConfirmationFallback = false,
+  skipAssetLockConfirmationValidation = false,
 ) {
   /**
    * Returns lock transaction output for provided lockedOutPoint
@@ -47,12 +47,9 @@ function fetchConfirmedAssetLockTransactionOutputFactory(
       throw new IdentityAssetLockTransactionNotFoundError(transactionHash);
     }
 
-    let txIsConfirmed = rawTransaction.chainlock || rawTransaction.instantlock;
-    if (!txIsConfirmed && enableAssetLockTxOneBlockConfirmationFallback) {
-      txIsConfirmed = rawTransaction.confirmations > 0;
-    }
-
-    if (!txIsConfirmed) {
+    if (!skipAssetLockConfirmationValidation
+      && !rawTransaction.chainlock
+      && !rawTransaction.instantlock) {
       throw new IdentityAssetLockTransactionIsNotConfirmedError(transactionHash);
     }
 

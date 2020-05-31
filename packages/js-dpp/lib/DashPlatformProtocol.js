@@ -16,7 +16,7 @@ class DashPlatformProtocol {
    * @param {Object} options
    * @param {StateRepository} [options.stateRepository]
    * @param {JsonSchemaValidator} [options.jsonSchemaValidator]
-   * @param {boolean} [options.identities.enableAssetLockTxOneBlockConfirmationFallback=false]
+   * @param {boolean} [options.identities.skipAssetLockConfirmationValidation=false]
    */
   constructor(options = {}) {
     this.stateRepository = options.stateRepository;
@@ -26,17 +26,17 @@ class DashPlatformProtocol {
       this.jsonSchemaValidator = new JsonSchemaValidator(new Ajv());
     }
 
-    const enableAssetLockTxOneBlockConfirmationFallback = options.identities
-      ? options.identities.enableAssetLockTxOneBlockConfirmationFallback : false;
+    const skipAssetLockConfirmationValidation = options.identities
+      ? options.identities.skipAssetLockConfirmationValidation : false;
 
-    this.initializeFacades(enableAssetLockTxOneBlockConfirmationFallback);
+    this.initializeFacades(skipAssetLockConfirmationValidation);
   }
 
   /**
    * @private
-   * @param {boolean} [enableAssetLockTxOneBlockConfirmationFallback=false]
+   * @param {boolean} [skipAssetLockConfirmationValidation=false]
    */
-  initializeFacades(enableAssetLockTxOneBlockConfirmationFallback = false) {
+  initializeFacades(skipAssetLockConfirmationValidation = false) {
     this.dataContract = new DataContractFacade(
       this.jsonSchemaValidator,
     );
@@ -49,7 +49,7 @@ class DashPlatformProtocol {
     this.stateTransition = new StateTransitionFacade(
       this.stateRepository,
       this.jsonSchemaValidator,
-      enableAssetLockTxOneBlockConfirmationFallback,
+      skipAssetLockConfirmationValidation,
     );
 
     this.identity = new IdentityFacade(

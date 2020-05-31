@@ -66,9 +66,9 @@ class StateTransitionFacade {
   /**
    * @param {StateRepository} stateRepository
    * @param {JsonSchemaValidator} validator
-   * @param {boolean} [enableAssetLockTxOneBlockConfirmationFallback=false]
+   * @param {boolean} [skipAssetLockConfirmationValidation=false]
    */
-  constructor(stateRepository, validator, enableAssetLockTxOneBlockConfirmationFallback = false) {
+  constructor(stateRepository, validator, skipAssetLockConfirmationValidation = false) {
     this.stateRepository = stateRepository;
     this.validator = validator;
 
@@ -149,7 +149,7 @@ class StateTransitionFacade {
     const fetchConfirmedAssetLockTransactionOutput = fetchConfirmedAssetLockTransactionOutputFactory(
       stateRepository,
       Transaction.parseOutPointBuffer,
-      enableAssetLockTxOneBlockConfirmationFallback,
+      skipAssetLockConfirmationValidation,
     );
 
     const validateAssetLockTransaction = validateAssetLockTransactionFactory(
