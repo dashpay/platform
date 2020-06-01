@@ -4,6 +4,7 @@
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
+  "browser": "dist/wallet-lib.min.js",
   "scripts": {
     "lint": "eslint src/*",
     "build": "npm run build:dev",
