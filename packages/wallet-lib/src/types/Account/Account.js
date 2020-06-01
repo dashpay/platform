@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const { EventEmitter2: EventEmitter } = require('eventemitter2');
+const EventEmitter = require('events');
 const logger = require('../../logger');
 const { WALLET_TYPES } = require('../../CONSTANTS');
 const { is } = require('../../utils');
@@ -48,7 +48,7 @@ const getBIP44Path = require('./_getBIP44Path');
 
 class Account extends EventEmitter {
   constructor(wallet, opts = defaultOptions) {
-    super({ wildcard: true });
+    super();
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;

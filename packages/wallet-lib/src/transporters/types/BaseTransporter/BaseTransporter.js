@@ -1,4 +1,4 @@
-const { EventEmitter2: EventEmitter } = require('eventemitter2');
+const EventEmitter = require('events');
 
 class BaseTransporter extends EventEmitter {
   constructor(props) {

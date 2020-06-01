@@ -1,4 +1,4 @@
-const { EventEmitter2: EventEmitter } = require('eventemitter2');
+const EventEmitter = require('events');
 const { cloneDeep, has } = require('lodash');
 
 const CONSTANTS = require('../../CONSTANTS');
@@ -22,7 +22,7 @@ const _defaultOpts = {
  * */
 class Storage extends EventEmitter {
   constructor(opts = JSON.parse(JSON.stringify(_defaultOpts))) {
-    super({ wildcard: true });
+    super();
     const defaultOpts = JSON.parse(JSON.stringify(_defaultOpts));
 
     this.store = cloneDeep(initialStore);

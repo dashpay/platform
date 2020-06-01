@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const { EventEmitter2: EventEmitter } = require('eventemitter2');
+const EventEmitter = require('events');
 const { InjectionToPluginUnallowed } = require('../errors');
 const { SAFE_FUNCTIONS, SAFE_PROPERTIES } = require('../CONSTANTS').INJECTION_LISTS;
 
@@ -9,7 +9,7 @@ const defaultOpts = {
 
 class StandardPlugin extends EventEmitter {
   constructor(opts = {}) {
-    super({ wildcard: true });
+    super();
     this.pluginType = _.has(opts, 'type') ? opts.type : 'Standard';
     this.name = _.has(opts, 'name') ? opts.name : 'UnnamedPlugin';
     this.dependencies = _.has(opts, 'dependencies') ? opts.dependencies : [];
