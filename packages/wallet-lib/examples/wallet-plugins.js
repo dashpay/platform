@@ -20,24 +20,21 @@ const wallet = new Wallet({
   plugins: [WalletConsolidator, new ColdStorageWorker({ address: coldStorageAddress })],
 });
 
-const account = wallet.getAccount({ index: 0 });
 
-const start = async () => {
-  logger.info('Balance', account.getTotalBalance());
-  logger.info('Funding address', account.getUnusedAddress().address);
+wallet.getAccount({ index: 0 })
+  .then((account) => {
+    const showcasePlugin = async () => {
+      const walletConsolidator = account.getPlugin('walletConsolidator');
+      const consolidate = await walletConsolidator.consolidateWallet();
 
-  // await showcasePlugin();
-};
+      const preparedTransaction = consolidate.prepareTransaction();
 
+      logger.info('RawTx', preparedTransaction.toString());
+      logger.info('Broadcast', await preparedTransaction.broadcast());
+    };
 
-const showcasePlugin = async () => {
-  const walletConsolidator = account.getPlugin('walletConsolidator');
-  const consolidate = await walletConsolidator.consolidateWallet();
+    logger.info('Balance', account.getTotalBalance());
+    logger.info('Funding address', account.getUnusedAddress().address);
 
-  const preparedTransaction = consolidate.prepareTransaction();
-  logger.info('RawTx', preparedTransaction.toString());
-  // logger.info('Broadcast', await preparedTransaction.broadcast());
-};
-
-
-account.events.on('ready', start);
+    return showcasePlugin();
+  });

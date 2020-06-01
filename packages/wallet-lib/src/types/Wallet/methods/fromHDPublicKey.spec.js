@@ -53,23 +53,23 @@ describe('Wallet - HDPublicKey', function suite() {
 
     expect(wallet1.exportWallet()).to.be.equal(gatherTestnet.external.hdpubkey);
 
-    const account = wallet1.getAccount();
-    const unusedAddress = account.getUnusedAddress();
-    const expectedUnused = {
-      path: "m/44'/1'/0'/0/0",
-      index: 0,
-      address: 'yNJ3xxTXXBBf39VfMBbBuLH2k57uAwxBxj',
-      transactions: [],
-      balanceSat: 0,
-      unconfirmedBalanceSat: 0,
-      utxos: {},
-      fetchedLast: 0,
-      used: false,
-    };
-    expect(unusedAddress).to.deep.equal(expectedUnused);
 
-    wallet1.storage.on('CONFIGURED', () => {
+    wallet1.getAccount().then((account)=>{
+      const unusedAddress = account.getUnusedAddress();
+      const expectedUnused = {
+        path: "m/44'/1'/0'/0/0",
+        index: 0,
+        address: 'yNJ3xxTXXBBf39VfMBbBuLH2k57uAwxBxj',
+        transactions: [],
+        balanceSat: 0,
+        unconfirmedBalanceSat: 0,
+        utxos: {},
+        fetchedLast: 0,
+        used: false,
+      };
+      expect(unusedAddress).to.deep.equal(expectedUnused);
+
       wallet1.disconnect();
-    });
+    })
   });
 });

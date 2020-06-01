@@ -16,8 +16,29 @@ describe('Storage - importAccounts', async function suite() {
   it('should create a wallet if not existing', (done) => {
     const wallet = new Wallet({ offlineMode: true });
     wallet.storage.on(EVENTS.CONFIGURED, () => {
-      const acc = wallet.getAccount();
-      acc.on(EVENTS.INITIALIZED, () => {
+      wallet.getAccount().then((acc)=>{
+          let called = 0;
+
+          const self = {
+            searchWallet: () => ({ found: false }),
+            createWallet: () => (called += 1),
+            store: { wallets: { } },
+          };
+          self.store.wallets[wallet.walletId] = { accounts: {} };
+          importAccounts.call(self, acc, wallet.walletId);
+
+          // Called twice because of recursivity. We have a Acc Instance here.
+          expect(called).to.be.equal(2);
+          wallet.disconnect();
+          acc.disconnect();
+          done();
+      });
+    });
+  });
+  it('should import an account', (done) => {
+    const wallet = new Wallet({ offlineMode: true });
+    wallet.storage.on('CONFIGURED', () => {
+      wallet.getAccount().then((acc)=>{
         let called = 0;
 
         const self = {
@@ -25,39 +46,18 @@ describe('Storage - importAccounts', async function suite() {
           createWallet: () => (called += 1),
           store: { wallets: { } },
         };
+        acc.label = 'Heya!';
         self.store.wallets[wallet.walletId] = { accounts: {} };
         importAccounts.call(self, acc, wallet.walletId);
-
-        // Called twice because of recursivity. We have a Acc Instance here.
-        expect(called).to.be.equal(2);
-        wallet.disconnect();
-        acc.disconnect();
-        done();
-      });
-    });
-  });
-  it('should import an account', (done) => {
-    const wallet = new Wallet({ offlineMode: true });
-    wallet.storage.on('CONFIGURED', () => {
-      const acc = wallet.getAccount();
-      let called = 0;
-
-      const self = {
-        searchWallet: () => ({ found: false }),
-        createWallet: () => (called += 1),
-        store: { wallets: { } },
-      };
-      acc.label = 'Heya!';
-      self.store.wallets[wallet.walletId] = { accounts: {} };
-      importAccounts.call(self, acc, wallet.walletId);
-      const walletsKeys = Object.keys(self.store.wallets);
-      expect(walletsKeys.length).to.equal(1);
-      expect(self.store.wallets[walletsKeys[0]].accounts['m/44\'/1\'/0\''].label).to.equal('Heya!');
-      setTimeout(() => {
-        wallet.disconnect();
-        acc.disconnect();
-        done();
-      }, 50);
+        const walletsKeys = Object.keys(self.store.wallets);
+        expect(walletsKeys.length).to.equal(1);
+        expect(self.store.wallets[walletsKeys[0]].accounts['m/44\'/1\'/0\''].label).to.equal('Heya!');
+        setTimeout(() => {
+          wallet.disconnect();
+          acc.disconnect();
+          done();
+        }, 50);
+      })
     });
   });
 });

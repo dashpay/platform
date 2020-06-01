@@ -1,5 +1,6 @@
 const _ = require('lodash');
 const StandardPlugin = require('./StandardPlugin');
+const { WorkerFailedOnExecute, WorkerFailedOnStart } = require('../errors');
 
 // eslint-disable-next-line no-underscore-dangle
 const _defaultOpts = {
@@ -41,20 +42,24 @@ class Worker extends StandardPlugin {
 
   async startWorker() {
     const self = this;
-    if (this.worker) this.stopWorker();
-    // every minutes, check the pool
-    this.worker = setInterval(this.execWorker.bind(self), this.workerIntervalTime);
+    try {
+      if (this.worker) this.stopWorker();
+      // every minutes, check the pool
+      this.worker = setInterval(this.execWorker.bind(self), this.workerIntervalTime);
 
-    if (this.executeOnStart === true) {
-      if (this.onStart) {
-        await this.onStart();
+      if (this.executeOnStart === true) {
+        if (this.onStart) {
+          await this.onStart();
+        }
       }
-    }
-    const eventType = `WORKER/${this.name.toUpperCase()}/STARTED`;
-    this.parentEvents.emit(eventType, { type: eventType, payload: null });
-    this.state.started = true;
+      const eventType = `WORKER/${this.name.toUpperCase()}/STARTED`;
+      this.parentEvents.emit(eventType, { type: eventType, payload: null });
+      this.state.started = true;
 
-    if (this.executeOnStart) await this.execWorker();
+      if (this.executeOnStart) await this.execWorker();
+    } catch (err) {
+      throw new WorkerFailedOnStart(this.name, err.message);
+    }
   }
 
   stopWorker() {
@@ -81,7 +86,8 @@ class Worker extends StandardPlugin {
       try {
         await this.execute();
       } catch (err) {
-        throw new Error(`Worker ${this.name} execution failed with error ${err.message}`);
+        await this.stopWorker();
+        throw new WorkerFailedOnExecute(this.name, err.message);
       }
     } else {
       throw new Error(`Worker ${this.name} : Missing execute function`);
@@ -95,4 +101,5 @@ class Worker extends StandardPlugin {
     return true;
   }
 }
+
 module.exports = Worker;

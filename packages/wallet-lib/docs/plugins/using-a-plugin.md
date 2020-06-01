@@ -39,6 +39,8 @@ This will allow to access the walletId property; the same thing is doable with t
 
 
 ```
-const account = wallet.getAccount(0);
-account.getPlugin('pluginName');
+wallet.getAccount(0)
+    .then((account)=>{
+        account.getPlugin('pluginName');
+    });
 ```

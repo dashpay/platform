@@ -25,4 +25,5 @@ Examples (assuming a Wallet instance created) :
 const { Account, Wallet } = require('@dashevo/wallet-lib');
 const wallet = new Wallet();
 const account = new Account(wallet, {index: 42});
+await account.init();
 ```

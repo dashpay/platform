@@ -5,6 +5,7 @@ const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
 const BIP44Worker = require('../../plugins/Workers/BIP44Worker/BIP44Worker');
 const EVENTS = require('../../EVENTS');
 const { WALLET_TYPES } = require('../../CONSTANTS');
+const { PluginFailedOnStart, WorkerFailedOnExecute, InjectionToPluginUnallowed } = require('../../errors');
 
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
@@ -13,7 +14,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
   const readinessIntervalTime = (account.offlineMode) ? 50 : 200;
   // TODO: perform rejection with a timeout
   // eslint-disable-next-line no-async-promise-executor
-  return new Promise(async (resolve) => {
+  return new Promise(async (resolve, reject) => {
     if (account.injectDefaultPlugins) {
       // TODO: Should check in other accounts if a similar is setup already
       // TODO: We want to sort them by dependencies and deal with the await this way
@@ -41,11 +42,17 @@ async function _initializeAccount(account, userUnsafePlugins) {
     }
 
     _.each(userUnsafePlugins, (UnsafePlugin) => {
-      try {
-        account.injectPlugin(UnsafePlugin, account.allowSensitiveOperations);
-      } catch (e) {
-        throw new Error(`Failed to inject plugin: ${UnsafePlugin.name}, reason: ${e.message}`);
-      }
+      account.injectPlugin(UnsafePlugin, account.allowSensitiveOperations)
+        .catch((e) => {
+          if (![
+            PluginFailedOnStart,
+            WorkerFailedOnExecute,
+            InjectionToPluginUnallowed,
+          ].includes(e.constructor)) {
+            throw new Error(`Failed to inject plugin: ${UnsafePlugin.name}, reason: ${e.message}`);
+          }
+          return reject(e);
+        });
     });
 
     self.emit(EVENTS.STARTED, { type: EVENTS.STARTED, payload: null });
@@ -107,6 +114,11 @@ async function _initializeAccount(account, userUnsafePlugins) {
 
         if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
           account.generateAddress(0);
+          sendReady();
+          return resolve(true);
+        }
+
+        if (!account.injectDefaultPlugins) {
           sendReady();
           return resolve(true);
         }

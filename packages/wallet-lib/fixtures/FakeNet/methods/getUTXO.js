@@ -8,7 +8,7 @@ function getUtxoOfAddressAtHeight(address, height) {
     return utxos;
   }
   const utxofile = JSON.parse(fs.readFileSync(path));
-  for (let i = parseInt(Object.keys(utxofile)[0], 10) - 1; i <= height; i++) {
+  for (let i = parseInt(Object.keys(utxofile)[0], 10) - 1; i <= height; i += 1) {
     const el = utxofile[i];
     if (el) {
       utxos = utxos.concat(el);

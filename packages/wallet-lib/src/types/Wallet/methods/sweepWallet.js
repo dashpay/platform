@@ -18,7 +18,7 @@ async function sweepWallet(opts = {}) {
     if (self.walletType !== WALLET_TYPES.SINGLE_ADDRESS) {
       return reject(new Error('Can only sweep wallet initialized from privateKey'));
     }
-    const account = self.getAccount({ index: 0 });
+    const account = await self.getAccount({ index: 0 });
     const currentPublicAddress = account.getAddress().address;
     await account.isReady();
     const balance = await account.getTotalBalance();

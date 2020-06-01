@@ -7,9 +7,9 @@ describe('Account - sign', function suite() {
   this.timeout(10000);
   let wallet;
   let account;
-  beforeEach(() => {
+  beforeEach(async () => {
     wallet = new Wallet({ offlineMode: true });
-    account = wallet.getAccount({ index: 0 });
+    account = await wallet.getAccount({ index: 0 });
   });
 
   afterEach(() => {

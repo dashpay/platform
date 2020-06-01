@@ -36,8 +36,10 @@ const opts = {
   mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
 };
 const wallet = new Wallet(opts);
-const account = wallet.getAccount();
-account.events.on('ready', _ => console.log('Account ready to be used'));
+wallet.getAccount()
+    .then((account)=>{
+        console.log('Account ready to be used')
+    });
 ```
 
 In above code, we did not specify any `transport` instance, which by default, is equivalent to using DAPI as a transporter; The `adapter` being not set, we will use by default an in-memory (without persistance) adapter.    
@@ -54,8 +56,6 @@ Quick note :
 - If no adapter specified, Wallet-lib will use a in-memory store (and warn you about it).
 - If no transport specified, Wallet-lib will connect to DAPI.
 - `wallet.getAccount()` is by default equivalent to `wallet.getAccount(0)`, where 0 correspond of the account index as per [BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki).
-
-A sugar-syntax replacement for `account.events.on('ready'), exist in a promise : await account.isReady()`
 
 ## Make a payment to an address
 

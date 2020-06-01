@@ -150,12 +150,15 @@ class Account extends EventEmitter {
       }
     }
     this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
-    // It's actually Account that mutates wallet.accounts to add itself.
-    // We might want to get rid of that as it can be really confusing.
-    // It would gives that responsability to createAccount to create
-    // (and therefore push to accounts).
-    _addAccountToWallet(this, wallet);
-    _initializeAccount(this, wallet.plugins);
+  }
+
+  // It's actually Account that mutates wallet.accounts to add itself.
+  // We might want to get rid of that as it can be really confusing.
+  // It would gives that responsability to createAccount to create
+  // (and therefore push to accounts).
+  async init(wallet) {
+    await _addAccountToWallet(this, wallet);
+    await _initializeAccount(this, wallet.plugins);
   }
 
   async isInitialized() {

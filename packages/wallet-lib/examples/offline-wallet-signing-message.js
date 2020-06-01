@@ -8,15 +8,16 @@ const walletOpts = {
   mnemonic,
 };
 const wallet = new Wallet(walletOpts);
-const account = wallet.getAccount();
+wallet.getAccount()
+  .then((account) => {
+    const startSigningMessage = () => {
+      const message = new Message('Hello world!');
 
-const startSigningMessage = () => {
-  const message = new Message('Hello world!');
+      const idPrivateKey = account.getIdentityHDKey().privateKey;
 
-  const idPrivateKey = account.getIdentityHDKey().privateKey;
-
-  const signed = account.sign(message, idPrivateKey);
-  const verify = message.verify(idPrivateKey.toAddress().toString(), signed.toString()); // true
-};
-
-account.on('ready', startSigningMessage);
+      const signed = account.sign(message, idPrivateKey);
+      const verify = message.verify(idPrivateKey.toAddress().toString(), signed.toString()); // true
+      console.log('Verified message result:', verify);
+    };
+    startSigningMessage();
+  });

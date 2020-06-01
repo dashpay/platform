@@ -10,7 +10,7 @@ export declare class Wallet {
     plugins:[Plugins];
     passphrase?:string;
     constructor(options?: Wallet.Options);
-    createAccount(accOptions: Account.Options): Account;
+    createAccount(accOptions: Account.Options): Promise<Account>;
     disconnect(): void;
     exportWallet():Mnemonic["toString"];
     fromMnemonic(mnemonic: Mnemonic):void;
@@ -19,7 +19,7 @@ export declare class Wallet {
     fromHDPublicKey(HDPublicKey:HDPublicKey):void;
     fromSeed(seed:string):void;
     generateNewWalletId():void;
-    getAccount(accOptions?: Wallet.getAccOptions): Account;
+    getAccount(accOptions?: Wallet.getAccOptions): Promise<Account>;
     updateNetwork(network:Network):boolean;
 
 }

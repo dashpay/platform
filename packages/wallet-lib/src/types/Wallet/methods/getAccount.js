@@ -8,7 +8,7 @@ const { is } = require('../../../utils');
  * @return {*|account}
  */
 
-function getAccount(accountOpts = {}) {
+async function getAccount(accountOpts = {}) {
   if (is.num(accountOpts)) {
     throw new Error('getAccount expected index integer to be a property of accountOptions');
   }

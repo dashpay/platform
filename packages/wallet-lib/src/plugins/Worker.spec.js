@@ -1,6 +1,7 @@
 const { expect } = require('chai');
 const { EventEmitter } = require('events');
 const WorkerSpec = require('./Worker');
+const FaultyWorker = require('../../fixtures/plugins/FaultyWorker');
 
 describe('Plugins - Worker', function suite() {
   this.timeout(60000);
@@ -43,5 +44,10 @@ describe('Plugins - Worker', function suite() {
         done();
       }, 400);
     }, 999);
+  });
+  it('should handle faulty worker', function () {
+    const faultyWorker = new FaultyWorker();
+    const expectedException1 = 'Some reason.';
+    expect(() => faultyWorker.execute()).to.throw(expectedException1);
   });
 });

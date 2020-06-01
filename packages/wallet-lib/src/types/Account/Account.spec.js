@@ -37,31 +37,35 @@ describe('Account - class', function suite() {
   it('should create an account', () => {
     const mockWallet = mocks.wallet;
     const account = new Account(mockWallet, { injectDefaultPlugins: false });
-    expect(account).to.be.deep.equal(mockWallet.accounts[0]);
-    expect(account.index).to.be.deep.equal(0);
-    expect(account.injectDefaultPlugins).to.be.deep.equal(false);
-    expect(account.allowSensitiveOperations).to.be.deep.equal(false);
-    expect(account.state.isReady).to.be.deep.equal(false);
-    expect(account.type).to.be.deep.equal(undefined);
-    expect(account.transactions).to.be.deep.equal({});
-    expect(account.label).to.be.deep.equal(null);
-    expect(account.transport).to.be.deep.equal(undefined);
-    expect(account.cacheTx).to.be.deep.equal(true);
-    expect(account.plugins).to.be.deep.equal({
-      workers: {}, standard: {}, watchers: {},
-    });
-    if(!process.browser){
-      expect(account.readinessInterval.constructor.name).to.be.equal('Timeout');
-      expect(account.readinessInterval._idleTimeout).to.be.equal(200);
-    }
+    account.init(mockWallet).then(()=>{
+      expect(account).to.be.deep.equal(mockWallet.accounts[0]);
+      expect(account.index).to.be.deep.equal(0);
+      expect(account.injectDefaultPlugins).to.be.deep.equal(false);
+      expect(account.allowSensitiveOperations).to.be.deep.equal(false);
+      expect(account.state.isReady).to.be.deep.equal(true);
+      expect(account.type).to.be.deep.equal(undefined);
+      expect(account.transactions).to.be.deep.equal({});
+      expect(account.label).to.be.deep.equal(null);
+      expect(account.transport).to.be.deep.equal(undefined);
+      expect(account.cacheTx).to.be.deep.equal(true);
+      expect(account.plugins).to.be.deep.equal({
+        workers: {}, standard: {}, watchers: {},
+      });
 
-    account.disconnect();
+      account.disconnect();
+    })
   });
-  it('should correctly create the right expected index', () => {
+  it('should correctly create the right expected index', async () => {
     const mockWallet = mocks.wallet;
     const account = new Account(mockWallet, { injectDefaultPlugins: false });
+    await account.init(mockWallet);
+
     const account2 = new Account(mockWallet, { index: 10, injectDefaultPlugins: false });
+    await account2.init(mockWallet);
+
     const account3 = new Account(mockWallet, { injectDefaultPlugins: false });
+    await account3.init(mockWallet);
+
     expect(account.index).to.be.deep.equal(1);
     expect(account2.index).to.be.deep.equal(10);
     expect(account3.index).to.be.deep.equal(2);

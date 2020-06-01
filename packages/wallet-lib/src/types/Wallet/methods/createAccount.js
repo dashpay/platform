@@ -4,7 +4,7 @@ const { WALLET_TYPES } = require('../../../CONSTANTS');
  * @param {object} accountOpts - options to pass, will autopopulate some
  * @return {Account} - account object
  */
-function createAccount(accountOpts) {
+async function createAccount(accountOpts) {
   /**
    *   Wallet.createAccount calls Account that depends on Wallet.
    *   In order to avoid a cyclic dependency issue we put this require here and
@@ -21,6 +21,14 @@ function createAccount(accountOpts) {
   };
   if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) { baseOpts.privateKey = this.privateKey; }
   const opts = Object.assign(baseOpts, accountOpts);
-  return new Account(this, opts);
+
+  const account = new Account(this, opts);
+  try {
+    await account.init(this);
+    return account;
+  } catch (e) {
+    await account.disconnect();
+    throw e;
+  }
 }
 module.exports = createAccount;

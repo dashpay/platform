@@ -46,6 +46,7 @@ class FakeNet extends BaseTransporter {
     this.blockHash = blocksData.heights[this.height];
   }
 
+  // eslint-disable-next-line class-methods-use-this
   getMnemonicList() {
     return [
       'nerve iron scrap chronic error wild glue sound range hurdle alter dwarf',

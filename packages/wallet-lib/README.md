@@ -47,11 +47,10 @@ In your file, where you want to execute it :
 const { Wallet, EVENTS } = require('@dashevo/wallet-lib');
 
 const wallet = new Wallet();
-const start = () => {
-    const account = wallet.getAccount();
+wallet.getAccount((account)=>{
     // Do something with account.
-}
-account.events.on(EVENTS.READY, start);
+
+});
 ```
 
 Wallet will by default connects to DAPI and use either localforage (browser based device) or a InMem adapter.  

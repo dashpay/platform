@@ -52,9 +52,7 @@ describe('Wallet-lib - functional ', function suite() {
   });
   describe('Account', () => {
     it('should await readiness', async () => {
-      account = wallet.getAccount();
-      expect(account.state.isReady).to.be.deep.equal(false);
-
+      account = await wallet.getAccount();
       await account.isReady();
       expect(account.state.isReady).to.be.deep.equal(true);
     });

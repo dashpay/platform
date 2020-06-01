@@ -12,14 +12,13 @@ describe('Wallet - sweepWallet', function suite() {
   this.timeout(20000);
   let emptyWallet;
   let emptyAccount;
-  before(() => {
+  before(async () => {
     emptyWallet = new Wallet({
       privateKey: paperWallet.privateKey,
       network: 'testnet',
-      // offlineMode: true,
       transporter: { type: 'DAPIClient' },
     });
-    emptyAccount = emptyWallet.getAccount();
+    emptyAccount = await emptyWallet.getAccount();
   });
   it('should warn on empty balance', async () => {
     await emptyAccount.isReady();

@@ -1,6 +1,6 @@
 const _ = require('lodash');
 const EventEmitter = require('events');
-const { InjectionToPluginUnallowed } = require('../errors');
+const { InjectionToPluginUnallowed, PluginFailedOnStart } = require('../errors');
 const { SAFE_FUNCTIONS, SAFE_PROPERTIES } = require('../CONSTANTS').INJECTION_LISTS;
 
 const defaultOpts = {
@@ -29,11 +29,15 @@ class StandardPlugin extends EventEmitter {
   async startPlugin() {
     const self = this;
 
-    if (this.executeOnStart === true && this.onStart) {
-      await this.onStart();
+    try {
+      if (this.executeOnStart === true && this.onStart) {
+        await this.onStart();
+      }
+      const eventType = `PLUGIN/${this.name.toUpperCase()}/STARTED`;
+      self.parentEvents.emit(eventType, { type: eventType, payload: null });
+    } catch (e) {
+      throw new PluginFailedOnStart(this.pluginType, this.name, e.message);
     }
-    const eventType = `PLUGIN/${this.name.toUpperCase()}/STARTED`;
-    self.parentEvents.emit(eventType, { type: eventType, payload: null });
   }
 
   inject(name, obj, allowSensitiveOperations = false) {

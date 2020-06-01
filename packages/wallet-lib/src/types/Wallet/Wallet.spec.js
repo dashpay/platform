@@ -35,7 +35,6 @@ describe('Wallet - class', function suite() {
     expect(Dashcore.Mnemonic(wallet2.mnemonic).toString()).to.be.equal(wallet2.mnemonic);
     expect(wallet2.mnemonic).to.be.not.equal(wallet1.mnemonic);
     expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
-
     wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
     });
@@ -87,6 +86,7 @@ describe('Wallet - class', function suite() {
       wallet1.disconnect();
     });
   });
+
   it('should create a wallet with HDPublicKey', () => {
     const wallet1 = new Wallet({ HDPublicKey: gatherSailMnemonic.testnet.external.hdpubkey, network: 'testnet', ...mocks });
     expect(wallet1.walletType).to.be.equal(WALLET_TYPES.HDPUBLIC);
@@ -136,9 +136,10 @@ describe('Wallet - Get/Create Account',  function suite() {
   this.timeout(10000);
   const wallet1 = new Wallet({ mnemonic: fluidMnemonic.mnemonic, ...mocks });
 
-  it('should be able to create/get a wallet', () => {
-    const acc1 = wallet1.createAccount({ injectDefaultPlugins: false });
-    const acc2 = wallet1.createAccount({ injectDefaultPlugins: false });
+  it('should be able to create/get a wallet', async () => {
+    const acc1 = await wallet1.createAccount({ injectDefaultPlugins: false });
+    const acc2 = await wallet1.createAccount({ injectDefaultPlugins: false });
+
     [acc1, acc2].forEach((el, i) => {
       // eslint-disable-next-line no-unused-expressions
       expect(el).to.exist;
@@ -149,11 +150,11 @@ describe('Wallet - Get/Create Account',  function suite() {
     acc1.disconnect();
     acc2.disconnect();
   });
-  it('should get an account in a wallet', () => {
-    const acc1 = wallet1.getAccount({ index: 0 });
-    const acc2 = wallet1.getAccount({ index: 1 });
+  it('should get an account in a wallet', async () => {
+    const acc1 = await wallet1.getAccount({ index: 0 });
+    const acc2 = await wallet1.getAccount({ index: 1 });
 
-    expect(acc1).to.be.deep.equal(wallet1.getAccount());
+    expect(acc1).to.be.deep.equal(await wallet1.getAccount());
 
     [acc1, acc2].forEach((el, i) => {
       // eslint-disable-next-line no-unused-expressions
@@ -162,7 +163,9 @@ describe('Wallet - Get/Create Account',  function suite() {
       expect(el.constructor.name).to.equal('Account');
       expect(el.BIP44PATH).to.equal(`m/44'/1'/${i}'`);
     });
-    wallet1.disconnect();
+    wallet1.storage.on('CONFIGURED', () => {
+      wallet1.disconnect();
+    });
   });
   it('should encrypt wallet with a passphrase', () => {
     const network = Dashcore.Networks.testnet.toString();
@@ -190,20 +193,18 @@ describe('Wallet - Get/Create Account',  function suite() {
     };
     const walletTestnet = new Wallet(Object.assign(config, mocks));
 
-    const account = walletTestnet.createAccount();
-    // eslint-disable-next-line no-unused-expressions
-    expect(account).to.exist;
-    expect(account.BIP44PATH.split('/')[3]).to.equal('0\'');
-    expect(account.index).to.equal(0);
+    walletTestnet.createAccount().then(async (account)=>{
+      // eslint-disable-next-line no-unused-expressions
+      expect(account).to.exist;
+      expect(account.BIP44PATH.split('/')[3]).to.equal('0\'');
+      expect(account.index).to.equal(0);
 
-
-    const accountSpecificIndex = walletTestnet.createAccount({ index: 42 });
-    expect(accountSpecificIndex.BIP44PATH.split('/')[3]).to.equal('42\'');
-    expect(accountSpecificIndex.index).to.equal(42);
-    walletTestnet.storage.on('CONFIGURED', () => {
+      const accountSpecificIndex = await walletTestnet.createAccount({ index: 42 });
+      expect(accountSpecificIndex.BIP44PATH.split('/')[3]).to.equal('42\'');
+      expect(accountSpecificIndex.index).to.equal(42);
       walletTestnet.disconnect();
       done();
-    });
+    })
   });
   it('should not leak', () => {
     const mockOpts1 = { };

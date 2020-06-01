@@ -1,4 +1,4 @@
-**Usage**: `wallet.createAccount(accountOpts)`  
+**Usage**: `await wallet.createAccount(accountOpts)`  
 **Description**: This method, equivalent of a `new Account(wallet, accountOpts)` will create a new account having the specified options.   
 
 Parameters:   
