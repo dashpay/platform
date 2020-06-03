@@ -38,38 +38,33 @@ function impactAffectedInputs({ inputs }) {
  * @param transaction {Transaction|RawTransaction} - A txobject or it's hexadecimal representation
  * @return {Promise<*>}
  */
-// FIXME : IsIS needs to be removed.
 async function broadcastTransaction(transaction) {
-  try {
-    if (!this.transporter.isValid) throw new ValidTransportLayerRequired('broadcast');
+  if (!this.transporter.isValid) throw new ValidTransportLayerRequired('broadcast');
 
-    // We still support having in rawtransaction, if this is the case
-    // we first need to reform our object
-    if (is.string(transaction)) {
-      const rawtx = transaction.toString();
-      if (!is.rawtx(rawtx)) throw new InvalidRawTransaction(rawtx);
-      return broadcastTransaction.call(this, new Dashcore.Transaction(rawtx));
-    }
-
-    if (!is.dashcoreTransaction(transaction)) {
-      throw new InvalidDashcoreTransaction(transaction);
-    }
-
-    if (!transaction.isFullySigned()) {
-      throw new Error('Transaction not signed.');
-    }
-    const txid = await this.transporter.sendTransaction(transaction.toString());
-    // We now need to impact/update our affected inputs
-    // so we clear them out from UTXOset.
-    const { inputs } = new Dashcore.Transaction(transaction).toObject();
-    impactAffectedInputs.call(this, {
-      inputs,
-    });
-
-    return txid;
-  } catch (e) {
-    return e;
+  // We still support having in rawtransaction, if this is the case
+  // we first need to reform our object
+  if (is.string(transaction)) {
+    const rawtx = transaction.toString();
+    if (!is.rawtx(rawtx)) throw new InvalidRawTransaction(rawtx);
+    return broadcastTransaction.call(this, new Dashcore.Transaction(rawtx));
   }
+
+  if (!is.dashcoreTransaction(transaction)) {
+    throw new InvalidDashcoreTransaction(transaction);
+  }
+
+  if (!transaction.isFullySigned()) {
+    throw new Error('Transaction not signed.');
+  }
+  const txid = await this.transporter.sendTransaction(transaction.toString());
+  // We now need to impact/update our affected inputs
+  // so we clear them out from UTXOset.
+  const { inputs } = new Dashcore.Transaction(transaction).toObject();
+  impactAffectedInputs.call(this, {
+    inputs,
+  });
+
+  return txid;
 }
 
 module.exports = broadcastTransaction;

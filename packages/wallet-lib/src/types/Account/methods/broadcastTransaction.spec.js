@@ -5,8 +5,38 @@ const validRawTxs = require('../../../../fixtures/rawtx').valid;
 const invalidRawTxs = require('../../../../fixtures/rawtx').invalid;
 const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
 
+const { PrivateKey } = Dashcore;
+
 describe('Account - broadcastTransaction', function suite() {
   this.timeout(10000);
+  let utxos;
+  let address;
+  let keysToSign;
+  let oneToOneTx;
+  let fee;
+
+  beforeEach(() => {
+    utxos = [
+      {
+        address: 'yj8sq7ogzz6JtaxpBQm5Hg9YaB5cKExn5T',
+        txid: 'bfec828ed8ed562f53921e9580e847670044e870dda0e67b8f8d0c8d77962f7f',
+        vout: 1,
+        scriptPubKey: '76a914fa4b2bb85ad9b4075addb6d0eb50fa8b60c746c588ac',
+        amount: 138.7944
+      }
+    ];
+    fee = 680;
+    address = 'yTBXsrcGw74yMUsK34fBKAWJx3RNCq97Aq';
+    keysToSign = [
+        new PrivateKey('26d6b24119d1a71de6372ea2d3dc22a014d37e4828b43db6936cb41ea461cce8')
+    ];
+    oneToOneTx = new Dashcore.Transaction()
+        .from(utxos)
+        .to(address, 138)
+        .fee(fee);
+    oneToOneTx.sign(keysToSign);
+  });
+
   it('should throw error on missing transport', async () => {
     const expectedException1 = 'A transport layer is needed to perform a broadcast';
     const self = {
@@ -57,29 +87,9 @@ describe('Account - broadcastTransaction', function suite() {
       },
     };
 
-    const tx = new Dashcore.Transaction(validRawTxs.tx1to1Mainnet);
+    const tx = oneToOneTx;
     return broadcastTransaction
       .call(self, tx)
-      .then(
-        () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
-      );
-  });
-  it('should work on valid rawtx', async () => {
-    let sendCalled = +1;
-    let searchCalled = +1;
-    const self = {
-      transporter: {
-        isValid: true,
-        sendTransaction: () => sendCalled = +1,
-      },
-      storage: {
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
-      },
-    };
-
-    return broadcastTransaction
-      .call(self, validRawTxs.tx1to1Mainnet)
       .then(
         () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
       );
@@ -99,7 +109,7 @@ describe('Account - broadcastTransaction', function suite() {
     };
 
     return broadcastTransaction
-      .call(self, validRawTxs.tx1to1Mainnet)
+      .call(self, oneToOneTx)
       .then(
         () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
       );
