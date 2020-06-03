@@ -56,6 +56,19 @@ function startExecutor() {
   }, fastFetchThreshold);
 }
 
+async function fetchPreviousTransactions(addressList) {
+  const self = this;
+  addressList.forEach((address) => {
+    self.getAddressSummary(address).then((summary) => {
+      summary.transactions.forEach((txid) => {
+        self.getTransaction(txid).then((tx) => {
+          self.announce(EVENTS.FETCHED_TRANSACTION, tx);
+        });
+      });
+    });
+  });
+}
+
 // const stopExecutor = (subscriptions) => {
 //   subscriptions.addresses = clearInterval(subscriptions.addresses);
 //   subscriptions.addresses = null;
@@ -85,6 +98,8 @@ module.exports = async function subscribeToAddressesTransactions(addressList) {
     }
   }
   if (immediatelyExecutedAddresses.length) {
-    await Promise.resolve(executor.call(this, immediatelyExecutedAddresses));
+    const immediateExecutorPromise = executor.call(this, immediatelyExecutedAddresses);
+    const fetchPrevTxs = fetchPreviousTransactions.call(this, immediatelyExecutedAddresses);
+    await Promise.all([immediateExecutorPromise, fetchPrevTxs]);
   }
 };
