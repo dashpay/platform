@@ -19,7 +19,7 @@ const addUTXOToAddress = function (output, address, txid, outputIndex) {
     });
     return false;
   }
-  // Right now, we do not receive txid from getUTXO of DAPIClient
+  // Right now, we do not receive txid from getUTXO of DAPIClientWrapper
   // eslint-disable-next-line no-param-reassign
   output.txid = txid;
   // eslint-disable-next-line no-param-reassign

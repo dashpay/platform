@@ -1,6 +1,6 @@
 const logger = require('../../../../logger');
 
 module.exports = async function getBestBlockHash() {
-  logger.silly('DAPIClient.getBestBlockHash');
+  logger.silly('DAPIClientWrapper.getBestBlockHash');
   return this.client.getBestBlockHash();
 };

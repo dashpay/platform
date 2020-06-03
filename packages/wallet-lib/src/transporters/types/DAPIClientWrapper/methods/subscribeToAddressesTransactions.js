@@ -45,12 +45,12 @@ async function executor(forcedAddressList = null) {
 
 function startExecutor() {
   const self = this;
-  logger.silly('DAPIClient.subscribeToAddressesTransactions.startExecutor');
+  logger.silly('DAPIClientWrapper.subscribeToAddressesTransactions.startExecutor');
   this.state.executors.addresses = setInterval(() => {
     try {
       executor.call(self);
     } catch (e) {
-      logger.error('DAPIClient.subscribeToAddressesTransactions.executor failed', e);
+      logger.error('DAPIClientWrapper.subscribeToAddressesTransactions.executor failed', e);
       throw e;
     }
   }, fastFetchThreshold);
@@ -80,7 +80,7 @@ module.exports = async function subscribeToAddressesTransactions(addressList) {
     try {
       startExecutor.call(this);
     } catch (e) {
-      logger.error('DAPIClient.subscribeToAddressesTransactions.startingExecutor failed', e);
+      logger.error('DAPIClientWrapper.subscribeToAddressesTransactions.startingExecutor failed', e);
       throw e;
     }
   }

@@ -5,7 +5,7 @@ const fixture = {
   coreVersion: 150000, protocolVersion: 70216, blocks: 9495, timeOffset: 0, connections: 16, proxy: '', difficulty: 0.001447319555790497, testnet: false, relayFee: 0.00001, errors: '', network: 'testnet',
 };
 
-describe('transporters - DAPIClient - .getStatus', function suite() {
+describe('transporters - DAPIClientWrapper - .getStatus', function suite() {
   this.timeout(10000);
   const transporter = transporters.resolve('DAPIClient');
 

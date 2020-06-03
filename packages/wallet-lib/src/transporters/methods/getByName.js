@@ -2,7 +2,7 @@ module.exports = function getByName(transporterName) {
   let Transporter;
   const name = transporterName.toString().toLowerCase();
   if (name.startsWith('dapi')) {
-    Transporter = this.DAPIClient;
+    Transporter = this.DAPIClientWrapper;
   } else if (name.startsWith('rpc')) {
     Transporter = this.RPCClient;
   } else if (name.startsWith('protocol')) {

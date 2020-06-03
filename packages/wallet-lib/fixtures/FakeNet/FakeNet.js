@@ -4,7 +4,7 @@ const BaseTransporter = require('../../src/transporters/types/BaseTransporter/Ba
 const bestBlockDataHeight = 21546;
 /**
  * This is a saved snapshot of some selected blocks and transactions
- * Meant to be used as replacement of DAPIClient.
+ * Meant to be used as replacement of DAPIClientWrapper.
  * Read more on the specificities on Readme.md and the things that are saved
  *
  */

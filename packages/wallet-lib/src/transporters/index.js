@@ -1,11 +1,11 @@
 const BaseTransporter = require('./types/BaseTransporter/BaseTransporter');
-const DAPIClient = require('./types/DAPIClient/DAPIClient');
+const DAPIClientWrapper = require('./types/DAPIClientWrapper/DAPIClientWrapper');
 const RPCClient = require('./types/RPCClient/RPCClient');
 const ProtocolClient = require('./types/ProtocolClient/ProtocolClient');
 
 const Transporters = {
   BaseTransporter,
-  DAPIClient,
+  DAPIClientWrapper,
   RPCClient,
   ProtocolClient,
 };

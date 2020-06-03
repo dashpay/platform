@@ -2,7 +2,7 @@ const EventEmitter = require('events');
 
 class BaseTransporter extends EventEmitter {
   constructor(props) {
-    super(props);
+    super();
     this.type = props.type;
     this.state = {
       block: null,

@@ -1,58 +1,52 @@
 const { is } = require('../../utils');
 
-const defaultDAPIOpts = {
-  seeds: [
-    { service: 'seed-1.evonet.networks.dash.org' },
-    { service: 'seed-2.evonet.networks.dash.org' },
-    { service: 'seed-3.evonet.networks.dash.org' },
-    { service: 'seed-4.evonet.networks.dash.org' },
-    { service: 'seed-5.evonet.networks.dash.org' },
-  ],
-  timeout: 20000,
-  retries: 5,
-};
+
+const defaultTransporterType = 'DAPIClientWrapper';
+/**
+ * A number, or a string containing a number.
+ * @typedef {(DAPIClient|DAPIClientWrapper|RPCClient|ProtocolClient)} Transporter
+ */
+
 /**
  * Resolves a valid transporter.
  * By default, return a DAPI transporter
- *
- * @param {String|Object|Transporter} props - name of the transporter or options object
- * @param {String} props.type - name of the transporter
- * @param {String} props.devnetName - name of the devnet to connect ('evonet' (def))
- * @return {Transporter}
+ * @param {string|object|function|Transporter} [props] - name of the transporter or options object
+ * @param {string} props.type - name of the transporter
+ * @return {object}
  */
-module.exports = function resolve(props = { type: 'DAPIClient' }) {
-  let opts = {};
-  let Transporter = this.getByName('dapi');
+module.exports = function resolve(props = { type: defaultTransporterType }) {
+  // Used to hold a transporter constructor
+  let Transporter;
+
+  // If an instance is created, will be hold in order to be validated
   let transporter;
-  if (is.string(props)) {
-    try {
-      Transporter = this.getByName(props);
-    } catch (e) {
-      Transporter = this.getByName('BaseTransporter');
-    }
-    // TODO: Remove me when DAPIClient has correct seed
-    if (Transporter === this.DAPIClient) {
-      opts = defaultDAPIOpts;
-    }
-  } else if (is.obj(props) && props.type) {
-    Transporter = this.getByName(props.type || 'dapi');
-    // TODO: Remove me when DAPIClient has correct seed
-    if (Transporter === this.DAPIClient && !props.seeds) {
-      opts = defaultDAPIOpts;
-    }
-    opts = Object.assign(opts, props);
-  } else {
-    if (props === undefined) {
-      return resolve('dapi');
-    }
-    // User may have specified a whole instance of his client.
-    if (props.constructor.name !== Function.name) {
-      transporter = props;
-    }
-    // User may have specified a Transporter class that will be validated and used.
-    Transporter = props;
+  if (!props) {
+    throw new Error('Unexpected null parameter');
   }
-  if (!transporter) transporter = new Transporter(opts);
+
+  const isConstructor = !!props.prototype;
+  // We passed a constructor that we expect being returned as instance so we init it.
+  if (isConstructor) {
+    Transporter = props;
+    transporter = new Transporter();
+  } else {
+    const isObjectProps = props.constructor === Object;
+    // We allow to pass the name in props.type
+    if (isObjectProps) {
+      Transporter = this.getByName(props.type || defaultTransporterType);
+      transporter = new Transporter(props);
+    } else if (!is.string(props)) {
+      // Then it's simply an already initialized instance that we return;
+      transporter = props;
+    } else {
+      // At this point, props can only be string
+      Transporter = this.getByName(props);
+      transporter = new Transporter(props);
+    }
+  }
+
+  // Validation is helpful to inform dev about missing needed key and for Account
+  // to know if it's should default on offlineMode and avoid trying use transport layer
   transporter.isValid = this.validate(transporter);
   return transporter;
 };

@@ -18,6 +18,7 @@ describe('Wallet - sweepWallet', function suite() {
       network: 'testnet',
       transporter: { type: 'DAPIClient' },
     });
+
     emptyAccount = await emptyWallet.getAccount();
   });
   it('should warn on empty balance', async () => {

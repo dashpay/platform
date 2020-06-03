@@ -19,7 +19,7 @@ const fixture = {
     '3ab6ebc86b9cdea1580d376510e54a904f74fcaf38dfe9363fb44bcf33f83703',
   ],
 };
-describe('transporters - DAPIClient - .getAddressSummary', function suite() {
+describe('transporters - DAPIClientWrapper - .getAddressSummary', function suite() {
   this.timeout(10000);
   const transporter = transporters.resolve('DAPIClient');
 
