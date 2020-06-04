@@ -60,10 +60,11 @@ class TransactionsFilterStreamPromiseClient {
   /**
    * @param {TransactionsWithProofsRequest} transactionsWithProofsRequest The request proto
    * @param {?Object<string, string>} metadata User defined call metadata
+   * @param {CallOptions} [options={}]
    * @return {!grpc.web.ClientReadableStream<!TransactionsWithProofsResponse>|undefined}
    *     The XHR Node Readable Stream
    */
-  subscribeToTransactionsWithProofs(transactionsWithProofsRequest, metadata = {}) {
+  subscribeToTransactionsWithProofs(transactionsWithProofsRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -83,6 +84,7 @@ class TransactionsFilterStreamPromiseClient {
             ),
           ),
         ],
+        ...options,
       },
     );
   }

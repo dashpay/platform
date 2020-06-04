@@ -97,9 +97,10 @@ class PlatformPromiseClient {
   /**
    * @param {!ApplyStateTransitionRequest} applyStateTransitionRequest
    * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
    * @return {Promise<!ApplyStateTransitionResponse>}
    */
-  applyStateTransition(applyStateTransitionRequest, metadata = {}) {
+  applyStateTransition(applyStateTransitionRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -119,6 +120,7 @@ class PlatformPromiseClient {
             ),
           ),
         ],
+        ...options,
       },
     );
   }
@@ -126,9 +128,10 @@ class PlatformPromiseClient {
   /**
    * @param {!GetIdentityRequest} getIdentityRequest
    * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
    * @return {Promise<!GetIdentityResponse>}
    */
-  getIdentity(getIdentityRequest, metadata = {}) {
+  getIdentity(getIdentityRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -148,6 +151,7 @@ class PlatformPromiseClient {
             ),
           ),
         ],
+        ...options,
       },
     );
   }
@@ -156,9 +160,10 @@ class PlatformPromiseClient {
    *
    * @param {!GetDataContractRequest} getDataContractRequest
    * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
    * @returns {Promise<!GetDataContractResponse>}
    */
-  getDataContract(getDataContractRequest, metadata = {}) {
+  getDataContract(getDataContractRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -178,6 +183,7 @@ class PlatformPromiseClient {
             ),
           ),
         ],
+        ...options,
       },
     );
   }
@@ -186,9 +192,10 @@ class PlatformPromiseClient {
    *
    * @param {!GetDocumentsRequest} getDocumentsRequest
    * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
    * @returns {Promise<!GetDocumentsResponse>}
    */
-  getDocuments(getDocumentsRequest, metadata = {}) {
+  getDocuments(getDocumentsRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -208,24 +215,19 @@ class PlatformPromiseClient {
             ),
           ),
         ],
+        ...options,
       },
     );
-  }
-
-  /**
-   * @param {string} protocolVersion
-   */
-  setProtocolVersion(protocolVersion) {
-    this.setProtocolVersion = protocolVersion;
   }
 
   /**
    *
    * @param {!GetIdentityByFirstPublicKeyRequest} getIdentityByFirstPublicKeyRequest
    * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
    * @returns {Promise<!GetDocumentsResponse>}
    */
-  getIdentityByFirstPublicKey(getIdentityByFirstPublicKeyRequest, metadata = {}) {
+  getIdentityByFirstPublicKey(getIdentityByFirstPublicKeyRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -245,18 +247,19 @@ class PlatformPromiseClient {
             ),
           ),
         ],
+        ...options,
       },
     );
   }
-
 
   /**
    *
    * @param {!GetIdentityIdByFirstPublicKeyRequest} getIdentityIdByFirstPublicKeyRequest
    * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
    * @returns {Promise<!GetDocumentsResponse>}
    */
-  getIdentityIdByFirstPublicKey(getIdentityIdByFirstPublicKeyRequest, metadata = {}) {
+  getIdentityIdByFirstPublicKey(getIdentityIdByFirstPublicKeyRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -276,8 +279,16 @@ class PlatformPromiseClient {
             ),
           ),
         ],
+        ...options,
       },
     );
+  }
+
+  /**
+   * @param {string} protocolVersion
+   */
+  setProtocolVersion(protocolVersion) {
+    this.setProtocolVersion = protocolVersion;
   }
 }
 
