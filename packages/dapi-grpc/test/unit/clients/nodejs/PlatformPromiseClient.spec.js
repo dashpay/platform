@@ -9,7 +9,7 @@ describe('PlatformPromiseClient', () => {
     request = 'test request';
     response = 'test response';
 
-    platformPromiseClient = new PlatformPromiseClient('localhost');
+    platformPromiseClient = new PlatformPromiseClient('https://localhost/');
     platformPromiseClient.client = {
       applyStateTransition: this.sinon.stub().resolves(response),
       getIdentity: this.sinon.stub().resolves(response),

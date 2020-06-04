@@ -52,6 +52,7 @@ const {
 } = require('./core_protoc');
 
 const getCoreDefinition = require('../../lib/getCoreDefinition');
+const stripHostname = require('../../lib/utils/stripHostname');
 
 const CoreNodeJSClient = getCoreDefinition();
 
@@ -62,7 +63,9 @@ class CorePromiseClient {
    * @param {?Object} options
    */
   constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
-    this.client = new CoreNodeJSClient(hostname, credentials, options);
+    const strippedHostname = stripHostname(hostname);
+
+    this.client = new CoreNodeJSClient(strippedHostname, credentials, options);
 
     this.client.getStatus = promisify(
       this.client.getStatus.bind(this.client),

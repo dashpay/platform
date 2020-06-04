@@ -9,7 +9,7 @@ describe('CorePromiseClient', () => {
     request = 'test request';
     response = 'test response';
 
-    corePromiseClient = new CorePromiseClient('localhost');
+    corePromiseClient = new CorePromiseClient('https://localhost/');
     corePromiseClient.client = {
       getStatus: this.sinon.stub().resolves(response),
       getBlock: this.sinon.stub().resolves(response),

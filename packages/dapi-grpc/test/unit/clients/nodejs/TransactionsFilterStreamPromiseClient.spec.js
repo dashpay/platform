@@ -9,7 +9,7 @@ describe('TransactionsFilterStreamPromiseClient', () => {
     request = 'test request';
     response = 'test response';
 
-    transactionsFilterStreamPromiseClient = new TransactionsFilterStreamPromiseClient('localhost');
+    transactionsFilterStreamPromiseClient = new TransactionsFilterStreamPromiseClient('https://localhost/');
     transactionsFilterStreamPromiseClient.client = {
       subscribeToTransactionsWithProofs: this.sinon.stub().resolves(response),
     };

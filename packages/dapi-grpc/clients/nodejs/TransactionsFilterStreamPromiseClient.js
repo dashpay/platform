@@ -38,6 +38,7 @@ const {
 const getTransactionsFilterStreamDefinition = require(
   '../../lib/getTransactionsFilterStreamDefinition',
 );
+const stripHostname = require('../../lib/utils/stripHostname');
 
 const TransactionsFilterStreamNodeJSClient = getTransactionsFilterStreamDefinition();
 
@@ -49,7 +50,9 @@ class TransactionsFilterStreamPromiseClient {
    * @param {?Object} options
    */
   constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
-    this.client = new TransactionsFilterStreamNodeJSClient(hostname, credentials, options);
+    const strippedHostname = stripHostname(hostname);
+
+    this.client = new TransactionsFilterStreamNodeJSClient(strippedHostname, credentials, options);
 
     this.protocolVersion = undefined;
   }

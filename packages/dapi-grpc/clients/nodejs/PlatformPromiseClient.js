@@ -52,6 +52,7 @@ const {
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../lib/getPlatformDefinition');
+const stripHostname = require('../../lib/utils/stripHostname');
 
 const PlatformNodeJSClient = getPlatformDefinition();
 
@@ -62,7 +63,9 @@ class PlatformPromiseClient {
    * @param {?Object} options
    */
   constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
-    this.client = new PlatformNodeJSClient(hostname, credentials, options);
+    const strippedHostname = stripHostname(hostname);
+
+    this.client = new PlatformNodeJSClient(strippedHostname, credentials, options);
 
     this.client.applyStateTransition = promisify(
       this.client.applyStateTransition.bind(this.client),
