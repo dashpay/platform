@@ -58,7 +58,7 @@ class Worker extends StandardPlugin {
 
       if (this.executeOnStart) await this.execWorker();
     } catch (err) {
-      throw new WorkerFailedOnStart(this.name, err.message);
+      throw new WorkerFailedOnStart(this.name, err.message, err);
     }
   }
 
@@ -87,7 +87,7 @@ class Worker extends StandardPlugin {
         await this.execute();
       } catch (err) {
         await this.stopWorker();
-        throw new WorkerFailedOnExecute(this.name, err.message);
+        throw new WorkerFailedOnExecute(this.name, err.message, err);
       }
     } else {
       throw new Error(`Worker ${this.name} : Missing execute function`);

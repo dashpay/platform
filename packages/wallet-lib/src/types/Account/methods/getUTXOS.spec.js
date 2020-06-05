@@ -28,15 +28,16 @@ const mockedStore2 = {
             index: 0,
             unconfirmedBalanceSat: 0,
             used: true,
-            utxos: [
-              {
-                address: 'yizmJb63ygipuJaRgYtpWCV2erQodmaZt8',
-                txid: 'dd7afaadedb5f022cec6e33f1c8520aac897df152bd9f876842f3723ab9614bc',
-                outputIndex: 0,
-                scriptPubKey: '76a914f8c2652847720ab6d401291e5a48e2c8fe5d3c9f88ac',
-                satoshis: 100000000,
-              },
-            ],
+            utxos: {
+              "dd7afaadedb5f022cec6e33f1c8520aac897df152bd9f876842f3723ab9614bc-0":
+                  {
+                    address: 'yizmJb63ygipuJaRgYtpWCV2erQodmaZt8',
+                    txId: 'dd7afaadedb5f022cec6e33f1c8520aac897df152bd9f876842f3723ab9614bc',
+                    outputIndex: 0,
+                    script: '76a914f8c2652847720ab6d401291e5a48e2c8fe5d3c9f88ac',
+                    satoshis: 100000000,
+                  },
+            }
           },
         },
       },
@@ -60,14 +61,14 @@ describe('Account - getUTXOS', function suite() {
       walletId: '123456789',
     });
 
-    expect(utxos2).to.be.deep.equal([
+    expect(utxos2).to.be.deep.equal([new Dashcore.Transaction.UnspentOutput(
       {
-        address: 'yizmJb63ygipuJaRgYtpWCV2erQodmaZt8',
-        txid: 'dd7afaadedb5f022cec6e33f1c8520aac897df152bd9f876842f3723ab9614bc',
+        address: new Dashcore.Address('yizmJb63ygipuJaRgYtpWCV2erQodmaZt8'),
+        txId: 'dd7afaadedb5f022cec6e33f1c8520aac897df152bd9f876842f3723ab9614bc',
         outputIndex: 0,
-        scriptPubKey: '76a914f8c2652847720ab6d401291e5a48e2c8fe5d3c9f88ac',
+        script: new Dashcore.Script('76a914f8c2652847720ab6d401291e5a48e2c8fe5d3c9f88ac'),
         satoshis: 100000000,
       },
-    ]);
+    )]);
   });
 });

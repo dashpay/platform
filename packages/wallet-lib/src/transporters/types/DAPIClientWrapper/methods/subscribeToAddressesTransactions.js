@@ -56,35 +56,17 @@ function startExecutor() {
   }, fastFetchThreshold);
 }
 
-async function fetchPreviousTransactions(addressList) {
-  const self = this;
-  addressList.forEach((address) => {
-    self.getAddressSummary(address).then((summary) => {
-      summary.transactions.forEach((txid) => {
-        self.getTransaction(txid).then((tx) => {
-          self.announce(EVENTS.FETCHED_TRANSACTION, tx);
-        });
-      });
-    });
-  });
-}
-
-// const stopExecutor = (subscriptions) => {
-//   subscriptions.addresses = clearInterval(subscriptions.addresses);
-//   subscriptions.addresses = null;
-// };
 module.exports = async function subscribeToAddressesTransactions(addressList) {
   logger.silly(`DAPIClient.subscribeToAddressesTransactions[${addressList}]`);
+
   if (!Array.isArray(addressList)) throw new Error('Expected array of addresses');
   const { executors, subscriptions, addressesTransactionsMap } = this.state;
 
-  const immediatelyExecutedAddresses = [];
   addressList.forEach((address) => {
     if (!subscriptions.addresses[address]) {
       if (!addressesTransactionsMap[address]) {
         addressesTransactionsMap[address] = {};
       }
-      immediatelyExecutedAddresses.push(address);
       subscriptions.addresses[address] = { priority: 1, last: null };
     }
   });
@@ -96,10 +78,5 @@ module.exports = async function subscribeToAddressesTransactions(addressList) {
       logger.error('DAPIClientWrapper.subscribeToAddressesTransactions.startingExecutor failed', e);
       throw e;
     }
-  }
-  if (immediatelyExecutedAddresses.length) {
-    const immediateExecutorPromise = executor.call(this, immediatelyExecutedAddresses);
-    const fetchPrevTxs = fetchPreviousTransactions.call(this, immediatelyExecutedAddresses);
-    await Promise.all([immediateExecutorPromise, fetchPrevTxs]);
   }
 };

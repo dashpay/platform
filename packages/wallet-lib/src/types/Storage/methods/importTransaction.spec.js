@@ -1,7 +1,7 @@
-const { expect } = require('chai');
+const {expect} = require('chai');
 const importTransaction = require('./importTransaction');
-const { fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e } = require('../../../../fixtures/transactions').valid.mainnet;
-const { Transaction } = require('@dashevo/dashcore-lib');
+const {fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e} = require('../../../../fixtures/transactions').valid.mainnet;
+const {Transaction} = require('@dashevo/dashcore-lib');
 
 const faltyTx = '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0602cc0c028800ffffffff0200902f50090000001976a91446e502918c04a65a3830ce89cc364b0cd301793388ac00e40b54020000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac00000000460200cc0c0000be0c7d02ff51a9d30e39873ebb953d763595565fcbe0512a04bfa25ed0455e380000000000000000000000000000000000000000000000000000000000000000';
 
@@ -43,11 +43,11 @@ const tx = new Transaction({
 describe('Storage - importTransaction', function suite() {
   this.timeout(10000);
   it('should throw on failed import', () => {
-    const mockOpts1 = { };
+    const mockOpts1 = {};
     const mockOpts2 = '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23';
-    const mockOpts3 = { '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23': {} };
-    const mockOpts4 = { txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23' };
-    const mockOpts5 = { txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23', vin: [] };
+    const mockOpts3 = {'688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23': {}};
+    const mockOpts4 = {txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23'};
+    const mockOpts5 = {txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23', vin: []};
 
     const exceptedException1 = 'A Dashcore transaction object is required';
 
@@ -58,12 +58,34 @@ describe('Storage - importTransaction', function suite() {
     expect(() => importTransaction.call({}, mockOpts5)).to.throw(exceptedException1);
   });
   it('should import a transaction', () => {
-    const mockedSearchAddress = () => ({ found: false });
+    const mockedSearchAddress = () => ({found: false});
     let announceCalled = 0;
     const self = {
       store: {
+        wallets: {
+          'db158d08df': {
+            addresses: {
+              external: {
+                "m/44'/1'/0'/0/0": {
+                  path: "m/44'/1'/0'/0/0",
+                  index: 0,
+                  address: 'yS3Ja63BpkH7qHYVQvdEuiBd9xo8ZoPjZB',
+                  transactions: [],
+                  balanceSat: 0,
+                  unconfirmedBalanceSat: 0,
+                  utxos: {},
+                  fetchedLast: 0,
+                  used: false
+                }
+              }
+            }
+          }
+        },
         transactions: {},
-        chains: { testnet: { blockHeight: 50000 } },
+        chains: {testnet: {blockHeight: 50000}},
+      },
+      mappedAddress: {
+        'yS3Ja63BpkH7qHYVQvdEuiBd9xo8ZoPjZB': {walletId: 'db158d08df', type: 'external', path: "m/44'/1'/0'/0/0"}
       },
       network: 'testnet',
       lastModified: 0,
@@ -74,18 +96,38 @@ describe('Storage - importTransaction', function suite() {
       },
     };
     importTransaction.call(self, tx);
-    // const tx = new Transaction({"hash":"caabdb2b1aaaf4fc58ee1d6df8168213b0e54bd3bd4c0793d9bd8c733c3d302b","version":2,"inputs":[{"prevTxId":"d842bacde7f783b5e3682b6fc82d41260ad52a22764dc7a8b8662a9afc96d894","outputIndex":0,"sequenceNumber":4294967294,"script":"4730440220568ff101b0ee1cfbd6ca7d0ca750cf190f482e599a25b54f1367144b97bb79ae02206141020eced7adfedd6bacd441af367707153c739f45e74d01cd256eeb6789550121024d944ea228ab8d2233edb16d5df9c31714ad73fcd1d9b476370e63882b31c491","scriptString":"71 0x30440220568ff101b0ee1cfbd6ca7d0ca750cf190f482e599a25b54f1367144b97bb79ae02206141020eced7adfedd6bacd441af367707153c739f45e74d01cd256eeb67895501 33 0x024d944ea228ab8d2233edb16d5df9c31714ad73fcd1d9b476370e63882b31c491"}],"outputs":[{"satoshis":5000000000,"script":"76a91446e502918c04a65a3830ce89cc364b0cd301793388ac"},{"satoshis":34999999774,"script":"76a914756711c211e845e8b2b097fd86f8ce6000b48a5088ac"}],"nLockTime":2601});
-
+    importTransaction.call(self, tx);
     const expectedStore = {
-      transactions: { ea9c4066394aa09cb7ee8f3997b8dc10b999a8d709c4046f81d8bf9341ae6e5b: tx },
-      chains: { testnet: { blockHeight: 50000 } },
+      wallets: {
+        'db158d08df': {
+          addresses: {
+            external: {
+              "m/44'/1'/0'/0/0": {
+                path: "m/44'/1'/0'/0/0",
+                index: 0,
+                address: 'yS3Ja63BpkH7qHYVQvdEuiBd9xo8ZoPjZB',
+                transactions: ["ea9c4066394aa09cb7ee8f3997b8dc10b999a8d709c4046f81d8bf9341ae6e5b"],
+                balanceSat: 12999997493,
+                unconfirmedBalanceSat: 0,
+                utxos: {"ea9c4066394aa09cb7ee8f3997b8dc10b999a8d709c4046f81d8bf9341ae6e5b-0": tx.outputs[0]},
+                fetchedLast: 0,
+                used: true
+              }
+            }
+          }
+        }
+      },
+
+      transactions: {ea9c4066394aa09cb7ee8f3997b8dc10b999a8d709c4046f81d8bf9341ae6e5b: tx},
+      chains: {testnet: {blockHeight: 50000}},
+    };
+    const expectedMappedAddress =  {
+      'yS3Ja63BpkH7qHYVQvdEuiBd9xo8ZoPjZB': {walletId: 'db158d08df', type: 'external', path: "m/44'/1'/0'/0/0"}
     };
 
     expect(self.store).to.be.deep.equal(expectedStore);
+    expect(self.mappedAddress).to.be.deep.equal(expectedMappedAddress);
     expect(self.lastModified).to.be.not.equal(0);
     expect(announceCalled).to.be.equal(1);
-
-    // importTransaction.call(self, fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e);
-    // expect(self.store.transactions.fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e).to.deep.equal(fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e);
   });
 });

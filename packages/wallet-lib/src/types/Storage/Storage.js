@@ -42,7 +42,6 @@ class Storage extends EventEmitter {
   }
 }
 Storage.prototype.addNewTxToAddress = require('./methods/addNewTxToAddress');
-Storage.prototype.addUTXOToAddress = require('./methods/addUTXOToAddress');
 Storage.prototype.announce = require('./methods/announce');
 Storage.prototype.calculateDuffBalance = require('./methods/calculateDuffBalance');
 Storage.prototype.clearAll = require('./methods/clearAll');

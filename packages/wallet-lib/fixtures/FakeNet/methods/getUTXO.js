@@ -1,3 +1,4 @@
+const { Transaction } = require('@dashevo/dashcore-lib');
 const fs = require('fs');
 const { is } = require('../../../src/utils');
 
@@ -14,7 +15,9 @@ function getUtxoOfAddressAtHeight(address, height) {
       utxos = utxos.concat(el);
     }
   }
-  return utxos;
+  return utxos.map((utxo)=> {
+    return new Transaction.UnspentOutput(utxo)
+  });;
 }
 
 module.exports = async function getUTXO(addresses) {

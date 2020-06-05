@@ -27,13 +27,20 @@ class SyncWorker extends Worker {
       workerIntervalTime: defaultOpts.workerIntervalTime,
       fetchThreshold: defaultOpts.fetchThreshold,
       dependencies: [
-        'storage', 'transporter', 'fetchStatus', 'getTransaction', 'fetchAddressInfo', 'walletId', 'getUnusedAddress',
+        'storage',
+        'transporter',
+        'fetchStatus',
+        'getTransaction',
+        'fetchAddressInfo',
+        'walletId',
+        'getUnusedAddress',
       ],
       ...opts,
     };
     super(params);
     this.isBIP44 = _.has(opts, 'isBIP44') ? opts.isBIP44 : true;
 
+    this.isInitialized = false;
     this.listeners = {
       addresses: [],
     };
@@ -41,23 +48,31 @@ class SyncWorker extends Worker {
   }
 
   async onStart() {
+    this.setupListeners();
     // When SyncWorker.onStart gets executed. BIP44 Worker (if applicable), will already have ran.
     // At this stage, we just generated our local address pool
     // We therefore need to do a first sync-up (for balance reason).
     // Because we listen to the event. We need to know if we had fetched tx before releasing onStart
     await this.initialSyncUp();
+    this.isInitialized = true;
   }
 
   async execute() {
-    // We will needed to update the transporter about the addresses we need to listen
-    // which is something that can change over the course of the use of the lib.
-    const addrList = this.getAddressListToSync().map((addr) => addr.address);
-    await this.transporter.subscribeToAddressesTransactions(addrList);
+    if (this.isInitialized) {
+      // We will need to update the transporter about the addresses we need to listen
+      // which is something that can change over the course of the use of the lib.
+      const addrList = this.getAddressListToSync().map((addr) => addr.address);
+
+      // Setup listener that will listen for Events from transporter
+      // and handle them (mostly for addition request to storage)
+      await this.transporter.subscribeToAddressesTransactions(addrList);
+    }
   }
 }
 
 SyncWorker.prototype.announce = require('./announce');
 SyncWorker.prototype.getAddressListToSync = require('./getAddressListToSync');
+SyncWorker.prototype.setupListeners = require('./setupTransporterListeners');
 SyncWorker.prototype.initialSyncUp = require('./initialSyncUp');
 
 module.exports = SyncWorker;

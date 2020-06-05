@@ -1,34 +1,42 @@
-const _ = require('lodash');
+const { Address, Transaction } = require('@dashevo/dashcore-lib');
+
 /**
- * Return all the utxos (unspendable included)
- * @return {Array}
+ * Return all the utxos
+ * @return {UnspentOutput[]}
  */
-function getUTXOS(onlyAvailable = true) {
-  let utxos = [];
+function getUTXOS() {
+  const utxos = [];
 
   const self = this;
-  const { walletId } = this;
-  const subwallets = Object.keys(this.store.wallets[walletId].addresses);
-  subwallets.forEach((subwallet) => {
-    const paths = Object.keys(self.store.wallets[walletId].addresses[subwallet]);
-    paths.forEach((path) => {
-      const address = self.store.wallets[walletId].addresses[subwallet][path];
-      if (address.utxos) {
-        if (!(onlyAvailable && address.locked)) {
-          const addrUtxo = address.utxos;
-          const addrUtxoIds = Object.keys(addrUtxo);
-          if (addrUtxoIds.length > 0) {
-            Object.keys(addrUtxo).forEach((utxoid) => {
-              const modifiedUtxo = _.cloneDeep(addrUtxo[utxoid]);
-              utxos = utxos.concat(modifiedUtxo);
-            });
+  const { walletId, network } = this;
+  /* eslint-disable-next-line no-restricted-syntax */
+  for (const walletType in this.store.wallets[walletId].addresses) {
+    if (walletType && ['external', 'internal', 'misc'].includes(walletType)) {
+      /* eslint-disable-next-line no-restricted-syntax */
+      for (const path in self.store.wallets[walletId].addresses[walletType]) {
+        if (path) {
+          const address = self.store.wallets[walletId].addresses[walletType][path];
+          /* eslint-disable-next-line no-restricted-syntax */
+          for (const identifier in address.utxos) {
+            if (identifier) {
+              const [txid, outputIndex] = identifier.split('-');
+
+              utxos.push(new Transaction.UnspentOutput(
+                {
+                  txId: txid,
+                  vout: parseInt(outputIndex, 10),
+                  script: address.utxos[identifier].script,
+                  satoshis: address.utxos[identifier].satoshis,
+                  address: new Address(address.address, network),
+                },
+              ));
+            }
           }
         }
       }
-    });
-  });
-  utxos = utxos.sort((a, b) => b.satoshis - a.satoshis);
-
-  return utxos;
+    }
+  }
+  return utxos.sort((a, b) => b.satoshis - a.satoshis);
 }
+
 module.exports = getUTXOS;

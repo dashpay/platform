@@ -4,7 +4,17 @@ const { is } = require('../../../utils');
 /**
  * Generate an address from a path and import it to the store
  * @param path
- * @return {AddressObject} Address information
+ * @return {{
+ * path: string,
+ * address: string,
+ * balanceSat: number,
+ * index: number,
+ * fetchedLast: number,
+ * utxos: {},
+ * unconfirmedBalanceSat: number,
+ * used: boolean,
+ * transactions: []}
+ * } Address information
  * */
 function generateAddress(path) {
   if (is.undefOrNull(path)) throw new Error('Expected path to generate an address');

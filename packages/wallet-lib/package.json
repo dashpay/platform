@@ -15,8 +15,9 @@
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
     "lint:fix": "eslint . --fix",
     "test:unit": "nyc mocha 'src/**/*.spec.js'",
+    "test:functional": "nyc mocha 'tests/functional/*.js'",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test": "npm run test:unit && npm run test:browsers && npm run lint"
+    "test": "npm run test:unit && npm run test:functional && npm run test:browsers && npm run lint"
   },
   "repository": {
     "type": "git",

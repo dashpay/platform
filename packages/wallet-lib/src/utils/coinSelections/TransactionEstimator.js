@@ -36,7 +36,10 @@ const calculateInputsSize = (inputs) => {
 const calculateOutputsSize = (outputs, tx) => {
   let outputsBytes = 0;
   outputs.forEach((output) => {
-    const pkScript = Script.buildPublicKeyHashOut(Address.fromString(output.address)).toBuffer();
+    const address = (output.address instanceof Address)
+      ? output.address
+      : Address.fromString(output.address);
+    const pkScript = Script.buildPublicKeyHashOut(address).toBuffer();
     const pkScriptSigBytes = pkScript.length;
     const pkScriptLengthBytes = varIntSizeBytesFromLength(pkScriptSigBytes);
     // eslint-disable-next-line new-cap
@@ -92,20 +95,8 @@ class TransactionEstimator {
     if (inputs.length < 1) return false;
 
     const addInput = (input) => {
-      if (!is.utxo(input)) {
-        try {
-          // Tries to get retro-compatibility from insight old format
-          // FIXME: Maybe update tests with newer format now.
-          if (input.scriptPubKey) {
-          // eslint-disable-next-line no-param-reassign
-            input.script = input.scriptPubKey;
-          }
-
-          // eslint-disable-next-line no-param-reassign
-          input = new Transaction.UnspentOutput(input);
-        } catch (e) {
-          throw new Error('Expected valid input to import');
-        }
+      if (!(input instanceof Transaction.UnspentOutput)) {
+        throw new Error('Expected valid UnspentOutput to import');
       }
       self.state.inputs.push(input);
     };

@@ -1,14 +1,16 @@
 /* eslint-disable no-underscore-dangle */
 const _ = require('lodash');
-const Dashcore = require('@dashevo/dashcore-lib');
+const {
+  Transaction, PrivateKey, HDPrivateKey, crypto, Script,
+} = require('@dashevo/dashcore-lib');
 const { CreateTransactionError } = require('../../../errors');
 const { dashToDuffs, coinSelection, is } = require('../../../utils');
 const _loadStrategy = require('../_loadStrategy');
 
 const parseUtxos = (utxos) => {
   // We do not allow mixmatch types (output, object together) utxo list
-  if (utxos[0] && utxos[0].constructor !== Dashcore.Transaction.UnspentOutput) {
-    return utxos.map((utxo) => new Dashcore.Transaction.UnspentOutput(utxo));
+  if (utxos[0] && utxos[0].constructor !== Transaction.UnspentOutput) {
+    return utxos.map((utxo) => new Transaction.UnspentOutput(utxo));
   }
   return utxos;
 };
@@ -29,7 +31,7 @@ const parseUtxos = (utxos) => {
  */
 function createTransaction(opts) {
   const self = this;
-  const tx = new Dashcore.Transaction();
+  const tx = new Transaction();
 
   let outputs = [];
 
@@ -67,7 +69,7 @@ function createTransaction(opts) {
   const utxosList = _.has(opts, 'utxos') ? parseUtxos(opts.utxos) : this.getUTXOS();
 
   utxosList.map((utxo) => {
-    const utxoTx = self.storage.searchTransaction(utxo.txid);
+    const utxoTx = self.storage.searchTransaction(utxo.txId);
     if (utxoTx.found) {
       // eslint-disable-next-line no-param-reassign
       // console.log(utxoTx.result.vin);
@@ -85,6 +87,8 @@ function createTransaction(opts) {
   }
 
   const selectedUTXOs = selection.utxos;
+
+
   const selectedOutputs = selection.outputs;
   const {
     // feeCategory,
@@ -92,14 +96,7 @@ function createTransaction(opts) {
   } = selection;
 
   tx.to(selectedOutputs);
-
-
-  // We parse our inputs, transform them into a Dashcore UTXO object.
-  const inputs = selectedUTXOs;
-
-  if (!inputs) return tx;
-  // We can now add direction our inputs to the Dashcore TX object
-  tx.from(inputs);
+  tx.from(selectedUTXOs);
 
   // In case or excessive fund, we will get that to an address in our possession
   // and determine the finalFees
@@ -114,7 +111,7 @@ function createTransaction(opts) {
   tx.fee(finalFees);
   const addressList = selectedUTXOs.map((el) => {
     if (el.address) return el.address.toString();
-    return Dashcore.Script
+    return Script
       .fromHex(el.script)
       .toAddress(this.getNetwork())
       .toString();
@@ -125,9 +122,9 @@ function createTransaction(opts) {
     : this.getPrivateKeys(addressList);
   const transformedPrivateKeys = [];
   privateKeys.forEach((pk) => {
-    if (pk.constructor.name === Dashcore.PrivateKey.name) {
+    if (pk.constructor.name === PrivateKey.name) {
       transformedPrivateKeys.push(pk);
-    } else if (pk.constructor.name === Dashcore.HDPrivateKey.name) {
+    } else if (pk.constructor.name === HDPrivateKey.name) {
       transformedPrivateKeys.push(pk.privateKey);
     } else {
       throw new Error(`Unexpected pk of type ${pk.constructor.name}`);
@@ -137,7 +134,7 @@ function createTransaction(opts) {
     const signedTx = this.keyChain.sign(
       tx,
       transformedPrivateKeys,
-      Dashcore.crypto.Signature.SIGHASH_ALL,
+      crypto.Signature.SIGHASH_ALL,
     );
     return signedTx;
   } catch (e) {

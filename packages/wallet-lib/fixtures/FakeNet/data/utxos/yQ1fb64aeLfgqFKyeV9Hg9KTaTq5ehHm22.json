@@ -1,11 +1,11 @@
 {
-  "21546": [ {
-    "address": "yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22",
-    "txid": "1039026788f80b4199cc685c5ba9335aac976e25b65a59c816108cbdb6234eb6",
-    "outputIndex": 0,
-    "script": "76a9142883a66f510c4aa8f4abacb09e7372be54477cbe88ac",
-    "satoshis": 1000000000,
-    "height": 21546
-  }
+  "21546": [
+    {
+      "address" : "yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22",
+      "txId": "1039026788f80b4199cc685c5ba9335aac976e25b65a59c816108cbdb6234eb6",
+      "outputIndex": 0,
+      "satoshis": 1000000000,
+      "script": "76a9142883a66f510c4aa8f4abacb09e7372be54477cbe88ac"
+    }
   ]
 }
