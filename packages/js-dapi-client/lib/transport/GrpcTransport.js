@@ -47,8 +47,16 @@ class GrpcTransport {
     const url = this.makeGrpcUrlFromAddress(address);
     const client = new ClientClass(url);
 
+    const requestOptions = {};
+    if (options.timeout !== undefined) {
+      requestOptions.deadline = new Date();
+      requestOptions.deadline.setMilliseconds(
+        requestOptions.deadline.getMilliseconds() + options.timeout,
+      );
+    }
+
     try {
-      const result = await client[method](requestMessage);
+      const result = await client[method](requestMessage, {}, requestOptions);
 
       this.lastUsedAddress = address;
 
@@ -107,17 +115,18 @@ class GrpcTransport {
    * @returns {string}
    */
   makeGrpcUrlFromAddress(address) {
+    let port = address.getHttpPort();
+
     // For NodeJS Client
     if (typeof process !== 'undefined'
       && process.versions != null
       && process.versions.node != null) {
-      return `${address.getHost()}:${address.getGrpcPort()}`;
+      port = address.getGrpcPort();
     }
 
-    // For gRPC-Web client
     const protocol = address.getHttpPort() === 443 ? 'https' : 'http';
 
-    return `${protocol}://${address.getHost()}:${address.getHttpPort()}`;
+    return `${protocol}://${address.getHost()}:${port}`;
   }
 }
 
