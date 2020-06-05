@@ -1,7 +1,0 @@
-.idea
-node_modules/
-launch.json
-_temp/
-!test/dist
-.nyc_output/
-coverage/

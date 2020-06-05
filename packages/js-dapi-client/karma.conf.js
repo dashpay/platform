@@ -1,40 +1,14 @@
 module.exports = (config) => {
   config.set({
-    basePath: '',
     frameworks: ['mocha', 'chai'],
     files: [
-      './test/dist/dapi-client.min.js',
-      './test.spec.js',
-    ],
-    exclude: [
+      'lib/test/karma/loader.js',
     ],
     preprocessors: {
-      './test/dist/dapi-client.min.js': ['webpack'],
-      './test.spec.js': ['webpack'],
+      'lib/test/karma/loader.js': ['webpack'],
     },
     webpack: {
-      mode: 'production',
-      node: {
-        fs: 'empty',
-      },
-      module: {
-        rules: [
-          {
-            test: /dist\/.*\.js$/,
-            exclude: /(node_modules)/,
-          },
-          {
-            test: /src\/.*\.js$/,
-            exclude: /(node_modules)/,
-            use: {
-              loader: 'babel-loader',
-              options: {
-                presets: ['@babel/preset-env'],
-              },
-            },
-          },
-        ],
-      },
+      mode: 'development',
     },
     reporters: ['mocha'],
     port: 9876,

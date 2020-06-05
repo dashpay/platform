@@ -1,0 +1,13 @@
+extends:
+  - airbnb-base
+  - plugin:jsdoc/recommended
+rules:
+  eol-last:
+    - error
+    - always
+  class-methods-use-this: off
+  curly:
+    - error
+    - all
+plugins:
+  - jsdoc
