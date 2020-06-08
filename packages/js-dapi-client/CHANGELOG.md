@@ -1,3 +1,25 @@
+# [0.13.0](https://github.com/dashevo/dapi-client/compare/v0.12.0...v0.13.0) (2020-06-08)
+
+
+### Bug Fixes
+
+* missed grpc-common peer dependency caused error ([#135](https://github.com/dashevo/dapi-client/pull/135))
+
+
+## Features
+
+* implement transports with retries ([#130](https://github.com/dashevo/dapi-client/pull/130), [#141](https://github.com/dashevo/dapi-client/pull/141))
+* get identity by public key endpoints ([#133](https://github.com/dashevo/dapi-client/pull/133))
+
+
+### Documentation
+
+* add typing ([#143](https://github.com/dashevo/dapi-client/pull/143))
+* JSDoc formatting ([#132](https://github.com/dashevo/dapi-client/pull/132))
+* `subscribeToTransactionsWithProofs` ([#137](https://github.com/dashevo/dapi-client/pull/137))
+
+
+
 # [0.12.0](https://github.com/dashevo/dapi-client/compare/v0.11.0...v0.12.0) (2020-04-20)
 
 
