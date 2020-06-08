@@ -37,10 +37,10 @@
   "homepage": "https://github.com/dashevo/dapi-grpc#readme",
   "dependencies": {
     "@dashevo/grpc-common": "^0.3.0",
-    "google-protobuf": "^3.8.0",
-    "grpc": "^1.24.2",
-    "grpc-web": "^1.0.6",
-    "protobufjs": "^6.8.8"
+    "google-protobuf": "^3.12.2",
+    "grpc": "^1.24.3",
+    "grpc-web": "^1.1.0",
+    "protobufjs": "^6.9.0"
   },
   "devDependencies": {
     "chai": "^4.2.0",
@@ -48,10 +48,10 @@
     "dirty-chai": "^2.0.1",
     "eslint": "^5.16.0",
     "eslint-config-airbnb-base": "^13.2.0",
-    "eslint-plugin-import": "^2.18.0",
-    "mocha": "^6.2.1",
-    "mocha-sinon": "^2.1.0",
+    "eslint-plugin-import": "^2.21.1",
+    "mocha": "^7.2.0",
+    "mocha-sinon": "^2.1.2",
     "sinon": "^7.5.0",
-    "sinon-chai": "^3.3.0"
+    "sinon-chai": "^3.5.0"
   }
 }
