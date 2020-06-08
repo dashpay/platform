@@ -90,7 +90,9 @@ describe('SimplifiedMasternodeListProvider', () => {
       expect(jsonTransportMock.request).to.be.calledTwice();
     });
 
-    it('should use updated baseBlockHash for the second call', async () => {
+    it('should use updated baseBlockHash for the second call', async function it() {
+      this.timeout(3000);
+
       const firstSML = await smlProvider.getSimplifiedMNList();
 
       expect(firstSML).to.be.an.instanceOf(SimplifiedMNList);
