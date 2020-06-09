@@ -1,3 +1,26 @@
+# [0.13.0](https://github.com/dashevo/drive/compare/v0.12.1...v0.13.0) (2020-06-08)
+
+
+### Features
+
+* update to DPP 0.13 ([#336](https://github.com/dashevo/drive/issues/336), [#338](https://github.com/dashevo/drive/issues/338), [#340](https://github.com/dashevo/drive/issues/340), [#344](https://github.com/dashevo/drive/issues/344), [#346](https://github.com/dashevo/drive/issues/346), [#348](https://github.com/dashevo/drive/issues/348), [#354](https://github.com/dashevo/drive/issues/354), [#357](https://github.com/dashevo/drive/issues/357))
+* wait mongoDB replica set initialization ([#349](https://github.com/dashevo/drive/issues/349))
+* wait for Core to be synced before starting ([#345](https://github.com/dashevo/drive/issues/345), [#353](https://github.com/dashevo/drive/issues/353), [#356](https://github.com/dashevo/drive/issues/356))
+* get identity by public key endpoints ([#341](https://github.com/dashevo/drive/issues/341))
+* store identity id with identity's public key as a DB key ([#337](https://github.com/dashevo/drive/issues/337), [#339](https://github.com/dashevo/drive/issues/339))
+
+
+### Code Refactoring
+
+* use async function with cache to connect and get `MongoClient` ([#350](https://github.com/dashevo/drive/issues/350))
+
+
+### BREAKING CHANGES
+
+* see [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.13.0)
+
+
+
 ## [0.12.2](https://github.com/dashevo/drive/compare/v0.12.1...v0.12.2) (2020-05-21)
 
 
