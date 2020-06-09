@@ -1,3 +1,35 @@
+# [0.13.0](https://github.com/dashevo/dapi/compare/v0.12.0...v0.13.0) (2020-06-08)
+
+
+### Bug Fixes
+
+* invalid JSON RPC internal error code ([#271](https://github.com/dashevo/dapi/pull/271))
+* incorrect behaviour on undefined data in `handleAbciResponseError` ([#265](https://github.com/dashevo/dapi/pull/265))
+
+
+### Features
+
+* get identity by public key endpoints ([#263](https://github.com/dashevo/dapi/pull/263), [#266](https://github.com/dashevo/dapi/pull/266))
+
+
+### Tests
+
+* identity topup functional test ([#268](https://github.com/dashevo/dapi/pull/268))
+* functional for validating public key uniqueness ([#269](https://github.com/dashevo/dapi/pull/269))
+
+
+### Code Refactoring
+
+* actualize drive env variables ([#270](https://github.com/dashevo/dapi/pull/270))
+
+
+### BREAKING CHANGES
+
+* previously internal errors were respond with wrong error code `-32602` (invalid argument). The error code is changed
+ to `-32603` (internal error).
+* see [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.13.0)
+
+
 # [0.12.0](https://github.com/dashevo/dapi/compare/v0.11.1...v0.12.0) (2020-04-18)
 
 ### Bug Fixes

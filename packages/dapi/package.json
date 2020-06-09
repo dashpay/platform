@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi",
-  "version": "0.13.0-dev.2",
+  "version": "0.13.0",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -30,10 +30,10 @@
     "all": true
   },
   "dependencies": {
-    "@dashevo/dapi-grpc": "~0.13.0-dev.4",
+    "@dashevo/dapi-grpc": "~0.13.0",
     "@dashevo/dashcore-lib": "~0.18.1",
     "@dashevo/dashd-rpc": "^2.0.0",
-    "@dashevo/dpp": "~0.13.0-dev.7",
+    "@dashevo/dpp": "~0.13.0",
     "@dashevo/grpc-common": "~0.3.0",
     "ajv": "^6.4.0",
     "bs58": "^4.0.1",
@@ -41,7 +41,7 @@
     "dotenv": "^6.0.0",
     "dotenv-expand": "^5.1.0",
     "dotenv-safe": "^8.2.0",
-    "grpc": "^1.24.0",
+    "grpc": "^1.24.3",
     "jayson": "^2.0.4",
     "lodash": "^4.17.14",
     "request": "^2.87.0",
@@ -49,13 +49,13 @@
     "zeromq": "^5.2.0"
   },
   "devDependencies": {
-    "@dashevo/dapi-client": "~0.13.0-dev.3",
-    "@dashevo/dp-services-ctl": "~0.13.0-dev.1",
+    "@dashevo/dapi-client": "~0.13.0",
+    "@dashevo/dp-services-ctl": "~0.13.1",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
-    "eslint": "^6.8.0",
-    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint": "^5.8.0",
+    "eslint-config-airbnb-base": "^13.2.0",
     "eslint-plugin-import": "^2.20.0",
     "mocha": "^5.2.0",
     "mocha-sinon": "^2.1.0",
