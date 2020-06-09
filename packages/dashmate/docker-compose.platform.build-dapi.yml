@@ -1,0 +1,10 @@
+version: '3.7'
+
+services:
+  dapi_api:
+    build: ${DAPI_IMAGE_BUILD_PATH:?err}
+    image: dapi:local
+
+  dapi_tx_filter_stream:
+    # we don't need to build image here, we just use dapi:local image built in dapi_api
+    image: dapi:local

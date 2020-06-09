@@ -1,0 +1,6 @@
+version: '3.7'
+
+services:
+  drive_abci:
+    build: ${DRIVE_IMAGE_BUILD_PATH:?err}
+    image: drive:local
