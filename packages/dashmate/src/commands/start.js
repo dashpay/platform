@@ -65,7 +65,7 @@ class StartCommand extends BaseCommand {
 
             const envFile = path.join(__dirname, '..', '..', `.env.${preset}`);
             const envRawData = await fs.readFile(envFile);
-            let { composeFile } = dotenv.parse(envRawData);
+            let { COMPOSE_FILE: composeFile } = dotenv.parse(envRawData);
 
             if (driveImageBuildPath) {
               composeFile = `${composeFile}:docker-compose.platform.build-drive.yml`;
