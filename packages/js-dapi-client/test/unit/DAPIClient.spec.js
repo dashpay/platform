@@ -66,5 +66,23 @@ describe('DAPIClient', () => {
       expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
       expect(dapiClient.platform).to.be.an.instanceOf(PlatformMethodsFacade);
     });
+
+    it('should construct DAPIClient with network options', async () => {
+      options = {
+        retries: 3,
+        network: 'local',
+      };
+
+      dapiClient = new DAPIClient(options);
+      expect(dapiClient.options).to.deep.equal({
+        retries: 3,
+        network: 'local',
+        timeout: 2000,
+      });
+
+      expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
+      expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
+      expect(dapiClient.platform).to.be.an.instanceOf(PlatformMethodsFacade);
+    });
   });
 });

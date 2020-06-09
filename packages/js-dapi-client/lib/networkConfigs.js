@@ -10,7 +10,7 @@ module.exports = {
     networkType: 'testnet',
   },
   local: {
-    address: '127.0.0.1',
+    addresses: ['127.0.0.1'],
     networkType: 'testnet',
   },
 };
