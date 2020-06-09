@@ -20,7 +20,7 @@ describe('DAPIClient', () => {
       expect(dapiClient.options).to.deep.equal({
         retries: 0,
         newOption: true,
-        timeout: 2000,
+        timeout: 10000,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(
@@ -36,7 +36,7 @@ describe('DAPIClient', () => {
 
       expect(dapiClient.options).to.deep.equal({
         retries: 3,
-        timeout: 2000,
+        timeout: 10000,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(
@@ -58,7 +58,7 @@ describe('DAPIClient', () => {
       expect(dapiClient.options).to.deep.equal({
         retries: 0,
         addresses: ['localhost'],
-        timeout: 2000,
+        timeout: 10000,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
@@ -77,7 +77,7 @@ describe('DAPIClient', () => {
       expect(dapiClient.options).to.deep.equal({
         retries: 3,
         network: 'local',
-        timeout: 2000,
+        timeout: 10000,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);

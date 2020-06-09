@@ -13,7 +13,7 @@ class DAPIClient {
    */
   constructor(options = {}) {
     this.options = {
-      timeout: 2000,
+      timeout: 10000,
       retries: 3,
       ...options,
     };
