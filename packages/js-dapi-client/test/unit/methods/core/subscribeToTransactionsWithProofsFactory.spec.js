@@ -19,8 +19,9 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
   beforeEach(function beforeEach() {
     options = {
       fromBlockHeight: 1,
-      count: 1,
+      count: 5,
       fromBlockHash: '000000000b0339e07bce8b3186a6a57a3c45d10e16c4bce18ef81b667bc822b2',
+      timeout: 150000,
     };
 
     stream = new EventEmitter();
@@ -40,13 +41,7 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
 
     const bloomFilterMessage = new BloomFilterMessage();
 
-    let { vData } = bloomFilter;
-
-    if (Array.isArray(vData)) {
-      vData = new Uint8Array(vData);
-    }
-
-    bloomFilterMessage.setVData(vData);
+    bloomFilterMessage.setVData(new Uint8Array(bloomFilter.vData));
     bloomFilterMessage.setNHashFuncs(bloomFilter.nHashFuncs);
     bloomFilterMessage.setNTweak(bloomFilter.nTweak);
     bloomFilterMessage.setNFlags(bloomFilter.nFlags);
@@ -62,6 +57,37 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
       'subscribeToTransactionsWithProofs',
       request,
       options,
+    );
+
+    expect(actualStream).to.be.equal(stream);
+  });
+
+  it('should apply default options', async () => {
+    const bloomFilter = BloomFilter.create(1, 0.001);
+
+    const actualStream = await subscribeToTransactionsWithProofs(
+      bloomFilter,
+    );
+
+    const bloomFilterMessage = new BloomFilterMessage();
+
+    bloomFilterMessage.setVData(new Uint8Array(bloomFilter.vData));
+    bloomFilterMessage.setNHashFuncs(bloomFilter.nHashFuncs);
+    bloomFilterMessage.setNTweak(bloomFilter.nTweak);
+    bloomFilterMessage.setNFlags(bloomFilter.nFlags);
+
+    const request = new TransactionsWithProofsRequest();
+    request.setBloomFilter(bloomFilterMessage);
+    request.setCount(0);
+
+    expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
+      TransactionsFilterStreamPromiseClient,
+      'subscribeToTransactionsWithProofs',
+      request,
+      {
+        count: 0,
+        timeout: undefined,
+      },
     );
 
     expect(actualStream).to.be.equal(stream);

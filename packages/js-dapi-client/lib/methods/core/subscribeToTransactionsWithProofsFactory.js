@@ -29,6 +29,9 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
     // eslint-disable-next-line no-param-reassign
     options = {
       count: 0,
+      // Override global timeout option
+      // and timeout for this method by default
+      timeout: undefined,
       ...options,
     };
 
