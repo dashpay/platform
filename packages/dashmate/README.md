@@ -8,10 +8,14 @@ Distribution package for Dash Masternode installation
 
 - [Install](#install)
 - [Usage](#usage)
+  - [Configuration presets](#configuration-presets)
+  - [Command line interface](#cli)
   - [Start node](#start-node)
   - [Stop node](#stop-node)
   - [Register masternode](#register-masternode)
   - [Reset data](#reset-data)
+  - [Development](#development)
+  - [Docker Compose](#docker-compose)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -159,6 +163,10 @@ To reset an Evonet node:
 ```bash
 $ mn reset evonet
 ```
+
+### Development
+
+When developing on a standalone node (the `local` preset), a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command. A Docker image will be built from the provided path and then used by mn-bootstrap. This allows developers to quickly test changes to DAPI and Drive with minimal overhead.
 
 ### Docker Compose
 
