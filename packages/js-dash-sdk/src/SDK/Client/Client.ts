@@ -1,5 +1,5 @@
 import { Account, Wallet } from "@dashevo/wallet-lib";
-import { DAPIClient as DAPIClientWrapper } from "@dashevo/wallet-lib/src/transporters"
+import { DAPIClientWrapper } from "@dashevo/wallet-lib/src/transporters"
 // FIXME: use dashcorelib types
 import { Platform } from './Platform';
 // @ts-ignore

@@ -1,6 +1,5 @@
 const {expect} = require('chai');
 const Dash = require('../../dist/dash.cjs.min.js');
-const fixtures = require('../fixtures/user-flow-1');
 const Chance = require('chance');
 const chance = new Chance();
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
@@ -67,22 +66,34 @@ const year = chance.birthday({string: true}).slice(-2);
 const firstname = chance.first();
 const username = `test-${firstname}${year}`;
 
+const seeds = process.env.DAPI_SEED
+  .split(',')
+  .map((seed) => ({ service: seed }));
+
 const clientOpts = {
-  network: fixtures.network,
+  seeds,
+  network: process.env.NETWORK,
   wallet: {
     mnemonic: null,
   },
+  apps: {
+    dpns: {
+      contractId: process.env.DPNS_CONTRACT_ID,
+    }
+  }
 };
+
 let account;
+
 describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite() {
   this.timeout(700000);
 
   it('should init a Client', async () => {
     clientInstance = new Dash.Client(clientOpts);
-    expect(clientInstance.network).to.equal('testnet');
+    expect(clientInstance.network).to.equal(process.env.NETWORK);
     expect(clientInstance.walletAccountIndex).to.equal(0);
-    expect(clientInstance.apps).to.deep.equal({dpns: {contractId: "7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM"}});
-    expect(clientInstance.wallet.network).to.equal('testnet');
+    expect(clientInstance.apps).to.deep.equal({dpns: {contractId: process.env.DPNS_CONTRACT_ID}});
+    expect(clientInstance.wallet.network).to.equal(process.env.NETWORK);
     expect(clientInstance.wallet.offlineMode).to.equal(false);
     expect(clientInstance.platform.dpp).to.exist;
     expect(clientInstance.platform.client).to.exist;
@@ -157,7 +168,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     const createDocument = await clientInstance.platform.names.register(username, createdIdentity);
     expect(createDocument.getType()).to.equal('domain');
     expect(createDocument.getOwnerId()).to.equal(createdIdentityId);
-    expect(createDocument.getDataContractId()).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
+    expect(createDocument.getDataContractId()).to.equal(process.env.DPNS_CONTRACT_ID);
     expect(createDocument.get('label')).to.equal(username);
     expect(createDocument.get('normalizedParentDomainName')).to.equal('dash');
   });
@@ -176,7 +187,7 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     expect(doc.getRevision()).to.equal(1);
     expect(doc.getType()).to.equal('domain');
     expect(doc.getOwnerId()).to.equal(createdIdentityId);
-    expect(doc.getDataContractId()).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
+    expect(doc.getDataContractId()).to.equal(process.env.DPNS_CONTRACT_ID);
     expect(doc.get('label')).to.equal(username);
     expect(doc.get('normalizedParentDomainName')).to.equal('dash');
   });
