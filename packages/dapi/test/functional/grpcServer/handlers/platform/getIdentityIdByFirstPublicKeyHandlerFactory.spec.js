@@ -81,7 +81,7 @@ describe('getIdentityIdByFirstPublicKeyHandlerFactory', function main() {
     identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
     identityCreateTransition.signByPrivateKey(privateKey);
 
-    await dapiClient.applyStateTransition(identityCreateTransition);
+    await dapiClient.platform.broadcastStateTransition(identityCreateTransition.serialize());
   });
 
   after(async () => {
@@ -91,7 +91,7 @@ describe('getIdentityIdByFirstPublicKeyHandlerFactory', function main() {
   it('should fetch created identity', async () => {
     const publicKeyHash = identity.getPublicKeyById(0).hash();
 
-    const identityId = await dapiClient.getIdentityIdByFirstPublicKey(
+    const identityId = await dapiClient.platform.getIdentityIdByFirstPublicKey(
       publicKeyHash,
     );
 
@@ -102,7 +102,7 @@ describe('getIdentityIdByFirstPublicKeyHandlerFactory', function main() {
 
   it('should respond with NOT_FOUND error if identity not found', async () => {
     const publicKeyHash = Buffer.alloc(10).toString('hex');
-    const serializedIdentity = await dapiClient.getIdentityIdByFirstPublicKey(
+    const serializedIdentity = await dapiClient.platform.getIdentityIdByFirstPublicKey(
       publicKeyHash,
     );
 

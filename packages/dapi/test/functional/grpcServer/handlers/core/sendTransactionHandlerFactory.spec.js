@@ -56,7 +56,10 @@ describe('sendTransactionHandlerFactory', function main() {
   it('should sent transaction and return transaction ID', async () => {
     const options = {};
 
-    const result = await dapiClient.sendTransaction(Buffer.from(transaction.serialize(), 'hex'), options);
+    const result = await dapiClient.core.broadcastTransaction(
+      Buffer.from(transaction.serialize(), 'hex'),
+      options,
+    );
 
     expect(result).to.be.a('string');
   });

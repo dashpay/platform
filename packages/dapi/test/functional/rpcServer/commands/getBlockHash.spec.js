@@ -35,7 +35,7 @@ describe('rpcServer', function main() {
 
     it('should get block hash by height', async () => {
       const height = blocksNumber - 10;
-      const hash = await dapiClient.getBlockHash(height);
+      const hash = await dapiClient.core.getBlockHash(height);
 
       expect(hash).to.be.a('string');
     });
@@ -44,11 +44,11 @@ describe('rpcServer', function main() {
       const height = blocksNumber * 3;
 
       try {
-        await dapiClient.getBlockHash(height);
+        await dapiClient.core.getBlockHash(height);
 
         expect.fail('Should throw error');
       } catch (e) {
-        expect(e.name).to.equal('RPCError');
+        expect(e.name).to.equal('JsonRpcError');
         expect(e.message).contains('Block height out of range');
       }
     });

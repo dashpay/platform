@@ -29,7 +29,7 @@ describe('getStatusHandlerFactory', function main() {
   });
 
   it('should return status', async () => {
-    const result = await dapiClient.getStatus();
+    const result = await dapiClient.core.getStatus();
 
     expect(result).to.have.a.property('coreVersion');
     expect(result).to.have.a.property('protocolVersion');

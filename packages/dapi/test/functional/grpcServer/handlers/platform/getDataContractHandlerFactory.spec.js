@@ -92,10 +92,10 @@ describe('getDataContractHandlerFactory', function main() {
     dataContractCreateTransition.sign(identity.getPublicKeyById(publicKeyId), privateKey);
 
     // Create Identity
-    await dapiClient.applyStateTransition(identityCreateTransition);
+    await dapiClient.platform.broadcastStateTransition(identityCreateTransition.serialize());
 
     // Create Data Contract
-    await dapiClient.applyStateTransition(dataContractCreateTransition);
+    await dapiClient.platform.broadcastStateTransition(dataContractCreateTransition.serialize());
   });
 
   after(async () => {
@@ -103,7 +103,7 @@ describe('getDataContractHandlerFactory', function main() {
   });
 
   it('should fetch created data contract', async () => {
-    const serializedDataContract = await dapiClient.getDataContract(
+    const serializedDataContract = await dapiClient.platform.getDataContract(
       dataContract.getId(),
     );
 
@@ -118,7 +118,7 @@ describe('getDataContractHandlerFactory', function main() {
   });
 
   it('should respond with null if data contract not found', async () => {
-    const serializedDataContract = await dapiClient.getDataContract(
+    const serializedDataContract = await dapiClient.platform.getDataContract(
       'unknownId',
     );
 

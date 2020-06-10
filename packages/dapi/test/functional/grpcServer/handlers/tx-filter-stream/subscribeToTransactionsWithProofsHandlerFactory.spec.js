@@ -106,7 +106,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', function main() {
 
     const bloomFilterObject = bloomFilter.toObject();
 
-    const stream = await dapiClient.subscribeToTransactionsWithProofs(
+    const stream = await dapiClient.core.subscribeToTransactionsWithProofs(
       {
         vData: new Uint8Array(bloomFilterObject.vData),
         nHashFuncs: bloomFilterObject.nHashFuncs,
@@ -177,7 +177,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', function main() {
 
     const bloomFilterObject = bloomFilter.toObject();
 
-    const stream = await dapiClient.subscribeToTransactionsWithProofs(
+    const stream = await dapiClient.core.subscribeToTransactionsWithProofs(
       {
         vData: new Uint8Array(bloomFilterObject.vData),
         nHashFuncs: bloomFilterObject.nHashFuncs,
@@ -280,7 +280,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', function main() {
 
     const bloomFilterObject = bloomFilter.toObject();
 
-    const stream = await dapiClient.subscribeToTransactionsWithProofs(
+    const stream = await dapiClient.core.subscribeToTransactionsWithProofs(
       {
         vData: new Uint8Array(bloomFilterObject.vData),
         nHashFuncs: bloomFilterObject.nHashFuncs,
@@ -443,7 +443,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', function main() {
     await coreAPI.sendRawTransaction(transaction.serialize());
 
     // Connect to the stream
-    const stream = await dapiClient.subscribeToTransactionsWithProofs(
+    const stream = await dapiClient.core.subscribeToTransactionsWithProofs(
       {
         vData: new Uint8Array(bloomFilterObject.vData),
         nHashFuncs: bloomFilterObject.nHashFuncs,

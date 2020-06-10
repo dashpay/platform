@@ -100,7 +100,7 @@ describe('validateIdentityPublicKeyUniqueness', function main() {
     identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
     identityCreateTransition.signByPrivateKey(privateKey);
 
-    await dapiClient.applyStateTransition(identityCreateTransition);
+    await dapiClient.platform.broadcastStateTransition(identityCreateTransition.serialize());
   });
 
   after(async () => {
@@ -121,7 +121,7 @@ describe('validateIdentityPublicKeyUniqueness', function main() {
     identityCreateTransition.signByPrivateKey(privateKey);
 
     try {
-      await dapiClient.applyStateTransition(identityCreateTransition);
+      await dapiClient.platform.broadcastStateTransition(identityCreateTransition.serialize());
       expect.fail('Error was not thrown');
     } catch (e) {
       const [error] = JSON.parse(e.metadata.get('errors')[0]);

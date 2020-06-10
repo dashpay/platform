@@ -38,7 +38,7 @@ describe('getBlockHandlerFactory', function main() {
   });
 
   it('should get block by hash', async () => {
-    const blockBinary = await dapiClient.getBlockByHash(blockHash);
+    const blockBinary = await dapiClient.core.getBlockByHash(blockHash);
 
     expect(blockBinary).to.be.an.instanceof(Buffer);
     const block = new Block(blockBinary);
@@ -47,7 +47,7 @@ describe('getBlockHandlerFactory', function main() {
   });
 
   it('should get block by height', async () => {
-    const blockBinary = await dapiClient.getBlockByHeight(blockHeight);
+    const blockBinary = await dapiClient.core.getBlockByHeight(blockHeight);
 
     expect(blockBinary).to.be.an.instanceof(Buffer);
     const block = new Block(blockBinary);
@@ -57,7 +57,7 @@ describe('getBlockHandlerFactory', function main() {
 
   it('should respond with an invalid argument error if the block was not found', async () => {
     try {
-      await dapiClient.getBlockByHeight(100000000);
+      await dapiClient.core.getBlockByHeight(100000000);
 
       expect.fail('Should throw an invalid argument error');
     } catch (e) {

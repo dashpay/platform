@@ -98,7 +98,7 @@ describe('getDocumentsHandlerFactory', function main() {
 
     accumulatedFee += identityCreateTransition.calculateFee();
 
-    await dapiClient.applyStateTransition(identityCreateTransition);
+    await dapiClient.platform.broadcastStateTransition(identityCreateTransition.serialize());
 
     dataContract = getDataContractFixture(identity.getId());
 
@@ -107,7 +107,7 @@ describe('getDocumentsHandlerFactory', function main() {
 
     accumulatedFee += dataContractStateTransition.calculateFee();
 
-    await dapiClient.applyStateTransition(dataContractStateTransition);
+    await dapiClient.platform.broadcastStateTransition(dataContractStateTransition.serialize());
   });
 
   after(async () => {
@@ -128,9 +128,9 @@ describe('getDocumentsHandlerFactory', function main() {
 
     accumulatedFee += documentTransition.calculateFee();
 
-    await dapiClient.applyStateTransition(documentTransition);
+    await dapiClient.platform.broadcastStateTransition(documentTransition.serialize());
 
-    const [documentBuffer] = await dapiClient.getDocuments(dataContract.getId(), 'niceDocument', {});
+    const [documentBuffer] = await dapiClient.platform.getDocuments(dataContract.getId(), 'niceDocument', {});
 
     const receivedDocument = await dpp.document.createFromSerialized(
       documentBuffer, { skipValidation: true },
@@ -152,7 +152,7 @@ describe('getDocumentsHandlerFactory', function main() {
     documentTransition.sign(identity.getPublicKeyById(publicKeyId), identityPrivateKey);
 
     try {
-      await dapiClient.applyStateTransition(documentTransition);
+      await dapiClient.platform.broadcastStateTransition(documentTransition.serialize());
       expect.fail('Error was not thrown');
     } catch (e) {
       expect(e.code).to.equal(GrpcErrorCodes.FAILED_PRECONDITION);

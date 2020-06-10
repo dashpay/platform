@@ -93,7 +93,7 @@ describe('topUpIdentity', function main() {
     identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
     identityCreateTransition.signByPrivateKey(privateKey);
 
-    await dapiClient.applyStateTransition(identityCreateTransition);
+    await dapiClient.platform.broadcastStateTransition(identityCreateTransition.serialize());
   });
 
   after(async () => {
@@ -126,9 +126,9 @@ describe('topUpIdentity', function main() {
     );
     identityTopUpTransition.signByPrivateKey(privateKey);
 
-    await dapiClient.applyStateTransition(identityTopUpTransition);
+    await dapiClient.platform.broadcastStateTransition(identityTopUpTransition.serialize());
 
-    const serializedIdentity = await dapiClient.getIdentity(
+    const serializedIdentity = await dapiClient.platform.getIdentity(
       identityCreateTransition.getIdentityId(),
     );
 
@@ -166,7 +166,7 @@ describe('topUpIdentity', function main() {
     identityTopUpTransition.signByPrivateKey(privateKey);
 
     try {
-      await dapiClient.applyStateTransition(identityTopUpTransition);
+      await dapiClient.platform.broadcastStateTransition(identityTopUpTransition.serialize());
 
       expect.fail('Should fail with error');
     } catch (e) {
@@ -174,7 +174,7 @@ describe('topUpIdentity', function main() {
       expect(e.details).to.equal('State Transition is invalid');
     }
 
-    const serializedIdentity = await dapiClient.getIdentity(
+    const serializedIdentity = await dapiClient.platform.getIdentity(
       identityCreateTransition.getIdentityId(),
     );
 

@@ -85,7 +85,7 @@ describe('getIdentityHandlerFactory', function main() {
     identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
     identityCreateTransition.signByPrivateKey(privateKey);
 
-    await dapiClient.applyStateTransition(identityCreateTransition);
+    await dapiClient.platform.broadcastStateTransition(identityCreateTransition.serialize());
   });
 
   after(async () => {
@@ -93,7 +93,7 @@ describe('getIdentityHandlerFactory', function main() {
   });
 
   it('should fetch created identity', async () => {
-    const serializedIdentity = await dapiClient.getIdentity(
+    const serializedIdentity = await dapiClient.platform.getIdentity(
       identityCreateTransition.getIdentityId(),
     );
 
@@ -111,7 +111,7 @@ describe('getIdentityHandlerFactory', function main() {
   });
 
   it('should respond with NOT_FOUND error if identity not found', async () => {
-    const serializedIdentity = await dapiClient.getIdentity('unknownId');
+    const serializedIdentity = await dapiClient.platform.getIdentity('unknownId');
 
     expect(serializedIdentity).to.be.null();
   });

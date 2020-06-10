@@ -34,7 +34,7 @@ describe('getTransactionHandlerFactor', function main() {
 
     await coreAPI.generateToAddress(1000, fromAddress);
 
-    const { items: unspent } = await dapiClient.getUTXO(fromAddress);
+    const { items: unspent } = await dapiClient.core.getUTXO(fromAddress);
 
     const amount = 10000;
 
@@ -54,7 +54,7 @@ describe('getTransactionHandlerFactor', function main() {
   });
 
   it('should respond with a transaction by it\'s ID', async () => {
-    const result = await dapiClient.getTransaction(transactionId);
+    const result = await dapiClient.core.getTransaction(transactionId);
     const receivedTx = new Transaction(Buffer.from(result));
     expect(receivedTx.toString('hex')).to.deep.equal(transaction.serialize());
   });
@@ -62,7 +62,7 @@ describe('getTransactionHandlerFactor', function main() {
   it('should respond with null if transaction was not found', async () => {
     const nonExistentId = Buffer.alloc(32).toString('hex');
 
-    const result = await dapiClient.getTransaction(nonExistentId);
+    const result = await dapiClient.core.getTransaction(nonExistentId);
 
     expect(result).to.be.null();
   });
