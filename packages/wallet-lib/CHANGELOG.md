@@ -1,3 +1,8 @@
+# [7.1.2](https://github.com/dashevo/wallet-lib/compare/v7.1.1...v7.1.2) (2020-06-10)
+    
+- **Feat:**
+    - feat: TransactionOrderer (#136)
+
 # [7.1.1](https://github.com/dashevo/wallet-lib/compare/v7.1.0...v7.1.1) (2020-06-03)
     
 - **Fixes:**

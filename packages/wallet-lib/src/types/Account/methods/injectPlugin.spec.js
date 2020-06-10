@@ -1,5 +1,4 @@
 const { expect } = require('chai');
-// const { EventEmitter2: EventEmitter } = require('eventemitter2');
 const EventEmitter = require('events');
 const Dashcore = require('@dashevo/dashcore-lib');
 const FaultyWorker = require('../../../../fixtures/plugins/FaultyWorker');
