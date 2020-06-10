@@ -75,7 +75,7 @@ const clientOpts = {
 };
 let account;
 describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite() {
-  this.timeout(550000);
+  this.timeout(700000);
 
   it('should init a Client', async () => {
     clientInstance = new Dash.Client(clientOpts);
