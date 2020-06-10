@@ -1,6 +1,7 @@
+const _ = require('lodash');
 const logger = require('../../../logger');
-const fetchAndStoreAddressTransactions = require('./utils/fetchAndStoreAddressTransactions');
-
+const fetchAddressTransactions = require('./utils/fetchAddressTransactions');
+const TransactionOrderer = require('./utils/TransactionOrderer/TransactionOrderer');
 // This method is called as first thing by the SyncWorker.
 // It's only when resolved that the Wallet will be ready (for what SyncWorker do)
 // And therefore that's where we need to deal with all necessary step
@@ -10,23 +11,28 @@ const fetchAndStoreAddressTransactions = require('./utils/fetchAndStoreAddressTr
 // fetching here found that we have more addresses that on starting of the sync up.
 module.exports = async function initialSyncUp() {
   const { transporter, storage } = this;
-
   const addrList = this.getAddressListToSync().map((addr) => addr.address);
 
   // Due to the events system, we need to handle the fact that we did subscribed to addresses
   // that we had received the transactions and store before
   // being able to release initialSyncUp as ready.
   // When we will move to bloomfilter, that part might be more complex.
-  /* eslint-disable-next-line no-async-promise-executor */
-  return new Promise(async (resolve) => {
-    // eslint-disable-next-line no-restricted-syntax
-    for (const address of addrList) {
-      // We need to wait for fetching and addition to be done sequentially
-      // to correctly manage our balance as input can be output in prev tx.
-      /* eslint-disable-next-line no-await-in-loop */
-      await fetchAndStoreAddressTransactions(address, transporter, storage);
-    }
-    logger.silly('SyncWorker - initialSyncUp - Fully synced');
-    resolve();
-  });
+
+  const boundFetchAddressTransactions = _.bind(fetchAddressTransactions, null, _, transporter);
+  const transactionPromises = addrList.map(boundFetchAddressTransactions);
+
+  const transactionsByAddresses = await Promise.all(transactionPromises);
+
+  const transactions = _.flatten(transactionsByAddresses);
+
+  const ordered = new TransactionOrderer();
+
+  transactions.forEach((tx) => ordered.insert(tx));
+
+  const boundImportTransaction = _.bind(storage.importTransaction, storage, _, transporter);
+  const importPromises = ordered.transactions.map(boundImportTransaction);
+
+  await Promise.all(importPromises);
+
+  logger.silly('SyncWorker - initialSyncUp - Fully synced');
 };

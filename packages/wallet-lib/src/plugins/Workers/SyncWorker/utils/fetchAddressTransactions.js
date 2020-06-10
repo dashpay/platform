@@ -1,4 +1,4 @@
-module.exports = async function fetchAndStoreAddressTransactions(address, transporter, storage) {
+module.exports = async function fetchAndStoreAddressTransactions(address, transporter) {
   const promises = [];
   const summary = await transporter.getAddressSummary(address);
 
@@ -9,9 +9,5 @@ module.exports = async function fetchAndStoreAddressTransactions(address, transp
       });
   }
 
-  await Promise
-    .all(promises)
-    .then((transactions) => {
-      transactions.map((transaction) => storage.importTransaction(transaction));
-    });
+  return Promise.all(promises);
 };
