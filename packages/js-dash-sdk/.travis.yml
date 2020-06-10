@@ -3,17 +3,20 @@ language: node_js
 
 # Support Active LTS versions of Node.js
 node_js:
-  - "10"
   - "12"
+  - "14"
+
+branches:
+  only:
+    - master
+    - develop
 
 install:
   - npm ci
 
-after_install:
-  - npm run build:prod
-
 script:
   - npm run check-package
+  - npm run build:prod
   - npm run test
 
 before_deploy:

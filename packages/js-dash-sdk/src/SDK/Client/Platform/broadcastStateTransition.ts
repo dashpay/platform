@@ -6,7 +6,9 @@ import {Platform} from "./Platform";
  * @param identity
  */
 export default async function broadcastStateTransition(platform: Platform, stateTransition: any, identity: any) {
-    const { dpp, client, account } = platform;
+    const { client } = platform;
+
+    const account = await client.getWalletAccount();
 
     // @ts-ignore
     const { privateKey } = account.getIdentityHDKey(0);
@@ -24,5 +26,5 @@ export default async function broadcastStateTransition(platform: Platform, state
     //     throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
     // }
 
-    await client.applyStateTransition(stateTransition);
+    await client.getDAPIClient().applyStateTransition(stateTransition);
 }

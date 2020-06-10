@@ -5,7 +5,7 @@ DAPI (Decentralized API) is a distributed and decentralized endpoints provided b
 ## Get the DAPI-Client instance
 
 ```js
- const dapi = client.getDAPIInstance();
+ const dapiClient = client.getDAPIClient();
 ```
 
 The usage is then [described here](https://dashplatform.readme.io/docs/explanation-dapi).

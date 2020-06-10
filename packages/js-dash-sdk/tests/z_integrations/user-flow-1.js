@@ -3,6 +3,7 @@ const Dash = require('../../dist/dash.cjs.min.js');
 const fixtures = require('../fixtures/user-flow-1');
 const Chance = require('chance');
 const chance = new Chance();
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
 const dotenvSafe = require('dotenv-safe');
 
@@ -72,34 +73,22 @@ const clientOpts = {
     mnemonic: null,
   },
 };
+let account;
 describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite() {
-  this.timeout(450000);
+  this.timeout(550000);
 
   it('should init a Client', async () => {
     clientInstance = new Dash.Client(clientOpts);
     expect(clientInstance.network).to.equal('testnet');
-    expect(clientInstance.accountIndex).to.equal(0);
+    expect(clientInstance.walletAccountIndex).to.equal(0);
     expect(clientInstance.apps).to.deep.equal({dpns: {contractId: "7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM"}});
     expect(clientInstance.wallet.network).to.equal('testnet');
     expect(clientInstance.wallet.offlineMode).to.equal(false);
-    expect(clientInstance.account.index).to.equal(0);
     expect(clientInstance.platform.dpp).to.exist;
     expect(clientInstance.platform.client).to.exist;
-  });
 
-  it('should be ready quickly', (done) => {
-    let timer = setTimeout(() => {
-      done(new Error('Should have been initialized in time'));
-    }, 15000);
-    clientInstance.isReady().then(() => {
-      clearTimeout(timer);
-      expect(clientInstance.account.state).to.deep.equal({isInitialized: true, isReady: true, isDisconnecting: false});
-      expect(clientInstance.state).to.deep.equal({isReady: true, isAccountReady: true});
-      expect(clientInstance.apps['dpns']).to.exist;
-      expect(clientInstance.apps['dpns'].contractId).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
-      expect(clientInstance.apps['dpns'].contractId).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
-      return done();
-    })
+    account = await clientInstance.getWalletAccount();
+    expect(account.index).to.equal(0);
   });
 
   it('populate balance with dash', async () => {
@@ -109,24 +98,24 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
       .toString();
 
     await fundAddress(
-      clientInstance.clients.dapi,
+      clientInstance.getDAPIClient(),
       faucetAddress,
       faucetPrivateKey,
-      clientInstance.account.getAddress().address,
+      account.getAddress().address,
       20000
     )
   })
 
   it('should have a balance', function (done) {
-    const balance = (clientInstance.account.getTotalBalance());
+    const balance = (account.getTotalBalance());
     if(balance<10000){
-      return done(new Error(`You need to fund this address : ${clientInstance.account.getUnusedAddress().address}. Insuffisiant balance: ${balance}`));
+      return done(new Error(`You need to fund this address : ${account.getUnusedAddress().address}. Insuffisiant balance: ${balance}`));
     }
     hasBalance = true;
     return done();
   });
 
-  it('should check it\'s DPNS reg is available' , async function () {
+  it('should check if name is available' , async function () {
     const getDocument = await clientInstance.platform.names.get(username);
     expect(getDocument).to.equal(null);
     hasDuplicate = false;
@@ -190,6 +179,35 @@ describe('Integration - User flow 1 - Identity, DPNS, Documents', function suite
     expect(doc.getDataContractId()).to.equal('7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM');
     expect(doc.get('label')).to.equal(username);
     expect(doc.get('normalizedParentDomainName')).to.equal('dash');
+  });
+  it('should create and broadcast contract', async () => {
+    if(!createdIdentity){
+      throw new Error('Can\'t perform the test. Failed to fetch identity & did not reg name');
+    }
+
+    const documentsDefinition = {
+      test: {
+        properties: {
+          testProperty: {
+            type: "string"
+          }
+        },
+        additionalProperties: false,
+      }
+    }
+
+    const contract = await clientInstance.platform.contracts.create(documentsDefinition, createdIdentity);
+
+    expect(contract).to.exist;
+    expect(contract).to.be.instanceOf(DataContract);
+
+    await clientInstance.platform.contracts.broadcast(contract, createdIdentity);
+
+    const fetchedContract = await clientInstance.platform.contracts.get(contract.getId());
+
+    expect(fetchedContract).to.exist;
+    expect(fetchedContract).to.be.instanceOf(DataContract);
+    expect(fetchedContract.toJSON()).to.be.deep.equal(contract.toJSON());
   });
   it('should disconnect', async function () {
     await clientInstance.disconnect();

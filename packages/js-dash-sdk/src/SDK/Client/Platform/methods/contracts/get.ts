@@ -23,25 +23,19 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     if (localContract && localContract.contract) {
         return localContract.contract;
     } else {
-        try {
-            // @ts-ignore
-            const rawContract = await this.client.getDataContract(identifier);
-            if(!rawContract){
-                return null;
-            }
-
-            const contract = await this.dpp.dataContract.createFromSerialized(rawContract);
-            const app = {contractId: identifier, contract};
-            // If we do not have even the identifier in this.apps, we add it with timestamp as key
-            if (localContract === undefined) {
-                this.apps[Date.now()] = app
-            }
-            return app.contract;
-        } catch (e) {
-            console.error('Failed to get dataContract', e);
-            throw e;
+        const rawContract = await this.client.getDAPIClient().getDataContract(identifier);
+        if(!rawContract){
+            return null;
         }
 
+        const contract = await this.dpp.dataContract.createFromSerialized(rawContract);
+        const app = {contractId: identifier, contract};
+
+        // If we do not have even the identifier in this.apps, we add it with timestamp as key
+        if (localContract === undefined || !localContract.contract) {
+            this.apps[Date.now()] = app;
+        }
+        return app.contract;
     }
 }
 

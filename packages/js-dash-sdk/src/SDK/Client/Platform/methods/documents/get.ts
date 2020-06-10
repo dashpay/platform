@@ -1,4 +1,5 @@
 import {Platform} from "../../Platform";
+
 /**
  * @param {any} [where] - where
  * @param {any} [orderBy] - order by
@@ -15,6 +16,22 @@ declare interface fetchOpts {
 }
 
 /**
+ * Prefetch contract
+ *
+ * @param {Platform} this bound instance class
+ * @param {string} appName of the contract to fetch
+ */
+const ensureAppContractFetched = async function (this: Platform, appName) {
+    if (this.apps[appName]) {
+        if (!this.apps[appName].contract) {
+            const app = this.apps[appName];
+            // contracts.get deals with settings contract into this.apps[appName]
+            await this.contracts.get(app.contractId);
+        }
+    }
+}
+
+/**
  * Get documents from the platform
  *
  * @param {Platform} this bound instance class
@@ -23,10 +40,10 @@ declare interface fetchOpts {
  * @returns documents
  */
 export async function get(this: Platform, typeLocator: string, opts: fetchOpts): Promise<any> {
-    const appNames = Object.keys(this.apps);
+    if (!typeLocator.includes('.')) throw new Error('Accessing to field is done using format: appName.fieldName');
 
-    //We can either provide of type `dashpay.profile` or if only one schema provided, of type `profile`.
-    const [appName, fieldType] = (typeLocator.includes('.')) ? typeLocator.split('.') : [appNames[0], typeLocator];
+    // locator is of `dashpay.profile` with dashpay the app and profile the field.
+    const [appName, fieldType] = typeLocator.split('.');
     // FIXME: we may later want a hashmap of schemas and contract IDs
 
     if (!this.apps[appName]) {
@@ -36,26 +53,19 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
     if (!app.contractId) {
         throw new Error(`Missing contract ID for ${appName}`)
     }
-    const contractId = app.contractId;
-    try{
-        // @ts-ignore
-        const rawDataList = await this.client.getDocuments(contractId, fieldType, opts);
-        const documents: any[] = [];
 
-        for (const rawData of rawDataList) {
-            try {
-                const doc = await this.dpp.document.createFromSerialized(rawData, {skipValidation: true});
-                documents.push(doc);
-            } catch (e) {
-                console.error('Document creation: failure', e);
-                throw e;
-            }
-        }
-        return documents
-    } catch (e) {
-        console.error(`Document creation: unable to get documents of ${contractId}`);
-        throw e;
+    const contractId = app.contractId;
+    // If not present, will fetch contract based on appName and contractId store in this.apps.
+    await ensureAppContractFetched.call(this, appName);
+    // @ts-ignore
+    const rawDataList = await this.client.getDAPIClient().getDocuments(contractId, fieldType, opts);
+    const documents: any[] = [];
+
+    for (const rawData of rawDataList) {
+        const doc = await this.dpp.document.createFromSerialized(rawData, {skipValidation: true});
+        documents.push(doc);
     }
+    return documents
 }
 
 export default get;

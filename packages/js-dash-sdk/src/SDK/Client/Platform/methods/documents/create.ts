@@ -20,7 +20,7 @@ export async function create(this: Platform, typeLocator: string, identity: any,
     const [appName, fieldType] = (typeLocator.includes('.')) ? typeLocator.split('.') : [appNames[0], typeLocator];
 
 
-    if(!this.apps[appName] || !this.apps[appName]){
+    if(!this.apps[appName]){
         throw new Error(`Cannot find contractId for ${appName}`);
     }
 

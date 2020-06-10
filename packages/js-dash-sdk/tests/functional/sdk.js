@@ -1,15 +1,15 @@
 const {expect} = require('chai');
-const Dash = require('../../dist/dash.cjs.min');
+const Dash = require('../../');
 
 describe('SDK', function suite() {
-  this.timeout(10000);
+  this.timeout(40000);
   let instanceWithoutWallet = {};
   let instanceWithWallet = {};
   it('should provide expected class', function () {
     expect(Dash).to.have.property('Client');
     expect(Dash.Client.constructor.name).to.be.equal('Function')
   });
-  it('should create an instance', function (done) {
+  it('should create an instance', async function () {
     instanceWithoutWallet = new Dash.Client();
     expect(instanceWithoutWallet.network).to.equal('testnet');
     expect(instanceWithoutWallet.apps).to.deep.equal({
@@ -28,10 +28,9 @@ describe('SDK', function suite() {
         }
     );
     expect(instanceWithWallet.wallet.mnemonic).to.exist;
-    done();
   });
-  it('should sign and verify a message', function () {
-    const {account} = instanceWithWallet;
+  it('should sign and verify a message', async function () {
+    const account = await instanceWithWallet.getWalletAccount();
     const idKey = account.getIdentityHDKey();
     // This transforms from a Wallet-Lib.PrivateKey to a Dashcore-lib.PrivateKey.
     // It will quickly be annoying to perform this, and we therefore need to find a better solution for that.
@@ -42,7 +41,6 @@ describe('SDK', function suite() {
     expect(verify).to.equal(true);
   });
   after(async ()=>{
-    await instanceWithWallet.isReady();
     await instanceWithWallet.disconnect();
     await instanceWithoutWallet.disconnect();
   })

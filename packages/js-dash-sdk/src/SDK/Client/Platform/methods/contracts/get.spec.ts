@@ -14,17 +14,20 @@ const factory = new DataContractFactory(
 const dpp = {
     dataContract: factory
 }
+const getDataContract = async (id) => {
+    switch (id) {
+        // @ts-ignore
+        case contractsFixtures.ratePlatform.id:
+            const contract = await dpp.dataContract.createFromObject(contractsFixtures.ratePlatform);
+            return contract.serialize()
+        default:
+            return null;
+    }
+};
 const client = {
-    getDataContract: async (id) => {
-        switch (id) {
-            // @ts-ignore
-            case contractsFixtures.ratePlatform.id:
-                const contract = await dpp.dataContract.createFromObject(contractsFixtures.ratePlatform);
-                return contract.serialize()
-            default:
-                return null;
-        }
-    },
+    getDAPIClient: () => {
+        return { getDataContract };
+    }
 };
 const apps = {};
 
