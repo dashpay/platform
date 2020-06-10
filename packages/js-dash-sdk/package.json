@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "3.0.2",
+  "version": "3.13.0-dev.1",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "dist/dash.cjs.min.js",
   "unpkg": "dist/dash.min.js",
@@ -14,8 +14,7 @@
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
     "test": "npm run test:ts && npm run build:prod && npm run test:js",
     "test:ts": "mocha -r ts-node/register \"src/**/*.spec.ts\"",
-    "test:js": "mocha --recursive tests/**/*.js",
-    "prepare": "npm run build:dev"
+    "test:js": "mocha --recursive tests/**/*.js"
   },
   "repository": {
     "type": "git",
