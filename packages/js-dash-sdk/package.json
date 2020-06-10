@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "3.13.0-dev.2",
+  "version": "3.13.0-dev.3",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "dist/dash.cjs.min.js",
   "unpkg": "dist/dash.min.js",
