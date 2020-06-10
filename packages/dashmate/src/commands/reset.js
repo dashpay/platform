@@ -31,6 +31,7 @@ class ResetCommand extends BaseCommand {
           new Listr([
             {
               title: 'Remove Tendermint data',
+              enabled: () => preset !== PRESETS.TESTNET,
               task: async () => {
                 if (await dockerCompose.isServiceRunning(preset)) {
                   throw new Error('You can\'t reset data while MN is running. Please stop it.');
@@ -50,6 +51,7 @@ class ResetCommand extends BaseCommand {
             },
             {
               title: 'Remove Drive data',
+              enabled: () => preset !== PRESETS.TESTNET,
               task: async () => dockerCompose.down(preset),
             },
           ])

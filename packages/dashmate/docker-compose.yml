@@ -18,7 +18,7 @@ services:
       - -externalip=${CORE_EXTERNAL_IP:?err}
 
   sentinel:
-    image: strophy/sentinel
+    image: dashpay/sentinel
     restart: unless-stopped
     depends_on:
       - core

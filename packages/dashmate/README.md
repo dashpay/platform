@@ -143,7 +143,7 @@ To register a testnet masternode:
 $ mn register testnet cVdEfkXLHqftgXzRYZW4EdwtcnJ8Mktw9L4vcEcqbVDs3e2qdzCf 1.2.3.4 19999
 ```
 
-#### Reset data
+### Reset data
 
 The `reset` command removes all data corresponding to the specified preset and allows you to start a node from scratch.
 
