@@ -1,3 +1,8 @@
+# [3.13.0](https://github.com/dashevo/DashJS/compare/v3.13.0...v3.0.2) (2020-05-11)
+
+- **feat:**
+  - feat: update wallet lib to 7.1.4 (#80)
+
 # [3.0.2](https://github.com/dashevo/DashJS/compare/v3.0.2...v3.0.1) (2020-05-06)
 
 - **fix**:
