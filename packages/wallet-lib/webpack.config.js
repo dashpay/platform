@@ -1,23 +1,9 @@
 const path = require('path');
-// const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
-const webpack = require('webpack');
 
 const webConfig = {
   entry: './src/index.js',
-  // devtool: 'inline-source-map',
-  devtool: 'cheap-module-source-map',
-  // mode: 'development',
   mode: 'production',
   target: 'web',
-  module: {
-    rules: [
-      {
-        test: /\.ts$/,
-        use: 'ts-loader',
-        exclude: /node_modules/,
-      },
-    ],
-  },
   node: {
     // Prevent embedded winston to throw error with FS not existing.
     fs: 'empty',
@@ -32,11 +18,5 @@ const webConfig = {
   resolve: {
     extensions: ['.ts', '.js', '.json'],
   },
-  plugins: [
-    // new BundleAnalyzerPlugin(),
-    new webpack.DefinePlugin({
-      'process.env.NODE_ENV': JSON.stringify('production'),
-    }),
-  ],
 };
 module.exports = webConfig;

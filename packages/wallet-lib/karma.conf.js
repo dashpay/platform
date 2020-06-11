@@ -19,15 +19,13 @@ module.exports = (config) => {
     },
     webpack: {
       mode: 'development',
-      optimization: {
-        minimize: false,
-      },
       plugins: [
         new webpack.EnvironmentPlugin(
           dotenvResult.parsed,
         ),
       ],
       node: {
+        // Prevent embedded winston to throw error with FS not existing.
         fs: 'empty',
       },
     },

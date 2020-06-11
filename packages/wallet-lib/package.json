@@ -4,21 +4,25 @@
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
-  "browser": "dist/wallet-lib.min.js",
   "scripts": {
-    "lint": "eslint src/*",
-    "build": "npm run build:dev",
-    "build:dev": "webpack -d --display-error-details --progress",
-    "build:prod": "webpack -p --display-error-details --progress",
+    "build": "webpack --display-error-details",
     "check-package": "npm run check-package:name && npm run check-package:version",
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
+    "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test:unit": "nyc mocha 'src/**/*.spec.js'",
     "test:functional": "nyc mocha 'tests/functional/*.js'",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test": "npm run test:unit && npm run test:functional && npm run test:browsers && npm run lint"
+    "test": "npm run test:unit && npm run test:functional && npm run test:browsers",
+    "prepublishOnly": "npm run build"
   },
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "src"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dashevo/wallet-lib.git"
@@ -35,13 +39,13 @@
   },
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
+    "@dashevo/dapi-client": "^0.13.2",
     "@dashevo/dashcore-lib": "^0.18.4",
     "cbor": "^5.0.2",
     "crypto-js": "^4.0.0",
     "lodash": "^4.17.15",
     "pbkdf2": "^3.1.1",
-    "winston": "^3.2.1",
-    "@dashevo/dapi-client": "^0.13.2"
+    "winston": "^3.2.1"
   },
   "devDependencies": {
     "chai": "^4.2.0",
@@ -58,8 +62,7 @@
     "localforage": "^1.7.3",
     "mocha": "^7.2.0",
     "nyc": "^15.0.0",
-    "webpack": "^4.41.5",
-    "webpack-bundle-analyzer": "^3.8.0",
-    "webpack-cli": "^3.3.10"
+    "webpack": "^4.43.0",
+    "webpack-cli": "^3.3.11"
   }
 }

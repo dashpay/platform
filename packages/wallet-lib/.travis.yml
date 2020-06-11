@@ -9,17 +9,14 @@ node_js:
 branches:
   only:
     - master
-    - develop
-    - /^v(\d+\.)?(\d+\.)?(\*|\d+)$/
+    - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)-dev$/
+    - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
 
 install:
   - npm ci
   - cp .env.example .env
 
-script:
-  - npm run check-package
-  - npm run build:prod
-  - npm run test
+script: npm run check-package && npm run lint && npm run test
 
 before_deploy:
   # Add token for @dashevo private npm registry & deployement

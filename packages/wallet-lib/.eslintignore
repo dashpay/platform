@@ -1,1 +1,4 @@
 *.d.ts
+fixtures
+dist
+tests
