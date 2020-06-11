@@ -1,5 +1,5 @@
 const {expect} = require('chai');
-const Dash = require('../../dist/dash.cjs.min.js');
+const Dash = require('../../');
 const Chance = require('chance');
 const chance = new Chance();
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');

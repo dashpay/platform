@@ -4,7 +4,7 @@ const baseConfig = {
   entry: './src/index.ts',
   // devtool: 'inline-source-map',
   devtool: 'cheap-module-source-map',
-  // mode: 'development',
+  //mode: 'development',
   mode: "production",
   module: {
     rules: [

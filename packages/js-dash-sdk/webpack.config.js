@@ -16,9 +16,13 @@ const es5Config = Object.assign({}, baseConfig, {
   target: 'node',
   // in order to ignore all modules in node_modules folder
   externals: [nodeExternals()],
+  optimization: {
+    minimize: false
+  },
+  devtool: 'inline-source-map',
   output: {
     ...baseConfig.output,
-    filename: 'dash.cjs.min.js',
+    filename: 'dash.cjs.js',
     libraryTarget: 'commonjs2'
   },
 });
