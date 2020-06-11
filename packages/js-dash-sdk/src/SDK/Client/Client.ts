@@ -84,14 +84,12 @@ export class Client {
 
         this.apps = Object.assign({
             dpns: {
-                contractId: '7PBvxeGpj7SsWfvDSa31uqEMt58LAiJww7zNcVRP1uEM'
+                contractId: '2zjMNfMF31QdunL5SK7DyDULDwXm1PxSqnnSpfBkvTWH'
             }
         }, this.options.apps);
 
         this.dapiClientWrapper = new DAPIClientWrapper({
             seeds: this.options.seeds || defaultSeeds,
-            timeout: 1000,
-            retries: 5,
             network: this.network
         });
 

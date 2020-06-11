@@ -10,9 +10,11 @@ const opts = {
     }
   }
 };
-const client = new Dash.Client(opts);
-client.isReady().then(()=>{
-  const {account, platform} = client;
+const clientInstance = new Dash.Client(opts);
+
+(async ()=>{
+  const { platform } = clientInstance;
+  account = await clientInstance.getWalletAccount();
 
   async function sendPayment() {
     const tx = await account.createTransaction({recipient: 'yNPbcFfabtNmmxKdGwhHomdYfVs6gikbPf', satoshis: 12000});
@@ -23,4 +25,4 @@ client.isReady().then(()=>{
     const profile = await platform.documents.fetch('dashpay.profile', {});
     console.log(profile);
   }
-});
+})()
