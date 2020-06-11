@@ -12,6 +12,10 @@ branches:
     - develop
     - /^v(\d+\.)?(\d+\.)?(\*|\d+)$/
 
+install:
+  - npm ci
+  - cp .env.example .env
+
 script:
   - npm run check-package
   - npm run build:prod

@@ -1,19 +1,78 @@
 const { expect } = require('chai');
 
-const mnemonic = 'advance garment concert scatter west fringe hurdle estate bubble angry hungry dress';
+const {
+  Transaction,
+  PrivateKey,
+} = require('@dashevo/dashcore-lib');
 
 const { Wallet } = require('../../src/index');
 
+function wait(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+/**
+ *
+ * @param {DAPIClient} dapiClient
+ * @param {Address} faucetAddress
+ * @param {PrivateKey} faucetPrivateKey
+ * @param {Address} address
+ * @param {number} amount
+ * @return {Promise<string>}
+ */
+async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address, amount) {
+  const { items: inputs } = await dapiClient.getUTXO(faucetAddress);
+
+  const transaction = new Transaction();
+
+  // We take random coz two browsers run in parallel
+  // and they can take the same inputs
+
+  const inputIndex = Math.floor(
+    Math.random() * Math.floor(inputs.length / 2) * -1,
+  );
+
+  transaction.from(inputs.slice(inputIndex)[0])
+    .to(address, amount)
+    .change(faucetAddress)
+    .fee(668)
+    .sign(faucetPrivateKey);
+
+  let { blocks: currentBlockHeight } = await dapiClient.getStatus();
+
+  const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
+
+  const desiredBlockHeight = currentBlockHeight + 1;
+
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    ({ blocks: currentBlockHeight } = await dapiClient.getStatus());
+    // eslint-disable-next-line no-await-in-loop
+    await wait(30000);
+  } while (currentBlockHeight < desiredBlockHeight);
+
+  return transactionId;
+}
+
+const seeds = process.env.DAPI_SEED
+  .split(',')
+  .map((seed) => ({ service: seed }));
 
 let newWallet;
 let wallet;
 let account;
 describe('Wallet-lib - functional ', function suite() {
-  this.timeout(100000);
+  this.timeout(700000);
+
   describe('Wallet', () => {
     describe('Create a new Wallet', () => {
       it('should create a new wallet with default params', () => {
-        newWallet = new Wallet();
+        newWallet = new Wallet({
+          transporter: {
+            seeds,
+          },
+          network: process.env.NETWORK,
+        });
 
         expect(newWallet.walletType).to.be.equal('hdwallet');
         expect(newWallet.plugins).to.be.deep.equal({});
@@ -32,7 +91,11 @@ describe('Wallet-lib - functional ', function suite() {
     describe('Load a wallet', () => {
       it('should load a wallet from mnemonic', () => {
         wallet = new Wallet({
-          mnemonic,
+          mnemonic: newWallet.mnemonic,
+          transporter: {
+            seeds,
+          },
+          network: process.env.NETWORK,
         });
 
         expect(wallet.walletType).to.be.equal('hdwallet');
@@ -46,7 +109,7 @@ describe('Wallet-lib - functional ', function suite() {
         expect(wallet.network).to.be.deep.equal('testnet');
 
         const exported = wallet.exportWallet();
-        expect(exported).to.equal(mnemonic);
+        expect(exported).to.equal(newWallet.mnemonic);
       });
     });
   });
@@ -56,12 +119,25 @@ describe('Wallet-lib - functional ', function suite() {
       await account.isReady();
       expect(account.state.isReady).to.be.deep.equal(true);
     });
-    it('should get the expected unusedAddress', () => {
+
+    it('populate balance with dash', async () => {
+      const faucetPrivateKey = PrivateKey.fromString(process.env.FAUCET_PRIVATE_KEY);
+      const faucetAddress = faucetPrivateKey
+        .toAddress(process.env.NETWORK)
+        .toString();
+
+      await fundAddress(
+        wallet.transporter.client,
+        faucetAddress,
+        faucetPrivateKey,
+        account.getAddress().address,
+        20000,
+      );
+    });
+
+    it('should has unusedAddress with index 1', () => {
       const unusedAddress = account.getUnusedAddress();
-      if (unusedAddress.index === 0) {
-        throw new Error('Fund this address on testnet: yb9SZAkDS4p9UDRy3X5LAMrr3kLBaVgZDD');
-      }
-      expect(unusedAddress.address).to.equal('ydvgJ2eVSmdKt78ZSVBJ7zarVVtdHGj3yR');
+      expect(unusedAddress.index).to.equal(1);
     });
     it('should not have empty balance', () => {
       expect(account.getTotalBalance()).to.not.equal(0);

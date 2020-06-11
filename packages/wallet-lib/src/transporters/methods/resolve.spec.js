@@ -12,7 +12,15 @@ describe('transporters', function suite() {
     }
     const defaultTransporterWithOpts = transporters.resolve(opts);
     expect(defaultTransporterWithOpts).to.be.instanceOf(transporters.DAPIClientWrapper);
-    expect(defaultTransporterWithOpts.client.MNDiscovery.seeds).to.be.deep.equal(opts.seeds);
+
+    const seeds = defaultTransporterWithOpts.client.MNDiscovery
+                  .masternodeListProvider.jsonRpcTransport
+                  .mnDiscovery.mnList.map((seed) => {
+                    delete seed.getIp;
+                    return seed;
+      });
+
+    expect(seeds).to.be.deep.equal(opts.seeds);
   });
   it('should resolve transporters from string', () => {
     const opts = 'dapi';
@@ -44,13 +52,29 @@ describe('transporters', function suite() {
     };
     const dapiTransporterWithSeeds = transporters.resolve(optsDAPIWithSeeds);
     expect(dapiTransporterWithSeeds).to.be.instanceOf(transporters.DAPIClientWrapper);
-    expect(dapiTransporterWithSeeds.client.MNDiscovery.seeds).to.be.deep.equal(optsDAPIWithSeeds.seeds);
+
+    let seeds = dapiTransporterWithSeeds.client.MNDiscovery
+      .masternodeListProvider.jsonRpcTransport
+      .mnDiscovery.mnList.map((seed) => {
+        delete seed.getIp;
+        return seed;
+      });
+
+    expect(seeds).to.be.deep.equal(optsDAPIWithSeeds.seeds);
 
     const optsDAPI2 = { type: 'dapi', seeds: [{ service: '18.236.131.254' }] };
     const dapiTransporter2 = transporters.resolve(optsDAPI2);
     expect(dapiTransporter2).to.be.instanceOf(transporters.DAPIClientWrapper);
     expect(dapiTransporter2.type).to.be.equal('DAPIClientWrapper');
-    expect(dapiTransporter2.client.MNDiscovery.seeds).to.be.deep.equal(optsDAPI2.seeds);
+
+    seeds = dapiTransporter2.client.MNDiscovery
+      .masternodeListProvider.jsonRpcTransport
+      .mnDiscovery.mnList.map((seed) => {
+        delete seed.getIp;
+        return seed;
+      });
+
+    expect(seeds).to.be.deep.equal(optsDAPI2.seeds);
   });
   it('should extend passed options', () => {
     const options = {
@@ -60,7 +84,15 @@ describe('transporters', function suite() {
 
     const transporter = transporters.resolve(options);
     expect(transporter.type).to.be.equal('DAPIClientWrapper');
-    expect(transporter.client.MNDiscovery.seeds).to.be.deep.equal(options.seeds);
+
+    const seeds = transporter.client.MNDiscovery
+      .masternodeListProvider.jsonRpcTransport
+      .mnDiscovery.mnList.map((seed) => {
+        delete seed.getIp;
+        return seed;
+      });
+
+    expect(seeds).to.be.deep.equal(options.seeds);
   });
   it('should resolves the transporter passed as a props', () => {
     const opts = {
@@ -72,6 +104,14 @@ describe('transporters', function suite() {
     const client = new transporters.DAPIClientWrapper(opts);
     const transporter = transporters.resolve(client);
     expect(transporter).to.deep.equal(client);
-    expect(transporter.client.MNDiscovery.seeds).to.be.deep.equal(opts.seeds);
+
+    const seeds = transporter.client.MNDiscovery
+      .masternodeListProvider.jsonRpcTransport
+      .mnDiscovery.mnList.map((seed) => {
+        delete seed.getIp;
+        return seed;
+      });
+
+    expect(seeds).to.be.deep.equal(opts.seeds);
   });
 });

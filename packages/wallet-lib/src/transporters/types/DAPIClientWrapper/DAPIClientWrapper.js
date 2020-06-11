@@ -32,8 +32,10 @@ class DAPIClientWrapper extends BaseTransporter {
       const Client = require('@dashevo/dapi-client');
       this.client = new Client({ ...defaultDAPIOpts, ...props });
     } catch (err) {
-      logger.error("The '@dashevo/dapi-client' package is missing! Please install it with 'npm install @dashevo/dapi-client --save' command.");
-    }
+      if (!err.message || !err.message.includes("Cannot find module '@dashevo/dapi-client'")){
+        throw err;
+      }
+      logger.error("The '@dashevo/dapi-client' package is missing! Please install it with 'npm install @dashevo/dapi-client --save' command.");    }
   }
 }
 
