@@ -116,7 +116,7 @@ describe('SDK', function suite() {
       faucetAddress,
       faucetPrivateKey,
       account.getAddress().address,
-      20000
+      50000
     )
   })
 
@@ -217,12 +217,36 @@ describe('SDK', function suite() {
 
     await clientInstance.platform.contracts.broadcast(contract, createdIdentity);
 
+    await wait(100);
+
     const fetchedContract = await clientInstance.platform.contracts.get(contract.getId());
 
     expect(fetchedContract).to.exist;
     expect(fetchedContract).to.be.instanceOf(DataContract);
     expect(fetchedContract.toJSON()).to.be.deep.equal(contract.toJSON());
   });
+
+  it('should top up identity', async function () {
+    const identityId = createdIdentity.getId();
+
+    const identityBeforeTopUp = await clientInstance.platform.identities.get(identityId);
+    const balanceBeforeTopUp = identityBeforeTopUp.getBalance();
+    const topUpAmount = 10000;
+    const topUpCredits = topUpAmount * 1000;
+
+    await clientInstance.platform.identities.topUp(identityId, topUpAmount);
+
+    const identity = await clientInstance.platform.identities.get(identityId);
+
+    expect(identity.getId()).to.be.equal(identityId);
+
+    // Fee is based on ST's size atm, so we too lazy
+    // to take it somehow from clientInstance.platform.identities.topUp
+
+    expect(identity.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
+    expect(identity.getBalance()).to.be.lessThan(balanceBeforeTopUp + topUpCredits);
+  })
+
   it('should disconnect', async function () {
     await clientInstance.disconnect();
   });
