@@ -1,3 +1,12 @@
+# [3.13.1](https://github.com/dashevo/DashJS/compare/v3.13.0...v3.13.1) (2020-05-12)
+
+
+### Features
+
+* identity topups ([#71](https://github.com/dashevo/DashJS/pull/71))
+
+
+
 # [3.13.0](https://github.com/dashevo/DashJS/compare/v3.13.0...v3.0.2) (2020-05-11)
 
 - **feat:**
