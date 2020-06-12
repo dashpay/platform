@@ -59,5 +59,6 @@ DAPIClientWrapper.prototype.sendTransaction = require('./methods/sendTransaction
 DAPIClientWrapper.prototype.subscribeToAddressesTransactions = require('./methods/subscribeToAddressesTransactions');
 DAPIClientWrapper.prototype.subscribeToBlockHeaders = require('./methods/subscribeToBlockHeaders');
 DAPIClientWrapper.prototype.subscribeToBlocks = require('./methods/subscribeToBlocks');
+DAPIClientWrapper.prototype.getIdentityIdByFirstPublicKey = require('./methods/getIdentityIdByFirstPublicKey');
 
 module.exports = DAPIClientWrapper;

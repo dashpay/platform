@@ -5,7 +5,7 @@ const { is } = require('../../../utils');
  * Get a specific account per accounts index
  * @param accountOpts - If the account doesn't exist yet, we create it passing these options
  * @param accountOpts.index - Default: 0, set a specific index to get
- * @return {*|account}
+ * @return {Account}
  */
 
 async function getAccount(accountOpts = {}) {

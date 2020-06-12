@@ -594,7 +594,12 @@
           }
         },
         "misc": {}
-      }
+      },
+      "identityIds": [
+        "9Gk9T5mJY9j3dDX1D1tG5WYaV8g6zQTS2ocFFXe6NCrq",
+        null,
+        "HZJywfYZ87fdJFLkp7wtnTfS29zpvR63f21gqaajLYx6"
+      ]
     }
   },
   "transactions": {

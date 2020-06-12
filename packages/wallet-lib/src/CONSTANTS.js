@@ -70,6 +70,7 @@ const CONSTANTS = {
       'generateAddress',
       'getPrivateKeys',
       'injectPlugin',
+      'getIdentityHDKeyByIndex',
     ],
     UNSAFE_PROPERTIES: [
       'storage',

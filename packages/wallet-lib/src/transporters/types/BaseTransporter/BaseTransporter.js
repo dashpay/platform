@@ -38,5 +38,6 @@ BaseTransporter.prototype.sendTransaction = require('./methods/sendTransaction')
 BaseTransporter.prototype.subscribeToAddressesTransactions = require('./methods/subscribeToAddressesTransactions');
 BaseTransporter.prototype.subscribeToBlockHeaders = require('./methods/subscribeToBlockHeaders');
 BaseTransporter.prototype.subscribeToBlocks = require('./methods/subscribeToBlocks');
+BaseTransporter.prototype.getIdentityIdByFirstPublicKey = require('./methods/getIdentityIdByFirstPublicKey');
 
 module.exports = BaseTransporter;

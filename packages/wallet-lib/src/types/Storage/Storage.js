@@ -70,4 +70,9 @@ Storage.prototype.updateTransaction = require('./methods/updateTransaction');
 Storage.prototype.startWorker = require('./methods/startWorker');
 Storage.prototype.stopWorker = require('./methods/stopWorker');
 
+// Identities
+Storage.prototype.insertIdentityIdAtIndex = require('./methods/insertIdentityAtIndex');
+Storage.prototype.getIdentityIdByIndex = require('./methods/getIdentityByIndex');
+Storage.prototype.getIndexedIdentityIds = require('./methods/getIndexedIdentityIds');
+
 module.exports = Storage;

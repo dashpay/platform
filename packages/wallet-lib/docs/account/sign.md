@@ -25,7 +25,7 @@ const signedTx = account.sign(tx); // Will find the privateKey from keychain for
 const {Message} = require('dash');
 const message = new Message('hello, world');
 
-const idPrivateKey = account.getIdentityHDKey().privateKey;
+const idPrivateKey = account.getIdentityHDKeyByIndex(0, 0).privateKey;
 
 const signed = account.sign(message, idPrivateKey);
 const verify = message.verify(idPrivateKey.toAddress().toString(), signed.toString()); // true

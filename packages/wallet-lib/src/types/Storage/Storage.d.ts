@@ -76,7 +76,11 @@ export declare class Storage {
 
     startWorker(): void;
 
-    stopWorker(): boolean
+    stopWorker(): boolean;
+
+    insertIdentityIdAtIndex(walletId: string, identityId: string, identityIndex: number): void;
+    getIdentityIdByIndex(walletId: string, identityIndex: number): string|undefined;
+    getIndexedIdentityIds(walletId: string): Array<string|undefined>;
 }
 
 interface MappedAddressMap {

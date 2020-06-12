@@ -3,6 +3,7 @@ const logger = require('../../logger');
 const SyncWorker = require('../../plugins/Workers/SyncWorker/SyncWorker');
 const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
 const BIP44Worker = require('../../plugins/Workers/BIP44Worker/BIP44Worker');
+const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
 const EVENTS = require('../../EVENTS');
 const { WALLET_TYPES } = require('../../CONSTANTS');
 const { PluginFailedOnStart, WorkerFailedOnExecute, InjectionToPluginUnallowed } = require('../../errors');
@@ -35,6 +36,9 @@ async function _initializeAccount(account, userUnsafePlugins) {
         }
         if (!account.offlineMode) {
           await account.injectPlugin(SyncWorker, true);
+          if (account.walletType === WALLET_TYPES.HDWALLET) {
+            await account.injectPlugin(IdentitySyncWorker, true);
+          }
         }
       } catch (err) {
         throw new Error(`Failed to perform standard injections with reason: ${err.message}`);

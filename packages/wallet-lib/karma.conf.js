@@ -14,11 +14,12 @@ module.exports = (config) => {
       'tests/functional/wallet.js',
     ],
     preprocessors: {
-      'karma.test.loader.js': ['webpack'],
-      'tests/functional/wallet.js': ['webpack'],
+      'karma.test.loader.js': ['webpack', 'sourcemap'],
+      'tests/functional/wallet.js': ['webpack', 'sourcemap'],
     },
     webpack: {
       mode: 'development',
+      devtool: 'inline-source-map',
       plugins: [
         new webpack.EnvironmentPlugin(
           dotenvResult.parsed,
@@ -37,13 +38,14 @@ module.exports = (config) => {
     browsers: ['ChromeHeadless'],
     singleRun: false,
     concurrency: Infinity,
-    browserNoActivityTimeout: 7 * 60 * 1000,
+    browserNoActivityTimeout: 10 * 60 * 1000,
     plugins: [
       'karma-mocha',
       'karma-mocha-reporter',
       'karma-chai',
       'karma-chrome-launcher',
       'karma-webpack',
+      'karma-sourcemap-loader',
     ],
   });
 };

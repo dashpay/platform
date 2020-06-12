@@ -22,7 +22,7 @@
         - [`.generateAddress()`](account/generateAddress.md)
         - [`.getAddress()`](account/getAddress.md)
         - [`.getConfirmedBalance()`](account/getConfirmedBalance.md)
-        - [`.getIdentityHDKey()`](account/getIdentityHDKey.md)
+        - [`.getIdentityHDKeyByIndex()`](account/getIdentityHDKeyByIndex.md)
         - [`.getPrivateKeys()`](account/getPrivateKeys.md)
         - [`.getTotalBalance()`](account/getTotalBalance.md)
         - [`.getTransaction()`](account/getTransaction.md)

@@ -5,6 +5,7 @@ const methods = [
   'getTransaction',
   'getUTXO',
   'sendTransaction',
+  'getIdentityIdByFirstPublicKey',
 ];
 class FakeValidTransporter extends BaseTransporter {
   constructor() {

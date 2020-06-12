@@ -61,7 +61,7 @@ class Account extends EventEmitter {
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
     this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
-    if (this.debug) process.env.LOG_LEVEL = 'debug';
+    // if (this.debug) process.env.LOG_LEVEL = 'debug';
 
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
@@ -226,6 +226,9 @@ Account.prototype.sign = require('./methods/sign');
 
 Account.prototype.hasPlugins = require('./methods/hasPlugins');
 
-Account.prototype.getIdentityHDKey = require('./methods/getIdentityHDKey');
+Account.prototype.getIdentityHDKeyByIndex = require('./methods/getIdentityHDKeyByIndex');
+Account.prototype.getIdentityIds = require('./methods/getIdentityIds');
+Account.prototype.getIdentityHDKeyById = require('./methods/getIdentityHDKeyById');
+Account.prototype.getUnusedIdentityIndex = require('./methods/getUnusedIdentityIndex');
 
 module.exports = Account;

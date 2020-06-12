@@ -1,4 +1,4 @@
-**Usage**: `account.getIdentityHDKey(index, identityType)`      
+**Usage**: `account.getIdentityHDKeyByIndex(identityIndex, keyIndex)`      
 **Description**: This method return the identity HDKey of `identityType` for the specified `index`  
 
 Parameters: 

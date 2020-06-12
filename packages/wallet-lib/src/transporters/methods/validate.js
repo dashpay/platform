@@ -8,6 +8,7 @@ module.exports = function validate(transporter, silent = false) {
     'getTransaction',
     'getUTXO',
     'sendTransaction',
+    'getIdentityIdByFirstPublicKey',
   ];
 
   expectedKeys.forEach((key) => {

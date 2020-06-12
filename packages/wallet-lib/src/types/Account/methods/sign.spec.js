@@ -16,7 +16,7 @@ describe('Account - sign', function suite() {
     wallet.disconnect();
   });
   it('should sign and verify a message', () => {
-    const idKey = account.getIdentityHDKey();
+    const idKey = account.getIdentityHDKeyByIndex(0, 0);
     const idPrivateKey = idKey.privateKey;
     const idAddress = idPrivateKey.toAddress().toString();
     const message = new Dashcore.Message('hello, world');

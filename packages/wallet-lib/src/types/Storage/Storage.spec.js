@@ -70,6 +70,7 @@ describe('Storage - constructor', function suite() {
           mnemonic: null,
           type: null,
           blockHeight: 0,
+          identityIds: [],
           addresses: { external: {}, internal: {}, misc: {} },
         },
       },
