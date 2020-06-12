@@ -1,4 +1,13 @@
-# [3.13.1](https://github.com/dashevo/DashJS/compare/v3.13.0...v3.13.1) (2020-05-12)
+## [3.13.2](https://github.com/dashevo/DashJS/compare/v3.13.1...v3.13.2) (2020-06-12)
+
+
+### Bug Fixes
+
+* more than one identity registration failed ([#83](https://github.com/dashevo/DashJS/issues/83))
+
+
+
+## [3.13.1](https://github.com/dashevo/DashJS/compare/v3.13.0...v3.13.1) (2020-05-12)
 
 
 ### Features
