@@ -4,27 +4,29 @@ import {Platform} from "./Platform";
  * @param {Platform} platform
  * @param stateTransition
  * @param identity
+ * @param {number} [keyIndex=0]
  */
-export default async function broadcastStateTransition(platform: Platform, stateTransition: any, identity: any) {
-    const { client } = platform;
+export default async function broadcastStateTransition(platform: Platform, stateTransition: any, identity: any, keyIndex : number = 0) {
+    const { client, dpp } = platform;
 
     const account = await client.getWalletAccount();
 
     // @ts-ignore
-    const { privateKey } = account.getIdentityHDKey(0);
+    const { privateKey } = account.getIdentityHDKeyById(
+        identity.getId(),
+        keyIndex,
+    );
 
     stateTransition.sign(
-        identity.getPublicKeyById(0),
+        identity.getPublicKeyById(keyIndex),
         privateKey,
     );
 
-    // TODO: There is some bug internally for some reason
-    // const result = await dpp.stateTransition.validateStructure(stateTransition);
+    const result = await dpp.stateTransition.validateStructure(stateTransition);
 
-
-    // if (!result.isValid()) {
-    //     throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
-    // }
+    if (!result.isValid()) {
+        throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
+    }
 
     await client.getDAPIClient().applyStateTransition(stateTransition);
 }

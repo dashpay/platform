@@ -102,7 +102,7 @@ describe('SDK', function suite() {
   });
 
   it('should sign and verify a message', async function () {
-    const idKey = account.getIdentityHDKey();
+    const idKey = account.getIdentityHDKeyByIndex(0, 0);
     // This transforms from a Wallet-Lib.PrivateKey to a Dashcore-lib.PrivateKey.
     // It will quickly be annoying to perform this, and we therefore need to find a better solution for that.
     const privateKey = Dash.Core.PrivateKey(idKey.privateKey);
@@ -123,7 +123,7 @@ describe('SDK', function suite() {
       faucetAddress,
       faucetPrivateKey,
       account.getAddress().address,
-      50000
+      100000
     )
   })
 
@@ -159,6 +159,8 @@ describe('SDK', function suite() {
     if(!createdIdentityId){
       throw new Error('Can\'t perform the test. Failed to create identity');
     }
+
+    await wait(200);
 
     const fetchIdentity = await clientInstance.platform.identities.get(createdIdentityId);
 
