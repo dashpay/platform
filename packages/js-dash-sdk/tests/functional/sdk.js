@@ -25,9 +25,16 @@ function wait(ms) {
 async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address, amount) {
   const { items: inputs } = await dapiClient.getUTXO(faucetAddress);
 
+  // We take random coz two browsers run in parallel
+  // and they can take the same inputs
+
+  const inputIndex = Math.floor(
+    Math.random() * Math.floor(inputs.length / 2) * -1,
+  );
+
   const transaction = new Transaction();
 
-  transaction.from(inputs.slice(-1)[0])
+  transaction.from(inputs.slice(inputIndex)[0])
     .to(address, amount)
     .change(faucetAddress)
     .fee(668)
@@ -217,7 +224,7 @@ describe('SDK', function suite() {
 
     await clientInstance.platform.contracts.broadcast(contract, createdIdentity);
 
-    await wait(100);
+    await wait(1000);
 
     const fetchedContract = await clientInstance.platform.contracts.get(contract.getId());
 
