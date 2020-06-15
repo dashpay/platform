@@ -7,7 +7,7 @@ const IdentityReplaceError = require('../../../errors/IndentityIdReplaceError');
  * @param {number} identityIndex
  */
 function insertIdentityAtIndex(walletId, identityId, identityIndex) {
-  if (this.store.wallets[walletId].identityIds) {
+  if (!this.store.wallets[walletId].identityIds) {
     this.store.wallets[walletId].identityIds = [];
   }
 
