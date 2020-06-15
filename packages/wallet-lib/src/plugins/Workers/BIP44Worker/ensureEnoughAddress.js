@@ -1,56 +1,9 @@
 const { BIP44_ADDRESS_GAP, WALLET_TYPES } = require('../../../CONSTANTS');
 const is = require('../../../utils/is');
 
-const isContiguousPath = (currPath, prevPath) => {
-  if (is.undef(currPath)) return false;
-  const splitedCurrPath = currPath.split('/');
-  const currIndex = parseInt(splitedCurrPath[5], 10);
-  if (is.undef(prevPath)) {
-    if (currIndex !== 0) return false;
-    return true;
-  }
-  const splitedPrevPath = prevPath.split('/');
-  const prevIndex = parseInt(splitedPrevPath[5], 10);
-  if (prevIndex !== currIndex - 1) return false;
-  return true;
-};
-const getMissingIndexes = (paths, fromOrigin = true) => {
-  if (!is.arr(paths)) return false;
+const getMissingIndexes = require('./utils/getMissingIndexes');
+const isContiguousPath = require('./utils/isContiguousPath');
 
-  let sortedIndexes = [];
-
-  paths.forEach((path) => {
-    const splitedPath = path.split('/');
-    const index = parseInt(splitedPath[5], 10);
-    sortedIndexes.push(index);
-  });
-
-  sortedIndexes = sortedIndexes.sort((a, b) => a - b);
-
-  let missingIndex = sortedIndexes.reduce((acc, cur, ind, arr) => {
-    const diff = cur - arr[ind - 1];
-    if (diff > 1) {
-      let i = 1;
-      while (i < diff) {
-        acc.push(arr[ind - 1] + i);
-        i += 1;
-      }
-    }
-    return acc;
-  }, []);
-
-  // Will fix missing index before our first known indexes
-  if (fromOrigin) {
-    if (sortedIndexes[0] > 0) {
-      for (let i = sortedIndexes[0] - 1; i >= 0; i -= 1) {
-        missingIndex.push(i);
-      }
-    }
-  }
-
-  missingIndex = missingIndex.sort((a, b) => a - b);
-  return missingIndex;
-};
 module.exports = function ensureEnoughAddress() {
   let generated = 0;
   let unusedAddress = 0;

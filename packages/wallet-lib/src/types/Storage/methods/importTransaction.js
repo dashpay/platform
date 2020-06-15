@@ -14,14 +14,16 @@ const importTransaction = function importTransaction(transaction) {
 
   let hasUpdateStorage = false;
   let outputIndex = -1;
+  const processedAddressesForTx = [];
 
-  if (transactions[transaction.hash]) {
-    return;
+  // If we already had this transaction locally, we won't add it again,
+  // but we still need to continue processing it as we might have new
+  // address generated (on BIP44 wallets) since the first checkup.
+  if (!transactions[transaction.hash]) {
+    transactions[transaction.hash] = transaction;
   }
 
-  transactions[transaction.hash] = transaction;
-
-  [...inputs, ...outputs].forEach((element) => {
+  [...inputs, ...outputs].forEach((element, elementIndex) => {
     const isOutput = (element instanceof Output);
     if (isOutput) outputIndex += 1;
 
@@ -33,10 +35,22 @@ const importTransaction = function importTransaction(transaction) {
         const addressObject = store.wallets[walletId].addresses[type][path];
         if (!addressObject.used) addressObject.used = true;
 
-        if (!addressObject.transactions.includes(transaction.hash)) {
+        if (elementIndex === 0) {
+          // If the transactions has already been processed in a previous insertion,
+          // we can skip the processing now
+          if (addressObject.transactions.includes(transaction.hash)) {
+            // We mark it as already processed
+            processedAddressesForTx.push(addressObject.address);
+            return;
+          }
           addressObject.transactions.push(transaction.hash);
           hasUpdateStorage = true;
         }
+        // If mark as already procesed on first run, skipping.
+        if (processedAddressesForTx.includes(addressObject.address)) {
+          return;
+        }
+
         if (!isOutput) {
           const vin = element;
           const utxoKey = `${vin.prevTxId.toString('hex')}-${vin.outputIndex}`;
