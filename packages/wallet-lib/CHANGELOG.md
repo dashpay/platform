@@ -1,17 +1,16 @@
-# [7.13.0](https://github.com/dashevo/wallet-lib/compare/v7.1.3...v7.1.4) (2020-06-13)
+# [7.13.1](https://github.com/dashevo/wallet-lib/compare/v7.13.0...v7.13.1) (2020-06-15)
 
+- **Fixes:**
+    * fix(Storage): identityIds being restate to empty array ([#143](https://github.com/dashevo/wallet-lib/pull/143))
 
-### Features
+# [7.13.0](https://github.com/dashevo/wallet-lib/compare/v7.1.4...v7.13.0) (2020-06-13)
 
-* sync of identities associated with wallet ([#142](https://github.com/dashevo/wallet-lib/pull/142))
+- **Feat:**
+    * sync of identities associated with wallet ([#142](https://github.com/dashevo/wallet-lib/pull/142))
 
-
-### BREAKING CHANGES
-
-* `Account#getIdentityHDKey` is removed in favor of `Account#getIdentityHDKeyByIndex(identityIndex, keyIndex)`
-* `debug` option temporary disabled
-
-
+- **Breaking changes:**
+    * `Account#getIdentityHDKey` is removed in favor of `Account#getIdentityHDKeyByIndex(identityIndex, keyIndex)`
+    * `debug` option temporary disabled
 
 # [7.1.4](https://github.com/dashevo/wallet-lib/compare/v7.1.3...v7.1.4) (2020-06-11)
     
