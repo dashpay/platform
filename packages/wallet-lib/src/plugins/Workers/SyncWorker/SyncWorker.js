@@ -27,6 +27,7 @@ class SyncWorker extends Worker {
       workerIntervalTime: defaultOpts.workerIntervalTime,
       fetchThreshold: defaultOpts.fetchThreshold,
       dependencies: [
+        'walletType',
         'storage',
         'transporter',
         'fetchStatus',

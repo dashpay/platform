@@ -16,12 +16,14 @@ const importTransaction = function importTransaction(transaction) {
   let outputIndex = -1;
   const processedAddressesForTx = [];
 
+
   // If we already had this transaction locally, we won't add it again,
   // but we still need to continue processing it as we might have new
   // address generated (on BIP44 wallets) since the first checkup.
   if (!transactions[transaction.hash]) {
     transactions[transaction.hash] = transaction;
   }
+
 
   [...inputs, ...outputs].forEach((element, elementIndex) => {
     const isOutput = (element instanceof Output);
@@ -46,6 +48,7 @@ const importTransaction = function importTransaction(transaction) {
           addressObject.transactions.push(transaction.hash);
           hasUpdateStorage = true;
         }
+
         // If mark as already procesed on first run, skipping.
         if (processedAddressesForTx.includes(addressObject.address)) {
           return;
