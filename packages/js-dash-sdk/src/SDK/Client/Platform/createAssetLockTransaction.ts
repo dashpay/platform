@@ -37,11 +37,6 @@ export default async function createAssetLockTransaction(platform : Platform, fu
 
     const selection = utils.coinSelection(utxos, [output, outputToMarkItUsed]);
 
-    // FIXME : Usage with a single utxo had estimated fee of 205.
-    // But network failed us with 66: min relay fee not met.
-    // Over-writing the value for now.
-    selection.estimatedFee = 680;
-
     lockTransaction
         .from(selection.utxos)
         // @ts-ignore
@@ -50,7 +45,6 @@ export default async function createAssetLockTransaction(platform : Platform, fu
         .to(identityAddressInfo.address, 10000)
         // @ts-ignore
         .change(changeAddress)
-        .fee(selection.estimatedFee);
 
     const utxoAddresses = selection.utxos.map((utxo: any) => utxo.address.toString());
 
