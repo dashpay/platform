@@ -38,8 +38,8 @@ function createTransaction(opts) {
   if (_.has(opts, 'recipients')) {
     if (!is.arr(opts.recipients)) throw new Error('Expected recipients to be an array of recipient');
     _.each(opts.recipients, (recipient) => {
-      if (_.has(recipient, 'address') && _.has(recipient, 'satoshis')) {
-        outputs.push(recipient);
+      if (_.has(recipient, 'recipient') && _.has(recipient, 'satoshis')) {
+        outputs.push({ address: recipient.recipient, satoshis: recipient.satoshis });
       } else {
         throw new Error(`Invalid recipient provided ${recipient}`);
       }

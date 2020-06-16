@@ -33,7 +33,7 @@ const tx1 = account.createTransaction(txOpts1);
 ```
 
 ```js
-const recipients = [{address:"yereyozxENB9jbhqpbg1coE5c39ExqLSaG", satoshis:10e8},{recipient: "yMN2w8NiwcmY3zvJLeeBxpaExFV1aN23pg", satoshis: 1e8}];
+const recipients = [{recipient:"yereyozxENB9jbhqpbg1coE5c39ExqLSaG", satoshis:10e8},{recipient: "yMN2w8NiwcmY3zvJLeeBxpaExFV1aN23pg", satoshis: 1e8}];
 const change = "yaVrJ5dgELFkYwv6AydDyGPAJQ5kTJXyAN";
 const tx = account.createTransaction({recipients, change});
 ```

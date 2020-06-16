@@ -86,34 +86,34 @@ describe('Account - createTransaction', function suite() {
     const tx2 = await createTransaction.call(mockWallet, {
       recipients: [
         {
-          address: 'yMGXHsi8gstbd5wqfqkqcfsbwJjGBt5sWu',
+          recipient: 'yMGXHsi8gstbd5wqfqkqcfsbwJjGBt5sWu',
           satoshis: 90000000
         }, {
-          address: 'yLeqoVqqGf4hFDwsiJwKiLPpeJbZHJpwo7',
+          recipient: 'yLeqoVqqGf4hFDwsiJwKiLPpeJbZHJpwo7',
           satoshis: 90000000
         }, {
-          address: 'yWCxg5NdRXDagFokjwdLMYNDqfEKmLPtua',
+          recipient: 'yWCxg5NdRXDagFokjwdLMYNDqfEKmLPtua',
           satoshis: 90000000
         }, {
-          address: 'ySPghvb9M1PqjhRYKv7iivQEuebM2aXs9f',
+          recipient: 'ySPghvb9M1PqjhRYKv7iivQEuebM2aXs9f',
           satoshis: 90000000
         }, {
-          address: 'yR8bXVFZAM1ysc8s4GfVTirNhTEzKizY19',
+          recipient: 'yR8bXVFZAM1ysc8s4GfVTirNhTEzKizY19',
           satoshis: 90000000
         }, {
-          address: 'yhoCPK6WyqtB5GmZjVqxy3faR5JMUKbt8x',
+          recipient: 'yhoCPK6WyqtB5GmZjVqxy3faR5JMUKbt8x',
           satoshis: 90000000
         }, {
-          address: 'yTJbGkT7TYVY4MYbTgdSDdq19A3VmjyEUo',
+          recipient: 'yTJbGkT7TYVY4MYbTgdSDdq19A3VmjyEUo',
           satoshis: 90000000
         }, {
-          address: 'yNtvF5g6qnbRsUJ8ggap3pd53HEmkngEJu',
+          recipient: 'yNtvF5g6qnbRsUJ8ggap3pd53HEmkngEJu',
           satoshis: 90000000
         }, {
-          address: 'yia3dGyRdh7xZLDtum1rdCLRqabyBQbcWL',
+          recipient: 'yia3dGyRdh7xZLDtum1rdCLRqabyBQbcWL',
           satoshis: 90000000
         }, {
-          address: 'yXbuPCJagq4XH85hgxqsNv92kSUFroTWUA',
+          recipient: 'yXbuPCJagq4XH85hgxqsNv92kSUFroTWUA',
           satoshis: 90000000
         },
       ]

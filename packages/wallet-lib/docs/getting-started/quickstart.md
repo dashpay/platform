@@ -61,7 +61,8 @@ Quick note :
 
 ```js
 const options = {
-  recipient:{address:'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h', satoshis:100000}
+  recipient:'yLptqWxjgTxtwKJuLHoGY222NnoeqYuN8h',
+  satoshis:100000
 };
 account
   .createTransaction(options)
