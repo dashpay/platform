@@ -14,7 +14,7 @@ const importTransaction = function importTransaction(transaction) {
 
   let hasUpdateStorage = false;
   let outputIndex = -1;
-  const processedAddressesForTx = [];
+  const processedAddressesForTx = {};
 
 
   // If we already had this transaction locally, we won't add it again,
@@ -25,7 +25,7 @@ const importTransaction = function importTransaction(transaction) {
   }
 
 
-  [...inputs, ...outputs].forEach((element, elementIndex) => {
+  [...inputs, ...outputs].forEach((element) => {
     const isOutput = (element instanceof Output);
     if (isOutput) outputIndex += 1;
 
@@ -35,23 +35,17 @@ const importTransaction = function importTransaction(transaction) {
       if (mappedAddress && mappedAddress[address]) {
         const { path, type, walletId } = mappedAddress[address];
         const addressObject = store.wallets[walletId].addresses[type][path];
-        if (!addressObject.used) addressObject.used = true;
-
-        if (elementIndex === 0) {
-          // If the transactions has already been processed in a previous insertion,
-          // we can skip the processing now
-          if (addressObject.transactions.includes(transaction.hash)) {
-            // We mark it as already processed
-            processedAddressesForTx.push(addressObject.address);
-            return;
-          }
-          addressObject.transactions.push(transaction.hash);
-          hasUpdateStorage = true;
+        // If the transactions has already been processed in a previous insertion,
+        // we can skip the processing now
+        if (addressObject.transactions.includes(transaction.hash)) {
+          return;
         }
 
-        // If mark as already procesed on first run, skipping.
-        if (processedAddressesForTx.includes(addressObject.address)) {
-          return;
+        if (!addressObject.used) addressObject.used = true;
+
+        // We mark our address as affected so we update the tx later on
+        if (!processedAddressesForTx[addressObject.address]) {
+          processedAddressesForTx[addressObject.address] = addressObject;
         }
 
         if (!isOutput) {
@@ -75,6 +69,12 @@ const importTransaction = function importTransaction(transaction) {
         }
       }
     }
+  });
+
+  // As the same address can have one or more inputs and one or more outputs in the same tx
+  // we update it's transactions array as last step of importing
+  Object.values(processedAddressesForTx).forEach((addressObject) => {
+    addressObject.transactions.push(transaction.hash);
   });
 
   if (hasUpdateStorage) {
