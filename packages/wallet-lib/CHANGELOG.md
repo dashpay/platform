@@ -1,3 +1,14 @@
+# [7.13.3](https://github.com/dashevo/wallet-lib/compare/v7.13.2...v7.13.3) (2020-06-16)
+
+- **Fixes:**  
+    * fix!: createTransaction should be checking for 'recipient' instead of 'address' in 'txOpts.recipients' ([#152](https://github.com/dashevo/wallet-lib/pull/152))
+    * fix: transaction hash not present on address ([#151](https://github.com/dashevo/wallet-lib/pull/151))
+
+- **Breaking changes:**   
+    * Previously, the documentation stated a usage on `createTransaction()` with multiples recipients as such: `recipients:[{recipient,satoshis}]`.   
+    However, the code where still referring and expecting recipients `recipients:[{address,satoshis}]`.  
+    This version fixes that inconsistency. 
+     
 # [7.13.2](https://github.com/dashevo/wallet-lib/compare/v7.13.1...v7.13.2) (2020-06-15)
 
 - **Features:**
