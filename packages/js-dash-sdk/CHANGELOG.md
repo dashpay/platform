@@ -1,37 +1,39 @@
+## [3.13.3](https://github.com/dashevo/DashJS/compare/v3.13.2...v3.13.3) (2020-06-15)
+
+- **Features:**
+    * Updated wallet-lib to [7.13.3](https://github.com/dashevo/wallet-lib/blob/master/CHANGELOG.md#7133-2020-06-16)
+    * Updated js-dpp to [0.13.1](https://github.com/dashevo/js-dpp/blob/master/CHANGELOG.md#0131-2020-06-15)
+
+- **Bug fixes:**
+    * fix: wrong assetlock tx fee estimation (#85)
+    * fix: generate one-time private key for the asset lock transaction (#86)
+        
 ## [3.13.2](https://github.com/dashevo/DashJS/compare/v3.13.1...v3.13.2) (2020-06-12)
 
-
-### Bug Fixes
-
-* more than one identity registration failed ([#83](https://github.com/dashevo/DashJS/issues/83))
-
-
+- **Bug fixes:**
+    * more than one identity registration failed ([#83](https://github.com/dashevo/DashJS/issues/83))
 
 ## [3.13.1](https://github.com/dashevo/DashJS/compare/v3.13.0...v3.13.1) (2020-05-12)
 
+- **Features:**
+    * identity topups ([#71](https://github.com/dashevo/DashJS/pull/71))
 
-### Features
-
-* identity topups ([#71](https://github.com/dashevo/DashJS/pull/71))
-
-
-
-# [3.13.0](https://github.com/dashevo/DashJS/compare/v3.13.0...v3.0.2) (2020-05-11)
+# [3.13.0](https://github.com/dashevo/DashJS/compare/v3.0.2...v3.13.0) (2020-05-11)
 
 - **feat:**
   - feat: update wallet lib to 7.1.4 (#80)
 
-# [3.0.2](https://github.com/dashevo/DashJS/compare/v3.0.2...v3.0.1) (2020-05-06)
+# [3.0.2](https://github.com/dashevo/DashJS/compare/v3.0.1...v3.0.2) (2020-05-06)
 
 - **fix**:
   - typescript support (#46)
 
-# [3.0.1](https://github.com/dashevo/DashJS/compare/v3.0.1...v3.0.0) (2020-04-27)
+# [3.0.1](https://github.com/dashevo/DashJS/compare/v3.0.0...v3.0.1) (2020-04-27)
 
 - **fix**:
   - changed dpp.documents (undefined) to dpp.document (#48)
 
-# [3.0.0](https://github.com/dashevo/DashJS/compare/v3.0.0...v2.0.0) (2020-04-24)
+# [3.0.0](https://github.com/dashevo/DashJS/compare/v2.0.0...v3.0.0) (2020-04-24)
 
 - **breaking:**
   - Identity registration will use HDKeys(0) instead 1 (https://github.com/dashevo/DashJS/pull/41/commits/4bbc54d265c679affbd043b03a88f8ed2f1d52fb)
@@ -52,7 +54,7 @@
 - **Chore, Docs & Tests:**
   - bumped wallet-lib to 6.1 (#41)
  
-# [2.0.0](https://github.com/dashevo/DashJS/compare/v2.0.0...v1.1.2) (2020-03-27)
+# [2.0.0](https://github.com/dashevo/DashJS/compare/v1.1.2...v2.0.0) (2020-03-27)
 
 - **breaking:**
   - renamed DashJS namespace to SDK namespace.
