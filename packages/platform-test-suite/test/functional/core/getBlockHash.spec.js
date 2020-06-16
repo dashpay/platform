@@ -1,4 +1,4 @@
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getBlockHash', () => {
     let lastBlockHeight;
 

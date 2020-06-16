@@ -1,4 +1,4 @@
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getStatus', function main() {
     this.timeout(160000);
 

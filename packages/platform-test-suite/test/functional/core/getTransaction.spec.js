@@ -5,7 +5,7 @@ const {
 
 const fundAddress = require('../../../lib/test/fundAddress');
 
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getTransaction', () => {
     let transactionId;
 

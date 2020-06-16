@@ -1,9 +1,10 @@
 const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
+
 const fundAddress = require('../../../lib/test/fundAddress');
 
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getAddressSummary', () => {
     let address;
 
@@ -18,7 +19,7 @@ describe('Core', () => {
         .toString();
 
       await fundAddress(
-        dashClient.clients.dapi,
+        dashClient.getDAPIClient(),
         faucetAddress,
         faucetPrivateKey,
         address,

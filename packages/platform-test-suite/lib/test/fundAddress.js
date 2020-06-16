@@ -28,7 +28,7 @@ async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address,
 
   const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
 
-  const desiredBlockHeight = currentBlockHeight + 2;
+  const desiredBlockHeight = currentBlockHeight + 1;
 
   do {
     ({ blocks: currentBlockHeight } = await dapiClient.getStatus());

@@ -3,7 +3,7 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
-describe('Core', () => {
+describe.skip('Core', () => {
   let transaction;
 
   before(async () => {

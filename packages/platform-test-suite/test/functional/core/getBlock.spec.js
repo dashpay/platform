@@ -1,6 +1,6 @@
 const { Block } = require('@dashevo/dashcore-lib');
 
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getBlock', () => {
     it('should get block by hash', async () => {
       const blockHash = await dashClient.clients.dapi.getBestBlockHash();
