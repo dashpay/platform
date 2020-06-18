@@ -200,6 +200,41 @@ class RegisterCommand extends BaseCommand {
                 task.output = `ProRegTx transaction ID: ${proRegTx}\nDon't forget to add bls private key to your configuration`;
               },
             },
+            {
+              title: 'Wait for 1 confirmation',
+              enabled: () => preset !== PRESETS.LOCAL,
+              task: async (ctx) => (
+                new Observable(async (observer) => {
+                  await waitForConfirmations(
+                    ctx.coreService,
+                    ctx.collateralTxId,
+                    1,
+                    (confirmations) => {
+                      observer.next(`${confirmations} ${confirmations > 1 ? 'confirmations' : 'confirmation'}`);
+                    },
+                  );
+
+                  observer.complete();
+                })
+              ),
+            },
+            {
+              title: 'Mine 1 block to confirm',
+              enabled: () => preset === PRESETS.LOCAL,
+              task: async (ctx) => (
+                new Observable(async (observer) => {
+                  await generateBlocks(
+                    ctx.coreService,
+                    1,
+                    (blocks) => {
+                      observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
+                    },
+                  );
+
+                  observer.complete();
+                })
+              ),
+            },
           ])
         ),
       },
