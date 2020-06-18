@@ -1,3 +1,12 @@
+## [0.13.3](https://github.com/dashevo/mn-bootstrap/compare/v0.13.2...v0.13.3) (2020-06-18)
+
+
+### Bug Fixes
+
+* parsing docker container name on first start ([#75](https://github.com/dashevo/mn-bootstrap/issues/75))
+
+
+
 ## [0.13.2](https://github.com/dashevo/mn-bootstrap/compare/v0.13.1...v0.13.2) (2020-06-16)
 
 

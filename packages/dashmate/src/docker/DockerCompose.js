@@ -48,7 +48,7 @@ class DockerCompose {
       throw new DockerComposeError(e);
     }
 
-    containerName = containerName.trim();
+    containerName = containerName.trim().split('\n').pop();
 
     this.startedContainers.addContainer(containerName);
     return this.docker.getContainer(containerName);

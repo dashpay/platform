@@ -26,7 +26,7 @@ async function waitForCoreStart(coreService) {
   } while (!isReady && retires < maxRetries);
 
   if (!isReady) {
-    throw new Error('Could not connect to to Dash core RPC');
+    throw new Error('Could not connect to Core RPC');
   }
 }
 
