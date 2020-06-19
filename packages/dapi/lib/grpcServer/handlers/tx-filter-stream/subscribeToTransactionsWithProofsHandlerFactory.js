@@ -151,7 +151,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     for await (const { merkleBlock, transactions, index } of historicalDataIterator) {
       if (index > 0) {
         // Wait a second between the calls to Core just to reduce the load
-        await wait(1000);
+        await wait(50);
       }
 
       await sendTransactionsResponse(acknowledgingCall, transactions);

@@ -65,7 +65,7 @@ function subscribeToNewTransactions(
       unsentMerkleBlocks
         .forEach(merkleBlock => mediator.emit(ProcessMediator.EVENTS.MERKLE_BLOCK, merkleBlock));
 
-      await wait(1000);
+      await wait(50);
     }
   });
 
