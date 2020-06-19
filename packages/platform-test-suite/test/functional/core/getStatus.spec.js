@@ -1,9 +1,23 @@
-describe.skip('Core', () => {
+const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
+
+describe('Core', () => {
   describe('getStatus', function main() {
+    let client;
+
     this.timeout(160000);
 
+    before(() => {
+      client = createClientWithoutWallet();
+    });
+
+    after(async () => {
+      if (client) {
+        await client.disconnect();
+      }
+    });
+
     it('should return status', async () => {
-      const result = await dashClient.clients.dapi.getStatus();
+      const result = await client.getDAPIClient().getStatus();
 
       expect(result).to.have.a.property('coreVersion');
       expect(result).to.have.a.property('protocolVersion');

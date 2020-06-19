@@ -2,38 +2,42 @@ const {
   Transaction,
 } = require('@dashevo/dashcore-lib');
 
-const wait = require('../wait');
+const waitForBlocks = require('../waitForBlocks');
+const getInputsByAddress = require('./getInputsByAddress');
 
 /**
  *
  * @param {DAPIClient} dapiClient
- * @param {Address} faucetAddress
+ * @param {string} faucetAddress
  * @param {PrivateKey} faucetPrivateKey
- * @param {Address} address
- * @param {number} amount
+ * @param {string} address
+ * @param {number} amountInSatoshis
  * @return {Promise<string>}
  */
-async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address, amount) {
-  const { items: inputs } = await dapiClient.getUTXO(faucetAddress);
+async function fundAddress(
+  dapiClient,
+  faucetAddress,
+  faucetPrivateKey,
+  address,
+  amountInSatoshis,
+) {
+  const inputs = await getInputsByAddress(dapiClient, faucetAddress);
+
+  if (!inputs.length) {
+    throw new Error(`Address ${faucetAddress} has no inputs to spend`);
+  }
 
   const transaction = new Transaction();
 
   transaction.from(inputs.slice(-1)[0])
-    .to(address, amount)
+    .to(address, amountInSatoshis)
     .change(faucetAddress)
     .fee(668)
     .sign(faucetPrivateKey);
 
-  let { blocks: currentBlockHeight } = await dapiClient.getStatus();
-
   const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
 
-  const desiredBlockHeight = currentBlockHeight + 1;
-
-  do {
-    ({ blocks: currentBlockHeight } = await dapiClient.getStatus());
-    await wait(30000);
-  } while (currentBlockHeight < desiredBlockHeight);
+  await waitForBlocks(dapiClient, 1);
 
   return transactionId;
 }

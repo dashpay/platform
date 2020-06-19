@@ -1,0 +1,8 @@
+Dockerfile
+.dockerignore
+.git
+.idea
+.eslintrc
+.travis.yml
+npm-debug.log
+node_modules

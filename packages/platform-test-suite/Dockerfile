@@ -14,6 +14,8 @@ RUN npm ci --production
 
 FROM node:12-alpine
 
+RUN apk add --no-cache bash
+
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Test suite for Dash Platform"
 
@@ -30,4 +32,4 @@ COPY . ./
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
-ENTRYPOINT ["./bin/test.sh"]
+ENTRYPOINT ["/usr/src/app/bin/test.sh"]

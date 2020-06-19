@@ -1,4 +1,4 @@
 exit: true
-timeout: 250000
+timeout: 350000
 file:
   - ./lib/test/bootstrap.js

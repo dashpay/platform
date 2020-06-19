@@ -1,22 +1,12 @@
-const {
-  PrivateKey,
-} = require('@dashevo/dashcore-lib');
-
-const Dash = require('dash');
-
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
-const fundAddress = require('../../lib/test/fundAddress');
+const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 
 describe('e2e', () => {
   describe('Contacts', function contacts() {
     this.timeout(950000);
 
     let dataContract;
-
-    let seeds;
-    let faucetPrivateKey;
-    let faucetAddress;
 
     let bobClient;
     let aliceClient;
@@ -30,16 +20,6 @@ describe('e2e', () => {
     let dataContractDocumentSchemas;
 
     before(() => {
-      seeds = process.env.DAPI_SEED
-        .split(',')
-        .map((seed) => ({ service: `${seed}` }));
-
-      // Prepare to fund Bob and Alice wallets
-      faucetPrivateKey = PrivateKey.fromString(process.env.FAUCET_PRIVATE_KEY);
-      faucetAddress = faucetPrivateKey
-        .toAddress(process.env.NETWORK)
-        .toString();
-
       dataContractDocumentSchemas = {
         profile: {
           indices: [
@@ -90,24 +70,7 @@ describe('e2e', () => {
     describe('Bob', () => {
       it('should create user wallet and identity', async () => {
         // Create Bob wallet
-        bobClient = new Dash.Client({
-          seeds,
-          wallet: {
-            mnemonic: null,
-          },
-          network: process.env.NETWORK,
-        });
-
-        const account = await bobClient.getWalletAccount();
-
-        // Send some Dash to Bob
-        await fundAddress(
-          bobClient.getDAPIClient(),
-          faucetAddress,
-          faucetPrivateKey,
-          account.getAddress().address,
-          20000,
-        );
+        bobClient = await createClientWithFundedWallet();
 
         bobIdentity = await bobClient.platform.identities.register(10);
 
@@ -159,30 +122,12 @@ describe('e2e', () => {
     describe('Alice', () => {
       it('should create user wallet and identity', async () => {
         // Create Alice wallet
-        aliceClient = new Dash.Client({
-          seeds,
-          wallet: {
-            mnemonic: null,
-          },
-          network: process.env.NETWORK,
-        });
+        aliceClient = await createClientWithFundedWallet();
 
-        const account = await aliceClient.getWalletAccount();
-
-        // Update contacts app
         aliceClient.apps.contacts = {
           contractId: dataContract.getId(),
           contract: dataContract,
         };
-
-        // Send some Dash to Alice
-        await fundAddress(
-          aliceClient.getDAPIClient(),
-          faucetAddress,
-          faucetPrivateKey,
-          account.getAddress().address,
-          20000,
-        );
 
         aliceIdentity = await aliceClient.platform.identities.register(10);
 

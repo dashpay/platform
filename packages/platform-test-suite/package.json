@@ -21,17 +21,22 @@
     "url": "https://github.com/dashevo/plaform-test-suite/issues"
   },
   "homepage": "https://github.com/dashevo/plaform-test-suite#readme",
-  "devDependencies": {
+  "dependencies": {
     "@dashevo/dashcore-lib": "~0.18.4",
     "@dashevo/dpp": "~0.13.1",
+    "@dashevo/grpc-common": "~0.3.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
-    "dash": "~3.13.2",
+    "dash": "~3.13.3",
     "dirty-chai": "^2.0.1",
     "dotenv-safe": "^8.2.0",
+    "github-api": "^3.3.0",
+    "mocha": "^7.2.0",
+    "semver": "^7.3.2"
+  },
+  "devDependencies": {
     "eslint": "^6.8.0",
     "eslint-config-airbnb-base": "^14.1.0",
-    "eslint-plugin-import": "^2.20.2",
-    "mocha": "^7.2.0"
+    "eslint-plugin-import": "^2.20.2"
   }
 }

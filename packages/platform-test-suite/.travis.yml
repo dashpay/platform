@@ -1,4 +1,3 @@
-sudo: false
 dist: bionic
 language: node_js
 
@@ -19,11 +18,47 @@ addons:
     packages:
       - docker-ce
 
-script: npm run check-package && npm run lint && npm run test
+env:
+  - DOCKER_COMPOSE_VERSION=1.25.5
+
+before_install:
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - chmod +x docker-compose
+  - sudo mv docker-compose /usr/local/bin
+
+install:
+  - npm ci
+  - cp .env.example .env
+  # Build docker image
+  - docker build -t platform-test-suite:local .
+  # Install MN Bootstrap
+  - export MN_RELEASE_LINK=$(./scripts/get-gh-release-link dashevo/mn-bootstrap)
+  - curl -L $MN_RELEASE_LINK > mn-bootstrap.tar.gz
+  - mkdir ~/mn-bootstrap && tar -C ~/mn-bootstrap -xvf mn-bootstrap.tar.gz
+  - export MN_RELEASE_DIR="$(ls ~/mn-bootstrap)"
+  - cd ~/mn-bootstrap/$MN_RELEASE_DIR
+  - chmod -R 777 data
+  - npm ci && npm link
+  # Go back to workdir
+  - cd -
+
+before_script:
+  - export PRIVATE_KEY=$(mn wallet:generate-to-address local 10000 | grep -m 1 "Private key:" | awk '{printf $3}')
+  - export OPERATOR_BLS_KEY=$(mn register local $PRIVATE_KEY 127.0.0.1 20001 | grep -m 1 "Private key:" | awk '{printf $3}')
+  - mn start local -p $OPERATOR_BLS_KEY 127.0.0.1 20001
+
+script: >
+  npm run check-package &&
+  npm run lint &&
+  docker run --network="host" platform-test-suite:local 127.0.0.1:3000 -k=$PRIVATE_KEY -n=regtest
+
+after_script:
+  - mn stop local
 
 deploy:
   provider: script
-  script: bash bin/travis-deploy.sh
+  script: bash scripts/travis-deploy.sh
   on:
     tags: true
     repo: dashevo/platform-test-suite

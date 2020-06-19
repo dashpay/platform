@@ -9,10 +9,11 @@ Usage: test <seed> [options]
   <seed> can be IP or IP:port
 
   Options:
-  -ni=pkg   --npm-install=pkg   - install npm package before running the suite
-  -s=a,b,c  --scope=a,b,c       - test scope to run
-  -k=key    --faucet-key=key    - faucet private key string
-  -h        --help              - show help
+              --npm-install=pkg   - install npm package before running the suite
+  -s=a,b,c    --scope=a,b,c       - test scope to run
+  -k=key      --faucet-key=key    - faucet private key string
+  -n=network  --network=network   - Use regtest or testnet
+  -h          --help              - show help
 
   Possible scopes:
   e2e
@@ -25,6 +26,7 @@ Usage: test <seed> [options]
   functional:platform"
 
 DAPI_SEED="$1"
+network="testnet"
 
 DIR="$( cd -P "$( dirname "$BASH_SOURCE[0]" )" >/dev/null 2>&1 && pwd )"
 
@@ -37,7 +39,7 @@ case ${i} in
         echo "$cmd_usage"
         exit 0
     ;;
-    -ni=*|--npm-install=*)
+    --npm-install=*)
     npm_package_to_install="${i#*=}"
     ;;
     -s=*|--scope=*)
@@ -45,6 +47,9 @@ case ${i} in
     ;;
     -k=*|--faucet-key=*)
     faucet_key="${i#*=}"
+    ;;
+    -n=*|--network=*)
+    network="${i#*=}"
     ;;
 esac
 done
@@ -105,4 +110,4 @@ else
   scope_dirs="test/functional/**/*.spec.js test/e2e/**/*.spec.js"
 fi
 
-DAPI_SEED=${DAPI_SEED} FAUCET_PRIVATE_KEY=${faucet_key} NODE_ENV=test node_modules/.bin/mocha ${scope_dirs}
+DAPI_SEED=${DAPI_SEED} FAUCET_PRIVATE_KEY=${faucet_key} NETWORK=${network} NODE_ENV=test mocha ${scope_dirs}

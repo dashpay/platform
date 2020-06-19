@@ -1,31 +1,45 @@
 const { Block } = require('@dashevo/dashcore-lib');
 
-describe.skip('Core', () => {
+const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
+
+describe('Core', () => {
   describe('getBlock', () => {
+    let client;
+
+    before(() => {
+      client = createClientWithoutWallet();
+    });
+
+    after(async () => {
+      if (client) {
+        await client.disconnect();
+      }
+    });
+
     it('should get block by hash', async () => {
-      const blockHash = await dashClient.clients.dapi.getBestBlockHash();
+      const blockHash = await client.getDAPIClient().getBestBlockHash();
 
-      const blockBinary = await dashClient.clients.dapi.getBlockByHash(blockHash);
+      const blockBinary = await client.getDAPIClient().getBlockByHash(blockHash);
       expect(blockBinary).to.be.an.instanceof(Buffer);
-      const block = new Block(blockBinary);
 
+      const block = new Block(blockBinary);
       expect(block.hash).to.equal(blockHash);
     });
 
     it('should get block by height', async () => {
-      const { blocks } = await dashClient.clients.dapi.getStatus();
+      const { blocks } = await client.getDAPIClient().getStatus();
 
-      const blockBinary = await dashClient.clients.dapi.getBlockByHeight(blocks);
+      const blockBinary = await client.getDAPIClient().getBlockByHeight(blocks);
 
       expect(blockBinary).to.be.an.instanceof(Buffer);
-      const block = new Block(blockBinary);
 
+      const block = new Block(blockBinary);
       expect(block).to.be.an.instanceOf(Block);
     });
 
     it('should respond with an invalid argument error if the block by height was not found', async () => {
       try {
-        await dashClient.clients.dapi.getBlockByHeight(1000000000);
+        await client.getDAPIClient().getBlockByHeight(1000000000);
 
         expect.fail('Should throw an invalid argument error');
       } catch (e) {
@@ -35,7 +49,8 @@ describe.skip('Core', () => {
     });
 
     it('should respond with null if the block by hash was not found', async () => {
-      const block = await dashClient.clients.dapi.getBlockByHash('hash');
+      const block = await client.getDAPIClient().getBlockByHash('hash');
+
       expect(block).to.equal(null);
     });
   });
