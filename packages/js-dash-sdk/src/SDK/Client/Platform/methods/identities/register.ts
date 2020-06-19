@@ -31,7 +31,7 @@ export default async function register(this: Platform, fundingAmount : number = 
     const identityIndex = await account.getUnusedIdentityIndex();
 
     // @ts-ignore
-    const { privateKey: identityPrivateKey } = account.getIdentityHDKeyByIndex(identityIndex, 0)
+    const { privateKey: identityPrivateKey } = account.getIdentityHDKeyByIndex(identityIndex, 0);
     const identityPublicKey = identityPrivateKey.toPublicKey();
 
     const identity = dpp.identity.create(assetLockOutPoint, [identityPublicKey]);

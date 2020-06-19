@@ -40,7 +40,7 @@ export default async function createAssetLockTransaction(platform : Platform, fu
         // @ts-ignore
         .addBurnOutput(output.satoshis, assetLockOneTimePublicKey._getID())
         // @ts-ignore
-        .change(changeAddress)
+        .change(changeAddress);
 
     const utxoAddresses = selection.utxos.map((utxo: any) => utxo.address.toString());
 
