@@ -1,3 +1,12 @@
+## [0.13.4](https://github.com/dashevo/mn-bootstrap/compare/v0.13.3...v0.13.4) (2020-06-18)
+
+
+### Bug Fixes
+
+* tendermint throw fatal error on start in linux environment ([#76](https://github.com/dashevo/mn-bootstrap/issues/76))
+
+
+
 ## [0.13.3](https://github.com/dashevo/mn-bootstrap/compare/v0.13.2...v0.13.3) (2020-06-18)
 
 

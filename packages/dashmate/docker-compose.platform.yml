@@ -44,7 +44,7 @@ services:
     ports:
       - 26656:26656 # P2P
     volumes:
-      - ./configs/${PRESET:?err}/drive/tendermint:/tendermint
+      - ./configs/${PRESET:?err}/drive/tendermint:/tendermint/config
       - ./data/${PRESET:?err}/drive/tendermint:/data
     entrypoint: sh -c "/usr/bin/tendermint init && /usr/bin/tendermint node"
 
