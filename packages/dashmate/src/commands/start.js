@@ -30,6 +30,7 @@ class StartCommand extends BaseCommand {
     },
     {
       'full-node': isFullNode,
+      'update': isUpdate,
       'operator-private-key': operatorPrivateKey,
       'drive-image-build-path': driveImageBuildPath,
       'dapi-image-build-path': dapiImageBuildPath,
@@ -37,6 +38,11 @@ class StartCommand extends BaseCommand {
     dockerCompose,
   ) {
     const tasks = new Listr([
+      {
+        title: 'Download updated services',
+        enabled: () => isUpdate === true,
+        task: async (ctx) => await dockerCompose.pull(preset),
+      },
       {
         title: `Start ${isFullNode ? 'full node' : 'masternode'} with ${preset} preset`,
         task: async () => {
@@ -114,6 +120,7 @@ StartCommand.args = [{
 
 StartCommand.flags = {
   'full-node': flagTypes.boolean({ char: 'f', description: 'start as full node', default: false }),
+  'update': flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'operator-private-key': flagTypes.string({ char: 'p', description: 'operator private key', default: null }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),

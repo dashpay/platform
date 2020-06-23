@@ -159,6 +159,27 @@ class DockerCompose {
   }
 
   /**
+   * Pull docker compose
+   *
+   * @param {string} preset
+   * @return {Promise<void>}
+   */
+  async pull(preset) {
+    await this.throwErrorIfNotInstalled();
+
+    const env = this.getPlaceholderEmptyEnvOptions();
+
+    try {
+      await dockerCompose.pullAll({
+        ...this.getOptions(preset, env),
+        commandOptions: ['-q'],
+      });
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+  }
+
+  /**
    * @private
    * @return {Promise<void>}
    */
