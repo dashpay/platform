@@ -18,6 +18,7 @@ describe('DAPIClient', () => {
       dapiClient = new DAPIClient(options);
 
       expect(dapiClient.options).to.deep.equal({
+        network: 'evonet',
         retries: 0,
         newOption: true,
         timeout: 10000,
@@ -37,6 +38,7 @@ describe('DAPIClient', () => {
       expect(dapiClient.options).to.deep.equal({
         retries: 3,
         timeout: 10000,
+        network: 'evonet',
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(
@@ -58,6 +60,7 @@ describe('DAPIClient', () => {
       expect(dapiClient.options).to.deep.equal({
         retries: 0,
         addresses: ['localhost'],
+        network: 'evonet',
         timeout: 10000,
       });
 

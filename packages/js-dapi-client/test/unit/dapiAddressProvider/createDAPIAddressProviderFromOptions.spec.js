@@ -4,7 +4,7 @@ const createDAPIAddressProviderFromOptions = require(
 const ListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/ListDAPIAddressProvider');
 const SimplifiedMasternodeListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
 
-const networks = require('../../../lib/networkConfigs');
+const networkConfigs = require('../../../lib/networkConfigs');
 
 const DAPIClientError = require('../../../lib/errors/DAPIClientError');
 
@@ -17,6 +17,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
       dapiAddressProvider = Object.create(null);
 
       options = {
+        network: 'evonet',
         dapiAddressProvider,
       };
     });
@@ -50,18 +51,6 @@ describe('createDAPIAddressProviderFromOptions', () => {
         expect(e).to.be.an.instanceOf(DAPIClientError);
       }
     });
-
-    it('should throw DAPIClientError if `network` option is passed too', async () => {
-      options.network = 'testnet';
-
-      try {
-        createDAPIAddressProviderFromOptions(options);
-
-        expect.fail('should throw DAPIClientError');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(DAPIClientError);
-      }
-    });
   });
 
   describe('addresses', () => {
@@ -70,6 +59,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
     beforeEach(() => {
       options = {
         addresses: ['localhost'],
+        network: 'local',
       };
     });
 
@@ -90,18 +80,6 @@ describe('createDAPIAddressProviderFromOptions', () => {
         expect(e).to.be.an.instanceOf(DAPIClientError);
       }
     });
-
-    it('should throw DAPIClientError if `network` option is passed too', async () => {
-      options.network = 'testnet';
-
-      try {
-        createDAPIAddressProviderFromOptions(options);
-
-        expect.fail('should throw DAPIClientError');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(DAPIClientError);
-      }
-    });
   });
 
   describe('seeds', () => {
@@ -110,6 +88,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
     beforeEach(() => {
       options = {
         seeds: ['127.0.0.1'],
+        network: 'local',
       };
     });
 
@@ -118,18 +97,6 @@ describe('createDAPIAddressProviderFromOptions', () => {
 
       expect(result).to.be.an.instanceOf(SimplifiedMasternodeListDAPIAddressProvider);
     });
-
-    it('should throw DAPIClientError if `network` option is passed too', async () => {
-      options.network = 'testnet';
-
-      try {
-        createDAPIAddressProviderFromOptions(options);
-
-        expect.fail('should throw DAPIClientError');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(DAPIClientError);
-      }
-    });
   });
 
   describe('network', () => {
@@ -137,7 +104,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
 
     beforeEach(() => {
       options = {
-        network: Object.keys(networks)[0],
+        network: Object.keys(networkConfigs)[0],
       };
     });
 
@@ -147,7 +114,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
       expect(result).to.be.an.instanceOf(SimplifiedMasternodeListDAPIAddressProvider);
     });
 
-    it('should throw DAPIClientError if `network` is invalid', async () => {
+    it('should throw DAPIClientError if there is no config for a specified network', async () => {
       options.network = 'unknown';
 
       try {

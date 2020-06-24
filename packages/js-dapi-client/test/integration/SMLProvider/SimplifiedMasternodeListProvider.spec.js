@@ -41,7 +41,7 @@ describe('SimplifiedMasternodeListProvider', () => {
 
     smlProvider = new SimplifiedMasternodeListProvider(jsonTransportMock, {
       updateInterval: 50,
-      networkType: 'testnet',
+      network: 'testnet',
     });
   });
 

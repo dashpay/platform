@@ -13,16 +13,13 @@ class DAPIClient {
    */
   constructor(options = {}) {
     this.options = {
+      network: 'evonet',
       timeout: 10000,
       retries: 3,
       ...options,
     };
 
     this.dapiAddressProvider = createDAPIAddressProviderFromOptions(this.options);
-    if (!this.dapiAddressProvider) {
-      // Connect to evonet if no address options passed
-      this.dapiAddressProvider = createDAPIAddressProviderFromOptions({ network: 'evonet' });
-    }
 
     const grpcTransport = new GrpcTransport(
       createDAPIAddressProviderFromOptions,
@@ -47,8 +44,7 @@ class DAPIClient {
  * @property {DAPIAddressProvider} [dapiAddressProvider]
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [addresses]
  * @property {string[]|RawDAPIAddress[]} [seeds]
- * @property {string} [network=evonet]
- * @property {string} [networkType=testnet]
+ * @property {string|Network} [network=evonet]
  * @property {number} [timeout=2000]
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]

@@ -1,3 +1,5 @@
+const networks = require('@dashevo/dashcore-lib/lib/networks');
+
 const DAPIAddress = require('./DAPIAddress');
 
 const ListDAPIAddressProvider = require('./ListDAPIAddressProvider');
@@ -10,7 +12,7 @@ const requestJsonRpc = require('../transport/JsonRpcTransport/requestJsonRpc');
 
 const DAPIClientError = require('../errors/DAPIClientError');
 
-const networks = require('../networkConfigs');
+const networkConfigs = require('../networkConfigs');
 
 /**
  * @typedef {createDAPIAddressProviderFromOptions}
@@ -23,6 +25,10 @@ const networks = require('../networkConfigs');
  * }
  */
 function createDAPIAddressProviderFromOptions(options) {
+  if (options.network && !networks.get(options.network)) {
+    throw new DAPIClientError(`Invalid network '${options.network}'`);
+  }
+
   if (options.dapiAddressProvider) {
     if (options.addresses) {
       throw new DAPIClientError("Can't use 'address' with 'dapiAddressProvider' option");
@@ -30,10 +36,6 @@ function createDAPIAddressProviderFromOptions(options) {
 
     if (options.seeds) {
       throw new DAPIClientError("Can't use 'seeds' with 'dapiAddressProvider' option");
-    }
-
-    if (options.network) {
-      throw new DAPIClientError("Can't use 'network' with 'dapiAddressProvider' option");
     }
 
     return options.dapiAddressProvider;
@@ -44,10 +46,6 @@ function createDAPIAddressProviderFromOptions(options) {
       throw new DAPIClientError("Can't use 'seeds' with 'addresses' option");
     }
 
-    if (options.network) {
-      throw new DAPIClientError("Can't use 'network' with 'addresses' option");
-    }
-
     return new ListDAPIAddressProvider(
       options.addresses.map((rawAddress) => new DAPIAddress(rawAddress)),
       options,
@@ -55,10 +53,6 @@ function createDAPIAddressProviderFromOptions(options) {
   }
 
   if (options.seeds) {
-    if (options.network) {
-      throw new DAPIClientError("Can't use 'network' with 'seeds' option");
-    }
-
     const listDAPIAddressProvider = new ListDAPIAddressProvider(
       options.seeds.map((rawAddress) => new DAPIAddress(rawAddress)),
       options,
@@ -73,20 +67,18 @@ function createDAPIAddressProviderFromOptions(options) {
 
     const smlProvider = new SimplifiedMasternodeListProvider(
       jsonRpcTransport,
-      { networkType: options.networkType },
+      { network: options.network },
     );
 
     return new SimplifiedMasternodeListDAPIAddressProvider(smlProvider, listDAPIAddressProvider);
   }
 
   if (options.network) {
-    if (!networks[options.network]) {
-      throw new DAPIClientError(`Invalid network '${options.network}'`);
+    if (!networkConfigs[options.network]) {
+      throw new DAPIClientError(`There is no connection config for network '${options.network}'`);
     }
 
-    const networkConfig = { ...options, ...networks[options.network] };
-    // noinspection JSUnresolvedVariable
-    delete networkConfig.network;
+    const networkConfig = { ...options, ...networkConfigs[options.network] };
 
     return createDAPIAddressProviderFromOptions(networkConfig);
   }

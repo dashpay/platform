@@ -7,7 +7,7 @@ class SimplifiedMasternodeListProvider {
    * @param {JsonRpcTransport} jsonRpcTransport - JsonRpcTransport instance
    * @param {object} [options] - Options
    * @param {number} [options.updateInterval=60000]
-   * @param {string} [options.networkType]
+   * @param {string} [options.network]
    */
   constructor(jsonRpcTransport, options = {}) {
     this.jsonRpcTransport = jsonRpcTransport;
@@ -17,7 +17,7 @@ class SimplifiedMasternodeListProvider {
       ...options,
     };
 
-    this.simplifiedMNList = new SimplifiedMNList(undefined, this.options.networkType);
+    this.simplifiedMNList = new SimplifiedMNList(undefined, this.options.network);
 
     this.lastUpdateDate = 0;
 
@@ -77,7 +77,7 @@ class SimplifiedMasternodeListProvider {
       { addresses: [this.jsonRpcTransport.getLastUsedAddress()] },
     );
 
-    return new SimplifiedMNListDiff(rawSimplifiedMNListDiff, this.options.networkType);
+    return new SimplifiedMNListDiff(rawSimplifiedMNListDiff, this.options.network);
   }
 }
 

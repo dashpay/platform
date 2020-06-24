@@ -7,10 +7,10 @@ module.exports = {
       'seed-4.evonet.networks.dash.org',
       'seed-5.evonet.networks.dash.org',
     ],
-    networkType: 'testnet',
+    network: 'evonet',
   },
   local: {
     addresses: ['127.0.0.1'],
-    networkType: 'testnet',
+    network: 'regtest',
   },
 };
