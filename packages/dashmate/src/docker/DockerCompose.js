@@ -7,6 +7,8 @@ const semver = require('semver');
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
+const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
+const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
 class DockerCompose {
   /**
@@ -64,22 +66,7 @@ class DockerCompose {
   async isServiceRunning(preset, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
 
-    let psOutput;
-
-    const env = this.getPlaceholderEmptyEnvOptions();
-
-    try {
-      ({ out: psOutput } = await dockerCompose.ps({
-        ...this.getOptions(preset, env),
-        commandOptions: ['-q', serviceName],
-      }));
-    } catch (e) {
-      throw new DockerComposeError(e);
-    }
-
-    const coreContainerIds = psOutput.trim()
-      .split('\n')
-      .filter((containerId) => containerId !== '');
+    const coreContainerIds = await this.getContainersList(preset, serviceName);
 
     for (const containerId of coreContainerIds) {
       const container = this.docker.getContainer(containerId);
@@ -135,6 +122,86 @@ class DockerCompose {
     } catch (e) {
       throw new DockerComposeError(e);
     }
+  }
+
+  /**
+   * Inspect service
+   *
+   * @param {string} preset
+   * @param {string} serviceName
+   * @return {Promise<object>}
+   */
+  async inspectService(preset, serviceName) {
+    await this.throwErrorIfNotInstalled();
+
+    const containerIds = await this.getContainersList(preset, serviceName);
+
+    if (containerIds.length === 0) {
+      throw new ContainerIsNotPresentError(preset, serviceName);
+    }
+
+    const container = this.docker.getContainer(containerIds[0]);
+
+    return container.inspect();
+  }
+
+  /**
+   * Execute command
+   *
+   * @param {string} preset
+   * @param {string} serviceName
+   * @param {string} command
+   * @return {Promise<object>}
+   */
+  async execCommand(preset, serviceName, command) {
+    await this.throwErrorIfNotInstalled();
+
+    if (!(await this.isServiceRunning(preset, serviceName))) {
+      throw new ServiceIsNotRunningError(preset, serviceName);
+    }
+
+    const envs = this.getPlaceholderEmptyEnvOptions();
+
+    let commandOutput;
+
+    try {
+      commandOutput = await dockerCompose.exec(
+        serviceName,
+        command,
+        this.getOptions(preset, envs),
+      );
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+
+    return commandOutput;
+  }
+
+  /**
+   * Get list of Docker containers
+   *
+   * @param {string} preset
+   * @param {string} [filterServiceName]
+   * @return {string[]}
+   */
+  async getContainersList(preset, filterServiceName = undefined) {
+    let psOutput;
+
+    const env = this.getPlaceholderEmptyEnvOptions();
+
+    try {
+      ({ out: psOutput } = await dockerCompose.ps({
+        ...this.getOptions(preset, env),
+        commandOptions: ['-q', filterServiceName],
+      }));
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+
+    return psOutput
+      .trim()
+      .split('\n')
+      .filter(Boolean);
   }
 
   /**
