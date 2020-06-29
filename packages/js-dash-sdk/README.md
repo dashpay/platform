@@ -1,14 +1,21 @@
 # Dash SDK
 
-[![Package Version](https://img.shields.io/github/package-json/v/dashevo/dashjs.svg?&style=flat-square)](https://www.npmjs.org/package/dash)
-[![Build Status](https://img.shields.io/travis/com/dashevo/dashjs.svg?branch=master&style=flat-square)](https://travis-ci.com/dashevo/dashjs)
+[![NPM Version](https://img.shields.io/npm/v/dash)](https://www.npmjs.org/package/dash)
+[![Build Status](https://img.shields.io/travis/com/dashevo/dashjs)](https://travis-ci.com/dashevo/dashjs)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/dashjs)](https://img.shields.io/github/release-date/dashevo/dashjs)
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
-> Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
-
+Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
 
 Dash library allows you to transact on L1 or fetch/register documents on L2 within a single library, including management and signing of your documents.
 
-Find more information in the [Documentation](https://dashevo.github.io/DashJS/#/).
+## Table of Contents
+- [Install](#install)
+- [Usage](#usage)
+- [Dependencies](#dependencies)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Install
 
@@ -43,25 +50,31 @@ const client = new Dash.Client({
   },
 });
 
-client.isReady().then(async () => {
-  const {account, platform} = client;
+client.wallet.getAccount().then((account) => {
   console.log("Funding address", account.getUnusedAddress().address);
   console.log("Confirmed Balance", account.getConfirmedBalance());
-  console.log(await platform.names.get('alice'));
+  client.disconnect();
 });
-
 ```
 
 ## Dependencies 
 
-Dash SDK works using multiple dependencies that might interest you :
-- [Wallet-Lib](https://github.com/dashevo/wallet-lib) - Wallet management for handling, signing and broadcasting transactions (HD44).
-- [Dashcore-Lib](https://github.com/dashevo/dashcore-lib) - Providing the main primitives (Block, Transaction,...).
+The Dash SDK works using multiple dependencies that might interest you:
+- [Wallet-Lib](https://github.com/dashevo/wallet-lib) - Wallet management for handling, signing and broadcasting transactions (BIP-44 HD).
+- [Dashcore-Lib](https://github.com/dashevo/dashcore-lib) - Provides the main L1 blockchain primitives (Block, Transaction,...).
 - [DAPI-Client](https://github.com/dashevo/dapi-client) - Client library for accessing DAPI endpoints.
 - [DPP](https://github.com/dashevo/js-dpp) - Implementation (JS) of Dash Platform Protocol.
 
 Some features might be more extensive in those libs, as Dash SDK only wraps around them to provide a single interface that is easy to use (and thus has less features).
 
-## Licence
+## Documentation
 
-[MIT](/LICENCE) © Dash Core Group, Inc.
+More extensive documentation available at https://dashevo.github.io/DashJS/.
+
+## Contributing
+
+Feel free to dive in! [Open an issue](https://github.com/dashevo/DashJS/issues/new) or submit PRs.
+
+## License
+
+[MIT](/LICENSE) © Dash Core Group, Inc.
