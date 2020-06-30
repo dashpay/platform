@@ -3,6 +3,7 @@ const {Transaction, Address, Script} = require('@dashevo/dashcore-lib');
 const coinSelection = require('./coinSelection');
 const {utxosList} = require('../../fixtures/crackspice');
 const STRATEGIES = require('./coinSelections/strategies');
+const TransactionEstimator = require('./coinSelections/TransactionEstimator')
 
 const utxosListAsUnspentOutput = utxosList.map((utxo)=> Transaction.UnspentOutput(utxo));
 const outputs = {
@@ -56,7 +57,6 @@ describe('Utils - coinSelection', function suite() {
   it('should require a outputsList with at least one output', () => {
     expect(() => coinSelection(utxosList, [])).to.throw('outputsList must contains at least 1 output');
   });
-
   it('should require a outputsList with valid outputs', () => {
     expect(() => coinSelection(utxosListAsUnspentOutput, [{toto: true}])).to.throw('data parameter supplied is not a string.');
   });
@@ -316,6 +316,51 @@ describe('Utils - coinSelection', function suite() {
     // result.utxos = result.utxos.map((el) => el.toObject());
 
     expect(result).to.deep.equal(expectedResult);
+  });
+  it('should handle externally crafted strategy', function () {
+    // A dummy strategy that takes a random selection of utxo
+    const externalStrategy = (utxosList, outputsList, deductFee = false, feeCategory = 'normal') => {
+      const copiedUtxos = [...utxosList];
+      const txEstimator = new TransactionEstimator(feeCategory);
+
+      txEstimator.addOutputs(outputsList);
+
+      let inputValue = 0;
+      let outputValue = txEstimator.getOutValue();
+      const randomlySelectedUtxos = [];
+
+      while(inputValue<outputValue){
+        if(copiedUtxos.length === 0){
+          throw new Error('Not enought UTXOs');
+        }
+        // Take a random item and add it to selection
+        const utxo = copiedUtxos.splice(Math.floor(Math.random() * copiedUtxos.length),1)[0];
+        inputValue+=utxo.satoshis;
+        randomlySelectedUtxos.push(utxo);
+      }
+
+      txEstimator.addInputs(randomlySelectedUtxos);
+
+      return {
+        utxos: txEstimator.getInputs(),
+        outputs: txEstimator.getOutputs(),
+        feeCategory,
+        estimatedFee: txEstimator.getFeeEstimate(),
+        utxosValue: txEstimator.getInValue(),
+      };
+    }
+    const result = coinSelection(
+        utxosListAsUnspentOutput,
+        [outputs.FOURTY_FIVE_DASH],
+        false,
+        'normal',
+        externalStrategy);
+
+    expect(result).to.exist;
+    expect(result.feeCategory).to.equal('normal');
+    expect(result.utxosValue).to.gte(4500000000);
+    expect(result.outputs).to.deep.equal([outputs.FOURTY_FIVE_DASH]);
+    expect(result.utxos.length).to.gte(0);
   });
   // Note : Removed, kept in case of fallback needed
   // it('should return an error in not any utxo has been found', () => {

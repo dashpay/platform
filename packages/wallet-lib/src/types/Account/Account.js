@@ -5,7 +5,7 @@ const { WALLET_TYPES } = require('../../CONSTANTS');
 const { is } = require('../../utils');
 const EVENTS = require('../../EVENTS');
 const Wallet = require('../Wallet/Wallet.js');
-const { simpleTransactionOptimizedAccumulator } = require('../../utils/coinSelections/strategies');
+const { simpleDescendingAccumulator } = require('../../utils/coinSelections/strategies');
 
 function getNextUnusedAccountIndexForWallet(wallet) {
   if (wallet && wallet.accounts) {
@@ -35,7 +35,7 @@ const defaultOptions = {
   plugins: [],
   injectDefaultPlugins: true,
   debug: false,
-  strategy: simpleTransactionOptimizedAccumulator,
+  strategy: simpleDescendingAccumulator,
 };
 
 /* eslint-disable no-underscore-dangle */

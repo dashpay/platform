@@ -27,8 +27,8 @@ const CONSTANTS = {
   UTXO_SELECTION_MAX_FEE_VS_SINGLE_UTXO_FEE_FACTOR: 5,
   MAX_STANDARD_TX_SIZE: 100000,
   MAX_P2SH_SIGOPS: 15,
-  MAX_INPUTS_FOR_AUTO_IX: 4,
-  UTXO_MAX_INPUTS_PER_TX: 25,
+  // limit to how many times an unconfirmed input in a new tx can be respent
+  UTXO_CHAINED_SPENDING_LIMIT_FOR_TX: 25,
   FEES: {
     DUST_RELAY_TX_FEE: 1000,
     ZERO: 0,

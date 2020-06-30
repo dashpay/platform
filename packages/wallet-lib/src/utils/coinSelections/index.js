@@ -4,7 +4,7 @@ const InvalidUTXO = require('../../errors/InvalidUTXO');
 const InvalidOutput = require('../../errors/InvalidOutput');
 const CoinSelectionUnsufficientUTXOS = require('../../errors/CoinSelectionUnsufficientUTXOS');
 
-module.exports = function coinSelection(utxosList, outputsList, deductFee = false, feeCategory = 'normal', strategy = STRATEGIES.simpleTransactionOptimizedAccumulator) {
+module.exports = function coinSelection(utxosList, outputsList, deductFee = false, feeCategory = 'normal', strategy = STRATEGIES.simpleDescendingAccumulator) {
   if (!utxosList) { throw new Error('A utxosList is required'); }
   if (utxosList.constructor.name !== Array.name) { throw new Error('UtxosList is expected to be an array of utxos'); }
   if (utxosList.length < 1) { throw new Error('utxosList must contain at least 1 utxo'); }
