@@ -4,9 +4,18 @@ const knifeMnemonic = require('../../../fixtures/knifeeasily');
 const fluidMnemonic = require('../../../fixtures/fluidDepth');
 const cR4t6ePrivateKey = require('../../../fixtures/cR4t6e_pk');
 const { WALLET_TYPES } = require('../../CONSTANTS');
-const { Account } = require('../../index');
+const { Account, EVENTS } = require('../../index');
+const EventEmitter = require('events');
 const inMem = require('../../adapters/InMem');
-
+const blockHeader = new Dashcore.BlockHeader.fromObject({
+  hash: '00000ac3a0c9df709260e41290d6902e5a4a073099f11fe8c1ce80aadc4bb331',
+  version: 2,
+  prevHash: '00000ce430de949c85a145b02e33ebbaed3772dc8f3d668f66edc6852c24d002',
+  merkleRoot: '663360403b5fba9cd8744c3706f9660c7d3fee4e5a9ee98ce0ad5e5ad7824c1d',
+  time: 1398712821,
+  bits: 504365040,
+  nonce: 312363
+});
 const mocks = {
   adapter: inMem,
   offlineMode: true,
@@ -16,18 +25,23 @@ const mocks = {
 describe('Account - class', function suite() {
   this.timeout(10000);
   before(() => {
+    const emitter = new EventEmitter();
+    const mockStorage = {
+      on: emitter.on,
+      emit: emitter.emit,
+      store: {},
+      getStore: () => {},
+      saveState: () => {},
+      stopWorker: () => {},
+      importBlockHeader: (blockheader)=>{
+        mockStorage.emit(EVENTS.BLOCKHEADER, {type: EVENTS.BLOCKHEADER, payload:blockheader});
+      }
+    };
     mocks.wallet = (new (function Wallet() {
       this.walletId = '1234567891';
       this.accounts = [];
       this.network = Dashcore.Networks.testnet;
-      this.storage = {
-        on: () => {},
-        emit: () => {},
-        store: {},
-        getStore: () => {},
-        saveState: () => {},
-        stopWorker: () => {},
-      };
+      this.storage = mockStorage;
     })());
   });
   it('should be specify on missing params', () => {
@@ -72,5 +86,16 @@ describe('Account - class', function suite() {
     account.disconnect();
     account2.disconnect();
     account3.disconnect();
+  });
+  it('should forward events', function (done) {
+    const mockWallet = mocks.wallet;
+    const account = new Account(mockWallet, { injectDefaultPlugins: false });
+    account.init(mockWallet).then(async ()=>{
+      await account.on(EVENTS.BLOCKHEADER, ()=>{
+        done();
+      });
+      account.storage.importBlockHeader(blockHeader);
+    })
+
   });
 });
