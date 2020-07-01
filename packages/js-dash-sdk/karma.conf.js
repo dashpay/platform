@@ -13,10 +13,12 @@ module.exports = (config) => {
     frameworks: ['mocha', 'chai'],
     files: [
       'src/**/*.spec.ts',
+      'src/test/karma/bootstrap.ts',
       'tests/functional/sdk.js',
     ],
     preprocessors: {
       'src/**/*.spec.ts': ['webpack'],
+      'src/test/karma/bootstrap.ts': ['webpack'],
       'tests/functional/sdk.js': ['webpack'],
     },
     webpack: {

@@ -1,7 +1,5 @@
 import {Platform} from "../../Platform";
 
-import broadcastStateTransition from '../../broadcastStateTransition';
-
 const entropy = require('@dashevo/dpp/lib/util/entropy');
 const { hash } = require('@dashevo/dpp/lib/util/multihashDoubleSHA256');
 const bs58 = require('bs58');
@@ -29,25 +27,25 @@ export async function register(this: Platform,
         dashIdentity: identity.getId(),
     };
 
-    const nameSlice = name.indexOf('.');
-    const normalizedParentDomainName = (
-        nameSlice === -1
-        ? 'dash'
-        : name.slice(nameSlice + 1)
-    );
-    const label = (
-        nameSlice === -1
-        ? name
-        : name.slice(0,nameSlice)
-    );
+    const nameLabels = name.split('.');
+
+    const normalizedParentDomainName = nameLabels
+        .slice(1)
+        .join('.')
+        .toLowerCase();
+
+    const [label] = nameLabels;
     const normalizedLabel = label.toLowerCase();
-    const fullDomainName = `${normalizedLabel}.${normalizedParentDomainName}`;
+
+    const preorderSalt = entropy.generate();
+
+    const fullDomainName = normalizedParentDomainName.length > 0
+        ? `${normalizedLabel}.${normalizedParentDomainName}`
+        : normalizedLabel;
 
     const nameHash = hash(
         Buffer.from(fullDomainName),
     ).toString('hex');
-
-    const preorderSalt = entropy.generate();
 
     const saltedDomainHashBuffer = Buffer.concat([
         bs58.decode(preorderSalt),
@@ -71,11 +69,12 @@ export async function register(this: Platform,
         },
     );
 
-    const preorderTransition = dpp.document.createStateTransition({
-        create: [ preorderDocument ],
-    });
-
-    await broadcastStateTransition(this, preorderTransition, identity);
+    await this.documents.broadcast(
+        {
+            create: [preorderDocument],
+        },
+        identity,
+    );
 
     // 3. Create domain document
     const domainDocument = await this.documents.create(
@@ -92,11 +91,12 @@ export async function register(this: Platform,
     );
 
     // 4. Create and send domain state transition
-    const domainTransition = dpp.document.createStateTransition({
-        create: [domainDocument],
-    });
-
-    await broadcastStateTransition(this, domainTransition, identity);
+    await this.documents.broadcast(
+        {
+            create: [domainDocument],
+        },
+        identity,
+    );
 
     return domainDocument;
 }

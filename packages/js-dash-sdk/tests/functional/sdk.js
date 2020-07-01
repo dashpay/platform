@@ -137,10 +137,11 @@ describe('SDK', function suite() {
   });
 
   it('should check if name is available' , async function () {
-    const getDocument = await clientInstance.platform.names.get(username);
+    const getDocument = await clientInstance.platform.names.resolve(`${username}.dash`);
     expect(getDocument).to.equal(null);
     hasDuplicate = false;
   });
+
   it('should register an identity', async function () {
     if(!hasBalance){
       throw new Error('Insufficient balance to perform this test')
@@ -169,6 +170,7 @@ describe('SDK', function suite() {
 
     createdIdentity = fetchIdentity;
   });
+
   it('should register a name', async function () {
     if(!createdIdentity){
       throw new Error('Can\'t perform the test. Failed to fetch identity');
@@ -177,7 +179,7 @@ describe('SDK', function suite() {
       throw new Error(`Duplicate username ${username} registered. Skipping.`)
     }
 
-    const createDocument = await clientInstance.platform.names.register(username, createdIdentity);
+    const createDocument = await clientInstance.platform.names.register(`${username}.dash`, createdIdentity);
     expect(createDocument.getType()).to.equal('domain');
     expect(createDocument.getOwnerId()).to.equal(createdIdentityId);
     expect(createDocument.getDataContractId()).to.equal(process.env.DPNS_CONTRACT_ID);
@@ -203,6 +205,7 @@ describe('SDK', function suite() {
     expect(doc.get('label')).to.equal(username);
     expect(doc.get('normalizedParentDomainName')).to.equal('dash');
   });
+
   it('should create and broadcast contract', async () => {
     if(!createdIdentity){
       throw new Error('Can\'t perform the test. Failed to fetch identity & did not reg name');

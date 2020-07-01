@@ -15,8 +15,10 @@ import getIdentity from "./methods/identities/get";
 import registerIdentity from "./methods/identities/register";
 import topUpIdentity from "./methods/identities/topUp";
 
-import getName from "./methods/names/get";
 import registerName from "./methods/names/register";
+import resolveName from "./methods/names/resolve";
+import resolveNameByRecord from "./methods/names/resolveByRecord";
+import searchName from "./methods/names/search";
 
 /**
  * Interface for PlatformOpts
@@ -43,12 +45,16 @@ interface Records {
 }
 
 /**
- * @param {Function} broadcast - broadcast credentials onto the platform
- * @param {Function} get - get credentials from the platform
+ * @param {Function} register - register a domain
+ * @param {Function} resolve - resolve domain by a name
+ * @param {Function} resolveByRecord - resolve domain by it's record
+ * @param {Function} search - search domain
  */
-interface Credentials {
-    get: Function,
+interface DomainNames {
     register: Function,
+    resolve: Function,
+    resolveByRecord: Function,
+    search: Function,
 }
 
 interface Identities {
@@ -78,7 +84,7 @@ export class Platform {
      * @param {Function} get - get names from the platform
      * @param {Function} register - register names on the platform
      */
-    public names: Credentials;
+    public names: DomainNames;
     /**
      * @param {Function} get - get contracts from the platform
      * @param {Function} create - create contracts which can be broadcasted
@@ -108,7 +114,9 @@ export class Platform {
         };
         this.names = {
             register: registerName.bind(this),
-            get: getName.bind(this),
+            resolve: resolveName.bind(this),
+            resolveByRecord: resolveNameByRecord.bind(this),
+            search: searchName.bind(this),
         };
         this.identities = {
             register: registerIdentity.bind(this),
