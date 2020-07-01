@@ -1,3 +1,18 @@
+## [7.13.4](https://github.com/dashevo/wallet-lib/compare/v7.13.3...v7.13.4) (2020-07-01)
+
+
+### Bug Fixes
+
+* simple transaction do not have any 4 inputs limitation ([#158](https://github.com/dashevo/wallet-lib/issues/158))
+* **account:** forward all storage events ([#159](https://github.com/dashevo/wallet-lib/issues/159))
+
+
+### Features
+
+* update dashcore-lib and DAPI Client ([#161](https://github.com/dashevo/wallet-lib/issues/161))
+
+
+
 # [7.13.3](https://github.com/dashevo/wallet-lib/compare/v7.13.2...v7.13.3) (2020-06-16)
 
 - **Fixes:**  
