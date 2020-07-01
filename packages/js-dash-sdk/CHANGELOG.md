@@ -1,3 +1,12 @@
+## [3.13.4](https://github.com/dashevo/DashJS/compare/v3.13.3...v3.13.4) (2020-07-01)
+
+
+### Features
+
+* update Wallet and DashCore libs ([#95](https://github.com/dashevo/DashJS/issues/95))
+
+
+
 ## [3.13.3](https://github.com/dashevo/DashJS/compare/v3.13.2...v3.13.3) (2020-06-15)
 
 - **Features:**
