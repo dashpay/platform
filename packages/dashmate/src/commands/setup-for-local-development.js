@@ -1,9 +1,8 @@
-const Listr = require('listr');
+const { Listr } = require('listr2');
 
 const { flags: flagTypes } = require('@oclif/command');
 
 const BaseCommand = require('../oclif/command/BaseCommand');
-const UpdateRendererWithOutput = require('../oclif/renderer/UpdateRendererWithOutput');
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
 const PRESETS = require('../presets');
@@ -49,16 +48,15 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
               title: 'Initialize Platform',
               task: () => initTask(preset),
             },
-          ],
-          {
-            collapse: false,
-            renderer: UpdateRendererWithOutput,
-          }),
+          ]),
         },
       ],
       {
-        collapse: false,
-        renderer: UpdateRendererWithOutput,
+        rendererOptions: {
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
     );
 

@@ -1,8 +1,6 @@
-const Listr = require('listr');
+const { Listr } = require('listr2');
 
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/src/schema/dpns-documents.json');
-
-const UpdateRendererWithOutput = require('../../../oclif/renderer/UpdateRendererWithOutput');
 
 const wait = require('../../../util/wait');
 
@@ -55,6 +53,7 @@ function initTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `HD private key: ${ctx.client.wallet.exportWallet('HDPrivateKey')}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Register DPNS identity',
@@ -64,6 +63,7 @@ function initTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `DPNS identity: ${ctx.identity.getId()}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Register DPNS contract',
@@ -80,6 +80,7 @@ function initTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `DPNS contract ID: ${ctx.dataContract.getId()}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Register top level domain "dash"',
@@ -99,11 +100,7 @@ function initTaskFactory(
         title: 'Stop node',
         task: async () => dockerCompose.stop(preset),
       },
-    ],
-    {
-      collapse: false,
-      renderer: UpdateRendererWithOutput,
-    });
+    ]);
   }
 
   return initTask;

@@ -1,8 +1,6 @@
-const Listr = require('listr');
+const { Listr } = require('listr2');
 
 const BaseCommand = require('../oclif/command/BaseCommand');
-
-const UpdateRendererWithOutput = require('../oclif/renderer/UpdateRendererWithOutput');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
@@ -28,7 +26,13 @@ class StopCommand extends BaseCommand {
         task: async () => dockerCompose.stop(preset),
       },
     ],
-    { collapse: false, renderer: UpdateRendererWithOutput });
+    {
+      rendererOptions: {
+        clearOutput: false,
+        collapse: false,
+        showSubtasks: true,
+      },
+    });
 
     try {
       await tasks.run();

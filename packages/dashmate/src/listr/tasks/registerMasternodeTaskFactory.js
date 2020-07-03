@@ -1,10 +1,8 @@
-const Listr = require('listr');
+const { Listr } = require('listr2');
 
 const { Observable } = require('rxjs');
 
 const PRESETS = require('../../presets');
-
-const UpdateRendererWithOutput = require('../../oclif/renderer/UpdateRendererWithOutput');
 
 const masternodeDashAmount = require('../../core/masternodeDashAmount');
 
@@ -75,6 +73,7 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Public key: ${ctx.operator.publicKey}\nPrivate key: ${ctx.operator.privateKey}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Create a new collateral address',
@@ -84,6 +83,7 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Address: ${ctx.collateral.address}\nPrivate key: ${ctx.collateral.privateKey}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Create a new owner addresses',
@@ -93,6 +93,7 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Address: ${ctx.owner.address}\nPrivate key: ${ctx.owner.privateKey}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: `Send ${masternodeDashAmount} dash from funding address to collateral address`,
@@ -108,6 +109,7 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Collateral transaction ID: ${ctx.collateralTxId}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Wait for 15 confirmations',
@@ -183,6 +185,7 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `ProRegTx transaction ID: ${proRegTx}\nDon't forget to add bls private key to your configuration`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Wait for 1 confirmation',
@@ -223,11 +226,7 @@ function registerMasternodeTaskFactory(
         title: 'Stop Core',
         task: async (ctx) => ctx.coreService.stop(),
       },
-    ],
-    {
-      collapse: false,
-      renderer: UpdateRendererWithOutput,
-    });
+    ]);
   }
 
   return registerMasternodeTask;

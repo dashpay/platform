@@ -1,8 +1,6 @@
-const Listr = require('listr');
+const { Listr } = require('listr2');
 
 const { Observable } = require('rxjs');
-
-const UpdateRendererWithOutput = require('../../../oclif/renderer/UpdateRendererWithOutput');
 
 const PRESETS = require('../../../presets');
 
@@ -61,6 +59,7 @@ function generateToAddressTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Address: ${ctx.fundingAddress}\nPrivate key: ${ctx.fundingPrivateKeyString}`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: `Generate ≈${amount} dash to address`,
@@ -82,6 +81,7 @@ function generateToAddressTaskFactory(
             observer.complete();
           })
         ),
+        options: { persistentOutput: true },
       },
       {
         title: 'Mine 100 blocks to confirm',
@@ -121,11 +121,7 @@ function generateToAddressTaskFactory(
         title: 'Stop Core',
         task: async (ctx) => ctx.coreService.stop(),
       },
-    ],
-    {
-      collapse: false,
-      renderer: UpdateRendererWithOutput,
-    });
+    ]);
   }
 
   return generateToAddressTask;

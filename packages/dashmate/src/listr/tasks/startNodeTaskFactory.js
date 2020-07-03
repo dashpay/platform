@@ -1,10 +1,8 @@
-const Listr = require('listr');
+const { Listr } = require('listr2');
 
 const fs = require('fs').promises;
 const path = require('path');
 const dotenv = require('dotenv');
-
-const UpdateRendererWithOutput = require('../../oclif/renderer/UpdateRendererWithOutput');
 
 const PRESETS = require('../../presets');
 
@@ -100,11 +98,7 @@ function startNodeTaskFactory(dockerCompose) {
 
           await dockerCompose.up(preset, envs);
         },
-      }],
-    {
-      collapse: false,
-      renderer: UpdateRendererWithOutput,
-    });
+      }]);
   }
 
   return startNodeTask;
