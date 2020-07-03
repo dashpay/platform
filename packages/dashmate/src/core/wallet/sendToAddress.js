@@ -20,7 +20,7 @@ async function sendToAddress(
   amount,
 ) {
   const maxFee = 200000;
-  const feePerKb = 1000;
+  const feePerKb = 2000;
 
   const amountToSend = toSatoshi(amount);
 

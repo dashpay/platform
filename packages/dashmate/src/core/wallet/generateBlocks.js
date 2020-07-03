@@ -24,5 +24,4 @@ async function generateBlocks(
   } while (generatedBlocks < blocks);
 }
 
-
 module.exports = generateBlocks;

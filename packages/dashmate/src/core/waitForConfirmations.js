@@ -31,5 +31,4 @@ async function waitForConfirmations(
   } while (confirmationsReached < confirmations);
 }
 
-
 module.exports = waitForConfirmations;

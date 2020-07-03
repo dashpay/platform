@@ -30,5 +30,4 @@ async function generateToAddress(
   } while (addressBalance < amount);
 }
 
-
 module.exports = generateToAddress;

@@ -29,7 +29,7 @@ Distribution package for Dash Masternode installation
 
 For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
-### Distribution package 
+### Distribution package
 
 ```bash
 $ git clone -b master https://github.com/dashevo/mn-bootstrap.git
@@ -167,7 +167,12 @@ $ mn reset evonet
 
 ### Development
 
-When developing on a standalone node (the `local` preset), a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command. A Docker image will be built from the provided path and then used by mn-bootstrap. This allows developers to quickly test changes to DAPI and Drive with minimal overhead.
+When developing on a standalone node (the `local` preset), `setup-for-local-development` can be used
+to generate some dash, register a masternode and populate the node with the data required for local development.
+
+To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified
+via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command.
+A Docker image will be built from the provided path and then used by mn-bootstrap.
 
 ### Docker Compose
 

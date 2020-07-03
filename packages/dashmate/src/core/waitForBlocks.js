@@ -21,5 +21,4 @@ async function waitForBlocks(coreService, blocks, progressCallback = () => {}) {
   } while (currentBlock < lastBlock);
 }
 
-
 module.exports = waitForBlocks;

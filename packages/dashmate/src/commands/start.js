@@ -1,9 +1,4 @@
-const fs = require('fs').promises;
-const path = require('path');
-
 const Listr = require('listr');
-
-const dotenv = require('dotenv');
 
 const { flags: flagTypes } = require('@oclif/command');
 
@@ -20,6 +15,7 @@ class StartCommand extends BaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
+   * @param {startNodeTask} startNodeTask
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -30,65 +26,41 @@ class StartCommand extends BaseCommand {
     },
     {
       'full-node': isFullNode,
-      'update': isUpdate,
+      update: isUpdate,
       'operator-private-key': operatorPrivateKey,
+      'dpns-contract-id': dpnsContractId,
+      'dpns-top-level-identity': dpnsTopLevelIdentity,
       'drive-image-build-path': driveImageBuildPath,
       'dapi-image-build-path': dapiImageBuildPath,
     },
     dockerCompose,
+    startNodeTask,
   ) {
-    const tasks = new Listr([
-      {
-        title: 'Download updated services',
-        enabled: () => isUpdate === true,
-        task: async (ctx) => await dockerCompose.pull(preset),
-      },
-      {
-        title: `Start ${isFullNode ? 'full node' : 'masternode'} with ${preset} preset`,
-        task: async () => {
-          let CORE_MASTERNODE_BLS_PRIV_KEY;
-
-          if (operatorPrivateKey) {
-            CORE_MASTERNODE_BLS_PRIV_KEY = operatorPrivateKey;
-          }
-
-          if (isFullNode) {
-            CORE_MASTERNODE_BLS_PRIV_KEY = '';
-          }
-
-          const envs = {
-            CORE_MASTERNODE_BLS_PRIV_KEY,
-            CORE_P2P_PORT: coreP2pPort,
-            CORE_EXTERNAL_IP: externalIp,
-            DRIVE_IMAGE_BUILD_PATH: driveImageBuildPath,
-            DAPI_IMAGE_BUILD_PATH: dapiImageBuildPath,
-          };
-
-          if (driveImageBuildPath || dapiImageBuildPath) {
-            if (preset === 'testnet') {
-              throw new Error('You can\' use drive-image-build-path and dapi-image-build-path options with testnet preset');
-            }
-
-            const envFile = path.join(__dirname, '..', '..', `.env.${preset}`);
-            const envRawData = await fs.readFile(envFile);
-            let { COMPOSE_FILE: composeFile } = dotenv.parse(envRawData);
-
-            if (driveImageBuildPath) {
-              composeFile = `${composeFile}:docker-compose.platform.build-drive.yml`;
-            }
-
-            if (dapiImageBuildPath) {
-              composeFile = `${composeFile}:docker-compose.platform.build-dapi.yml`;
-            }
-
-            envs.COMPOSE_FILE = composeFile;
-          }
-
-          await dockerCompose.up(preset, envs);
+    const tasks = new Listr(
+      [
+        {
+          title: `Start ${isFullNode ? 'full node' : 'masternode'} with ${preset} preset`,
+          task: () => startNodeTask(
+            preset,
+            {
+              externalIp,
+              coreP2pPort,
+              isFullNode,
+              operatorPrivateKey,
+              dpnsContractId,
+              dpnsTopLevelIdentity,
+              driveImageBuildPath,
+              dapiImageBuildPath,
+              isUpdate,
+            },
+          ),
         },
+      ],
+      {
+        collapse: false,
+        renderer: UpdateRendererWithOutput,
       },
-    ],
-    { collapse: false, renderer: UpdateRendererWithOutput });
+    );
 
     try {
       await tasks.run();
@@ -120,8 +92,10 @@ StartCommand.args = [{
 
 StartCommand.flags = {
   'full-node': flagTypes.boolean({ char: 'f', description: 'start as full node', default: false }),
-  'update': flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
+  update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'operator-private-key': flagTypes.string({ char: 'p', description: 'operator private key', default: null }),
+  'dpns-contract-id': flagTypes.string({ description: 'DPNS contract ID', default: null }),
+  'dpns-top-level-identity': flagTypes.string({ description: 'DPNS top level identity', default: null }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),
 };
