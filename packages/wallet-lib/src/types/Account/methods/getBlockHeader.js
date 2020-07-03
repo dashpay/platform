@@ -12,8 +12,8 @@ async function getBlockHeader(identifier) {
   }
   const blockHeight = (is.num(identifier)) ? identifier : null;
   const blockHeader = (is.num(identifier))
-    ? await this.transporter.getBlockByHeight(blockHeight)
-    : await this.transporter.getBlockHeaderByHash(identifier);
+    ? await this.transport.getBlockByHeight(blockHeight)
+    : await this.transport.getBlockHeaderByHash(identifier);
 
   if (this.cacheBlockHeaders) {
     await this.storage.importBlockHeader(blockHeader, blockHeight);

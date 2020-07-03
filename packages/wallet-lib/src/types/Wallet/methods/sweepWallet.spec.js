@@ -1,4 +1,3 @@
-const { expect } = require('chai');
 const { Wallet } = require('../../../index');
 const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
 const sweepWallet = require('./sweepWallet');
@@ -12,19 +11,25 @@ describe('Wallet - sweepWallet', function suite() {
   this.timeout(60000);
   let emptyWallet;
   let emptyAccount;
+
   before(async () => {
     emptyWallet = new Wallet({
       privateKey: paperWallet.privateKey,
-      network: 'testnet',
-      transporter: {
+      transport: {
         seeds: process.env.DAPI_SEED
-          .split(',')
-          .map((seed) => ({ service: seed })),
+          .split(','),
       },
     });
 
     emptyAccount = await emptyWallet.getAccount();
   });
+
+  after(async () => {
+    if (emptyWallet) {
+      await emptyWallet.disconnect();
+    }
+  });
+
   it('should warn on empty balance', async () => {
     await emptyAccount.isReady();
     const exceptedException = 'Cannot sweep an empty private key (current balance: 0)';
@@ -38,8 +43,5 @@ describe('Wallet - sweepWallet', function suite() {
       getAccount: () => ({ getAddress: () => ({ address: null }), isReady: () => true }),
     };
     expectThrowsAsync(async () => await sweepWallet.call(mockWallet), exceptedException);
-  });
-  after(async () => {
-    await emptyWallet.disconnect();
   });
 });

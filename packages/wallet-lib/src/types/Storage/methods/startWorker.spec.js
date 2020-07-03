@@ -26,7 +26,7 @@ describe('Storage - startWorker', function suite() {
     expect(self.interval._repeat).to.be.equal(defaultIntervalValue); // Timeout are null btw
     clearInterval(self.interval);
   });
-  it('should works', async () => new Promise((res) => {
+  it('should work', async () => new Promise((res) => {
     let saved = 0;
     const self = {
       saveState: () => {

@@ -39,7 +39,7 @@ function impactAffectedInputs({ inputs }) {
  * @return {Promise<*>}
  */
 async function broadcastTransaction(transaction) {
-  if (!this.transporter.isValid) throw new ValidTransportLayerRequired('broadcast');
+  if (!this.transport) throw new ValidTransportLayerRequired('broadcast');
 
   // We still support having in rawtransaction, if this is the case
   // we first need to reform our object
@@ -56,7 +56,7 @@ async function broadcastTransaction(transaction) {
   if (!transaction.isFullySigned()) {
     throw new Error('Transaction not signed.');
   }
-  const txid = await this.transporter.sendTransaction(transaction.toString());
+  const txid = await this.transport.sendTransaction(transaction.toString());
   // We now need to impact/update our affected inputs
   // so we clear them out from UTXOset.
   const { inputs } = new Dashcore.Transaction(transaction).toObject();

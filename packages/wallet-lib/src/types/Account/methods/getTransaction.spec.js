@@ -20,7 +20,7 @@ describe('Account - getTransaction', function suite() {
       walletId,
       index: 0,
       storage: storageHDW,
-      transporter: {
+      transport: {
         getTransaction: () => fetchTransactionInfoCalledNb += 1,
       },
     };

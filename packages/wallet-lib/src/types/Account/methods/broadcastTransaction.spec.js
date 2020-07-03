@@ -40,9 +40,7 @@ describe('Account - broadcastTransaction', function suite() {
   it('should throw error on missing transport', async () => {
     const expectedException1 = 'A transport layer is needed to perform a broadcast';
     const self = {
-      transporter: {
-        isValid: false,
-      },
+      transport: null,
     };
     expectThrowsAsync(async () => await broadcastTransaction.call(self, validRawTxs.tx2to2Testnet), expectedException1);
 
@@ -56,9 +54,7 @@ describe('Account - broadcastTransaction', function suite() {
   it('should throw error on invalid rawtx (string)', async () => {
     const expectedException1 = 'A valid transaction object or it\'s hex representation is required';
     const self = {
-      transporter: {
-        isValid: true,
-      },
+      transport: { },
     };
 
     expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.notRelatedString), expectedException1);
@@ -66,9 +62,7 @@ describe('Account - broadcastTransaction', function suite() {
   it('should throw error on invalid rawtx (hex)', async () => {
     const expectedException1 = 'A valid transaction object or it\'s hex representation is required';
     const self = {
-      transporter: {
-        isValid: true,
-      },
+      transport: { },
     };
 
     expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.truncatedRawTx), expectedException1);
@@ -77,8 +71,7 @@ describe('Account - broadcastTransaction', function suite() {
     let sendCalled = +1;
     let searchCalled = +1;
     const self = {
-      transporter: {
-        isValid: true,
+      transport: {
         sendTransaction: () => sendCalled = +1,
       },
       storage: {
@@ -98,8 +91,7 @@ describe('Account - broadcastTransaction', function suite() {
     let sendCalled = +1;
     let searchCalled = +1;
     const self = {
-      transporter: {
-        isValid: true,
+      transport: {
         sendTransaction: () => sendCalled = +1,
       },
       storage: {

@@ -7,7 +7,7 @@ Parameters:
 | parameters             | type              | required         | Description                                                             |  
 |------------------------|-------------------|------------------| ------------------------------------------------------------------------|
 | **walletId**           | String            | yes              | The wallet id to create                                                 |
-| **network**            | Network/String    | no (Def: testnet)| The network for the wallet                                              |
+| **network**            | Network/String    | no (Def: evonet) | The network for the wallet                                              |
 | **mnemonic**           | Mnemonic/String   | no (Def: null)   | When applicable, the mnemonic used to generate the wallet               |
 | **type**               | String            | no (Def: null)   | The wallet type to create                                               |
 

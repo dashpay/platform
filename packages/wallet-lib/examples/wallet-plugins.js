@@ -13,7 +13,6 @@ const coldStorageAddress = 'yb67GKjkk4AMrJcqoedCjeemFGo9bDovNS';
 
 const wallet = new Wallet({
   mode: 'light',
-  transporter: 'insight',
   injectDefaultPlugins: false, // Will not inject default plugins (BIP44, SyncWorker)
   // Will add these plugin instead, one is already init to show that both are fine to used.
   // The order has it's importance, here ColdStorageWorker will use WalletConsolidator as a depts.

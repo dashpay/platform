@@ -77,8 +77,8 @@ class Account extends EventEmitter {
 
     this.label = (opts && opts.label && is.string(opts.label)) ? opts.label : null;
 
-    // If transporter is null or invalid, we won't try to fetch anything
-    this.transporter = wallet.transporter;
+    // If transport is null or invalid, we won't try to fetch anything
+    this.transport = wallet.transport;
 
     this.store = wallet.storage.store;
     this.storage = wallet.storage;

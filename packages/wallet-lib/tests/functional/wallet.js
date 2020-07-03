@@ -21,7 +21,7 @@ function wait(ms) {
  * @return {Promise<string>}
  */
 async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address, amount) {
-  const { items: inputs } = await dapiClient.getUTXO(faucetAddress);
+  const { items: inputs } = await dapiClient.core.getUTXO(faucetAddress);
 
   const transaction = new Transaction();
 
@@ -38,15 +38,15 @@ async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address,
     .fee(668)
     .sign(faucetPrivateKey);
 
-  let { blocks: currentBlockHeight } = await dapiClient.getStatus();
+  let { blocks: currentBlockHeight } = await dapiClient.core.getStatus();
 
-  const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
+  const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
 
   const desiredBlockHeight = currentBlockHeight + 1;
 
   do {
     // eslint-disable-next-line no-await-in-loop
-    ({ blocks: currentBlockHeight } = await dapiClient.getStatus());
+    ({ blocks: currentBlockHeight } = await dapiClient.core.getStatus());
     // eslint-disable-next-line no-await-in-loop
     await wait(30000);
   } while (currentBlockHeight < desiredBlockHeight);
@@ -55,8 +55,7 @@ async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address,
 }
 
 const seeds = process.env.DAPI_SEED
-  .split(',')
-  .map((seed) => ({ service: seed }));
+  .split(',');
 
 let newWallet;
 let wallet;
@@ -68,7 +67,7 @@ describe('Wallet-lib - functional ', function suite() {
     describe('Create a new Wallet', () => {
       it('should create a new wallet with default params', () => {
         newWallet = new Wallet({
-          transporter: {
+          transport: {
             seeds,
           },
           network: process.env.NETWORK,
@@ -92,7 +91,7 @@ describe('Wallet-lib - functional ', function suite() {
       it('should load a wallet from mnemonic', () => {
         wallet = new Wallet({
           mnemonic: newWallet.mnemonic,
-          transporter: {
+          transport: {
             seeds,
           },
           network: process.env.NETWORK,
@@ -127,7 +126,7 @@ describe('Wallet-lib - functional ', function suite() {
         .toString();
 
       await fundAddress(
-        wallet.transporter.client,
+        wallet.transport.client,
         faucetAddress,
         faucetPrivateKey,
         account.getAddress().address,

@@ -17,8 +17,7 @@ describe('Account - disconnect', function suite() {
       saveState: () => null,
       stopWorker: () => null,
     },
-    transporter: {
-      isValid: true,
+    transport: {
       connect: () => { transportConnected = true; },
       disconnect: () => { transportConnected = false; },
     },

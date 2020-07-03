@@ -22,7 +22,7 @@ describe('Account#getIdentityHDKeyById', function suite() {
       walletId,
       index: 0,
       storage: storageMock,
-      transporter: {
+      transport: {
         getTransaction: () => fetchTransactionInfoCalledNb += 1,
       },
       getIdentityHDKeyByIndex: (identityIndex) => {

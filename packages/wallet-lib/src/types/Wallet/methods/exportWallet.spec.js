@@ -45,7 +45,7 @@ describe('Wallet - exportWallet - integration', function suite() {
       offlineMode: true,
       mnemonic: knifeMnemonic.mnemonic,
     });
-    it('should works as expected', () => {
+    it('should work as expected', () => {
       const exceptedException = 'Tried to export to invalid output : seed';
       expect(wallet.exportWallet()).to.equal(knifeMnemonic.mnemonic);
       expect(wallet.exportWallet('mnemonic')).to.equal(knifeMnemonic.mnemonic);
@@ -61,7 +61,7 @@ describe('Wallet - exportWallet - integration', function suite() {
       offlineMode: true,
       seed: knifeMnemonic.seed,
     });
-    it('should works as expected', () => {
+    it('should work as expected', () => {
       const exceptedException = "Wallet was not initiated with a mnemonic, can't export it.";
       const exceptedException2 = 'Tried to export to invalid output : seed';
 
@@ -79,7 +79,7 @@ describe('Wallet - exportWallet - integration', function suite() {
       offlineMode: true,
       HDPrivateKey: knifeMnemonic.HDRootPrivateKeyTestnet,
     });
-    it('should works as expected', () => {
+    it('should work as expected', () => {
       const exceptedException = "Wallet was not initiated with a mnemonic, can't export it.";
       const exceptedException2 = 'Tried to export to invalid output : seed';
 
@@ -97,7 +97,7 @@ describe('Wallet - exportWallet - integration', function suite() {
       offlineMode: true,
       HDPublicKey: knifeMnemonic.HDRootPublicKeyMainnet,
     });
-    it('should works as expected', () => {
+    it('should work as expected', () => {
       const exceptedException = 'Tried to export to invalid output : mnemonic';
       const exceptedException2 = 'Tried to export to invalid output : seed';
       const exceptedException3 = 'Tried to export to invalid output : HDPrivateKey';

@@ -3,7 +3,7 @@ const outputHandler = require('./outputHandler');
 
 describe('Utils - outputHandler', function suite() {
   this.timeout(10000);
-  it('should works', () => {
+  it('should work', () => {
     const outputs = [{
       amount: 9.9999,
       address: 'yeuLv2E9FGF4D9o8vphsaC2Vxoa8ZA7Efp',

@@ -15,7 +15,7 @@ class ChainPlugin extends StandardPlugin {
       firstExecutionRequired: defaultOpts.firstExecutionRequired,
       dependencies: [
         'storage',
-        'transporter',
+        'transport',
         'fetchStatus',
         'walletId',
       ],
@@ -32,14 +32,14 @@ class ChainPlugin extends StandardPlugin {
   async execBlockListener() {
     const self = this;
     if (!this.isSubscribedToBlocks) {
-      self.transporter.on(EVENTS.BLOCK, async (ev) => {
+      self.transport.on(EVENTS.BLOCK, async (ev) => {
         // const { network } = self.storage.store.wallets[self.walletId];
         const { payload: block } = ev;
         this.parentEvents.emit(EVENTS.BLOCK, { type: EVENTS.BLOCK, payload: block });
         // We do not announce BLOCKHEADER as this is done by Storage
         await self.storage.importBlockHeader(block.header);
       });
-      await self.transporter.subscribeToBlocks();
+      await self.transport.subscribeToBlocks();
     }
   }
 
@@ -58,7 +58,7 @@ class ChainPlugin extends StandardPlugin {
     logger.debug('ChainPlugin - Setting up starting blockHeight', blocks);
     this.storage.store.chains[network.toString()].blockHeight = blocks;
 
-    const bestBlock = await this.transporter.getBlockHeaderByHeight(blocks);
+    const bestBlock = await this.transport.getBlockHeaderByHeight(blocks);
     await this.storage.importBlockHeader(bestBlock);
 
     return true;

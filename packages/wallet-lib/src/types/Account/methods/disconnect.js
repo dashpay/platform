@@ -6,8 +6,8 @@
  */
 module.exports = async function disconnect() {
   this.isDisconnecting = true;
-  if (this.transporter && this.transporter.isValid && this.transporter.disconnect) {
-    await this.transporter.disconnect();
+  if (this.transport && this.transport.disconnect) {
+    await this.transport.disconnect();
   }
 
   if (this.plugins.workers) {

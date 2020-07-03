@@ -8,7 +8,7 @@ async function getTransaction(txid = null) {
   if (search.found) {
     return search.result;
   }
-  const tx = await this.transporter.getTransaction(txid);
+  const tx = await this.transport.getTransaction(txid);
   if (this.cacheTx) {
     await this.storage.importTransactions(tx);
     if (this.cacheBlockHeaders) {

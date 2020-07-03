@@ -29,7 +29,7 @@ async function sweepWallet(opts = {}) {
     try {
       const walletOpts = {
         network: self.network,
-        transporter: self.transporter,
+        transport: self.transport,
         ...opts,
       };
       newWallet = new self.constructor(walletOpts);

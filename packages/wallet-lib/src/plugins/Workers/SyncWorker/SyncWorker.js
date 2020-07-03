@@ -29,7 +29,7 @@ class SyncWorker extends Worker {
       dependencies: [
         'walletType',
         'storage',
-        'transporter',
+        'transport',
         'fetchStatus',
         'getTransaction',
         'fetchAddressInfo',
@@ -60,13 +60,13 @@ class SyncWorker extends Worker {
 
   async execute() {
     if (this.isInitialized) {
-      // We will need to update the transporter about the addresses we need to listen
+      // We will need to update the transport about the addresses we need to listen
       // which is something that can change over the course of the use of the lib.
       const addrList = this.getAddressListToSync().map((addr) => addr.address);
 
-      // Setup listener that will listen for Events from transporter
+      // Setup listener that will listen for Events from transport
       // and handle them (mostly for addition request to storage)
-      await this.transporter.subscribeToAddressesTransactions(addrList);
+      await this.transport.subscribeToAddressesTransactions(addrList);
     }
   }
 }

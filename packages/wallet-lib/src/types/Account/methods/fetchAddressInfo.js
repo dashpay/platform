@@ -8,12 +8,13 @@ const { is } = require('../../../utils');
  * @return {Promise<addrInfo>}
  */
 async function fetchAddressInfo(addressObj, fetchUtxo = true) {
-  if (!this.transporter.isValid) throw new ValidTransportLayerRequired('fetchAddressInfo');
+  if (!this.transport) throw new ValidTransportLayerRequired('fetchAddressInfo');
+
   const self = this;
   const { address, path, index } = addressObj;
 
   try {
-    const addrSum = await this.transporter.getAddressSummary(address);
+    const addrSum = await this.transport.getAddressSummary(address);
     if (!addrSum) return false;
     const {
       balanceSat, unconfirmedBalanceSat, transactions,
@@ -51,7 +52,7 @@ async function fetchAddressInfo(addressObj, fetchUtxo = true) {
       }
     }
     if (fetchUtxo) {
-      const fetchedUtxo = await self.transporter.getUTXO(address);
+      const fetchedUtxo = await self.transport.getUTXO(address);
       if (fetchedUtxo.length) {
         const utxos = [];
         if (balanceSat > 0) {

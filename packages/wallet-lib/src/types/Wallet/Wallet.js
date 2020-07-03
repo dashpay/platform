@@ -1,17 +1,15 @@
-const Dashcore = require('@dashevo/dashcore-lib');
+const { PrivateKey, Networks } = require('@dashevo/dashcore-lib');
+
 const _ = require('lodash');
 const Storage = require('../Storage/Storage');
 const {
   generateNewMnemonic,
-  is,
 } = require('../../utils');
-
-const transporters = require('../../transporters');
 
 const defaultOptions = {
   debug: false,
   offlineMode: false,
-  network: 'testnet',
+  network: 'evonet',
   plugins: [],
   passphrase: null,
   injectDefaultPlugins: true,
@@ -24,6 +22,8 @@ const fromSeed = require('./methods/fromSeed');
 const fromHDPublicKey = require('./methods/fromHDPublicKey');
 const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
 const generateNewWalletId = require('./methods/generateNewWalletId');
+
+const createTransportFromOptions = require('../../transport/createTransportFromOptions');
 
 /**
  * Instantiate a basic Wallet object,
@@ -53,19 +53,22 @@ class Wallet {
       generateNewWalletId,
     });
 
-    const network = _.has(opts, 'network') ? opts.network.toString() : defaultOptions.network;
-    const passphrase = _.has(opts, 'passphrase') ? opts.passphrase : defaultOptions.passphrase;
-    this.passphrase = passphrase;
+    this.passphrase = _.has(opts, 'passphrase') ? opts.passphrase : defaultOptions.passphrase;
     this.offlineMode = _.has(opts, 'offlineMode') ? opts.offlineMode : defaultOptions.offlineMode;
     this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
 
-    if (!(is.network(network))) throw new Error('Expected a valid network (typeof String)');
-    if (!Dashcore.Networks[network]) {
-      throw new Error(`Un-handled network: ${network}`);
+    // Validate network
+    const networkName = _.has(opts, 'network') ? opts.network.toString() : defaultOptions.network;
+    const network = Networks.get(networkName);
+
+    if (!network) {
+      throw new Error(`Invalid network: ${network}`);
     }
-    this.network = Dashcore.Networks[network].toString();
+
+    this.network = network.toString();
+
     if ('mnemonic' in opts) {
       this.fromMnemonic((opts.mnemonic === null) ? generateNewMnemonic() : opts.mnemonic);
     } else if ('seed' in opts) {
@@ -74,7 +77,7 @@ class Wallet {
       this.fromHDPrivateKey(opts.HDPrivateKey);
     } else if ('privateKey' in opts) {
       this.fromPrivateKey((opts.privateKey === null)
-        ? new Dashcore.PrivateKey(network).toString()
+        ? new PrivateKey(network).toString()
         : opts.privateKey);
     } else if ('HDPublicKey' in opts) {
       this.fromHDPublicKey(opts.HDPublicKey);
@@ -110,11 +113,23 @@ class Wallet {
         this.storage.importAddresses(opts.cache.addresses, this.walletId);
       }
     }
-    if (this.offlineMode) {
-      this.transporter = { isValid: false };
-    } else {
-      this.transporter = transporters.resolve(opts.transporter);
+
+    if (!this.offlineMode) {
+      if (opts.transport && opts.transport.network) {
+        throw new Error('Please use Wallet\'s "network" option');
+      }
+
+      if (!opts.transport) {
+        // eslint-disable-next-line no-param-reassign
+        opts.transport = {};
+      }
+
+      // eslint-disable-next-line no-param-reassign
+      opts.transport.network = this.network;
+
+      this.transport = createTransportFromOptions(opts.transport);
     }
+
     this.accounts = [];
     this.interface = opts.interface;
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals

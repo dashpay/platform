@@ -15,7 +15,7 @@ class IdentitySyncWorker extends Worker {
       gapLimit: 10,
       dependencies: [
         'storage',
-        'transporter',
+        'transport',
         'walletId',
         'getIdentityHDKeyByIndex',
       ],
@@ -63,7 +63,7 @@ class IdentitySyncWorker extends Worker {
       const publicKey = privateKey.toPublicKey();
 
       // eslint-disable-next-line no-await-in-loop
-      const fetchedId = await this.transporter.getIdentityIdByFirstPublicKey(publicKey.hash);
+      const fetchedId = await this.transport.getIdentityIdByFirstPublicKey(publicKey.hash);
 
       // if identity id is not preset then increment gap count
       // and stop sync if gap limit is reached

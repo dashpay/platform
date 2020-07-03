@@ -10,8 +10,7 @@ describe('Account - connect', function suite() {
   it('should connect to transport and worker', () => {
     const self = {
       emit: (eventName) => emitted.push(eventName),
-      transporter: {
-        isValid: true,
+      transport: {
         connect: () => { transportConnected = true; },
       },
       plugins: {
