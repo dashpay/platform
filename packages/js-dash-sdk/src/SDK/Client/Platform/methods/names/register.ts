@@ -21,8 +21,6 @@ export async function register(this: Platform,
                                    getPublicKeyById(number: number):any;
                                }
 ): Promise<any> {
-    const { dpp } = this;
-
     const records = {
         dashIdentity: identity.getId(),
     };
