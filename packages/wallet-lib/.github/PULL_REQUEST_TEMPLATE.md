@@ -27,3 +27,6 @@
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have added or updated relevant unit/integration/functional/e2e tests
 - [ ] I have made corresponding changes to the documentation
+
+**For repository code-owners and collaborators only**
+- [ ] I have assigned this pull request to a milestone
