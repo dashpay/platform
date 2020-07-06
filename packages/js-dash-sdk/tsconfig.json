@@ -4,6 +4,7 @@
     "module": "commonjs",
     "lib": ["es6"],
     "outDir": "./build",
+    "skipLibCheck": true,
     "strict": true,
     "allowUmdGlobalAccess": true,
     "noImplicitAny": false,
