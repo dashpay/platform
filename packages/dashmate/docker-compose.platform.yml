@@ -37,7 +37,7 @@ services:
     command: npm run abci
 
   drive_tendermint:
-    image: tendermint/tendermint:${TENDERMINT_VERSION:-v0.32.8}
+    image: dashpay/tendermint:${TENDERMINT_VERSION:-v0.32.12}
     restart: unless-stopped
     depends_on:
       - drive_abci
