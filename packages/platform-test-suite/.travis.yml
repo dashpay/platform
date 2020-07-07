@@ -44,14 +44,18 @@ install:
   - cd -
 
 before_script:
-  - export PRIVATE_KEY=$(mn wallet:generate-to-address local 10000 | grep -m 1 "Private key:" | awk '{printf $3}')
-  - export OPERATOR_BLS_KEY=$(mn register local $PRIVATE_KEY 127.0.0.1 20001 | grep -m 1 "Private key:" | awk '{printf $3}')
-  - mn start local -p $OPERATOR_BLS_KEY 127.0.0.1 20001
+  - export OUTPUT=$(mn setup-for-local-development 127.0.0.1 20001)
+  - export PRIVATE_KEY=$(echo "$OUTPUT" | grep -m 1 "Private key:" | awk '{printf $4}')
+  - export OPERATOR_BLS_KEY=$(echo "$OUTPUT" | grep -m 2 "Private key:" | tail -n 1 | awk '{printf $4}')
+  - export DPNS_CONTRACT_ID=$(echo "$OUTPUT" | grep -m 1 "DPNS contract ID:" | awk '{printf $5}')
+  - export DPNS_TOP_LEVEL_IDENTITY_ID=$(echo "$OUTPUT" | grep -m 1 "DPNS identity:" | awk '{printf $4}')
+  - export DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=$(echo "$OUTPUT" | grep -m 1 "HD private key:" | awk '{$1=""; printf $5}')
+  - mn start local 127.0.0.1 20001 -p=$OPERATOR_BLS_KEY --dpns-contract-id=$DPNS_CONTRACT_ID --dpns-top-level-identity=$DPNS_TOP_LEVEL_IDENTITY_ID
 
 script: >
   npm run check-package &&
   npm run lint &&
-  docker run --network="host" platform-test-suite:local 127.0.0.1:3000 -k=$PRIVATE_KEY -n=regtest
+  docker run --network="host" platform-test-suite:local 127.0.0.1:3000 -k=$PRIVATE_KEY -n=regtest --dpns-tld-identity-private-key=$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY --dpns-tld-identity-id=$DPNS_TOP_LEVEL_IDENTITY_ID --dpns-contract-id=$DPNS_CONTRACT_ID
 
 after_script:
   - mn stop local

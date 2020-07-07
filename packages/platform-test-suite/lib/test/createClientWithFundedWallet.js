@@ -11,10 +11,11 @@ const wait = require('../wait');
 
 /**
  * Create and fund DashJS client
+ * @param {string} [HDPrivateKey]
  *
  * @returns {Promise<Client>}
  */
-async function createClientWithFundedWallet() {
+async function createClientWithFundedWallet(HDPrivateKey = undefined) {
   const seeds = getDAPISeeds();
 
   // Prepare to fund wallet
@@ -23,12 +24,21 @@ async function createClientWithFundedWallet() {
     .toAddress(process.env.NETWORK)
     .toString();
 
+  const walletOptions = {};
+
+  if (HDPrivateKey) {
+    walletOptions.HDPrivateKey = HDPrivateKey;
+  }
+
   const dashClient = new Dash.Client({
     seeds,
-    wallet: {
-      mnemonic: null,
-    },
+    wallet: walletOptions,
     network: process.env.NETWORK,
+    apps: {
+      dpns: {
+        contractId: process.env.DPNS_CONTRACT_ID,
+      },
+    },
   });
 
   const account = await dashClient.getWalletAccount();

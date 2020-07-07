@@ -10,7 +10,13 @@ async function main() {
 
   const suiteVersion = semver.coerce(version);
 
-  const gh = new GitHub();
+  const options = {};
+
+  if (process.env.GITHUB_TOKEN) {
+    options.token = process.env.GITHUB_TOKEN;
+  }
+
+  const gh = new GitHub(options);
 
   const { data: releases } = await gh.getRepo(repoUser, repoName)
     .listReleases();
@@ -19,11 +25,14 @@ async function main() {
     .sort((releaseA, releaseB) => (
       semver.compare(releaseB.tag_name, releaseA.tag_name)
     ))
-    .filter((release) => (
-      semver.satisfies(
-        release.tag_name, `${suiteVersion.major}.${suiteVersion.minor}`,
-      )
-    ));
+    .filter((release) => {
+      const releaseVersion = semver.coerce(release.tag_name);
+
+      return semver.satisfies(
+        `${releaseVersion.major}.${releaseVersion.minor}.${releaseVersion.patch}`,
+        `${suiteVersion.major}.${suiteVersion.minor}`,
+      );
+    });
 
   console.log(matchingRelease.tarball_url);
 }

@@ -9,11 +9,14 @@ Usage: test <seed> [options]
   <seed> can be IP or IP:port
 
   Options:
-              --npm-install=pkg   - install npm package before running the suite
-  -s=a,b,c    --scope=a,b,c       - test scope to run
-  -k=key      --faucet-key=key    - faucet private key string
-  -n=network  --network=network   - Use regtest or testnet
-  -h          --help              - show help
+              --npm-install=pkg                             - install npm package before running the suite
+  -s=a,b,c    --scope=a,b,c                                 - test scope to run
+  -k=key      --faucet-key=key                              - faucet private key string
+  -n=network  --network=network                             - use regtest or testnet
+              --dpns-tld-identity-private-key=private_key   - top level identity private key
+              --dpns-tld-identity-id=identity_id            - top level identity id
+              --dpns-contract-id=contract_id                - dpns contract id
+  -h          --help                                        - show help
 
   Possible scopes:
   e2e
@@ -28,7 +31,7 @@ Usage: test <seed> [options]
 DAPI_SEED="$1"
 network="testnet"
 
-DIR="$( cd -P "$( dirname "$BASH_SOURCE[0]" )" >/dev/null 2>&1 && pwd )"
+DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 cd "${DIR}/.."
 
@@ -50,6 +53,15 @@ case ${i} in
     ;;
     -n=*|--network=*)
     network="${i#*=}"
+    ;;
+    --dpns-tld-identity-private-key=*)
+    identity_private_key="${i#*=}"
+    ;;
+    --dpns-tld-identity-id=*)
+    identity_id="${i#*=}"
+    ;;
+    --dpns-contract-id=*)
+    contract_id="${i#*=}"
     ;;
 esac
 done
@@ -110,4 +122,4 @@ else
   scope_dirs="test/functional/**/*.spec.js test/e2e/**/*.spec.js"
 fi
 
-DAPI_SEED=${DAPI_SEED} FAUCET_PRIVATE_KEY=${faucet_key} NETWORK=${network} NODE_ENV=test mocha ${scope_dirs}
+DAPI_SEED=${DAPI_SEED} FAUCET_PRIVATE_KEY=${faucet_key} NETWORK=${network} DPNS_CONTRACT_ID=${contract_id} DPNS_TOP_LEVEL_IDENTITY_ID=${identity_id} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key} NODE_ENV=test mocha ${scope_dirs}
