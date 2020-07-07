@@ -1,6 +1,8 @@
 # MN Bootstrap
 
-[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/mn-bootstrap)](https://github.com/dashevo/mn-bootstrap/releases)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/mn-bootstrap)](https://github.com/dashevo/mn-bootstrap/releases/latest)
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
 Distribution package for Dash Masternode installation
 
