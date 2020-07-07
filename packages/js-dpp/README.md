@@ -1,9 +1,11 @@
 # Dash Platform Protocol JS
 
-[![Build Status](https://travis-ci.com/dashevo/js-dpp.svg?branch=master)](https://travis-ci.com/dashevo/js-dpp)
-[![NPM version](https://img.shields.io/npm/v/@dashevo/dpp.svg)](https://npmjs.org/package/@dashevo/dpp)
+[![NPM Version](https://img.shields.io/npm/v/@dashevo/dpp)](https://www.npmjs.com/package/@dashevo/dpp)
+[![Build Status](https://img.shields.io/travis/com/dashevo/js-dpp)](https://travis-ci.com/dashevo/js-dpp)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/js-dpp)](https://github.com/dashevo/js-dpp/releases/latest)
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
-> The JavaScript implementation of the [Dash Platform Protocol](http://github.com/dashevo/dpp-spec)
+The JavaScript implementation of the [Dash Platform Protocol](https://dashplatform.readme.io/docs/explanation-platform-protocol)
 
 ## Table of Contents
 
