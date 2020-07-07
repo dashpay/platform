@@ -29,7 +29,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
   ) {
     const preset = PRESETS.LOCAL;
     const network = preset;
-    const amount = 2000;
+    const amount = 10000;
 
     const tasks = new Listr(
       [

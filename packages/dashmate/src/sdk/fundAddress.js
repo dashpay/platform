@@ -2,8 +2,11 @@ const {
   Transaction,
 } = require('@dashevo/dashcore-lib');
 
-const waitForBlocks = require('./waitForBlocks');
+const waitForBlocksWithSDK = require('./waitForBlocksWithSDK');
+const generateBlocksWithSDK = require('./generateBlocksWithSDK');
 const getInputsByAddress = require('./getInputsByAddress');
+
+const PRESETS = require('../presets');
 
 /**
  *
@@ -41,7 +44,11 @@ async function fundAddress(
 
   const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
 
-  await waitForBlocks(dapiClient, preset, network, 1);
+  if (preset === PRESETS.LOCAL) {
+    await generateBlocksWithSDK(dapiClient, network, 1);
+  } else {
+    await waitForBlocksWithSDK(dapiClient, 1);
+  }
 
   return transactionId;
 }

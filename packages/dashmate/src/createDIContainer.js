@@ -29,6 +29,8 @@ const sendToAddress = require('./core/wallet/sendToAddress');
 const registerMasternode = require('./core/wallet/registerMasternode');
 
 const createClientWithFundedWallet = require('./sdk/createClientWithFundedWallet');
+const generateBlocksWithSDK = require('./sdk/generateBlocksWithSDK');
+const waitForBlocksWithSDK = require('./sdk/waitForBlocksWithSDK');
 
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
@@ -85,6 +87,8 @@ async function createDIContainer() {
    */
   container.register({
     createClientWithFundedWallet: asValue(createClientWithFundedWallet),
+    waitForBlocksWithSDK: asValue(waitForBlocksWithSDK),
+    generateBlocksWithSDK: asValue(generateBlocksWithSDK),
   });
 
   /**
