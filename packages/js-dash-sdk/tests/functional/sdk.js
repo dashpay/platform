@@ -23,7 +23,7 @@ function wait(ms) {
  * @return {Promise<string>}
  */
 async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address, amount) {
-  const { items: inputs } = await dapiClient.getUTXO(faucetAddress);
+  const { items: inputs } = await dapiClient.core.getUTXO(faucetAddress);
 
   // We take random coz two browsers run in parallel
   // and they can take the same inputs
@@ -40,14 +40,14 @@ async function fundAddress(dapiClient, faucetAddress, faucetPrivateKey, address,
     .fee(668)
     .sign(faucetPrivateKey);
 
-  let { blocks: currentBlockHeight } = await dapiClient.getStatus();
+  let { blocks: currentBlockHeight } = await dapiClient.core.getStatus();
 
-  const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
+  const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
 
   const desiredBlockHeight = currentBlockHeight + 1;
 
   do {
-    ({ blocks: currentBlockHeight } = await dapiClient.getStatus());
+    ({ blocks: currentBlockHeight } = await dapiClient.core.getStatus());
     await wait(30000);
   } while (currentBlockHeight < desiredBlockHeight);
 
@@ -66,8 +66,7 @@ const firstname = chance.first();
 const username = `test-${firstname}${year}`;
 
 const seeds = process.env.DAPI_SEED
-  .split(',')
-  .map((seed) => ({ service: seed }));
+  .split(',');
 
 const clientOpts = {
   seeds,
@@ -228,8 +227,6 @@ describe('SDK', function suite() {
     expect(contract).to.be.instanceOf(DataContract);
 
     await clientInstance.platform.contracts.broadcast(contract, createdIdentity);
-
-    await wait(1000);
 
     const fetchedContract = await clientInstance.platform.contracts.get(contract.getId());
 

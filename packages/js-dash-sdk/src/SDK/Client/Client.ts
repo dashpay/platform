@@ -1,5 +1,5 @@
 import { Account, Wallet } from "@dashevo/wallet-lib";
-import { DAPIClientWrapper } from "@dashevo/wallet-lib/src/transporters"
+import DAPIClientTransport from "@dashevo/wallet-lib/src/transport/DAPIClientTransport/DAPIClientTransport"
 // FIXME: use dashcorelib types
 import { Platform } from './Platform';
 // @ts-ignore
@@ -7,40 +7,30 @@ import { Network } from "@dashevo/dashcore-lib";
 import DAPIClient from "@dashevo/dapi-client";
 
 /**
- * default seed passed to SDK options
- */
-const defaultSeeds = [
-    {service: 'seed-1.evonet.networks.dash.org'},
-    {service: 'seed-2.evonet.networks.dash.org'},
-    {service: 'seed-3.evonet.networks.dash.org'},
-    {service: 'seed-4.evonet.networks.dash.org'},
-    {service: 'seed-5.evonet.networks.dash.org'},
-];
-
-
-/**
- * Interface for DAPIClientSeed
- * @param {string} service - service seed, can be an IP, HTTP or DNS Seed
- */
-export interface DAPIClientSeed {
-    service: string,
-}
-
-/**
  * Interface Client Options
  *
- * @param {[string]?} [seeds] - DAPI seeds
- * @param {Network? | string?} [network] - evonet network
- * @param {Wallet.Options} [wallet] - Wallet options
  * @param {ClientApps?} [apps] - applications
- * @param {number} [walletAccountIndex=0] - account index number
+ * @param {Wallet.Options} [wallet] - Wallet options
+ * @param {number} [walletAccountIndex=0] - Wallet account index number
+ * @param {DAPIAddressProvider} [dapiAddressProvider] - DAPI Address Provider instance
+ * @param {Array<RawDAPIAddress|DAPIAddress|string>} [addresses] - DAPI addresses
+ * @param {string[]|RawDAPIAddress[]} [seeds] - DAPI seeds
+ * @param {string|Network} [network=evonet] - Network name
+ * @param {number} [timeout=2000]
+ * @param {number} [retries=3]
+ * @param {number} [baseBanTime=60000]
  */
 export interface ClientOpts {
-    seeds?: DAPIClientSeed[];
-    network?: Network | string,
-    wallet?: Wallet.Options | null,
     apps?: ClientApps,
+    wallet?: Wallet.Options | null,
     walletAccountIndex?: number,
+    dapiAddressProvider?: any,
+    addresses?: any[],
+    seeds?: any[],
+    network?: Network | string,
+    timeout?: number,
+    retries?: number,
+    baseBanTime?: number,
 }
 
 /**
@@ -57,12 +47,12 @@ export interface ClientApps {
  * class for SDK
  */
 export class Client {
-    public network: string = 'testnet';
+    public network: string = 'evonet';
     public wallet: Wallet | undefined;
     public account: Account | undefined;
     public platform: Platform | undefined;
     public walletAccountIndex: number = 0;
-    private readonly dapiClientWrapper: DAPIClientWrapper;
+    private readonly dapiClient: DAPIClient;
     private readonly apps: ClientApps;
     private options: ClientOpts;
 
@@ -77,10 +67,40 @@ export class Client {
             ...options
         }
 
-        // @ts-ignore
-        this.walletAccountIndex = this.options.walletAccountIndex;
+        this.network = this.options.network ? this.options.network.toString() : 'evonet';
 
-        this.network = this.options.network ? this.options.network.toString() : 'testnet';
+        // Initialize DAPI Client
+        const dapiClientOptions = {
+            network: this.network,
+        };
+
+        [
+            'dapiAddressProvider',
+            'addresses',
+            'seeds',
+            'timeout',
+            'retries',
+            'baseBanTime'
+        ].forEach((optionName) => {
+            if (this.options.hasOwnProperty(optionName)) {
+                dapiClientOptions[optionName] = this.options[optionName];
+            }
+        });
+
+        this.dapiClient = new DAPIClient(dapiClientOptions);
+
+        // Initialize a wallet if `wallet` option is preset
+        if (this.options.wallet !== undefined) {
+            const transport = new DAPIClientTransport(this.dapiClient);
+
+            this.wallet = new Wallet({
+                transport,
+                ...this.options.wallet,
+            });
+
+            // @ts-ignore
+            this.walletAccountIndex = this.options.walletAccountIndex;
+        }
 
         this.apps = Object.assign({
             dpns: {
@@ -88,23 +108,9 @@ export class Client {
             }
         }, this.options.apps);
 
-        this.dapiClientWrapper = new DAPIClientWrapper({
-            seeds: this.options.seeds || defaultSeeds,
-            network: this.network
-        });
-
-        // We accept null as parameter for a new generated mnemonic
-        if (this.options.wallet !== undefined) {
-            this.wallet = new Wallet({
-                transporter: this.dapiClientWrapper,
-                ...this.options.wallet,
-            });
-        }
-
         this.platform = new Platform({
             client: this,
             apps: this.getApps(),
-            network: this.network,
         });
     }
 
@@ -138,15 +144,12 @@ export class Client {
     }
 
     /**
-     * fetch some instance of DAPI client
-     *
-     * @remarks
-     * This function throws an error message when there is no client DAPI instance
+     * Get DAPI Client instance
      *
      * @returns {DAPIClient}
      */
     getDAPIClient() : DAPIClient {
-        return this.dapiClientWrapper.client;
+        return this.dapiClient;
     }
 
     /**

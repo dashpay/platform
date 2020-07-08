@@ -12,7 +12,7 @@ describe('Dash - Client', function suite() {
   it('should be instantiable', function () {
     const client = new Client();
     expect(client).to.exist;
-    expect(client.network).to.be.equal('testnet');
+    expect(client.network).to.be.equal('evonet');
     expect(client.getDAPIClient().constructor.name).to.be.equal('DAPIClient');
   });
   it('should not initiate wallet lib without mnemonic', function () {

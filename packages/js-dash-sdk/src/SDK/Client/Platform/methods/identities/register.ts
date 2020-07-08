@@ -48,7 +48,7 @@ export default async function register(this: Platform, fundingAmount : number = 
     }
 
     // Broadcast ST
-    await client.getDAPIClient().applyStateTransition(identityCreateTransition);
+    await client.getDAPIClient().platform.broadcastStateTransition(identityCreateTransition.serialize());
 
     // @ts-ignore
     account.storage.insertIdentityIdAtIndex(
@@ -57,6 +57,9 @@ export default async function register(this: Platform, fundingAmount : number = 
         identity.getId(),
         identityIndex,
     );
+
+    // Wait some time for propagation
+    await wait(1000);
 
     // @ts-ignore
     return identity;

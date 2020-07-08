@@ -23,7 +23,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     if (localContract && localContract.contract) {
         return localContract.contract;
     } else {
-        const rawContract = await this.client.getDAPIClient().getDataContract(identifier);
+        const rawContract = await this.client.getDAPIClient().platform.getDataContract(identifier);
         if(!rawContract){
             return null;
         }

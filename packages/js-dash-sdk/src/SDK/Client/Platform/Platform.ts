@@ -25,12 +25,10 @@ import searchName from "./methods/names/search";
  *
  * @remarks
  * required parameters include { client, apps }
- * optional parameters include { ..., account?, network? }
  */
 export interface PlatformOpts {
     client: Client,
     apps: ClientApps
-    network?: string
 }
 
 /**
@@ -94,7 +92,6 @@ export class Platform {
 
     client: Client;
     apps: ClientApps;
-    network?: string;
 
     /**
      * Construct some instance of Platform
@@ -135,7 +132,6 @@ export class Platform {
         });
 
         this.client = options.client;
-        this.apps = options.apps;
-        this.network = options.network;
+        this.apps = options.apps
     }
 }

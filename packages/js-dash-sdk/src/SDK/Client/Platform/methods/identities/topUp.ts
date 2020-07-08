@@ -44,7 +44,10 @@ export async function topUp(this: Platform, identityId: string, amount: number):
     }
 
     // Broadcast ST
-    await client.getDAPIClient().applyStateTransition(identityTopUpTransition);
+    await client.getDAPIClient().platform.broadcastStateTransition(identityTopUpTransition.serialize());
+
+    // Wait some time for propagation
+    await wait(1000);
 
     // @ts-ignore
     return true;

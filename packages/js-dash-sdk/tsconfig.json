@@ -16,5 +16,5 @@
     "declarationDir": "./dist"
   },
   "exclude": ["node_modules", "examples"],
-  "typeRoots": ["node_modules/@types", "./typings"]
+  "typeRoots": ["node_modules/@types"]
 }
