@@ -1,10 +1,11 @@
 ## DAPI-Client
 
+[![NPM Version](https://img.shields.io/npm/v/@dashevo/dapi-client)](https://www.npmjs.com/package/@dashevo/dapi-client)
 [![Build Status](https://travis-ci.com/dashevo/dapi-client.svg?branch=master)](https://travis-ci.com/dashevo/dapi-client)
-[![GitHub Current Tag](https://img.shields.io/github/tag-date/dashevo/dapi-client.svg)](https://github.com/dashevo/dapi-client/tags)
-[![npm](https://img.shields.io/npm/v/@dashevo/dapi-client.svg)](https://www.npmjs.com/package/@dashevo/dapi-client)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/dapi-client)](https://github.com/dashevo/dapi-client/releases/latest)
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
-> Client library used to access Dash DAPI endpoints
+Client library used to access Dash DAPI endpoints
 
 This library enables HTTP-based interaction with the Dash blockchain and Dash
 Platform via the decentralized API ([DAPI](https://github.com/dashevo/dapi))
@@ -37,4 +38,3 @@ For browser usage, you can also directly rely on unpkg :
 ## Licence
 
 [MIT](https://github.com/dashevo/dapi-client/blob/master/LICENCE.md) © Dash Core Group, Inc.
-
