@@ -79,7 +79,7 @@ function startNodeTaskFactory(dockerCompose) {
               throw new Error('You can\'t use drive-image-build-path and dapi-image-build-path options with testnet preset');
             }
 
-            const envFile = path.join(__dirname, '..', '..', `.env.${preset}`);
+            const envFile = path.join(__dirname, '..', '..', '..', `.env.${preset}`);
             const envRawData = await fs.readFile(envFile);
             let { COMPOSE_FILE: composeFile } = dotenv.parse(envRawData);
 
