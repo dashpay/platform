@@ -1,4 +1,4 @@
-**Usage**: `async client.getBestBlockHash()`
+**Usage**: `async client.core.getBestBlockHash()`
 **Description**: Returns block hash of chaintip
 
 Parameters:

@@ -1,4 +1,4 @@
-**Usage**: `async client.applyStateTransition(stateTransition)`
+**Usage**: `async client.platform.applyStateTransition(stateTransition)`
 **Description**: Send State Transition to machine
 
 Parameters:

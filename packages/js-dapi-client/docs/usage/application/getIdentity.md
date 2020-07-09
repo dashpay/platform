@@ -1,4 +1,4 @@
-**Usage**: `async client.getIdentity(id)`
+**Usage**: `async client.platform.getIdentity(id)`
 **Description**: Fetch the identity by id
 
 Parameters:

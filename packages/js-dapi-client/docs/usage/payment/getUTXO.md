@@ -1,4 +1,4 @@
-**Usage**: `async client.getUTXO(address, from, to, fromHeight, toHeight)`
+**Usage**: `async client.core.getUTXO(address, from, to, fromHeight, toHeight)`
 **Description**: Returns UTXO for a given address or multiple addresses (max result 1000)
 
 Parameters:

@@ -1,4 +1,4 @@
-**Usage**: `client.getBlockHash(height)`
+**Usage**: `client.core.getBlockHash(height)`
 **Description**: Returns block hash for the given height
 
 Parameters:

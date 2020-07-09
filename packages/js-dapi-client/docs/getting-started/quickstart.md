@@ -25,7 +25,7 @@ const DAPIClient = require('@dashevo/dapi-client');
 const client = new DAPIClient();
 
 (async () => {
-  const bestBlockHash = await client.getBestBlockHash('testaddress');
+  const bestBlockHash = await client.core.getBestBlockHash();
   console.log(bestBlockHash);
 })();
 ```

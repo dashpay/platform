@@ -35,12 +35,8 @@ npm install @dashevo/dapi-client
 const DAPIClient = require('@dashevo/dapi-client');
 const client = new DAPIClient();
 
-const coreStatus = await client.core.getStatus();
-
-console.dir(coreStatus);
-
-client.getBestBlockHash().then((hash) => {
-  console.log(hash);
+client.core.getStatus().then((coreStatus) => {
+  console.dir(coreStatus);
 });
 ```
 
@@ -59,13 +55,49 @@ var client = new DAPIClient({
   }],
 });
 
-client.getBestBlockHash().then((r) => {
+client.core.getBestBlockHash().then((r) => {
   console.log(r);
 });
-
 ```
 
 **Note**: The seed node shown above (`seed-1.evonet.networks.dash.org`) is for the Dash Evonet testing network.
+
+### Custom addresses
+
+Custom addresses may be directly specified in cases where it is beneficial to know exactly what node(s) are being accessed (e.g. debugging, local development, etc.).
+
+```javascript
+const DAPIClient = require('@dashevo/dapi-client');
+
+var client = new DAPIClient({
+  addresses: [
+    '127.0.0.1',
+    '127.0.0.2'
+  ],
+});
+
+client.core.getBestBlockHash().then((r) => {
+  console.log(r);
+});
+```
+
+### Command specific options
+
+DAPI Client options can be passed directly to any command to override any predefined client options and modify the client's behavior for that specific call.
+
+```javascript
+const DAPIClient = require('@dashevo/dapi-client');
+
+// Set options to direct the request to a specific address and disable retries
+const options = {
+  addresses: ['127.0.0.1'],
+  retries: 0,
+};
+
+client.core.getBestBlockHash(options).then((r) => {
+  console.log(r);
+});
+```
 
 ## Documentation
 

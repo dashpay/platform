@@ -1,4 +1,4 @@
-**Usage**: `async client.getMnListDiff(baseBlockHash, blockHash)`
+**Usage**: `async client.core.getMnListDiff(baseBlockHash, blockHash)`
 **Description**: Get deterministic masternodelist diff
 
 Parameters:

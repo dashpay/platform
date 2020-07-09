@@ -1,4 +1,4 @@
-**Usage**: `async client.getDocuments(contractId, type, options)`
+**Usage**: `async client.platform.getDocuments(contractId, type, options)`
 **Description**: Fetch Documents from Drive
 
 Parameters:
