@@ -79,24 +79,13 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
   }
 
-  if (records.dashUniqueIdentityId && context.getOwnerId() !== records.dashUniqueIdentityId) {
+  if (context.getOwnerId() !== records.dashIdentity) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,
         context.getDataContract(),
         context.getOwnerId(),
-        'ownerId doesn\'t match dashUniqueIdentityId',
-      ),
-    );
-  }
-
-  if (records.dashAliasIdentityId && context.getOwnerId() !== records.dashAliasIdentityId) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'ownerId doesn\'t match dashAliasIdentityId',
+        'ownerId doesn\'t match dashIdentity',
       ),
     );
   }
