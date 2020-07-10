@@ -7,6 +7,7 @@ const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const MissingDocumentTypeError = require('../errors/MissingDocumentTypeError');
 const MismatchDocumentContractIdAndDataContractError = require('../errors/MismatchDocumentContractIdAndDataContractError');
 
+
 /**
  * @param {JsonSchemaValidator} validator
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
@@ -46,15 +47,18 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    const documentSchemaRef = dataContract.getDocumentSchemaRef(rawDocument.$type);
+    const documentSchemaRef = dataContract.getDocumentSchemaRef(
+      rawDocument.$type,
+    );
 
     const enrichedDataContract = enrichDataContractWithBaseSchema(
       dataContract,
       baseDocumentSchema,
+      'document_base_',
     );
 
     const additionalSchemas = {
-      [dataContract.getJsonSchemaId()]: enrichedDataContract,
+      [dataContract.getJsonSchemaId()]: enrichedDataContract.toJSON(),
     };
 
     result.merge(

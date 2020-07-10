@@ -68,10 +68,12 @@ function validateDocumentsBatchTransitionStructureFactory(
       [ACTIONS.CREATE]: enrichDataContractWithBaseSchema(
         enrichedBaseDataContract,
         createTransitionSchema,
+        'document_create_transition_',
       ),
       [ACTIONS.REPLACE]: enrichDataContractWithBaseSchema(
         enrichedBaseDataContract,
         replaceTransitionSchema,
+        'document_replace_transition_',
         ['$createdAt'],
       ),
     };
@@ -107,11 +109,16 @@ function validateDocumentsBatchTransitionStructureFactory(
       switch (rawDocumentTransition.$action) {
         case ACTIONS.CREATE:
         case ACTIONS.REPLACE: {
-          const documentSchemaRef = dataContract.getDocumentSchemaRef(rawDocumentTransition.$type);
+          // eslint-disable-next-line max-len
+          const enrichedDataContract = enrichedDataContractsByActions[rawDocumentTransition.$action];
+
+          const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(
+            rawDocumentTransition.$type,
+          );
 
           const additionalSchemas = {
-            [dataContract.getJsonSchemaId()]:
-              enrichedDataContractsByActions[rawDocumentTransition.$action],
+            [enrichedDataContract.getJsonSchemaId()]:
+            enrichedDataContract.toJSON(),
           };
 
           const schemaResult = validator.validate(

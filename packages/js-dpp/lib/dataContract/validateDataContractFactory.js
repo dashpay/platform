@@ -15,7 +15,6 @@ const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
 const systemProperties = ['$id', '$ownerId'];
 const prebuiltIndices = ['$id'];
-const contractValidationPrefixId = 'contract_';
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -57,39 +56,24 @@ module.exports = function validateDataContractFactory(
     );
 
     // Validate Document JSON Schemas
-    const enrichedRawDataContract = enrichDataContractWithBaseSchema(
+    const enrichedDataContract = enrichDataContractWithBaseSchema(
       dataContract,
       baseDocumentSchema,
-    );
-    const enrichedDataContract = new DataContract(enrichedRawDataContract);
-
-    const enrichedRawDataContractForValidation = {
-      ...enrichedRawDataContract,
-      $id: `${contractValidationPrefixId}${enrichedRawDataContract.$id}`,
-    };
-    const enrichedDataContractForValidation = new DataContract(
-      enrichedRawDataContractForValidation,
+      'document_base_',
     );
 
-    Object.keys(enrichedRawDataContract.documents).forEach((documentType) => {
-      const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(documentType);
-
-      // This is needed to prevent ajv caching, please refer to
-      // 'should not cache contract with the same schema it preventing
-      // further sts from being validated'
-      // test in StateTransitionFacade.spec.js
-      const docSchemaRefForValidation = {
-        ...documentSchemaRef,
-        $ref: `${contractValidationPrefixId}${documentSchemaRef.$ref}`,
-      };
+    Object.keys(enrichedDataContract.getDocuments()).forEach((documentType) => {
+      const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(
+        documentType,
+      );
 
       const additionalSchemas = {
-        [enrichedDataContractForValidation.getJsonSchemaId()]: enrichedRawDataContractForValidation,
+        [enrichedDataContract.getJsonSchemaId()]: enrichedDataContract.toJSON(),
       };
 
       result.merge(
         jsonSchemaValidator.validateSchema(
-          docSchemaRefForValidation,
+          documentSchemaRef,
           additionalSchemas,
         ),
       );

@@ -79,17 +79,29 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
   }
 
-  if (context.getOwnerId() !== records.dashIdentity) {
+  if (records.dashUniqueIdentityId && context.getOwnerId() !== records.dashUniqueIdentityId) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,
         context.getDataContract(),
         context.getOwnerId(),
-        'ownerId doesn\'t match dashIdentity',
+        'ownerId doesn\'t match dashUniqueIdentityId',
       ),
     );
   }
 
+  if (records.dashAliasIdentityId && context.getOwnerId() !== records.dashAliasIdentityId) {
+    result.addError(
+      new DataTriggerConditionError(
+        documentTransition,
+        context.getDataContract(),
+        context.getOwnerId(),
+        'ownerId doesn\'t match dashAliasIdentityId',
+      ),
+    );
+  }
+
+  // TODO: Move this to DPNS contract
   if (normalizedParentDomainName !== normalizedParentDomainName.toLowerCase()) {
     result.addError(
       new DataTriggerConditionError(

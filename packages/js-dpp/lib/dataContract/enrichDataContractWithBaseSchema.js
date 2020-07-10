@@ -5,13 +5,15 @@ const DataContract = require('./DataContract');
  *
  * @param {DataContract|RawDataContract} dataContract
  * @param {Object} baseSchema
+ * @param {string} schemaIdPrefix
  * @param {string[]} [excludeProperties]
  *
- * @return {RawDataContract}
+ * @return {DataContract}
  */
 function enrichDataContractWithBaseSchema(
   dataContract,
   baseSchema,
+  schemaIdPrefix,
   excludeProperties = [],
 ) {
   const rawDataContract = (dataContract instanceof DataContract)
@@ -52,7 +54,10 @@ function enrichDataContractWithBaseSchema(
       .filter((property) => !excludeProperties.includes(property));
   });
 
-  return clonedDataContract;
+  // Add schema $id prefix
+  clonedDataContract.$id = schemaIdPrefix + clonedDataContract.$id;
+
+  return new DataContract(clonedDataContract);
 }
 
 module.exports = enrichDataContractWithBaseSchema;
