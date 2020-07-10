@@ -20,6 +20,8 @@ describe('Document', () => {
     const serializerMock = { encode: this.sinonSandbox.stub() };
     encodeMock = serializerMock.encode;
 
+    const now = new Date().getTime();
+
     Document = rewiremock.proxy('../../../lib/document/Document', {
       '../../../node_modules/lodash.get': lodashGetMock,
       '../../../node_modules/lodash.set': lodashSetMock,
@@ -33,6 +35,8 @@ describe('Document', () => {
       $dataContractId: generateRandomId(),
       $ownerId: generateRandomId(),
       $revision: DocumentCreateTransition.INITIAL_REVISION,
+      $createdAt: now,
+      $updatedAt: now,
     };
 
     document = new Document(rawDocument);
@@ -135,6 +139,42 @@ describe('Document', () => {
       document = new Document(rawDocument);
 
       expect(document.revision).to.equal(rawDocument.$revision);
+      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
+    });
+
+    it('should create Document with $createdAt and data if present', async () => {
+      const data = {
+        test: 1,
+      };
+
+      const createdAt = new Date().getTime();
+
+      rawDocument = {
+        $createdAt: createdAt,
+        ...data,
+      };
+
+      document = new Document(rawDocument);
+
+      expect(document.getCreatedAt().getTime()).to.equal(rawDocument.$createdAt);
+      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
+    });
+
+    it('should create Document with $updatedAt and data if present', async () => {
+      const data = {
+        test: 1,
+      };
+
+      const updatedAt = new Date().getTime();
+
+      rawDocument = {
+        $updatedAt: updatedAt,
+        ...data,
+      };
+
+      document = new Document(rawDocument);
+
+      expect(document.getUpdatedAt().getTime()).to.equal(rawDocument.$updatedAt);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
   });
@@ -296,6 +336,50 @@ describe('Document', () => {
       expect(Document.prototype.serialize).to.have.been.calledOnce();
 
       expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
+    });
+  });
+
+  describe('#setCreatedAt', () => {
+    it('should set $createdAt', () => {
+      const time = new Date();
+
+      const result = document.setCreatedAt(time);
+
+      expect(result).to.equal(document);
+
+      expect(document.createdAt).to.equal(time);
+    });
+  });
+
+  describe('#getCreatedAt', () => {
+    it('should return $createdAt', () => {
+      const time = new Date();
+
+      document.createdAt = time;
+
+      expect(document.getCreatedAt()).to.equal(time);
+    });
+  });
+
+  describe('#setUpdatedAt', () => {
+    it('should set $updatedAt', () => {
+      const time = new Date();
+
+      const result = document.setUpdatedAt(time);
+
+      expect(result).to.equal(document);
+
+      expect(document.updatedAt).to.equal(time);
+    });
+  });
+
+  describe('#getUpdatedAt', () => {
+    it('should return $updatedAt', () => {
+      const time = new Date();
+
+      document.updatedAt = time;
+
+      expect(document.getUpdatedAt()).to.equal(time);
     });
   });
 });

@@ -6,6 +6,14 @@
       "type": "string",
       "minLength": 26,
       "maxLength": 35
+    },
+    "$createdAt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$updatedAt": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "required": [

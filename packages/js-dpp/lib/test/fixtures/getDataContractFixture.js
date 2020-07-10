@@ -17,6 +17,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           type: 'string',
         },
       },
+      required: ['$createdAt'],
       additionalProperties: false,
     },
     prettyDocument: {
@@ -25,7 +26,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           $ref: '#/definitions/lastName',
         },
       },
-      required: ['lastName'],
+      required: ['lastName', '$updatedAt'],
       additionalProperties: false,
     },
     indexedDocument: {
@@ -59,7 +60,15 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           type: 'string',
         },
       },
-      required: ['firstName'],
+      required: ['firstName', '$createdAt', '$updatedAt'],
+      additionalProperties: false,
+    },
+    noTimeDocument: {
+      properties: {
+        name: {
+          type: 'string',
+        },
+      },
       additionalProperties: false,
     },
   };

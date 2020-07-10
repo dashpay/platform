@@ -66,8 +66,15 @@ describe('StateTransitionFacade', () => {
       getBalance,
     };
 
+    const timeInSeconds = Math.ceil(new Date().getTime() / 1000);
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
+    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
+      time: {
+        seconds: timeInSeconds,
+      },
+    });
 
     dpp = new DashPlatformProtocol({
       stateRepository: stateRepositoryMock,
@@ -216,6 +223,7 @@ describe('StateTransitionFacade', () => {
     });
 
     it('should not cache contract with the same schema it preventing further sts from being validated', async () => {
+      const now = new Date().getTime();
       const st = {
         protocolVersion: 0,
         type: 1,
@@ -230,6 +238,8 @@ describe('StateTransitionFacade', () => {
             $type: 'preorder',
             $entropy: 'yfLGvfKr3Y3ahtkeEKY3wTFz2zNjmsrwbj',
             saltedDomainHash: '562088f2e19881fe8c05da623463582fd84a644489e570a1ea3fcd716b28f11ed4f7',
+            $createdAt: now,
+            $updatedAt: now,
           },
         ],
       };

@@ -13,11 +13,16 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
     this.type = rawTransition.$type;
     this.revision = rawTransition.$revision;
 
+    if (rawTransition.$updatedAt) {
+      this.updatedAt = new Date(rawTransition.$updatedAt);
+    }
+
     delete data.$id;
     delete data.$type;
     delete data.$action;
     delete data.$revision;
     delete data.$dataContractId;
+    delete data.$updatedAt;
 
     this.data = data;
   }
@@ -68,18 +73,33 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
   }
 
   /**
+   * Get update date
+   *
+   * @return {Date}
+   */
+  getUpdatedAt() {
+    return this.updatedAt;
+  }
+
+  /**
    * Get document transition as a plain object
    *
    * @return {RawDocumentReplaceTransition}
    */
   toJSON() {
-    return {
+    const json = {
       ...super.toJSON(),
       $id: this.getId(),
       $type: this.getType(),
       $revision: this.getRevision(),
       ...this.data,
     };
+
+    if (this.getUpdatedAt()) {
+      json.$updatedAt = this.getUpdatedAt().getTime();
+    }
+
+    return json;
   }
 }
 
@@ -89,6 +109,7 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
  * @property {string} $id
  * @property {string} $type
  * @property {number} $revision
+ * @property {number} [$updatedAt]
  */
 
 module.exports = DocumentReplaceTransition;

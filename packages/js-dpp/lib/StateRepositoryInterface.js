@@ -110,3 +110,12 @@
  * @param {string} publicKeyHash
  * @returns {Promise<string|null>}
  */
+
+/**
+ * Fetch latest platform block header
+ *
+ * @async
+ * @method
+ * @name fetchLatestPlatformBlockHeader
+ * @returns {Promise<abci.IHeader>}
+ */

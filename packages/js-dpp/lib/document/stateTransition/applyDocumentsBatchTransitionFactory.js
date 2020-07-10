@@ -54,6 +54,14 @@ function applyDocumentsBatchTransitionFactory(
             ...documentTransition.getData(),
           });
 
+          if (documentTransition.getCreatedAt()) {
+            newDocument.setCreatedAt(documentTransition.getCreatedAt());
+          }
+
+          if (documentTransition.getUpdatedAt()) {
+            newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
+          }
+
           newDocument.setEntropy(documentTransition.getEntropy());
           newDocument.setRevision(DocumentCreateTransition.INITIAL_REVISION);
 
@@ -68,6 +76,10 @@ function applyDocumentsBatchTransitionFactory(
 
           document.setRevision(documentTransition.getRevision());
           document.setData(documentTransition.getData());
+
+          if (documentTransition.getUpdatedAt()) {
+            document.setUpdatedAt(documentTransition.getUpdatedAt());
+          }
 
           return stateRepository.storeDocument(document);
         }

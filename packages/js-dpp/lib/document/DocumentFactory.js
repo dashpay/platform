@@ -53,6 +53,8 @@ class DocumentFactory {
       documentEntropy,
     );
 
+    const creationTime = new Date().getTime();
+
     const rawDocument = {
       $id: id,
       $type: type,
@@ -61,6 +63,20 @@ class DocumentFactory {
       $revision: DocumentCreateTransition.INITIAL_REVISION,
       ...data,
     };
+
+    // We should set timestamps
+    // Only if they are required by the contract
+    const { required: documentRequiredFields } = dataContract.getDocumentSchema(type);
+
+    if (documentRequiredFields
+        && documentRequiredFields.includes('$createdAt')) {
+      rawDocument.$createdAt = creationTime;
+    }
+
+    if (documentRequiredFields
+      && documentRequiredFields.includes('$updatedAt')) {
+      rawDocument.$updatedAt = creationTime;
+    }
 
     const document = new Document(rawDocument);
 
@@ -190,7 +206,7 @@ class DocumentFactory {
           throw new InvalidInitialRevisionError(document);
         }
 
-        return {
+        const json = {
           $action: AbstractDocumentTransition.ACTIONS.CREATE,
           $id: document.getId(),
           $type: document.getType(),
@@ -198,17 +214,37 @@ class DocumentFactory {
           $entropy: document.getEntropy(),
           ...document.getData(),
         };
+
+        if (document.getCreatedAt()) {
+          json.$createdAt = document.getCreatedAt().getTime();
+        }
+
+        if (document.getUpdatedAt()) {
+          json.$updatedAt = document.getUpdatedAt().getTime();
+        }
+
+        return json;
       });
 
     const rawDocumentReplaceTransitions = (replaceDocuments || [])
-      .map((document) => ({
-        $action: AbstractDocumentTransition.ACTIONS.REPLACE,
-        $id: document.getId(),
-        $type: document.getType(),
-        $dataContractId: document.getDataContractId(),
-        $revision: document.getRevision() + 1,
-        ...document.getData(),
-      }));
+      .map((document) => {
+        const json = {
+          $action: AbstractDocumentTransition.ACTIONS.REPLACE,
+          $id: document.getId(),
+          $type: document.getType(),
+          $dataContractId: document.getDataContractId(),
+          $revision: document.getRevision() + 1,
+          ...document.getData(),
+        };
+
+        // If document have an originally set `updatedAt`
+        // we should update it then
+        if (document.getUpdatedAt()) {
+          json.$updatedAt = new Date().getTime();
+        }
+
+        return json;
+      });
 
     const rawDocumentDeleteTransitions = (deleteDocuments || [])
       .map((document) => ({

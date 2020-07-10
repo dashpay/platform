@@ -38,6 +38,16 @@ class Document {
       delete data.$revision;
     }
 
+    if (Object.prototype.hasOwnProperty.call(rawDocument, '$createdAt')) {
+      this.createdAt = new Date(rawDocument.$createdAt);
+      delete data.$createdAt;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawDocument, '$updatedAt')) {
+      this.updatedAt = new Date(rawDocument.$updatedAt);
+      delete data.$updatedAt;
+    }
+
     this.setData(data);
   }
 
@@ -164,12 +174,54 @@ class Document {
   }
 
   /**
+   * Set document creation date
+   *
+   * @param {Date} date
+   * @return {Document}
+   */
+  setCreatedAt(date) {
+    this.createdAt = date;
+
+    return this;
+  }
+
+  /**
+   * Get document creation date
+   *
+   * @return {Date}
+   */
+  getCreatedAt() {
+    return this.createdAt;
+  }
+
+  /**
+   * Set document updated date
+   *
+   * @param {Date} date
+   * @return {Document}
+   */
+  setUpdatedAt(date) {
+    this.updatedAt = date;
+
+    return this;
+  }
+
+  /**
+   * Get document updated date
+   *
+   * @return {Date}
+   */
+  getUpdatedAt() {
+    return this.updatedAt;
+  }
+
+  /**
    * Return Document as plain object
    *
    * @return {RawDocument}
    */
   toJSON() {
-    return {
+    const json = {
       $id: this.getId(),
       $type: this.getType(),
       $dataContractId: this.getDataContractId(),
@@ -177,6 +229,16 @@ class Document {
       $revision: this.getRevision(),
       ...this.getData(),
     };
+
+    if (this.createdAt) {
+      json.$createdAt = this.getCreatedAt().getTime();
+    }
+
+    if (this.updatedAt) {
+      json.$updatedAt = this.getUpdatedAt().getTime();
+    }
+
+    return json;
   }
 
   /**
@@ -207,6 +269,8 @@ class Document {
  * @property {string} $dataContractId
  * @property {string} $ownerId
  * @property {number} $revision
+ * @property {number} [$createdAt]
+ * @property {number} [$updatedAt]
  */
 
 Document.SYSTEM_PREFIX = '$';

@@ -5,14 +5,14 @@ const DataContract = require('./DataContract');
  *
  * @param {DataContract|RawDataContract} dataContract
  * @param {Object} baseSchema
- * @param {string[]} [excludeBaseDocumentProperties]
+ * @param {string[]} [excludeProperties]
  *
  * @return {RawDataContract}
  */
 function enrichDataContractWithBaseSchema(
   dataContract,
   baseSchema,
-  excludeBaseDocumentProperties = [],
+  excludeProperties = [],
 ) {
   const rawDataContract = (dataContract instanceof DataContract)
     ? dataContract.toJSON()
@@ -38,12 +38,18 @@ function enrichDataContractWithBaseSchema(
     }
 
     Object.keys(baseProperties)
-      .filter((name) => excludeBaseDocumentProperties.indexOf(name) === -1)
       .forEach((name) => {
         clonedDocument.properties[name] = baseProperties[name];
       });
 
     baseRequired.forEach((name) => clonedDocument.required.push(name));
+
+    excludeProperties.forEach((property) => {
+      delete clonedDocument[property];
+    });
+
+    clonedDocument.required = clonedDocument.required
+      .filter((property) => !excludeProperties.includes(property));
   });
 
   return clonedDataContract;

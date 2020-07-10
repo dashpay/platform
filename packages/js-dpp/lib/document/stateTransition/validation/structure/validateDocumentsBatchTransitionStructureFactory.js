@@ -72,6 +72,7 @@ function validateDocumentsBatchTransitionStructureFactory(
       [ACTIONS.REPLACE]: enrichDataContractWithBaseSchema(
         enrichedBaseDataContract,
         replaceTransitionSchema,
+        ['$createdAt'],
       ),
     };
 

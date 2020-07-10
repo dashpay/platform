@@ -26,6 +26,14 @@
       "minLength": 42,
       "maxLength": 44,
       "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+    },
+    "$createdAt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$updatedAt": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "required": [

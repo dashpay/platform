@@ -22,6 +22,8 @@ const InvalidDocumentRevisionError = require('../../../../../lib/errors/InvalidD
 const ConsensusError = require('../../../../../lib/errors/ConsensusError');
 const InvalidDocumentActionError = require('../../../../../lib/document/errors/InvalidDocumentActionError');
 const DocumentOwnerIdMismatchError = require('../../../../../lib/errors/DocumentOwnerIdMismatchError');
+const DocumentTimestampsMismatchError = require('../../../../../lib/errors/DocumentTimestampsMismatchError');
+const DocumentTimestampWindowViolationError = require('../../../../../lib/errors/DocumentTimestampWindowViolationError');
 
 const generateRandomId = require('../../../../../lib/test/utils/generateRandomId');
 
@@ -36,6 +38,8 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
   let stateRepositoryMock;
   let executeDataTriggersMock;
   let documentTransitions;
+  let abciHeader;
+  let fakeTime;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
@@ -51,8 +55,23 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       transitions: documentTransitions.map((t) => t.toJSON()),
     });
 
+    const timeInSeconds = Math.ceil(new Date().getTime() / 1000);
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
+      time: {
+        seconds: timeInSeconds,
+      },
+    });
+
+    abciHeader = {
+      time: {
+        seconds: new Date().getTime() / 1000,
+      },
+    };
+
+    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(abciHeader);
 
     fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
 
@@ -67,6 +86,12 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       validateDocumentsUniquenessByIndicesMock,
       executeDataTriggersMock,
     );
+
+    fakeTime = this.sinonSandbox.useFakeTimers(new Date());
+  });
+
+  afterEach(() => {
+    fakeTime.reset();
   });
 
   it('should return invalid result if data contract was not found', async () => {
@@ -192,6 +217,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       transitions: documentTransitions.map((t) => t.toJSON()),
     });
 
+    documents[0].setCreatedAt(replaceDocument.getCreatedAt());
     fetchDocumentsMock.resolves([documents[0]]);
 
     const result = await validateData(stateTransition);
@@ -365,6 +391,143 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       documentTransitions,
       dataTriggersExecutionContext,
     );
+  });
+
+  describe('Timestamps', () => {
+    describe('CREATE transition', () => {
+      it('should return invalid result if timestamps mismatch', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [documents[0]],
+        });
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toJSON()),
+        });
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt = new Date();
+        });
+
+        const result = await validateData(stateTransition);
+
+        expectValidationError(result, DocumentTimestampsMismatchError);
+
+        const [error] = result.getErrors();
+
+        documentTransitions[0].updatedAt = new Date();
+
+        expect(error.getDocumentTransition()).to.deep.equal(documentTransitions[0]);
+      });
+
+      it('should return invalid result if "$createdAt" have violated time window', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [documents[0]],
+        });
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toJSON()),
+        });
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.createdAt.setMinutes(t.createdAt.getMinutes() - 6);
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt = undefined;
+        });
+
+        const result = await validateData(stateTransition);
+
+        expectValidationError(result, DocumentTimestampWindowViolationError);
+
+        const [error] = result.getErrors();
+
+        documentTransitions[0].createdAt.setMinutes(
+          documentTransitions[0].createdAt.getMinutes() - 6,
+        );
+        documentTransitions[0].updatedAt = undefined;
+
+        expect(error.getDocumentTransition()).to.deep.equal(documentTransitions[0]);
+        expect(error.getTimestampName()).to.equal('createdAt');
+      });
+
+      it('should return invalid result if "$updatedAt" have violated time window', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [documents[1]],
+        });
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toJSON()),
+        });
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt.setMinutes(t.updatedAt.getMinutes() - 6);
+          // eslint-disable-next-line no-param-reassign
+          t.createdAt = undefined;
+        });
+
+        const result = await validateData(stateTransition);
+
+        expectValidationError(result, DocumentTimestampWindowViolationError);
+
+        const [error] = result.getErrors();
+
+        documentTransitions[0].updatedAt.setMinutes(
+          documentTransitions[0].updatedAt.getMinutes() - 6,
+        );
+        documentTransitions[0].createdAt = undefined;
+
+        expect(error.getDocumentTransition()).to.deep.equal(documentTransitions[0]);
+        expect(error.getTimestampName()).to.equal('updatedAt');
+      });
+    });
+
+    describe('REPLACE transition', () => {
+      it('should return invalid result if documents with action "replace" have violated time window', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [],
+          replace: [documents[1]],
+        });
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toJSON()),
+        });
+
+        documents[1].updatedAt.setMinutes(
+          documents[1].updatedAt.getMinutes() - 6,
+        );
+
+        fetchDocumentsMock.resolves([documents[1]]);
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt.setMinutes(t.updatedAt.getMinutes() - 6);
+        });
+
+        const result = await validateData(stateTransition);
+
+        expectValidationError(result, DocumentTimestampWindowViolationError);
+
+        const [error] = result.getErrors();
+
+        documentTransitions[0].updatedAt.setMinutes(
+          documentTransitions[0].updatedAt.getMinutes() - 6,
+        );
+
+        expect(error.getDocumentTransition()).to.deep.equal(documentTransitions[0]);
+        expect(error.getFetchedDocument()).to.deep.equal(documents[1]);
+        expect(error.getTimestampName()).to.equal('updatedAt');
+      });
+    });
   });
 
   it('should return valid result if document transitions are valid', async () => {

@@ -34,13 +34,15 @@ describe('DocumentFactory', () => {
   let documents;
   let rawDocument;
   let factory;
+  let fakeTime;
+  let fakeTimeDate;
 
   beforeEach(function beforeEach() {
     ({ ownerId } = getDocumentsFixture);
     dataContract = getDataContractFixture();
 
     documents = getDocumentsFixture();
-    ([document] = documents);
+    ([,,, document] = documents);
     rawDocument = document.toJSON();
 
     decodeMock = this.sinonSandbox.stub();
@@ -63,6 +65,13 @@ describe('DocumentFactory', () => {
       validateDocumentMock,
       fetchAndValidateDataContractMock,
     );
+
+    fakeTimeDate = new Date();
+    fakeTime = this.sinonSandbox.useFakeTimers(fakeTimeDate);
+  });
+
+  afterEach(() => {
+    fakeTime.reset();
   });
 
   describe('create', () => {
@@ -97,7 +106,10 @@ describe('DocumentFactory', () => {
 
       expect(newDocument.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
 
-      expect(newDocument.getId()).to.equal('E9QpjZMD7CPAGa7x2ABuLFPvBLZjhPji4TMrUfSP3Hk9');
+      expect(newDocument.getId()).to.equal('B99gjrjq6R1FXwGUQnoP7VrmCDDT1PbKprUNzjVbxXfz');
+
+      expect(newDocument.getCreatedAt().getTime()).to.be.equal(fakeTimeDate.getTime());
+      expect(newDocument.getCreatedAt().getTime()).to.equal(newDocument.getUpdatedAt().getTime());
     });
 
     it('should throw an error if type is not defined', () => {
@@ -287,14 +299,24 @@ describe('DocumentFactory', () => {
     });
 
     it('should create DocumentsBatchTransition with passed documents', () => {
+      const [newDocument] = getDocumentsFixture();
+
+      fakeTime.tick(1000);
+
       const stateTransition = factory.createStateTransition({
         create: documents,
+        replace: [newDocument],
       });
 
+      const expectedTransitions = getDocumentTransitionsFixture({
+        create: documents,
+        replace: [newDocument],
+      });
+
+      expectedTransitions.slice(-1).updatedAt = new Date();
+
       expect(stateTransition.getTransitions()).to.deep.equal(
-        getDocumentTransitionsFixture({
-          create: documents,
-        }),
+        expectedTransitions,
       );
     });
   });
