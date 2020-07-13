@@ -151,27 +151,6 @@
         },
         "contentEncoding": {
           "$ref": "http://json-schema.org/draft-07/schema#/properties/contentEncoding"
-        },
-        "if": {
-          "$ref": "#/definitions/documentSchema"
-        },
-        "then": {
-          "$ref": "#/definitions/documentSchema"
-        },
-        "else": {
-          "$ref": "#/definitions/documentSchema"
-        },
-        "allOf": {
-          "$ref": "#/definitions/documentSchemaArray"
-        },
-        "anyOf": {
-          "$ref": "#/definitions/documentSchemaArray"
-        },
-        "oneOf": {
-          "$ref": "#/definitions/documentSchemaArray"
-        },
-        "not": {
-          "$ref": "#/definitions/documentSchema"
         }
       },
       "dependencies": {
