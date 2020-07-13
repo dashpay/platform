@@ -36,7 +36,20 @@ describe('validateDocumentsUniquenessByIndices', () => {
     );
   });
 
-  it('should return valid result if Documents have no unique indices');
+  it('should return valid result if Documents have no unique indices', async () => {
+    const [niceDocument] = documents;
+    const noIndexDocumentTransitions = getDocumentTransitionsFixture({
+      create: [niceDocument],
+    });
+
+    const result = await validateDocumentsUniquenessByIndices(
+      ownerId, noIndexDocumentTransitions, dataContract,
+    );
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+    expect(stateRepositoryMock.fetchDocuments).to.have.not.been.called();
+  });
 
   it('should return valid result if Document has unique indices and there are no duplicates', async () => {
     const [, , , william] = documents;
@@ -153,5 +166,70 @@ describe('validateDocumentsUniquenessByIndices', () => {
       indicesDefinition[0],
       indicesDefinition[1],
     ]);
+  });
+
+  it('should return valid result if Document has undefined field from index', async () => {
+    const indexedDocument = documents[7];
+    const indexedDocumentTransitions = getDocumentTransitionsFixture({
+      create: [indexedDocument],
+    });
+
+    stateRepositoryMock.fetchDocuments
+      .withArgs(
+        dataContract.getId(),
+        indexedDocument.getType(),
+        {
+          where: [
+            ['$ownerId', '==', ownerId],
+            ['firstName', '==', indexedDocument.get('firstName')],
+          ],
+        },
+      )
+      .resolves([indexedDocument]);
+
+    stateRepositoryMock.fetchDocuments
+      .withArgs(
+        dataContract.getId(),
+        indexedDocument.getType(),
+        {
+          where: [
+            ['$ownerId', '==', ownerId],
+          ],
+        },
+      )
+      .resolves([indexedDocument]);
+
+    const result = await validateDocumentsUniquenessByIndices(
+      ownerId, indexedDocumentTransitions, dataContract,
+    );
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+  });
+
+  it('should return valid result if Document being created and has createdAt and updatedAt indices', async () => {
+    const [, , , , , , uniqueDatesDocument] = documents;
+
+    const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
+      create: [uniqueDatesDocument],
+    });
+    stateRepositoryMock.fetchDocuments
+      .withArgs(
+        dataContract.getId(),
+        uniqueDatesDocument.getType(),
+        {
+          where: [
+            ['$createdAt', '==', uniqueDatesDocument.getCreatedAt().getTime()],
+            ['$updatedAt', '==', uniqueDatesDocument.getUpdatedAt().getTime()],
+          ],
+        },
+      )
+      .resolves([uniqueDatesDocument]);
+
+    const result = await validateDocumentsUniquenessByIndices(
+      ownerId, uniqueDatesDocumentTransitions, dataContract,
+    );
+
+    expect(result.isValid()).to.be.true();
   });
 });

@@ -23,6 +23,8 @@ module.exports = function getDocumentsFixture() {
     factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'William', lastName: 'Birkin' }),
     factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Leon', lastName: 'Kennedy' }),
     factory.create(dataContract, ownerId, 'noTimeDocument', { name: 'ImOutOfTime' }),
+    factory.create(dataContract, ownerId, 'uniqueDates', { firstName: 'John' }),
+    factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Bill' }),
   ];
 };
 

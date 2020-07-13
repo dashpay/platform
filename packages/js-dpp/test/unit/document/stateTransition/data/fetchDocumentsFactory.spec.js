@@ -18,8 +18,7 @@ describe('fetchDocumentsFactory', () => {
 
     fetchDocuments = fetchDocumentsFactory(stateRepositoryMock);
 
-    documents = getDocumentsFixture();
-    documents.splice(-1);
+    documents = getDocumentsFixture().slice(0, 5);
 
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,

@@ -13,7 +13,7 @@ const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReac
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
-const systemProperties = ['$id', '$ownerId'];
+const systemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
 
 /**

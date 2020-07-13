@@ -51,6 +51,17 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
             { lastName: 'asc' },
           ],
         },
+        {
+          properties: [
+            { $createdAt: 'asc' },
+            { $updatedAt: 'asc' },
+          ],
+        },
+        {
+          properties: [
+            { $updatedAt: 'asc' },
+          ],
+        },
       ],
       properties: {
         firstName: {
@@ -69,6 +80,32 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           type: 'string',
         },
       },
+      additionalProperties: false,
+    },
+    uniqueDates: {
+      indices: [
+        {
+          properties: [
+            { $createdAt: 'asc' },
+            { $updatedAt: 'asc' },
+          ],
+          unique: true,
+        },
+        {
+          properties: [
+            { $updatedAt: 'asc' },
+          ],
+        },
+      ],
+      properties: {
+        firstName: {
+          type: 'string',
+        },
+        lastName: {
+          type: 'string',
+        },
+      },
+      required: ['firstName', '$createdAt', '$updatedAt'],
       additionalProperties: false,
     },
   };

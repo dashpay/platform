@@ -1,5 +1,6 @@
 const ValidationResult = require('../../../../validation/ValidationResult');
 const DuplicateDocumentError = require('../../../../errors/DuplicateDocumentError');
+const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
 /**
  * @param {StateRepository} stateRepository
@@ -33,19 +34,40 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
         documentSchema.indices
           .filter((index) => index.unique)
           .forEach((indexDefinition) => {
-            const where = indexDefinition.properties
-              .map((property) => {
-                const propertyName = Object.keys(property)[0];
+            const where = [];
 
-                let propertyValue;
-                if (propertyName === '$ownerId') {
+            indexDefinition.properties.forEach((property) => {
+              const propertyName = Object.keys(property)[0];
+              let propertyValue;
+
+              switch (propertyName) {
+                case '$ownerId':
                   propertyValue = ownerId;
-                } else {
-                  propertyValue = documentTransition.getData()[propertyName];
+                  break;
+                case '$createdAt':
+                  if (documentTransition.getAction()
+                    === AbstractDocumentTransition.ACTIONS.CREATE) {
+                    const createdAt = documentTransition.getCreatedAt();
+                    if (createdAt) {
+                      propertyValue = createdAt.getTime();
+                    }
+                  }
+                  break;
+                case '$updatedAt': {
+                  const updatedAt = documentTransition.getUpdatedAt();
+                  if (updatedAt) {
+                    propertyValue = updatedAt.getTime();
+                  }
                 }
+                  break;
+                default:
+                  propertyValue = documentTransition.getData()[propertyName];
+              }
 
-                return [propertyName, '==', propertyValue];
-              });
+              if (propertyValue !== undefined) {
+                where.push([propertyName, '==', propertyValue]);
+              }
+            });
 
             queries.push({
               type: documentTransition.getType(),
