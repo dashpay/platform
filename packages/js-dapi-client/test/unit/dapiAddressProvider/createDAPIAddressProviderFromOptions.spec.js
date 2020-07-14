@@ -29,7 +29,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
     });
 
     it('should throw DAPIClientError if `addresses` option is passed too', async () => {
-      options.addresses = ['localhost'];
+      options.dapiAddresses = ['localhost'];
 
       try {
         createDAPIAddressProviderFromOptions(options);
@@ -58,7 +58,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
 
     beforeEach(() => {
       options = {
-        addresses: ['localhost'],
+        dapiAddresses: ['localhost'],
         network: 'local',
       };
     });

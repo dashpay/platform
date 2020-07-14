@@ -52,14 +52,14 @@ describe('DAPIClient', () => {
     it('should construct DAPIClient with address options', async () => {
       options = {
         retries: 0,
-        addresses: ['localhost'],
+        dapiAddresses: ['localhost'],
       };
 
       dapiClient = new DAPIClient(options);
 
       expect(dapiClient.options).to.deep.equal({
         retries: 0,
-        addresses: ['localhost'],
+        dapiAddresses: ['localhost'],
         network: 'evonet',
         timeout: 10000,
       });

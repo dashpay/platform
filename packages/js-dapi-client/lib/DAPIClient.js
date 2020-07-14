@@ -42,7 +42,7 @@ class DAPIClient {
 /**
  * @typedef {DAPIClientOptions} DAPIClientOptions
  * @property {DAPIAddressProvider} [dapiAddressProvider]
- * @property {Array<RawDAPIAddress|DAPIAddress|string>} [addresses]
+ * @property {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddresses]
  * @property {string[]|RawDAPIAddress[]} [seeds]
  * @property {string|Network} [network=evonet]
  * @property {number} [timeout=2000]

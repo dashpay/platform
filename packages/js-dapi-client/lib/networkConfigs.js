@@ -10,7 +10,7 @@ module.exports = {
     network: 'evonet',
   },
   local: {
-    addresses: ['127.0.0.1'],
+    dapiAddresses: ['127.0.0.1'],
     network: 'regtest',
   },
 };

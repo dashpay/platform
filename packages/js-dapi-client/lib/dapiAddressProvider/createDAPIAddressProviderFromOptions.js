@@ -30,8 +30,8 @@ function createDAPIAddressProviderFromOptions(options) {
   }
 
   if (options.dapiAddressProvider) {
-    if (options.addresses) {
-      throw new DAPIClientError("Can't use 'address' with 'dapiAddressProvider' option");
+    if (options.dapiAddresses) {
+      throw new DAPIClientError("Can't use 'dapiAddresses' with 'dapiAddressProvider' option");
     }
 
     if (options.seeds) {
@@ -41,13 +41,13 @@ function createDAPIAddressProviderFromOptions(options) {
     return options.dapiAddressProvider;
   }
 
-  if (options.addresses) {
+  if (options.dapiAddresses) {
     if (options.seeds) {
-      throw new DAPIClientError("Can't use 'seeds' with 'addresses' option");
+      throw new DAPIClientError("Can't use 'seeds' with 'dapiAddresses' option");
     }
 
     return new ListDAPIAddressProvider(
-      options.addresses.map((rawAddress) => new DAPIAddress(rawAddress)),
+      options.dapiAddresses.map((rawAddress) => new DAPIAddress(rawAddress)),
       options,
     );
   }
