@@ -9,11 +9,11 @@ const PRESETS = require('../presets');
  * @return {Promise<[]>}
  */
 async function getInputsByAddress(dapiClient, preset, address) {
-  const { items: utxos } = await dapiClient.getUTXO(address);
+  const { items: utxos } = await dapiClient.core.getUTXO(address);
   let inputs = [];
 
   if (preset === PRESETS.LOCAL) {
-    const { blocks } = await dapiClient.getStatus();
+    const { blocks } = await dapiClient.core.getStatus();
     const sortedUtxos = utxos
       .filter((utxo) => utxo.height < blocks - 100)
       .sort((a, b) => a.satoshis > b.satoshis);

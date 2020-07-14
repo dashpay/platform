@@ -23,7 +23,7 @@ async function generateBlocksWithSDK(
   let generatedBlocks = 0;
 
   do {
-    const blockHashes = await dapiClient.generateToAddress(
+    const blockHashes = await dapiClient.core.generateToAddress(
       1,
       address,
     );

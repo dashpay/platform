@@ -24,7 +24,7 @@ async function createClientWithFundedWallet(preset, network, faucetPrivateKeyStr
     .toString();
 
   const dashClient = new Dash.Client({
-    seeds: [{ service: '127.0.0.1:3000' }],
+    seeds: ['127.0.0.1'],
     wallet: {
       mnemonic: null,
     },

@@ -9,11 +9,11 @@ const wait = require('../util/wait');
  * @return {Promise<void>}
  */
 async function waitForBlocksWithSDK(dapiClient, numberOfBlocks, progressCallback = () => {}) {
-  let { blocks: currentBlock } = await dapiClient.getStatus();
+  let { blocks: currentBlock } = await dapiClient.core.getStatus();
 
   const lastBlock = currentBlock + numberOfBlocks;
   do {
-    ({ blocks: currentBlock } = await dapiClient.getStatus());
+    ({ blocks: currentBlock } = await dapiClient.core.getStatus());
 
     await progressCallback(numberOfBlocks - (lastBlock - currentBlock));
 

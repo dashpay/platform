@@ -42,7 +42,7 @@ async function fundAddress(
     .change(faucetAddress)
     .sign(faucetPrivateKey);
 
-  const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
+  const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
 
   if (preset === PRESETS.LOCAL) {
     await generateBlocksWithSDK(dapiClient, network, 1);
