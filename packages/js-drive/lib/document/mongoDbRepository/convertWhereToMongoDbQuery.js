@@ -15,6 +15,10 @@ const mongoDbOperators = {
   contains: '$all',
 };
 
+const dateFieldNames = [
+  'createdAt', 'updatedAt',
+];
+
 /**
  * @typedef convertWhereToMongoDbQuery
  * @param {Array} where
@@ -59,6 +63,10 @@ function convertWhereToMongoDbQuery(where, isNested = false) {
 
     if (!mongoDbQuery[mongoDbField]) {
       mongoDbQuery[mongoDbField] = {};
+    }
+
+    if (dateFieldNames.includes(mongoDbField)) {
+      mongoDbValue = new Date(mongoDbValue);
     }
 
     mongoDbQuery[mongoDbField][mongoDbOperator] = mongoDbValue;

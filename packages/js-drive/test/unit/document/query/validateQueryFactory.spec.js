@@ -103,6 +103,10 @@ const validFieldNameTestCases = [
   'a.0.b',
   'a_._b',
   'a-b.c_',
+  '$id',
+  '$ownerId',
+  '$createdAt',
+  '$updatedAt',
 ];
 
 const invalidFieldNameTestCases = [
@@ -230,6 +234,20 @@ describe('validateQueryFactory', () => {
           expect(result.isValid()).to.be.true();
         });
 
+        it('should return valid result if condition contains "$createdAt" field', () => {
+          const result = validateQuery({ where: [['$createdAt', '==', Date.now()]] }, documentSchema);
+
+          expect(result).to.be.instanceOf(ValidationResult);
+          expect(result.isValid()).to.be.true();
+        });
+
+        it('should return valid result if condition contains "$updatedAt" field', () => {
+          const result = validateQuery({ where: [['$updatedAt', '==', Date.now()]] }, documentSchema);
+
+          expect(result).to.be.instanceOf(ValidationResult);
+          expect(result.isValid()).to.be.true();
+        });
+
         it('should return valid result if condition contains top-level field', () => {
           const result = validateQuery({ where: [['a', '==', '1']] }, documentSchema);
 
@@ -316,8 +334,8 @@ describe('validateQueryFactory', () => {
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
 
-            expect(result.errors[6].dataPath).to.be.equal('.where[0]');
-            expect(result.errors[6].keyword).to.be.equal('oneOf');
+            expect(result.errors[7].dataPath).to.be.equal('.where[0]');
+            expect(result.errors[7].keyword).to.be.equal('oneOf');
           });
 
           it('should return valid result if "<" operator used with a numeric value', () => {
@@ -424,6 +442,46 @@ describe('validateQueryFactory', () => {
           });
         });
 
+        describe('timestamps', () => {
+          nonNumberTestCases.forEach(({ type, value }) => {
+            it(`should return invalid result if $createdAt timestamp used with ${type} value`, () => {
+              const result = validateQuery({ where: [['$createdAt', '>', value]] }, documentSchema);
+
+              expect(result).to.be.instanceOf(ValidationResult);
+              expect(result.isValid()).to.be.false();
+              expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[1].keyword).to.be.equal('type');
+              expect(result.errors[1].params.type).to.be.equal('integer');
+            });
+          });
+
+          nonNumberTestCases.forEach(({ type, value }) => {
+            it(`should return invalid result if $updatedAt timestamp used with ${type} value`, () => {
+              const result = validateQuery({ where: [['$updatedAt', '>', value]] }, documentSchema);
+
+              expect(result).to.be.instanceOf(ValidationResult);
+              expect(result.isValid()).to.be.false();
+              expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[1].keyword).to.be.equal('type');
+              expect(result.errors[1].params.type).to.be.equal('integer');
+            });
+          });
+
+          it('should return valid result if condition contains "$createdAt" field', () => {
+            const result = validateQuery({ where: [['$createdAt', '==', Date.now()]] }, documentSchema);
+
+            expect(result).to.be.instanceOf(ValidationResult);
+            expect(result.isValid()).to.be.true();
+          });
+
+          it('should return valid result if condition contains "$updatedAt" field', () => {
+            const result = validateQuery({ where: [['$updatedAt', '==', Date.now()]] }, documentSchema);
+
+            expect(result).to.be.instanceOf(ValidationResult);
+            expect(result.isValid()).to.be.true();
+          });
+        });
+
         describe('in', () => {
           it('should return valid result if "in" operator used with an array value', () => {
             const result = validateQuery({ where: [['a', 'in', [1, 2]]] }, documentSchema);
@@ -438,9 +496,9 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
-              expect(result.errors[1].keyword).to.be.equal('type');
-              expect(result.errors[1].params.type).to.be.equal('array');
+              expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[2].keyword).to.be.equal('type');
+              expect(result.errors[2].params.type).to.be.equal('array');
             });
           });
 
@@ -449,9 +507,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[1].keyword).to.be.equal('minItems');
-            expect(result.errors[1].params.limit).to.be.equal(1);
+            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[2].keyword).to.be.equal('minItems');
+            expect(result.errors[2].params.limit).to.be.equal(1);
           });
 
           it('should return invalid result if "in" operator used with an array value which contains more than 100'
@@ -473,9 +531,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[1].keyword).to.be.equal('maxItems');
-            expect(result.errors[1].params.limit).to.be.equal(100);
+            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[2].keyword).to.be.equal('maxItems');
+            expect(result.errors[2].params.limit).to.be.equal(100);
           });
 
           it('should return invalid result if "in" operator used with an array which contains not unique elements', () => {
@@ -484,9 +542,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[1].keyword).to.be.equal('uniqueItems');
-            expect(result.errors[1].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
+            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[2].keyword).to.be.equal('uniqueItems');
+            expect(result.errors[2].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
           });
 
           it('should return invalid results if condition contains empty arrays', () => {
@@ -511,9 +569,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[2].keyword).to.be.equal('minLength');
-            expect(result.errors[2].params.limit).to.be.equal(1);
+            expect(result.errors[3].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[3].keyword).to.be.equal('minLength');
+            expect(result.errors[3].params.limit).to.be.equal(1);
           });
 
           it('should return invalid result if "startsWith" operator used with a string value which is more than 255'
@@ -523,9 +581,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[2].keyword).to.be.equal('maxLength');
-            expect(result.errors[2].params.limit).to.be.equal(255);
+            expect(result.errors[3].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[3].keyword).to.be.equal('maxLength');
+            expect(result.errors[3].params.limit).to.be.equal(255);
           });
 
           nonStringTestCases.forEach(({ type, value }) => {
@@ -534,9 +592,9 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
-              expect(result.errors[2].keyword).to.be.equal('type');
-              expect(result.errors[2].params.type).to.be.equal('string');
+              expect(result.errors[3].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[3].keyword).to.be.equal('type');
+              expect(result.errors[3].params.type).to.be.equal('string');
             });
           });
         });
@@ -568,8 +626,8 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[9].dataPath).to.be.equal('.where[0][2][0]');
-            expect(result.errors[9].keyword).to.be.equal('oneOf');
+            expect(result.errors[11].dataPath).to.be.equal('.where[0][2][0]');
+            expect(result.errors[11].keyword).to.be.equal('oneOf');
           });
 
           it('should return invalid result if "elementMatch" operator used with less than 2 "where" conditions', () => {
@@ -584,9 +642,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[3].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[3].keyword).to.be.equal('minItems');
-            expect(result.errors[3].params.limit).to.be.equal(2);
+            expect(result.errors[4].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[4].keyword).to.be.equal('minItems');
+            expect(result.errors[4].params.limit).to.be.equal(2);
           });
 
           it('should return invalid result if value contains conflicting conditions', () => {
@@ -694,9 +752,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[4].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[4].keyword).to.be.equal('multipleOf');
-            expect(result.errors[4].params.multipleOf).to.be.equal(1);
+            expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[5].keyword).to.be.equal('multipleOf');
+            expect(result.errors[5].params.multipleOf).to.be.equal(1);
           });
 
           it('should return invalid result if "length" operator used with a NaN', () => {
@@ -709,10 +767,10 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[4].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[4].keyword).to.be.equal('minimum');
-            expect(result.errors[4].params.comparison).to.be.equal('>=');
-            expect(result.errors[4].params.limit).to.be.equal(0);
+            expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[5].keyword).to.be.equal('minimum');
+            expect(result.errors[5].params.comparison).to.be.equal('>=');
+            expect(result.errors[5].params.limit).to.be.equal(0);
           });
 
           it('should return invalid result if "length" operator used with a numeric value which is less than 0', () => {
@@ -725,10 +783,10 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[4].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[4].keyword).to.be.equal('minimum');
-            expect(result.errors[4].params.comparison).to.be.equal('>=');
-            expect(result.errors[4].params.limit).to.be.equal(0);
+            expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[5].keyword).to.be.equal('minimum');
+            expect(result.errors[5].params.comparison).to.be.equal('>=');
+            expect(result.errors[5].params.limit).to.be.equal(0);
           });
 
           nonNumberTestCases.forEach(({ type, value }) => {
@@ -742,9 +800,9 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[4].dataPath).to.be.equal('.where[0][2]');
-              expect(result.errors[4].keyword).to.be.equal('type');
-              expect(result.errors[4].params.type).to.be.equal('number');
+              expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[5].keyword).to.be.equal('type');
+              expect(result.errors[5].params.type).to.be.equal('number');
             });
           });
         });
@@ -806,9 +864,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[9].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[9].keyword).to.be.equal('maxItems');
-            expect(result.errors[9].params.limit).to.be.equal(100);
+            expect(result.errors[10].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[10].keyword).to.be.equal('maxItems');
+            expect(result.errors[10].params.limit).to.be.equal(100);
           });
 
           it('should return invalid result if "contains" operator used with an empty array', () => {
@@ -821,9 +879,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[9].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[9].keyword).to.be.equal('minItems');
-            expect(result.errors[9].params.limit).to.be.equal(1);
+            expect(result.errors[10].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[10].keyword).to.be.equal('minItems');
+            expect(result.errors[10].params.limit).to.be.equal(1);
           });
 
           it('should return invalid result if "contains" operator used with an array which contains not unique'
@@ -837,9 +895,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[9].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[9].keyword).to.be.equal('uniqueItems');
-            expect(result.errors[9].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
+            expect(result.errors[10].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[10].keyword).to.be.equal('uniqueItems');
+            expect(result.errors[10].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
           });
 
           nonScalarTestCases.forEach(({ type, value }) => {
@@ -853,15 +911,15 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
-              expect(result.errors[5].keyword).to.be.equal('type');
-              expect(result.errors[5].params.type).to.be.equal('string');
               expect(result.errors[6].dataPath).to.be.equal('.where[0][2]');
               expect(result.errors[6].keyword).to.be.equal('type');
-              expect(result.errors[6].params.type).to.be.equal('number');
+              expect(result.errors[6].params.type).to.be.equal('string');
               expect(result.errors[7].dataPath).to.be.equal('.where[0][2]');
               expect(result.errors[7].keyword).to.be.equal('type');
-              expect(result.errors[7].params.type).to.be.equal('boolean');
+              expect(result.errors[7].params.type).to.be.equal('number');
+              expect(result.errors[8].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[8].keyword).to.be.equal('type');
+              expect(result.errors[8].params.type).to.be.equal('boolean');
             });
           });
 
@@ -876,15 +934,15 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[9].dataPath).to.be.equal('.where[0][2][0]');
-              expect(result.errors[9].keyword).to.be.equal('type');
-              expect(result.errors[9].params.type).to.be.equal('string');
               expect(result.errors[10].dataPath).to.be.equal('.where[0][2][0]');
               expect(result.errors[10].keyword).to.be.equal('type');
-              expect(result.errors[10].params.type).to.be.equal('number');
+              expect(result.errors[10].params.type).to.be.equal('string');
               expect(result.errors[11].dataPath).to.be.equal('.where[0][2][0]');
               expect(result.errors[11].keyword).to.be.equal('type');
-              expect(result.errors[11].params.type).to.be.equal('boolean');
+              expect(result.errors[11].params.type).to.be.equal('number');
+              expect(result.errors[12].dataPath).to.be.equal('.where[0][2][0]');
+              expect(result.errors[12].keyword).to.be.equal('type');
+              expect(result.errors[12].params.type).to.be.equal('boolean');
             });
           });
         });
@@ -1088,7 +1146,7 @@ describe('validateQueryFactory', () => {
         expect(result.errors[0].dataPath).to.be.equal('.orderBy[0][0]');
         expect(result.errors[0].keyword).to.be.equal('pattern');
         expect(result.errors[0].params.pattern).to.be.equal(
-          '^(\\$id|\\$ownerId|[a-zA-Z0-9-_]|[a-zA-Z0-9-_]+(.[a-zA-Z0-9-_]+)+?)$',
+          '^(\\$id|\\$ownerId|\\$createdAt|\\$updatedAt|[a-zA-Z0-9-_]|[a-zA-Z0-9-_]+(.[a-zA-Z0-9-_]+)+?)$',
         );
       });
     });

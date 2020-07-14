@@ -34,6 +34,7 @@ describe('CachedStateRepositoryDecorator', () => {
       removeDocument: this.sinon.stub(),
       storePublicKeyIdentityId: this.sinon.stub(),
       fetchPublicKeyIdentityId: this.sinon.stub(),
+      fetchLatestPlatformBlockHeader: this.sinon.stub(),
     };
 
     cachedStateRepository = new CachedStateRepositoryDecorator(
@@ -172,6 +173,24 @@ describe('CachedStateRepositoryDecorator', () => {
       expect(dataContractCacheMock.get).to.be.calledOnceWith(id);
       expect(dataContractCacheMock.set).to.not.be.called();
       expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
+    });
+  });
+
+  describe('#fetchLatestPlatformBlockHeader', () => {
+    it('should fetch latest platform block header from state repository', async () => {
+      const header = {
+        height: 10,
+        time: {
+          seconds: Math.ceil(new Date().getTime() / 1000),
+        },
+      };
+
+      stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(header);
+
+      const result = await cachedStateRepository.fetchLatestPlatformBlockHeader(id);
+
+      expect(result).to.deep.equal(header);
+      expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
     });
   });
 });

@@ -227,37 +227,74 @@ class DocumentMongoDbRepository {
 
   /**
    * @private
-   * @param document
-   * @return {{_id: string, ownerId: string, revision: number, data: object}}
+   * @param {Document} document
+   * @return {{
+   *   _id: string,
+   *   ownerId: string,
+   *   revision: number,
+   *   createdAt?: Date,
+   *   updatedAt?: Date,
+   *   data: object
+   * }}
    */
   createMongoDBDocument(document) {
-    return {
+    const result = {
       _id: document.getId(),
       ownerId: document.getOwnerId(),
       revision: document.getRevision(),
       data: document.getData(),
     };
+
+    const createdAt = document.getCreatedAt();
+    if (createdAt) {
+      result.createdAt = createdAt;
+    }
+
+    const updatedAt = document.getUpdatedAt();
+    if (updatedAt) {
+      result.updatedAt = updatedAt;
+    }
+
+    return result;
   }
 
   /**
    * @private
-   * @param {{_id: string, ownerId: string, revision: number, data: object}} mongoDBDocument
+   * @param {{
+   * _id: string,
+   * ownerId: string,
+   * revision: number,
+   * createdAt?: Date,
+   * updatedAt?: Date,
+   * data: object}} mongoDBDocument
    * @return {Document}
    */
   createDppDocument({
     _id,
     ownerId,
     revision,
+    createdAt,
+    updatedAt,
     data,
   }) {
-    return new Document({
+    const rawDocument = {
       $id: _id,
       $type: this.documentType,
       $dataContractId: this.contractId,
       $ownerId: ownerId,
       $revision: revision,
       ...data,
-    });
+    };
+
+    if (createdAt) {
+      rawDocument.$createdAt = createdAt.getTime();
+    }
+
+    if (updatedAt) {
+      rawDocument.$updatedAt = updatedAt.getTime();
+    }
+
+    return new Document(rawDocument);
   }
 
   /**

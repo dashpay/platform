@@ -99,7 +99,6 @@ class CachedStateRepositoryDecorator {
     return this.stateRepository.fetchDocuments(contractId, type, options);
   }
 
-
   /**
    * Store document
    *
@@ -130,6 +129,15 @@ class CachedStateRepositoryDecorator {
    */
   async fetchTransaction(id) {
     return this.stateRepository.fetchTransaction(id);
+  }
+
+  /**
+   * Fetch latest platform block header
+   *
+   * @return {Promise<IHeader>}
+   */
+  async fetchLatestPlatformBlockHeader() {
+    return this.stateRepository.fetchLatestPlatformBlockHeader();
   }
 }
 

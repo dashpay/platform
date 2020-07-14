@@ -15,6 +15,8 @@ class BlockExecutionStateMock {
     this.getAccumulativeFees = sinon.stub();
     this.incrementAccumulativeFees = sinon.stub();
     this.reset = sinon.stub();
+    this.setHeader = sinon.stub();
+    this.getHeader = sinon.stub();
   }
 }
 

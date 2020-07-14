@@ -72,6 +72,40 @@ describe('BlockExecutionState', () => {
       blockExecutionState.reset();
 
       expect(blockExecutionState.getDataContracts()).to.have.lengthOf(0);
+
+      expect(blockExecutionState.getHeader()).to.be.null();
+    });
+  });
+
+  describe('#setHeader', () => {
+    it('should set header', async () => {
+      const header = {
+        height: 10,
+        time: {
+          seconds: Math.ceil(new Date().getTime() / 1000),
+        },
+      };
+
+      const result = blockExecutionState.setHeader(header);
+
+      expect(result).to.equal(blockExecutionState);
+
+      expect(blockExecutionState.header).to.deep.equal(header);
+    });
+  });
+
+  describe('#getHeader', () => {
+    it('should get header', async () => {
+      const header = {
+        height: 10,
+        time: {
+          seconds: Math.ceil(new Date().getTime() / 1000),
+        },
+      };
+
+      blockExecutionState.header = header;
+
+      expect(blockExecutionState.getHeader()).to.deep.equal(header);
     });
   });
 });

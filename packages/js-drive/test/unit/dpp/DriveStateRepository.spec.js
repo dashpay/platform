@@ -18,6 +18,7 @@ describe('DriveStateRepository', () => {
   let documents;
   let dataContract;
   let transactionMock;
+  let blockExecutionStateMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -52,6 +53,10 @@ describe('DriveStateRepository', () => {
 
     createDocumentRepositoryMock = this.sinon.stub();
 
+    blockExecutionStateMock = {
+      getHeader: this.sinon.stub(),
+    };
+
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
       publicKeyIdentityIdRepositoryMock,
@@ -59,6 +64,7 @@ describe('DriveStateRepository', () => {
       fetchDocumentsMock,
       createDocumentRepositoryMock,
       coreRpcClientMock,
+      blockExecutionStateMock,
       blockExecutionDBTransactionsMock,
     );
 
@@ -247,6 +253,24 @@ describe('DriveStateRepository', () => {
         expect(e).to.equal(error);
         expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWith(id);
       }
+    });
+  });
+
+  describe('#fetchLatestPlatformBlockHeader', () => {
+    it('should fetch latest platform block header', async () => {
+      const header = {
+        height: 10,
+        time: {
+          seconds: Math.ceil(new Date().getTime() / 1000),
+        },
+      };
+
+      blockExecutionStateMock.getHeader.resolves(header);
+
+      const result = await stateRepository.fetchLatestPlatformBlockHeader();
+
+      expect(result).to.deep.equal(header);
+      expect(blockExecutionStateMock.getHeader).to.be.calledOnce();
     });
   });
 });

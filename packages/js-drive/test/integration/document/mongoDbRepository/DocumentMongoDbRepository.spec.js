@@ -42,7 +42,7 @@ describe('DocumentMongoDbRepository', function main() {
   });
 
   beforeEach(async () => {
-    documents = getDocumentsFixture();
+    documents = getDocumentsFixture().slice(0, 5);
 
     const { dataContract } = getDocumentsFixture;
 

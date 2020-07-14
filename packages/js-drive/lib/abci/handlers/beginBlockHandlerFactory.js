@@ -24,12 +24,14 @@ function beginBlockHandlerFactory(
    * @param {abci.RequestBeginBlock} request
    * @return {Promise<abci.ResponseBeginBlock>}
    */
-  async function beginBlockHandler({ header: { height } }) {
-    blockchainState.setLastBlockHeight(height);
+  async function beginBlockHandler({ header }) {
+    blockExecutionState.reset();
+
+    blockExecutionState.setHeader(header);
+
+    blockchainState.setLastBlockHeight(header.height);
 
     await blockExecutionDBTransactions.start();
-
-    blockExecutionState.reset();
 
     return new ResponseBeginBlock();
   }

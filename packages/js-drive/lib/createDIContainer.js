@@ -278,6 +278,7 @@ async function createDIContainer(options) {
       createDocumentRepository,
       coreRpcClient,
       dataContractCache,
+      blockExecutionState,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -286,6 +287,7 @@ async function createDIContainer(options) {
         fetchDocuments,
         createDocumentRepository,
         coreRpcClient,
+        blockExecutionState,
       );
 
       return new CachedStateRepositoryDecorator(stateRepository, dataContractCache);
@@ -300,6 +302,7 @@ async function createDIContainer(options) {
       coreRpcClient,
       blockExecutionDBTransactions,
       dataContractCache,
+      blockExecutionState,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -308,6 +311,7 @@ async function createDIContainer(options) {
         fetchDocuments,
         createDocumentRepository,
         coreRpcClient,
+        blockExecutionState,
         blockExecutionDBTransactions,
       );
 

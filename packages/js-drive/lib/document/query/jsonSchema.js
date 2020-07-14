@@ -47,6 +47,23 @@ module.exports = {
               },
             ],
           },
+          // Timestamps
+          {
+            items: [
+              {
+                type: 'string',
+                enum: ['$createdAt', '$updatedAt'],
+              },
+              {
+                type: 'string',
+                enum: ['<', '<=', '==', '>', '>='],
+              },
+              {
+                type: 'integer',
+                minimum: 0,
+              },
+            ],
+          },
           // in
           {
             items: [
@@ -173,7 +190,10 @@ module.exports = {
         type: 'array',
         items: [
           {
-            $ref: 'field',
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+            pattern: '^(\\$id|\\$ownerId|\\$createdAt|\\$updatedAt|[a-zA-Z0-9-_]|[a-zA-Z0-9-_]+(.[a-zA-Z0-9-_]+)+?)$',
           },
           {
             type: 'string',

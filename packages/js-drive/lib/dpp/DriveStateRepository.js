@@ -6,7 +6,8 @@ class DriveStateRepository {
    * @param {fetchDocuments} fetchDocuments
    * @param {createDocumentMongoDbRepository} createDocumentRepository
    * @param {RpcClient} coreRpcClient
-   * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
+   * @param {BlockExecutionState} blockExecutionState
+   * @param {BlockExecutionDBTransactions} [blockExecutionDBTransactions]
    */
   constructor(
     identityRepository,
@@ -15,6 +16,7 @@ class DriveStateRepository {
     fetchDocuments,
     createDocumentRepository,
     coreRpcClient,
+    blockExecutionState,
     blockExecutionDBTransactions = undefined,
   ) {
     this.identityRepository = identityRepository;
@@ -24,6 +26,7 @@ class DriveStateRepository {
     this.createDocumentRepository = createDocumentRepository;
     this.coreRpcClient = coreRpcClient;
     this.blockExecutionDBTransactions = blockExecutionDBTransactions;
+    this.blockExecutionState = blockExecutionState;
   }
 
   /**
@@ -147,7 +150,7 @@ class DriveStateRepository {
   async removeDocument(contractId, type, id) {
     const transaction = this.getDBTransaction('document');
 
-    const repository = this.createDocumentRepository(
+    const repository = await this.createDocumentRepository(
       contractId,
       type,
     );
@@ -189,6 +192,15 @@ class DriveStateRepository {
     }
 
     return transaction;
+  }
+
+  /**
+   * Fetch latest platform block header
+   *
+   * @return {Promise<IHeader>}
+   */
+  async fetchLatestPlatformBlockHeader() {
+    return this.blockExecutionState.getHeader();
   }
 }
 

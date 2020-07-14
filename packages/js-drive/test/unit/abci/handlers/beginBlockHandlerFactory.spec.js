@@ -17,6 +17,7 @@ describe('beginBlockHandlerFactory', () => {
   let blockHeight;
   let blockExecutionDBTransactionsMock;
   let blockExecutionStateMock;
+  let header;
 
   beforeEach(function beforeEach() {
     blockchainState = new BlockchainState();
@@ -33,10 +34,15 @@ describe('beginBlockHandlerFactory', () => {
 
     blockHeight = 2;
 
-    request = {
-      header: {
-        height: blockHeight,
+    header = {
+      height: blockHeight,
+      time: {
+        seconds: Math.ceil(new Date().getTime() / 1000),
       },
+    };
+
+    request = {
+      header,
     };
   });
 
@@ -49,5 +55,6 @@ describe('beginBlockHandlerFactory', () => {
 
     expect(blockExecutionDBTransactionsMock.start).to.be.calledOnce();
     expect(blockExecutionStateMock.reset).to.be.calledOnce();
+    expect(blockExecutionStateMock.setHeader).to.be.calledOnceWithExactly(header);
   });
 });

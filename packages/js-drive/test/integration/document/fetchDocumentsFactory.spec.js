@@ -144,6 +144,75 @@ describe('fetchDocumentsFactory', () => {
     expect(result).to.deep.equal([]);
   });
 
+  it('should fetch documents by an equal date', async () => {
+    const [, , , indexedDocument] = getDocumentsFixture();
+
+    const documentRepository = await createDocumentMongoDbRepository(contractId, 'indexedDocument');
+    await documentRepository.store(indexedDocument);
+
+    const query = {
+      where: [
+        ['$createdAt', '==', indexedDocument.getCreatedAt().getTime()],
+      ],
+    };
+
+    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+
+    expect(result[0].toJSON()).to.deep.equal(
+      indexedDocument.toJSON(),
+    );
+  });
+
+  it('should fetch documents by a date range', async () => {
+    const [, , , indexedDocument] = getDocumentsFixture();
+
+    const documentRepository = await createDocumentMongoDbRepository(contractId, 'indexedDocument');
+    await documentRepository.store(indexedDocument);
+
+    const startDate = new Date();
+    startDate.setSeconds(startDate.getSeconds() - 10);
+
+    const endDate = new Date();
+    endDate.setSeconds(endDate.getSeconds() + 10);
+
+    const query = {
+      where: [
+        ['$createdAt', '>', startDate.getTime()],
+        ['$createdAt', '<=', endDate.getTime()],
+      ],
+    };
+
+    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+
+    expect(result[0].toJSON()).to.deep.equal(
+      indexedDocument.toJSON(),
+    );
+  });
+
+  it('should fetch empty array in case date is out of range', async () => {
+    const [, , , indexedDocument] = getDocumentsFixture();
+
+    const documentRepository = await createDocumentMongoDbRepository(contractId, 'indexedDocument');
+    await documentRepository.store(indexedDocument);
+
+    const startDate = new Date();
+    startDate.setSeconds(startDate.getSeconds() + 10);
+
+    const endDate = new Date();
+    endDate.setSeconds(endDate.getSeconds() + 20);
+
+    const query = {
+      where: [
+        ['$createdAt', '>', startDate.getTime()],
+        ['$createdAt', '<=', endDate.getTime()],
+      ],
+    };
+
+    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+
+    expect(result).to.have.length(0);
+  });
+
   it('should throw InvalidQueryError if contract ID does not exist', async () => {
     const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
 

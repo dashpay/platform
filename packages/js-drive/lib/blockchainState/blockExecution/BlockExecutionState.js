@@ -2,6 +2,7 @@ class BlockExecutionState {
   constructor() {
     this.dataContracts = [];
     this.accumulativeFees = 0;
+    this.header = null;
   }
 
   /**
@@ -41,11 +42,32 @@ class BlockExecutionState {
   }
 
   /**
+   * Set current block header
+   * @param {IHeader} header
+   * @return {BlockExecutionState}
+   */
+  setHeader(header) {
+    this.header = header;
+
+    return this;
+  }
+
+  /**
+   * Get block header
+   *
+   * @return {IHeader|null}
+   */
+  getHeader() {
+    return this.header;
+  }
+
+  /**
    * Reset state
    */
   reset() {
     this.dataContracts = [];
     this.accumulativeFees = 0;
+    this.header = null;
   }
 }
 

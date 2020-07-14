@@ -2,6 +2,8 @@ const systemFields = {
   $id: '_id',
   $ownerId: 'ownerId',
   $revision: 'revision',
+  $createdAt: 'createdAt',
+  $updatedAt: 'updatedAt',
 };
 
 /**
