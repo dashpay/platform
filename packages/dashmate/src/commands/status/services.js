@@ -74,11 +74,16 @@ class ServicesStatusCommand extends BaseCommand {
         continue;
       }
 
+      let statusText;
+      if (status) {
+        statusText = chalk.keyword(status === 'running' ? 'green' : 'red')(status);
+      }
+
       tableRows.push([
         serviceDescription,
-        containerId.slice(0, 12),
+        containerId ? containerId.slice(0, 12) : undefined,
         version,
-        chalk.keyword(status === 'running' ? 'green' : 'red')(status),
+        statusText,
       ]);
     }
 
