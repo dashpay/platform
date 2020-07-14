@@ -70,7 +70,7 @@ class JsonRpcTransport {
     } catch (error) {
       this.lastUsedAddress = address;
 
-      if (error.code !== 'ECONNABORTED' && error.code !== 'ECONNREFUSED'
+      if (!['ECONNABORTED', 'ECONNREFUSED', 'ETIMEDOUT'].includes(error.code)
         && error.code !== -32603 && !(error.code >= -32000 && error.code <= -32099)) {
         throw error;
       }

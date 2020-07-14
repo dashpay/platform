@@ -195,6 +195,25 @@ describe('JsonRpcTransport', () => {
       expect(requestJsonRpcMock).to.be.calledTwice();
     });
 
+    it('should retry the request if a connection timeout error has thrown', async () => {
+      dapiAddressProviderMock.hasLiveAddresses.resolves(true);
+      const error = new Error('Internal error');
+      error.code = 'ETIMEDOUT';
+      requestJsonRpcMock.onCall(0).throws(error);
+
+      options.retries = 1;
+      const receivedData = await jsonRpcTransport.request(
+        method,
+        params,
+        options,
+      );
+
+      expect(receivedData).to.equal(data);
+      expect(createDAPIAddressProviderFromOptionsMock).to.be.calledTwice();
+      expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
+      expect(requestJsonRpcMock).to.be.calledTwice();
+    });
+
     it('should retry the request if error with code -32603 has thrown', async () => {
       dapiAddressProviderMock.hasLiveAddresses.resolves(true);
       const error = new Error('Internal error');
