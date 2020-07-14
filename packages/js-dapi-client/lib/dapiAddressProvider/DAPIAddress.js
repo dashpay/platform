@@ -10,11 +10,13 @@ class DAPIAddress {
     }
 
     if (typeof address === 'string') {
+      const [host, httpPort, grpcPort] = address.split(':');
+
       // eslint-disable-next-line no-param-reassign
       address = {
-        host: address,
-        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
-        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        host,
+        httpPort: httpPort ? parseInt(httpPort, 10) : DAPIAddress.DEFAULT_HTTP_PORT,
+        grpcPort: grpcPort ? parseInt(grpcPort, 10) : DAPIAddress.DEFAULT_GRPC_PORT,
       };
     }
 
@@ -155,11 +157,15 @@ class DAPIAddress {
    */
   toJSON() {
     return {
-      host: this.host,
-      httpPort: this.httpPort,
-      grpcPort: this.grpcPort,
-      proRegTxHash: this.proRegTxHash,
+      host: this.getHost(),
+      httpPort: this.getHttpPort(),
+      grpcPort: this.getGrpcPort(),
+      proRegTxHash: this.getProRegTxHash(),
     };
+  }
+
+  toString() {
+    return `${this.getHost()}:${this.getHttpPort()}:${this.getGrpcPort()}`;
   }
 }
 

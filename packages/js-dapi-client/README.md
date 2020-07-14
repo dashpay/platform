@@ -71,8 +71,8 @@ const DAPIClient = require('@dashevo/dapi-client');
 
 var client = new DAPIClient({
   dapiAddresses: [
-    '127.0.0.1',
-    '127.0.0.2'
+    '127.0.0.1:3000:3010',
+    '127.0.0.2:3000:3010',
   ],
 });
 

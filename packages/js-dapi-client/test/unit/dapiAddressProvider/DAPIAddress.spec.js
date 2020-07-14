@@ -4,21 +4,35 @@ const DAPIAddressHostMissingError = require(
 );
 
 describe('DAPIAddress', () => {
-  let dapiAddress;
+  let host;
+  let httpPort;
+  let grpcPort;
+
+  beforeEach(() => {
+    host = '127.0.0.1';
+    httpPort = DAPIAddress.DEFAULT_HTTP_PORT + 1;
+    grpcPort = DAPIAddress.DEFAULT_GRPC_PORT + 1;
+  });
 
   describe('#constructor', () => {
-    let host;
-
-    beforeEach(() => {
-      host = '127.0.0.1';
-    });
-
-    it('should construct DAPIAddress from host', () => {
-      dapiAddress = new DAPIAddress(host);
+    it('should construct DAPIAddress from string with host and both ports', () => {
+      const dapiAddress = new DAPIAddress(`${host}:${httpPort}:${grpcPort}`);
 
       expect(dapiAddress).to.be.an.instanceOf(DAPIAddress);
       expect(dapiAddress.host).to.equal(host);
-      expect(dapiAddress.httpPort).to.equal(DAPIAddress.DEFAULT_HTTP_PORT);
+      expect(dapiAddress.httpPort).to.equal(httpPort);
+      expect(dapiAddress.grpcPort).to.equal(grpcPort);
+      expect(dapiAddress.proRegTxHash).to.be.undefined();
+      expect(dapiAddress.banCount).to.equal(0);
+      expect(dapiAddress.banStartTime).to.be.undefined();
+    });
+
+    it('should construct DAPIAddress from string with host and HTTP port', () => {
+      const dapiAddress = new DAPIAddress(`${host}:${httpPort}`);
+
+      expect(dapiAddress).to.be.an.instanceOf(DAPIAddress);
+      expect(dapiAddress.host).to.equal(host);
+      expect(dapiAddress.httpPort).to.equal(httpPort);
       expect(dapiAddress.grpcPort).to.equal(DAPIAddress.DEFAULT_GRPC_PORT);
       expect(dapiAddress.proRegTxHash).to.be.undefined();
       expect(dapiAddress.banCount).to.equal(0);
@@ -28,14 +42,14 @@ describe('DAPIAddress', () => {
     it('should construct DAPIAddress from DAPIAddress', () => {
       const address = new DAPIAddress(host);
 
-      dapiAddress = new DAPIAddress(address);
+      const dapiAddress = new DAPIAddress(address);
 
       expect(dapiAddress).to.be.an.instanceOf(DAPIAddress);
       expect(dapiAddress.toJSON()).to.deep.equal(address.toJSON());
     });
 
     it('should construct DAPIAddress form RawDAPIAddress', () => {
-      dapiAddress = new DAPIAddress({
+      const dapiAddress = new DAPIAddress({
         host,
       });
 
@@ -49,11 +63,9 @@ describe('DAPIAddress', () => {
     });
 
     it('should construct DAPIAddress with defined ports', () => {
-      const httpPort = DAPIAddress.DEFAULT_HTTP_PORT + 1;
-      const grpcPort = DAPIAddress.DEFAULT_GRPC_PORT + 1;
       const proRegTxHash = 'proRegTxHash';
 
-      dapiAddress = new DAPIAddress({
+      const dapiAddress = new DAPIAddress({
         host,
         httpPort,
         grpcPort,
@@ -72,7 +84,7 @@ describe('DAPIAddress', () => {
     });
 
     it('should not set banCount and banStartTime from RawDAPIAddress', async () => {
-      dapiAddress = new DAPIAddress({
+      const dapiAddress = new DAPIAddress({
         host,
         banCount: 100,
         banStartTime: 1000,
@@ -85,7 +97,8 @@ describe('DAPIAddress', () => {
 
     it('should throw DAPIAddressHostMissingError if host is missed', () => {
       try {
-        dapiAddress = new DAPIAddress('');
+        // eslint-disable-next-line no-new
+        new DAPIAddress('');
 
         expect.fail('should throw DAPIAddressHostMissingError');
       } catch (e) {
@@ -96,9 +109,7 @@ describe('DAPIAddress', () => {
 
   describe('#getHost', () => {
     it('should return host', () => {
-      const host = '127.0.0.1';
-
-      dapiAddress = new DAPIAddress(host);
+      const dapiAddress = new DAPIAddress(host);
 
       expect(dapiAddress.getHost()).to.equal(host);
     });
@@ -106,21 +117,19 @@ describe('DAPIAddress', () => {
 
   describe('#setHost', () => {
     it('should set host', () => {
-      const host = '192.168.1.1';
+      const otherHost = '192.168.1.1';
 
-      dapiAddress = new DAPIAddress('127.0.0.1');
-      dapiAddress.setHost(host);
+      const dapiAddress = new DAPIAddress(host);
+      dapiAddress.setHost(otherHost);
 
-      expect(dapiAddress.host).to.equal(host);
+      expect(dapiAddress.host).to.equal(otherHost);
     });
   });
 
   describe('#getHttpPort', () => {
     it('should get HTTP port', () => {
-      const httpPort = 666;
-
-      dapiAddress = new DAPIAddress({
-        host: '127.0.0.1',
+      const dapiAddress = new DAPIAddress({
+        host,
         httpPort,
       });
 
@@ -130,9 +139,7 @@ describe('DAPIAddress', () => {
 
   describe('#setHttpPort', () => {
     it('should set HTTP port', () => {
-      const httpPort = 666;
-
-      dapiAddress = new DAPIAddress('127.0.0.1');
+      const dapiAddress = new DAPIAddress(host);
       dapiAddress.setHttpPort(httpPort);
 
       expect(dapiAddress.getHttpPort()).to.equal(httpPort);
@@ -141,10 +148,8 @@ describe('DAPIAddress', () => {
 
   describe('#getGrpcPort', () => {
     it('should get GRPC port', () => {
-      const grpcPort = 666;
-
-      dapiAddress = new DAPIAddress({
-        host: '127.0.0.1',
+      const dapiAddress = new DAPIAddress({
+        host,
         grpcPort,
       });
 
@@ -154,9 +159,7 @@ describe('DAPIAddress', () => {
 
   describe('#setGrpcPort', () => {
     it('should set GRPC port', () => {
-      const grpcPort = 666;
-
-      dapiAddress = new DAPIAddress('127.0.0.1');
+      const dapiAddress = new DAPIAddress(host);
       dapiAddress.setGrpcPort(grpcPort);
 
       expect(dapiAddress.getGrpcPort()).to.equal(grpcPort);
@@ -166,8 +169,9 @@ describe('DAPIAddress', () => {
   describe('#getProRegTxHash', () => {
     it('should get ProRegTxHash', () => {
       const proRegTxHash = 'proRegTxHash';
-      dapiAddress = new DAPIAddress({
-        host: '127.0.0.1',
+
+      const dapiAddress = new DAPIAddress({
+        host,
         proRegTxHash,
       });
 
@@ -178,7 +182,8 @@ describe('DAPIAddress', () => {
   describe('#getBanStartTime', () => {
     it('should get ban start time', () => {
       const now = Date.now();
-      dapiAddress = new DAPIAddress('127.0.0.1');
+
+      const dapiAddress = new DAPIAddress(host);
       dapiAddress.banStartTime = now;
 
       const banStartTime = dapiAddress.getBanStartTime();
@@ -188,7 +193,7 @@ describe('DAPIAddress', () => {
 
   describe('#getBanCount', () => {
     it('should get ban count', () => {
-      dapiAddress = new DAPIAddress('127.0.0.1');
+      const dapiAddress = new DAPIAddress(host);
       dapiAddress.banCount = 666;
 
       const banCount = dapiAddress.getBanCount();
@@ -198,7 +203,7 @@ describe('DAPIAddress', () => {
 
   describe('#markAsBanned', () => {
     it('should mark address as banned', () => {
-      dapiAddress = new DAPIAddress('127.0.0.1');
+      const dapiAddress = new DAPIAddress(host);
       dapiAddress.markAsBanned();
 
       expect(dapiAddress.banCount).to.equal(1);
@@ -208,7 +213,7 @@ describe('DAPIAddress', () => {
 
   describe('#markAsLive', () => {
     it('should mark address as live', () => {
-      dapiAddress = new DAPIAddress('127.0.0.1');
+      const dapiAddress = new DAPIAddress(host);
       dapiAddress.banCount = 1;
       dapiAddress.banStartTime = Date.now();
 
@@ -220,11 +225,9 @@ describe('DAPIAddress', () => {
   });
 
   describe('#isBanned', () => {
-    beforeEach(() => {
-      dapiAddress = new DAPIAddress('127.0.0.1');
-    });
-
     it('should return true if address is banned', () => {
+      const dapiAddress = new DAPIAddress(host);
+
       dapiAddress.banCount = 1;
 
       const isBanned = dapiAddress.isBanned();
@@ -232,6 +235,8 @@ describe('DAPIAddress', () => {
     });
 
     it('should return false if address is not banned', () => {
+      const dapiAddress = new DAPIAddress(host);
+
       const isBanned = dapiAddress.isBanned();
       expect(isBanned).to.be.false();
     });
@@ -239,13 +244,25 @@ describe('DAPIAddress', () => {
 
   describe('#toJSON', () => {
     it('should return RawDAPIAddress', () => {
-      dapiAddress = new DAPIAddress('127.0.0.1');
-      const rawDAPIAddress = dapiAddress.toJSON();
+      const dapiAddress = new DAPIAddress(host);
 
-      expect(rawDAPIAddress.host).to.equal(dapiAddress.getHost());
-      expect(rawDAPIAddress.httpPort).to.equal(dapiAddress.getHttpPort());
-      expect(rawDAPIAddress.grpcPort).to.equal(dapiAddress.getGrpcPort());
-      expect(rawDAPIAddress.proRegTxHash).to.equal(dapiAddress.getProRegTxHash());
+      expect(dapiAddress.toJSON()).to.deep.equal({
+        host: dapiAddress.getHost(),
+        httpPort: dapiAddress.getHttpPort(),
+        grpcPort: dapiAddress.getGrpcPort(),
+        proRegTxHash: dapiAddress.getProRegTxHash(),
+      });
+    });
+  });
+
+  describe('toString', () => {
+    it('should return a string representation', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      const dapiAddressString = `${dapiAddress.getHost()}:`
+        + `${dapiAddress.getHttpPort()}:${dapiAddress.getGrpcPort()}`;
+
+      expect(`${dapiAddress}`).to.equal(dapiAddressString);
     });
   });
 });
