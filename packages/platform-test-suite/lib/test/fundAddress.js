@@ -35,7 +35,7 @@ async function fundAddress(
     .fee(668)
     .sign(faucetPrivateKey);
 
-  const transactionId = await dapiClient.sendTransaction(transaction.toBuffer());
+  const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
 
   await waitForBlocks(dapiClient, 1);
 

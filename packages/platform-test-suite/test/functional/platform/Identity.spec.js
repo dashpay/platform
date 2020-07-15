@@ -51,8 +51,8 @@ describe('Platform', () => {
       );
 
       try {
-        await client.getDAPIClient().applyStateTransition(
-          identityCreateTransition,
+        await client.getDAPIClient().platform.broadcastStateTransition(
+          identityCreateTransition.serialize(),
         );
         expect.fail('Error was not thrown');
       } catch (e) {
@@ -62,7 +62,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(1);
+      identity = await client.platform.identities.register(2);
       identityRawPublicKey = new PublicKey(
         Buffer.from(identity.getPublicKeys()[0].getData(), 'base64'),
       );
@@ -83,7 +83,7 @@ describe('Platform', () => {
 
       const outPoint = transaction.getOutPointBuffer(0);
 
-      await client.getDAPIClient().sendTransaction(transaction.toBuffer());
+      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
       await waitForBlocks(client.getDAPIClient(), 1);
 
       const otherIdentity = dpp.identity.create(
@@ -99,8 +99,8 @@ describe('Platform', () => {
       );
 
       try {
-        await client.getDAPIClient().applyStateTransition(
-          otherIdentityCreateTransition,
+        await client.getDAPIClient().platform.broadcastStateTransition(
+          otherIdentityCreateTransition.serialize(),
         );
 
         expect.fail('Error was not thrown');
@@ -119,7 +119,7 @@ describe('Platform', () => {
       expect(fetchedIdentity).to.be.not.null();
       expect(fetchedIdentity.toJSON()).to.deep.equal({
         ...identity.toJSON(),
-        balance: 826,
+        balance: 1826,
       });
 
       // updating balance
@@ -127,7 +127,7 @@ describe('Platform', () => {
     });
 
     it('should be able to get newly created identity by it\'s first public key', async () => {
-      const serializedIdentity = await client.getDAPIClient().getIdentityByFirstPublicKey(
+      const serializedIdentity = await client.getDAPIClient().platform.getIdentityByFirstPublicKey(
         identity.getPublicKeyById(0).hash(),
       );
 
@@ -140,12 +140,12 @@ describe('Platform', () => {
 
       expect(receivedIdentity.toJSON()).to.deep.equal({
         ...identity.toJSON(),
-        balance: 826,
+        balance: 1826,
       });
     });
 
     it('should be able to get newly created identity id by it\'s first public key', async () => {
-      const identityId = await client.getDAPIClient().getIdentityIdByFirstPublicKey(
+      const identityId = await client.getDAPIClient().platform.getIdentityIdByFirstPublicKey(
         identity.getPublicKeyById(0).hash(),
       );
 
@@ -172,7 +172,7 @@ describe('Platform', () => {
           'customContracts.niceDocument',
           identity,
           {
-            name: 'Some Very Long Long Long Name',
+            name: 'Some Very Long Long Long Name'.repeat(100),
           },
         );
 
@@ -211,8 +211,8 @@ describe('Platform', () => {
         );
 
         try {
-          await client.getDAPIClient().applyStateTransition(
-            identityTopUpTransition,
+          await client.getDAPIClient().platform.broadcastStateTransition(
+            identityTopUpTransition.serialize(),
           );
 
           expect.fail('Error was not thrown');

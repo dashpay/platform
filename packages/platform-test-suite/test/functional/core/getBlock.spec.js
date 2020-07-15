@@ -17,9 +17,9 @@ describe('Core', () => {
     });
 
     it('should get block by hash', async () => {
-      const blockHash = await client.getDAPIClient().getBestBlockHash();
+      const blockHash = await client.getDAPIClient().core.getBestBlockHash();
 
-      const blockBinary = await client.getDAPIClient().getBlockByHash(blockHash);
+      const blockBinary = await client.getDAPIClient().core.getBlockByHash(blockHash);
       expect(blockBinary).to.be.an.instanceof(Buffer);
 
       const block = new Block(blockBinary);
@@ -27,9 +27,9 @@ describe('Core', () => {
     });
 
     it('should get block by height', async () => {
-      const { blocks } = await client.getDAPIClient().getStatus();
+      const { blocks } = await client.getDAPIClient().core.getStatus();
 
-      const blockBinary = await client.getDAPIClient().getBlockByHeight(blocks);
+      const blockBinary = await client.getDAPIClient().core.getBlockByHeight(blocks);
 
       expect(blockBinary).to.be.an.instanceof(Buffer);
 
@@ -39,7 +39,7 @@ describe('Core', () => {
 
     it('should respond with an invalid argument error if the block by height was not found', async () => {
       try {
-        await client.getDAPIClient().getBlockByHeight(1000000000);
+        await client.getDAPIClient().core.getBlockByHeight(1000000000);
 
         expect.fail('Should throw an invalid argument error');
       } catch (e) {
@@ -49,7 +49,7 @@ describe('Core', () => {
     });
 
     it('should respond with null if the block by hash was not found', async () => {
-      const block = await client.getDAPIClient().getBlockByHash('hash');
+      const block = await client.getDAPIClient().core.getBlockByHash('hash');
 
       expect(block).to.equal(null);
     });

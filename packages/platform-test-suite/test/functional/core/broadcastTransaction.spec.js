@@ -43,7 +43,7 @@ describe('Core', () => {
 
       const serializedTransaction = Buffer.from(transaction.serialize(), 'hex');
 
-      const result = await client.getDAPIClient().sendTransaction(serializedTransaction);
+      const result = await client.getDAPIClient().core.broadcastTransaction(serializedTransaction);
 
       expect(result).to.be.a('string');
     });

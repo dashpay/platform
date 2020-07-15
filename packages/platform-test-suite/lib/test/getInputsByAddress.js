@@ -5,11 +5,11 @@
  * @return {Promise<[]>}
  */
 module.exports = async function getInputsByAddress(dapiClient, address) {
-  const { items: utxos } = await dapiClient.getUTXO(address);
+  const { items: utxos } = await dapiClient.core.getUTXO(address);
   let inputs = [];
 
-  if (process.env.NETWORK === 'regtest') {
-    const { blocks } = await dapiClient.getStatus();
+  if (process.env.NETWORK === 'regtest' || process.env.NETWORK === 'local') {
+    const { blocks } = await dapiClient.core.getStatus();
     const sortedUtxos = utxos
       .filter((utxo) => utxo.height < blocks - 100)
       .sort((a, b) => a.satoshis > b.satoshis);

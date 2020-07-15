@@ -55,7 +55,7 @@ before_script:
 script: >
   npm run check-package &&
   npm run lint &&
-  docker run --network="host" platform-test-suite:local 127.0.0.1:3000 -k=$PRIVATE_KEY -n=regtest --dpns-tld-identity-private-key=$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY --dpns-tld-identity-id=$DPNS_TOP_LEVEL_IDENTITY_ID --dpns-contract-id=$DPNS_CONTRACT_ID
+  docker run --network="host" platform-test-suite:local 127.0.0.1:3000:3010 -k=$PRIVATE_KEY -n=regtest --dpns-tld-identity-private-key=$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY --dpns-tld-identity-id=$DPNS_TOP_LEVEL_IDENTITY_ID --dpns-contract-id=$DPNS_CONTRACT_ID
 
 after_script:
   - mn stop local

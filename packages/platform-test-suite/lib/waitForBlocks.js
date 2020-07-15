@@ -11,19 +11,19 @@ const wait = require('./wait');
  * @return {Promise<void>}
  */
 module.exports = async function waitForBlocks(dapiClient, numberOfBlocks) {
-  if (process.env.NETWORK === 'regtest') {
+  if (process.env.NETWORK === 'regtest' || process.env.NETWORK === 'local') {
     const privateKey = new PrivateKey();
 
-    await dapiClient.generateToAddress(
+    await dapiClient.core.generateToAddress(
       numberOfBlocks,
       privateKey.toAddress(process.env.NETWORK).toString(),
     );
   } else {
-    let { blocks: currentBlockHeight } = await dapiClient.getStatus();
+    let { blocks: currentBlockHeight } = await dapiClient.core.getStatus();
 
     const desiredBlockHeight = currentBlockHeight + numberOfBlocks;
     do {
-      ({ blocks: currentBlockHeight } = await dapiClient.getStatus());
+      ({ blocks: currentBlockHeight } = await dapiClient.core.getStatus());
 
       if (currentBlockHeight < desiredBlockHeight) {
         await wait(30000);

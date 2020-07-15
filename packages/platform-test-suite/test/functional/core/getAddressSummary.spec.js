@@ -41,7 +41,7 @@ describe('Core', () => {
     });
 
     it('should return address summary', async () => {
-      const result = await client.getDAPIClient().getAddressSummary(address);
+      const result = await client.getDAPIClient().core.getAddressSummary(address);
 
       expect(result).to.be.an('object');
       expect(result.addrStr).to.equal(address);
@@ -51,11 +51,11 @@ describe('Core', () => {
       address = 'Xh7nD4vTUYAxy8GV7t1k8Er9ZKmxRBDcL';
 
       try {
-        await client.getDAPIClient().getAddressSummary(address);
+        await client.getDAPIClient().core.getAddressSummary(address);
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e.name).to.equal('RPCError');
+        expect(e.name).to.equal('JsonRpcError');
         expect(e.message).contains('Invalid address');
       }
     });

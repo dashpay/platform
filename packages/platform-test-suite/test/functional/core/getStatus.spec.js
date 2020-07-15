@@ -17,7 +17,7 @@ describe('Core', () => {
     });
 
     it('should return status', async () => {
-      const result = await client.getDAPIClient().getStatus();
+      const result = await client.getDAPIClient().core.getStatus();
 
       expect(result).to.have.a.property('coreVersion');
       expect(result).to.have.a.property('protocolVersion');

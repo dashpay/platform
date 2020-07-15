@@ -39,7 +39,7 @@ describe('Core', () => {
         20000,
       );
 
-      const result = await client.getDAPIClient().getTransaction(transactionId);
+      const result = await client.getDAPIClient().core.getTransaction(transactionId);
       const receivedTx = new Transaction(Buffer.from(result));
 
       expect(receivedTx.hash).to.deep.equal(transactionId);
@@ -48,7 +48,7 @@ describe('Core', () => {
     it('should respond with null if transaction was not found', async () => {
       const nonExistentId = Buffer.alloc(32).toString('hex');
 
-      const result = await client.getDAPIClient().getTransaction(nonExistentId);
+      const result = await client.getDAPIClient().core.getTransaction(nonExistentId);
 
       expect(result).to.equal(null);
     });

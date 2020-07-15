@@ -17,7 +17,7 @@ describe('Platform', () => {
     before(async () => {
       client = await createClientWithFundedWallet();
 
-      identity = await client.platform.identities.register(2);
+      identity = await client.platform.identities.register(10);
 
       dataContractFixture = getDataContractFixture(identity.getId());
 
@@ -128,10 +128,11 @@ describe('Platform', () => {
 
     it('should be able to create new document', async () => {
       document = await client.platform.documents.create(
-        'customContracts.niceDocument',
+        'customContracts.indexedDocument',
         identity,
         {
-          name: 'myName',
+          firstName: 'myName',
+          lastName: 'lastName',
         },
       );
 
@@ -140,13 +141,94 @@ describe('Platform', () => {
       }, identity);
     });
 
-    it('should fetch created documents array', async () => {
+    it('should fetch created document', async () => {
       const [fetchedDocument] = await client.platform.documents.get(
-        'customContracts.niceDocument',
+        'customContracts.indexedDocument',
         { where: [['$id', '==', document.getId()]] },
       );
 
       expect(document.toJSON()).to.deep.equal(fetchedDocument.toJSON());
+      expect(fetchedDocument.getUpdatedAt().getTime())
+        .to.be.equal(fetchedDocument.getCreatedAt().getTime());
+    });
+
+    it('should be able to fetch created document by created timestamp', async () => {
+      const [fetchedDocument] = await client.platform.documents.get(
+        'customContracts.indexedDocument',
+        { where: [['$createdAt', '==', document.getCreatedAt().getTime()]] },
+      );
+
+      expect(document.toJSON()).to.deep.equal(fetchedDocument.toJSON());
+    });
+
+    it('should be able to update document', async () => {
+      const [storedDocument] = await client.platform.documents.get(
+        'customContracts.indexedDocument',
+        { where: [['$id', '==', document.getId()]] },
+      );
+
+      storedDocument.set('firstName', 'updatedName');
+
+      await client.platform.documents.broadcast({
+        replace: [storedDocument],
+      }, identity);
+
+      const [fetchedDocument] = await client.platform.documents.get(
+        'customContracts.indexedDocument',
+        { where: [['$id', '==', document.getId()]] },
+      );
+
+      expect(fetchedDocument.get('firstName')).to.equal('updatedName');
+      expect(fetchedDocument.getUpdatedAt().getTime())
+        .to.be.greaterThan(fetchedDocument.getCreatedAt().getTime());
+    });
+
+    it('should fail to update document with timestamp in violated time frame', async () => {
+      const [storedDocument] = await client.platform.documents.get(
+        'customContracts.indexedDocument',
+        { where: [['$id', '==', document.getId()]] },
+      );
+
+      const updatedAt = storedDocument.getUpdatedAt();
+
+      updatedAt.setMinutes(updatedAt.getMinutes() - 10);
+
+      try {
+        await client.platform.documents.broadcast({
+          replace: [storedDocument],
+        }, identity);
+      } catch (e) {
+        const [error] = JSON.parse(e.metadata.get('errors'));
+        expect(error.name).to.equal('DocumentTimestampWindowViolationError');
+      }
+    });
+
+    it('should fail to create a new document with timestamp in violated time frame', async () => {
+      document = await client.platform.documents.create(
+        'customContracts.indexedDocument',
+        identity,
+        {
+          firstName: 'myName',
+          lastName: 'lastName',
+        },
+      );
+
+      const createdAt = document.getCreatedAt();
+
+      createdAt.setMinutes(createdAt.getMinutes() - 10);
+
+      document.setUpdatedAt(createdAt);
+
+      try {
+        await client.platform.documents.broadcast({
+          create: [document],
+        }, identity);
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        const [error] = JSON.parse(e.metadata.get('errors'));
+        expect(error.name).to.equal('DocumentTimestampWindowViolationError');
+      }
     });
   });
 });

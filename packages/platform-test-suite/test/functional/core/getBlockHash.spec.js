@@ -8,7 +8,7 @@ describe('Core', () => {
     before(async () => {
       client = createClientWithoutWallet();
 
-      ({ blocks: lastBlockHeight } = await client.getDAPIClient().getStatus());
+      ({ blocks: lastBlockHeight } = await client.getDAPIClient().core.getStatus());
     });
 
     after(async () => {
@@ -19,7 +19,7 @@ describe('Core', () => {
 
     it('should get block hash by height', async () => {
       const height = lastBlockHeight - 10;
-      const hash = await client.getDAPIClient().getBlockHash(height);
+      const hash = await client.getDAPIClient().core.getBlockHash(height);
 
       expect(hash).to.be.a('string');
     });
@@ -28,11 +28,11 @@ describe('Core', () => {
       const height = lastBlockHeight * 2;
 
       try {
-        await client.getDAPIClient().getBlockHash(height);
+        await client.getDAPIClient().core.getBlockHash(height);
 
         expect.fail('Should throw error');
       } catch (e) {
-        expect(e.name).to.equal('RPCError');
+        expect(e.name).to.equal('JsonRpcError');
         expect(e.message).contains('Block height out of range');
       }
     });
