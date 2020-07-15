@@ -100,6 +100,8 @@ services:
       - DASHCORE_P2P_PORT=20001
       - DASHCORE_P2P_NETWORK=devnet
       - NETWORK=devnet
+      - TENDERMINT_RPC_HOST=drive_tendermint
+      - TENDERMINT_RPC_PORT=26657
     command: npm run tx-filter-stream
 
   dapi_envoy:
