@@ -3,7 +3,6 @@ dist: bionic
 language: node_js
 
 node_js:
-  - '10'
   - '12'
 
 branches:
@@ -21,16 +20,45 @@ addons:
     packages:
       - docker-ce
 
+env:
+  - DOCKER_COMPOSE_VERSION=1.25.5
+
+before_install:
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - chmod +x docker-compose
+  - sudo mv docker-compose /usr/local/bin
+
 install:
   - npm ci
   - cp .env.example .env
+  - export CURRENT_VERSION=$(./scripts/get-release-version)
+  # Install MN Bootstrap
+  - export MN_RELEASE_LINK=$(./scripts/get-gh-release-link dashevo/mn-bootstrap)
+  - curl -L $MN_RELEASE_LINK > mn-bootstrap.tar.gz
+  - mkdir ~/mn-bootstrap && tar -C ~/mn-bootstrap -xvf mn-bootstrap.tar.gz
+  - export MN_RELEASE_DIR="$(ls ~/mn-bootstrap)"
+  - cd ~/mn-bootstrap/$MN_RELEASE_DIR
+  - chmod -R 777 data
+  - npm ci && npm link
+  # Go back to workdir
+  - cd $TRAVIS_BUILD_DIR
 
 before_script:
-  - npm run check-package
-  - npm run lint
-  - docker pull dashpay/insight-api:latest # workaround for functional tests
-  - docker build . -t dapi-dev
-  - echo SERVICE_IMAGE_DAPI=dapi-dev >> .env
+  - ./scripts/print-visual-bells.sh
+  - export OUTPUT=$(mn setup-for-local-development 127.0.0.1 20001 --dapi-image-build-path=$TRAVIS_BUILD_DIR)
+  - export PRIVATE_KEY=$(echo "$OUTPUT" | grep -m 1 "Private key:" | awk '{printf $4}')
+  - export OPERATOR_BLS_KEY=$(echo "$OUTPUT" | grep -m 2 "Private key:" | tail -n 1 | awk '{printf $4}')
+  - export DPNS_CONTRACT_ID=$(echo "$OUTPUT" | grep -m 1 "DPNS contract ID:" | awk '{printf $5}')
+  - export DPNS_TOP_LEVEL_IDENTITY_ID=$(echo "$OUTPUT" | grep -m 1 "DPNS identity:" | awk '{printf $4}')
+  - export DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=$(echo "$OUTPUT" | grep -m 1 "HD private key:" | awk '{$1=""; printf $5}')
+  - mn start local 127.0.0.1 20001 -p=$OPERATOR_BLS_KEY --dpns-contract-id=$DPNS_CONTRACT_ID --dpns-top-level-identity=$DPNS_TOP_LEVEL_IDENTITY_ID --dapi-image-build-path=$TRAVIS_BUILD_DIR
+
+script: >
+  npm run check-package &&
+  npm run lint &&
+  npm run test:coverage &&
+  docker run --network="host" dashpay/platform-test-suite:$CURRENT_VERSION 127.0.0.1:3000 -k=$PRIVATE_KEY -n=regtest --dpns-tld-identity-private-key=$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY --dpns-tld-identity-id=$DPNS_TOP_LEVEL_IDENTITY_ID --dpns-contract-id=$DPNS_CONTRACT_ID
 
 deploy:
   skip_cleanup: true

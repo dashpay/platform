@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+
+const GitHub = require('github-api');
+const semver = require('semver');
+
+const { version } = require('../package.json');
+
+async function main() {
+  const [repoUser, repoName] = process.argv[2].split('/');
+
+  const suiteVersion = semver.coerce(version);
+
+  const options = {};
+
+  if (process.env.GITHUB_TOKEN) {
+    options.token = process.env.GITHUB_TOKEN;
+  }
+
+  const gh = new GitHub(options);
+
+  const { data: releases } = await gh.getRepo(repoUser, repoName)
+    .listReleases();
+
+  const [matchingRelease] = releases
+    .sort((releaseA, releaseB) => (
+      semver.compare(releaseB.tag_name, releaseA.tag_name)
+    ))
+    .filter((release) => {
+      const releaseVersion = semver.coerce(release.tag_name);
+
+      return semver.satisfies(
+        `${releaseVersion.major}.${releaseVersion.minor}.${releaseVersion.patch}`,
+        `${suiteVersion.major}.${suiteVersion.minor}`,
+      );
+    });
+
+  console.log(matchingRelease.tarball_url);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

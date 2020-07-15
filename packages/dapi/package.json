@@ -57,10 +57,12 @@
     "eslint": "^5.8.0",
     "eslint-config-airbnb-base": "^13.2.0",
     "eslint-plugin-import": "^2.20.0",
+    "github-api": "^3.3.0",
     "mocha": "^5.2.0",
     "mocha-sinon": "^2.1.0",
     "nodemon": "^1.18.9",
     "nyc": "^14.0.0",
+    "semver": "^7.3.2",
     "sinon": "^7.5.0",
     "sinon-chai": "^3.4.0",
     "swagger-jsdoc": "^3.5.0"
