@@ -103,7 +103,7 @@ services:
     command: npm run tx-filter-stream
 
   dapi_envoy:
-    image: envoyproxy/envoy:${DAPI_ENVOY_VERSION:-latest}
+    image: envoyproxy/envoy:${DAPI_ENVOY_VERSION:-v1.14-latest}
     restart: unless-stopped
     depends_on:
       - dapi_api
