@@ -19,6 +19,7 @@ addons:
   apt:
     packages:
       - docker-ce
+      - jq
 
 env:
   - DOCKER_COMPOSE_VERSION=1.25.5
@@ -32,9 +33,16 @@ before_install:
 install:
   - npm ci
   - cp .env.example .env
-  - export CURRENT_VERSION=$(./scripts/get-release-version)
+  - curl -s https://api.github.com/repos/jawid-h/travis-ci-tools/releases/latest | jq -r '.tarball_url' | xargs -I {} -n1 wget -O travis-ci-tools.tar.gz -q {}
+  - mkdir ~/travis-ci-tools && tar -C ~/travis-ci-tools -xvf travis-ci-tools.tar.gz
+  - export CI_TOOLS_DIR="$(ls ~/travis-ci-tools)"
+  - cd ~/travis-ci-tools/$CI_TOOLS_DIR
+  - npm ci && npm link
+  # Go back to workdir
+  - cd $TRAVIS_BUILD_DIR
+  - export CURRENT_VERSION=$(get-release-version $TRAVIS_BUILD_DIR/package.json)
   # Install MN Bootstrap
-  - export MN_RELEASE_LINK=$(./scripts/get-gh-release-link dashevo/mn-bootstrap)
+  - export MN_RELEASE_LINK=$(get-github-release-link $TRAVIS_BUILD_DIR/package.json dashevo/mn-bootstrap)
   - curl -L $MN_RELEASE_LINK > mn-bootstrap.tar.gz
   - mkdir ~/mn-bootstrap && tar -C ~/mn-bootstrap -xvf mn-bootstrap.tar.gz
   - export MN_RELEASE_DIR="$(ls ~/mn-bootstrap)"
@@ -45,7 +53,7 @@ install:
   - cd $TRAVIS_BUILD_DIR
 
 before_script:
-  - ./scripts/print-visual-bells.sh
+  - print-bells
   - export OUTPUT=$(mn setup-for-local-development 127.0.0.1 20001 --dapi-image-build-path=$TRAVIS_BUILD_DIR)
   - export PRIVATE_KEY=$(echo "$OUTPUT" | grep -m 1 "Private key:" | awk '{printf $4}')
   - export OPERATOR_BLS_KEY=$(echo "$OUTPUT" | grep -m 2 "Private key:" | tail -n 1 | awk '{printf $4}')
