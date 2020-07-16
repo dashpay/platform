@@ -13,7 +13,7 @@ module.exports = {
       oneOf: [
         {
           type: 'string',
-          maxLength: 512,
+          maxLength: 1024,
         },
         {
           type: 'number',

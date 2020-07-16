@@ -352,15 +352,15 @@ describe('validateQueryFactory', () => {
             expect(result.isValid()).to.be.true();
           });
 
-          it('should return invalid result if "<" operator used with a string value longer than 512 chars', () => {
-            const longString = 't'.repeat(512);
+          it('should return invalid result if "<" operator used with a string value longer than 1024 chars', () => {
+            const longString = 't'.repeat(1024);
 
             let result = validateQuery({ where: [['a', '<', longString]] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
 
-            const veryLongString = 't'.repeat(513);
+            const veryLongString = 't'.repeat(1025);
 
             result = validateQuery({ where: [['a', '<', veryLongString]] }, documentSchema);
 
@@ -368,7 +368,7 @@ describe('validateQueryFactory', () => {
             expect(result.isValid()).to.be.false();
             expect(result.errors[0].dataPath).to.be.equal('.where[0][2]');
             expect(result.errors[0].keyword).to.be.equal('maxLength');
-            expect(result.errors[0].params.limit).to.be.equal(512);
+            expect(result.errors[0].params.limit).to.be.equal(1024);
           });
 
           it('should return valid result if "<" operator used with a boolean value', () => {
