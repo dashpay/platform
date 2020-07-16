@@ -10,11 +10,14 @@ const UndefinedIndexPropertyError = require('../errors/UndefinedIndexPropertyErr
 const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTypeError');
 const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
 const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReachedError');
+const InvalidIndexedPropertyConstraintError = require('../errors/InvalidIndexedPropertyConstraintError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
 const systemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
+
+const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -153,6 +156,36 @@ module.exports = function validateDataContractFactory(
                 propertyName,
                 invalidPropertyType,
               ));
+            }
+
+            if (propertyType === 'string') {
+              const { maxLength } = propertyDefinition;
+
+              if (maxLength === undefined) {
+                result.addError(
+                  new InvalidIndexedPropertyConstraintError(
+                    rawDataContract,
+                    documentType,
+                    indexDefinition,
+                    propertyName,
+                    'maxLength',
+                    'should be set',
+                  ),
+                );
+              }
+
+              if (maxLength !== undefined && maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH) {
+                result.addError(
+                  new InvalidIndexedPropertyConstraintError(
+                    rawDataContract,
+                    documentType,
+                    indexDefinition,
+                    propertyName,
+                    'maxLength',
+                    `should be less or equal ${MAX_INDEXED_STRING_PROPERTY_LENGTH}`,
+                  ),
+                );
+              }
             }
           });
 

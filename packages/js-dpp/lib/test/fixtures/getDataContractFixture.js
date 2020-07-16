@@ -66,9 +66,11 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       properties: {
         firstName: {
           type: 'string',
+          maxLength: 256,
         },
         lastName: {
           type: 'string',
+          maxLength: 256,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt'],
