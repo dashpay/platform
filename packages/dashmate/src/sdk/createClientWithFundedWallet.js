@@ -13,10 +13,11 @@ const wait = require('../util/wait');
  * @typedef {createClientWithFundedWallet}
  * @param {string} preset
  * @param {string} network
+ * @param {string} seed
  * @param {string} faucetPrivateKeyString
  * @return {Promise<Client>}
  */
-async function createClientWithFundedWallet(preset, network, faucetPrivateKeyString) {
+async function createClientWithFundedWallet(preset, network, seed, faucetPrivateKeyString) {
   // Prepare to fund wallet
   const faucetPrivateKey = PrivateKey.fromString(faucetPrivateKeyString);
   const faucetAddress = faucetPrivateKey
@@ -24,11 +25,11 @@ async function createClientWithFundedWallet(preset, network, faucetPrivateKeyStr
     .toString();
 
   const dashClient = new Dash.Client({
-    seeds: ['127.0.0.1'],
+    seeds: [seed],
     wallet: {
       mnemonic: null,
     },
-    network: 'testnet',
+    network,
   });
 
   const account = await dashClient.getWalletAccount();

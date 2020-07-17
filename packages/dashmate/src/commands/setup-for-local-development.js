@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const { Observable } = require('rxjs');
 
 const { flags: flagTypes } = require('@oclif/command');
 
@@ -15,6 +16,9 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
    * @param {generateToAddressTask} generateToAddressTask
    * @param {registerMasternodeTask} registerMasternodeTask
    * @param {initTask} initTask
+   * @param {generateBlocksWithSDK} generateBlocksWithSDK
+   * @param {startNodeTask} startNodeTask
+   * @param {DockerCompose} dockerCompose
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -26,10 +30,14 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
     generateToAddressTask,
     registerMasternodeTask,
     initTask,
+    generateBlocksWithSDK,
+    startNodeTask,
+    dockerCompose,
   ) {
     const preset = PRESETS.LOCAL;
     const network = preset;
     const amount = 10000;
+    const seed = '127.0.0.1';
 
     const tasks = new Listr(
       [
@@ -45,8 +53,43 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
               task: () => registerMasternodeTask(preset),
             },
             {
+              title: `Start masternode with ${preset} preset`,
+              task: async (ctx) => startNodeTask(
+                preset,
+                {
+                  externalIp: ctx.externalIp,
+                  coreP2pPort: ctx.coreP2pPort,
+                  operatorPrivateKey: ctx.operator.privateKey,
+                  driveImageBuildPath: ctx.driveImageBuildPath,
+                  dapiImageBuildPath: ctx.dapiImageBuildPath,
+                },
+              ),
+            },
+            {
               title: 'Initialize Platform',
               task: () => initTask(preset),
+            },
+            {
+              title: 'Mine 100 blocks',
+              enabled: () => preset === PRESETS.LOCAL,
+              task: async (ctx) => (
+                new Observable(async (observer) => {
+                  await generateBlocksWithSDK(
+                    ctx.client.getDAPIClient(),
+                    ctx.network,
+                    100,
+                    (blocks) => {
+                      observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
+                    },
+                  );
+
+                  observer.complete();
+                })
+              ),
+            },
+            {
+              title: 'Stop node',
+              task: async () => dockerCompose.stop(preset),
             },
           ]),
         },
@@ -65,6 +108,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
         externalIp,
         coreP2pPort,
         network,
+        seed,
         driveImageBuildPath,
         dapiImageBuildPath,
       });

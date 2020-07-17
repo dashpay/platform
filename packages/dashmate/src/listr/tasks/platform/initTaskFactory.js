@@ -1,28 +1,16 @@
 const { Listr } = require('listr2');
 
-const { Observable } = require('rxjs');
-
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/src/schema/dpns-documents.json');
 
 const wait = require('../../../util/wait');
 
-const PRESETS = require('../../../presets');
-
 /**
  *
- * @param {DockerCompose} dockerCompose
- * @param {startNodeTask} startNodeTask
  * @param {createClientWithFundedWallet} createClientWithFundedWallet
- * @param {waitForBlocksWithSDK} waitForBlocksWithSDK
- * @param {generateBlocksWithSDK} generateBlocksWithSDK
  * @return {initTask}
  */
 function initTaskFactory(
-  dockerCompose,
-  startNodeTask,
   createClientWithFundedWallet,
-  waitForBlocksWithSDK,
-  generateBlocksWithSDK,
 ) {
   /**
    * @typedef {initTask}
@@ -34,19 +22,6 @@ function initTaskFactory(
   ) {
     return new Listr([
       {
-        title: `Start masternode with ${preset} preset`,
-        task: async (ctx) => startNodeTask(
-          preset,
-          {
-            externalIp: ctx.externalIp,
-            coreP2pPort: ctx.coreP2pPort,
-            operatorPrivateKey: ctx.operator.privateKey,
-            driveImageBuildPath: ctx.driveImageBuildPath,
-            dapiImageBuildPath: ctx.dapiImageBuildPath,
-          },
-        ),
-      },
-      {
         title: 'Initialize SDK',
         task: async (ctx, task) => {
           // wait 5 seconds to ensure everything was initialized
@@ -55,6 +30,7 @@ function initTaskFactory(
           ctx.client = await createClientWithFundedWallet(
             preset,
             ctx.network,
+            ctx.seed,
             ctx.fundingPrivateKeyString,
           );
 
@@ -101,47 +77,8 @@ function initTaskFactory(
         },
       },
       {
-        title: 'Mine 100 blocks to confirm',
-        enabled: () => preset === PRESETS.LOCAL,
-        task: async (ctx) => (
-          new Observable(async (observer) => {
-            await generateBlocksWithSDK(
-              ctx.client.getDAPIClient(),
-              ctx.network,
-              100,
-              (blocks) => {
-                observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
-              },
-            );
-
-            observer.complete();
-          })
-        ),
-      },
-      {
-        title: 'Wait 100 blocks to be mined',
-        enabled: () => preset === PRESETS.EVONET,
-        task: async (ctx) => (
-          new Observable(async (observer) => {
-            await waitForBlocksWithSDK(
-              ctx.client.getDAPIClient(),
-              100,
-              (blocks) => {
-                observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
-              },
-            );
-
-            observer.complete();
-          })
-        ),
-      },
-      {
         title: 'Disconnect SDK',
         task: async (ctx) => ctx.client.disconnect(),
-      },
-      {
-        title: 'Stop node',
-        task: async () => dockerCompose.stop(preset),
       },
     ]);
   }

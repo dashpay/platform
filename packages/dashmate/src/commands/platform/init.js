@@ -19,10 +19,8 @@ class InitCommand extends BaseCommand {
   async runWithDependencies(
     {
       preset,
+      seed,
       'funding-private-key': fundingPrivateKeyString,
-      'operator-private-key': operatorPrivateKey,
-      'external-ip': externalIp,
-      'core-p2p-port': coreP2pPort,
     },
     {
       'drive-image-build-path': driveImageBuildPath,
@@ -49,12 +47,8 @@ class InitCommand extends BaseCommand {
     try {
       await tasks.run({
         fundingPrivateKeyString,
-        externalIp,
-        coreP2pPort,
-        operator: {
-          privateKey: operatorPrivateKey,
-        },
         network,
+        seed,
         driveImageBuildPath,
         dapiImageBuildPath,
       });
@@ -75,21 +69,13 @@ InitCommand.args = [{
   description: 'preset to use',
   options: Object.values(PRESETS),
 }, {
+  name: 'seed',
+  required: true,
+  description: 'DAPI seed to connect',
+}, {
   name: 'funding-private-key',
   required: true,
   description: 'private key with dash for funding account',
-}, {
-  name: 'operator-private-key',
-  required: true,
-  description: 'operator private key',
-}, {
-  name: 'external-ip',
-  required: true,
-  description: 'masternode external IP',
-}, {
-  name: 'core-p2p-port',
-  required: true,
-  description: 'Core P2P port',
 }];
 
 InitCommand.flags = {
