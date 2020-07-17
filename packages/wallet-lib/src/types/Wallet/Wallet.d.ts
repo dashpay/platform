@@ -36,7 +36,7 @@ export declare class Wallet {
 
 declare interface DAPIClientOptions {
     dapiAddressProvider?: any;
-    addresses?: Array<any | string>;
+    dapiAddresses?: Array<any | string>;
     seeds?: Array<any | string>;
     network?: string;
     networkType?: string;

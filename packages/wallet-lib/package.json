@@ -39,11 +39,11 @@
   },
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "~0.14.0-dev.7",
+    "@dashevo/dapi-client": "~0.14.0-dev.8",
     "@dashevo/dashcore-lib": "~0.18.11",
     "cbor": "^5.0.2",
     "crypto-js": "^4.0.0",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.19",
     "pbkdf2": "^3.1.1",
     "winston": "^3.2.1"
   },
