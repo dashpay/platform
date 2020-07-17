@@ -13,7 +13,7 @@ import DAPIClient from "@dashevo/dapi-client";
  * @param {Wallet.Options} [wallet] - Wallet options
  * @param {number} [walletAccountIndex=0] - Wallet account index number
  * @param {DAPIAddressProvider} [dapiAddressProvider] - DAPI Address Provider instance
- * @param {Array<RawDAPIAddress|DAPIAddress|string>} [addresses] - DAPI addresses
+ * @param {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddresses] - DAPI addresses
  * @param {string[]|RawDAPIAddress[]} [seeds] - DAPI seeds
  * @param {string|Network} [network=evonet] - Network name
  * @param {number} [timeout=2000]
@@ -25,7 +25,7 @@ export interface ClientOpts {
     wallet?: Wallet.Options,
     walletAccountIndex?: number,
     dapiAddressProvider?: any,
-    addresses?: any[],
+    dapiAddresses?: any[],
     seeds?: any[],
     network?: Network | string,
     timeout?: number,
@@ -76,7 +76,7 @@ export class Client {
 
         [
             'dapiAddressProvider',
-            'addresses',
+            'dapiAddresses',
             'seeds',
             'timeout',
             'retries',
