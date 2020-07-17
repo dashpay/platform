@@ -52,7 +52,7 @@ export declare namespace Wallet {
         debug?: boolean;
         offlineMode?: boolean;
         transport?: DAPIClientOptions | Transport;
-        network?: Network;
+        network?: Network | string;
         plugins?: [Plugins];
         passphrase?: string;
         injectDefaultPlugins?: boolean;
