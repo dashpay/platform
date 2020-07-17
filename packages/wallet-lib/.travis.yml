@@ -12,9 +12,55 @@ branches:
     - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)-dev$/
     - /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
 
+services:
+  - docker
+
+addons:
+  apt:
+    packages:
+      - docker-ce
+
+env:
+  - DOCKER_COMPOSE_VERSION=1.25.5
+
+before_install:
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - chmod +x docker-compose
+  - sudo mv docker-compose /usr/local/bin
+
 install:
   - npm ci
   - cp .env.example .env
+  # Get the latest version of travis-ci-tools
+  - curl -s https://api.github.com/repos/jawid-h/travis-ci-tools/releases/latest | jq -r '.tarball_url' | xargs -I {} -n1 wget -O travis-ci-tools.tar.gz -q {}
+  - mkdir ~/travis-ci-tools && tar -C ~/travis-ci-tools -xvf travis-ci-tools.tar.gz
+  - export CI_TOOLS_DIR="$(ls ~/travis-ci-tools)"
+  - cd ~/travis-ci-tools/$CI_TOOLS_DIR
+  - npm ci && npm link
+  # Go back to workdir
+  - cd $TRAVIS_BUILD_DIR
+  # Install MN Bootstrap
+  - export MN_RELEASE_LINK=$(get-github-release-link $TRAVIS_BUILD_DIR/package.json dashevo/mn-bootstrap 0)
+  - curl -L $MN_RELEASE_LINK > mn-bootstrap.tar.gz
+  - mkdir ~/mn-bootstrap && tar -C ~/mn-bootstrap -xvf mn-bootstrap.tar.gz
+  - export MN_RELEASE_DIR="$(ls ~/mn-bootstrap)"
+  - cd ~/mn-bootstrap/$MN_RELEASE_DIR
+  - chmod -R 777 data
+  - npm ci && npm link
+  # Go back to workdir
+  - cd $TRAVIS_BUILD_DIR
+
+before_script:
+  - npm run build
+  - print-bells
+  - export OUTPUT=$(mn setup-for-local-development 127.0.0.1 20001)
+  - export FAUCET_PRIVATE_KEY=$(echo "$OUTPUT" | grep -m 1 "Private key:" | awk '{printf $4}')
+  - export OPERATOR_BLS_KEY=$(echo "$OUTPUT" | grep -m 2 "Private key:" | tail -n 1 | awk '{printf $4}')
+  - export DPNS_CONTRACT_ID=$(echo "$OUTPUT" | grep -m 1 "DPNS contract ID:" | awk '{printf $5}')
+  - export DPNS_TOP_LEVEL_IDENTITY_ID=$(echo "$OUTPUT" | grep -m 1 "DPNS identity:" | awk '{printf $4}')
+  - export DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=$(echo "$OUTPUT" | grep -m 1 "HD private key:" | awk '{$1=""; printf $5}')
+  - mn start local 127.0.0.1 20001 -p=$OPERATOR_BLS_KEY --dpns-contract-id=$DPNS_CONTRACT_ID --dpns-top-level-identity=$DPNS_TOP_LEVEL_IDENTITY_ID
 
 script: npm run check-package && npm run lint && npm run test
 
