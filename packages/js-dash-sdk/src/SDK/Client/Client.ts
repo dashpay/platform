@@ -22,7 +22,7 @@ import DAPIClient from "@dashevo/dapi-client";
  */
 export interface ClientOpts {
     apps?: ClientApps,
-    wallet?: Wallet.Options | null,
+    wallet?: Wallet.Options,
     walletAccountIndex?: number,
     dapiAddressProvider?: any,
     addresses?: any[],
@@ -91,10 +91,15 @@ export class Client {
 
         // Initialize a wallet if `wallet` option is preset
         if (this.options.wallet !== undefined) {
+            if (this.options.wallet.network !== undefined && this.options.wallet.network !== this.network) {
+                throw new Error('Wallet and Client networks are different');
+            }
+
             const transport = new DAPIClientTransport(this.dapiClient);
 
             this.wallet = new Wallet({
                 transport,
+                network: this.network,
                 ...this.options.wallet,
             });
 

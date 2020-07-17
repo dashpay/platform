@@ -37,4 +37,20 @@ describe('Dash - Client', function suite() {
     const account = await client.getWalletAccount();
     await account.disconnect();
   });
+  it('should throw an error if client and wallet have different networks', async () => {
+    try {
+      new Client({
+        network: 'evonet',
+        wallet: {
+          mnemonic,
+          offlineMode: true,
+          network: 'testnet',
+        },
+      });
+
+      expect.fail('should throw an error');
+    } catch (e) {
+      expect(e.message).to.equal('Wallet and Client networks are different');
+    }
+  });
 });
