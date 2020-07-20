@@ -46,6 +46,7 @@ describe('e2e', () => {
           properties: {
             toUserId: {
               type: 'string',
+              maxLength: 1024,
             },
             publicKey: {
               type: 'string',
