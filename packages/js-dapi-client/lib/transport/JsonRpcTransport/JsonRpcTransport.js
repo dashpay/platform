@@ -1,5 +1,6 @@
 const MaxRetriesReachedError = require('../errors/MaxRetriesReachedError');
 const NoAvailableAddressesForRetry = require('../errors/NoAvailableAddressesForRetry');
+const NoAvailableAddresses = require('../errors/NoAvailableAddresses');
 
 class JsonRpcTransport {
   /**
@@ -40,6 +41,10 @@ class JsonRpcTransport {
       || this.dapiAddressProvider;
 
     const address = await dapiAddressProvider.getLiveAddress();
+
+    if (!address) {
+      throw new NoAvailableAddresses();
+    }
 
     // eslint-disable-next-line no-param-reassign
     options = {

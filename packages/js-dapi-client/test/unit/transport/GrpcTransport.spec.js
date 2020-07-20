@@ -5,6 +5,7 @@ const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
 
 const MaxRetriesReachedError = require('../../../lib/transport/errors/MaxRetriesReachedError');
 const NoAvailableAddressesForRetry = require('../../../lib/transport/errors/NoAvailableAddressesForRetry');
+const NoAvailableAddresses = require('../../../lib/transport/errors/NoAvailableAddresses');
 
 describe('GrpcTransport', () => {
   let grpcTransport;
@@ -150,6 +151,24 @@ describe('GrpcTransport', () => {
           expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
           expect(clientClassMock).to.be.calledOnceWithExactly(url);
           expect(requestFunc).to.be.calledOnceWithExactly(requestMessage, {}, {});
+        }
+      });
+
+      it('should throw NoAvailableAddresses if there is no available addresses', async () => {
+        dapiAddressProviderMock.getLiveAddress.resolves(null);
+
+        try {
+          await grpcTransport.request(
+            clientClassMock,
+            method,
+            requestMessage,
+            options,
+          );
+
+          expect.fail('should throw NoAvailableAddresses');
+        } catch (e) {
+          expect(e).to.be.an.instanceof(NoAvailableAddresses);
+          expect(clientClassMock).to.not.be.called();
         }
       });
 

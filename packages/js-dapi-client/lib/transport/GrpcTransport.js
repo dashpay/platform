@@ -2,6 +2,7 @@ const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 
 const MaxRetriesReachedError = require('./errors/MaxRetriesReachedError');
 const NoAvailableAddressesForRetry = require('./errors/NoAvailableAddressesForRetry');
+const NoAvailableAddresses = require('./errors/NoAvailableAddresses');
 
 class GrpcTransport {
   /**
@@ -36,6 +37,10 @@ class GrpcTransport {
       || this.dapiAddressProvider;
 
     const address = await dapiAddressProvider.getLiveAddress();
+
+    if (!address) {
+      throw new NoAvailableAddresses();
+    }
 
     // eslint-disable-next-line no-param-reassign
     options = {
