@@ -101,7 +101,11 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     let blockHash = fromBlockHash;
 
-    if (blockHash.length === 0) {
+    if (blockHash === '') {
+      if (fromBlockHeight === 0) {
+        throw new InvalidArgumentGrpcError('minimum value for `fromBlockHeight` is 1');
+      }
+
       const bestHeight = await coreAPI.getBestBlockHeight();
 
       if (fromBlockHeight > bestHeight) {
