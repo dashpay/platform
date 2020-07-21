@@ -1,7 +1,7 @@
 /**
  * Import an array of accounts or a account object to the store
- * @param accounts
- * @param walletId
+ * @param {Account|[Account]} accounts
+ * @param {string} walletId
  * @return {boolean}
  */
 const importAccounts = function (accounts, walletId) {

@@ -2,7 +2,7 @@
  * This method will disconnect from all the opened streams, will stop all running workers
  * and force a saving of the state.
  * You want to use this method at the end of your life cycle of this lib.
- * @return {Boolean}
+ * @return {Promise<Boolean>}
  */
 module.exports = async function disconnect() {
   this.isDisconnecting = true;

@@ -19,6 +19,7 @@ export declare type Seed<T extends object = object> = T & {
 export declare type Transaction<T extends object = object> = T & {
     toString(): string;
 };
+export declare type RawTransaction = string;
 export declare type TransactionInfo<T extends object = object> = T & {
     txid:string;
     blockhash:string;
@@ -45,16 +46,36 @@ export declare type AddressObj<T extends object = object> = T & {
 export declare type AddressInfoMap<T extends object = object> = T & {
     [pathName: string]: AddressInfo
 }
+export declare type StatusInfo<T extends object = object> = T & {
+    coreVersion: number;
+    protocolVersion: number;
+    blocks: number;
+    timeOffset: number;
+    connections: number;
+    proxy: string;
+    difficulty: number;
+    testnet: false;
+    relayFee: number;
+    errors: string;
+    network: Network
+}
 export declare type AddressInfo<T extends AddressObj = AddressObj> = T & {
+    path: string;
+    address: string;
     balanceSat: number;
+    index: number;
     fetchedLast:number;
     unconfirmedBalanceSat: number;
     transaction: object;
     used:boolean;
     utxos:[object]
 }
+
 export declare type Network = "livenet" | "testnet" | "evonet" | "regtest" | "local" | "devnet" | "mainnet";
-export declare type Strategy = "livenet" | "testnet";
+export declare type Strategy = "simpleDescendingAccumulator"
+    | "simpleAscendingAccumulator"
+    | 'simpleTransactionOptimizedAccumulator'
+    | Function;
 export declare type AddressType = "external" | "internal" | "misc";
 // todo: actually, I would vote to move hdextpublic to hdextpubkey
 export declare type WalletType = "single_address" | "hdwallet" | "hdextpublic";
@@ -70,6 +91,10 @@ export declare type WalletObj = {
         misc: AddressInfoMap
     }
 }
+
+export declare type TransactionsMap = {
+    [txid: string]: Transaction
+};
 
 export declare type  AccountMap = {
     [pathName: string]: Account

@@ -2,8 +2,8 @@ const { is } = require('../../../utils');
 
 /**
  * Get a getBlockHeader from a provided block hash or block height
- * @param identifier - Block Hash or blockHeight
- * @return {Promise<*>}
+ * @param {string|number} identifier - Block Hash or blockHeight
+ * @return {Promise<BlockHeader>}
  */
 async function getBlockHeader(identifier) {
   const search = await this.storage.searchBlockHeader(identifier);

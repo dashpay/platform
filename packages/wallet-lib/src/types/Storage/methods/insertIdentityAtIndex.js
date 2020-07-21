@@ -5,6 +5,7 @@ const IdentityReplaceError = require('../../../errors/IndentityIdReplaceError');
  * @param {string} walletId
  * @param {string} identityId
  * @param {number} identityIndex
+ * @return void
  */
 function insertIdentityAtIndex(walletId, identityId, identityIndex) {
   if (!this.store.wallets[walletId].identityIds) {

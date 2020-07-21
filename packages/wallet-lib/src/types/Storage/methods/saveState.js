@@ -1,7 +1,7 @@
 const { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } = require('../../../EVENTS');
 
 /**
- * Force persistance of the state to the adapter
+ * Force persistence of the state to the adapter
  * @return {Promise<boolean>}
  */
 const saveState = async function () {

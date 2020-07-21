@@ -1,5 +1,8 @@
 const { ValidTransportLayerRequired } = require('../../../errors');
 
+/**
+ * @return {Promise<StatusInfo|{blocks:number}>} status
+ */
 async function fetchStatus() {
   if (!this.transport) throw new ValidTransportLayerRequired('fetchStatus');
   const status = { blocks: -1 };

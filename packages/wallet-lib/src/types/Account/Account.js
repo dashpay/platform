@@ -191,51 +191,32 @@ Account.prototype.createTransaction = require('./methods/createTransaction');
 Account.prototype.decode = require('./methods/decode');
 Account.prototype.decrypt = require('./methods/decrypt');
 Account.prototype.disconnect = require('./methods/disconnect');
+Account.prototype.encode = require('./methods/encode');
+Account.prototype.encrypt = require('./methods/encrypt');
 Account.prototype.fetchAddressInfo = require('./methods/fetchAddressInfo');
 Account.prototype.fetchStatus = require('./methods/fetchStatus');
-
 Account.prototype.forceRefreshAccount = require('./methods/forceRefreshAccount');
-
-Account.prototype.encrypt = require('./methods/encrypt');
-
-Account.prototype.encode = require('./methods/encode');
-
 Account.prototype.generateAddress = require('./methods/generateAddress');
-
 Account.prototype.getAddress = require('./methods/getAddress');
-
 Account.prototype.getAddresses = require('./methods/getAddresses');
 Account.prototype.getBlockHeader = require('./methods/getBlockHeader');
 Account.prototype.getConfirmedBalance = require('./methods/getConfirmedBalance');
-Account.prototype.getUnconfirmedBalance = require('./methods/getUnconfirmedBalance');
-
-Account.prototype.getTotalBalance = require('./methods/getTotalBalance');
-
-Account.prototype.getPlugin = require('./methods/getPlugin');
-
-Account.prototype.getWorker = require('./methods/getWorker');
-
-Account.prototype.getPrivateKeys = require('./methods/getPrivateKeys');
-
-Account.prototype.getTransaction = require('./methods/getTransaction');
-
-Account.prototype.getTransactionHistory = require('./methods/getTransactionHistory');
-
-Account.prototype.getTransactions = require('./methods/getTransactions');
-
-Account.prototype.getUnusedAddress = require('./methods/getUnusedAddress');
-
-Account.prototype.getUTXOS = require('./methods/getUTXOS');
-
-Account.prototype.injectPlugin = require('./methods/injectPlugin');
-
-Account.prototype.sign = require('./methods/sign');
-
-Account.prototype.hasPlugins = require('./methods/hasPlugins');
-
+Account.prototype.getIdentityHDKeyById = require('./methods/getIdentityHDKeyById');
 Account.prototype.getIdentityHDKeyByIndex = require('./methods/getIdentityHDKeyByIndex');
 Account.prototype.getIdentityIds = require('./methods/getIdentityIds');
-Account.prototype.getIdentityHDKeyById = require('./methods/getIdentityHDKeyById');
+Account.prototype.getPlugin = require('./methods/getPlugin');
+Account.prototype.getPrivateKeys = require('./methods/getPrivateKeys');
+Account.prototype.getTotalBalance = require('./methods/getTotalBalance');
+Account.prototype.getTransaction = require('./methods/getTransaction');
+Account.prototype.getTransactionHistory = require('./methods/getTransactionHistory');
+Account.prototype.getTransactions = require('./methods/getTransactions');
+Account.prototype.getUnconfirmedBalance = require('./methods/getUnconfirmedBalance');
+Account.prototype.getUnusedAddress = require('./methods/getUnusedAddress');
 Account.prototype.getUnusedIdentityIndex = require('./methods/getUnusedIdentityIndex');
+Account.prototype.getUTXOS = require('./methods/getUTXOS');
+Account.prototype.getWorker = require('./methods/getWorker');
+Account.prototype.hasPlugins = require('./methods/hasPlugins');
+Account.prototype.injectPlugin = require('./methods/injectPlugin');
+Account.prototype.sign = require('./methods/sign');
 
 module.exports = Account;

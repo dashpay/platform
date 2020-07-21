@@ -5,7 +5,7 @@ const mergeHelper = (initial = {}, additional = {}) => merge(initial, additional
 const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
 
 /**
- * Fetch the state from the persistance adapter
+ * Fetch the state from the persistence adapter
  * @return {Promise<void>}
  */
 const rehydrateState = async function () {

@@ -30,8 +30,8 @@ function mnemonicToWalletId(mnemonic) {
 }
 const mnemonicToSeed = function (mnemonic, password = '') {
   const mnemonicBuff = Buffer.from(mnemonic.normalize('NFKD'), 'utf8');
-  const salfBuff = Buffer.from(`mnemonic${password}`, 'utf8');
-  return pbkdf2Sync(mnemonicBuff, salfBuff, 2048, 64, 'sha512')
+  const saltBuff = Buffer.from(`mnemonic${password}`, 'utf8');
+  return pbkdf2Sync(mnemonicBuff, saltBuff, 2048, 64, 'sha512')
     .toString('hex');
 };
 // See https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki

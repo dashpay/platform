@@ -7,10 +7,10 @@ const { is } = require('../../../utils');
 const logger = require('../../../logger');
 /**
  * Will try to inject a given plugin. If needed, it will construct the object first (new).
- * @param UnsafePlugin - Either a child object, or it's parent class to inject
- * @param allowSensitiveOperations (false) - When true, force injection discarding unsafeOp checks.
- * @param awaitOnInjection (true) - When true, wait for onInjected resolve first
- * @return {Promise<*>}
+ * @param {Plugin} UnsafePlugin - Either a child object, or it's parent class to inject
+ * @param {Boolean} [allowSensitiveOperations=false] - forcing injection discarding unsafeOp checks.
+ * @param {Boolean} [awaitOnInjection=true] - When true, wait for onInjected resolve first
+ * @return {Promise<*>} plugin - instance of the plugin
  */
 module.exports = async function injectPlugin(
   UnsafePlugin,

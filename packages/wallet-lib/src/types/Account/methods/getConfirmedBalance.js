@@ -2,7 +2,7 @@ const { duffsToDash } = require('../../../utils');
 
 /**
  * Return the confirmed balance of an account.
- * @param displayDuffs {boolean} True by default. Set the returned format : Duff/dash.
+ * @param {boolean} [displayDuffs=true] - Set the returned format : Duff/dash.
  * @return {number} Balance in dash
  */
 function getConfirmedBalance(displayDuffs = true) {

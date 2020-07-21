@@ -3,7 +3,7 @@ const {
 } = require('../../../errors');
 /**
  * Get a plugin by name
- * @param pluginName
+ * @param {string} pluginName
  * @return {*}
  */
 function getPlugin(pluginName) {

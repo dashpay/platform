@@ -2,7 +2,8 @@ const { BIP44_TESTNET_ROOT_PATH, BIP44_LIVENET_ROOT_PATH } = require('../../../C
 
 /**
  * Return a safier root path to derivate from
- * @param type - {HDPrivateKey|HDPublicKey} def : HDPrivateKey - set the type of returned keys
+ * @param {HDPrivateKey|HDPublicKey} [type=HDPrivateKey] - set the type of returned keys
+ * @return {HDPrivateKey|HDPublicKey}
  */
 function getHardenedBIP44Path(type = 'HDPrivateKey') {
   const pathRoot = (this.network.toString() === 'testnet') ? BIP44_TESTNET_ROOT_PATH : BIP44_LIVENET_ROOT_PATH;

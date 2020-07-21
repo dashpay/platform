@@ -1,6 +1,6 @@
 /**
  * Allow to start the working interval (worker for saving state).
- * @return {boolean}
+ * @return {void}
  */
 module.exports = function startWorker() {
   this.interval = setInterval(() => {

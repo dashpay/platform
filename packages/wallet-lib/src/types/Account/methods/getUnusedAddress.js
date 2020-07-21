@@ -2,9 +2,9 @@ const logger = require('../../../logger');
 
 /**
  * Get an unused address from the store
- * @param type - (default: 'external') - Type of the requested usused address
- * @param skip
- * @return {*}
+ * @param {AddressType} [type="external"] - Type of the requested usused address
+ * @param {number} [skip=0]
+ * @return {AddressObj}
  */
 function getUnusedAddress(type = 'external', skip = 0) {
   let unused = {

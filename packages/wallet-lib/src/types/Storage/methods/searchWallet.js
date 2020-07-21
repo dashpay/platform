@@ -1,7 +1,7 @@
 /**
  * Search a wallet in store based from it's walletId
- * @param walletId
- * @return {{walletId: *, found: boolean}}
+ * @param {string} walletId
+ * @return {WalletSearchResult}
  */
 const searchWallet = function (walletId) {
   const search = {

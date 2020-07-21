@@ -1,6 +1,6 @@
 /**
  * Return all the private keys matching the PubKey Addr List
- * @param addressList<String>
+ * @param {[string]} addressList
  * @return {Array}<HDPrivateKey>
  */
 function getPrivateKeys(addressList) {

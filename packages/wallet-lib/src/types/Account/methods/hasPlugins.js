@@ -1,7 +1,9 @@
 const _ = require('lodash');
 /**
- * To any object passed (Transaction, ST,..), will try to sign the message given passed keys.
- * @param searchedPlugins {Array} - Array of constructor or single plugin constructor
+ * To any Plugins (StandardPlugins, Worker,...) will lookup in account for it's presence.
+ *
+ * @param {[Plugin]} searchedPlugins - Array of constructor or single plugin constructor
+ * @return {{found:Boolean, results:[{name: string}]}} search - results with presents plugin
  */
 module.exports = function hasPlugins(searchedPlugins = []) {
   const search = {

@@ -1,8 +1,8 @@
 const { is } = require('../../../utils');
 /**
  * Search a specific blockheader in the store
- * @param identifier - block hash or height
- * @return {{txid: *, found: boolean}}
+ * @param {string|number} identifier - block hash or height
+ * @return {BlockHeaderSearchResult}
  */
 const searchBlockHeader = function (identifier) {
   const store = this.getStore();

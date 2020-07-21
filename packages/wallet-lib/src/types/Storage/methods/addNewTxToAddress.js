@@ -3,8 +3,8 @@ const { is } = require('../../../utils');
 
 /**
  * Add a new transaction to an address (push a tx)
-* @param tx
-* @param address
+* @param {TransactionInfo} tx
+* @param {String} address
 * @return {boolean}
   */
 const addNewTxToAddress = function (tx, address) {

@@ -4,9 +4,9 @@ const {
 
 /**
  * Allow to sign any transaction or a transition object from a valid privateKeys list
- * @param object
- * @param privateKeys
- * @param sigType
+ * @param {Transaction|any} object
+ * @param {[PrivateKey]} privateKeys
+ * @param {number} [sigType=crypto.Signature.SIGHASH_ALL]
  */
 function sign(object, privateKeys, sigType = crypto.Signature.SIGHASH_ALL) {
   const handledTypes = [Transaction.name, Transaction.Payload.SubTxRegisterPayload, Message.name];

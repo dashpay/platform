@@ -3,9 +3,9 @@ const {
 } = require('@dashevo/dashcore-lib');
 /**
  * Derive from HDPrivateKey to a specific path
- * @param path
- * @param type - {HDPrivateKey|HDPublicKey} def : HDPrivateKey - set the type of returned keys
- * @return HDPrivateKey
+ * @param {string} path
+ * @param {HDPrivateKey|HDPublicKey} [type=HDPrivateKey] - set the type of returned keys
+ * @return {HDPrivateKey|HDPublicKey}
  */
 function generateKeyForPath(path, type = 'HDPrivateKey') {
   if (!['HDPrivateKey', 'HDPublicKey'].includes(this.type)) {

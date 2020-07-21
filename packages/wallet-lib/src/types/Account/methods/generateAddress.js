@@ -3,18 +3,8 @@ const { WALLET_TYPES } = require('../../../CONSTANTS');
 const { is } = require('../../../utils');
 /**
  * Generate an address from a path and import it to the store
- * @param path
- * @return {{
- * path: string,
- * address: string,
- * balanceSat: number,
- * index: number,
- * fetchedLast: number,
- * utxos: {},
- * unconfirmedBalanceSat: number,
- * used: boolean,
- * transactions: []}
- * } Address information
+ * @param {string} path
+ * @return {AddressObj} Address information
  * */
 function generateAddress(path) {
   if (is.undefOrNull(path)) throw new Error('Expected path to generate an address');

@@ -18,7 +18,7 @@ Parameters:
 | **walletOpts.plugins**                   | Array              | no                 | It you have some plugins, worker you want to pass to wallet-lib. You can pass them as constructor or initialized object  |
 | **walletOpts.seed**                      | string             | no                 | If you only have a seed representation, you can pass it instead of mnemonic to init the wallet from it  |
 | **walletOpts.HDPrivateKey**              | string/HDPrivateKey| no                 | If you only have a HDPrivateKey representation, you can pass it instead of mnemonic to init the wallet from it  |
-| **walletOpts.HDPublicKey**               | string/HDPublicKey  | no                 | If you only have a HDPublicKey representation, you can pass it instead of mnemonic to init the wallet from it  |
+| **walletOpts.HDPublicKey**               | string/HDPublicKey | no                 | If you only have a HDPublicKey representation, you can pass it instead of mnemonic to init the wallet from it  |
 | **walletOpts.privateKey**                | string/PrivateKey  | no                 | If you only have a PrivateKey representation, you can pass it instead of mnemonic to init the wallet from it  |
 
 
@@ -44,6 +44,13 @@ const wallet = new Wallet({
 console.log(wallet.exportWallet());
 ```
 
+In the case where you will want to have stronger entropy (have 24 words generated instead of 12), this snippet will allow to do that : 
+
+```js 
+const { Mnemonic } = require('@dashevo/dashcore-lib');
+const mnemonic = new Mnemonic(256).toString();
+```
+
 ### Creation from Mnemonic 
 
 ```js
@@ -57,6 +64,14 @@ const wallet = new Wallet({
 ```js
 const wallet = new Wallet({
   HDPrivateKey: 'tprv8ZgxMBicQKsPeWisxgPVWiXho8ozsAUqc3uvpAhBuoGvSTxqkxPZbTeG43mvgXn3iNfL3cBL1NmR4DaVoDBPMUXe1xeiLoc39jU9gRTVBd2'
+})
+```
+
+### Creation from HDPrivateKey 
+
+```js
+const wallet = new Wallet({
+  HDPublicKey: 'tpubDEB6BgW9JvZRWVbFmwwGuJ2vifakABuxQWdY9yXbFC2rc3zagie1RkhwUEnahb1dzaapchEVeKqKcx99TzkjNvjXcmoQkLJwsYnA1J5bGNj'
 })
 ```
 

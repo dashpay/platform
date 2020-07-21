@@ -1,7 +1,7 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 /**
  * Import an array of transactions or a transaction object to the store
- * @param transactions
+ * @param {[Transaction]|Transaction} transactions
  * @return {boolean}
  * */
 const importTransactions = function (transactions) {

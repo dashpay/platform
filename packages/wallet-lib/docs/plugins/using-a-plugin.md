@@ -9,7 +9,7 @@ By default, three plugins are injected : BIP44Worker, SyncWorker and ChainWorker
 They handle respectively with maintaining your address pool, getting you in sync with the blockchain and maintaining some knowledge about the chain (blockheight). 
 You can disable them by adding `injectDefaultPlugins:false` at the initialization parameter of your wallet object.
  
-For more granularity, you could do it as a parameter of `getAccount(accId, accOpts)`.
+For more granularity, you could do it as a parameter of `getAccount(accOpts)`.
 
 ## Type of plugins 
 
@@ -38,9 +38,8 @@ This will allow to access the walletId property; the same thing is doable with t
 ## Accessing a plugin 
 
 
-```
-wallet.getAccount(0)
-    .then((account)=>{
-        account.getPlugin('pluginName');
+```js
+wallet.getAccount({index:0}).then((account)=>{
+        const plugin = account.getPlugin('pluginName');
     });
 ```

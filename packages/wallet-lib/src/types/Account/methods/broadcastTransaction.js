@@ -35,8 +35,8 @@ function impactAffectedInputs({ inputs }) {
 
 /**
  * Broadcast a Transaction to the transport layer
- * @param transaction {Transaction|RawTransaction} - A txobject or it's hexadecimal representation
- * @return {Promise<*>}
+ * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
+ * @return {Promise<transactionId>}
  */
 async function broadcastTransaction(transaction) {
   if (!this.transport) throw new ValidTransportLayerRequired('broadcast');

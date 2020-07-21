@@ -1,5 +1,5 @@
 **Usage**: async `storage.rehydrateState()`     
-**Description**: Used to fetch the state from the persistance adapter    
+**Description**: Used to fetch the state from the persistence adapter    
 **Notes**: Three items are fetch (`adapter.getItem`) : transactions, wallets and chains data.   
 
 Parameters: 

@@ -1,7 +1,7 @@
 const { cloneDeep } = require('lodash');
 const initialStore = require('../initialStore');
 /**
- * Clear all the store and save the cleared store to the persistance adapter
+ * Clear all the store and save the cleared store to the persistence adapter
  * @return {Promise<boolean>}
  */
 const clearAll = async function () {

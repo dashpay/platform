@@ -53,8 +53,8 @@ Storage.prototype.getBlockHeader = require('./methods/getBlockHeader');
 Storage.prototype.getTransaction = require('./methods/getTransaction');
 Storage.prototype.importAccounts = require('./methods/importAccounts');
 Storage.prototype.importAddress = require('./methods/importAddress');
-Storage.prototype.importBlockHeader = require('./methods/importBlockHeader');
 Storage.prototype.importAddresses = require('./methods/importAddresses');
+Storage.prototype.importBlockHeader = require('./methods/importBlockHeader');
 Storage.prototype.importSingleAddress = require('./methods/importSingleAddress');
 Storage.prototype.importTransaction = require('./methods/importTransaction');
 Storage.prototype.importTransactions = require('./methods/importTransactions');
@@ -72,7 +72,7 @@ Storage.prototype.stopWorker = require('./methods/stopWorker');
 
 // Identities
 Storage.prototype.insertIdentityIdAtIndex = require('./methods/insertIdentityAtIndex');
-Storage.prototype.getIdentityIdByIndex = require('./methods/getIdentityByIndex');
+Storage.prototype.getIdentityIdByIndex = require('./methods/getIdentityIdByIndex');
 Storage.prototype.getIndexedIdentityIds = require('./methods/getIndexedIdentityIds');
 
 module.exports = Storage;

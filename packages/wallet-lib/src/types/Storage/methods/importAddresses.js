@@ -1,7 +1,7 @@
 /**
  * Import one or multiple addresses to the store
- * @param addresses
- * @param walletId
+ * @param {[AddressObj]} addresses
+ * @param {string} walletId
  * @return {boolean}
  */
 const importAddresses = function (addresses, walletId) {

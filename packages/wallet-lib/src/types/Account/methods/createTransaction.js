@@ -16,7 +16,7 @@ const parseUtxos = (utxos) => {
 };
 /**
  * Create a transaction based around on the provided information
- * @param opts - Options object
+ * @param {createTransactionOptions} opts - Options object
  * @param opts.amount - Amount in dash that you want to send
  * @param opts.satoshis - Amount in satoshis
  * @param opts.recipient - Address of the recipient

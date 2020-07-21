@@ -4,7 +4,8 @@ const { InvalidDashcoreTransaction } = require('../../../errors');
 const { FETCHED_CONFIRMED_TRANSACTION } = require('../../../EVENTS');
 /**
  * This method is used to import a transaction in Store.
- * @param transaction - A valid Transaction
+ * @param {Transaction} transaction - A valid Transaction
+ * @return void
  */
 const importTransaction = function importTransaction(transaction) {
   if (!(transaction instanceof Transaction)) throw new InvalidDashcoreTransaction(transaction);

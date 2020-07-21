@@ -34,6 +34,29 @@ For browser usage, you can also directly rely on unpkg :
 ```
 
 
+## Usage
+
+In your file, where you want to execute it :
+
+```js
+const { Wallet, EVENTS } = require('@dashevo/wallet-lib');
+
+const wallet = new Wallet();
+
+// We can dump our initialization parameters
+const mnemonic = wallet.exportWallet();
+
+wallet.getAccount().then((account) => {
+  // At this point, account has fetch all UTXOs if they exists
+  const balance = account.getTotalBalance();
+  console.log(`Balance: ${balance}`);
+
+  // We easily can get a new address to fund
+  const { address } = account.getUnusedAddress();
+});
+```
+
+
 ## Licence
 
 [MIT](https://github.com/dashevo/wallet-lib/blob/master/LICENCE.md) © Dash Core Group, Inc.

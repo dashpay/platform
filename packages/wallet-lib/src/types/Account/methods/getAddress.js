@@ -23,8 +23,8 @@ const getTypePathFromWalletType = (walletType, addressType = 'external', index, 
 };
 /**
  * Get a specific addresss based on the index and type of address.
- * @param index - The index on the type
- * @param type - default: external - Type of the address (external, internal, misc)
+ * @param {number} index - The index on the type
+ * @param {AddressType} [_type="external"] - Type of the address (external, internal, misc)
  * @return <AddressInfo>
  */
 function getAddress(index = 0, _type = 'external') {

@@ -3,9 +3,9 @@ const { is } = require('../../../utils');
 
 /**
  * Fetch a specific address from the transport layer
- * @param addressObj - AddressObject having an address and a path
- * @param fetchUtxo - If we also query the utxo (default: yes)
- * @return {Promise<addrInfo>}
+ * @param {AddressObj} addressObj - AddressObject having an address and a path
+ * @param {Boolean} [fetchUtxo=true] - If we also query the utxo
+ * @return {Promise<AddressInfo>}
  */
 async function fetchAddressInfo(addressObj, fetchUtxo = true) {
   if (!this.transport) throw new ValidTransportLayerRequired('fetchAddressInfo');

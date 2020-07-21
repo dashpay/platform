@@ -1,8 +1,8 @@
 /**
  * SingleAddress differs from importAddress is the type being linked to a
  * single PrivateKey (when not a HDWallet).
- * @param singleAddress
- * @param walletId
+ * @param {AddressObj} singleAddress
+ * @param {string} walletId
  * @returns {boolean}
  */
 const importSingleAddress = function (singleAddress, walletId) {

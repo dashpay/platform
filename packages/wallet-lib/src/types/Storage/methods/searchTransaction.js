@@ -1,7 +1,7 @@
 /**
  * Search a specific txid in the store
- * @param txid
- * @return {{txid: *, found: boolean}}
+ * @param {string} hash
+ * @return {TransactionSearchResult}
  */
 const searchTransaction = function (hash) {
   const search = {

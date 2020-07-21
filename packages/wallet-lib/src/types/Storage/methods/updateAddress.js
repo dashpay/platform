@@ -5,8 +5,8 @@ const EVENTS = require('../../../EVENTS');
 
 /**
 * Update a specific address information in the store
-* @param addressObj
-* @param walletId
+* @param {AddressObj} addressObj
+* @param {string} walletId
 * @return {boolean}
 */
 const updateAddress = function (addressObj, walletId) {

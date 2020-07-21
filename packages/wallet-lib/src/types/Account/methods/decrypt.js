@@ -1,6 +1,13 @@
 const CryptoJS = require('crypto-js');
 const { AES } = CryptoJS;
 
+/**
+ * @param {string} method
+ * @param {string} data
+ * @param {string} secret
+ * @param {'hex'|string} [encoding=CryptoJS.enc.Utf8]
+ * @return {string}
+ */
 const decrypt = function (method, data, secret, encoding = '') {
   let decrypted;
   switch (method) {

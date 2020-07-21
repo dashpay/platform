@@ -3,8 +3,8 @@ const { InvalidAddressObject } = require('../../../errors');
 const { is } = require('../../../utils');
 /**
  * Import one address to the store
- * @param addressObj
- * @param walletId
+ * @param {AddressObj} addressObj
+ * @param {string} walletId
  * @return {boolean}
  */
 const importAddress = function (addressObj, walletId) {

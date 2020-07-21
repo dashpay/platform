@@ -3,9 +3,9 @@ const {
 } = require('@dashevo/dashcore-lib');
 /**
  * Derive from HDPrivateKey to a child
- * @param index - {Number} - Child index to derivee to
- * @param type - {HDPrivateKey|HDPublicKey} def : HDPrivateKey - set the type of returned keys
- * @return HDPrivateKey
+ * @param {number} index - Child index to derivee to
+ * @param {HDPrivateKey|HDPublicKey} [type=HDPrivateKey] - set the type of returned keys
+ * @return {HDPrivateKey|HDPublicKey}
  */
 function generateKeyForChild(index, type = 'HDPrivateKey') {
   if (!['HDPrivateKey', 'HDPublicKey'].includes(this.type)) {

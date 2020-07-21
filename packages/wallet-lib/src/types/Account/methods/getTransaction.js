@@ -1,7 +1,7 @@
 /**
  * Get a transaction from a provided txid
- * @param txid - Transaction Hash
- * @return {Promise<*>}
+ * @param {transactionId} txid - Transaction Hash
+ * @return {Promise<Transaction>}
  */
 async function getTransaction(txid = null) {
   const search = await this.storage.searchTransaction(txid);

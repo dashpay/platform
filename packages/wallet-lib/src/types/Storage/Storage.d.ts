@@ -1,86 +1,77 @@
 import {
-    AddressInfo,
     AddressObj,
     AddressType,
     Mnemonic,
     Network,
-    SerializedUTXO,
     TransactionInfo,
     WalletObj, WalletType
 } from "../types";
-import { EventEmitter2 as EventEmitter } from 'eventemitter2';
-import {BlockHeader} from "@dashevo/dashcore-lib";
+import { BlockHeader } from "@dashevo/dashcore-lib";
+import { Account } from "../..";
+import { Transaction } from "@dashevo/dashcore-lib/typings/transaction/Transaction";
+
+export declare namespace Storage {
+    interface IStorageOptions {
+        rehydrate?: boolean;
+        autosave?: boolean;
+        autosaveIntervalTime?: number;
+        network?: Network;
+    }
+    interface store {
+        wallets: {},
+        transactions: {},
+        chains: {},
+    }
+}
+
 
 export declare class Storage {
-    constructor(options?: Storage.Options);
-
+    constructor(options?: Storage.IStorageOptions);
+    store: {};
     rehydrate: boolean;
     autosave: boolean;
     autosaveIntervalTime: number;
+    lastRehydrate: number|null;
+    lastSave: number|null;
+    lastModified: number|null;
     network: Network;
     mappedAddress: MappedAddressMap;
 
-    addNewTxToAddress(tx: TransactionInfo, address: AddressObj): boolean;
-
-    addUTXOToAddress(utxo: SerializedUTXO, address: AddressObj): boolean;
-
+    addNewTxToAddress(tx: TransactionInfo, address: string): boolean;
     announce(type: string, el: any): boolean;
-
     calculateDuffBalance(walletId: number, accountId: number, type: string): number;
-
-    clearAll(): boolean;
-
+    clearAll(): Promise<boolean>;
     configure(opts: {
         rehydrate?: boolean,
         autosave?: boolean,
         adapter?: any
-    }): void;
-
+    }): Promise<void>;
     createChain(network: string): boolean;
-
     createWallet(walletId: string, network: Network, mnemonic?:Mnemonic, type?: WalletType ): boolean;
-
-    getStore(): any;
-
-    getTransaction(txid: string): TransactionInfo;
-
-    importAccounts(accounts: any, walletId: string): boolean;
-
-    importAddress(address: AddressObj): boolean;
-
-    importAddresses(addresses: [AddressObj]): boolean;
-
-    importSingleAddress(singleAddress: AddressObj): boolean;
-
-    importTransaction(transaction: TransactionInfo): boolean;
-
-    importTransactions(transactions: [TransactionInfo]): boolean;
-
-    rehydrateState(): void;
-
-    saveState(): boolean;
-
-    searchAddress(address: string, forceLoop: boolean): AddressSearchResult;
-
-    searchBlockHeader(identifier: string|number): BlockHeaderSearchResult;
-
-    searchAddressesWithTx(txid: number): AddressesSearchResult;
-
-    searchTransaction(txid: number): TransactionSearchResult;
-
-    searchWallet(walletId: number): WalletSearchResult;
-
-    updateAddress(addressObj: AddressObj, walletId: number): boolean;
-
-    updateTransaction(transaction: TransactionInfo): boolean;
-
-    startWorker(): void;
-
-    stopWorker(): boolean;
-
-    insertIdentityIdAtIndex(walletId: string, identityId: string, identityIndex: number): void;
+    getBlockHeader(identifier: string|number): BlockHeader;
     getIdentityIdByIndex(walletId: string, identityIndex: number): string|undefined;
     getIndexedIdentityIds(walletId: string): Array<string|undefined>;
+    getStore(): Storage.store;
+    getTransaction(txid: string): Transaction;
+    importAccounts(accounts: Account|[Account], walletId: string): boolean;
+    importAddress(address: AddressObj, walletId: string): boolean;
+    importAddresses(addresses: [AddressObj], walletId: string): boolean;
+    importBlockHeader(blockHeader: BlockHeader, height: number): void;
+    importSingleAddress(singleAddress: AddressObj, walletId: string): boolean;
+    importTransaction(transaction: Transaction): void;
+    importTransactions(transactions: [Transaction]): boolean;
+    insertIdentityIdAtIndex(walletId: string, identityId: string, identityIndex: number): void;
+    rehydrateState(): Promise<void>;
+    saveState(): Promise<boolean>;
+    searchAddress(address: string, forceLoop: boolean): AddressSearchResult;
+    searchAddressesWithTx(txid: string): AddressesSearchResult;
+    searchBlockHeader(identifier: string|number): BlockHeaderSearchResult;
+    searchTransaction(hash: string): TransactionSearchResult;
+    searchWallet(walletId: string): WalletSearchResult;
+    startWorker(): void;
+    stopWorker(): boolean;
+    updateAddress(addressObj: AddressObj, walletId: string): boolean;
+    updateTransaction(transaction: Transaction): boolean;
 }
 
 interface MappedAddressMap {
@@ -117,7 +108,7 @@ interface AddressSearchResult {
 }
 interface BlockHeaderSearchResult {
     found: boolean,
-    result: BlockHeader,
+    result?: BlockHeader,
     identifier: number|string
 }
 
@@ -126,13 +117,3 @@ interface AddressesSearchResult {
     found: boolean,
     results: [AddressObj]
 }
-
-export declare namespace Storage {
-    interface Options {
-        rehydrate?: boolean;
-        autosave?: boolean;
-        autosaveIntervalTime?: number;
-        network?: Network;
-    }
-}
-

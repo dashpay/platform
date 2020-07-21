@@ -1,8 +1,7 @@
 /**
  * Update a specific transaction information in the store
  * It do not handle any merging right now and write over previous data.
- * @param address
- * @param walletId
+ * @param {Transaction} transaction
  * @return {boolean}
  */
 const updateTransaction = function (transaction) {

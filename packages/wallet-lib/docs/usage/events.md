@@ -2,9 +2,9 @@
 
 ```javascript
 const {EVENTS} = require('@dashevo/wallet-lib');
-const {READY} = EVENTS;
-const doSomethingWhenReady = (info) => {...}
-account.events.on(READY, doSomethingWhenReady);
+const {FETCHED_CONFIRMED_TRANSACTION} = EVENTS;
+const doSomethingConfirmedTransactionFetched = (tx) => {...}
+account.on(FETCHED_CONFIRMED_TRANSACTION, doSomethingConfirmedTransactionFetched);
 ```
 
 Events types : 
@@ -30,7 +30,7 @@ Events types :
 
 | Event Name                       | Description                                                          | 
 | -------------------------------- |:--------------------------------------------------------------------:|
-| BLOCKHEIGHT_CHANGED              |  When the chain has moved from one block forward                     |
+| BLOCKHEIGHT_CHANGED              | When the chain has moved from one block forward                      |
 | FETCHED_UNCONFIRMED_TRANSACTION  | When we got to fetch an unconfirmed transaction, we throw this event |
 | FETCHED_CONFIRMED_TRANSACTION    | This one is if the transaction is confirmed                          |
 | FETCHED_TRANSACTIONS             | In both case, we throw that event                                    |

@@ -3,7 +3,7 @@ const {
 } = require('../../../errors');
 /**
  * Get a worker by it's name
- * @param workerName
+ * @param {string} workerName
  * @return {*}
  */
 function getWorker(workerName) {

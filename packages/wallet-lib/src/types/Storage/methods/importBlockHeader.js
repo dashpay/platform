@@ -1,7 +1,8 @@
 const EVENTS = require('../../../EVENTS');
 /**
  * This method is used to import a blockheader in Store.
- * @param blockheader - A Blockheader
+ * @param {BlockHeader} blockHeader - A Blockheader
+ * @param {number} height
  */
 const importBlockHeader = function importBlockHeader(blockHeader, height) {
   const self = this;
