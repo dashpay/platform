@@ -19,9 +19,20 @@ function wrapInErrorHandlerFactory(logger) {
    * @typedef wrapInErrorHandler
    *
    * @param {Function} method
+   * @param {Object} [options={}]
+   * @param {boolean} [options.throwNonABCIErrors=true]
+   *
    * @return {Function}
    */
-  function wrapInErrorHandler(method) {
+  function wrapInErrorHandler(method, options = {}) {
+    // eslint-disable-next-line no-param-reassign
+    options = {
+      throwNonABCIErrors: true,
+      ...options,
+    };
+
+    const { throwNonABCIErrors } = options;
+
     /**
      * @param request
      */
@@ -33,6 +44,13 @@ function wrapInErrorHandlerFactory(logger) {
 
         // Wrap all non ABCI errors to an internal ABCI error
         if (!(e instanceof AbciError)) {
+          // in special cases (e.g. deliverTx call)
+          // we should propagate the error upwards
+          // to halt the Drive
+          if (throwNonABCIErrors) {
+            throw e;
+          }
+
           error = new InternalAbciError(e);
         }
 

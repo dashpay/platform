@@ -8,6 +8,7 @@ describe('wrapInErrorHandlerFactory', () => {
   let methodMock;
   let request;
   let handler;
+  let wrapInErrorHandler;
 
   beforeEach(function beforeEach() {
     request = {
@@ -18,11 +19,11 @@ describe('wrapInErrorHandlerFactory', () => {
       error: this.sinon.stub(),
     };
 
-    const wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock);
+    wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock);
     methodMock = this.sinon.stub();
 
     handler = wrapInErrorHandler(
-      methodMock,
+      methodMock, { throwNonABCIErrors: false },
     );
   });
 
@@ -82,5 +83,22 @@ describe('wrapInErrorHandlerFactory', () => {
       }),
       tags: [],
     });
+  });
+
+  it('should rethrow internal errors in case `rethrowInternalErrors` options is set', async () => {
+    const unknownError = new Error('Some internal error indicating a bug');
+
+    methodMock.throws(unknownError);
+
+    handler = wrapInErrorHandler(
+      methodMock, { throwNonABCIErrors: true },
+    );
+
+    try {
+      await handler(request);
+      expect.fail('Error was not re-thrown');
+    } catch (e) {
+      expect(e).to.equal(unknownError);
+    }
   });
 });
