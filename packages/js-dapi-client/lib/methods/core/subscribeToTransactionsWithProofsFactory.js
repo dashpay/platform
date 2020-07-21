@@ -4,6 +4,8 @@ const {
   BloomFilter: BloomFilterMessage,
 } = require('@dashevo/dapi-grpc');
 
+const DAPIClientError = require('../../errors/DAPIClientError');
+
 /**
  * @param {GrpcTransport} grpcTransport
  * @returns {subscribeToTransactionsWithProofs}
@@ -35,6 +37,10 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
       ...options,
     };
 
+    if (options.fromBlockHeight === 0) {
+      throw new DAPIClientError('Invalid argument: minimum value for `fromBlockHeight` is 1');
+    }
+
     const bloomFilterMessage = new BloomFilterMessage();
 
     let { vData } = bloomFilter;
@@ -51,7 +57,7 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
     const request = new TransactionsWithProofsRequest();
     request.setBloomFilter(bloomFilterMessage);
 
-    if (options.fromBlockHeight) {
+    if (options.fromBlockHeight !== undefined) {
       request.setFromBlockHeight(options.fromBlockHeight);
     }
 

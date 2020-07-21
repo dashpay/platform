@@ -10,6 +10,8 @@ const {
 
 const subscribeToTransactionsWithProofsFactory = require('../../../../lib/methods/core/subscribeToTransactionsWithProofsFactory');
 
+const DAPIClientError = require('../../../../lib/errors/DAPIClientError');
+
 describe('subscribeToTransactionsWithProofsFactory', () => {
   let subscribeToTransactionsWithProofs;
   let grpcTransportMock;
@@ -91,5 +93,25 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
     );
 
     expect(actualStream).to.be.equal(stream);
+  });
+
+  it('should throw error if `fromBlockHeight` is set to 0', async () => {
+    options = {
+      fromBlockHeight: 0,
+      count: 5,
+      fromBlockHash: '000000000b0339e07bce8b3186a6a57a3c45d10e16c4bce18ef81b667bc822b2',
+      timeout: 150000,
+    };
+
+    const bloomFilter = BloomFilter.create(1, 0.001);
+
+    try {
+      await subscribeToTransactionsWithProofs(
+        bloomFilter, options,
+      );
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(DAPIClientError);
+      expect(e.message).to.equal('Invalid argument: minimum value for `fromBlockHeight` is 1');
+    }
   });
 });
