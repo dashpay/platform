@@ -10,6 +10,7 @@ const {
  * @param {BlockchainState} blockchainState
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @param {BlockExecutionState} blockExecutionState
+ * @param {BaseLogger} logger
  *
  * @return {beginBlockHandler}
  */
@@ -17,6 +18,7 @@ function beginBlockHandlerFactory(
   blockchainState,
   blockExecutionDBTransactions,
   blockExecutionState,
+  logger,
 ) {
   /**
    * @typedef beginBlockHandler
@@ -25,6 +27,8 @@ function beginBlockHandlerFactory(
    * @return {Promise<abci.ResponseBeginBlock>}
    */
   async function beginBlockHandler({ header }) {
+    logger.info(`Block begin #${header.height}`);
+
     blockExecutionState.reset();
 
     blockExecutionState.setHeader(header);

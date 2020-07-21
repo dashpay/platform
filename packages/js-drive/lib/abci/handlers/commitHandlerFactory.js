@@ -10,6 +10,7 @@ const {
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @param {BlockExecutionState} blockExecutionState
  * @param {DocumentDatabaseManager} documentDatabaseManager
+ * @param {BaseLogger} logger
  *
  * @return {commitHandler}
  */
@@ -19,6 +20,7 @@ function commitHandlerFactory(
   blockExecutionDBTransactions,
   blockExecutionState,
   documentDatabaseManager,
+  logger,
 ) {
   /**
    * Commit ABCI handler
@@ -28,6 +30,10 @@ function commitHandlerFactory(
    * @return {Promise<abci.ResponseCommit>}
    */
   async function commitHandler() {
+    const { height: blockHeight } = blockExecutionState.getHeader();
+
+    logger.info(`Block commit #${blockHeight}`);
+
     // We don't build state tree for now
     // so appHash always empty
     const appHash = Buffer.alloc(0);

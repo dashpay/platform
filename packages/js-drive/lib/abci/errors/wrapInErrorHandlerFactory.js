@@ -8,7 +8,7 @@ const AbciError = require('./AbciError');
 const InternalAbciError = require('./InternalAbciError');
 
 /**
- * @param {Object} logger
+ * @param {BaseLogger} logger
  *
  * @return wrapInErrorHandler
  */

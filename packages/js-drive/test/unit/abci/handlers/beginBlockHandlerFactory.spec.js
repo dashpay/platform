@@ -26,10 +26,16 @@ describe('beginBlockHandlerFactory', () => {
 
     blockExecutionStateMock = new BlockExecutionStateMock(this.sinon);
 
+    const loggerMock = {
+      debug: this.sinon.stub(),
+      info: this.sinon.stub(),
+    };
+
     beginBlockHandler = beginBlockHandlerFactory(
       blockchainState,
       blockExecutionDBTransactionsMock,
       blockExecutionStateMock,
+      loggerMock,
     );
 
     blockHeight = 2;

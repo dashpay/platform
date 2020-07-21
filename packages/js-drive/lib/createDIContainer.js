@@ -17,7 +17,7 @@ const DashPlatformProtocol = require('@dashevo/dpp');
 
 const findMyWay = require('find-my-way');
 
-const Logger = require('./util/Logger');
+const pino = require('pino');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
 
@@ -64,6 +64,7 @@ const identityByFirstPublicKeyQueryHandlerFactory = require('./abci/handlers/que
 const identityIdByFirstPublicKeyQueryHandlerFactory = require('./abci/handlers/query/identityIdByFirstPublicKeyQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
+
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
 const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory');
@@ -91,6 +92,7 @@ const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
  * @param {string} options.CORE_JSON_RPC_USERNAME
  * @param {string} options.CORE_JSON_RPC_PASSWORD
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
+ * @param {string} options.LOGGING_LEVEL
  *
  * @return {AwilixContainer}
  */
@@ -121,6 +123,7 @@ async function createDIContainer(options) {
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
     coreJsonRpcUsername: asValue(options.CORE_JSON_RPC_USERNAME),
     coreJsonRpcPassword: asValue(options.CORE_JSON_RPC_PASSWORD),
+    loggingLevel: asValue(options.LOGGING_LEVEL),
   });
 
   /**
@@ -139,7 +142,12 @@ async function createDIContainer(options) {
    * Register common services
    */
   container.register({
-    logger: asFunction(() => new Logger(console)).singleton(),
+    logger: asFunction((loggingLevel) => pino({
+      level: loggingLevel,
+      prettyPrint: {
+        translateTime: true,
+      },
+    })),
 
     noStateDpp: asFunction((dppOptions) => (
       new DashPlatformProtocol({
