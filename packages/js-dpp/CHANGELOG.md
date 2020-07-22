@@ -1,3 +1,31 @@
+# [0.14.0](https://github.com/dashevo/js-dpp/compare/v0.13.1...v0.14.0) (2020-07-22)
+
+
+### Bug Fixes
+
+* missing indexed string property constraint validation ([#196](https://github.com/dashevo/js-dpp/issues/196))
+* error when the indexed field has an undefined value ([#194](https://github.com/dashevo/js-dpp/issues/194))
+* conflicting schema ids in AJV cache ([#187](https://github.com/dashevo/js-dpp/issues/187))
+
+
+### Features
+
+* add `createdAt` and `updatedAt` timestamps to Document ([#192](https://github.com/dashevo/js-dpp/issues/192))
+* disable unsupported JSON Schema conditions ([#193](https://github.com/dashevo/js-dpp/issues/193))
+
+
+### Documentation
+
+* readme standard updates ([#189](https://github.com/dashevo/js-dpp/issues/189))
+
+
+### BREAKING CHANGES
+
+* Indexed strings should have `maxLength` constraint not less than 1024 chars
+* JSON Schema conditions (`allOf`, `if`, ...) are not allowed in Document JSON Schema
+
+
+
 ## [0.13.1](https://github.com/dashevo/js-dpp/compare/v0.13.0...v0.13.1) (2020-06-15)
 
 
