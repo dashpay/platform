@@ -1,17 +1,20 @@
 ## Wallet-lib
 
-[![Package Version](https://img.shields.io/github/package-json/v/dashevo/wallet-lib.svg?&style=flat-square)](https://www.npmjs.org/package/@dashevo/wallet-lib)
-[![Build Status](https://img.shields.io/travis/com/dashevo/wallet-lib.svg?branch=master&style=flat-square)](https://travis-ci.com/dashevo/wallet-lib)
+[![NPM Version](https://img.shields.io/npm/v/@dashevo/wallet-lib)](https://www.npmjs.com/package/@dashevo/wallet-lib)
+[![Build Status](https://travis-ci.com/dashevo/wallet-lib.svg?branch=master)](https://travis-ci.com/dashevo/wallet-lib)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/wallet-lib)](https://github.com/dashevo/wallet-lib/releases/latest)
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
-> A pure and extensible JavaScript Wallet Library for Dash
+A pure and extensible JavaScript Wallet Library for Dash
 
 ### What it is 
 
+Wallet-lib provides all the wallet features needed for node and browser usage.
 From being able to display an account balance, to paying to another address, passing by the need to automate back-end task related to a cold-storage.  
-The Wallet-lib allows you to easily work with Wallet/Account for HDWallet, or from just a single private key.  
-Wallet-lib also allow you to watch for a public key or an HDPubKey.  
-You might also wish to have your own set of plugins or your own coin selection logic.  
-The wallet-lib provides all the set of feature intended for node and browser usage.  
+
+Wallet-lib allows you to easily work with Wallets/Accounts for HDWallets, or from just a single private key.  
+It also allows you to monitor public keys and HDPubKey.  
+You might also wish to create your own set of plugins or your own coin selection logic.  
 
 ### Install
 
@@ -32,7 +35,6 @@ For browser usage, you can also directly rely on unpkg :
 ```
 <script src="https://unpkg.com/@dashevo/wallet-lib"></script>
 ```
-
 
 ## Usage
 
@@ -55,7 +57,6 @@ wallet.getAccount().then((account) => {
   const { address } = account.getUnusedAddress();
 });
 ```
-
 
 ## Licence
 
