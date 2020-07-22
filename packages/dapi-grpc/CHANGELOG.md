@@ -1,3 +1,23 @@
+# [0.14.0](https://github.com/dashevo/dapi-grpc/compare/v0.13.0...v0.14.0) (2020-07-22)
+
+
+### Features
+
+* allow passing of options to calls in NodeJS clients ([#74](https://github.com/dashevo/dapi-grpc/issues/74))
+* strip URL passed on to client and leave only ip/host:port pair ([#75](https://github.com/dashevo/dapi-grpc/issues/75))
+
+
+### Refactoring
+
+* refactor: remove java artifacts ([#78](https://github.com/dashevo/dapi-grpc/issues/78))
+
+
+### Tests
+
+* update Mocha config ([#77](https://github.com/dashevo/dapi-grpc/issues/77))
+
+
+
 # [0.13.0](https://github.com/dashevo/dapi-grpc/compare/v0.12.1...v0.13.0) (2020-06-08)
 
 
