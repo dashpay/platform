@@ -1,3 +1,28 @@
+# [3.14.0](https://github.com/dashevo/DashJS/compare/v3.13.4...v3.14.0) (2020-07-23)
+
+
+### Features
+
+* implement DPNS methods ([#92](https://github.com/dashevo/DashJS/issues/92))
+* TypeScript compilation without webpack ([#97](https://github.com/dashevo/DashJS/issues/97), [#107](https://github.com/dashevo/DashJS/issues/107))
+* integrate with new DAPI Client and Wallet transport ([#105](https://github.com/dashevo/DashJS/issues/105), [#110](https://github.com/dashevo/DashJS/issues/110))
+* update DPP to 0.14.0 ([#112](https://github.com/dashevo/DashJS/issues/112))
+* use test-suite to run platform tests ([#106](https://github.com/dashevo/DashJS/issues/106))
+
+
+### Documentation
+
+* update documentation and definitions files ([#99]((https://github.com/dashevo/DashJS/issues/99))
+
+
+### BREAKING CHANGES
+
+* `seeds` option now is an array of DAPI addresses, that can be represented as a string, plan JS object (host, httpPort, grpcPort) or DAPIAddress instance
+* see [DPP v0.14 breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.14.0)
+* `client.platform.names.get` method has been removed in favor of `client.platform.names.resolve`
+
+
+
 ## [3.13.4](https://github.com/dashevo/DashJS/compare/v3.13.3...v3.13.4) (2020-07-01)
 
 
