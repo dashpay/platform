@@ -4,7 +4,7 @@ const {
   GetIdentityByFirstPublicKeyResponse,
   GetIdentityResponse,
   GetIdentityIdByFirstPublicKeyResponse,
-  ApplyStateTransitionResponse,
+  BroadcastStateTransitionResponse,
 } = require('@dashevo/dapi-grpc');
 const DashPlatformProtocol = require('@dashevo/dpp');
 
@@ -26,7 +26,7 @@ describe('PlatformMethodsFacade', () => {
 
   describe('#broadcastStateTransition', () => {
     it('should broadcast state transition', async () => {
-      const response = new ApplyStateTransitionResponse();
+      const response = new BroadcastStateTransitionResponse();
       grpcTransportMock.request.resolves(response);
 
       const dpp = new DashPlatformProtocol();

@@ -1,5 +1,5 @@
 const {
-  ApplyStateTransitionRequest,
+  BroadcastStateTransitionRequest,
   PlatformPromiseClient,
 } = require('@dashevo/dapi-grpc');
 
@@ -14,16 +14,16 @@ function broadcastStateTransitionFactory(grpcTransport) {
    * @typedef {broadcastStateTransition}
    * @param {Buffer} stateTransition
    * @param {DAPIClientOptions} [options]
-   * @returns {Promise<!ApplyStateTransitionResponse>}
+   * @returns {Promise<!BroadcastStateTransitionResponse>}
    */
   async function broadcastStateTransition(stateTransition, options = {}) {
-    const applyStateTransitionRequest = new ApplyStateTransitionRequest();
-    applyStateTransitionRequest.setStateTransition(stateTransition);
+    const broadcastStateTransitionRequest = new BroadcastStateTransitionRequest();
+    broadcastStateTransitionRequest.setStateTransition(stateTransition);
 
     return grpcTransport.request(
       PlatformPromiseClient,
-      'applyStateTransition',
-      applyStateTransitionRequest,
+      'broadcastStateTransition',
+      broadcastStateTransitionRequest,
       options,
     );
   }

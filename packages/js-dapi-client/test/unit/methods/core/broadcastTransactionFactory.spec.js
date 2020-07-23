@@ -1,7 +1,7 @@
 const {
   CorePromiseClient,
-  SendTransactionRequest,
-  SendTransactionResponse,
+  BroadcastTransactionRequest,
+  BroadcastTransactionResponse,
 } = require('@dashevo/dapi-grpc');
 
 const broadcastTransactionFactory = require(
@@ -28,7 +28,7 @@ describe('broadcastTransactionFactory', () => {
   });
 
   it('should return transaction id', async () => {
-    const response = new SendTransactionResponse();
+    const response = new BroadcastTransactionResponse();
     response.setTransactionId(id);
     grpcTransportMock.request.resolves(response);
 
@@ -41,14 +41,14 @@ describe('broadcastTransactionFactory', () => {
       options,
     );
 
-    const request = new SendTransactionRequest();
+    const request = new BroadcastTransactionRequest();
     request.setTransaction(transaction);
     request.setAllowHighFees(options.allowHighFees);
     request.setBypassLimits(false);
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       CorePromiseClient,
-      'sendTransaction',
+      'broadcastTransaction',
       request,
       options,
     );

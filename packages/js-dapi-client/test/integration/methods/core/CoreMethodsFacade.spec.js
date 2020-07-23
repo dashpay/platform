@@ -1,7 +1,7 @@
 const { EventEmitter } = require('events');
 
 const {
-  SendTransactionResponse,
+  BroadcastTransactionResponse,
   GetBlockResponse,
   GetTransactionResponse,
   GetStatusResponse,
@@ -29,7 +29,7 @@ describe('CoreMethodsFacade', () => {
 
   describe('#broadcastTransaction', () => {
     it('should broadcast transaction', async () => {
-      const response = new SendTransactionResponse();
+      const response = new BroadcastTransactionResponse();
       response.setTransactionId('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176');
       grpcTransportMock.request.resolves(response);
 

@@ -1,6 +1,6 @@
 const {
   CorePromiseClient,
-  SendTransactionRequest,
+  BroadcastTransactionRequest,
 } = require('@dashevo/dapi-grpc');
 
 /**
@@ -17,15 +17,15 @@ function broadcastTransactionFactory(grpcTransport) {
    * @returns {string}
    */
   async function broadcastTransaction(transaction, options = {}) {
-    const sendTransactionRequest = new SendTransactionRequest();
-    sendTransactionRequest.setTransaction(transaction);
-    sendTransactionRequest.setAllowHighFees(options.allowHighFees || false);
-    sendTransactionRequest.setBypassLimits(options.bypassLimits || false);
+    const broadcastTransactionRequest = new BroadcastTransactionRequest();
+    broadcastTransactionRequest.setTransaction(transaction);
+    broadcastTransactionRequest.setAllowHighFees(options.allowHighFees || false);
+    broadcastTransactionRequest.setBypassLimits(options.bypassLimits || false);
 
     const response = await grpcTransport.request(
       CorePromiseClient,
-      'sendTransaction',
-      sendTransactionRequest,
+      'broadcastTransaction',
+      broadcastTransactionRequest,
       options,
     );
 
