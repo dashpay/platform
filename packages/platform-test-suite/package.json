@@ -28,7 +28,7 @@
     "@dashevo/grpc-common": "~0.3.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
-    "dash": "~3.14.0-dev.3",
+    "dash": "~3.14.0-dev.4",
     "dirty-chai": "^2.0.1",
     "dotenv-safe": "^8.2.0",
     "github-api": "^3.3.0",
