@@ -15,8 +15,7 @@ const dpp = {
 }
 const getDataContract = async (id) => {
     switch (id) {
-        // @ts-ignore
-        case contractsFixtures.ratePlatform.id:
+        case contractsFixtures.ratePlatform.$id:
             const contract = await dpp.dataContract.createFromObject(contractsFixtures.ratePlatform);
             return contract.serialize()
         default:
@@ -39,7 +38,7 @@ const apps = {};
 describe('Client - Platform - Contracts - .get()', () => {
     it('should get a contract', async function () {
         // @ts-ignore
-        const contract = await get.call({apps, dpp, client}, contractsFixtures.ratePlatform.id);
+        const contract = await get.call({apps, dpp, client}, contractsFixtures.ratePlatform.$id);
         expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
     });
     it('should deal when no contract', async function () {

@@ -1,7 +1,7 @@
-import {Client as _Client} from './Client';
-import {Core as _Core} from './Core';
-import {Platform as _Platform} from './Platform';
-import {default as _DAPIClient} from '@dashevo/dapi-client';
+import { Client as _Client } from './Client';
+import { Core as _Core } from './Core';
+import { Platform as _Platform } from './Platform';
+import { default as _DAPIClient } from '@dashevo/dapi-client';
 
 import {
     Wallet as _Wallet,
@@ -33,4 +33,4 @@ export namespace SDK {
     }
 
 }
-export {SDK as default};
+export { SDK as default };

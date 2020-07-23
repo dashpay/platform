@@ -7,7 +7,7 @@
 
 Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
 
-Dash library allows you to transact on L1 or fetch/register documents on L2 within a single library, including management and signing of your documents.
+Dash library allows you to connect to DAPI and receive or broadcast payments on the Dash Network, manage identifies, register data contracts, retrieve or submit documents on the Dash Platform, all within a single library.
 
 ## Table of Contents
 - [Install](#install)
@@ -50,10 +50,27 @@ const client = new Dash.Client({
   },
 });
 
-client.wallet.getAccount().then((account) => {
+// Accessing an account allow you to transact with the Dash Network
+client.getWalletAccount().then(async (account) => {
   console.log("Funding address", account.getUnusedAddress().address);
-  console.log("Confirmed Balance", account.getConfirmedBalance());
-  client.disconnect();
+
+  const balance = account.getConfirmedBalance();
+  console.log("Confirmed Balance", balance);
+
+  if(balance > 0){
+    // Creating an identity is the basis of all interactions with the Dash Platform
+    const identity = await client.platform.identities.register()
+    
+    // Prepare a new document containing a simple hello world sent to a hypothetical tutorial contract
+    const document = await platform.documents.create(
+      'tutorialContract.note',
+      identity,
+      { message: 'Hello World' },
+    );
+
+    // Broadcast the document into a new state transition
+    await platform.documents.broadcast({create:[document]}, identity);
+  }
 });
 ```
 

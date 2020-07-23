@@ -22,7 +22,6 @@ export async function topUp(this: Platform, identityId: string, amount: number):
     } = await createAssetLockTransaction(this, amount);
 
     // Broadcast Asset Lock transaction
-    // @ts-ignore
     await account.broadcastTransaction(assetLockTransaction);
 
     // Wait some time for propagation
@@ -30,7 +29,6 @@ export async function topUp(this: Platform, identityId: string, amount: number):
 
     // Create ST
 
-    // @ts-ignore
     const outPointBuffer = assetLockTransaction.getOutPointBuffer(0);
 
     const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(identityId, outPointBuffer);
@@ -44,12 +42,12 @@ export async function topUp(this: Platform, identityId: string, amount: number):
     }
 
     // Broadcast ST
+
     await client.getDAPIClient().platform.broadcastStateTransition(identityTopUpTransition.serialize());
 
     // Wait some time for propagation
     await wait(1000);
 
-    // @ts-ignore
     return true;
 }
 

@@ -1,6 +1,6 @@
-import {PrivateKey, Transaction} from "@dashevo/dashcore-lib";
-import {utils} from "@dashevo/wallet-lib";
-import {Platform} from "./Platform";
+import { PrivateKey, Transaction } from "@dashevo/dashcore-lib";
+import { utils } from "@dashevo/wallet-lib";
+import { Platform } from "./Platform";
 
 /**
  * Creates a funding transaction for the platform identity and returns one-time key to sign the state transition
@@ -39,7 +39,6 @@ export default async function createAssetLockTransaction(platform : Platform, fu
         .from(selection.utxos)
         // @ts-ignore
         .addBurnOutput(output.satoshis, assetLockOneTimePublicKey._getID())
-        // @ts-ignore
         .change(changeAddress);
 
     const utxoAddresses = selection.utxos.map((utxo: any) => utxo.address.toString());

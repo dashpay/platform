@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import {Platform} from "./index";
+import { Platform } from "./index";
 import 'mocha';
 
 describe('Dash - Platform', () => {

@@ -1,5 +1,5 @@
-import {Platform} from "./Platform";
-import {wait} from "../../../utils/wait";
+import { Platform } from "./Platform";
+import { wait } from "../../../utils/wait";
 
 /**
  * @param {Platform} platform

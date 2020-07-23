@@ -9,18 +9,15 @@ Therefore usage might varies if you need to deal with platform or not.
 
 ### Access to account without platform
 ```js  
-   const accountIndex = 1;
-   const account = client.wallet.getAccount({index:accountIndex});
-   await account.isReady();
+   const account = await client.getWalletAccount({index:1});
 ```
 
 ### Access to account with platform.
 
-You will actually need to replace `client.account` to get platform to correctly fetch the right account to use for signing and fetching UTXOs.
+When calling `getWalletAccount`, the client will locally store the index options you have passed to it, which will be used for your platform related calls.
 
 ```js
 async function changeAccount(){
-   client.account = client.wallet.getAccount({index:1});
-   await client.account.isReady();
+   await client.getWalletAccount({index:2});
 }
 ```

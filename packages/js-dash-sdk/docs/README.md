@@ -29,7 +29,7 @@ npm install dash
 
 ### Usage 
 
-```
+```js
 const Dash = require("dash");
 
 const client = new Dash.Client({
@@ -39,11 +39,27 @@ const client = new Dash.Client({
   },
 });
 
-client.isReady().then(async () => {
-  const {account, platform} = client;
+// Accessing an account allow you to transact with the Dash Network
+client.getWalletAccount().then(async (account) => {
   console.log("Funding address", account.getUnusedAddress().address);
-  console.log("Confirmed Balance", account.getConfirmedBalance());
-  console.log(await platform.names.get('alice'));
+
+  const balance = account.getConfirmedBalance();
+  console.log("Confirmed Balance", balance);
+
+  if(balance > 0){
+    // Creating an identity is the basis of all interactions with the Dash Platform
+    const identity = await client.platform.identities.register()
+    
+    // Prepare a new document containing a simple hello world sent to a hypothetical tutorial contract
+    const document = await platform.documents.create(
+      'tutorialContract.note',
+      identity,
+      { message: 'Hello World' },
+    );
+
+    // Broadcast the document into a new state transition
+    await platform.documents.broadcast({create:[document]}, identity);
+  }
 });
 ```
 

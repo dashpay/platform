@@ -11,7 +11,16 @@ Parameters:
 
 **Example**: 
 ```js
-  // See https://github.com/dashevo/dpns-contract on how to get those value.
-  const dpnsDocOpts =  {nameHash, label,normalizedLabel,normalizedParentDomainName,preorderSalt,records };
-  const document = client.platform.documents.create('dpns.domain', identity, dpnsDocOpts);
+const identityId = '';// Your identity identifier
+const identity = await client.platform.identities.get(identityId);
+
+const helloWorldDocument = await platform.documents.create(
+      // Assume a contract helloWorldContract is registered with a field note
+      'helloWorldContract.note',
+      identity,
+     { message: 'Hello World'},
+  );
 ```
+**Note**: When your document is created, it will only exist locally, use the [broadcast](/platform/documents/broadcast.md) method to register it.  
+
+Returns: Document

@@ -1,11 +1,11 @@
 import {Platform} from "../../Platform";
 
 /**
- * Get identies from the platform
+ * Get an identity from the platform
  *
  * @param {Platform} this - bound instance class
  * @param {string} id - id
- * @returns identites
+ * @returns Identity
  */
 export async function get(this: Platform, id: string): Promise<any> {
     // @ts-ignore

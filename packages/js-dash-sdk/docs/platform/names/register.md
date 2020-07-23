@@ -10,3 +10,5 @@ Parameters:
 
 
 **Example**: `await client.platform.identities.register('alice', identity)`
+
+Return: the created domain document

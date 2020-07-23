@@ -1,12 +1,12 @@
-import {Platform} from "../../Platform";
-import {wait} from "../../../../../utils/wait";
+import { Platform } from "../../Platform";
+import { wait } from "../../../../../utils/wait";
 import createAssetLockTransaction from "../../createAssetLockTransaction";
 
 /**
  * Register identities to the platform
  *
  * @param {number} [fundingAmount=10000] - funding amount in duffs
- * @returns {Identity}
+ * @returns {Identity} identity - a register and funded identity
  */
 export default async function register(this: Platform, fundingAmount : number = 10000): Promise<any> {
     const { client, dpp } = this;
@@ -19,7 +19,6 @@ export default async function register(this: Platform, fundingAmount : number = 
     } = await createAssetLockTransaction(this, fundingAmount);
 
     // Broadcast Asset Lock transaction
-    // @ts-ignore
     await account.broadcastTransaction(assetLockTransaction);
 
     // Wait some time for propagation
@@ -50,9 +49,7 @@ export default async function register(this: Platform, fundingAmount : number = 
     // Broadcast ST
     await client.getDAPIClient().platform.broadcastStateTransition(identityCreateTransition.serialize());
 
-    // @ts-ignore
     account.storage.insertIdentityIdAtIndex(
-        // @ts-ignore
         account.walletId,
         identity.getId(),
         identityIndex,
@@ -61,6 +58,5 @@ export default async function register(this: Platform, fundingAmount : number = 
     // Wait some time for propagation
     await wait(1000);
 
-    // @ts-ignore
     return identity;
 }

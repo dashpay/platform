@@ -5,3 +5,7 @@ Identity is the atomic element that linked with additional applications can be e
 
 Read more on the Dash Platform documentation about [Identity](https://dashplatform.readme.io/docs/explanation-identity).     
 You might also want to consult the usage for the [DPNS Name Service](/platform/names) in order to attach a name to your created identity.
+
+## Credits
+
+Each identity contains a credit balance. The ratio is 1 duff = 1000 credits.

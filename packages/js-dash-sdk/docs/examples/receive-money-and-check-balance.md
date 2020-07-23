@@ -13,7 +13,7 @@ const client = new Dash.Client({
 
 Having set up your `client` instance, you be able to access the `account` and `wallet` instance generated from your mnemonic.
 
-You can read more on [change my account](/examples/change-my-account) as by default, you are on the first BIP44 account. 
+You can read more on [how to use a different account](/examples/use-different-account) as by default, you are on the first BIP44 account. 
 
 
 ## Generate a receiving address

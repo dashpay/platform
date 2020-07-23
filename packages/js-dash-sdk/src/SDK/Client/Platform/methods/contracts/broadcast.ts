@@ -6,7 +6,7 @@
  * @param identity - identity
  * @return dataContract
  */
-import {Platform} from "../../Platform";
+import { Platform } from "../../Platform";
 import broadcastStateTransition from "../../broadcastStateTransition";
 
 export default async function broadcast(this: Platform, dataContract: any, identity: any): Promise<any> {

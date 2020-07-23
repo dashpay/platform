@@ -6,7 +6,7 @@ declare type ContractIdentifier = string;
  * Get contracts from the platform
  *
  * @param {Platform} this - bound instance class
- * @param {ContractIdentifier} identifier - identifier
+ * @param {ContractIdentifier} identifier - identifier of the contract to fetch
  * @returns contracts
  */
 export async function get(this: Platform, identifier: ContractIdentifier): Promise<any> {

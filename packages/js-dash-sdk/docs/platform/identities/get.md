@@ -1,5 +1,5 @@
 **Usage**: `client.platform.identities.get(identityId)`    
-**Description**: This method will allow you to fetch back an identity from it's id. 
+**Description**: This method will allow you to fetch back an identity from its id. 
 
 Parameters: 
 
@@ -9,4 +9,4 @@ Parameters:
 
 **Example**: `await client.platform.identities.get('3GegupTgRfdN9JMS8R6QXF3B2VbZtiw63eyudh1oMJAk')`
 
-Returns : Identity (or `null` if do not exist).
+Returns : Identity (or `null` if it does not exist).
