@@ -21,7 +21,7 @@
 
 ### BREAKING CHANGES
 
-* Indexed strings should have `maxLength` constraint not less than 1024 chars
+* Indexed strings should have `maxLength` constraint not greater than 1024 chars
 * JSON Schema conditions (`allOf`, `if`, ...) are not allowed in Document JSON Schema
 
 
