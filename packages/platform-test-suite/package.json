@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/plaform-test-suite",
-  "version": "0.14.0-dev.3",
+  "version": "0.15.0-dev.1",
   "description": "Dash Network end-to-end tests",
   "private": true,
   "scripts": {
