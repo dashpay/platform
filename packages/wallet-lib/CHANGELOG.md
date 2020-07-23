@@ -1,3 +1,45 @@
+# [7.14.0](https://github.com/dashevo/wallet-lib/compare/v7.13.4...v7.14.0) (2020-07-23)
+
+
+### Bug Fixes
+
+* merge conflict artefact issue ([#170](https://github.com/dashevo/wallet-lib/issues/170))
+* outdated network option values ([#167](https://github.com/dashevo/wallet-lib/issues/167))
+
+
+### Features
+
+* run tests against mn-bootstrap instead of devnet ([#168](https://github.com/dashevo/wallet-lib/issues/168))
+* update to DAPI Client 0.14 and refactor transport layer ([#163](https://github.com/dashevo/wallet-lib/issues/163))
+
+
+### Documentation
+
+* readme standard updates ([#165](https://github.com/dashevo/wallet-lib/issues/165))
+* update documentation and definitions files ([#154](https://github.com/dashevo/wallet-lib/issues/154))
+
+
+### BREAKING CHANGES
+
+* `transporter` option is replaced with `transport` that accepts [DAPI Client options](https://github.com/dashevo/dapi-client/blob/1ec21652f1615ba95ea537c38632692f81deefa3/lib/DAPIClient.js#L42-L51) or a Transport instance.
+
+
+
+## [7.13.4](https://github.com/dashevo/wallet-lib/compare/v7.13.3...v7.13.4) (2020-07-01)
+
+
+### Bug Fixes
+
+* simple transaction do not have any 4 inputs limitation ([#158](https://github.com/dashevo/wallet-lib/issues/158)) ([11d8d01](https://github.com/dashevo/wallet-lib/commit/11d8d011a15e9000dfd8dc4bd22c449334835767))
+* **account:** forward all storage events ([#159](https://github.com/dashevo/wallet-lib/issues/159)) ([e5c807e](https://github.com/dashevo/wallet-lib/commit/e5c807e1d0132d6fe0538e05f04e760ff0c0b1f3))
+
+
+### Features
+
+* update dashcore-lib and DAPI Client ([#161](https://github.com/dashevo/wallet-lib/issues/161)) ([81536d2](https://github.com/dashevo/wallet-lib/commit/81536d2235e335fed5fa53752b77260a4a7fa367))
+
+
+
 ## [7.13.4](https://github.com/dashevo/wallet-lib/compare/v7.13.3...v7.13.4) (2020-07-01)
 
 
