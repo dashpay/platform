@@ -2,7 +2,7 @@ import {Mnemonic, PrivateKey, HDPublicKey, Strategy, Network, Plugins, AddressIn
 import {Account} from "../Account/Account";
 import {Storage} from "../Storage/Storage";
 import {HDPrivateKey} from "@dashevo/dashcore-lib";
-import {Transporter} from "../../transporters/Transporter";
+import {Transport} from "../../transport/Transport";
 
 export declare class Wallet {
     offlineMode: boolean;
@@ -10,7 +10,7 @@ export declare class Wallet {
     injectDefaultPlugins: boolean;
     plugins: [Plugins];
     passphrase?: string;
-    transporter: Transporter;
+    transport: Transport;
     network: Network;
     walletId: string;
     accounts: [undefined];
@@ -18,7 +18,7 @@ export declare class Wallet {
     store: Storage.store;
 
     constructor(opts:Wallet.IWalletOptions)
-  
+
     createAccount(accOptions: Account.Options): Promise<Account>;
     disconnect(): void;
     exportWallet():Mnemonic["toString"];

@@ -13,7 +13,7 @@ import {
 import { KeyChain } from "../KeyChain/KeyChain";
 import { HDPrivateKey } from "@dashevo/dashcore-lib";
 import { Wallet } from "../../index";
-import { Transporter } from "../../transporters/Transporter";
+import { Transport } from "../../transport/Transport";
 import { BlockHeader } from "@dashevo/dashcore-lib/typings/block/BlockHeader";
 import { UnspentOutput } from "@dashevo/dashcore-lib/typings/transaction/UnspentOutput";
 import { Storage } from "../Storage/Storage";
@@ -34,7 +34,7 @@ export declare class Account {
     storage: Storage;
     store: Storage.store;
     walletId: string;
-    transporter: Transporter;
+    transport: Transport;
 
     isReady(): Promise<boolean>;
     isInitialized(): Promise<boolean>;
