@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/plaform-test-suite",
-  "version": "0.15.0-dev.1",
+  "version": "0.14.0",
   "description": "Dash Network end-to-end tests",
   "private": true,
   "scripts": {
@@ -24,11 +24,11 @@
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.18.11",
     "@dashevo/dpns-contract": "~0.2.0-dev.4",
-    "@dashevo/dpp": "~0.14.0-dev.4",
+    "@dashevo/dpp": "~0.14.0",
     "@dashevo/grpc-common": "~0.3.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
-    "dash": "~3.14.0-dev.4",
+    "dash": "~3.14.0",
     "dirty-chai": "^2.0.1",
     "dotenv-safe": "^8.2.0",
     "github-api": "^3.3.0",
