@@ -167,6 +167,28 @@ To reset an Evonet node:
 $ mn reset evonet
 ```
 
+### Show status
+
+The `status` command outputs status information relating to either the host, masternode or services.
+
+```
+Show status details
+
+USAGE
+  $ mn status:COMMAND
+
+COMMANDS
+  status:host        Show host status details
+  status:masternode  Show masternode status details
+  status:services    Show service status details
+```
+
+To show the host status:
+
+```bash
+$ mn status:host
+```
+
 ### Development
 
 When developing on a standalone node (the `local` preset), `setup-for-local-development` can be used

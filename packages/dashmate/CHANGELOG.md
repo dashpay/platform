@@ -1,3 +1,38 @@
+# [0.14.0](https://github.com/dashevo/mn-bootstrap/compare/v0.13.4...v0.14.0) (2020-07-24)
+
+
+### Bug Fixes
+
+* missing `build` section for `tx_filter_stream_service` service ([#94](https://github.com/dashevo/mn-bootstrap/issues/94))
+* missing env variables for `dapi-tx-filter-stream` service ([#99](https://github.com/dashevo/mn-bootstrap/issues/99))
+* faucet inputs where locked after platform initialization script ([#88](https://github.com/dashevo/mn-bootstrap/issues/88))
+* original Tendermint image creates wrong mount points ([#86](https://github.com/dashevo/mn-bootstrap/issues/86))
+
+
+### Features
+
+* update Evonet preset to 0.14 ([#108](https://github.com/dashevo/mn-bootstrap/issues/108), [#105](https://github.com/dashevo/mn-bootstrap/issues/105))
+* update Drive and DAPI versions to 0.14 ([#98](https://github.com/dashevo/mn-bootstrap/issues/98))
+* implement `status` command ([#49](https://github.com/dashevo/mn-bootstrap/issues/49), [#93](https://github.com/dashevo/mn-bootstrap/issues/93), [#96](https://github.com/dashevo/mn-bootstrap/issues/96))
+* move from Listr to Listr2 ([#84](https://github.com/dashevo/mn-bootstrap/issues/84))
+* implement `setup-for-local-development` command ([#82](https://github.com/dashevo/mn-bootstrap/issues/82), [#101](https://github.com/dashevo/mn-bootstrap/issues/101))
+* implement `update` option for `start` command ([#80](https://github.com/dashevo/mn-bootstrap/issues/80))
+* build docker images from local directories ([#59](https://github.com/dashevo/mn-bootstrap/issues/59), [#66](https://github.com/dashevo/mn-bootstrap/issues/66), [#90](https://github.com/dashevo/mn-bootstrap/issues/90))
+
+
+### Documentation
+
+* document `status` command in README ([#97](https://github.com/dashevo/mn-bootstrap/issues/97))
+* add release date badge ([#85](https://github.com/dashevo/mn-bootstrap/issues/85))
+* add development usage for local docker build ([#67](https://github.com/dashevo/mn-bootstrap/issues/67))
+
+
+### BREAKING CHANGES
+
+* data created with previous versions of Dash Platform is incompatible we the new one, so you need to reset data before you start the node
+
+
+
 ## [0.13.4](https://github.com/dashevo/mn-bootstrap/compare/v0.13.3...v0.13.4) (2020-06-18)
 
 

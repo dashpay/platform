@@ -38,9 +38,7 @@ class MasternodeStatusCommand extends BaseCommand {
 
     rows.push(['Blocks', blockCountOutput.out.trim()]);
 
-    const output = table(rows, {
-      drawHorizontalLine: (index, size) => index === 0 || index === 1 || index === size,
-    });
+    const output = table(rows, { singleLine: true });
 
     // eslint-disable-next-line no-console
     console.log(output);
