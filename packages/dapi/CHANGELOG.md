@@ -1,3 +1,18 @@
+# [0.14.0](https://github.com/dashevo/dapi/compare/v0.13.0...v0.14.0) (2020-07-23)
+
+### Bug Fixes
+
+* internal error when `fromBlockHeight` submitted as 0  to `subscribeToTransactionsWithProofs` ([#285](https://github.com/dashevo/dapi/issues/285))
+
+
+### Features
+
+* update dependencies (dpp to 0.14.0, dashcore-lib to 0.18.11) ([#283](https://github.com/dashevo/dapi/issues/283))
+* reduce artifical slowdown of the transaction stream ([#275](https://github.com/dashevo/dapi/issues/275))
+* use test-suite to run functional tests ([#276](https://github.com/dashevo/dapi/issues/276), [#280](https://github.com/dashevo/dapi/issues/280))
+
+
+
 # [0.13.0](https://github.com/dashevo/dapi/compare/v0.12.0...v0.13.0) (2020-06-08)
 
 
