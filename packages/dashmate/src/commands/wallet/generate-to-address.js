@@ -19,6 +19,8 @@ class GenerateToAddressCommand extends BaseCommand {
     { address },
     generateToAddressTask,
   ) {
+    const network = preset;
+
     const tasks = new Listr([
       {
         title: `Generate ${amount} dash to address using ${preset} preset`,
@@ -36,6 +38,7 @@ class GenerateToAddressCommand extends BaseCommand {
     try {
       await tasks.run({
         fundingAddress: address,
+        network,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

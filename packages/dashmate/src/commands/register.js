@@ -52,6 +52,7 @@ class RegisterCommand extends BaseCommand {
         fundingPrivateKeyString,
         externalIp,
         coreP2pPort,
+        network,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

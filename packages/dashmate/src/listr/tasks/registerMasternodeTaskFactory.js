@@ -137,6 +137,7 @@ function registerMasternodeTaskFactory(
             await generateBlocks(
               ctx.coreService,
               15,
+              ctx.network,
               (blocks) => {
                 observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
               },
@@ -158,6 +159,7 @@ function registerMasternodeTaskFactory(
               await generateBlocks(
                 ctx.coreService,
                 1000 - height,
+                ctx.network,
                 (blocks) => {
                   const remaining = 1000 - height - blocks;
                   observer.next(`${remaining} ${remaining > 1 ? 'blocks' : 'block'} remaining`);
@@ -213,6 +215,7 @@ function registerMasternodeTaskFactory(
             await generateBlocks(
               ctx.coreService,
               1,
+              ctx.network,
               (blocks) => {
                 observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
               },
