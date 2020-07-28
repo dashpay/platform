@@ -14,13 +14,13 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  SendTransactionRequest,
+  BroadcastTransactionRequest,
   GetTransactionRequest,
   GetStatusRequest,
   GetBlockRequest,
   pbjs: {
-    SendTransactionRequest: PBJSSendTransactionRequest,
-    SendTransactionResponse: PBJSSendTransactionResponse,
+    BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
+    BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
     GetTransactionRequest: PBJSGetTransactionRequest,
     GetTransactionResponse: PBJSGetTransactionResponse,
     GetStatusRequest: PBJSGetStatusRequest,
@@ -41,8 +41,8 @@ const getStatusHandlerFactory = require(
 const getTransactionHandlerFactory = require(
   './getTransactionHandlerFactory',
 );
-const sendTransactionHandlerFactory = require(
-  './sendTransactionHandlerFactory',
+const broadcastTransactionHandlerFactory = require(
+  './broadcastTransactionHandlerFactory',
 );
 
 /**
@@ -91,24 +91,24 @@ function coreHandlersFactory(insightAPI) {
     wrapInErrorHandler(getTransactionHandler),
   );
 
-  // sendTransaction
-  const sendTransactionHandler = sendTransactionHandlerFactory(insightAPI);
-  const wrappedSendTransaction = jsonToProtobufHandlerWrapper(
+  // broadcastTransaction
+  const broadcastTransactionHandler = broadcastTransactionHandlerFactory(insightAPI);
+  const wrappedBroadcastTransaction = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      SendTransactionRequest,
-      PBJSSendTransactionRequest,
+      BroadcastTransactionRequest,
+      PBJSBroadcastTransactionRequest,
     ),
     protobufToJsonFactory(
-      PBJSSendTransactionResponse,
+      PBJSBroadcastTransactionResponse,
     ),
-    wrapInErrorHandler(sendTransactionHandler),
+    wrapInErrorHandler(broadcastTransactionHandler),
   );
 
   return {
     getBlock: wrappedGetBlock,
     getStatus: wrappedGetStatus,
     getTransaction: wrappedGetTransaction,
-    sendTransaction: wrappedSendTransaction,
+    broadcastTransaction: wrappedBroadcastTransaction,
   };
 }
 

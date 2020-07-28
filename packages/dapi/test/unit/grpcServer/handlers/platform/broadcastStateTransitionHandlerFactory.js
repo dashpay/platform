@@ -7,7 +7,7 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  ApplyStateTransitionResponse,
+  BroadcastStateTransitionResponse,
 } = require('@dashevo/dapi-grpc');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
@@ -15,14 +15,14 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-const applyStateTransitionHandlerFactory = require(
-  '../../../../../lib/grpcServer/handlers/platform/applyStateTransitionHandlerFactory',
+const broadcastStateTransitionHandlerFactory = require(
+  '../../../../../lib/grpcServer/handlers/platform/broadcastStateTransitionHandlerFactory',
 );
 
-describe('applyStateTransitionHandlerFactory', () => {
+describe('broadcastStateTransitionHandlerFactory', () => {
   let call;
   let rpcClientMock;
-  let applyStateTransitionHandler;
+  let broadcastStateTransitionHandler;
   let response;
   let stateTransitionFixture;
   let log;
@@ -69,7 +69,7 @@ describe('applyStateTransitionHandlerFactory', () => {
 
     handleAbciResponseErrorMock = this.sinon.stub();
 
-    applyStateTransitionHandler = applyStateTransitionHandlerFactory(
+    broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
       rpcClientMock,
       handleAbciResponseErrorMock,
     );
@@ -83,7 +83,7 @@ describe('applyStateTransitionHandlerFactory', () => {
     call.request.getStateTransition.returns(null);
 
     try {
-      await applyStateTransitionHandler(call);
+      await broadcastStateTransitionHandler(call);
 
       expect.fail('InvalidArgumentGrpcError was not thrown');
     } catch (e) {
@@ -95,11 +95,11 @@ describe('applyStateTransitionHandlerFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await applyStateTransitionHandler(call);
+    const result = await broadcastStateTransitionHandler(call);
 
     const tx = stateTransitionFixture.serialize().toString('base64');
 
-    expect(result).to.be.an.instanceOf(ApplyStateTransitionResponse);
+    expect(result).to.be.an.instanceOf(BroadcastStateTransitionResponse);
     expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
     expect(handleAbciResponseErrorMock).to.not.be.called();
   });
@@ -115,7 +115,7 @@ describe('applyStateTransitionHandlerFactory', () => {
     rpcClientMock.request.resolves(response);
 
     try {
-      await applyStateTransitionHandler(call);
+      await broadcastStateTransitionHandler(call);
 
       expect.fail('InternalGrpcError was not thrown');
     } catch (e) {
@@ -133,7 +133,7 @@ describe('applyStateTransitionHandlerFactory', () => {
     rpcClientMock.request.resolves(response);
 
     try {
-      await applyStateTransitionHandler(call);
+      await broadcastStateTransitionHandler(call);
 
       expect.fail('InternalGrpcError was not thrown');
     } catch (e) {
@@ -147,7 +147,7 @@ describe('applyStateTransitionHandlerFactory', () => {
     response.error = error;
 
     try {
-      await applyStateTransitionHandler(call);
+      await broadcastStateTransitionHandler(call);
     } catch (e) {
       expect(e.message).to.equal(error.message);
       expect(e.data).to.equal(error.data);

@@ -14,15 +14,15 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  ApplyStateTransitionRequest,
+  ApplyStateTransitionRequest: BroadcastStateTransitionRequest,
   GetIdentityRequest,
   GetDataContractRequest,
   GetDocumentsRequest,
   GetIdentityByFirstPublicKeyRequest,
   GetIdentityIdByFirstPublicKeyRequest,
   pbjs: {
-    ApplyStateTransitionRequest: PBJSApplyStateTransitionRequest,
-    ApplyStateTransitionResponse: PBJSApplyStateTransitionResponse,
+    ApplyStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
+    ApplyStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
     GetIdentityRequest: PBJSGetIdentityRequest,
     GetIdentityResponse: PBJSGetIdentityResponse,
     GetDataContractRequest: PBJSGetDataContractRequest,
@@ -43,8 +43,8 @@ const handleAbciResponseError = require('../handleAbciResponseError');
 const getIdentityHandlerFactory = require(
   './getIdentityHandlerFactory',
 );
-const applyStateTransitionHandlerFactory = require(
-  './applyStateTransitionHandlerFactory',
+const broadcastStateTransitionHandlerFactory = require(
+  './broadcastStateTransitionHandlerFactory',
 );
 const getDocumentsHandlerFactory = require(
   './getDocumentsHandlerFactory',
@@ -67,21 +67,21 @@ const getIdentityIdByFirstPublicKeyHandlerFactory = require(
 function platformHandlersFactory(rpcClient, driveStateRepository) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
 
-  // applyStateTransition
-  const applyStateTransitionHandler = applyStateTransitionHandlerFactory(
+  // broadcastStateTransition
+  const broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
     rpcClient,
     handleAbciResponseError,
   );
 
-  const wrappedApplyStateTransition = jsonToProtobufHandlerWrapper(
+  const wrappedBroadcastStateTransition = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      ApplyStateTransitionRequest,
-      PBJSApplyStateTransitionRequest,
+      BroadcastStateTransitionRequest,
+      PBJSBroadcastStateTransitionRequest,
     ),
     protobufToJsonFactory(
-      PBJSApplyStateTransitionResponse,
+      PBJSBroadcastStateTransitionResponse,
     ),
-    wrapInErrorHandler(applyStateTransitionHandler),
+    wrapInErrorHandler(broadcastStateTransitionHandler),
   );
 
   // getIdentity
@@ -165,7 +165,7 @@ function platformHandlersFactory(rpcClient, driveStateRepository) {
   );
 
   return {
-    applyStateTransition: wrappedApplyStateTransition,
+    broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,

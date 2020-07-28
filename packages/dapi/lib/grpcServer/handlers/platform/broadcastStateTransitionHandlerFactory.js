@@ -7,7 +7,7 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  ApplyStateTransitionResponse,
+  BroadcastStateTransitionResponse,
 } = require('@dashevo/dapi-grpc');
 
 const AbciResponseError = require('../../../errors/AbciResponseError');
@@ -16,17 +16,17 @@ const AbciResponseError = require('../../../errors/AbciResponseError');
  * @param {jaysonClient} rpcClient
  * @param {handleAbciResponseError} handleAbciResponseError
  *
- * @returns {applyStateTransitionHandler}
+ * @returns {broadcastStateTransitionHandler}
  */
-function applyStateTransitionHandlerFactory(rpcClient, handleAbciResponseError) {
+function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseError) {
   /**
-   * @typedef applyStateTransitionHandler
+   * @typedef broadcastStateTransitionHandler
    *
    * @param {Object} call
    *
-   * @return {Promise<ApplyStateTransitionResponse>}
+   * @return {Promise<BroadcastStateTransitionResponse>}
    */
-  async function applyStateTransitionHandler(call) {
+  async function broadcastStateTransitionHandler(call) {
     const { request } = call;
     const stByteArray = request.getStateTransition();
 
@@ -63,10 +63,10 @@ function applyStateTransitionHandlerFactory(rpcClient, handleAbciResponseError) 
       );
     }
 
-    return new ApplyStateTransitionResponse();
+    return new BroadcastStateTransitionResponse();
   }
 
-  return applyStateTransitionHandler;
+  return broadcastStateTransitionHandler;
 }
 
-module.exports = applyStateTransitionHandlerFactory;
+module.exports = broadcastStateTransitionHandlerFactory;

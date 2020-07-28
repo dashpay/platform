@@ -1,5 +1,5 @@
 const {
-  SendTransactionResponse,
+  BroadcastTransactionResponse,
 } = require('@dashevo/dapi-grpc');
 
 
@@ -15,15 +15,15 @@ const { Transaction } = require('@dashevo/dashcore-lib');
 
 /**
  * @param {InsightAPI} insightAPI
- * @returns {sendTransactionHandler}
+ * @returns {broadcastTransactionHandler}
  */
-function sendTransactionHandlerFactory(insightAPI) {
+function broadcastTransactionHandlerFactory(insightAPI) {
   /**
-   * @typedef sendTransactionHandler
+   * @typedef broadcastTransactionHandler
    * @param {Object} call
-   * @returns {Promise<SendTransactionResponse>}
+   * @returns {Promise<BroadcastTransactionResponse>}
    */
-  async function sendTransactionHandler(call) {
+  async function broadcastTransactionHandler(call) {
     const { request } = call;
 
     const serializedTransactionBinary = request.getTransaction();
@@ -60,13 +60,13 @@ function sendTransactionHandlerFactory(insightAPI) {
       throw e;
     }
 
-    const response = new SendTransactionResponse();
+    const response = new BroadcastTransactionResponse();
     response.setTransactionId(transactionId);
 
     return response;
   }
 
-  return sendTransactionHandler;
+  return broadcastTransactionHandler;
 }
 
-module.exports = sendTransactionHandlerFactory;
+module.exports = broadcastTransactionHandlerFactory;
