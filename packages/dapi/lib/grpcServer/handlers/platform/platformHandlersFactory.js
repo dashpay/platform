@@ -14,15 +14,15 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  ApplyStateTransitionRequest: BroadcastStateTransitionRequest,
+  BroadcastStateTransitionRequest,
   GetIdentityRequest,
   GetDataContractRequest,
   GetDocumentsRequest,
   GetIdentityByFirstPublicKeyRequest,
   GetIdentityIdByFirstPublicKeyRequest,
   pbjs: {
-    ApplyStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
-    ApplyStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
+    BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
+    BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
     GetIdentityRequest: PBJSGetIdentityRequest,
     GetIdentityResponse: PBJSGetIdentityResponse,
     GetDataContractRequest: PBJSGetDataContractRequest,
