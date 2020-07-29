@@ -225,7 +225,23 @@ describe('Platform', () => {
       it('should be able to top-up credit balance', async () => {
         await waitForBalanceToChange(walletAccount);
 
-        await client.platform.identities.topUp(identity.getId(), 10);
+        const identityBeforeTopUp = await client.platform.identities.get(
+          identity.getId(),
+        );
+        const balanceBeforeTopUp = identityBeforeTopUp.getBalance();
+        const topUpAmount = 100;
+        const topUpCredits = topUpAmount * 1000;
+
+        await client.platform.identities.topUp(identity.getId(), topUpAmount);
+
+        await waitForBalanceToChange(walletAccount);
+
+        const identityAfterTopUp = await client.platform.identities.get(
+          identity.getId(),
+        );
+
+        expect(identityAfterTopUp.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
+        expect(identityAfterTopUp.getBalance()).to.be.lessThan(balanceBeforeTopUp + topUpCredits);
       });
 
       it('should be able to create more documents after the top-up', async () => {
