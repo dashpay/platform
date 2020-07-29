@@ -24,6 +24,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
   async runWithDependencies(
     { port: coreP2pPort, 'external-ip': externalIp },
     {
+      update: isUpdate,
       'drive-image-build-path': driveImageBuildPath,
       'dapi-image-build-path': dapiImageBuildPath,
     },
@@ -62,6 +63,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
                   operatorPrivateKey: ctx.operator.privateKey,
                   driveImageBuildPath: ctx.driveImageBuildPath,
                   dapiImageBuildPath: ctx.dapiImageBuildPath,
+                  isUpdate,
                 },
               ),
             },
@@ -134,6 +136,7 @@ SetupForLocalDevelopmentCommand.args = [{
 }];
 
 SetupForLocalDevelopmentCommand.flags = {
+  update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),
 };
