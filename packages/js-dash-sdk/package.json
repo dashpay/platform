@@ -17,7 +17,8 @@
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:unit": "mocha -r ts-node/register \"src/**/*.spec.ts\"",
     "test:functional": "npm run build && mocha --recursive tests/functional/**/*.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepare": "npm run build"
   },
   "repository": {
     "type": "git",
