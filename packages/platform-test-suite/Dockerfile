@@ -14,7 +14,8 @@ RUN npm ci --production
 
 FROM node:12-alpine
 
-RUN apk add --no-cache bash
+RUN apk add --no-cache bash \
+                       git
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Test suite for Dash Platform"
