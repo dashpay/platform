@@ -29,6 +29,7 @@ before_install:
   - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
   - chmod +x docker-compose
   - sudo mv docker-compose /usr/local/bin
+  - if [[ -n $SDK_BRANCH ]]; then export SDK_INSTALL=github:dashevo/DashJS#$SDK_BRANCH; fi
 
 install:
   - npm ci
@@ -39,6 +40,7 @@ install:
   - export CI_TOOLS_DIR="$(ls ~/travis-ci-tools)"
   - cd ~/travis-ci-tools/$CI_TOOLS_DIR
   - npm ci && npm link
+  - if [[ -n $SDK_BRANCH ]]; then npm i github:dashevo/DashJS#$SDK_BRANCH ;fi
 
 before_script:
   - print-bells
@@ -49,7 +51,7 @@ script: >
   npm run check-package &&
   npm run lint &&
   npm run test:coverage &&
-  if [[ -z $SKIP_TEST_SUITE ]]; then docker run --network="host" dashpay/platform-test-suite:$CURRENT_VERSION 127.0.0.1:3000 -k=$FAUCET_PRIVATE_KEY -n=regtest --dpns-tld-identity-private-key=$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY --dpns-tld-identity-id=$DPNS_TOP_LEVEL_IDENTITY_ID --dpns-contract-id=$DPNS_CONTRACT_ID; fi
+  if [[ -z $SKIP_TEST_SUITE ]]; then docker run --network="host" dashpay/platform-test-suite:$CURRENT_VERSION 127.0.0.1:3000 -k=$FAUCET_PRIVATE_KEY -n=regtest --dpns-tld-identity-private-key=$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY --dpns-tld-identity-id=$DPNS_TOP_LEVEL_IDENTITY_ID --dpns-contract-id=$DPNS_CONTRACT_ID --npm-install=$SDK_INSTALL; fi
 
 deploy:
   skip_cleanup: true
