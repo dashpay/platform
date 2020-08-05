@@ -3,6 +3,9 @@ const path = require('path');
 const commonJSConfig = {
   entry: ['core-js/stable', './lib/DAPIClient.js'],
   mode: 'production',
+  node: {
+    fs: 'empty',
+  },
   module: {
     rules: [
       {

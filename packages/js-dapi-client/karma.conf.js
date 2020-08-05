@@ -9,6 +9,9 @@ module.exports = (config) => {
     },
     webpack: {
       mode: 'development',
+      node: {
+        fs: 'empty',
+      },
     },
     reporters: ['mocha'],
     port: 9876,
