@@ -1,5 +1,5 @@
 {
-  "name": "@dashevo/drive",
+  "name": "@dashevo/drive-abci",
   "version": "0.14.0",
   "description": "Replicated state machine for Dash Platform",
   "engines": {

@@ -57,4 +57,4 @@ deploy:
   script: bash bin/travis-deploy.sh
   on:
     tags: true
-    repo: dashevo/drive
+    repo: dashevo/js-drive-abci
