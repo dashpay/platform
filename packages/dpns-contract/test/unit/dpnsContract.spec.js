@@ -1,7 +1,7 @@
 const DashPlatformProtocol = require('@dashevo/dpp');
 const generateRandomId = require('@dashevo/dpp/lib/test/utils/generateRandomId');
 
-const dpnsDocumentsSchema = require('../../src/schema/dpns-documents.json');
+const dpnsContractDocumentsSchema = require('../../schema/dpns-contract-documents.json');
 
 describe('DPNS Contract', () => {
   let dpp;
@@ -12,14 +12,14 @@ describe('DPNS Contract', () => {
     const fetchContractStub = this.sinon.stub();
 
     dpp = new DashPlatformProtocol({
-      dataProvider: {
+      stateRepository: {
         fetchDataContract: fetchContractStub,
       },
     });
 
     identityId = generateRandomId();
 
-    contract = dpp.dataContract.create(identityId, dpnsDocumentsSchema);
+    contract = dpp.dataContract.create(identityId, dpnsContractDocumentsSchema);
 
     fetchContractStub.resolves(contract);
   });
@@ -36,45 +36,79 @@ describe('DPNS Contract', () => {
 
       beforeEach(() => {
         preorderData = {
-          saltedDomainHash: Buffer.alloc(34).toString('hex'),
+          saltedDomainHash: '0'.repeat(32),
         };
       });
 
-      it('should throw validation error if `saltedDomainHash` is not specified', async () => {
-        delete preorderData.saltedDomainHash;
+      describe('saltedDomainHash', () => {
+        it('should be defined', async () => {
+          delete preorderData.saltedDomainHash;
 
-        const preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
+          const preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
 
-        const result = await dpp.document.validate(preorder);
+          const result = await dpp.document.validate(preorder);
 
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
 
-        const [error] = result.errors;
+          const [error] = result.errors;
 
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('saltedDomainHash');
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('saltedDomainHash');
+        });
+
+        it('should not be empty', async () => {
+          preorderData.saltedDomainHash = '';
+
+          const preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
+
+          const result = await dpp.document.validate(preorder);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('minLength');
+          expect(error.dataPath).to.equal('.saltedDomainHash');
+        });
+
+        it('should have 32 chars length', async () => {
+          preorderData.saltedDomainHash = '0'.repeat(31);
+          let preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
+
+          let result = await dpp.document.validate(preorder);
+          await dpp.document.validate(preorder);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          let [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('minLength');
+          expect(error.dataPath).to.equal('.saltedDomainHash');
+
+          preorderData.saltedDomainHash = '0'.repeat(33);
+          identityId = generateRandomId();
+          preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
+
+          result = await dpp.document.validate(preorder);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.dataPath).to.equal('.saltedDomainHash');
+        });
       });
 
-      it('should throw validation error if `saltedDomainHash` is empty', async () => {
-        preorderData.saltedDomainHash = '';
-
-        const preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
-
-        const result = await dpp.document.validate(preorder);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('minLength');
-        expect(error.dataPath).to.equal('.saltedDomainHash');
-      });
-
-      it('should throw validation error if additional properties are present', async () => {
+      it('should not have additional properties', async () => {
         preorderData.someOtherProperty = 42;
 
         const preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
@@ -91,7 +125,7 @@ describe('DPNS Contract', () => {
         expect(error.params.additionalProperty).to.equal('someOtherProperty');
       });
 
-      it('should successfuly validate preorder document if it is valid', async () => {
+      it('should be valid', async () => {
         const preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
 
         const result = await dpp.document.validate(preorder);
@@ -105,243 +139,267 @@ describe('DPNS Contract', () => {
 
       beforeEach(() => {
         domainData = {
-          nameHash: Buffer.alloc(34).toString('hex'),
           label: 'Wallet',
           normalizedLabel: 'wallet',
           normalizedParentDomainName: 'dash',
-          preorderSalt: 'yTU2B8bTaq1X17Sm4QdTjfgtPQ6MD2Mx2c',
+          preorderSalt: 'yTU2B8bTaq1X17Sm4QdTjfgtPQ6MD2Mx',
           records: {
-            dashIdentity: generateRandomId(),
+            dashUniqueIdentityId: generateRandomId(),
+          },
+          subdomainRules: {
+            allowSubdomains: false,
           },
         };
       });
 
-      it('should throw validation error if `nameHash` is not specified', async () => {
-        delete domainData.nameHash;
+      describe('label', () => {
+        it('should be defined', async () => {
+          delete domainData.label;
 
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
 
-        const result = await dpp.document.validate(domain);
+          const result = await dpp.document.validate(domain);
 
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
 
-        const [error] = result.errors;
+          const [error] = result.errors;
 
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('nameHash');
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('label');
+        });
+
+        it('should follow pattern', async () => {
+          domainData.label = 'invalid label';
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('pattern');
+          expect(error.dataPath).to.equal('.label');
+        });
+
+        it('should be longer than 3 chars', async () => {
+          domainData.label = 'ab';
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('minLength');
+          expect(error.dataPath).to.equal('.label');
+        });
+
+        it('should be less than 63 chars', async () => {
+          domainData.label = 'a'.repeat(64);
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.dataPath).to.equal('.label');
+        });
       });
 
-      it('should throw validation error if `nameHash` is empty', async () => {
-        domainData.nameHash = '';
+      describe('normalizedLabel', () => {
+        it('should be defined', async () => {
+          delete domainData.normalizedLabel;
 
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
 
-        const result = await dpp.document.validate(domain);
+          const result = await dpp.document.validate(domain);
 
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
 
-        const [error] = result.errors;
+          const [error] = result.errors;
 
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('minLength');
-        expect(error.dataPath).to.equal('.nameHash');
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('normalizedLabel');
+        });
+
+        it('should follow pattern', async () => {
+          domainData.normalizedLabel = 'InValiD label';
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('pattern');
+          expect(error.dataPath).to.equal('.normalizedLabel');
+        });
+
+        it('should be less than 63 chars', async () => {
+          domainData.normalizedLabel = 'a'.repeat(64);
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.dataPath).to.equal('.normalizedLabel');
+        });
       });
 
-      it('should throw validation error if `label` is not specified', async () => {
-        delete domainData.label;
+      describe('normalizedParentDomainName', () => {
+        it('should be defined', async () => {
+          delete domainData.normalizedParentDomainName;
 
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
 
-        const result = await dpp.document.validate(domain);
+          const result = await dpp.document.validate(domain);
 
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
 
-        const [error] = result.errors;
+          const [error] = result.errors;
 
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('label');
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('normalizedParentDomainName');
+        });
+
+        it('should be less than 190 chars', async () => {
+          domainData.normalizedParentDomainName = 'a'.repeat(191);
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.dataPath).to.equal('.normalizedParentDomainName');
+        });
+
+        it('should follow pattern', async () => {
+          domainData.normalizedParentDomainName = '';
+
+          let domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          let result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.true();
+
+          domainData.normalizedParentDomainName = 'notNormalized';
+          domain = dpp.document.create(contract, identityId, 'domain', domainData);
+          result = await dpp.document.validate(domain);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('pattern');
+          expect(error.dataPath).to.equal('.normalizedParentDomainName');
+        });
       });
 
-      it('should throw validation error if `label` is invalid', async () => {
-        domainData.label = 'invalid label';
+      describe('preorderSalt', () => {
+        it('should be defined', async () => {
+          delete domainData.preorderSalt;
 
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
 
-        const result = await dpp.document.validate(domain);
+          const result = await dpp.document.validate(domain);
 
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
 
-        const [error] = result.errors;
+          const [error] = result.errors;
 
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('pattern');
-        expect(error.dataPath).to.equal('.label');
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('preorderSalt');
+        });
+
+        it('should not be empty', async () => {
+          domainData.preorderSalt = '';
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('minLength');
+          expect(error.dataPath).to.equal('.preorderSalt');
+        });
+
+        it('should have 32 chars length', async () => {
+          domainData.preorderSalt = 'a'.repeat(31);
+
+          let domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          let result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          let [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('minLength');
+          expect(error.dataPath).to.equal('.preorderSalt');
+
+          domainData.preorderSalt = 'a'.repeat(33);
+
+          domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.dataPath).to.equal('.preorderSalt');
+        });
       });
 
-      it('should throw validation error if `normalizedLabel` is not specified', async () => {
-        delete domainData.normalizedLabel;
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('normalizedLabel');
-      });
-
-      it('should throw validation error if `normalizedLabel` is invalid', async () => {
-        domainData.normalizedLabel = 'InValiD label';
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('pattern');
-        expect(error.dataPath).to.equal('.normalizedLabel');
-      });
-
-      it('should throw validation error if `normalizedParentDomainName` is not specified', async () => {
-        delete domainData.normalizedParentDomainName;
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('normalizedParentDomainName');
-      });
-
-      it('should throw validation error if `preorderSalt` is not specified', async () => {
-        delete domainData.preorderSalt;
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('preorderSalt');
-      });
-
-      it('should throw validation error if `preorderSalt` is empty', async () => {
-        domainData.preorderSalt = '';
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('minLength');
-        expect(error.dataPath).to.equal('.preorderSalt');
-      });
-
-      it('should throw validation error if `records` are not specified', async () => {
-        delete domainData.records;
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('records');
-      });
-
-      it('should throw validation error if `records` is empty', async () => {
-        domainData.records = {};
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('minProperties');
-        expect(error.dataPath).to.equal('.records');
-      });
-
-      it('should throw validation error if `records` have a short `dashIdentity`', async () => {
-        domainData.records = {
-          dashIdentity: 'short indentity',
-        };
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('minLength');
-        expect(error.dataPath).to.equal('.records.dashIdentity');
-      });
-
-      it('should throw validation error if `records` have a long `dashIdentity`', async () => {
-        domainData.records = {
-          dashIdentity: Buffer.alloc(64).toString('hex'),
-        };
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('maxLength');
-        expect(error.dataPath).to.equal('.records.dashIdentity');
-      });
-
-      it('should throw validation error if additional properties are present', async () => {
+      it('should not have additional properties', async () => {
         domainData.someOtherProperty = 42;
 
         const domain = dpp.document.create(contract, identityId, 'domain', domainData);
@@ -358,30 +416,267 @@ describe('DPNS Contract', () => {
         expect(error.params.additionalProperty).to.equal('someOtherProperty');
       });
 
-      it('should throw validation error if additional properties are present in records', async () => {
-        domainData.records.someOtherProperty = 42;
-
-        const domain = dpp.document.create(contract, identityId, 'domain', domainData);
-
-        const result = await dpp.document.validate(domain);
-
-        expect(result.isValid()).to.be.false();
-        expect(result.errors).to.have.a.lengthOf(1);
-
-        const [error] = result.errors;
-
-        expect(error.name).to.equal('JsonSchemaError');
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.dataPath).to.equal('.records');
-        expect(error.params.additionalProperty).to.equal('someOtherProperty');
-      });
-
-      it('shoud successfuly validate a domain document is it is valid', async () => {
+      it('should be valid', async () => {
         const domain = dpp.document.create(contract, identityId, 'domain', domainData);
 
         const result = await dpp.document.validate(domain);
 
         expect(result.isValid()).to.be.true();
+      });
+
+      describe('Records', () => {
+        it('should be defined', async () => {
+          delete domainData.records;
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('records');
+        });
+
+        it('should not be empty', async () => {
+          domainData.records = {};
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('minProperties');
+          expect(error.dataPath).to.equal('.records');
+        });
+
+        it('should not have additional properties', async () => {
+          domainData.records = {
+            someOtherProperty: 42,
+          };
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('additionalProperties');
+          expect(error.dataPath).to.equal('.records');
+          expect(error.params.additionalProperty).to.equal('someOtherProperty');
+        });
+
+        describe('Dash Identity', () => {
+          it('should have either `dashUniqueIdentityId` or `dashAliasIdentityId`', async () => {
+            domainData.records = {
+              dashUniqueIdentityId: identityId,
+              dashAliasIdentityId: identityId,
+            };
+
+            const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+            const result = await dpp.document.validate(domain);
+
+            expect(result.isValid()).to.be.false();
+            expect(result.errors).to.have.a.lengthOf(1);
+
+            const [error] = result.errors;
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('maxProperties');
+            expect(error.dataPath).to.equal('.records');
+          });
+
+          describe('dashUniqueIdentityId', () => {
+            it('should be longer than 42 chars', async () => {
+              domainData.records = {
+                dashUniqueIdentityId: 'short indentity',
+              };
+
+              const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
+
+              const result = await dpp.document.validate(domain);
+
+              expect(result.isValid()).to.be.false();
+              expect(result.errors).to.have.a.lengthOf(1);
+
+              const [error] = result.errors;
+
+              expect(error.name).to.equal('JsonSchemaError');
+              expect(error.keyword).to.equal('minLength');
+              expect(error.dataPath).to.equal('.records.dashUniqueIdentityId');
+            });
+
+            it('should be less than 44 chars', async () => {
+              domainData.records = {
+                dashUniqueIdentityId: Buffer.alloc(64).toString('hex'),
+              };
+
+              const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
+
+              const result = await dpp.document.validate(domain);
+
+              expect(result.isValid()).to.be.false();
+              expect(result.errors).to.have.a.lengthOf(1);
+
+              const [error] = result.errors;
+
+              expect(error.name).to.equal('JsonSchemaError');
+              expect(error.keyword).to.equal('maxLength');
+              expect(error.dataPath).to.equal('.records.dashUniqueIdentityId');
+            });
+
+            it('should follow pattern', async () => {
+              const id = generateRandomId().substring(1);
+
+              domainData.records = {
+                dashUniqueIdentityId: `${id}*`,
+              };
+
+              const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
+
+              const result = await dpp.document.validate(domain);
+
+              expect(result.isValid()).to.be.false();
+              expect(result.errors).to.have.a.lengthOf(1);
+
+              const [error] = result.errors;
+
+              expect(error.name).to.equal('JsonSchemaError');
+              expect(error.keyword).to.equal('pattern');
+              expect(error.dataPath).to.equal('.records.dashUniqueIdentityId');
+            });
+          });
+
+          describe('dashAliasIdentityId', () => {
+            it('should be longer than 42 chars', async () => {
+              domainData.records = {
+                dashAliasIdentityId: 'short identity',
+              };
+
+              const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
+
+              const result = await dpp.document.validate(domain);
+
+              expect(result.isValid()).to.be.false();
+              expect(result.errors).to.have.a.lengthOf(1);
+
+              const [error] = result.errors;
+
+              expect(error.name).to.equal('JsonSchemaError');
+              expect(error.keyword).to.equal('minLength');
+              expect(error.dataPath).to.equal('.records.dashAliasIdentityId');
+            });
+
+            it('should be less than 44 chars', async () => {
+              domainData.records = {
+                dashAliasIdentityId: Buffer.alloc(64).toString('hex'),
+              };
+
+              const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
+
+              const result = await dpp.document.validate(domain);
+
+              expect(result.isValid()).to.be.false();
+              expect(result.errors).to.have.a.lengthOf(1);
+
+              const [error] = result.errors;
+
+              expect(error.name).to.equal('JsonSchemaError');
+              expect(error.keyword).to.equal('maxLength');
+              expect(error.dataPath).to.equal('.records.dashAliasIdentityId');
+            });
+
+            it('should follow pattern', async () => {
+              const id = generateRandomId().substring(1);
+
+              domainData.records = {
+                dashAliasIdentityId: `${id}*`,
+              };
+
+              const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
+
+              const result = await dpp.document.validate(domain);
+
+              expect(result.isValid()).to.be.false();
+              expect(result.errors).to.have.a.lengthOf(1);
+
+              const [error] = result.errors;
+
+              expect(error.name).to.equal('JsonSchemaError');
+              expect(error.keyword).to.equal('pattern');
+              expect(error.dataPath).to.equal('.records.dashAliasIdentityId');
+            });
+          });
+        });
+      });
+
+      describe('subdomainRules', () => {
+        it('should be defined', async () => {
+          delete domainData.subdomainRules;
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('subdomainRules');
+        });
+
+        it('should not have additional properties', async () => {
+          domainData.subdomainRules.someOtherProperty = 42;
+
+          const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+          const result = await dpp.document.validate(domain);
+
+          expect(result.isValid()).to.be.false();
+          expect(result.errors).to.have.a.lengthOf(1);
+
+          const [error] = result.errors;
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('additionalProperties');
+          expect(error.dataPath).to.equal('.subdomainRules');
+        });
+
+        describe('allowSubdomains', () => {
+          it('should be boolean', async () => {
+            domainData.subdomainRules.allowSubdomains = 'data';
+
+            const domain = dpp.document.create(contract, identityId, 'domain', domainData);
+
+            const result = await dpp.document.validate(domain);
+
+            expect(result.isValid()).to.be.false();
+            expect(result.errors).to.have.a.lengthOf(1);
+
+            const [error] = result.errors;
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('type');
+            expect(error.dataPath).to.equal('.subdomainRules.allowSubdomains');
+          });
+        });
       });
     });
   });

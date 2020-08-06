@@ -1,0 +1,131 @@
+{
+  "domain": {
+    "indices": [
+      {
+        "properties": [
+          {
+            "normalizedParentDomainName": "asc"
+          },
+          {
+            "normalizedLabel": "asc"
+          }
+        ],
+        "unique": true
+      },
+      {
+        "properties": [
+          {
+            "records.dashUniqueIdentityId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+        "label": {
+        "type": "string",
+        "pattern": "^((?!-)[a-zA-Z0-9-]{0,62}[a-zA-Z0-9])$",
+        "minLength": 3,
+        "maxLength": 63,
+        "description": "Domain label. e.g. 'Bob'."
+      },
+      "normalizedLabel": {
+        "type": "string",
+        "pattern": "^((?!-)[a-z0-9-]{0,62}[a-z0-9])$",
+        "maxLength": 63,
+        "description": "Domain label in a lower case for case insensitive uniqueness validation. e.g. 'bob'",
+        "$comment": "This property will be deprecated due to case insensitive indices. Must be equal to lowered label."
+      },
+      "normalizedParentDomainName": {
+        "type": "string",
+        "pattern": "^$|^((?!-)[a-z0-9-\\.]{0,189}[a-z0-9])$",
+        "minLength": 0,
+        "maxLength": 190,
+        "description": "A full parent domain name in lower case for case insensitive uniqueness validation. e.g. 'dash'",
+        "$comment": "Must be equal to existing domain or can be empty if you want to create top level domain. Only the contract owner can create top level domains."
+      },
+      "preorderSalt": {
+        "type": "string",
+        "contentEncoding": "binary",
+        "minLength": 32,
+        "maxLength": 32,
+        "description": "Domain pre-order salt. 32 random bytes"
+      },
+      "records": {
+        "type": "object",
+        "properties": {
+          "dashUniqueIdentityId": {
+            "type": "string",
+            "minLength": 42,
+            "maxLength": 44,
+            "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$",
+            "description": "Identity ID string should be used to create a primary name for Identity",
+            "$comment": "base58 string. Should be equal to the document owner."
+          },
+          "dashAliasIdentityId": {
+            "type": "string",
+            "minLength": 42,
+            "maxLength": 44,
+            "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$",
+            "description": "Identity ID string should be used to create multiple alias names for Identity",
+            "$comment": "base58 string. Should be equal to the document owner"
+          }
+        },
+        "$comment": "Constraint with max and min properties ensure that only one identity record is used either `dashUniqueIdentityId` or `dashAliasIdentityId`",
+        "minProperties": 1,
+        "maxProperties": 1,
+        "additionalProperties": false
+      },
+      "subdomainRules": {
+        "type": "object",
+        "properties": {
+          "allowSubdomains": {
+            "type": "boolean",
+            "const": false,
+            "description": "This option defines who can create subdomains. Only domain owner is allowed at the moment"
+          }
+        },
+        "description": "Subdomain rules allows to define rules for subdomains",
+        "additionalProperties": false,
+        "required": ["allowSubdomains"]
+      }
+    },
+    "required": [
+      "label",
+      "normalizedLabel",
+      "normalizedParentDomainName",
+      "preorderSalt",
+      "records",
+      "subdomainRules"
+    ],
+    "additionalProperties": false,
+    "$comment": "normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035"
+  },
+  "preorder": {
+    "indices": [
+      {
+        "properties": [
+          {
+            "saltedDomainHash": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "saltedDomainHash": {
+        "type": "string",
+        "contentEncoding": "binary",
+        "minLength": 32,
+        "maxLength": 32,
+        "description": "Double sha-256 of concatenated salt, `normalizedLabel` and `normalizedParentDomainName`. Salt should be 32 random bytes"
+      }
+    },
+    "required": [
+      "saltedDomainHash"
+    ],
+    "additionalProperties": false,
+    "description": "This document is a temporary one and can be removed after domain creation.",
+    "$comment": "First we have a preorder registration step and then a domain registration step. The preorder step is needed to prevent man-in-the-middle attacks. The register step can begin once the preorder document is included in the platform state tree."
+  }
+}
