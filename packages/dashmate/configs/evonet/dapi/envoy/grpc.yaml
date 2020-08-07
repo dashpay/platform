@@ -44,11 +44,10 @@ static_resources:
     type: logical_dns
     http2_protocol_options: {}
     lb_policy: round_robin
-    # win/mac hosts: Use address: host.docker.internal instead of address: localhost in the line below
     hosts: [{ socket_address: { address: dapi_api, port_value: 3005 }}]
   - name: tx_filter_stream
     connect_timeout: 0.25s
     type: logical_dns
     http2_protocol_options: {}
     lb_policy: round_robin
-    hosts: [{ socket_address: { address: dapi_api, port_value: 3006 }}]
+    hosts: [{ socket_address: { address: dapi_tx_filter_stream, port_value: 3006 }}]
