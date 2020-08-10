@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const dpnsDocumentSchema = require('@dashevo/dpns-contract/src/schema/dpns-documents.json');
+const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
 
 const wait = require('../../../util/wait');
 
