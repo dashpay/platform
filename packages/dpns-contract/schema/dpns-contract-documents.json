@@ -34,7 +34,7 @@
         "pattern": "^((?!-)[a-z0-9-]{0,62}[a-z0-9])$",
         "maxLength": 63,
         "description": "Domain label in a lower case for case insensitive uniqueness validation. e.g. 'bob'",
-        "$comment": "This property will be deprecated due to case insensitive indices. Must be equal to lowered label."
+        "$comment": "This property will be deprecated due to case insensitive indices. Must be equal to label in lowercase."
       },
       "normalizedParentDomainName": {
         "type": "string",
@@ -42,7 +42,7 @@
         "minLength": 0,
         "maxLength": 190,
         "description": "A full parent domain name in lower case for case insensitive uniqueness validation. e.g. 'dash'",
-        "$comment": "Must be equal to existing domain or can be empty if you want to create top level domain. Only the contract owner can create top level domains."
+        "$comment": "Must be equal to existing domain or can be empty if you want to create a top level domain. Only the contract owner can create top level domains."
       },
       "preorderSalt": {
         "type": "string",
@@ -59,16 +59,16 @@
             "minLength": 42,
             "maxLength": 44,
             "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$",
-            "description": "Identity ID string should be used to create a primary name for Identity",
-            "$comment": "base58 string. Should be equal to the document owner."
+            "description": "Identity ID string should be used to create a primary name for Identity. base58 string",
+            "$comment": "Should be equal to the document owner"
           },
           "dashAliasIdentityId": {
             "type": "string",
             "minLength": 42,
             "maxLength": 44,
             "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$",
-            "description": "Identity ID string should be used to create multiple alias names for Identity",
-            "$comment": "base58 string. Should be equal to the document owner"
+            "description": "Identity ID string should be used to create multiple alias names for Identity. base58 string",
+            "$comment": "Should be equal to the document owner"
           }
         },
         "$comment": "Constraint with max and min properties ensure that only one identity record is used either `dashUniqueIdentityId` or `dashAliasIdentityId`",
@@ -99,7 +99,7 @@
       "subdomainRules"
     ],
     "additionalProperties": false,
-    "$comment": "normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035"
+    "$comment": "In order to register domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"
   },
   "preorder": {
     "indices": [
@@ -125,7 +125,6 @@
       "saltedDomainHash"
     ],
     "additionalProperties": false,
-    "description": "This document is a temporary one and can be removed after domain creation.",
-    "$comment": "First we have a preorder registration step and then a domain registration step. The preorder step is needed to prevent man-in-the-middle attacks. The register step can begin once the preorder document is included in the platform state tree."
+    "$comment": "Preorder documents are immutable: modification and deletion are restricted"
   }
 }
