@@ -1,6 +1,11 @@
 # Dash Platform Test Suite
 
-> The test suite for end-to-end and functional testing the Dash Platform by running some real-life scenarios against a Dash Network
+[![Latest Release](https://img.shields.io/github/v/release/dashevo/platform-test-suite)](https://github.com/dashevo/platform-test-suite/releases/latest)
+[![Build Status](https://img.shields.io/travis/com/dashevo/platform-test-suite)](https://travis-ci.com/dashevo/platform-test-suite)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/platform-test-suite)](https://img.shields.io/github/release-date/dashevo/platform-test-suite)
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
+
+The test suite for end-to-end and functional testing the Dash Platform by running some real-life scenarios against a Dash Network
 
 ## Table of Contents
 - [Pre-Requisites](#pre-requisites)
@@ -92,7 +97,7 @@ Usage: test <seed> [options]
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/platform-test-suite/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/platform-test-suite/issues/new/choose) or submit PRs.
 
 ## License
 
