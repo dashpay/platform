@@ -1,8 +1,11 @@
 # Drive
 
-[![Build Status](https://travis-ci.com/dashevo/drive.svg?branch=master)](https://travis-ci.com/dashevo/drive)
+[![Latest Release](https://img.shields.io/github/v/release/dashevo/js-drive-abci)](https://github.com/dashevo/js-drive-abci/releases/latest)
+[![Build Status](https://img.shields.io/travis/com/dashevo/js-drive-abci)](https://travis-ci.com/dashevo/js-drive-abci)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/js-drive-abci)](https://img.shields.io/github/release-date/dashevo/js-drive-abci)
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
-> Replicated state machine for Dash Platform
+Replicated state machine for Dash Platform
 
 Drive is the storage component of Dash Platform, allowing developers to store and secure their application data through Dash's masternode network. Application data structures are defined by a data contract, which is stored on Drive and used to verify/validate updates to your application data.
 
@@ -17,7 +20,7 @@ Drive is the storage component of Dash Platform, allowing developers to store an
 
 ## Install
 
-1. [Install Node.JS 12 and higher](https://nodejs.org/en/download/)
+1. [Install Node.JS 12 or higher](https://nodejs.org/en/download/)
 2. Copy `.env.example` to `.env` file
 3. Install npm dependencies: `npm install`
 
@@ -45,7 +48,7 @@ See all available settings in [.env.example](.env.example).
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/drive/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/js-drive-abci/issues/new/choose) or submit PRs.
 
 ## License
 
