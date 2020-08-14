@@ -75,6 +75,7 @@ class GrpcTransport {
         && error.code !== GrpcErrorCodes.UNAVAILABLE
         && error.code !== GrpcErrorCodes.INTERNAL
         && error.code !== GrpcErrorCodes.CANCELLED
+        && error.code !== GrpcErrorCodes.UNIMPLEMENTED
         && error.code !== GrpcErrorCodes.UNKNOWN) {
         throw error;
       }

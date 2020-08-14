@@ -309,6 +309,25 @@ describe('GrpcTransport', () => {
         expect(requestFunc).to.be.calledTwice();
       });
 
+      it('should retry the request if a unimplemented error has thrown', async () => {
+        const error = new Error('Internal error');
+        error.code = GrpcErrorCodes.UNIMPLEMENTED;
+
+        requestFunc.onCall(0).throws(error);
+
+        const receivedData = await grpcTransport.request(
+          clientClassMock,
+          method,
+          requestMessage,
+          options,
+        );
+
+        expect(receivedData).to.deep.equal(data);
+        expect(createDAPIAddressProviderFromOptionsMock).to.be.calledTwice();
+        expect(clientClassMock).to.be.calledTwice();
+        expect(requestFunc).to.be.calledTwice();
+      });
+
       it('should retry the request if a GRPC unknown error has thrown', async () => {
         const error = new Error('Internal error');
         error.code = GrpcErrorCodes.UNKNOWN;
