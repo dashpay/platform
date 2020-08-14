@@ -6,37 +6,37 @@ const BaseCommand = require('../oclif/command/BaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
-const PRESETS = require('../presets');
+const NETWORKS = require('../networks');
 
 class ResetCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
+   * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
-    {
-      preset,
-    },
+    args,
     flags,
     dockerCompose,
+    config,
   ) {
     const tasks = new Listr([
       {
-        title: `Reset data for ${preset} preset`,
+        title: 'Reset node data',
         task: () => (
           new Listr([
             {
-              title: 'Remove Tendermint data',
-              enabled: () => preset !== PRESETS.TESTNET,
+              title: 'Cleanup Tendermint data dir',
+              enabled: () => config.get('network') !== NETWORKS.TESTNET,
               task: async () => {
-                if (await dockerCompose.isServiceRunning(preset)) {
+                if (await dockerCompose.isServiceRunning(config.toEnvs())) {
                   throw new Error('You can\'t reset data while MN is running. Please stop it.');
                 }
 
                 await dockerCompose.runService(
-                  preset,
+                  config.toEnvs(),
                   'drive_tendermint',
                   ['tendermint', 'unsafe_reset_all'],
                   ['--entrypoint=""'],
@@ -44,13 +44,12 @@ class ResetCommand extends BaseCommand {
               },
             },
             {
-              title: 'Remove Core data',
-              task: () => rimraf.sync(`${__dirname}/../../data/${preset}/core/!(.gitignore)`),
+              title: 'Cleanup Core data dir',
+              task: () => rimraf.sync(`${__dirname}/../../data/${config.get('network')}/core/!(.gitignore)`),
             },
             {
-              title: 'Remove Drive data',
-              enabled: () => preset !== PRESETS.TESTNET,
-              task: async () => dockerCompose.down(preset),
+              title: 'Remove Docker containers and associated data',
+              task: async () => dockerCompose.down(config.toEnvs()),
             },
           ])
         ),
@@ -72,16 +71,13 @@ class ResetCommand extends BaseCommand {
   }
 }
 
-ResetCommand.description = `Reset masternode data
-...
-Reset masternode data for specific preset
+ResetCommand.description = `Reset node data
+
+Reset node data
 `;
 
-ResetCommand.args = [{
-  name: 'preset',
-  required: true,
-  description: 'preset to use',
-  options: Object.values(PRESETS),
-}];
+ResetCommand.flags = {
+  ...BaseCommand.flags,
+};
 
 module.exports = ResetCommand;

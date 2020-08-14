@@ -5,26 +5,36 @@ const { flags: flagTypes } = require('@oclif/command');
 const BaseCommand = require('../../oclif/command/BaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
-const PRESETS = require('../../presets');
+const NETWORKS = require('../../networks');
 
-class GenerateToAddressCommand extends BaseCommand {
+class MintCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {generateToAddressTask} generateToAddressTask
+   * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
-    { preset, amount },
-    { address },
+    {
+      amount,
+    },
+    {
+      address,
+    },
     generateToAddressTask,
+    config,
   ) {
-    const network = preset;
+    const network = config.get('network');
+
+    if (network !== NETWORKS.LOCAL) {
+      throw new Error('Only local network supports generation of dash');
+    }
 
     const tasks = new Listr([
       {
-        title: `Generate ${amount} dash to address using ${preset} preset`,
-        task: () => generateToAddressTask(preset, amount),
+        title: `Generate ${amount} dash to address`,
+        task: () => generateToAddressTask(config, amount),
       },
     ],
     {
@@ -46,28 +56,21 @@ class GenerateToAddressCommand extends BaseCommand {
   }
 }
 
-GenerateToAddressCommand.description = `Generate dash to address
+MintCommand.description = `Mint dash
 ...
-Generate specified amount of dash to a new address or specified one
+Mint specified amount of dash to a new address or specified one
 `;
 
-GenerateToAddressCommand.flags = {
+MintCommand.flags = {
+  ...BaseCommand.flags,
   address: flagTypes.string({ char: 'a', description: 'recipient address instead of a new one', default: null }),
 };
 
-GenerateToAddressCommand.args = [{
-  name: 'preset',
-  required: true,
-  description: 'preset to use',
-  options: [
-    PRESETS.EVONET,
-    PRESETS.LOCAL,
-  ],
-}, {
+MintCommand.args = [{
   name: 'amount',
   required: true,
   description: 'amount of dash to be generated to address',
   parse: (input) => parseInt(input, 10),
 }];
 
-module.exports = GenerateToAddressCommand;
+module.exports = MintCommand;

@@ -14,24 +14,35 @@ function initTaskFactory(
 ) {
   /**
    * @typedef {initTask}
-   * @param {string} preset
+   * @param {Config} config
    * @return {Listr}
    */
   function initTask(
-    preset,
+    config,
   ) {
+    const dpnsOwnerId = config.get('platform.dpns.ownerId');
+
+    if (dpnsOwnerId !== null) {
+      throw new Error(`DPNS owner ID ('platform.dpns.ownerId') is already set in ${config.getName()} config`);
+    }
+
+    const dpnsContractId = config.get('platform.dpns.contractId');
+
+    if (dpnsContractId !== null) {
+      throw new Error(`DPNS owner ID ('platform.dpns.contractId') is already set in ${config.getName()} config`);
+    }
+
     return new Listr([
       {
         title: 'Initialize SDK',
         task: async (ctx, task) => {
-          // wait 5 seconds to ensure everything was initialized
+          // wait 5 seconds to ensure all services are running
           await wait(5000);
 
           ctx.client = await createClientWithFundedWallet(
-            preset,
-            ctx.network,
-            ctx.seed,
+            config.get('network'),
             ctx.fundingPrivateKeyString,
+            ctx.seed,
           );
 
           // eslint-disable-next-line no-param-reassign
@@ -43,6 +54,8 @@ function initTaskFactory(
         title: 'Register DPNS identity',
         task: async (ctx, task) => {
           ctx.identity = await ctx.client.platform.identities.register(5);
+
+          config.set('platform.dpns.ownerId', ctx.identity.getId());
 
           // eslint-disable-next-line no-param-reassign
           task.output = `DPNS identity: ${ctx.identity.getId()}`;
@@ -60,6 +73,8 @@ function initTaskFactory(
             ctx.dataContract,
             ctx.identity,
           );
+
+          config.set('platform.dpns.contractId', ctx.dataContract.getId());
 
           // eslint-disable-next-line no-param-reassign
           task.output = `DPNS contract ID: ${ctx.dataContract.getId()}`;

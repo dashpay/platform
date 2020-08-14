@@ -2,7 +2,7 @@ version: '3.7'
 
 services:
   drive_mongodb:
-    image: mongo:${DRIVE_MONGODB_VERSION:-4.2}
+    image: ${PLATFORM_DRIVE_MONGODB_DOCKER_IMAGE:?err}:${PLATFORM_DRIVE_MONGODB_VERSION:?err}
     restart: unless-stopped
     volumes:
       - drive_mongodb:/data/db
@@ -11,7 +11,7 @@ services:
     command: mongod --replSet driveDocumentIndices --bind_ip_all
 
   drive_mongodb_replica_init:
-    image: mongo:${DRIVE_MONGODB_VERSION:-4.2}
+    image: ${PLATFORM_DRIVE_MONGODB_DOCKER_IMAGE:?err}:${PLATFORM_DRIVE_MONGODB_VERSION:?err}
     depends_on:
       - drive_mongodb
     volumes:
@@ -19,7 +19,7 @@ services:
     entrypoint: /initiate_mongodb_replica.sh
 
   drive_abci:
-    image: dashpay/drive:${DRIVE_VERSION:-latest}
+    image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}:${PLATFORM_DRIVE_ABCI_VERSION:?err}
     restart: unless-stopped
     depends_on:
       - drive_mongodb_replica_init
@@ -32,32 +32,32 @@ services:
       - CORE_JSON_RPC_HOST=core
       - CORE_JSON_RPC_PORT=20002
       - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017?replicaSet=driveDocumentIndices
-      - DPNS_CONTRACT_ID=${DPNS_CONTRACT_ID}
-      - DPNS_TOP_LEVEL_IDENTITY=${DPNS_TOP_LEVEL_IDENTITY}
+      - DPNS_CONTRACT_ID=${PLATFORM_DPNS_CONTRACT_ID}
+      - DPNS_TOP_LEVEL_IDENTITY=${PLATFORM_DPNS_OWNER_ID}
     command: npm run abci
 
   drive_tendermint:
-    image: dashpay/tendermint:${TENDERMINT_VERSION:-v0.32.12}
+    image: ${PLATFORM_DRIVE_TENDERMINT_DOCKER_IMAGE:?err}:${PLATFORM_DRIVE_TENDERMINT_VERSION:?err}
     restart: unless-stopped
     depends_on:
       - drive_abci
     ports:
       - 26656:26656 # P2P
     volumes:
-      - ./configs/${PRESET:?err}/drive/tendermint:/tendermint/config
-      - ./data/${PRESET:?err}/drive/tendermint:/data
+      - ./configs/${NETWORK:?err}/drive/tendermint:/tendermint/config
+      - ./data/${NETWORK:?err}/drive/tendermint:/data
     entrypoint: sh -c "/usr/bin/tendermint init && /usr/bin/tendermint node"
 
   dapi_insight:
-    image: dashpay/insight-api:${DAPI_INSIGHT_VERSION:-latest}
+    image: ${PLATFORM_DAPI_INSIGHT_DOCKER_IMAGE:?err}:${PLATFORM_DAPI_INSIGHT_VERSION:?err}
     restart: unless-stopped
     depends_on:
       - core
     volumes:
-      - ./configs/${PRESET:?err}/dapi/insight/dashcore-node.json:/insight/dashcore-node.json
+      - ./configs/${NETWORK:?err}/dapi/insight/dashcore-node.json:/insight/dashcore-node.json
 
   dapi_api:
-    image: dashpay/dapi:${DAPI_VERSION:-latest}
+    image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}:${PLATFORM_DAPI_API_VERSION:?err}
     restart: unless-stopped
     depends_on:
       - drive_tendermint
@@ -82,7 +82,7 @@ services:
     command: npm run api
 
   dapi_tx_filter_stream:
-    image: dashpay/dapi:${DAPI_VERSION:-latest}
+    image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}:${PLATFORM_DAPI_API_VERSION:?err}
     restart: unless-stopped
     depends_on:
       - core
@@ -105,16 +105,16 @@ services:
     command: npm run tx-filter-stream
 
   dapi_envoy:
-    image: envoyproxy/envoy:${DAPI_ENVOY_VERSION:-v1.14-latest}
+    image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}:${PLATFORM_DAPI_ENVOY_VERSION:?err}
     restart: unless-stopped
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream
     volumes:
-      - ./configs/${PRESET:?err}/dapi/envoy/grpc.yaml:/etc/envoy/envoy.yaml
+      - ./configs/${NETWORK:?err}/dapi/envoy/grpc.yaml:/etc/envoy/envoy.yaml
 
   dapi_nginx:
-    image: nginx:${DAPI_NGINX_VERSION:-latest}
+    image: ${PLATFORM_DAPI_NGINX_DOCKER_IMAGE:?err}:${PLATFORM_DAPI_NGINX_VERSION:?err}
     restart: unless-stopped
     depends_on:
       - dapi_api
@@ -124,9 +124,9 @@ services:
       - 3000:80 # JSON RPC and gRPC Web
       - 3010:50051 # gRPC Native
     volumes:
-      - ./configs/${PRESET:?err}/dapi/nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - ./configs/${PRESET:?err}/dapi/nginx/grpc.conf:/etc/nginx/conf.d/grpc.conf
-      - ./configs/${PRESET:?err}/dapi/nginx/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
+      - ./configs/${NETWORK:?err}/dapi/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./configs/${NETWORK:?err}/dapi/nginx/grpc.conf:/etc/nginx/conf.d/grpc.conf
+      - ./configs/${NETWORK:?err}/dapi/nginx/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
 
 volumes:
   drive_mongodb:

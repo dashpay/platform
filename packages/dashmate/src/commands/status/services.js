@@ -5,28 +5,26 @@ const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPr
 
 const BaseCommand = require('../../oclif/command/BaseCommand');
 
-const PRESETS = require('../../presets');
-
 class ServicesStatusCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
+   * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
-    {
-      preset,
-    },
+    args,
     flags,
     dockerCompose,
+    config,
   ) {
     const serviceHumanNames = {
       core: 'Core',
       sentinel: 'Sentinel',
     };
 
-    if (preset !== 'testnet') {
+    if (config.options.network !== 'testnet') {
       Object.assign(serviceHumanNames, {
         drive_mongodb_replica_init: 'Initiate Drive MongoDB replica',
         drive_mongodb: 'Drive MongoDB',
@@ -62,7 +60,7 @@ class ServicesStatusCommand extends BaseCommand {
               'org.dash.version': version,
             },
           },
-        } = await dockerCompose.inspectService(preset, serviceName));
+        } = await dockerCompose.inspectService(config.toEnvs(), serviceName));
       } catch (e) {
         if (e instanceof ContainerIsNotPresentError) {
           status = 'not started';
@@ -101,11 +99,8 @@ class ServicesStatusCommand extends BaseCommand {
 
 ServicesStatusCommand.description = 'Show service status details';
 
-ServicesStatusCommand.args = [{
-  name: 'preset',
-  required: true,
-  description: 'preset to use',
-  options: Object.values(PRESETS),
-}];
+ServicesStatusCommand.flags = {
+  ...BaseCommand.flags,
+};
 
 module.exports = ServicesStatusCommand;

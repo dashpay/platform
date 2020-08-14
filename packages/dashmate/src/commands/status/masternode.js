@@ -2,27 +2,25 @@ const { table } = require('table');
 
 const BaseCommand = require('../../oclif/command/BaseCommand');
 
-const PRESETS = require('../../presets');
-
 class MasternodeStatusCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
+   * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
-    {
-      preset,
-    },
+    args,
     flags,
     dockerCompose,
+    config,
   ) {
     const rows = [];
 
     // Version
     const versionOutput = await dockerCompose.execCommand(
-      preset,
+      config.toEnvs(),
       'core',
       'dashd --version',
     );
@@ -31,7 +29,7 @@ class MasternodeStatusCommand extends BaseCommand {
 
     // Block count
     const blockCountOutput = await dockerCompose.execCommand(
-      preset,
+      config.toEnvs(),
       'core',
       'dash-cli getblockcount',
     );
@@ -47,11 +45,8 @@ class MasternodeStatusCommand extends BaseCommand {
 
 MasternodeStatusCommand.description = 'Show masternode status details';
 
-MasternodeStatusCommand.args = [{
-  name: 'preset',
-  required: true,
-  description: 'preset to use',
-  options: Object.values(PRESETS),
-}];
+MasternodeStatusCommand.flags = {
+  ...BaseCommand.flags,
+};
 
 module.exports = MasternodeStatusCommand;

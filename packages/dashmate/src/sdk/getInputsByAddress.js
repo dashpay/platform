@@ -1,18 +1,18 @@
-const PRESETS = require('../presets');
+const NETWORKS = require('../networks');
 
 /**
  *
  * @typedef {getInputsByAddress}
  * @param {DAPIClient} dapiClient
- * @param {string} preset
+ * @param {string} network
  * @param {string} address
  * @return {Promise<[]>}
  */
-async function getInputsByAddress(dapiClient, preset, address) {
+async function getInputsByAddress(dapiClient, network, address) {
   const { items: utxos } = await dapiClient.core.getUTXO(address);
   let inputs = [];
 
-  if (preset === PRESETS.LOCAL) {
+  if (network === NETWORKS.LOCAL) {
     const { blocks } = await dapiClient.core.getStatus();
     const sortedUtxos = utxos
       .filter((utxo) => utxo.height < blocks - 100)

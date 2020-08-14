@@ -6,7 +6,7 @@ const { flags: flagTypes } = require('@oclif/command');
 const BaseCommand = require('../oclif/command/BaseCommand');
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
-const PRESETS = require('../presets');
+const NETWORKS = require('../networks');
 
 class SetupForLocalDevelopmentCommand extends BaseCommand {
   /**
@@ -19,10 +19,11 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
    * @param {generateBlocksWithSDK} generateBlocksWithSDK
    * @param {startNodeTask} startNodeTask
    * @param {DockerCompose} dockerCompose
+   * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
-    { port: coreP2pPort, 'external-ip': externalIp },
+    args,
     {
       update: isUpdate,
       'drive-image-build-path': driveImageBuildPath,
@@ -34,11 +35,13 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
     generateBlocksWithSDK,
     startNodeTask,
     dockerCompose,
+    config,
   ) {
-    const preset = PRESETS.LOCAL;
-    const network = preset;
+    if (config.get('network') !== NETWORKS.LOCAL) {
+      throw new Error(`This command supposed to work only with local network. Your network is ${config.get('network')}`);
+    }
+
     const amount = 10000;
-    const seed = '127.0.0.1';
 
     const tasks = new Listr(
       [
@@ -47,20 +50,17 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
           task: () => new Listr([
             {
               title: `Generate ${amount} dash to address`,
-              task: () => generateToAddressTask(preset, amount),
+              task: () => generateToAddressTask(config, amount),
             },
             {
               title: 'Register masternode',
-              task: () => registerMasternodeTask(preset),
+              task: () => registerMasternodeTask(config),
             },
             {
-              title: `Start masternode with ${preset} preset`,
+              title: 'Start masternode',
               task: async (ctx) => startNodeTask(
-                preset,
+                config,
                 {
-                  externalIp: ctx.externalIp,
-                  coreP2pPort: ctx.coreP2pPort,
-                  operatorPrivateKey: ctx.operator.privateKey,
                   driveImageBuildPath: ctx.driveImageBuildPath,
                   dapiImageBuildPath: ctx.dapiImageBuildPath,
                   isUpdate,
@@ -69,16 +69,15 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
             },
             {
               title: 'Initialize Platform',
-              task: () => initTask(preset),
+              task: () => initTask(config),
             },
             {
               title: 'Mine 100 blocks',
-              enabled: () => preset === PRESETS.LOCAL,
               task: async (ctx) => (
                 new Observable(async (observer) => {
                   await generateBlocksWithSDK(
                     ctx.client.getDAPIClient(),
-                    ctx.network,
+                    config.get('network'),
                     100,
                     (blocks) => {
                       observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
@@ -91,7 +90,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
             },
             {
               title: 'Stop node',
-              task: async () => dockerCompose.stop(preset),
+              task: async () => dockerCompose.stop(config.toEnvs()),
             },
           ]),
         },
@@ -107,10 +106,6 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
 
     try {
       await tasks.run({
-        externalIp,
-        coreP2pPort,
-        network,
-        seed,
         driveImageBuildPath,
         dapiImageBuildPath,
       });
@@ -121,21 +116,12 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
 }
 
 SetupForLocalDevelopmentCommand.description = `Setup for development
-...
+
 Generate some dash, register masternode and populate node with data required for local development
 `;
 
-SetupForLocalDevelopmentCommand.args = [{
-  name: 'external-ip',
-  required: true,
-  description: 'masternode external IP',
-}, {
-  name: 'port',
-  required: true,
-  description: 'masternode P2P port',
-}];
-
 SetupForLocalDevelopmentCommand.flags = {
+  ...BaseCommand.flags,
   update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),

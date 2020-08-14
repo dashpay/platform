@@ -6,13 +6,12 @@ const waitForBlocksWithSDK = require('./waitForBlocksWithSDK');
 const generateBlocksWithSDK = require('./generateBlocksWithSDK');
 const getInputsByAddress = require('./getInputsByAddress');
 
-const PRESETS = require('../presets');
+const NETWORKS = require('../networks');
 
 /**
  *
  * @typedef {fundAddress}
  * @param {DAPIClient} dapiClient
- * @param {string} preset
  * @param {string} network
  * @param {string} faucetAddress
  * @param {PrivateKey} faucetPrivateKey
@@ -22,14 +21,13 @@ const PRESETS = require('../presets');
  */
 async function fundAddress(
   dapiClient,
-  preset,
   network,
   faucetAddress,
   faucetPrivateKey,
   address,
   amountInSatoshis,
 ) {
-  const inputs = await getInputsByAddress(dapiClient, preset, faucetAddress);
+  const inputs = await getInputsByAddress(dapiClient, network, faucetAddress);
 
   if (!inputs.length) {
     throw new Error(`Address ${faucetAddress} has no inputs to spend`);
@@ -44,7 +42,7 @@ async function fundAddress(
 
   const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
 
-  if (preset === PRESETS.LOCAL) {
+  if (network === NETWORKS.LOCAL) {
     await generateBlocksWithSDK(dapiClient, network, 1);
   } else {
     await waitForBlocksWithSDK(dapiClient, 1);

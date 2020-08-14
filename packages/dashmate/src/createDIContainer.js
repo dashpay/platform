@@ -8,6 +8,13 @@ const {
 
 const Docker = require('dockerode');
 
+const path = require('path');
+
+const ConfigJsonFileRepository = require('./config/configFile/ConfigJsonFileRepository');
+const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
+const resetSystemConfigFactory = require('./config/systemConfigs/resetSystemConfigFactory');
+const systemConfigs = require('./config/systemConfigs/systemConfigs');
+
 const DockerCompose = require('./docker/DockerCompose');
 const StartedContainers = require('./docker/StartedContainers');
 const stopAllContainersFactory = require('./docker/stopAllContainersFactory');
@@ -40,6 +47,18 @@ const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
 async function createDIContainer() {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
+  });
+
+  /**
+   * Config
+   */
+  container.register({
+    configFilePath: asValue(path.resolve(__dirname, '../data/config.json')),
+    configRepository: asClass(ConfigJsonFileRepository),
+    systemConfigs: asValue(systemConfigs),
+    createSystemConfigs: asFunction(createSystemConfigsFactory),
+    resetSystemConfig: asFunction(resetSystemConfigFactory),
+    // `configCollection` and `config` are registering on command init
   });
 
   /**

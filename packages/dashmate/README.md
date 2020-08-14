@@ -10,8 +10,8 @@ Distribution package for Dash Masternode installation
 
 - [Install](#install)
 - [Usage](#usage)
-  - [Configuration presets](#configuration-presets)
   - [Command line interface](#cli)
+  - [Configure node](#configure-node)
   - [Start node](#start-node)
   - [Stop node](#stop-node)
   - [Register masternode](#register-masternode)
@@ -42,45 +42,67 @@ $ sudo npm link # optional: link CLI for system-wide execution
 
 ## Usage
 
-The package contains a CLI, Docker Compose files and configuration presets.
-
-### Configuration presets
-
- - Local - standalone masternode for local development
- - Evonet - masternode with Evonet configuration
- - Testnet - masternode with testnet configuration
+The package contains a CLI, Docker Compose and configuration files.
 
 ### CLI
 
 The CLI can be used to perform routine tasks. Invoke the CLI with `mn` if linked during installation, or with `node bin/mn` if not linked. To list available commands, either run `mn` with no parameters or execute `mn help`. To list the help on any command just execute the command, followed by the `--help` option
 
-### Start node
+### Configure node
 
-The `start` command is used to start a node with a specified configuration preset.
+The `config` command is used to manage your node configuration before starting the node. Several system configurations are provided as a starting point:
+
+ - base - basic config for use as template
+ - local - standalone node for local development
+ - evonet - node with Evonet configuration
+ - testnet - node with testnet configuration
+
+You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `mn config:create CONFIG [FROM]` command. You must set a default config with `mn config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
 
 ```
 USAGE
-  $ mn start PRESET EXTERNAL-IP CORE-P2P-PORT
-ARGUMENTS
-  PRESET         (local|testnet|evonet) preset to use
-  EXTERNAL-IP    masternode external IP
-  CORE-P2P-PORT  Core P2P port
+  $ mn config
+
+OPTIONS
+  --config=config  configuration name to use
+
+DESCRIPTION
+  Display configuration options for default config
+
+COMMANDS
+  config:create   Create config
+  config:default  Manage default config
+  config:envs     Export config to envs
+  config:get      Get config option
+  config:list     List available configs
+  config:remove   Remove config
+  config:reset    Reset config
+  config:set      Set config option
+```
+
+### Start node
+
+The `start` command is used to start a node with the default or specified config.
+
+```
+USAGE
+  $ mn start
 OPTIONS
   -f, --full-node                                  start as full node
-  -p, --operator-private-key=operator-private-key  operator private key
   -u, --update                                     download updated services before start
+  --config=config                                  configuration name to use
+  --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
+  --drive-image-build-path=drive-image-build-path  drive's docker image build path
 ```
 
-To start a masternode for Evonet:
-
+To start a masternode:
 ```bash
-$ mn start evonet 1.2.3.4 20001 -p 2058cd87116ee8492ae0db5d4f8050218588701636197cfcd124dcae8986d514
+$ mn start
 ```
 
-To start a full node for Evonet:
-
+To start a full node:
 ```bash
-$ mn start evonet 1.2.3.4 19999 -f
+$ mn start -f
 ```
 
 ### Stop node
@@ -89,15 +111,14 @@ The `stop` command is used to stop a running node.
 
 ```
 USAGE
-  $ mn stop PRESET
-ARGUMENTS
-  PRESET  (local|testnet|evonet) preset to use
+  $ mn stop
+OPTIONS
+  --config=config  configuration name to use
 ```
 
-To stop an Evonet node:
-
+To stop a node:
 ```bash
-$ mn stop evonet
+$ mn stop
 ```
 
 ### Register masternode
@@ -112,22 +133,21 @@ Before registering the masternode, you must have access to an address on the net
 dumpprivkey "address"
 ```
 
-If using the `local` or `evonet` presets, you can create and fund a new address using the `wallet` command as shown below.
+If using a config specifying the `local` or `evonet` network, you can create and fund a new address using the `wallet` command as shown below.
 
 ```
 USAGE
-  $ mn wallet:generate-to-address PRESET AMOUNT
+  $ mn wallet:mint AMOUNT
 ARGUMENTS
-  PRESET  (evonet|local) preset to use
   AMOUNT  amount of dash to be generated to address
 OPTIONS
   -a, --address=address  recipient address instead of a new one
+  --config=config        configuration name to use
 ```
 
-To generate 1001 Dash to a new address on evonet:
-
+To generate 1001 Dash to a new address:
 ```bash
-mn wallet:generate-to-address evonet 1001
+mn wallet:mint 1001
 ```
 
 #### Masternode registration
@@ -136,35 +156,32 @@ Run the `register` command as described below. The command will first verify suf
 
 ```
 USAGE
-  $ mn register PRESET FUNDING-PRIVATE-KEY EXTERNAL-IP PORT
+  $ mn register FUNDING-PRIVATE-KEY
 ARGUMENTS
-  PRESET               (local|testnet|evonet) preset to use
   FUNDING-PRIVATE-KEY  private key with more than 1000 dash for funding collateral
-  EXTERNAL-IP          masternode external IP
-  PORT                 masternode P2P port
+OPTIONS
+  --config=config  configuration name to use
 ```
 
-To register a testnet masternode:
-
+To register a masternode:
 ```bash
-$ mn register testnet cVdEfkXLHqftgXzRYZW4EdwtcnJ8Mktw9L4vcEcqbVDs3e2qdzCf 1.2.3.4 19999
+$ mn register cVdEfkXLHqftgXzRYZW4EdwtcnJ8Mktw9L4vcEcqbVDs3e2qdzCf
 ```
 
 ### Reset data
 
-The `reset` command removes all data corresponding to the specified preset and allows you to start a node from scratch.
+The `reset` command removes all data corresponding to the specified config and allows you to start a node from scratch.
 
 ```
 USAGE
-  $ mn reset PRESET
-ARGUMENTS
-  PRESET  (local|testnet|evonet) preset to use
+  $ mn reset
+OPTIONS
+  --config=config  configuration name to use
 ```
 
-To reset an Evonet node:
-
+To reset a node:
 ```bash
-$ mn reset evonet
+$ mn reset
 ```
 
 ### Show status
@@ -172,8 +189,6 @@ $ mn reset evonet
 The `status` command outputs status information relating to either the host, masternode or services.
 
 ```
-Show status details
-
 USAGE
   $ mn status:COMMAND
 
@@ -184,27 +199,29 @@ COMMANDS
 ```
 
 To show the host status:
-
 ```bash
 $ mn status:host
 ```
 
 ### Development
 
-When developing on a standalone node (the `local` preset), `setup-for-local-development` can be used
-to generate some dash, register a masternode and populate the node with the data required for local development.
+When developing on a standalone node (a config specifying the `local` network), `setup-for-local-development` can be used to generate some dash, register a masternode and populate the node with the data required for local development.
 
-To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified
-via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command.
-A Docker image will be built from the provided path and then used by mn-bootstrap.
+To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command. A Docker image will be built from the provided path and then used by mn-bootstrap.
 
 ### Docker Compose
 
-In case if you need to use Docker Compose directly you need to pass a preset configuration.
+If you want to use Docker Compose directly, you will need to pass a configuration as a dotenv file. You can output a config to a dotenv file for Docker Compose as follows:
 
-There are two ways to pass a preset:
- 1. Rename corresponding dotenv file (i.e. `.env.evonet`) to `.env`
- 2. Add `--env-file` option to `docker-compose` command (i.e. `docker-compose --env-file=.env.evonet ps`)
+```bash
+$ mn config:envs --output-file .env
+```
+
+Docker Compose will attempt to read a file named `.env` by default. You can optionally specify a dotenv file with a different filename for Docker Compose by adding `--env-file` option to the `docker-compose` command as follows:
+
+```bash
+$ docker-compose --env-file=<filename>
+```
 
 ## Contributing
 

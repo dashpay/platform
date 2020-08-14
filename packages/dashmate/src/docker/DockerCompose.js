@@ -23,26 +23,25 @@ class DockerCompose {
   /**
    * Run service
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @param {string} serviceName
    * @param {array} [command]
    * @param {array} [options]
    * @return {Promise<Container>}
    */
-  async runService(preset, serviceName, command = [], options = []) {
-    if (await this.isServiceRunning(preset, serviceName)) {
-      throw new ServiceAlreadyRunningError(preset, serviceName);
+  async runService(envs, serviceName, command = [], options = []) {
+    if (await this.isServiceRunning(envs, serviceName)) {
+      throw new ServiceAlreadyRunningError(serviceName);
     }
 
     let containerName;
-    const env = this.getPlaceholderEmptyEnvOptions();
 
     try {
       ({ out: containerName } = await dockerCompose.run(
         serviceName,
         command,
         {
-          ...this.getOptions(preset, env),
+          ...this.getOptions(envs),
           commandOptions: options,
         },
       ));
@@ -53,20 +52,21 @@ class DockerCompose {
     containerName = containerName.trim().split('\n').pop();
 
     this.startedContainers.addContainer(containerName);
+
     return this.docker.getContainer(containerName);
   }
 
   /**
    * Is service running?
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @param {string} [serviceName]
    * @return {Promise<boolean>}
    */
-  async isServiceRunning(preset, serviceName = undefined) {
+  async isServiceRunning(envs, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
 
-    const coreContainerIds = await this.getContainersList(preset, serviceName);
+    const coreContainerIds = await this.getContainersList(envs, serviceName);
 
     for (const containerId of coreContainerIds) {
       const container = this.docker.getContainer(containerId);
@@ -84,23 +84,17 @@ class DockerCompose {
   /**
    * Up docker compose
    *
-   * @param {string} preset
    * @param {Object} envs
    * @return {Promise<void>}
    */
-  async up(preset, envs = {}) {
+  async up(envs) {
     await this.throwErrorIfNotInstalled();
-    const options = this.getOptions(preset, envs);
-    if (!Array.isArray(options.commandOptions)) {
-      options.commandOptions = [];
-    }
-
-    if (!options.commandOptions.includes('--build')) {
-      options.commandOptions.push('--build');
-    }
 
     try {
-      await dockerCompose.upAll(options);
+      await dockerCompose.upAll({
+        ...this.getOptions(envs),
+        commandOptions: ['--build'],
+      });
     } catch (e) {
       throw new DockerComposeError(e);
     }
@@ -109,16 +103,14 @@ class DockerCompose {
   /**
    * Stop all docker compose containers
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @return {Promise<void>}
    */
-  async stop(preset) {
+  async stop(envs) {
     await this.throwErrorIfNotInstalled();
 
-    const envs = this.getPlaceholderEmptyEnvOptions();
-
     try {
-      await dockerCompose.stop(this.getOptions(preset, envs));
+      await dockerCompose.stop(this.getOptions(envs));
     } catch (e) {
       throw new DockerComposeError(e);
     }
@@ -127,17 +119,17 @@ class DockerCompose {
   /**
    * Inspect service
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @param {string} serviceName
    * @return {Promise<object>}
    */
-  async inspectService(preset, serviceName) {
+  async inspectService(envs, serviceName) {
     await this.throwErrorIfNotInstalled();
 
-    const containerIds = await this.getContainersList(preset, serviceName);
+    const containerIds = await this.getContainersList(envs, serviceName);
 
     if (containerIds.length === 0) {
-      throw new ContainerIsNotPresentError(preset, serviceName);
+      throw new ContainerIsNotPresentError(serviceName);
     }
 
     const container = this.docker.getContainer(containerIds[0]);
@@ -148,19 +140,17 @@ class DockerCompose {
   /**
    * Execute command
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @param {string} serviceName
    * @param {string} command
    * @return {Promise<object>}
    */
-  async execCommand(preset, serviceName, command) {
+  async execCommand(envs, serviceName, command) {
     await this.throwErrorIfNotInstalled();
 
-    if (!(await this.isServiceRunning(preset, serviceName))) {
-      throw new ServiceIsNotRunningError(preset, serviceName);
+    if (!(await this.isServiceRunning(envs, serviceName))) {
+      throw new ServiceIsNotRunningError(envs, serviceName);
     }
-
-    const envs = this.getPlaceholderEmptyEnvOptions();
 
     let commandOutput;
 
@@ -168,7 +158,7 @@ class DockerCompose {
       commandOutput = await dockerCompose.exec(
         serviceName,
         command,
-        this.getOptions(preset, envs),
+        this.getOptions(envs),
       );
     } catch (e) {
       throw new DockerComposeError(e);
@@ -180,18 +170,16 @@ class DockerCompose {
   /**
    * Get list of Docker containers
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @param {string} [filterServiceName]
    * @return {string[]}
    */
-  async getContainersList(preset, filterServiceName = undefined) {
+  async getContainersList(envs, filterServiceName = undefined) {
     let psOutput;
-
-    const env = this.getPlaceholderEmptyEnvOptions();
 
     try {
       ({ out: psOutput } = await dockerCompose.ps({
-        ...this.getOptions(preset, env),
+        ...this.getOptions(envs),
         commandOptions: ['-q', filterServiceName],
       }));
     } catch (e) {
@@ -207,17 +195,15 @@ class DockerCompose {
   /**
    * Down docker compose
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @return {Promise<void>}
    */
-  async down(preset) {
+  async down(envs) {
     await this.throwErrorIfNotInstalled();
-
-    const env = this.getPlaceholderEmptyEnvOptions();
 
     try {
       await dockerCompose.down({
-        ...this.getOptions(preset, env),
+        ...this.getOptions(envs),
         commandOptions: ['-v'],
       });
     } catch (e) {
@@ -228,17 +214,15 @@ class DockerCompose {
   /**
    * Pull docker compose
    *
-   * @param {string} preset
+   * @param {Object} envs
    * @return {Promise<void>}
    */
-  async pull(preset) {
+  async pull(envs) {
     await this.throwErrorIfNotInstalled();
-
-    const env = this.getPlaceholderEmptyEnvOptions();
 
     try {
       await dockerCompose.pullAll({
-        ...this.getOptions(preset, env),
+        ...this.getOptions(envs),
         commandOptions: ['-q'],
       });
     } catch (e) {
@@ -267,33 +251,18 @@ class DockerCompose {
 
   /**
    * @private
-   * @param {string} preset
-   * @param {Object} [envOptions]
-   * @return {{cwd: string, config: string, composeOptions: [string, string]}}
+   * @param {Object} envs
+   * @return {{cwd: string, env: Object}}
    */
-  getOptions(preset, envOptions = undefined) {
-    let env;
-
-    if (envOptions !== undefined) {
-      env = Object.assign(process.env, envOptions);
-    }
+  getOptions(envs) {
+    const env = {
+      ...process.env,
+      ...envs,
+    };
 
     return {
       cwd: path.join(__dirname, '../../'),
-      composeOptions: [
-        '--env-file', `.env.${preset}`,
-      ],
       env,
-    };
-  }
-
-  /**
-   * @private
-   * @return {Object}
-   */
-  getPlaceholderEmptyEnvOptions() {
-    return {
-      CORE_EXTERNAL_IP: '127.0.0.1',
     };
   }
 }

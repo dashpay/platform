@@ -2,20 +2,20 @@ version: '3.7'
 
 services:
   core:
-    image: dashpay/dashd:${CORE_VERSION:-latest}
+    image: ${CORE_DOCKER_IMAGE:?err}:${CORE_VERSION:?err}
     restart: unless-stopped
     ports:
       - ${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
     volumes:
-      - ./configs/${PRESET:?err}/core/dashd.conf:/dash/.dashcore/dash.conf
-      - ./data/${PRESET:?err}/core:/dash/data
+      - ./configs/${NETWORK:?err}/core/dashd.conf:/dash/.dashcore/dash.conf
+      - ./data/${NETWORK:?err}/core:/dash/data
     command:
       - dashd
       - -conf=/dash/.dashcore/dash.conf
       - -datadir=/dash/data
       - -port=${CORE_P2P_PORT:?err}
-      - -masternodeblsprivkey=${CORE_MASTERNODE_BLS_PRIV_KEY}
-      - -externalip=${CORE_EXTERNAL_IP:?err}
+      - -masternodeblsprivkey=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
+      - -externalip=${EXTERNAL_IP}
 
   sentinel:
     image: dashpay/sentinel
@@ -28,5 +28,5 @@ services:
       - RPCPASSWORD=password
       - RPCHOST=core
       - RPCPORT=20002
-      - NETWORK=${SENTINEL_NETWORK?:err}
+      - NETWORK=${NETWORK?:err}
       - SENTINEL_ARGS=-b

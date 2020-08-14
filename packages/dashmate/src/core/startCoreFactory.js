@@ -15,14 +15,19 @@ function startCoreFactory(
 ) {
   /**
    * @typedef startCore
-   * @param {string} preset
+   * @param {Config} config
    * @param {Object} [options]
    * @param {boolean} [options.wallet=false]
+   * @param {boolean} [options.addressIndex=false]
    * @return {CoreService}
    */
-  async function startCore(preset, options = {}) {
+  async function startCore(config, options = {}) {
     // eslint-disable-next-line no-param-reassign
-    options = { wallet: false, ...options };
+    options = {
+      wallet: false,
+      addressIndex: false,
+      ...options,
+    };
 
     // Run Core service
 
@@ -30,19 +35,19 @@ function startCoreFactory(
       'dashd',
       '-conf=/dash/.dashcore/dash.conf',
       '-datadir=/dash/data',
-      '-port=20001',
+      `-port=${config.get('core.p2p.port')}`,
     ];
 
     if (options.wallet) {
       coreCommand.push('--disablewallet=0');
     }
 
-    if (options.addressindex) {
+    if (options.addressIndex) {
       coreCommand.push('--addressindex=1');
     }
 
     const coreContainer = await dockerCompose.runService(
-      preset,
+      config.toEnvs(),
       'core',
       coreCommand,
       [

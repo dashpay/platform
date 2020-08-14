@@ -2,7 +2,7 @@ const { Listr } = require('listr2');
 
 const { Observable } = require('rxjs');
 
-const PRESETS = require('../../presets');
+const NETWORKS = require('../../networks');
 
 const masternodeDashAmount = require('../../core/masternodeDashAmount');
 
@@ -36,15 +36,21 @@ function registerMasternodeTaskFactory(
 ) {
   /**
    * @typedef {registerMasternodeTask}
-   * @param {string} preset
+   * @param {Config} config
    * @return {Listr}
    */
-  function registerMasternodeTask(preset) {
+  function registerMasternodeTask(config) {
+    const operatorPrivateKey = config.get('core.masternode.operator.privateKey');
+
+    if (operatorPrivateKey !== null) {
+      throw new Error(`Masternode operator private key ('core.masternode.operator.privateKey') is already set in ${config.getName()} config`);
+    }
+
     return new Listr([
       {
         title: 'Start Core',
         task: async (ctx) => {
-          ctx.coreService = await startCore(preset, { wallet: true, addressindex: true });
+          ctx.coreService = await startCore(config, { wallet: true, addressIndex: true });
         },
       },
       {
@@ -53,7 +59,7 @@ function registerMasternodeTaskFactory(
       },
       {
         title: 'Sync Core with network',
-        enabled: () => preset !== PRESETS.LOCAL,
+        enabled: () => config.get('network') !== NETWORKS.LOCAL,
         task: async (ctx) => waitForCoreSync(ctx.coreService),
       },
       {
@@ -69,6 +75,8 @@ function registerMasternodeTaskFactory(
         title: 'Generate a masternode operator key',
         task: async (ctx, task) => {
           ctx.operator = await generateBlsKeys();
+
+          config.set('core.masternode.operator.privateKey', ctx.operator.privateKey);
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Public key: ${ctx.operator.publicKey}\nPrivate key: ${ctx.operator.privateKey}`;
@@ -113,7 +121,7 @@ function registerMasternodeTaskFactory(
       },
       {
         title: 'Wait for 15 confirmations',
-        enabled: () => preset !== PRESETS.LOCAL,
+        enabled: () => config.get('network') !== NETWORKS.LOCAL,
         task: async (ctx) => (
           new Observable(async (observer) => {
             await waitForConfirmations(
@@ -131,13 +139,13 @@ function registerMasternodeTaskFactory(
       },
       {
         title: 'Mine 15 blocks to confirm',
-        enabled: () => preset === PRESETS.LOCAL,
+        enabled: () => config.get('network') === NETWORKS.LOCAL,
         task: async (ctx) => (
           new Observable(async (observer) => {
             await generateBlocks(
               ctx.coreService,
               15,
-              ctx.network,
+              config.get('network'),
               (blocks) => {
                 observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
               },
@@ -149,7 +157,7 @@ function registerMasternodeTaskFactory(
       },
       {
         title: 'Reach 1000 blocks to enable DML',
-        enabled: () => preset === PRESETS.LOCAL,
+        enabled: () => config.get('network') === NETWORKS.LOCAL,
         // eslint-disable-next-line consistent-return
         task: async (ctx) => {
           const { result: height } = await ctx.coreService.getRpcClient().getBlockCount();
@@ -159,7 +167,7 @@ function registerMasternodeTaskFactory(
               await generateBlocks(
                 ctx.coreService,
                 1000 - height,
-                ctx.network,
+                config.get('network'),
                 (blocks) => {
                   const remaining = 1000 - height - blocks;
                   observer.next(`${remaining} ${remaining > 1 ? 'blocks' : 'block'} remaining`);
@@ -177,21 +185,20 @@ function registerMasternodeTaskFactory(
           const proRegTx = await registerMasternode(
             ctx.coreService,
             ctx.collateralTxId,
-            ctx.externalIp,
-            ctx.coreP2pPort,
             ctx.owner.address,
             ctx.operator.publicKey,
             ctx.fundingAddress,
+            config,
           );
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `ProRegTx transaction ID: ${proRegTx}\nDon't forget to add bls private key to your configuration`;
+          task.output = `ProRegTx transaction ID: ${proRegTx}`;
         },
         options: { persistentOutput: true },
       },
       {
         title: 'Wait for 1 confirmation',
-        enabled: () => preset !== PRESETS.LOCAL,
+        enabled: () => config.get('network') !== NETWORKS.LOCAL,
         task: async (ctx) => (
           new Observable(async (observer) => {
             await waitForConfirmations(
@@ -209,13 +216,13 @@ function registerMasternodeTaskFactory(
       },
       {
         title: 'Mine 1 block to confirm',
-        enabled: () => preset === PRESETS.LOCAL,
+        enabled: () => config.get('network') === NETWORKS.LOCAL,
         task: async (ctx) => (
           new Observable(async (observer) => {
             await generateBlocks(
               ctx.coreService,
               1,
-              ctx.network,
+              config.get('network'),
               (blocks) => {
                 observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
               },

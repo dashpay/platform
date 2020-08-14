@@ -11,26 +11,30 @@ const wait = require('../util/wait');
  *  * Create and fund DashJS client
  *
  * @typedef {createClientWithFundedWallet}
- * @param {string} preset
  * @param {string} network
- * @param {string} seed
  * @param {string} faucetPrivateKeyString
+ * @param {string} [seed]
  * @return {Promise<Client>}
  */
-async function createClientWithFundedWallet(preset, network, seed, faucetPrivateKeyString) {
+async function createClientWithFundedWallet(network, faucetPrivateKeyString, seed = undefined) {
   // Prepare to fund wallet
   const faucetPrivateKey = PrivateKey.fromString(faucetPrivateKeyString);
   const faucetAddress = faucetPrivateKey
     .toAddress(network)
     .toString();
 
-  const dashClient = new Dash.Client({
-    seeds: [seed],
+  const options = {
     wallet: {
       mnemonic: null,
     },
     network,
-  });
+  };
+
+  if (seed) {
+    options.seeds = [seed];
+  }
+
+  const dashClient = new Dash.Client(options);
 
   const account = await dashClient.getWalletAccount();
 
@@ -40,7 +44,6 @@ async function createClientWithFundedWallet(preset, network, seed, faucetPrivate
 
   await fundAddress(
     dashClient.getDAPIClient(),
-    preset,
     network,
     faucetAddress,
     faucetPrivateKey,
