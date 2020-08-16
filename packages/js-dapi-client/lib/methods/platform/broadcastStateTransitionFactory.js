@@ -1,6 +1,8 @@
 const {
-  BroadcastStateTransitionRequest,
-  PlatformPromiseClient,
+  v0: {
+    BroadcastStateTransitionRequest,
+    PlatformPromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
 
 /**

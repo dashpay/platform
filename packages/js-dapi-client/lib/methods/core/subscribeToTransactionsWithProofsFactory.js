@@ -1,7 +1,9 @@
 const {
-  TransactionsWithProofsRequest,
-  TransactionsFilterStreamPromiseClient,
-  BloomFilter: BloomFilterMessage,
+  v0: {
+    TransactionsWithProofsRequest,
+    CorePromiseClient,
+    BloomFilter: BloomFilterMessage,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const DAPIClientError = require('../../errors/DAPIClientError');
@@ -70,7 +72,7 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
     request.setCount(options.count);
 
     return grpcTransport.request(
-      TransactionsFilterStreamPromiseClient,
+      CorePromiseClient,
       'subscribeToTransactionsWithProofs',
       request,
       options,

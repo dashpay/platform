@@ -1,6 +1,8 @@
 const {
-  GetStatusRequest,
-  CorePromiseClient,
+  v0: {
+    GetStatusRequest,
+    CorePromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
 
 /**

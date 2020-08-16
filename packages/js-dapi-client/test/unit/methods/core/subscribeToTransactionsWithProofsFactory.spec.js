@@ -1,12 +1,14 @@
 const BloomFilter = require('@dashevo/dashcore-lib/lib/bloomfilter');
 
-const { BloomFilter: BloomFilterMessage } = require('@dashevo/dapi-grpc');
+const {
+  v0: {
+    BloomFilter: BloomFilterMessage,
+    CorePromiseClient,
+    TransactionsWithProofsRequest,
+  },
+} = require('@dashevo/dapi-grpc');
 
 const { EventEmitter } = require('events');
-const {
-  TransactionsFilterStreamPromiseClient,
-  TransactionsWithProofsRequest,
-} = require('@dashevo/dapi-grpc');
 
 const subscribeToTransactionsWithProofsFactory = require('../../../../lib/methods/core/subscribeToTransactionsWithProofsFactory');
 
@@ -55,7 +57,7 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
     request.setFromBlockHash(Buffer.from(options.fromBlockHash, 'hex'));
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
-      TransactionsFilterStreamPromiseClient,
+      CorePromiseClient,
       'subscribeToTransactionsWithProofs',
       request,
       options,
@@ -83,7 +85,7 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
     request.setCount(0);
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
-      TransactionsFilterStreamPromiseClient,
+      CorePromiseClient,
       'subscribeToTransactionsWithProofs',
       request,
       {

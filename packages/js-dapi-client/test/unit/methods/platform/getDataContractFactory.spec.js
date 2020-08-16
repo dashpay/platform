@@ -1,7 +1,9 @@
 const {
-  PlatformPromiseClient,
-  GetDataContractRequest,
-  GetDataContractResponse,
+  v0: {
+    PlatformPromiseClient,
+    GetDataContractRequest,
+    GetDataContractResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');

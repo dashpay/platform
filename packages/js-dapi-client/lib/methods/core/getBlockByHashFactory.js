@@ -1,6 +1,8 @@
 const {
-  GetBlockRequest,
-  CorePromiseClient,
+  v0: {
+    GetBlockRequest,
+    CorePromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');

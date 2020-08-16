@@ -1,8 +1,10 @@
 const cbor = require('cbor');
 
 const {
-  PlatformPromiseClient,
-  GetDocumentsRequest,
+  v0: {
+    PlatformPromiseClient,
+    GetDocumentsRequest,
+  },
 } = require('@dashevo/dapi-grpc');
 
 /**

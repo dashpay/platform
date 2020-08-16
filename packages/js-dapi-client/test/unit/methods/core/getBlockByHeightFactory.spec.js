@@ -1,8 +1,11 @@
 const {
-  GetBlockRequest,
-  GetBlockResponse,
-  CorePromiseClient,
+  v0: {
+    GetBlockRequest,
+    GetBlockResponse,
+    CorePromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
+
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const getBlockByHeightFactory = require('../../../../lib/methods/core/getBlockByHeightFactory');

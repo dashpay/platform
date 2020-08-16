@@ -1,6 +1,8 @@
 const {
-  CorePromiseClient,
-  BroadcastTransactionRequest,
+  v0: {
+    CorePromiseClient,
+    BroadcastTransactionRequest,
+  },
 } = require('@dashevo/dapi-grpc');
 
 /**

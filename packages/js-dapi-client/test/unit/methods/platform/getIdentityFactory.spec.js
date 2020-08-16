@@ -1,8 +1,11 @@
 const {
-  PlatformPromiseClient,
-  GetIdentityRequest,
-  GetIdentityResponse,
+  v0: {
+    PlatformPromiseClient,
+    GetIdentityRequest,
+    GetIdentityResponse,
+  },
 } = require('@dashevo/dapi-grpc');
+
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 

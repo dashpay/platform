@@ -1,10 +1,12 @@
 const { EventEmitter } = require('events');
 
 const {
-  BroadcastTransactionResponse,
-  GetBlockResponse,
-  GetTransactionResponse,
-  GetStatusResponse,
+  v0: {
+    BroadcastTransactionResponse,
+    GetBlockResponse,
+    GetTransactionResponse,
+    GetStatusResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const BloomFilter = require('@dashevo/dashcore-lib/lib/bloomfilter');

@@ -1,6 +1,8 @@
 const {
-  PlatformPromiseClient,
-  GetIdentityByFirstPublicKeyRequest,
+  v0: {
+    PlatformPromiseClient,
+    GetIdentityByFirstPublicKeyRequest,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');

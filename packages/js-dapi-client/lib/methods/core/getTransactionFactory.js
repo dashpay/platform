@@ -1,6 +1,8 @@
 const {
-  GetTransactionRequest,
-  CorePromiseClient,
+  v0: {
+    GetTransactionRequest,
+    CorePromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');

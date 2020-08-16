@@ -1,8 +1,11 @@
 const {
-  GetStatusRequest,
-  GetStatusResponse,
-  CorePromiseClient,
+  v0: {
+    GetStatusRequest,
+    GetStatusResponse,
+    CorePromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
+
 const getStatusFactory = require('../../../../lib/methods/core/getStatusFactory');
 
 describe('getStatusFactory', () => {
