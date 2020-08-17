@@ -36,9 +36,9 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dapi-client": "~0.15.0-dev.2",
-    "@dashevo/dashcore-lib": "~0.19.2",
-    "@dashevo/dpp": "~0.15.0-dev.3",
+    "@dashevo/dapi-client": "~0.15.0-dev.5",
+    "@dashevo/dashcore-lib": "~0.18.12",
+    "@dashevo/dpp": "~0.15.0-dev.7",
     "chai": "^4.2.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^6.7.2",

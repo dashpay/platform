@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const DashPlatformProtocol = require('@dashevo/dpp');
 const generateRandomId = require('@dashevo/dpp/lib/test/utils/generateRandomId');
 
@@ -36,7 +38,7 @@ describe('DPNS Contract', () => {
 
       beforeEach(() => {
         preorderData = {
-          saltedDomainHash: '0'.repeat(32),
+          saltedDomainHash: crypto.randomBytes(32),
         };
       });
 
@@ -75,8 +77,8 @@ describe('DPNS Contract', () => {
           expect(error.dataPath).to.equal('.saltedDomainHash');
         });
 
-        it('should have 32 chars length', async () => {
-          preorderData.saltedDomainHash = '0'.repeat(31);
+        it('should have 43 to 44 chars length', async () => {
+          preorderData.saltedDomainHash = crypto.randomBytes(10);
           let preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
 
           let result = await dpp.document.validate(preorder);
@@ -91,7 +93,7 @@ describe('DPNS Contract', () => {
           expect(error.keyword).to.equal('minLength');
           expect(error.dataPath).to.equal('.saltedDomainHash');
 
-          preorderData.saltedDomainHash = '0'.repeat(33);
+          preorderData.saltedDomainHash = crypto.randomBytes(40);
           identityId = generateRandomId();
           preorder = dpp.document.create(contract, identityId, 'preorder', preorderData);
 
@@ -142,7 +144,7 @@ describe('DPNS Contract', () => {
           label: 'Wallet',
           normalizedLabel: 'wallet',
           normalizedParentDomainName: 'dash',
-          preorderSalt: 'yTU2B8bTaq1X17Sm4QdTjfgtPQ6MD2Mx',
+          preorderSalt: crypto.randomBytes(32),
           records: {
             dashUniqueIdentityId: generateRandomId(),
           },
@@ -366,8 +368,8 @@ describe('DPNS Contract', () => {
           expect(error.dataPath).to.equal('.preorderSalt');
         });
 
-        it('should have 32 chars length', async () => {
-          domainData.preorderSalt = 'a'.repeat(31);
+        it('should have 43 to 44 chars length', async () => {
+          domainData.preorderSalt = crypto.randomBytes(10);
 
           let domain = dpp.document.create(contract, identityId, 'domain', domainData);
 
@@ -382,7 +384,7 @@ describe('DPNS Contract', () => {
           expect(error.keyword).to.equal('minLength');
           expect(error.dataPath).to.equal('.preorderSalt');
 
-          domainData.preorderSalt = 'a'.repeat(33);
+          domainData.preorderSalt = crypto.randomBytes(40);
 
           domain = dpp.document.create(contract, identityId, 'domain', domainData);
 
@@ -522,7 +524,7 @@ describe('DPNS Contract', () => {
 
             it('should be less than 44 chars', async () => {
               domainData.records = {
-                dashUniqueIdentityId: Buffer.alloc(64).toString('hex'),
+                dashUniqueIdentityId: crypto.randomBytes(64).toString('hex'),
               };
 
               const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
@@ -583,7 +585,7 @@ describe('DPNS Contract', () => {
 
             it('should be less than 44 chars', async () => {
               domainData.records = {
-                dashAliasIdentityId: Buffer.alloc(64).toString('hex'),
+                dashAliasIdentityId: crypto.randomBytes(64).toString('hex'),
               };
 
               const domain = await dpp.document.create(contract, identityId, 'domain', domainData);
