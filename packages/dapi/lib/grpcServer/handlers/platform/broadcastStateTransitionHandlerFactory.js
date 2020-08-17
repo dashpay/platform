@@ -7,7 +7,9 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  BroadcastStateTransitionResponse,
+  v0: {
+    BroadcastStateTransitionResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const AbciResponseError = require('../../../errors/AbciResponseError');

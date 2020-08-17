@@ -7,7 +7,9 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  GetDataContractResponse,
+  v0: {
+    GetDataContractResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');

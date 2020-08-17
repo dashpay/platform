@@ -1,5 +1,7 @@
 const {
-  GetStatusResponse,
+  v0: {
+    GetStatusResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const getStatusHandlerFactory = require('../../../../../lib/grpcServer/handlers/core/getStatusHandlerFactory');

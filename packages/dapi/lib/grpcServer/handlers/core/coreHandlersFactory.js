@@ -14,19 +14,21 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  BroadcastTransactionRequest,
-  GetTransactionRequest,
-  GetStatusRequest,
-  GetBlockRequest,
-  pbjs: {
-    BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
-    BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
-    GetTransactionRequest: PBJSGetTransactionRequest,
-    GetTransactionResponse: PBJSGetTransactionResponse,
-    GetStatusRequest: PBJSGetStatusRequest,
-    GetStatusResponse: PBJSGetStatusResponse,
-    GetBlockRequest: PBJSGetBlockRequest,
-    GetBlockResponse: PBJSGetBlockResponse,
+  v0: {
+    BroadcastTransactionRequest,
+    GetTransactionRequest,
+    GetStatusRequest,
+    GetBlockRequest,
+    pbjs: {
+      BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
+      BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
+      GetTransactionRequest: PBJSGetTransactionRequest,
+      GetTransactionResponse: PBJSGetTransactionResponse,
+      GetStatusRequest: PBJSGetStatusRequest,
+      GetStatusResponse: PBJSGetStatusResponse,
+      GetBlockRequest: PBJSGetBlockRequest,
+      GetBlockResponse: PBJSGetBlockResponse,
+    },
   },
 } = require('@dashevo/dapi-grpc');
 

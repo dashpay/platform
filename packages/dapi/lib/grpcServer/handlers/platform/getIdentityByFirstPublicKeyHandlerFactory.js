@@ -7,7 +7,9 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  GetIdentityByFirstPublicKeyResponse,
+  v0: {
+    GetIdentityByFirstPublicKeyResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const AbciResponseError = require('../../../errors/AbciResponseError');

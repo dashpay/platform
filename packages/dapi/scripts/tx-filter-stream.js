@@ -18,12 +18,14 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  TransactionsWithProofsRequest,
-  pbjs: {
-    TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
-    TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+  v0: {
+    TransactionsWithProofsRequest,
+    pbjs: {
+      TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
+      TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+    },
   },
-  getTransactionsFilterStreamDefinition,
+  getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
 
 // Load config from .env
@@ -120,7 +122,7 @@ async function main() {
   );
 
   const grpcServer = createServer(
-    getTransactionsFilterStreamDefinition(),
+    getCoreDefinition(0),
     {
       subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
     },

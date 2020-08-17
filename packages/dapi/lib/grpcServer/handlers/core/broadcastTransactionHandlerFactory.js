@@ -1,5 +1,7 @@
 const {
-  BroadcastTransactionResponse,
+  v0: {
+    BroadcastTransactionResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 

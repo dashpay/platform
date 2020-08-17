@@ -16,10 +16,12 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  TransactionsWithProofsRequest,
-  TransactionsWithProofsResponse,
-  RawTransactions,
-  BloomFilter,
+  v0: {
+    TransactionsWithProofsRequest,
+    TransactionsWithProofsResponse,
+    RawTransactions,
+    BloomFilter,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const { BloomFilter: CoreBloomFilter } = require('@dashevo/dashcore-lib');

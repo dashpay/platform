@@ -12,8 +12,10 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  TransactionsWithProofsResponse,
-  RawTransactions,
+  v0: {
+    TransactionsWithProofsResponse,
+    RawTransactions,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');

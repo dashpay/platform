@@ -1,5 +1,7 @@
 const {
-  GetBlockResponse,
+  v0: {
+    GetBlockResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const {

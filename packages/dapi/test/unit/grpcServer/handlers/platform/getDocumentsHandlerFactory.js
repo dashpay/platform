@@ -9,7 +9,9 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  GetDocumentsResponse,
+  v0: {
+    GetDocumentsResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');

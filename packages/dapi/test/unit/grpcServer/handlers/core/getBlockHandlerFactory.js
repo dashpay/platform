@@ -8,7 +8,9 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  GetBlockResponse,
+  v0: {
+    GetBlockResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const { Block } = require('@dashevo/dashcore-lib');

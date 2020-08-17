@@ -7,7 +7,9 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  GetIdentityResponse,
+  v0: {
+    GetIdentityResponse,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');

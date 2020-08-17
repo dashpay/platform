@@ -14,25 +14,27 @@ const {
 } = require('@dashevo/grpc-common');
 
 const {
-  BroadcastStateTransitionRequest,
-  GetIdentityRequest,
-  GetDataContractRequest,
-  GetDocumentsRequest,
-  GetIdentityByFirstPublicKeyRequest,
-  GetIdentityIdByFirstPublicKeyRequest,
-  pbjs: {
-    BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
-    BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
-    GetIdentityRequest: PBJSGetIdentityRequest,
-    GetIdentityResponse: PBJSGetIdentityResponse,
-    GetDataContractRequest: PBJSGetDataContractRequest,
-    GetDataContractResponse: PBJSGetDataContractResponse,
-    GetDocumentsRequest: PBJSGetDocumentsRequest,
-    GetDocumentsResponse: PBJSGetDocumentsResponse,
-    GetIdentityByFirstPublicKeyResponse: PBJSGetIdentityByFirstPublicKeyResponse,
-    GetIdentityByFirstPublicKeyRequest: PBJSGetIdentityByFirstPublicKeyRequest,
-    GetIdentityIdByFirstPublicKeyResponse: PBJSGetIdentityIdByFirstPublicKeyResponse,
-    GetIdentityIdByFirstPublicKeyRequest: PBJSGetIdentityIdByFirstPublicKeyRequest,
+  v0: {
+    BroadcastStateTransitionRequest,
+    GetIdentityRequest,
+    GetDataContractRequest,
+    GetDocumentsRequest,
+    GetIdentityByFirstPublicKeyRequest,
+    GetIdentityIdByFirstPublicKeyRequest,
+    pbjs: {
+      BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
+      BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
+      GetIdentityRequest: PBJSGetIdentityRequest,
+      GetIdentityResponse: PBJSGetIdentityResponse,
+      GetDataContractRequest: PBJSGetDataContractRequest,
+      GetDataContractResponse: PBJSGetDataContractResponse,
+      GetDocumentsRequest: PBJSGetDocumentsRequest,
+      GetDocumentsResponse: PBJSGetDocumentsResponse,
+      GetIdentityByFirstPublicKeyResponse: PBJSGetIdentityByFirstPublicKeyResponse,
+      GetIdentityByFirstPublicKeyRequest: PBJSGetIdentityByFirstPublicKeyRequest,
+      GetIdentityIdByFirstPublicKeyResponse: PBJSGetIdentityIdByFirstPublicKeyResponse,
+      GetIdentityIdByFirstPublicKeyRequest: PBJSGetIdentityIdByFirstPublicKeyRequest,
+    },
   },
 } = require('@dashevo/dapi-grpc');
 
