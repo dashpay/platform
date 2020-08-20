@@ -1,6 +1,6 @@
 # DashPay Contract
 
-> Reference contract of the DashPay DAP on Dash Evolution
+> Reference contract of the DashPay DPA on Dash Evolution
 
 ## About DashPay 
 DashPay allows Dash user to create a DashPay profile on the Platform chain.   
