@@ -1,5 +1,5 @@
 {
-  "name": "@dashevo/drive-abci",
+  "name": "@dashevo/drive",
   "version": "0.14.0",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
@@ -40,13 +40,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/drive.git"
+    "url": "git+https://github.com/dashevo/js-drive.git"
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dashevo/drive/issues"
+    "url": "https://github.com/dashevo/js-drive/issues"
   },
-  "homepage": "https://github.com/dashevo/drive",
+  "homepage": "https://github.com/dashevo/js-drive",
   "devDependencies": {
     "@dashevo/dp-services-ctl": "^0.14.0",
     "@types/pino": "^6.3.0",
