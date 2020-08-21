@@ -89,7 +89,7 @@ module.exports = {
     platform: {
       dpns: {
         contractId: 'FiBkhut4LFPMJqDWbZrxVeT6Mr6LsH3mTNTSSHJY2ape',
-        ownerId: 'UZ9jAodWiFxRg82HuA1Lf3mTh4fTGSiughxqkZX5kUA',
+        ownerId: '6UZ9jAodWiFxRg82HuA1Lf3mTh4fTGSiughxqkZX5kUA',
       },
     },
     network: NETWORKS.EVONET,
