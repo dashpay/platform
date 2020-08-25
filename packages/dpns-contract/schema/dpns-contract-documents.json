@@ -34,7 +34,7 @@
         "pattern": "^((?!-)[a-z0-9-]{0,62}[a-z0-9])$",
         "maxLength": 63,
         "description": "Domain label in a lower case for case insensitive uniqueness validation. e.g. 'bob'",
-        "$comment": "This property will be deprecated due to case insensitive indices. Must be equal to label in lowercase."
+        "$comment": "This property will be deprecated due to case insensitive indices. Must be equal to label in lowercase"
       },
       "normalizedParentDomainName": {
         "type": "string",
@@ -42,7 +42,7 @@
         "minLength": 0,
         "maxLength": 190,
         "description": "A full parent domain name in lower case for case insensitive uniqueness validation. e.g. 'dash'",
-        "$comment": "Must be equal to existing domain or can be empty if you want to create a top level domain. Only the contract owner can create top level domains."
+        "$comment": "Must be equal to existing domain or can be empty if you want to create a top level domain. Only the contract owner can create top level domains"
       },
       "preorderSalt": {
         "type": "string",
@@ -82,8 +82,7 @@
         "properties": {
           "allowSubdomains": {
             "type": "boolean",
-            "const": false,
-            "description": "This option defines who can create subdomains. Only domain owner is allowed at the moment"
+            "description": "This option defines who can create subdomains"
           }
         },
         "description": "Subdomain rules allows to define rules for subdomains",
