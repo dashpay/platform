@@ -304,7 +304,19 @@ class DocumentMongoDbRepository {
    * @returns {Promise<*>}
    */
   async createIndices(indices) {
-    return this.mongoCollection.createIndexes(indices);
+    const modifiedIndices = indices.map((index) => ({
+      ...index,
+      ...Object.keys(index.key)
+        .reduce((keyObject, key) => ({
+          ...keyObject,
+          partialFilterExpression: {
+            ...keyObject.partialFilterExpression,
+            [key]: { $exists: true },
+          },
+        }), { partialFilterExpression: {} }),
+    }));
+
+    return this.mongoCollection.createIndexes(modifiedIndices);
   }
 }
 

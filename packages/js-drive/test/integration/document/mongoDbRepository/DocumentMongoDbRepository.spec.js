@@ -754,6 +754,7 @@ describe('DocumentMongoDbRepository', function main() {
       const indices = [{
         key: {
           name: 1,
+          secondName: -1,
         },
         unique: true,
         name: 'index_name',
@@ -787,9 +788,18 @@ describe('DocumentMongoDbRepository', function main() {
         unique: true,
         key: {
           name: 1,
+          secondName: -1,
         },
         name: 'index_name',
         ns: 'test.documents_niceDocument',
+        partialFilterExpression: {
+          name: {
+            $exists: true,
+          },
+          secondName: {
+            $exists: true,
+          },
+        },
       }]);
     });
   });
