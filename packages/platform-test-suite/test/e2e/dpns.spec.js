@@ -66,7 +66,9 @@ describe('DPNS', () => {
     // generate a random one which will be used in tests above
     // skip if DPNS owner private key is not passed and use `dash` in tests above
     it('should be able to register a TLD', async () => {
-      createdTLD = await ownerClient.platform.names.register(newTopLevelDomain, identity);
+      createdTLD = await ownerClient.platform.names.register(newTopLevelDomain, {
+        dashAliasIdentityId: identity.getId(),
+      }, identity);
 
       expect(createdTLD).to.exist();
       expect(createdTLD.getType()).to.equal('domain');
@@ -87,7 +89,7 @@ describe('DPNS', () => {
         expect(e.code).to.equal(3);
         const [error] = JSON.parse(e.metadata.get('errors'));
         expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Update action is not allowed');
+        expect(error.message).to.equal('Action is not allowed');
       }
     });
 
@@ -102,7 +104,7 @@ describe('DPNS', () => {
         expect(e.code).to.equal(3);
         const [error] = JSON.parse(e.metadata.get('errors'));
         expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Delete action is not allowed');
+        expect(error.message).to.equal('Action is not allowed');
       }
     });
   });
@@ -118,7 +120,9 @@ describe('DPNS', () => {
 
     it('should not be able to register TLD', async () => {
       try {
-        await client.platform.names.register(getRandomDomain(), identity);
+        await client.platform.names.register(getRandomDomain(), {
+          dashAliasIdentityId: identity.getId(),
+        }, identity);
 
         expect.fail('Should throw error');
       } catch (e) {
@@ -129,7 +133,9 @@ describe('DPNS', () => {
     });
 
     it('should be able to register a second level domain', async () => {
-      registeredDomain = await client.platform.names.register(`${secondLevelDomain}.${topLevelDomain}`, identity);
+      registeredDomain = await client.platform.names.register(`${secondLevelDomain}.${topLevelDomain}`, {
+        dashUniqueIdentityId: identity.getId(),
+      }, identity);
 
       expect(registeredDomain.getType()).to.equal('domain');
       expect(registeredDomain.getData().label).to.equal(secondLevelDomain);
@@ -140,14 +146,16 @@ describe('DPNS', () => {
       try {
         const domain = `${getRandomDomain()}.${getRandomDomain()}.${topLevelDomain}`;
 
-        await client.platform.names.register(domain, identity);
+        await client.platform.names.register(domain, {
+          dashAliasIdentityId: identity.getId(),
+        }, identity);
 
         expect.fail('Should throw error');
       } catch (e) {
         expect(e.code).to.equal(3);
         const [error] = JSON.parse(e.metadata.get('errors'));
         expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Can\'t find parent domain matching parent hash');
+        expect(error.message).to.equal('Parent domain is not present');
       }
     });
 
@@ -168,9 +176,9 @@ describe('DPNS', () => {
     });
 
     it('should be able to resolve domain by it\'s record', async () => {
-      const document = await client.platform.names.resolveByRecord(
-        'dashIdentity',
-        registeredDomain.getData().records.dashIdentity,
+      const [document] = await client.platform.names.resolveByRecord(
+        'dashUniqueIdentityId',
+        registeredDomain.getData().records.dashUniqueIdentityId,
       );
 
       expect(document.toJSON()).to.deep.equal(registeredDomain.toJSON());
@@ -189,7 +197,7 @@ describe('DPNS', () => {
         expect(e.code).to.equal(3);
         const [error] = JSON.parse(e.metadata.get('errors'));
         expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Update action is not allowed');
+        expect(error.message).to.equal('Action is not allowed');
       }
     });
 
@@ -204,8 +212,16 @@ describe('DPNS', () => {
         expect(e.code).to.equal(3);
         const [error] = JSON.parse(e.metadata.get('errors'));
         expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Delete action is not allowed');
+        expect(error.message).to.equal('Action is not allowed');
       }
     });
+
+    it('should not be able to register two domains with same `dashAliasIdentityId` record');
+
+    it('should be able to register many domains with same `dashAliasIdentityId` record');
+
+    it('should not be able to update preorder');
+
+    it('should not be able to domain preorder');
   });
 });
