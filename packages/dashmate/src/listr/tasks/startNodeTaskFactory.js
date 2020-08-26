@@ -2,6 +2,8 @@ const { Listr } = require('listr2');
 
 const NETWORKS = require('../../networks');
 
+const wait = require('../../util/wait');
+
 /**
  *
  * @param {DockerCompose} dockerCompose
@@ -59,6 +61,9 @@ function startNodeTaskFactory(dockerCompose) {
           }
 
           await dockerCompose.up(envs);
+
+          // wait 10 seconds to ensure all services are running
+          await wait(10000);
         },
       }]);
   }
