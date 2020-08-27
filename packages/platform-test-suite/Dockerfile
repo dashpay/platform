@@ -9,6 +9,8 @@ RUN apk update && \
 # for easier app bind mounting for local development
 WORKDIR /
 
+RUN npm config set unsafe-perm true
+
 COPY package.json package-lock.json ./
 RUN npm ci --production
 

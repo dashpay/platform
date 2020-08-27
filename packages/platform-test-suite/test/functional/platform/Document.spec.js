@@ -1,3 +1,5 @@
+const { expect } = require('chai');
+
 const getDataContractFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
 );
@@ -6,7 +8,6 @@ const getIdentityFixture = require(
 );
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const { expect } = require('chai');
 
 describe('Platform', () => {
   describe('Document', () => {
