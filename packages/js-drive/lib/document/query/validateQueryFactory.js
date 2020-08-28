@@ -1,4 +1,5 @@
 const Ajv = require('ajv');
+const defineAjvKeywords = require('ajv-keywords');
 
 const ValidationResult = require('./ValidationResult');
 
@@ -26,7 +27,7 @@ function validateQueryFactory(
   findNotIndexedFields,
   findNotIndexedOrderByFields,
 ) {
-  const ajv = new Ajv();
+  const ajv = defineAjvKeywords(new Ajv(), ['instanceof']);
 
   const validateWithJsonSchema = ajv.compile(jsonSchema);
 

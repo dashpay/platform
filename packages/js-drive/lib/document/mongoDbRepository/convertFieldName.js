@@ -4,6 +4,7 @@ const systemFields = {
   $revision: 'revision',
   $createdAt: 'createdAt',
   $updatedAt: 'updatedAt',
+  $protocolVersion: 'protocolVersion',
 };
 
 /**

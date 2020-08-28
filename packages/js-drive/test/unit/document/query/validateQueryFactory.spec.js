@@ -35,6 +35,10 @@ const typesTestCases = {
     type: 'object',
     value: {},
   },
+  buffer: {
+    type: 'buffer',
+    value: Buffer.alloc(32),
+  },
 };
 
 const notObjectTestCases = [
@@ -53,6 +57,7 @@ const notArrayTestCases = [
   typesTestCases.null,
   typesTestCases.object,
   typesTestCases.function,
+  typesTestCases.buffer,
 ];
 
 const nonScalarTestCases = [
@@ -66,6 +71,7 @@ const scalarTestCases = [
   typesTestCases.number,
   typesTestCases.string,
   typesTestCases.boolean,
+  typesTestCases.buffer,
 ];
 
 const nonStringTestCases = [
@@ -75,6 +81,7 @@ const nonStringTestCases = [
   typesTestCases.undefined,
   typesTestCases.object,
   typesTestCases.function,
+  typesTestCases.buffer,
 ];
 
 const nonNumberTestCases = [
@@ -84,6 +91,7 @@ const nonNumberTestCases = [
   typesTestCases.undefined,
   typesTestCases.object,
   typesTestCases.function,
+  typesTestCases.buffer,
 ];
 
 const nonNumberAndUndefinedTestCases = [
@@ -92,6 +100,7 @@ const nonNumberAndUndefinedTestCases = [
   typesTestCases.null,
   typesTestCases.object,
   typesTestCases.function,
+  typesTestCases.buffer,
 ];
 
 const validFieldNameTestCases = [
@@ -864,9 +873,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[10].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[10].keyword).to.be.equal('maxItems');
-            expect(result.errors[10].params.limit).to.be.equal(100);
+            expect(result.errors[12].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[12].keyword).to.be.equal('maxItems');
+            expect(result.errors[12].params.limit).to.be.equal(100);
           });
 
           it('should return invalid result if "contains" operator used with an empty array', () => {
@@ -879,9 +888,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[10].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[10].keyword).to.be.equal('minItems');
-            expect(result.errors[10].params.limit).to.be.equal(1);
+            expect(result.errors[12].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[12].keyword).to.be.equal('minItems');
+            expect(result.errors[12].params.limit).to.be.equal(1);
           });
 
           it('should return invalid result if "contains" operator used with an array which contains not unique'
@@ -895,9 +904,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[10].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[10].keyword).to.be.equal('uniqueItems');
-            expect(result.errors[10].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
+            expect(result.errors[12].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[12].keyword).to.be.equal('uniqueItems');
+            expect(result.errors[12].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
           });
 
           nonScalarTestCases.forEach(({ type, value }) => {
@@ -934,15 +943,15 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[10].dataPath).to.be.equal('.where[0][2][0]');
-              expect(result.errors[10].keyword).to.be.equal('type');
-              expect(result.errors[10].params.type).to.be.equal('string');
-              expect(result.errors[11].dataPath).to.be.equal('.where[0][2][0]');
-              expect(result.errors[11].keyword).to.be.equal('type');
-              expect(result.errors[11].params.type).to.be.equal('number');
               expect(result.errors[12].dataPath).to.be.equal('.where[0][2][0]');
               expect(result.errors[12].keyword).to.be.equal('type');
-              expect(result.errors[12].params.type).to.be.equal('boolean');
+              expect(result.errors[12].params.type).to.be.equal('string');
+              expect(result.errors[13].dataPath).to.be.equal('.where[0][2][0]');
+              expect(result.errors[13].keyword).to.be.equal('type');
+              expect(result.errors[13].params.type).to.be.equal('number');
+              expect(result.errors[14].dataPath).to.be.equal('.where[0][2][0]');
+              expect(result.errors[14].keyword).to.be.equal('type');
+              expect(result.errors[14].params.type).to.be.equal('boolean');
             });
           });
         });

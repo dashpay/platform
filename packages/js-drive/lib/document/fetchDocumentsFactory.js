@@ -23,7 +23,16 @@ function fetchDocumentsFactory(
    * @returns {Promise<Document[]>}
    */
   async function fetchDocuments(contractId, type, options, dbTransaction = undefined) {
-    const documentRepository = await createDocumentRepository(contractId, type);
+    let documentRepository;
+    try {
+      documentRepository = await createDocumentRepository(contractId, type);
+    } catch (error) {
+      if (error instanceof InvalidContractIdError) {
+        throw new InvalidQueryError([error]);
+      }
+
+      throw error;
+    }
 
     let dataContract = dataContractCache.get(contractId);
 

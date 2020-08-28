@@ -21,6 +21,10 @@ module.exports = {
         {
           type: 'boolean',
         },
+        {
+          type: 'object',
+          instanceof: 'Buffer',
+        },
       ],
     },
   },

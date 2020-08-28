@@ -88,4 +88,26 @@ describe('LevelDBTransaction', () => {
       }
     });
   });
+
+  describe('#isStarted', () => {
+    it('should return true if transaction is started', async () => {
+      expect(levelDBTransaction.isStarted()).to.be.false();
+
+      await levelDBTransaction.start();
+
+      expect(levelDBTransaction.isStarted()).to.be.true();
+    });
+
+    it('should return false if transaction is aborted', async () => {
+      expect(levelDBTransaction.isStarted()).to.be.false();
+
+      await levelDBTransaction.start();
+
+      expect(levelDBTransaction.isStarted()).to.be.true();
+
+      await levelDBTransaction.abort();
+
+      expect(levelDBTransaction.isStarted()).to.be.false();
+    });
+  });
 });

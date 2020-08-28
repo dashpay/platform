@@ -1,3 +1,6 @@
+const lodashGet = require('lodash.get');
+const lodashSet = require('lodash.set');
+
 const Document = require('@dashevo/dpp/lib/document/Document');
 
 const convertFieldName = require('./convertFieldName');
@@ -9,15 +12,21 @@ class DocumentMongoDbRepository {
    * @param {Db} mongoDatabase
    * @param {convertWhereToMongoDbQuery} convertWhereToMongoDbQuery
    * @param {validateQuery} validateQuery
-   * @param {string} contractId
+   * @param {DataContract} dataContract
    * @param {string} documentType
    */
-  constructor(mongoDatabase, convertWhereToMongoDbQuery, validateQuery, contractId, documentType) {
+  constructor(
+    mongoDatabase,
+    convertWhereToMongoDbQuery,
+    validateQuery,
+    dataContract,
+    documentType,
+  ) {
     this.mongoDatabase = mongoDatabase;
     this.convertWhereToMongoDbQuery = convertWhereToMongoDbQuery;
     this.validateQuery = validateQuery;
     this.documentType = documentType;
-    this.contractId = contractId;
+    this.dataContract = dataContract;
     this.databaseName = mongoDatabase.databaseName;
     this.collectionName = this.getCollectionName();
     this.mongoCollection = mongoDatabase.collection(this.getCollectionName());
@@ -168,7 +177,7 @@ class DocumentMongoDbRepository {
   store(document, transaction = undefined) {
     if (
       document.getType() !== this.documentType
-      || document.getDataContractId() !== this.contractId
+      || document.getDataContractId() !== this.dataContract.getId()
     ) {
       throw new TypeError('Invalid document');
     }
@@ -242,6 +251,7 @@ class DocumentMongoDbRepository {
       _id: document.getId(),
       ownerId: document.getOwnerId(),
       revision: document.getRevision(),
+      protocolVersion: document.getProtocolVersion(),
       data: document.getData(),
     };
 
@@ -275,14 +285,27 @@ class DocumentMongoDbRepository {
     revision,
     createdAt,
     updatedAt,
+    protocolVersion,
     data,
   }) {
+    const encodedProperties = this.dataContract.getEncodedProperties(this.documentType);
+
+    Object.entries(encodedProperties).forEach(([propertyPath, propertyValue]) => {
+      if (propertyValue.contentEncoding === 'base64') {
+        const dataValue = lodashGet(data, propertyPath);
+        if (dataValue !== undefined) {
+          lodashSet(data, propertyPath, dataValue.buffer);
+        }
+      }
+    });
+
     const rawDocument = {
       $id: _id,
       $type: this.documentType,
-      $dataContractId: this.contractId,
+      $dataContractId: this.dataContract.getId(),
       $ownerId: ownerId,
       $revision: revision,
+      $protocolVersion: protocolVersion,
       ...data,
     };
 
@@ -294,7 +317,7 @@ class DocumentMongoDbRepository {
       rawDocument.$updatedAt = updatedAt.getTime();
     }
 
-    return new Document(rawDocument);
+    return new Document(rawDocument, this.dataContract);
   }
 
   /**

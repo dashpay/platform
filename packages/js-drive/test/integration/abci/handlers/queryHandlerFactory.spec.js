@@ -4,6 +4,7 @@ const {
   asValue,
 } = require('awilix');
 
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
@@ -35,8 +36,8 @@ describe('queryHandlerFactory', function main() {
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer(mongoDB);
 
-    ({ dataContract } = getDocumentsFixture);
-    documents = getDocumentsFixture();
+    dataContract = getDataContractFixture();
+    documents = getDocumentsFixture(dataContract);
     identity = getIdentityFixture();
 
     identityQueryHandlerMock = this.sinon.stub();

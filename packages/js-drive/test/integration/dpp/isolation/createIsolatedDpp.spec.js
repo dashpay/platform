@@ -1,6 +1,6 @@
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getIdentityCreateSTFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getIdentityCreateSTFixture',
@@ -44,7 +44,7 @@ describe('createIsolatedDpp', () => {
       .setData(publicKey);
 
     dataContract = getDataContractFixture();
-    const documents = getDocumentsFixture();
+    const documents = getDocumentsFixture(dataContract);
     [document] = documents;
     document.contractId = dataContract.getId();
     identity = getIdentityFixture();
@@ -55,17 +55,21 @@ describe('createIsolatedDpp', () => {
 
     identityCreateTransition = getIdentityCreateSTFixture();
 
-    const documentTransitions = getDocumentTransitionsFixture(documents);
+    const documentTransitions = getDocumentTransitionsFixture({
+      create: documents,
+    });
     documentsBatchTransition = new DocumentsBatchTransition({
       ownerId: getDocumentsFixture.ownerId,
-      contractId: getDocumentsFixture.dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+      contractId: dataContract.getId(),
+      protocolVersion: 0,
+      transitions: documentTransitions.map((t) => t.toObject()),
+    }, [dataContract]);
     documentsBatchTransition.sign(identityPublicKey, privateKey);
 
     dataContractCreateTransition = new DataContractCreateTransition({
       dataContract: dataContract.toJSON(),
       entropy: dataContract.getEntropy(),
+      protocolVersion: 0,
     });
     dataContractCreateTransition.sign(identityPublicKey, privateKey);
 
@@ -176,7 +180,7 @@ describe('createIsolatedDpp', () => {
 
       describe('IdentityCreateTransition', () => {
         it('should pass through validation result', async () => {
-          delete identityCreateTransition.lockedOutPoint;
+          delete identityCreateTransition.protocolVersion;
 
           const isolatedDpp = await createIsolatedDpp();
 
@@ -190,7 +194,7 @@ describe('createIsolatedDpp', () => {
 
             const [error] = e.getErrors();
             expect(error.name).to.equal('JsonSchemaError');
-            expect(error.params.missingProperty).to.equal('lockedOutPoint');
+            expect(error.params.missingProperty).to.equal('protocolVersion');
           } finally {
             isolatedDpp.dispose();
           }

@@ -4,7 +4,11 @@ class DocumentDatabaseManager {
    * @param {convertToMongoDbIndices} convertToMongoDbIndices
    * @param {getDocumentDatabase} getDocumentDatabase
    */
-  constructor(createDocumentRepository, convertToMongoDbIndices, getDocumentDatabase) {
+  constructor(
+    createDocumentRepository,
+    convertToMongoDbIndices,
+    getDocumentDatabase,
+  ) {
     this.createDocumentRepository = createDocumentRepository;
     this.convertToMongoDbIndices = convertToMongoDbIndices;
     this.getDocumentDatabase = getDocumentDatabase;

@@ -1,4 +1,4 @@
-const generateRandomId = require('@dashevo/dpp/lib/test/utils/generateRandomId');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const createDocumentMongoDbRepositoryFactory = require('../../../../lib/document/mongoDbRepository/createDocumentMongoDbRepositoryFactory');
 const DocumentMongoDbRepository = require('../../../../lib/document/mongoDbRepository/DocumentMongoDbRepository');
@@ -11,9 +11,13 @@ describe('createDocumentMongoDbRepositoryFactory', () => {
   let convertWhereToMongoDbQuery;
   let validateQuery;
   let getDocumentsDatabaseMock;
+  let dataContractRepositoryMock;
+  let dataContract;
 
   beforeEach(function beforeEach() {
-    contractId = generateRandomId();
+    dataContract = getDataContractFixture();
+
+    contractId = dataContract.getId();
     documentType = 'niceDocument';
 
     mongoDb = {
@@ -23,11 +27,22 @@ describe('createDocumentMongoDbRepositoryFactory', () => {
     convertWhereToMongoDbQuery = this.sinon.stub();
     validateQuery = this.sinon.stub();
     getDocumentsDatabaseMock = this.sinon.stub().resolves(mongoDb);
+    dataContractRepositoryMock = {
+      fetch: this.sinon.stub().resolves(dataContract),
+    };
+
+    const blockExecutionDBTransactionsMock = {
+      getTransaction: () => ({
+        isStarted: () => false,
+      }),
+    };
 
     createDocumentMongoDbRepository = createDocumentMongoDbRepositoryFactory(
       convertWhereToMongoDbQuery,
       validateQuery,
       getDocumentsDatabaseMock,
+      dataContractRepositoryMock,
+      blockExecutionDBTransactionsMock,
     );
   });
 
@@ -39,6 +54,6 @@ describe('createDocumentMongoDbRepositoryFactory', () => {
     expect(result.convertWhereToMongoDbQuery).to.deep.equal(convertWhereToMongoDbQuery);
     expect(result.validateQuery).to.deep.equal(validateQuery);
     expect(result.documentType).to.equal(documentType);
-    expect(result.contractId).to.equal(contractId);
+    expect(result.dataContract).to.deep.equal(dataContract);
   });
 });

@@ -69,6 +69,15 @@ class LevelDBTransaction {
 
     return this;
   }
+
+  /**
+   * Determine if transaction is currently in progress
+   *
+   * @returns {boolean}
+   */
+  isStarted() {
+    return this.db !== null;
+  }
 }
 
 module.exports = LevelDBTransaction;

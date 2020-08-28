@@ -1,8 +1,10 @@
 const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
+
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const Document = require('@dashevo/dpp/lib/document/Document');
 
-const DocumentMongoDbRepositorySpec = require('../../../../lib/document/mongoDbRepository/DocumentMongoDbRepository');
+const DocumentMongoDbRepository = require('../../../../lib/document/mongoDbRepository/DocumentMongoDbRepository');
 
 const convertWhereToMongoDbQuery = require('../../../../lib/document/mongoDbRepository/convertWhereToMongoDbQuery');
 const validateQueryFactory = require('../../../../lib/document/query/validateQueryFactory');
@@ -35,6 +37,7 @@ describe('DocumentMongoDbRepository', function main() {
   let mongoClient;
   let stateViewTransaction;
   let documentSchema;
+  let dataContract;
 
   startMongoDb().then((mongoDb) => {
     mongoDatabase = mongoDb.getDb();
@@ -42,9 +45,8 @@ describe('DocumentMongoDbRepository', function main() {
   });
 
   beforeEach(async () => {
-    documents = getDocumentsFixture().slice(0, 5);
-
-    const { dataContract } = getDocumentsFixture;
+    dataContract = getDataContractFixture();
+    documents = getDocumentsFixture(dataContract).slice(0, 5);
 
     [document] = documents;
 
@@ -75,9 +77,20 @@ describe('DocumentMongoDbRepository', function main() {
       },
       arrayWithScalar: {
         type: 'array',
+        items: [
+          { type: 'string' },
+        ],
       },
       arrayWithObjects: {
         type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            flag: {
+              type: 'string',
+            },
+          },
+        },
       },
     };
 
@@ -124,11 +137,11 @@ describe('DocumentMongoDbRepository', function main() {
       findNotIndexedOrderByFields,
     );
 
-    documentRepository = new DocumentMongoDbRepositorySpec(
+    documentRepository = new DocumentMongoDbRepository(
       mongoDatabase,
       convertWhereToMongoDbQuery,
       validateQuery,
-      document.getDataContractId(),
+      dataContract,
       document.getType(),
     );
 
@@ -742,6 +755,11 @@ describe('DocumentMongoDbRepository', function main() {
         unique: true,
         key: {
           name: 1,
+        },
+        partialFilterExpression: {
+          name: {
+            $exists: true,
+          },
         },
         name: 'index_name',
         ns: 'test.documents_niceDocument',
