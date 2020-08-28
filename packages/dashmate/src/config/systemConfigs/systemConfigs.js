@@ -56,7 +56,7 @@ const baseConfig = {
         docker: {
           image: 'dashpay/drive',
         },
-        version: '0.14',
+        version: '0.15-dev',
       },
       tendermint: {
         docker: {
