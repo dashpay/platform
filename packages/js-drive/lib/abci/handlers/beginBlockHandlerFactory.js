@@ -4,12 +4,15 @@ const {
   },
 } = require('abci/types');
 
+const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolVersionError');
+
 /**
  * Begin block ABCI handler
  *
  * @param {BlockchainState} blockchainState
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @param {BlockExecutionState} blockExecutionState
+ * @param {Number} protocolVersion - Protocol version
  * @param {BaseLogger} logger
  *
  * @return {beginBlockHandler}
@@ -18,6 +21,7 @@ function beginBlockHandlerFactory(
   blockchainState,
   blockExecutionDBTransactions,
   blockExecutionState,
+  protocolVersion,
   logger,
 ) {
   /**
@@ -34,6 +38,13 @@ function beginBlockHandlerFactory(
     blockExecutionState.setHeader(header);
 
     blockchainState.setLastBlockHeight(header.height);
+
+    if (header.version.App.gt(protocolVersion)) {
+      throw new NotSupportedProtocolVersionError(
+        header.version.App,
+        protocolVersion,
+      );
+    }
 
     await blockExecutionDBTransactions.start();
 

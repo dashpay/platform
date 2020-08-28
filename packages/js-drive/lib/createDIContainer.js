@@ -1,3 +1,5 @@
+const Long = require('long');
+
 const {
   createContainer: createAwilixContainer,
   InjectionMode,
@@ -99,6 +101,14 @@ const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 async function createDIContainer(options) {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
+  });
+
+  /**
+   * Register protocolVersion
+   * Define highest supported protocol version
+   */
+  container.register({
+    protocolVersion: asValue(Long.fromInt(0)),
   });
 
   /**

@@ -4,13 +4,14 @@ const {
   },
 } = require('abci/types');
 
-const packageJson = require('../../../package');
+const { version: driveVersion } = require('../../../package');
 
 /**
  * @param {BlockchainState} blockchainState
+ * @param {Number} protocolVersion
  * @return {infoHandler}
  */
-function infoHandlerFactory(blockchainState) {
+function infoHandlerFactory(blockchainState, protocolVersion) {
   /**
    * Info ABCI handler
    *
@@ -20,7 +21,8 @@ function infoHandlerFactory(blockchainState) {
    */
   async function infoHandler() {
     return new ResponseInfo({
-      version: packageJson.version,
+      version: driveVersion,
+      appVersion: protocolVersion,
       lastBlockHeight: blockchainState.getLastBlockHeight(),
       lastBlockAppHash: blockchainState.getLastBlockAppHash(),
     });

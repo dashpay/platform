@@ -31,7 +31,6 @@ describe('BlockchainStateLevelDBRepository', () => {
   describe('#store', () => {
     it('should store blockchain state', async () => {
       const repositoryInstance = await repository.store(blockchainState);
-
       expect(repositoryInstance).to.equal(repository);
 
       const storedStateBuffer = await db.get(BlockchainStateLevelDBRepository.KEY_NAME);
