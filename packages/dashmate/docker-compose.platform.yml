@@ -5,7 +5,7 @@ services:
     image: ${PLATFORM_DRIVE_MONGODB_DOCKER_IMAGE:?err}:${PLATFORM_DRIVE_MONGODB_VERSION:?err}
     restart: unless-stopped
     volumes:
-      - drive_mongodb:/data/db
+      - drive_mongodb_data:/data/db
     extra_hosts:
       - "drive_mongodb:127.0.0.1"
     command: mongod --replSet driveDocumentIndices --bind_ip_all
@@ -25,7 +25,7 @@ services:
       - drive_mongodb_replica_init
       - core
     volumes:
-      - drive_leveldb:/usr/src/app/db
+      - drive_abci_leveldb:/usr/src/app/db
     environment:
       - CORE_JSON_RPC_USERNAME=dashrpc
       - CORE_JSON_RPC_PASSWORD=password
@@ -45,7 +45,7 @@ services:
       - 26656:26656 # P2P
     volumes:
       - ./configs/${NETWORK:?err}/drive/tendermint:/tendermint/config
-      - ./data/${NETWORK:?err}/drive/tendermint:/data
+      - drive_tendermint_homedir:/tendermint
     entrypoint: sh -c "/usr/bin/tendermint init && /usr/bin/tendermint node"
 
   dapi_insight:
@@ -129,5 +129,6 @@ services:
       - ./configs/${NETWORK:?err}/dapi/nginx/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
 
 volumes:
-  drive_mongodb:
-  drive_leveldb:
+  drive_abci_leveldb:
+  drive_mongodb_data:
+  drive_tendermint_homedir:

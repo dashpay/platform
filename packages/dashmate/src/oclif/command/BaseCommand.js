@@ -17,6 +17,14 @@ class BaseCommand extends Command {
   async init() {
     this.container = await createDIContainer();
 
+    // Set up home dir
+    /**
+     * @type {ensureHomeDir}
+     */
+    const ensureHomeDir = this.container.resolve('ensureHomeDir');
+
+    ensureHomeDir();
+
     // Load configs
     /**
      * @type {ConfigJsonFileRepository}
@@ -43,7 +51,7 @@ class BaseCommand extends Command {
       configCollection = createSystemConfigs();
     }
 
-    // Register configs collection is the container
+    // Register config collection in the container
     this.container.register({
       configCollection: asValue(configCollection),
     });
