@@ -2,7 +2,7 @@ version: '3.7'
 
 services:
   core:
-    image: ${CORE_DOCKER_IMAGE:?err}:${CORE_VERSION:?err}
+    image: ${CORE_DOCKER_IMAGE:?err}
     restart: unless-stopped
     ports:
       - ${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P

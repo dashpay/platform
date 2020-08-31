@@ -6,9 +6,8 @@ const baseConfig = {
   description: 'base config for use as template',
   core: {
     docker: {
-      image: 'dashpay/dashd',
+      image: 'dashpay/dashd:0.15',
     },
-    version: '0.15',
     p2p: {
       port: 20001,
     },
@@ -22,47 +21,40 @@ const baseConfig = {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy',
+          image: 'envoyproxy/envoy:v1.14-latest',
         },
-        version: 'v1.14-latest',
       },
       nginx: {
         docker: {
-          image: 'nginx',
+          image: 'nginx:latest',
         },
-        version: 'latest',
       },
       api: {
         docker: {
-          image: 'dashpay/dapi',
+          image: 'dashpay/dapi:0.15-dev',
         },
-        version: '0.15-dev',
       },
       insight: {
         docker: {
-          image: 'dashpay/insight-api',
+          image: 'dashpay/insight-api:latest',
         },
-        version: 'latest',
       },
     },
     drive: {
       mongodb: {
         docker: {
-          image: 'mongo',
+          image: 'mongo:4.2',
         },
-        version: '4.2',
       },
       abci: {
         docker: {
-          image: 'dashpay/drive',
+          image: 'dashpay/drive:0.15-dev',
         },
-        version: '0.15-dev',
       },
       tendermint: {
         docker: {
-          image: 'dashpay/tendermint',
+          image: 'dashpay/tendermint:v0.32.12',
         },
-        version: 'v0.32.12',
       },
     },
     dpns: {

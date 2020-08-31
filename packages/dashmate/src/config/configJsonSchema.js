@@ -4,7 +4,7 @@ module.exports = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
   definitions: {
-    dockerAndVersion: {
+    docker: {
       type: 'object',
       properties: {
         docker: {
@@ -17,11 +17,8 @@ module.exports = {
           required: ['image'],
           additionalProperties: false,
         },
-        version: {
-          type: 'string',
-        },
       },
-      required: ['docker', 'version'],
+      required: ['docker'],
       additionalProperties: false,
     },
   },
@@ -41,9 +38,6 @@ module.exports = {
           },
           required: ['image'],
           additionalProperties: false,
-        },
-        version: {
-          type: 'string',
         },
         p2p: {
           type: 'object',
@@ -74,7 +68,7 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'version', 'p2p', 'masternode'],
+      required: ['docker', 'p2p', 'masternode'],
       additionalProperties: false,
     },
     platform: {
@@ -84,16 +78,16 @@ module.exports = {
           type: 'object',
           properties: {
             envoy: {
-              $ref: '#/definitions/dockerAndVersion',
+              $ref: '#/definitions/docker',
             },
             nginx: {
-              $ref: '#/definitions/dockerAndVersion',
+              $ref: '#/definitions/docker',
             },
             api: {
-              $ref: '#/definitions/dockerAndVersion',
+              $ref: '#/definitions/docker',
             },
             insight: {
-              $ref: '#/definitions/dockerAndVersion',
+              $ref: '#/definitions/docker',
             },
           },
           required: ['envoy', 'nginx', 'api', 'insight'],
@@ -103,13 +97,13 @@ module.exports = {
           type: 'object',
           properties: {
             mongodb: {
-              $ref: '#/definitions/dockerAndVersion',
+              $ref: '#/definitions/docker',
             },
             abci: {
-              $ref: '#/definitions/dockerAndVersion',
+              $ref: '#/definitions/docker',
             },
             tendermint: {
-              $ref: '#/definitions/dockerAndVersion',
+              $ref: '#/definitions/docker',
             },
           },
           required: ['mongodb', 'abci', 'tendermint'],
