@@ -27,11 +27,9 @@ function wrapInErrorHandlerFactory(logger) {
   function wrapInErrorHandler(method, options = {}) {
     // eslint-disable-next-line no-param-reassign
     options = {
-      throwNonABCIErrors: true,
+      respondWithInternalError: false,
       ...options,
     };
-
-    const { throwNonABCIErrors } = options;
 
     /**
      * @param request
@@ -44,19 +42,21 @@ function wrapInErrorHandlerFactory(logger) {
 
         // Wrap all non ABCI errors to an internal ABCI error
         if (!(e instanceof AbciError)) {
-          // in special cases (e.g. deliverTx call)
-          // we should propagate the error upwards
-          // to halt the Drive
-          if (throwNonABCIErrors) {
-            throw e;
-          }
-
           error = new InternalAbciError(e);
         }
 
         // Log only internal ABCI errors
         if (error instanceof InternalAbciError) {
           logger.error(error.getError());
+
+          // in consensus ABCI handlers (blockBegin, deliverTx, blockEnd, commit)
+          // we should propagate the error upwards
+          // to halt the Drive
+          // in order cases like query and checkTx
+          // we need to respond with internal errors
+          if (!options.respondWithInternalError) {
+            throw error.getError();
+          }
         }
 
         const kvPairTags = Object.entries(error.getTags())

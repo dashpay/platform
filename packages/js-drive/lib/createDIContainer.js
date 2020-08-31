@@ -438,11 +438,11 @@ async function createDIContainer(options) {
       queryHandler,
     ) => ({
       info: infoHandler,
-      checkTx: wrapInErrorHandler(checkTxHandler, { throwNonABCIErrors: false }),
+      checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
       beginBlock: beginBlockHandler,
       deliverTx: wrapInErrorHandler(deliverTxHandler),
       commit: commitHandler,
-      query: wrapInErrorHandler(queryHandler, { throwNonABCIErrors: false }),
+      query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
     })).singleton(),
   });
 

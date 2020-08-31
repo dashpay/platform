@@ -23,11 +23,45 @@ describe('wrapInErrorHandlerFactory', () => {
     methodMock = this.sinon.stub();
 
     handler = wrapInErrorHandler(
-      methodMock, { throwNonABCIErrors: false },
+      methodMock,
     );
   });
 
-  it('should respond with internal error code if any Error is thrown in handler', async () => {
+  it('should throw an internal error if any Error is thrown in handler', async () => {
+    const error = new Error('Custom error');
+
+    methodMock.throws(error);
+
+    try {
+      await handler(request);
+
+      expect.fail('Internal error must be thrown');
+    } catch (e) {
+      expect(e).to.equal(error);
+    }
+  });
+
+  it('should throw en internal error if an InternalAbciError is thrown in handler', async () => {
+    const originError = new Error();
+    const data = { sample: 'data' };
+    const error = new InternalAbciError(originError, data);
+
+    methodMock.throws(error);
+
+    try {
+      await handler(request);
+
+      expect.fail('Internal error must be thrown');
+    } catch (e) {
+      expect(e).to.equal(originError);
+    }
+  });
+
+  it('should respond with internal error code if any Error is thrown in handler and respondWithInternalError enabled', async () => {
+    handler = wrapInErrorHandler(
+      methodMock, { respondWithInternalError: true },
+    );
+
     const error = new Error('Custom error');
 
     methodMock.throws(error);
@@ -45,7 +79,11 @@ describe('wrapInErrorHandlerFactory', () => {
     });
   });
 
-  it('should respond with internal error code if an InternalAbciError is thrown in handler', async () => {
+  it('should respond with internal error code if an InternalAbciError is thrown in handler and respondWithInternalError enabled', async () => {
+    handler = wrapInErrorHandler(
+      methodMock, { respondWithInternalError: true },
+    );
+
     const data = { sample: 'data' };
     const error = new InternalAbciError(new Error(), data);
 
