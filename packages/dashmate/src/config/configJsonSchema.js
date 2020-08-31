@@ -30,14 +30,7 @@ module.exports = {
       type: 'object',
       properties: {
         docker: {
-          type: 'object',
-          properties: {
-            image: {
-              type: 'string',
-            },
-          },
-          required: ['image'],
-          additionalProperties: false,
+          $ref: '#/definitions/docker/properties/docker',
         },
         p2p: {
           type: 'object',

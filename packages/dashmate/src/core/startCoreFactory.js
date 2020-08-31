@@ -34,7 +34,6 @@ function startCoreFactory(
     const coreCommand = [
       'dashd',
       '-conf=/dash/.dashcore/dash.conf',
-      '-datadir=/dash/data',
       `-port=${config.get('core.p2p.port')}`,
     ];
 
