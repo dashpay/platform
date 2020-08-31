@@ -16,6 +16,11 @@ const baseConfig = {
         privateKey: null,
       },
     },
+    miner: {
+      enable: false,
+      interval: '2.5m',
+      address: null,
+    },
   },
   platform: {
     dapi: {

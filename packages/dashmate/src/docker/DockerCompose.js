@@ -143,9 +143,10 @@ class DockerCompose {
    * @param {Object} envs
    * @param {string} serviceName
    * @param {string} command
+   * @param {string[]} [commandOptions]
    * @return {Promise<object>}
    */
-  async execCommand(envs, serviceName, command) {
+  async execCommand(envs, serviceName, command, commandOptions = []) {
     await this.throwErrorIfNotInstalled();
 
     if (!(await this.isServiceRunning(envs, serviceName))) {
@@ -154,11 +155,16 @@ class DockerCompose {
 
     let commandOutput;
 
+    const options = {
+      ...this.getOptions(envs),
+      commandOptions,
+    };
+
     try {
       commandOutput = await dockerCompose.exec(
         serviceName,
         command,
-        this.getOptions(envs),
+        options,
       );
     } catch (e) {
       throw new DockerComposeError(e);
