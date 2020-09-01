@@ -47,7 +47,7 @@ class MintCommand extends BaseCommand {
 
     try {
       await tasks.run({
-        fundingAddress: address,
+        address,
         network,
       });
     } catch (e) {
