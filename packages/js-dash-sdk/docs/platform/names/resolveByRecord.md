@@ -15,4 +15,4 @@ const identityId = '3ge4yjGinQDhxh2aVpyLTQaoka45BkijkoybfAkDepoN';
 const document = await client.platform.names.resolveByRecord('dashIdentity',identityId);
 ```
 
-Returns : Document (or `null` if do not exist).
+Returns : array of Document.

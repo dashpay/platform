@@ -1,9 +1,9 @@
 import { expect } from 'chai';
 import { ImportMock } from 'ts-mock-imports';
 
-import entropyModule from '@dashevo/dpp/lib/util/entropy';
+import cryptoModule from 'crypto';
 
-ImportMock.mockFunction(entropyModule, 'generate', 'someEntropy');
+ImportMock.mockFunction(cryptoModule, 'randomBytes', Buffer.alloc(32));
 
 import register from './register';
 
@@ -33,61 +33,65 @@ describe('Platform', () => {
             });
 
             it('register top level domain', async () => {
-                identityMock.getId.returns('someIdentityId');
+                const identityId = 'someIdentityId';
+                identityMock.getId.returns(identityId);
 
-                await register.call(platformMock, 'Dash', identityMock);
+                await register.call(platformMock, 'Dash', {
+                    dashUniqueIdentityId: identityId,
+                }, identityMock);
 
-                expect(identityMock.getId.callCount).to.equal(1);
-                expect(platformMock.documents.create.getCall(0).args).to.have.deep.members([
-                    'dpns.preorder',
-                    identityMock,
-                    {
-                        "saltedDomainHash": "5620d033a9faaa2633afd855570b28b11190a5f2d16634021eb0acf8cee7d402b756",
-                    },
-                ]);
+                expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
+                expect(platformMock.documents.create.getCall(0).args[1]).to.deep.equal(identityMock);
+                expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.deep.equal(
+                    'df46c47179745ea18c0fdc95910372dca8810127acc9afe3c9b326b07555e6b4',
+                );
 
                 expect(platformMock.documents.create.getCall(1).args).to.have.deep.members([
                     'dpns.domain',
                     identityMock,
                     {
                         'label': 'Dash',
-                        'nameHash': '562060f0833932a21446ada9b0bb71ac8e8b40e2618f99f44204d66815f6bdf258cc',
                         'normalizedLabel': 'dash',
                         'normalizedParentDomainName': '',
-                        'preorderSalt': 'someEntropy',
+                        'preorderSalt': Buffer.alloc(32),
                         'records': {
-                            'dashIdentity': 'someIdentityId',
-                        }
+                            'dashUniqueIdentityId': 'someIdentityId',
+                        },
+                        'subdomainRules': {
+                            'allowSubdomains': true,
+                        },
                     }
                 ]);
             });
 
             it('should register second level domain', async () => {
-                identityMock.getId.returns('someIdentityId');
+                const identityId = 'someIdentityId';
+                identityMock.getId.returns(identityId);
 
-                await register.call(platformMock, 'User.dash', identityMock);
+                await register.call(platformMock, 'User.dash', {
+                    dashAliasIdentityId: identityId,
+                }, identityMock);
 
-                expect(identityMock.getId.callCount).to.equal(1);
-                expect(platformMock.documents.create.getCall(0).args).to.have.deep.members([
-                    'dpns.preorder',
-                    identityMock,
-                    {
-                        "saltedDomainHash": "5620ca5eed7648dcb77804e80c17753c23b1b77d43ca9ead90dee01c9c913ca4f13e",
-                    },
-                ]);
+                expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
+                expect(platformMock.documents.create.getCall(0).args[1]).to.deep.equal(identityMock);
+                expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.deep.equal(
+                    '04a52b75ca842ee9fb14f2cdd27aa0982b9b2cfb2c0e95f640ca3f0c24f1bb9a',
+                );
 
                 expect(platformMock.documents.create.getCall(1).args).to.have.deep.members([
                     'dpns.domain',
                     identityMock,
                     {
                         'label': 'User',
-                        'nameHash': '5620b5f42fb635a08cc0f441bbc6ef5f3bdeed2877692feffd9945bde3abf8b4141f',
                         'normalizedLabel': 'user',
                         'normalizedParentDomainName': 'dash',
-                        'preorderSalt': 'someEntropy',
+                        'preorderSalt': Buffer.alloc(32),
                         'records': {
-                            'dashIdentity': 'someIdentityId',
-                        }
+                            'dashAliasIdentityId': 'someIdentityId',
+                        },
+                        'subdomainRules': {
+                            'allowSubdomains': false,
+                        },
                     }
                 ]);
             });
@@ -96,7 +100,9 @@ describe('Platform', () => {
                 delete platformMock.apps.dpns.contractId;
 
                 try {
-                    await register.call(platformMock, 'user.dash', identityMock);
+                    await register.call(platformMock, 'user.dash', {
+                        dashUniqueIdentityId: 'someIdentityId',
+                    }, identityMock);
                 } catch (e) {
                     expect(e.message).to.equal('DPNS is required to register a new name.');
                 }

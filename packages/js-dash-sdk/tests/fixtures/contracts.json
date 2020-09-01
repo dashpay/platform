@@ -23,6 +23,7 @@
         ],
         "additionalProperties": false
       }
-    }
+    },
+    "protocolVersion": 0
   }
 }

@@ -31,10 +31,10 @@
   },
   "homepage": "https://github.com/dashevo/DashJS#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "~0.15.0-dev.1",
-    "@dashevo/dashcore-lib": "~0.18.11",
-    "@dashevo/dpp": "~0.14.0",
-    "@dashevo/wallet-lib": "~7.15.0-dev.1",
+    "@dashevo/dapi-client": "~0.15.0-dev.5",
+    "@dashevo/dashcore-lib": "~0.18.12",
+    "@dashevo/dpp": "~0.15.0-dev.13",
+    "@dashevo/wallet-lib": "~7.15.0-dev.3",
     "bs58": "^4.0.1"
   },
   "devDependencies": {
@@ -56,7 +56,7 @@
     "karma-mocha": "^2.0.1",
     "karma-mocha-reporter": "^2.2.5",
     "karma-webpack": "^4.0.2",
-    "mocha": "^8.0.1",
+    "mocha": "^8.1.1",
     "nodemon": "^2.0.4",
     "rimraf": "^3.0.2",
     "sinon": "^9.0.2",

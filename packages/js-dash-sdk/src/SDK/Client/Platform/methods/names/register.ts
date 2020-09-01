@@ -1,30 +1,31 @@
 import {Platform} from "../../Platform";
 
-const entropy = require('@dashevo/dpp/lib/util/entropy');
-const { hash } = require('@dashevo/dpp/lib/util/multihashDoubleSHA256');
-const bs58 = require('bs58');
+const hash = require('@dashevo/dpp/lib/util/hash');
+const crypto = require('crypto');
 
 /**
  * Register names to the platform
  *
  * @param {Platform} this - bound instance class
  * @param {string} name - name
+ * @param {Object} records - records object having only one of the following items
+ * @param {string} [records.dashUniqueIdentityId]
+ * @param {string} [records.dashAliasIdentityId]
  * @param identity - identity
- * @param {any} [identity.id] - identity ID
- * @param {function(number):any} - get public key by ID
- * @returns registered names
+ *
+ * @returns registered domain document
  */
 export async function register(this: Platform,
                                name: string,
+                               records: {
+                                   dashUniqueIdentityId?: string,
+                                   dashAliasIdentityId?: string,
+                               },
                                identity: {
                                    getId(): string;
                                    getPublicKeyById(number: number):any;
-                               }
+                               },
 ): Promise<any> {
-    const records = {
-        dashIdentity: identity.getId(),
-    };
-
     const nameLabels = name.split('.');
 
     const normalizedParentDomainName = nameLabels
@@ -35,24 +36,20 @@ export async function register(this: Platform,
     const [label] = nameLabels;
     const normalizedLabel = label.toLowerCase();
 
-    const preorderSalt = entropy.generate();
+    const preorderSalt = crypto.randomBytes(32);
 
-    const fullDomainName = normalizedParentDomainName.length > 0
+    const isSecondLevelDomain = normalizedParentDomainName.length > 0;
+
+    const fullDomainName = isSecondLevelDomain
         ? `${normalizedLabel}.${normalizedParentDomainName}`
         : normalizedLabel;
 
-    const nameHash = hash(
-        Buffer.from(fullDomainName),
-    ).toString('hex');
-
-    const saltedDomainHashBuffer = Buffer.concat([
-        bs58.decode(preorderSalt),
-        Buffer.from(nameHash, 'hex'),
-    ]);
-
     const saltedDomainHash = hash(
-        saltedDomainHashBuffer,
-    ).toString('hex');
+        Buffer.concat([
+            preorderSalt,
+            Buffer.from(fullDomainName),
+        ]),
+    );
 
     if (!this.apps.dpns.contractId) {
         throw new Error('DPNS is required to register a new name.');
@@ -79,12 +76,14 @@ export async function register(this: Platform,
         'dpns.domain',
         identity,
         {
-            nameHash,
             label,
             normalizedLabel,
             normalizedParentDomainName,
             preorderSalt,
             records,
+            subdomainRules: {
+                allowSubdomains: !isSecondLevelDomain,
+            },
         },
     );
 

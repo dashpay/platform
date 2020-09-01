@@ -1,5 +1,3 @@
-import { hash } from '@dashevo/dpp/lib/util/multihashDoubleSHA256';
-
 import { Platform } from "../../Platform";
 
 /**
@@ -8,13 +6,23 @@ import { Platform } from "../../Platform";
  * @returns {Document} document
  */
 export async function resolve(this: Platform, name: string): Promise<any> {
-    const normalizedAndHashedName = hash(
-        Buffer.from(name.toLowerCase()),
-    ).toString('hex');
+    // setting up variables in case of TLD registration
+    let normalizedLabel = name.toLowerCase();
+    let normalizedParentDomainName = '';
+
+    // in case of subdomain registration
+    // we should split label and parent domain name
+    if (name.includes('.')) {
+        const segments = name.toLowerCase().split('.');
+
+        normalizedLabel = segments[0];
+        normalizedParentDomainName = segments.slice(1).join('.');
+    }
 
     const [document] = await this.documents.get('dpns.domain', {
         where: [
-            ['nameHash', '==', normalizedAndHashedName],
+            ['normalizedParentDomainName', '==', normalizedParentDomainName],
+            ['normalizedLabel', '==', normalizedLabel],
         ],
     });
 
