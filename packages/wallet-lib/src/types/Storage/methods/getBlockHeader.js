@@ -4,7 +4,7 @@ const { BlockHeaderNotInStore } = require('../../../errors');
  * @param identifier - block hash or height
  * @return {BlockHeader}
  */
-const getBlockHeader = function (identifier) {
+const getBlockHeader = function getBlockHeader(identifier) {
   const search = this.searchBlockHeader(identifier);
   if (!search.found) throw new BlockHeaderNotInStore(identifier);
   return search.result;

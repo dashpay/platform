@@ -4,7 +4,7 @@ const { is } = require('../../../utils');
  * @param {string|number} identifier - block hash or height
  * @return {BlockHeaderSearchResult}
  */
-const searchBlockHeader = function (identifier) {
+const searchBlockHeader = function searchBlockHeader(identifier) {
   const store = this.getStore();
   const search = {
     identifier,

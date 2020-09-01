@@ -55,7 +55,6 @@ class FixtureTransport extends AbstractTransport {
   }
 }
 
-// FixtureTransport.prototype.getAddressSummary = require('./methods/getAddressSummary');
 FixtureTransport.prototype.getBestBlock = require('./methods/getBestBlock');
 FixtureTransport.prototype.getBestBlockHash = require('./methods/getBestBlockHash');
 FixtureTransport.prototype.getBestBlockHeader = require('./methods/getBestBlockHeader');
@@ -65,9 +64,7 @@ FixtureTransport.prototype.getBlockByHeight = require('./methods/getBlockByHeigh
 FixtureTransport.prototype.getBlockHeaderByHash = require('./methods/getBlockHeaderByHash');
 FixtureTransport.prototype.getBlockHeaderByHeight = require('./methods/getBlockHeaderByHeight');
 FixtureTransport.prototype.getStatus = require('./methods/getStatus');
-FixtureTransport.prototype.getAddressSummary = require('./methods/getAddressSummary');
 FixtureTransport.prototype.getTransaction = require('./methods/getTransaction');
-FixtureTransport.prototype.getUTXO = require('./methods/getUTXO');
 FixtureTransport.prototype.sendTransaction = require('./methods/sendTransaction');
 FixtureTransport.prototype.subscribeToAddressesTransactions = require('./methods/subscribeToAddressesTransactions');
 FixtureTransport.prototype.subscribeToBlockHeaders = require('./methods/subscribeToBlockHeaders');

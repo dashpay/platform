@@ -34,10 +34,10 @@ describe('Plugins - Worker', function suite() {
     };
 
     worker.startWorker();
-    setTimeout(() => {
+    setTimeout(async () => {
       expect(worker.workerPass).to.equal(4);
       expect(didSomething).to.equal(4);
-      worker.stopWorker();
+      await worker.stopWorker();
       setTimeout(() => {
         expect(worker.workerPass).to.equal(0);
         expect(didSomething).to.equal(4);

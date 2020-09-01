@@ -28,14 +28,14 @@ function mnemonicToWalletId(mnemonic) {
   const buff = doubleSha256(buffMnemonic);
   return buff.toString('hex').slice(0, 10);
 }
-const mnemonicToSeed = function (mnemonic, password = '') {
+const mnemonicToSeed = function mnemonicToSeed(mnemonic, password = '') {
   const mnemonicBuff = Buffer.from(mnemonic.normalize('NFKD'), 'utf8');
   const saltBuff = Buffer.from(`mnemonic${password}`, 'utf8');
   return pbkdf2Sync(mnemonicBuff, saltBuff, 2048, 64, 'sha512')
     .toString('hex');
 };
 // See https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
-const seedToHDPrivateKey = function (seed, network = 'testnet') {
+const seedToHDPrivateKey = function seedToHDPrivateKey(seed, network = 'testnet') {
   return HDPrivateKey.fromSeed(seed, network);
 };
 module.exports = {

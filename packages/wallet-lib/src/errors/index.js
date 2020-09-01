@@ -29,6 +29,8 @@ const UnknownPlugin = require('./UnknownPlugin');
 const ValidTransportLayerRequired = require('./ValidTransportLayerRequired');
 const WalletLibError = require('./WalletLibError');
 
+const PluginInjectionError = require('./PluginInjectionError');
+
 
 module.exports = {
   BlockHeaderNotInStore,
@@ -55,4 +57,5 @@ module.exports = {
   UnknownWorker,
   ValidTransportLayerRequired,
   WalletLibError,
+  PluginInjectionError,
 };

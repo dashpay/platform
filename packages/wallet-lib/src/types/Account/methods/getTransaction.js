@@ -10,7 +10,7 @@ async function getTransaction(txid = null) {
   }
   const tx = await this.transport.getTransaction(txid);
   if (this.cacheTx) {
-    await this.storage.importTransactions(tx);
+    await this.importTransactions(tx);
     if (this.cacheBlockHeaders) {
       const searchBlockHeader = this.storage.searchBlockHeader(tx.nLockTime);
       if (!searchBlockHeader.found) {

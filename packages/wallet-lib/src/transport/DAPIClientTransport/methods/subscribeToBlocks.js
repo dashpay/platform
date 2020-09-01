@@ -12,6 +12,6 @@ module.exports = async function subscribeToBlocks() {
     }
   };
   await executor();
-  const refreshBlockInterval = 10 * 1000;// Every 10s
+  const refreshBlockInterval = 30 * 1000;// Every 30s
   executors.blocks = setInterval(() => executor(), refreshBlockInterval);
 };

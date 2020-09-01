@@ -69,7 +69,6 @@ describe('Storage - constructor', function suite() {
           network: Dashcore.Networks.testnet.toString(),
           mnemonic: null,
           type: null,
-          blockHeight: 0,
           identityIds: [],
           addresses: { external: {}, internal: {}, misc: {} },
         },

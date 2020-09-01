@@ -6,8 +6,8 @@ const DAPIClientTransport = require('./DAPIClientTransport/DAPIClientTransport')
 
 /**
  *
- * @param {DAPIClientOptions|Transport} options
- * @returns {Transport}
+ * @param {DAPIClientOptions|Transport|DAPIClientTransport} options
+ * @returns {Transport|DAPIClientTransport}
  */
 function createTransportFromOptions(options) {
   if (!_.isPlainObject(options)) {

@@ -5,7 +5,7 @@ const _ = require('lodash');
  * @param {string} txid
  * @return {AddressesSearchResult}
  */
-const searchAddressesWithTx = function (txid) {
+const searchAddressesWithTx = function searchAddressesWithTx(txid) {
   const search = {
     txid,
     results: [],

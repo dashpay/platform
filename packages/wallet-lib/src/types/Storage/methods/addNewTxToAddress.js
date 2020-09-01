@@ -7,7 +7,7 @@ const { is } = require('../../../utils');
 * @param {String} address
 * @return {boolean}
   */
-const addNewTxToAddress = function (tx, address) {
+const addNewTxToAddress = function addNewTxToAddress(tx, address) {
   if (!is.address(address)) throw new InvalidAddress(address);
   if (!is.transactionObj(tx)) throw new InvalidTransactionObject(tx);
 

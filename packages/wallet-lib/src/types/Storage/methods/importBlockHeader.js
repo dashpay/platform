@@ -6,7 +6,6 @@ const EVENTS = require('../../../EVENTS');
  */
 const importBlockHeader = function importBlockHeader(blockHeader, height) {
   const self = this;
-  // if (!is.dashcoreBlockHeader(transaction)) throw new InvalidDashcoreTransaction(transaction);
   const { store, network } = this;
 
   const chainStore = store.chains[network];

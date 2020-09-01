@@ -1,6 +1,6 @@
 const _ = require('lodash');
 const { expect } = require('chai');
-const { HDPrivateKey } = require('@dashevo/dashcore-lib');
+const { HDPrivateKey, Transaction } = require('@dashevo/dashcore-lib');
 
 const createTransaction = require('./createTransaction');
 const { mnemonic } = require('../../../../fixtures/wallets/mnemonics/during-develop-before');
@@ -10,6 +10,7 @@ const getUTXOS = require('./getUTXOS');
 const { simpleDescendingAccumulator } = require('../../../utils/coinSelections/strategies');
 
 const addressesFixtures = require('../../../../fixtures/addresses.json');
+const fixtureUTXOS = require('../../../transport/FixtureTransport/data/utxos/yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22.json');
 const validStore = require('../../../../fixtures/walletStore').valid.orange.store;
 
 const craftedGenerousMinerStrategy = require('../../../../fixtures/strategies/craftedGenerousMinerStrategy');
@@ -23,6 +24,7 @@ describe('Account - createTransaction', function suite() {
       store: validStore,
       walletId: 'a3771aaf93',
       getUTXOS,
+      network: 'testnet'
     };
 
     const mockOpts1 = {};
@@ -50,10 +52,8 @@ describe('Account - createTransaction', function suite() {
     const transport = new FixtureTransport();
     transport.setHeight(21546);
 
-    const utxos = await transport.getUTXO.call(transport, ['yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22']);
-
     mockWallet = {
-      getUTXOS: () => utxos,
+      getUTXOS: () => fixtureUTXOS["21546"].map(utxo => Transaction.UnspentOutput(utxo)),
       getUnusedAddress: () => {
         return {"address": 'yMGXHsi8gstbd5wqfqkqcfsbwJjGBt5sWu'}
       },

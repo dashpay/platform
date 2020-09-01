@@ -55,8 +55,9 @@ const CONSTANTS = {
       'getUnconfirmedBalance',
       'getTotalBalance',
       'broadcastTransaction',
+      'importTransactions',
+      'importBlockHeader',
       'getAddress',
-      'fetchAddressInfo',
       'fetchStatus',
       'getPlugin',
       'sign',
@@ -78,8 +79,13 @@ const CONSTANTS = {
     ],
     SAFE_PROPERTIES: [
       'offlineMode',
+      'index',
+      'BIP44PATH',
       'transport',
       'walletId',
+      'walletType',
+      'strategy',
+      'network',
     ],
   },
   STORAGE: {
@@ -91,5 +97,8 @@ const CONSTANTS = {
   TXOUT_DUFFS_VALUE_BYTES: 8,
   VERSION_BYTES: 4,
   N_LOCKTIME_BYTES: 4,
+
+  BLOOM_FALSE_POSITIVE_RATE: 0.0001,
+  NULL_HASH: '0000000000000000000000000000000000000000000000000000000000000000',
 };
 module.exports = CONSTANTS;

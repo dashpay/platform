@@ -8,7 +8,7 @@ const { AES } = CryptoJS;
  * @param {'hex'|string} [encoding=CryptoJS.enc.Utf8]
  * @return {string}
  */
-const decrypt = function (method, data, secret, encoding = '') {
+const decrypt = function decrypt(method, data, secret, encoding = '') {
   let decrypted;
   switch (method) {
     default:

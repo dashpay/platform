@@ -3,7 +3,7 @@
  * @param {string} hash
  * @return {TransactionSearchResult}
  */
-const searchTransaction = function (hash) {
+const searchTransaction = function searchTransaction(hash) {
   const search = {
     hash,
     found: false,

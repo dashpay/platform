@@ -36,6 +36,7 @@ describe('Account - disconnect', function suite() {
     // console.log(self, transportConnected, emitted);
     expect(transportConnected).to.equal(false);
     expect(emitted).to.deep.equal([
+      'WORKER/DUMMYWORKER/STARTING',
       'WORKER/DUMMYWORKER/STARTED',
       'WORKER/DUMMYWORKER/EXECUTED',
       'WORKER/DUMMYWORKER/STOPPED',

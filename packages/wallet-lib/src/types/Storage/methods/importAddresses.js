@@ -4,7 +4,7 @@
  * @param {string} walletId
  * @return {boolean}
  */
-const importAddresses = function (addresses, walletId) {
+const importAddresses = function importAddresses(addresses, walletId) {
   if (!walletId) throw new Error('Expected walletId to import addresses');
   if (!this.searchWallet(walletId).found) {
     this.createWallet(walletId);

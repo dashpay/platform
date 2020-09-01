@@ -1,4 +1,5 @@
 const _ = require('lodash');
+const logger = require('../logger');
 const StandardPlugin = require('./StandardPlugin');
 const { WorkerFailedOnExecute, WorkerFailedOnStart } = require('../errors');
 
@@ -26,7 +27,7 @@ class Worker extends StandardPlugin {
       ? opts.executeOnStart
       : defaultOpts.executeOnStart;
 
-    this.workerIntervalTime = (opts.workerIntervalTime)
+    this.workerIntervalTime = _.has(opts, 'workerIntervalTime')
       ? opts.workerIntervalTime
       : defaultOpts.workerIntervalTime;
 
@@ -43,34 +44,45 @@ class Worker extends StandardPlugin {
   async startWorker() {
     let payloadResult = null;
     const self = this;
+    const eventTypeStarting = `WORKER/${this.name.toUpperCase()}/STARTING`;
+    logger.debug(JSON.stringify({ eventTypeStarting, result: payloadResult }));
+    this.parentEvents.emit(eventTypeStarting, { type: eventTypeStarting, payload: payloadResult });
     try {
-      if (this.worker) this.stopWorker();
-      // every minutes, check the pool
-      this.worker = setInterval(this.execWorker.bind(self), this.workerIntervalTime);
+      if (this.worker) await this.stopWorker();
+
+      if (this.workerIntervalTime > 0) {
+        this.worker = setInterval(this.execWorker.bind(self), this.workerIntervalTime);
+      }
 
       if (this.executeOnStart === true) {
         if (this.onStart) {
           payloadResult = await this.onStart();
         }
       }
-      const eventType = `WORKER/${this.name.toUpperCase()}/STARTED`;
-      this.parentEvents.emit(eventType, { type: eventType, payload: payloadResult });
+      const eventTypeStarted = `WORKER/${this.name.toUpperCase()}/STARTED`;
+      logger.debug(JSON.stringify({ eventTypeStarted, result: payloadResult }));
+      this.parentEvents.emit(eventTypeStarted, { type: eventTypeStarted, payload: payloadResult });
       this.state.started = true;
 
       if (this.executeOnStart) await this.execWorker();
-    } catch (err) {
-      throw new WorkerFailedOnStart(this.name, err.message, err);
+    } catch (e) {
+      throw new WorkerFailedOnStart(this.name, e);
     }
   }
 
-  stopWorker() {
+  async stopWorker(reason = null) {
+    let payloadResult = reason;
     clearInterval(this.worker);
     this.worker = null;
     this.workerPass = 0;
     this.isWorkerRunning = false;
     const eventType = `WORKER/${this.name.toUpperCase()}/STOPPED`;
+    if (this.onStop) {
+      payloadResult = await this.onStop();
+    }
     this.state.started = false;
-    this.parentEvents.emit(eventType, { type: eventType, payload: null });
+    logger.debug(JSON.stringify({ eventType, result: payloadResult }));
+    this.parentEvents.emit(eventType, { type: eventType, payload: payloadResult });
   }
 
   async execWorker() {
@@ -79,7 +91,7 @@ class Worker extends StandardPlugin {
       return false;
     }
     if (this.workerMaxPass !== null && this.workerPass >= this.workerMaxPass) {
-      this.stopWorker();
+      await this.stopWorker();
       return false;
     }
     this.isWorkerRunning = true;
@@ -87,18 +99,20 @@ class Worker extends StandardPlugin {
     if (this.execute) {
       try {
         payloadResult = await this.execute();
-      } catch (err) {
-        await this.stopWorker();
-        throw new WorkerFailedOnExecute(this.name, err.message, err);
+      } catch (e) {
+        await this.stopWorker(e.message);
+
+        throw new WorkerFailedOnExecute(this.name, e);
       }
     } else {
-      throw new Error(`Worker ${this.name} : Missing execute function`);
+      throw new Error(`Worker ${this.name}: Missing execute function`);
     }
 
     this.isWorkerRunning = false;
     this.workerPass += 1;
     if (!this.state.ready) this.state.ready = true;
     const eventType = `WORKER/${this.name.toUpperCase()}/EXECUTED`;
+    logger.debug(JSON.stringify({ eventType, result: payloadResult }));
     this.parentEvents.emit(eventType, { type: eventType, payload: payloadResult });
     return true;
   }

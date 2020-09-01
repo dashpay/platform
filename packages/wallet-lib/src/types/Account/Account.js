@@ -70,7 +70,6 @@ class Account extends EventEmitter {
     this.index = _.has(opts, 'index') ? opts.index : getNextUnusedAccountIndexForWallet(wallet);
     this.strategy = _loadStrategy(_.has(opts, 'strategy') ? opts.strategy : defaultOptions.strategy);
     this.network = getNetwork(wallet.network).toString();
-
     this.BIP44PATH = getBIP44Path(this.network, this.index);
 
     this.transactions = {};
@@ -102,26 +101,20 @@ class Account extends EventEmitter {
         super.emit(...args);
       };
     }
-    if (this.walletType === WALLET_TYPES.HDWALLET) {
-      this.storage.importAccounts({
-        label: this.label,
-        path: this.BIP44PATH,
-        network: this.network,
-      }, this.walletId);
-    }
-    if (this.walletType === WALLET_TYPES.HDPUBLIC) {
-      this.storage.importSingleAddress({
-        label: this.label,
-        path: '/0',
-        network: this.network,
-      }, this.walletId);
+    if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType)) {
+      this.storage.createAccount(
+        this.walletId,
+        this.BIP44PATH,
+        this.network,
+        this.label,
+      );
     }
     if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
-      this.storage.importSingleAddress({
-        label: this.label,
-        path: '0',
-        network: this.network,
-      }, this.walletId);
+      this.storage.createSingleAddress(
+        this.walletId,
+        this.network,
+        this.label,
+      );
     }
 
     this.keyChain = wallet.keyChain;
@@ -193,7 +186,6 @@ Account.prototype.decrypt = require('./methods/decrypt');
 Account.prototype.disconnect = require('./methods/disconnect');
 Account.prototype.encode = require('./methods/encode');
 Account.prototype.encrypt = require('./methods/encrypt');
-Account.prototype.fetchAddressInfo = require('./methods/fetchAddressInfo');
 Account.prototype.fetchStatus = require('./methods/fetchStatus');
 Account.prototype.forceRefreshAccount = require('./methods/forceRefreshAccount');
 Account.prototype.generateAddress = require('./methods/generateAddress');
@@ -217,6 +209,9 @@ Account.prototype.getUTXOS = require('./methods/getUTXOS');
 Account.prototype.getWorker = require('./methods/getWorker');
 Account.prototype.hasPlugins = require('./methods/hasPlugins');
 Account.prototype.injectPlugin = require('./methods/injectPlugin');
+Account.prototype.importTransactions = require('./methods/importTransactions');
+Account.prototype.importBlockHeader = require('./methods/importBlockHeader');
+
 Account.prototype.sign = require('./methods/sign');
 
 module.exports = Account;

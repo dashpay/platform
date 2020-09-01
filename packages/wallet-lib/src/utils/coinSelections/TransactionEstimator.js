@@ -130,7 +130,7 @@ class TransactionEstimator {
     // DIP3
     // size += VERSION_BYTES_DIP3
     // size += TYPE_BYTES_DIP3
-    size += calculateInputsSize(this.state.inputs, tx);
+    size += calculateInputsSize(this.state.inputs);
     size += calculateOutputsSize(this.state.outputs, tx);
     size += 16;
     // size += calculateExtraPayload(this.state.extraPayload);

@@ -5,7 +5,7 @@ const { TransactionNotInStore } = require('../../../errors');
  * @param {string} txid
  * @return {Transaction}
  */
-const getTransaction = function (txid) {
+const getTransaction = function getTransaction(txid) {
   const search = this.searchTransaction(txid);
   if (!search.found) throw new TransactionNotInStore(txid);
   return search.result;

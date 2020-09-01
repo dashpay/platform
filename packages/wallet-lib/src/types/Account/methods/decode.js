@@ -7,7 +7,7 @@ const cbor = require('cbor');
  * @param {any} data
  * @return {any}
  */
-const decode = function (method, data) {
+const decode = function decode(method, data) {
   switch (method) {
     default:
       return cbor.decodeFirstSync(data);

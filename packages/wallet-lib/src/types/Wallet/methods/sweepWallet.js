@@ -18,13 +18,15 @@ async function sweepWallet(opts = {}) {
     if (self.walletType !== WALLET_TYPES.SINGLE_ADDRESS) {
       return reject(new Error('Can only sweep wallet initialized from privateKey'));
     }
+
     const account = await self.getAccount({ index: 0 });
-    const currentPublicAddress = account.getAddress().address;
     await account.isReady();
+
     const balance = await account.getTotalBalance();
-    if (!balance > 0) {
+    if (balance <= 0) {
       return reject(new Error(`Cannot sweep an empty private key (current balance: ${balance})`));
     }
+
     let newWallet;
     try {
       const walletOpts = {
@@ -32,18 +34,26 @@ async function sweepWallet(opts = {}) {
         transport: self.transport,
         ...opts,
       };
+
       newWallet = new self.constructor(walletOpts);
+
       const recipient = newWallet.getAccount({ index: 0 }).getUnusedAddress().address;
+
       const tx = account.createTransaction({
         satoshis: balance,
         recipient,
       });
+
       const txid = await account.broadcastTransaction(tx);
-      logger.info(`SweepWallet: ${balance} of ${currentPublicAddress} to ${recipient} transfered. Txid :${txid}`);
+
+      logger.info(`SweepWallet: ${balance} of ${account.getAddress().address} to ${recipient} transfered. Txid :${txid}`);
 
       return resolve(newWallet);
     } catch (err) {
-      await newWallet.disconnect();
+      if (newWallet) {
+        await newWallet.disconnect();
+      }
+
       return reject(err);
     }
   });

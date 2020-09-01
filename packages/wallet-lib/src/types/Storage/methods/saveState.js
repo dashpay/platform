@@ -4,7 +4,7 @@ const { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } = require('../../../EVENTS');
  * Force persistence of the state to the adapter
  * @return {Promise<boolean>}
  */
-const saveState = async function () {
+const saveState = async function saveState() {
   if (this.autosave && this.adapter && this.adapter.setItem) {
     const self = this;
     try {

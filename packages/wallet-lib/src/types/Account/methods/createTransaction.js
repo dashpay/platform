@@ -29,8 +29,7 @@ const parseUtxos = (utxos) => {
  * @param opts.strategy - Overwrite default strategy
  * @return {Transaction} - Transaction object
  */
-function createTransaction(opts) {
-  const self = this;
+function createTransaction(opts = {}) {
   const tx = new Transaction();
 
   let outputs = [];
@@ -50,7 +49,7 @@ function createTransaction(opts) {
       throw new Error('An amount in dash or in satoshis is expected to create a transaction');
     }
     const satoshis = (opts.amount && !opts.satoshis) ? dashToDuffs(opts.amount) : opts.satoshis;
-    if (!opts || (!opts.recipient)) {
+    if (!opts || !opts.recipient) {
       throw new Error('A recipient is expected to create a transaction');
     }
     outputs = [{ address: opts.recipient, satoshis }];
@@ -67,16 +66,6 @@ function createTransaction(opts) {
 
 
   const utxosList = _.has(opts, 'utxos') ? parseUtxos(opts.utxos) : this.getUTXOS();
-
-  utxosList.map((utxo) => {
-    const utxoTx = self.storage.searchTransaction(utxo.txId);
-    if (utxoTx.found) {
-      // eslint-disable-next-line no-param-reassign
-      // console.log(utxoTx.result.vin);
-      // utxo.scriptSig = utxoTx.result.vin[0].scriptSig.hex;
-    }
-    return utxo;
-  });
 
   const feeCategory = (opts.isInstantSend) ? 'instant' : 'normal';
   let selection;

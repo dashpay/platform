@@ -3,7 +3,7 @@ const { dashToDuffs, duffsToDash } = require('../../../utils');
 
 // Will filter out transaction that are not concerning us
 // (which can happen in the case of multiple account in store)
-const getFilteredTransactions = async function (/* storage, walletId, accountIndex */) {
+const getFilteredTransactions = async function getFilteredTransactions() {
   /**
    * From transaction's hash, we would need to be able to find the time of such execution.
    * Previously we used 'confirmations' value to estimate the height block where it would

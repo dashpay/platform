@@ -8,7 +8,7 @@ const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EV
  * Fetch the state from the persistence adapter
  * @return {Promise<void>}
  */
-const rehydrateState = async function () {
+const rehydrateState = async function rehydrateState() {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
       const transactions = (this.adapter && hasProp(this.adapter, 'getItem'))

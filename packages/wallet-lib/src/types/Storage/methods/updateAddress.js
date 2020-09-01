@@ -9,7 +9,7 @@ const EVENTS = require('../../../EVENTS');
 * @param {string} walletId
 * @return {boolean}
 */
-const updateAddress = function (addressObj, walletId) {
+const updateAddress = function updateAddress(addressObj, walletId) {
   if (!walletId) throw new Error('Expected walletId to update an address');
   if (!is.addressObj(addressObj)) throw new InvalidAddressObject(addressObj);
   const { path } = addressObj;

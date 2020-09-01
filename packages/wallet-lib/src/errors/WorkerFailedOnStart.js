@@ -1,9 +1,21 @@
 const WalletLibError = require('./WalletLibError');
 
 class WorkerFailedOnStart extends WalletLibError {
-  constructor(pluginName, reason = 'unknown') {
-    const message = `Worker ${pluginName} failed onStart. Reason: ${reason}`;
-    super(message);
+  /**
+   * @param {string} pluginName
+   * @param {Error} error
+   */
+  constructor(pluginName, error) {
+    super(`Worker ${pluginName} failed onStart: ${error.message}`);
+
+    this.error = error;
+  }
+
+  /**
+   * @returns {Error}
+   */
+  getError() {
+    return this.error;
   }
 }
 

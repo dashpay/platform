@@ -9,7 +9,6 @@ const expectThrowsAsync = async (method, errorMessage) => {
     if (errorMessage) {
       if (res.message) {
         error = res;
-        console.warn('Method resolved with error instead of rejecting', errorMessage);
       }
     }
   } catch (err) {

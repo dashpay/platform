@@ -46,8 +46,16 @@ Storage.prototype.announce = require('./methods/announce');
 Storage.prototype.calculateDuffBalance = require('./methods/calculateDuffBalance');
 Storage.prototype.clearAll = require('./methods/clearAll');
 Storage.prototype.configure = require('./methods/configure');
+Storage.prototype.createAccount = require('./methods/createAccount');
 Storage.prototype.createChain = require('./methods/createChain');
+Storage.prototype.createSingleAddress = require('./methods/createSingleAddress');
 Storage.prototype.createWallet = require('./methods/createWallet');
+
+Storage.prototype.exportAccounts = require('./methods/exportAccounts');
+Storage.prototype.exportChains = require('./methods/exportChains');
+Storage.prototype.exportTransactions = require('./methods/exportTransactions');
+Storage.prototype.exportWallets = require('./methods/exportWallets');
+
 Storage.prototype.getStore = require('./methods/getStore');
 Storage.prototype.getBlockHeader = require('./methods/getBlockHeader');
 Storage.prototype.getTransaction = require('./methods/getTransaction');
@@ -56,6 +64,7 @@ Storage.prototype.importAddress = require('./methods/importAddress');
 Storage.prototype.importAddresses = require('./methods/importAddresses');
 Storage.prototype.importBlockHeader = require('./methods/importBlockHeader');
 Storage.prototype.importSingleAddress = require('./methods/importSingleAddress');
+Storage.prototype.importChains = require('./methods/importChains');
 Storage.prototype.importTransaction = require('./methods/importTransaction');
 Storage.prototype.importTransactions = require('./methods/importTransactions');
 Storage.prototype.rehydrateState = require('./methods/rehydrateState');

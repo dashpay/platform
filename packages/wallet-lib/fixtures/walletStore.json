@@ -489,7 +489,7 @@
         },
         "chains":{
           "testnet":{
-            "blockheight":0
+            "blockheight": 10000
           }
         }
       }

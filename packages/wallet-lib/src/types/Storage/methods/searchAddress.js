@@ -4,7 +4,7 @@
  * @param {boolean} [forceLoop=false] -  When set at true, will force a full search
  * @return {AddressSearchResult}
  */
-const searchAddress = function (address, forceLoop = false) {
+const searchAddress = function searchAddress(address, forceLoop = false) {
   const search = {
     address,
     type: null,

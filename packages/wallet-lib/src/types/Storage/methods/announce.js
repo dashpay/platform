@@ -7,7 +7,7 @@ const EVENTS = require('../../../EVENTS');
  * @param el
  * @return {boolean}
  */
-const announce = function (type, el) {
+const announce = function announce(type, el) {
   switch (type) {
     case EVENTS.BLOCK:
     case EVENTS.BLOCKHEADER:

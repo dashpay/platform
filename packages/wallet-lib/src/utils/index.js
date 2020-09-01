@@ -17,6 +17,8 @@ const coinSelection = require('./coinSelection');
 const feeCalculation = require('./feeCalculation');
 const { hash, doubleSha256, sha256 } = require('./crypto');
 
+const fundWallet = require('./fundWallet');
+
 module.exports = {
   dashToDuffs,
   duffsToDash,
@@ -34,4 +36,5 @@ module.exports = {
   doubleSha256,
   sha256,
   hasProp,
+  fundWallet,
 };

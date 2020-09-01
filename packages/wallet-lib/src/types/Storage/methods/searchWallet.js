@@ -3,7 +3,7 @@
  * @param {string} walletId
  * @return {WalletSearchResult}
  */
-const searchWallet = function (walletId) {
+const searchWallet = function searchWallet(walletId) {
   const search = {
     walletId,
     found: false,

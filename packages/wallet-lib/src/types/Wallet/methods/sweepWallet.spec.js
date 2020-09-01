@@ -1,4 +1,4 @@
-const { Wallet } = require('../../../index');
+const {Wallet} = require('../../../index');
 const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
 const sweepWallet = require('./sweepWallet');
 
@@ -11,14 +11,16 @@ describe('Wallet - sweepWallet', function suite() {
   this.timeout(60000);
   let emptyWallet;
   let emptyAccount;
-
+  const transportOpts = (process.env.DAPI_SEED)
+      ? {
+        seeds: process.env.DAPI_SEED
+            .split(',')
+      }
+      : {}
   before(async () => {
     emptyWallet = new Wallet({
       privateKey: paperWallet.privateKey,
-      transport: {
-        seeds: process.env.DAPI_SEED
-          .split(','),
-      },
+      transport: transportOpts
     });
 
     emptyAccount = await emptyWallet.getAccount();
@@ -40,7 +42,7 @@ describe('Wallet - sweepWallet', function suite() {
     const exceptedException = 'Can only sweep wallet initialized from privateKey';
     const mockWallet = {
       walletType: 'HDWALLET',
-      getAccount: () => ({ getAddress: () => ({ address: null }), isReady: () => true }),
+      getAccount: () => ({getAddress: () => ({address: null}), isReady: () => true}),
     };
     expectThrowsAsync(async () => await sweepWallet.call(mockWallet), exceptedException);
   });

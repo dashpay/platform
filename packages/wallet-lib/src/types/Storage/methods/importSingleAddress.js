@@ -5,7 +5,7 @@
  * @param {string} walletId
  * @returns {boolean}
  */
-const importSingleAddress = function (singleAddress, walletId) {
+const importSingleAddress = function importSingleAddress(singleAddress, walletId) {
   const type = singleAddress.constructor.name;
   if (!walletId) throw new Error('Expected walletId to import single address');
   if (!this.searchWallet(walletId).found) {

@@ -4,7 +4,7 @@
  * @param {Transaction} transaction
  * @return {boolean}
  */
-const updateTransaction = function (transaction) {
+const updateTransaction = function updateTransaction(transaction) {
   if (!transaction) throw new Error('Expected a transaction to update');
 
   const transactionStore = this.store.transactions;

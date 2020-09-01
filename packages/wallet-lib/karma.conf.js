@@ -10,11 +10,11 @@ module.exports = (config) => {
   config.set({
     frameworks: ['mocha', 'chai'],
     files: [
-      'karma.test.loader.js',
+      'src/test/karma/loader.js',
       'tests/functional/wallet.js',
     ],
     preprocessors: {
-      'karma.test.loader.js': ['webpack', 'sourcemap'],
+      'src/test/karma/loader.js': ['webpack', 'sourcemap'],
       'tests/functional/wallet.js': ['webpack', 'sourcemap'],
     },
     webpack: {

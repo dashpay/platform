@@ -36,7 +36,7 @@ class StandardPlugin extends EventEmitter {
       const eventType = `PLUGIN/${this.name.toUpperCase()}/STARTED`;
       self.parentEvents.emit(eventType, { type: eventType, payload: null });
     } catch (e) {
-      throw new PluginFailedOnStart(this.pluginType, this.name, e.message);
+      throw new PluginFailedOnStart(this.pluginType, this.name, e);
     }
   }
 

@@ -31,6 +31,8 @@ class ChainPlugin extends StandardPlugin {
    */
   async execBlockListener() {
     const self = this;
+    const { network } = this.storage.store.wallets[this.walletId];
+
     if (!this.isSubscribedToBlocks) {
       self.transport.on(EVENTS.BLOCK, async (ev) => {
         // const { network } = self.storage.store.wallets[self.walletId];
@@ -38,6 +40,10 @@ class ChainPlugin extends StandardPlugin {
         this.parentEvents.emit(EVENTS.BLOCK, { type: EVENTS.BLOCK, payload: block });
         // We do not announce BLOCKHEADER as this is done by Storage
         await self.storage.importBlockHeader(block.header);
+
+        const blockHeight = await self.transport.getBestBlockHeight();
+        this.storage.store.chains[network.toString()].blockHeight = blockHeight;
+        logger.debug(`ChainPlugin - setting chain blockheight ${blockHeight}`);
       });
       await self.transport.subscribeToBlocks();
     }

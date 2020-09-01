@@ -6,7 +6,7 @@ const cbor = require('cbor');
  * @param method
  * @param data
  */
-const encode = function (method, data) {
+const encode = function encode(method, data) {
   switch (method) {
     default:
       return cbor.encodeCanonical(data);

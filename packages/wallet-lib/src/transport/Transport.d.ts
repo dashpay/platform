@@ -5,8 +5,6 @@ export declare interface Transport {
 
     disconnect()
 
-    getAddressSummary(address)
-
     getBestBlock(): Promise<Block>
 
     getBestBlockHash(): Promise<string>
@@ -28,8 +26,6 @@ export declare interface Transport {
     getStatus(): Promise<object>
 
     getTransaction(txid): Promise<Transaction>
-
-    getUTXO(address): Promise<object>
 
     sendTransaction(serializedTransaction): Promise<string>
 

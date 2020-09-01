@@ -7,7 +7,7 @@ const { is } = require('../../../utils');
  * @param {string} walletId
  * @return {boolean}
  */
-const importAddress = function (addressObj, walletId) {
+const importAddress = function importAddress(addressObj, walletId) {
   if (!walletId) throw new Error('Expected walletId to import addresses');
   if (!this.searchWallet(walletId).found) {
     this.createWallet(walletId);
@@ -30,7 +30,6 @@ const importAddress = function (addressObj, walletId) {
     default:
       type = 'misc';
   }
-  if (!walletId) throw new Error('Invalid walletId. Cannot import');
   if (!modifiedAddressObject.index) modifiedAddressObject.index = index;
   if (addressesStore[type][path]) {
     if (addressesStore[type][path].fetchedLast < modifiedAddressObject.fetchedLast) {

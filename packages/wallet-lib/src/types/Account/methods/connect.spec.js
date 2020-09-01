@@ -24,7 +24,10 @@ describe('Account - connect', function suite() {
     self.plugins.workers.dummyWorker.parentEvents = { on: self.on, emit: self.emit };
 
     expect(connect.call(self)).to.equal(true);
-    expect(emitted).to.deep.equal(['WORKER/DUMMYWORKER/STARTED']);
+    expect(emitted).to.deep.equal([
+        'WORKER/DUMMYWORKER/STARTING',
+        'WORKER/DUMMYWORKER/STARTED',
+    ]);
     expect(transportConnected).to.deep.equal(true);
 
     // We need to stop the worker

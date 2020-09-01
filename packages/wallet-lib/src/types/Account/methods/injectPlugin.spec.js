@@ -1,10 +1,10 @@
 const { expect } = require('chai');
 const EventEmitter = require('events');
-const Dashcore = require('@dashevo/dashcore-lib');
 const FaultyWorker = require('../../../../fixtures/plugins/FaultyWorker');
 const WorkingWorker = require('../../../../fixtures/plugins/WorkingWorker');
 const injectPlugin = require('./injectPlugin');
-const expectThrowsAsync = require('../../../utils/expectThrowsAsync')
+const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
+
 describe('Account - injectPlugin', function suite() {
   this.timeout(12000);
   const parentEvents = new EventEmitter();
@@ -40,7 +40,7 @@ describe('Account - injectPlugin', function suite() {
     }, 10000);
   });
   it('should handle faulty worker', async function () {
-    const expectedException1 = 'Worker FaultyWorker failed onStart. Reason: Worker FaultyWorker failed onExecute. Reason: Some reason.';
+    const expectedException1 = 'Worker FaultyWorker failed onStart: Worker FaultyWorker failed onExecute: Some reason.';
     await expectThrowsAsync(async () => await injectPlugin.call(mockedSelf, FaultyWorker, true), expectedException1);
       expect(mockedSelf.plugins.workers['faultyworker']).to.exist;
       expect(mockedSelf.plugins.workers['faultyworker'].worker).to.equal(null);

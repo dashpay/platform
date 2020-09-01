@@ -1,12 +1,19 @@
 const _ = require('lodash');
 const logger = require('../../logger');
-const SyncWorker = require('../../plugins/Workers/SyncWorker/SyncWorker');
+const TransactionSyncStreamWorker = require('../../plugins/Workers/TransactionSyncStreamWorker/TransactionSyncStreamWorker');
 const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
-const BIP44Worker = require('../../plugins/Workers/BIP44Worker/BIP44Worker');
 const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
 const EVENTS = require('../../EVENTS');
 const { WALLET_TYPES } = require('../../CONSTANTS');
-const { PluginFailedOnStart, WorkerFailedOnExecute, InjectionToPluginUnallowed } = require('../../errors');
+
+const {
+  PluginFailedOnStart,
+  WorkerFailedOnExecute,
+  InjectionToPluginUnallowed,
+  PluginInjectionError,
+} = require('../../errors');
+
+const ensureAddressesToGapLimit = require('../../utils/bip44/ensureAddressesToGapLimit');
 
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
@@ -25,23 +32,29 @@ async function _initializeAccount(account, userUnsafePlugins) {
 
       try {
         if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
-          // Ideally we should move out from worker to event based
-          await account.injectPlugin(BIP44Worker, true);
+          ensureAddressesToGapLimit(
+            account.store.wallets[account.walletId],
+            account.walletType,
+            account.index,
+            account.getAddress.bind(account),
+          );
         }
-        if (!account.offlineMode) {
-          await account.injectPlugin(ChainPlugin, true);
-        }
+
         if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
           await account.getAddress('0'); // We force what is usually done by the BIP44Worker.
         }
         if (!account.offlineMode) {
-          await account.injectPlugin(SyncWorker, true);
+          await account.injectPlugin(ChainPlugin, true);
+
+          // Transaction sync worker
+          await account.injectPlugin(TransactionSyncStreamWorker, true);
+
           if (account.walletType === WALLET_TYPES.HDWALLET) {
             await account.injectPlugin(IdentitySyncWorker, true);
           }
         }
-      } catch (err) {
-        throw new Error(`Failed to perform standard injections with reason: ${err.message}`);
+      } catch (e) {
+        reject(new PluginInjectionError(e));
       }
     }
 
@@ -53,7 +66,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
             WorkerFailedOnExecute,
             InjectionToPluginUnallowed,
           ].includes(e.constructor)) {
-            throw new Error(`Failed to inject plugin: ${UnsafePlugin.name}, reason: ${e.message}`);
+            reject(new Error(`Failed to inject plugin: ${UnsafePlugin.name}, reason: ${e.message}`));
           }
           return reject(e);
         });
@@ -75,30 +88,13 @@ async function _initializeAccount(account, userUnsafePlugins) {
       }
     };
 
-    // The need for this function is to pre-generate the address when syncWorker is also doing so
-    // We then ensure first syncWorker to do it's job (which will fetch all used address)
-    // and only then lookup for remaining needed 20 unused address.
-    // Without that, waiting a tick would result similarly.
-    const recursivelyGenerateAddresses = async (isSyncWorkerActive = true) => {
-      const bip44worker = account.getWorker('BIP44Worker');
-
-      const exec = async () => {
-        if (isSyncWorkerActive) {
-          const syncWorker = account.getWorker('syncWorker');
-          await syncWorker.execute();
-        }
-        return bip44worker.ensureEnoughAddress();
-      };
-      if (await exec() !== 0) return recursivelyGenerateAddresses();
-      return true;
-    };
-
     // eslint-disable-next-line no-param-reassign,consistent-return
     account.readinessInterval = setInterval(() => {
       const watchedPlugins = Object.keys(account.plugins.watchers);
       let readyPlugins = 0;
       watchedPlugins.forEach((pluginName) => {
         if (account.plugins.watchers[pluginName].ready === true) {
+          logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
           readyPlugins += 1;
           logger.debug(`Initialized ${pluginName} - ${readyPlugins}/${watchedPlugins.length} plugins`);
         }
@@ -113,10 +109,6 @@ async function _initializeAccount(account, userUnsafePlugins) {
         // while SyncWorker fetch'em on network
         clearInterval(self.readinessInterval);
 
-        const resultBIP44WorkerSearch = account.hasPlugins(BIP44Worker);
-        const resultSyncWorkerSearch = account.hasPlugins(SyncWorker);
-        const isSyncWorkerActive = resultSyncWorkerSearch.found;
-
         if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
           account.generateAddress(0);
           sendReady();
@@ -128,21 +120,17 @@ async function _initializeAccount(account, userUnsafePlugins) {
           return resolve(true);
         }
 
-        if (!resultBIP44WorkerSearch.found) {
-          if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
-            sendReady();
-            return resolve(true);
-          }
-          throw new Error('Unable to initialize. BIP44 Worker not found.');
+        if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
+          ensureAddressesToGapLimit(
+            account.store.wallets[account.walletId],
+            account.walletType,
+            account.index,
+            account.getAddress.bind(account),
+          );
         }
-        return recursivelyGenerateAddresses(isSyncWorkerActive)
-          .then(() => {
-            sendReady();
-            return resolve(true);
-          })
-          .catch((err) => {
-            throw new Error(`Unable to generate addresses :${err}`);
-          });
+
+        sendReady();
+        return resolve(true);
       }
     }, readinessIntervalTime);
   });
