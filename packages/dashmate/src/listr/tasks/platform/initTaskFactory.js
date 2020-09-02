@@ -1,14 +1,16 @@
 const { Listr } = require('listr2');
 
+const Dash = require('dash');
+
+const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
+
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
 
 /**
  *
- * @param {createClientWithFundedWallet} createClientWithFundedWallet
  * @return {initTask}
  */
 function initTaskFactory(
-  createClientWithFundedWallet,
 ) {
   /**
    * @typedef {initTask}
@@ -34,11 +36,33 @@ function initTaskFactory(
       {
         title: 'Initialize SDK',
         task: async (ctx, task) => {
-          ctx.client = await createClientWithFundedWallet(
-            config.get('network'),
-            ctx.fundingPrivateKeyString,
-            ctx.seed,
-          );
+          const clientOpts = {
+            network: config.get('network'),
+          };
+
+          if (ctx.seed) {
+            clientOpts.seeds = [ctx.seed];
+          }
+
+          const faucetClient = new Dash.Client({
+            ...clientOpts,
+            wallet: {
+              privateKey: ctx.fundingPrivateKeyString,
+            },
+          });
+
+          ctx.client = new Dash.Client({
+            ...clientOpts,
+            wallet: {
+              mnemonic: null,
+            },
+          });
+
+          const amount = 40000;
+
+          await fundWallet(faucetClient.wallet, ctx.client.wallet, amount);
+
+          await faucetClient.disconnect();
 
           // eslint-disable-next-line no-param-reassign
           task.output = `HD private key: ${ctx.client.wallet.exportWallet('HDPrivateKey')}`;

@@ -15,7 +15,6 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
    * @param {generateToAddressTask} generateToAddressTask
    * @param {registerMasternodeTask} registerMasternodeTask
    * @param {initTask} initTask
-   * @param {generateBlocksWithSDK} generateBlocksWithSDK
    * @param {startNodeTask} startNodeTask
    * @param {DockerCompose} dockerCompose
    * @param {Config} config
@@ -31,7 +30,6 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
     generateToAddressTask,
     registerMasternodeTask,
     initTask,
-    generateBlocksWithSDK,
     startNodeTask,
     dockerCompose,
     config,
@@ -63,6 +61,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
                   driveImageBuildPath: ctx.driveImageBuildPath,
                   dapiImageBuildPath: ctx.dapiImageBuildPath,
                   isUpdate,
+                  isMinerEnabled: true,
                 },
               ),
             },

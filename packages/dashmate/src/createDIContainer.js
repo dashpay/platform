@@ -37,10 +37,6 @@ const getAddressBalance = require('./core/wallet/getAddressBalance');
 const sendToAddress = require('./core/wallet/sendToAddress');
 const registerMasternode = require('./core/wallet/registerMasternode');
 
-const createClientWithFundedWallet = require('./sdk/createClientWithFundedWallet');
-const generateBlocksWithSDK = require('./sdk/generateBlocksWithSDK');
-const waitForBlocksWithSDK = require('./sdk/waitForBlocksWithSDK');
-
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
 const initTaskFactory = require('./listr/tasks/platform/initTaskFactory');
@@ -105,15 +101,6 @@ async function createDIContainer() {
     getAddressBalance: asValue(getAddressBalance),
     sendToAddress: asValue(sendToAddress),
     registerMasternode: asValue(registerMasternode),
-  });
-
-  /**
-   * Dash SDK
-   */
-  container.register({
-    createClientWithFundedWallet: asValue(createClientWithFundedWallet),
-    waitForBlocksWithSDK: asValue(waitForBlocksWithSDK),
-    generateBlocksWithSDK: asValue(generateBlocksWithSDK),
   });
 
   /**
