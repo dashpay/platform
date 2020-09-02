@@ -4,8 +4,6 @@ const {
 
 const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
 
-const fundAddress = require('../../../lib/test/fundAddress');
-
 describe('Core', () => {
   describe('getAddressSummary', () => {
     let address;
@@ -21,26 +19,11 @@ describe('Core', () => {
       }
     });
 
-    before(async () => {
-      const faucetPrivateKey = PrivateKey.fromString(process.env.FAUCET_PRIVATE_KEY);
-      const faucetAddress = faucetPrivateKey
-        .toAddress(process.env.NETWORK)
-        .toString();
-
+    it('should return address summary', async () => {
       address = new PrivateKey()
         .toAddress(process.env.NETWORK)
         .toString();
 
-      await fundAddress(
-        client.getDAPIClient(),
-        faucetAddress,
-        faucetPrivateKey,
-        address,
-        20000,
-      );
-    });
-
-    it('should return address summary', async () => {
       const result = await client.getDAPIClient().core.getAddressSummary(address);
 
       expect(result).to.be.an('object');

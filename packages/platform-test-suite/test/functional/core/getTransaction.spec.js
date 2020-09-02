@@ -3,52 +3,36 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
-const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
-
-const fundAddress = require('../../../lib/test/fundAddress');
+const createFaucetClient = require('../../../lib/test/createFaucetClient');
 
 describe('Core', () => {
   describe('getTransaction', () => {
-    let client;
+    let faucetClient;
 
     before(() => {
-      client = createClientWithoutWallet();
-    });
-
-    after(async () => {
-      if (client) {
-        await client.disconnect();
-      }
+      faucetClient = createFaucetClient();
     });
 
     it('should respond with a transaction by it\'s ID', async () => {
-      const faucetPrivateKey = PrivateKey.fromString(process.env.FAUCET_PRIVATE_KEY);
-      const faucetAddress = faucetPrivateKey
-        .toAddress(process.env.NETWORK)
-        .toString();
+      const faucetWalletAccount = await faucetClient.getWalletAccount();
 
-      const address = new PrivateKey()
-        .toAddress(process.env.NETWORK)
-        .toString();
+      const transaction = faucetWalletAccount.createTransaction({
+        recipient: new PrivateKey().toAddress(process.env.NETWORK),
+        satoshis: 10000,
+      });
 
-      const transactionId = await fundAddress(
-        client.getDAPIClient(),
-        faucetAddress,
-        faucetPrivateKey,
-        address,
-        20000,
-      );
+      await faucetWalletAccount.broadcastTransaction(transaction);
 
-      const result = await client.getDAPIClient().core.getTransaction(transactionId);
+      const result = await faucetClient.getDAPIClient().core.getTransaction(transaction.id);
       const receivedTx = new Transaction(Buffer.from(result));
 
-      expect(receivedTx.hash).to.deep.equal(transactionId);
+      expect(receivedTx.hash).to.deep.equal(transaction.id);
     });
 
     it('should respond with null if transaction was not found', async () => {
       const nonExistentId = Buffer.alloc(32).toString('hex');
 
-      const result = await client.getDAPIClient().core.getTransaction(nonExistentId);
+      const result = await faucetClient.getDAPIClient().core.getTransaction(nonExistentId);
 
       expect(result).to.equal(null);
     });

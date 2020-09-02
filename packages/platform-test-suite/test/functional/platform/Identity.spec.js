@@ -1,14 +1,11 @@
 const DashPlatformProtocol = require('@dashevo/dpp');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const {
-  PublicKey,
-} = require('@dashevo/dashcore-lib');
+const { default: createAssetLockTransaction } = require('dash/build/src/SDK/Client/Platform/createAssetLockTransaction');
 
 const waitForBlocks = require('../../../lib/waitForBlocks');
 const waitForBalanceToChange = require('../../../lib/test/waitForBalanceToChange');
 
-const createOutPointTx = require('../../../lib/test/createOutPointTx');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Platform', () => {
@@ -18,7 +15,6 @@ describe('Platform', () => {
     let walletAccount;
     let identityCreateTransition;
     let identity;
-    let identityRawPublicKey;
     let walletPublicKey;
     let walletPrivateKey;
 
@@ -63,9 +59,8 @@ describe('Platform', () => {
 
     it('should create an identity', async () => {
       identity = await client.platform.identities.register(2);
-      identityRawPublicKey = new PublicKey(
-        Buffer.from(identity.getPublicKeys()[0].getData(), 'base64'),
-      );
+
+      expect(identity).to.exist();
 
       await waitForBalanceToChange(walletAccount);
     });
@@ -74,12 +69,9 @@ describe('Platform', () => {
       const {
         transaction,
         privateKey,
-      } = createOutPointTx(
-        1,
-        walletAccount,
-        walletPublicKey,
-        walletPrivateKey,
-      );
+      } = await createAssetLockTransaction({
+        client,
+      }, 1);
 
       const outPoint = transaction.getOutPointBuffer(0);
 
@@ -193,12 +185,9 @@ describe('Platform', () => {
         const {
           transaction,
           privateKey,
-        } = createOutPointTx(
-          1,
-          walletAccount,
-          identityRawPublicKey,
-          walletPrivateKey,
-        );
+        } = await createAssetLockTransaction({
+          client,
+        }, 1);
 
         const outPoint = transaction.getOutPointBuffer(0);
 
