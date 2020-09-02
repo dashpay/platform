@@ -77,12 +77,12 @@ function generateToAddressTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Mine 100 blocks to confirm',
+        title: 'Mine 101 blocks to confirm coinbase',
         task: async (ctx) => (
           new Observable(async (observer) => {
             await generateBlocks(
               ctx.coreService,
-              100,
+              101,
               config.get('network'),
               (blocks) => {
                 observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);

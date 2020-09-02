@@ -1,5 +1,4 @@
 const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
 
 const { flags: flagTypes } = require('@oclif/command');
 
@@ -70,23 +69,6 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
             {
               title: 'Initialize Platform',
               task: () => initTask(config),
-            },
-            {
-              title: 'Mine 100 blocks',
-              task: async (ctx) => (
-                new Observable(async (observer) => {
-                  await generateBlocksWithSDK(
-                    ctx.client.getDAPIClient(),
-                    config.get('network'),
-                    100,
-                    (blocks) => {
-                      observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
-                    },
-                  );
-
-                  observer.complete();
-                })
-              ),
             },
             {
               title: 'Stop node',
