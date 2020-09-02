@@ -58,5 +58,5 @@ deploy:
     skip_cleanup: true
     script: bash scripts/travis-deploy.sh
     on:
-      repo: dashevo/DashJS
+      repo: dashevo/js-dash-sdk
       tags: true
