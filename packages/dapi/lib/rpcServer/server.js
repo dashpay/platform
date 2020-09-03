@@ -5,22 +5,15 @@ const errorHandlerDecorator = require('./errorHandlerDecorator');
 const getBestBlockHash = require('./commands/getBestBlockHash');
 const getBlockHash = require('./commands/getBlockHash');
 const getMnListDiff = require('./commands/getMnListDiff');
-const getUTXO = require('./commands/getUTXO');
 const generateToAddress = require('./commands/generateToAddress');
-const getAddressSummary = require('./commands/getAddressSummary');
 
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
 
-const createCommands = (
-  insightAPI,
-  dashcoreAPI,
-) => ({
+const createCommands = dashcoreAPI => ({
   getBestBlockHash: getBestBlockHash(dashcoreAPI),
   getBlockHash: getBlockHash(dashcoreAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
-  getUTXO: getUTXO(insightAPI),
-  getAddressSummary: getAddressSummary(insightAPI),
 });
 
 const createRegtestCommands = dashcoreAPI => ({
@@ -32,7 +25,6 @@ const createRegtestCommands = dashcoreAPI => ({
  *  @param options
   * @param {number} options.port - port to listen for incoming RPC connections
   * @param {string} options.networkType
-  * @param {object} options.insightAPI
   * @param {object} options.dashcoreAPI
   * @param {AbstractDriveAdapter} options.driveAPI - Drive api adapter
   * @param {object} options.tendermintRpcClient
@@ -42,12 +34,10 @@ const createRegtestCommands = dashcoreAPI => ({
 const start = ({
   port,
   networkType,
-  insightAPI,
   dashcoreAPI,
   log,
 }) => {
   const commands = createCommands(
-    insightAPI,
     dashcoreAPI,
   );
 

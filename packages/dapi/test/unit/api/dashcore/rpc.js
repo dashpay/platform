@@ -249,45 +249,6 @@ describe('externalApis/dashcore/rpc', async () => {
     });
   });
 
-  describe('getUTXO', () => {
-    describe('#factory', () => {
-      it('should return a promise', () => {
-        const res = rpc.getUTXO();
-        expect(res).to.be.a('promise');
-      });
-      it('should return error with invalid transaction', async () => {
-        const res = rpc.getUTXO(1);
-        await expect(res).to.be.rejectedWith('JSON');
-      });
-    });
-
-    describe('#stub', () => {
-      const addrStr = 'ygPcCwVy7Fxg7ruxZzqVYdPLtvw7auHAFh';
-      before(() => {
-        stub = sinon.stub(rpc, 'getUTXO');
-        stub
-          .withArgs(addrStr)
-          .returns(new Promise(resolve => resolve('fake')));
-      });
-
-      beforeEach(() => {
-        stub.resetHistory();
-      });
-
-      after(() => {
-        stub.restore();
-      });
-
-      it('Should return a hash', async () => {
-        rpc.getUTXO(123);
-        expect(stub.callCount).to.be.equal(1);
-        const transaction = await rpc.getUTXO(addrStr);
-        expect(transaction).to.be.equal('fake');
-        expect(stub.callCount).to.be.equal(2);
-      });
-    });
-  });
-
   describe('getBlockHash', () => {
     describe('#factory', () => {
       it('should return a promise', () => {

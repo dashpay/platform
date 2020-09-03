@@ -58,7 +58,6 @@ async function main() {
   rpcServer.start({
     port: config.rpcServer.port,
     networkType: config.network,
-    insightAPI,
     dashcoreAPI: dashCoreRpcClient,
     log,
   });
