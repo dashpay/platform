@@ -38,9 +38,10 @@ async function fundWallet(faucetWallet, recipientWallet, amount) {
     recipient: recipientAccount.getAddress().address,
   });
 
-  await faucetAccount.broadcastTransaction(transaction);
-
-  await waitForTransaction(recipientAccount, transaction.id);
+  await Promise.all([
+    faucetAccount.broadcastTransaction(transaction),
+    waitForTransaction(recipientAccount, transaction.id),
+  ]);
 
   return transaction.id;
 }
