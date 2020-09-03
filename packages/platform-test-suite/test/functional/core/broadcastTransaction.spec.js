@@ -22,7 +22,7 @@ describe('Core', () => {
 
       const dapiClient = faucetClient.getDAPIClient();
 
-      const transactionId = await dapiClient.core.broadcastTransaction(transaction.serialize());
+      const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
 
       expect(transactionId).to.be.a('string');
     });
