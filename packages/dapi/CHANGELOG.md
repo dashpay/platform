@@ -1,3 +1,21 @@
+# [0.15.0](https://github.com/dashevo/dapi/compare/v0.14.0...v0.15.0) (2020-09-04)
+
+
+### Features
+
+* update to DAPI gRPC 0.15 ([#298](https://github.com/dashevo/dapi/issues/298))
+* remove getUTXO & getAddressSummary rpc methods ([#292](https://github.com/dashevo/dapi/issues/292), [#293](https://github.com/dashevo/dapi/issues/293))
+* rename sendTransaction and applyStateTransition to broadcast ([#287](https://github.com/dashevo/dapi/pull/287))
+
+
+### BREAKING CHANGES
+
+* `broadcastTransaction` and `broadcastStatTransition` gRPC method names are using instead of `sendTransaction` and `applyStateTransition`
+* TxFilterStream `subscribeToTransactionsWithProofs` endpoint uses `Core` gRPC service
+* see [DAPI gRPC breaking changes](https://github.com/dashevo/dapi-grpc/releases/tag/v0.15.0)
+
+
+
 # [0.14.0](https://github.com/dashevo/dapi/compare/v0.13.0...v0.14.0) (2020-07-23)
 
 ### Bug Fixes
