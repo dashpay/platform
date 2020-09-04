@@ -1,3 +1,26 @@
+# [0.15.0](https://github.com/dashevo/js-drive/compare/v0.14.0...v0.15.0) (2020-09-04)
+
+
+### Bug Fixes
+
+* internal errors are not logged ([#380](https://github.com/dashevo/js-drive/issues/380))
+* unique index throws duplicate key error (#378)
+
+
+### Features
+
+* handle protocol and software versions ([#377](https://github.com/dashevo/js-drive/issues/377))
+* handle user-defined binary fields ([#373](https://github.com/dashevo/js-drive/issues/373), [#381](https://github.com/dashevo/js-drive/issues/381))
+
+
+### BREAKING CHANGES
+
+* protocol version (`AppVersion`) is required in a Tendermint block header
+* previous state is not compartible due to new DPP serialization format
+* See [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.15.0)
+
+
+
 # [0.14.0](https://github.com/dashevo/drive/compare/v0.13.2...v0.14.0) (2020-07-23)
 
 
