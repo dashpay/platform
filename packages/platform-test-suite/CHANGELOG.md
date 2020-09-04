@@ -1,3 +1,30 @@
+# [0.15.0](https://github.com/dashevo/plaform-test-suite/compare/v0.14.0...v0.15.0) (2020-09-04)
+
+
+### Bug Fixes
+
+* faucet client singleton ([#70](https://github.com/dashevo/plaform-test-suite/issues/70))
+* core tests were using `serialize` instead of `toBuffer` ([#66](https://github.com/dashevo/plaform-test-suite/issues/66))
+* npm is not running `prepare` script as root ([#63](https://github.com/dashevo/plaform-test-suite/issues/63))
+
+
+### Features
+
+* `wallet` e2e test ([#59](https://github.com/dashevo/plaform-test-suite/issues/59))
+* new test timeout option ([#71](https://github.com/dashevo/plaform-test-suite/issues/71))
+* remove pending `subscribeToTransactionsWithProofs` functional tests ([#72](https://github.com/dashevo/plaform-test-suite/issues/72))
+* remove getAddressSummary tests ([#67](https://github.com/dashevo/plaform-test-suite/issues/67))
+* update Wallet, DPP, DPNS and SDK deps ([#50](https://github.com/dashevo/plaform-test-suite/issues/50), [#64](https://github.com/dashevo/plaform-test-suite/issues/64), [#68](https://github.com/dashevo/plaform-test-suite/issues/68), [#60](https://github.com/dashevo/plaform-test-suite/issues/60))
+* support for installation node module from git on docker start ([#55](https://github.com/dashevo/plaform-test-suite/issues/55)) ([adb1e16](https://github.com/dashevo/plaform-test-suite/commit/adb1e1672a0288672b2eaef0bf9effc9212b50ad))
+* new topup identity test ([#53](https://github.com/dashevo/plaform-test-suite/issues/53)) ([075f09c](https://github.com/dashevo/plaform-test-suite/commit/075f09cb211fcda45aff2c75a2222e735f9eab49))
+
+
+### Code Refactoring
+
+* use Wallet lib instead of getUTXO ([#62](https://github.com/dashevo/plaform-test-suite/issues/62))
+
+
+
 # 0.14.0 (2020-07-23)
 
 
