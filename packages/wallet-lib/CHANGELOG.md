@@ -1,3 +1,24 @@
+# [7.15.0](https://github.com/dashevo/wallet-lib/compare/v7.14.0...v7.15.0) (2020-09-04)
+
+
+### Bug Fixes
+
+* confirmation might come before broadcast ACK ([#183](https://github.com/dashevo/wallet-lib/issues/183))
+* outdated create transaction typing ([#180](https://github.com/dashevo/wallet-lib/issues/180))
+
+
+### Code Refactoring
+
+* switch from getUTXO to subscribeToTransactions ([#119](https://github.com/dashevo/wallet-lib/issues/119))
+
+
+### BREAKING CHANGES
+
+* removed `subscribeToAddressesTransactions`, `getUTXO` and `getAddressSummary` from the transport
+* removed `Account#fetchAddressInfo` method
+
+
+
 # [7.14.0](https://github.com/dashevo/wallet-lib/compare/v7.13.4...v7.14.0) (2020-07-23)
 
 
