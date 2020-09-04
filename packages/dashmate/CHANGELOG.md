@@ -1,3 +1,42 @@
+# [0.15.0](https://github.com/dashevo/mn-bootstrap/compare/v0.14.0...v0.15.0) (2020-09-04)
+
+
+### Bug Fixes
+
+* ignored mint address option ([#143](https://github.com/dashevo/mn-bootstrap/issues/143))
+* Dash Client was created before Tendermint is started ([#131](https://github.com/dashevo/mn-bootstrap/issues/131))
+* gRPC buffer size settings in NGINX was too small ([#127](https://github.com/dashevo/mn-bootstrap/issues/127))
+* transaction filter stream doesn't work with gRPC-Web ([#116](https://github.com/dashevo/mn-bootstrap/issues/116))
+
+
+### Features
+
+* replace env files and presets with new `config` command ([#119](https://github.com/dashevo/mn-bootstrap/issues/119), [#138](https://github.com/dashevo/mn-bootstrap/issues/138))
+* remove unnecessary block generation ([#141](https://github.com/dashevo/mn-bootstrap/issues/141))
+* block mining with local development ([#137](https://github.com/dashevo/mn-bootstrap/issues/137))
+* move container datadirs to named docker volumes ([#123](https://github.com/dashevo/mn-bootstrap/issues/123), [#139](https://github.com/dashevo/mn-bootstrap/issues/139), [#140](https://github.com/dashevo/mn-bootstrap/issues/140), [#142](https://github.com/dashevo/mn-bootstrap/issues/142))
+* nginx responds with unimplemented in case of unsupported version ([#134](https://github.com/dashevo/mn-bootstrap/issues/134))
+* move `subscribeToTransactionsWithProofs` to `Core` service ([#121](https://github.com/dashevo/mn-bootstrap/issues/121))
+* use new DPNS contract ([#117](https://github.com/dashevo/mn-bootstrap/issues/117))
+* generate empty blocks every 3 minutes ([#114](https://github.com/dashevo/mn-bootstrap/issues/114))
+* use `generateToAddress` instead of `generate` ([#111](https://github.com/dashevo/mn-bootstrap/issues/111))
+* add docker image update support to setup-for-local-development ([#113](https://github.com/dashevo/mn-bootstrap/issues/113))
+
+
+### Code Refactoring
+
+* use MongoDB init script to initiate replica ([#147](https://github.com/dashevo/mn-bootstrap/issues/147))
+* remove getUTXO dependency for SDK ([#133](https://github.com/dashevo/mn-bootstrap/issues/139))
+
+
+### BREAKING CHANGES
+
+* node data from `data` dir is not using anymore and should be removed
+* see [Drive breaking changes](https://github.com/dashevo/js-drive/releases/tag/v0.15.0)
+* see [DAPI breaking changes](https://github.com/dashevo/dapi/releases/tag/v0.15.0)
+
+
+
 # [0.14.0](https://github.com/dashevo/mn-bootstrap/compare/v0.13.4...v0.14.0) (2020-07-24)
 
 
