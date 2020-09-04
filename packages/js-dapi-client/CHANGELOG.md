@@ -8,7 +8,7 @@
 
 ### Features
 
-* retry request on UNIMPLEMENTED error ([#185](https://github.com/dashevo/dapi-client/issues/185))
+* retry request on `UNIMPLEMENTED` error ([#185](https://github.com/dashevo/dapi-client/issues/185))
 * update DAPI gRPC to 0.15 ([#179](https://github.com/dashevo/dapi-client/issues/179), [#186](https://github.com/dashevo/dapi-client/issues/186))
 * remove `getUTXO` and `getAddressSummary` core methods ([#178](https://github.com/dashevo/js-dapi-client/pull/178))
 * rename `sendTransaction` and `applyStateTransition` ([#175](https://github.com/dashevo/js-dapi-client/pull/175))
@@ -18,6 +18,7 @@
 
 * `broadcastTransaction` and `broadcastStatTransition` gRPC method names are using instead of `sendTransaction` and `applyStateTransition`
 * `getUTXO` and `getAddressSummary` core methods are removed
+* see [DAPI gRPC breaking changes](https://github.com/dashevo/dapi-grpc/releases/tag/v0.15.0)
 
 
 
