@@ -1,3 +1,26 @@
+# [0.15.0](https://github.com/dashevo/dapi-client/compare/v0.14.0...v0.15.0) (2020-09-04)
+
+
+### Bug Fixes
+
+* internal error when submitting `fromBlockHeight` as `0` to `subscribeToTransactionsWithProofs` ([#174](https://github.com/dashevo/js-dapi-client/pull/174))
+
+
+### Features
+
+* retry request on UNIMPLEMENTED error ([#185](https://github.com/dashevo/dapi-client/issues/185))
+* update DAPI gRPC to 0.15 ([#179](https://github.com/dashevo/dapi-client/issues/179), [#186](https://github.com/dashevo/dapi-client/issues/186))
+* remove `getUTXO` and `getAddressSummary` core methods ([#178](https://github.com/dashevo/js-dapi-client/pull/178))
+* rename `sendTransaction` and `applyStateTransition` ([#175](https://github.com/dashevo/js-dapi-client/pull/175))
+
+
+### BREAKING CHANGES
+
+* `broadcastTransaction` and `broadcastStatTransition` gRPC method names are using instead of `sendTransaction` and `applyStateTransition`
+* `getUTXO` and `getAddressSummary` core methods are removed
+
+
+
 # [0.14.0](https://github.com/dashevo/dapi-client/compare/v0.13.6...v0.14.0) (2020-07-23)
 
 We completely rewrote DAPI Client to improve code quality, usability, and testability.
