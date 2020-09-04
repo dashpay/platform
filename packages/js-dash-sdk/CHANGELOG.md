@@ -1,3 +1,12 @@
+## [3.14.1](https://github.com/dashevo/DashJS/compare/v3.14.0...v3.14.1) (2020-07-24)
+
+
+### Bug Fixes
+
+* outdated DPNS contract ID ([#118](https://github.com/dashevo/DashJS/issues/118))
+
+
+
 # [3.14.0](https://github.com/dashevo/DashJS/compare/v3.13.4...v3.14.0) (2020-07-23)
 
 
