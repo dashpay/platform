@@ -16,6 +16,7 @@ Usage: test <seed> [options]
               --dpns-tld-identity-private-key=private_key   - top level identity private key
               --dpns-tld-identity-id=identity_id            - top level identity id
               --dpns-contract-id=contract_id                - dpns contract id
+  -t          --timeout                                     - test timeout in milliseconds
   -h          --help                                        - show help
 
   Possible scopes:
@@ -63,6 +64,9 @@ case ${i} in
     --dpns-contract-id=*)
     contract_id="${i#*=}"
     ;;
+    -t=*|--timeout=*)
+    timeout="${i#*=}"
+    ;;
 esac
 done
 
@@ -71,6 +75,12 @@ then
   echo "Seed is not specified"
   echo ""
   echo "$cmd_usage"
+  exit 1
+fi
+
+if [ -n "$timeout" ] && ! [[ $timeout =~ ^[0-9]+$ ]]
+then
+  echo "Timeout must be an integer"
   exit 1
 fi
 
@@ -122,4 +132,38 @@ else
   scope_dirs="test/functional/**/*.spec.js test/e2e/**/*.spec.js"
 fi
 
-DAPI_SEED=${DAPI_SEED} FAUCET_PRIVATE_KEY=${faucet_key} NETWORK=${network} DPNS_CONTRACT_ID=${contract_id} DPNS_TOP_LEVEL_IDENTITY_ID=${identity_id} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key} NODE_ENV=test mocha ${scope_dirs}
+cmd="DAPI_SEED=${DAPI_SEED}"
+
+if [ -n "$faucet_key" ]
+then
+  cmd="${cmd} FAUCET_PRIVATE_KEY=${faucet_key}"
+fi
+
+if [ -n "$network" ]
+then
+  cmd="${cmd} NETWORK=${network}"
+fi
+
+if [ -n "$contract_id" ]
+then
+  cmd="${cmd} DPNS_CONTRACT_ID=${contract_id}"
+fi
+
+if [ -n "$identity_id" ]
+then
+  cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_ID=${identity_id}"
+fi
+
+if [ -n "$identity_private_key" ]
+then
+  cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key}"
+fi
+
+cmd="${cmd} NODE_ENV=test mocha ${scope_dirs}"
+
+if [ -n "$timeout" ]
+then
+  cmd="${cmd} --timeout ${timeout}"
+fi
+
+eval $cmd
