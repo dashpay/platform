@@ -6,13 +6,15 @@ const {
 
 const AbciError = require('./AbciError');
 const InternalAbciError = require('./InternalAbciError');
+const VerboseInternalAbciError = require('./VerboseInternalAbciError');
 
 /**
  * @param {BaseLogger} logger
+ * @param {boolean} isProductionEnvironment
  *
  * @return wrapInErrorHandler
  */
-function wrapInErrorHandlerFactory(logger) {
+function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
   /**
    * Wrap ABCI methods in error handler
    *
@@ -57,7 +59,12 @@ function wrapInErrorHandlerFactory(logger) {
           if (!options.respondWithInternalError) {
             throw error.getError();
           }
+
+          if (!isProductionEnvironment) {
+            error = new VerboseInternalAbciError(error);
+          }
         }
+
 
         const kvPairTags = Object.entries(error.getTags())
           .map(([key, value]) => new KVPair({ key, value }));

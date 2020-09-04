@@ -95,6 +95,7 @@ const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
  * @param {string} options.CORE_JSON_RPC_PASSWORD
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  * @param {string} options.LOGGING_LEVEL
+ * @param {string} options.NODE_ENV
  *
  * @return {AwilixContainer}
  */
@@ -134,6 +135,7 @@ async function createDIContainer(options) {
     coreJsonRpcUsername: asValue(options.CORE_JSON_RPC_USERNAME),
     coreJsonRpcPassword: asValue(options.CORE_JSON_RPC_PASSWORD),
     loggingLevel: asValue(options.LOGGING_LEVEL),
+    isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
   });
 
   /**

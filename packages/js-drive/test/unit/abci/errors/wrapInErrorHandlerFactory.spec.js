@@ -19,7 +19,7 @@ describe('wrapInErrorHandlerFactory', () => {
       error: this.sinon.stub(),
     };
 
-    wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock);
+    wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock, true);
     methodMock = this.sinon.stub();
 
     handler = wrapInErrorHandler(
@@ -138,5 +138,37 @@ describe('wrapInErrorHandlerFactory', () => {
     } catch (e) {
       expect(e).to.equal(unknownError);
     }
+  });
+
+  it('should respond with verbose error containing message and stack in debug mode', async () => {
+    wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock, false);
+
+    const error = new Error('Custom error');
+
+    methodMock.throws(error);
+
+    handler = wrapInErrorHandler(
+      methodMock, { respondWithInternalError: true },
+    );
+
+    methodMock.throws(error);
+
+    const response = await handler(request);
+
+    const [, errorPath] = error.stack.toString().split(/\r\n|\n/);
+
+    expect(response).to.deep.equal({
+      code: 1,
+      log: JSON.stringify({
+        error: {
+          message: `${error.message} ${errorPath.trim()}`,
+          data: {
+            stack: error.stack,
+            data: undefined,
+          },
+        },
+      }),
+      tags: [],
+    });
   });
 });
