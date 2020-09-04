@@ -210,7 +210,7 @@ class DockerCompose {
     try {
       await dockerCompose.down({
         ...this.getOptions(envs),
-        commandOptions: ['-v'],
+        commandOptions: ['-v', '--remove-orphans'],
       });
     } catch (e) {
       throw new DockerComposeError(e);
