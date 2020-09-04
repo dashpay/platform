@@ -16,7 +16,7 @@
 ### BREAKING CHANGES
 
 * protocol version (`AppVersion`) is required in a Tendermint block header
-* previous state is not compartible due to new DPP serialization format
+* the previous state is not compatible due to new DPP serialization format
 * See [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.15.0)
 
 
