@@ -1,3 +1,17 @@
+# [3.15.0](https://github.com/dashevo/DashJS/compare/v3.14.1...v3.15.0) (2020-09-04)
+
+
+### Features
+
+* update to new Wallet and DPNS contract ([#127](https://github.com/dashevo/js-dash-sdk/pull/127))
+
+
+### BREAKING CHANGES
+
+* `client.platform.names.register` now receive records as a second argument
+* See [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.15.0)
+
+
 ## [3.14.1](https://github.com/dashevo/DashJS/compare/v3.14.0...v3.14.1) (2020-07-24)
 
 
