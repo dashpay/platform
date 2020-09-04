@@ -21,12 +21,14 @@ function createFaucetClient() {
     },
   };
 
-  return new Dash.Client({
+  faucetClient = new Dash.Client({
     ...clientOpts,
     wallet: {
       privateKey: process.env.FAUCET_PRIVATE_KEY,
     },
   });
+
+  return faucetClient;
 }
 
 module.exports = createFaucetClient;
