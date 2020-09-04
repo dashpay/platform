@@ -73,7 +73,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           maxLength: 256,
         },
       },
-      required: ['firstName', '$createdAt', '$updatedAt'],
+      required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
       additionalProperties: false,
     },
     noTimeDocument: {
@@ -108,6 +108,64 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt'],
+      additionalProperties: false,
+    },
+    withContentEncoding: {
+      properties: {
+        binaryField: {
+          type: 'string',
+          contentEncoding: 'base64',
+          maxLength: 16,
+          pattern: '^([A-Za-z0-9+/])*$',
+        },
+      },
+      required: ['binaryField'],
+      additionalProperties: false,
+    },
+    optionalUniqueIndexedDocument: {
+      properties: {
+        firstName: {
+          type: 'string',
+          maxLength: 256,
+        },
+        lastName: {
+          type: 'string',
+          maxLength: 256,
+        },
+        country: {
+          type: 'string',
+          maxLength: 256,
+        },
+        city: {
+          type: 'string',
+          maxLength: 256,
+        },
+      },
+      indices: [
+        {
+          properties: [
+            { firstName: 'desc' },
+          ],
+          unique: true,
+        },
+        {
+          properties: [
+            { $id: 'asc' },
+            { $ownerId: 'asc' },
+            { firstName: 'asc' },
+            { lastName: 'asc' },
+          ],
+          unique: true,
+        },
+        {
+          properties: [
+            { country: 'asc' },
+            { city: 'asc' },
+          ],
+          unique: true,
+        },
+      ],
+      required: ['firstName', 'lastName'],
       additionalProperties: false,
     },
   };

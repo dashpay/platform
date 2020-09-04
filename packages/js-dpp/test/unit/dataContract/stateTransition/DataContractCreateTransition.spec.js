@@ -3,6 +3,8 @@ const rewiremock = require('rewiremock/node');
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
 
+const DataContract = require('../../../../lib/dataContract/DataContract');
+
 describe('DataContractCreateTransition', () => {
   let stateTransition;
   let dataContract;
@@ -21,6 +23,7 @@ describe('DataContractCreateTransition', () => {
 
     dataContract = getDataContractFixture();
     stateTransition = new DataContractCreateTransition({
+      protocolVersion: DataContract.PROTOCOL_VERSION,
       dataContract: dataContract.toJSON(),
       entropy: dataContract.getEntropy(),
     });
@@ -53,7 +56,7 @@ describe('DataContractCreateTransition', () => {
   describe('#toJSON', () => {
     it('should return State Transition as plain JS object', () => {
       expect(stateTransition.toJSON()).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: DataContract.PROTOCOL_VERSION,
         type: stateTransitionTypes.DATA_CONTRACT_CREATE,
         dataContract: dataContract.toJSON(),
         signaturePublicKeyId: null,

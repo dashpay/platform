@@ -10,6 +10,7 @@ const DocumentsBatchTransition = require('../../../../../../lib/document/stateTr
 
 const getDocumentTransitionsFixture = require('../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const getDocumentsFixture = require('../../../../../../lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('../../../../../../lib/test/fixtures/getDataContractFixture');
 
 const ValidationResult = require('../../../../../../lib/validation/ValidationResult');
 
@@ -49,10 +50,10 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
   let documentTransitions;
 
   beforeEach(function beforeEach() {
-    documents = getDocumentsFixture();
+    dataContract = getDataContractFixture();
+    documents = getDocumentsFixture(dataContract);
 
     ownerId = getDocumentsFixture.ownerId;
-    dataContract = getDocumentsFixture.dataContract;
 
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,
@@ -61,8 +62,8 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+      transitions: documentTransitions.map((t) => t.toObject()),
+    }, [dataContract]);
     rawStateTransition = stateTransition.toJSON();
 
     findDuplicatesByIdMock = this.sinonSandbox.stub().returns([]);
@@ -227,7 +228,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           ownerId,
           contractId: dataContract.getId(),
           transitions: documentTransitions.map((t) => t.toJSON()),
-        });
+        }, [dataContract]);
 
         rawStateTransition = stateTransition.toJSON();
       });
@@ -672,8 +673,11 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       rawStateTransition.transitions, dataContract,
     );
     expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId);
-    expect(validateStateTransitionSignatureMock).to.have.been.calledOnceWithExactly(
-      stateTransition, ownerId,
+    expect(validateStateTransitionSignatureMock.getCall(0).args[0].toJSON()).to.deep.equal(
+      stateTransition.toJSON(),
+    );
+    expect(validateStateTransitionSignatureMock.getCall(0).args[1]).to.deep.equal(
+      ownerId,
     );
   });
 
@@ -694,8 +698,11 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       rawStateTransition.transitions, dataContract,
     );
     expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId);
-    expect(validateStateTransitionSignatureMock).to.have.been.calledOnceWithExactly(
-      stateTransition, ownerId,
+    expect(validateStateTransitionSignatureMock.getCall(0).args[0].toJSON()).to.deep.equal(
+      stateTransition.toJSON(),
+    );
+    expect(validateStateTransitionSignatureMock.getCall(0).args[1]).to.deep.equal(
+      ownerId,
     );
   });
 });

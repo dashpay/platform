@@ -7,6 +7,7 @@ const getDpnsContractFixture = require('../../../../../../lib/test/fixtures/getD
 const dpnsDocumentFixture = require('../../../../../../lib/test/fixtures/getDpnsDocumentFixture');
 const getDocumentsFixture = require('../../../../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDataContractFixture = require('../../../../../../lib/test/fixtures/getDataContractFixture');
 
 const dpnsCreateDomainDataTrigger = require('../../../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 const dpnsDeleteDomainDataTrigger = require('../../../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
@@ -31,8 +32,11 @@ describe('executeDataTriggersFactory', () => {
   let getDataTriggersMock;
 
   let executeDataTriggers;
+  let dataContract;
 
   beforeEach(function beforeEach() {
+    dataContract = getDataContractFixture();
+
     domainDocumentType = 'domain';
 
     dpnsTriggers = [
@@ -114,8 +118,8 @@ describe('executeDataTriggersFactory', () => {
   });
 
   it('should return a result for each passed document with success or error', async function test() {
-    const doc1 = getDocumentsFixture()[0];
-    const doc2 = getDocumentsFixture()[1];
+    const doc1 = getDocumentsFixture(dataContract)[0];
+    const doc2 = getDocumentsFixture(dataContract)[1];
 
     documentTransitions = getDocumentTransitionsFixture({
       create: [doc1, doc1],
@@ -209,11 +213,11 @@ describe('executeDataTriggersFactory', () => {
   });
 
   it("should call only one trigger if there's one document with a trigger and one without", async () => {
-    childDocument.dataContractId = getDocumentsFixture.dataContract.getId();
+    childDocument.dataContractId = getDataContractFixture().getId();
     childDocument.ownerId = getDocumentsFixture.ownerId;
 
     documentTransitions = getDocumentTransitionsFixture({
-      create: [childDocument].concat(getDocumentsFixture()),
+      create: [childDocument].concat(getDocumentsFixture(dataContract)),
     });
 
     getDataTriggersMock.resetBehavior();
@@ -247,7 +251,7 @@ describe('executeDataTriggersFactory', () => {
 
   it("should not call any triggers if there's no triggers in the contract", async () => {
     documentTransitions = getDocumentTransitionsFixture({
-      create: getDocumentsFixture(),
+      create: getDocumentsFixture(dataContract),
     });
 
     getDataTriggersMock.resetBehavior();

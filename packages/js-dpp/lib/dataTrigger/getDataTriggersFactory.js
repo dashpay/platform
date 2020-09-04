@@ -3,8 +3,7 @@ const AbstractDocumentTransition = require('../document/stateTransition/document
 const DataTrigger = require('./DataTrigger');
 
 const createDomainDataTrigger = require('./dpnsTriggers/createDomainDataTrigger');
-const deleteDomainDataTrigger = require('./dpnsTriggers/deleteDomainDataTrigger');
-const updateDomainDataTrigger = require('./dpnsTriggers/updateDomainDataTrigger');
+const rejectDataTrigger = require('./dpnsTriggers/rejectDataTrigger');
 
 /**
  * Get respective data triggers (factory)
@@ -24,14 +23,28 @@ function getDataTriggersFactory() {
       process.env.DPNS_CONTRACT_ID,
       'domain',
       AbstractDocumentTransition.ACTIONS.REPLACE,
-      updateDomainDataTrigger,
+      rejectDataTrigger,
       process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
     new DataTrigger(
       process.env.DPNS_CONTRACT_ID,
       'domain',
       AbstractDocumentTransition.ACTIONS.DELETE,
-      deleteDomainDataTrigger,
+      rejectDataTrigger,
+      process.env.DPNS_TOP_LEVEL_IDENTITY,
+    ),
+    new DataTrigger(
+      process.env.DPNS_CONTRACT_ID,
+      'preorder',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
+      process.env.DPNS_TOP_LEVEL_IDENTITY,
+    ),
+    new DataTrigger(
+      process.env.DPNS_CONTRACT_ID,
+      'preorder',
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
       process.env.DPNS_TOP_LEVEL_IDENTITY,
     ),
   ];

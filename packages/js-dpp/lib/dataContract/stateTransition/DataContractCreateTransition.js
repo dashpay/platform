@@ -47,14 +47,25 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
   }
 
   /**
-   * Get Data Contract State Transition as plain object
+   * Get entropy
    *
-   * @params {Object} [options]
-   * @return {RawDataContractCreateTransition}
+   * @returns {string}
    */
-  toJSON(options = {}) {
+  getEntropy() {
+    return this.entropy;
+  }
+
+  /**
+   * Get state transition as plain object
+   *
+   * @param {Object} [options]
+   * @param {boolean} [options.skipSignature]
+   *
+   * @return {Object}
+   */
+  toObject(options = {}) {
     return {
-      ...super.toJSON(options),
+      ...super.toObject(options),
       dataContract: this.getDataContract().toJSON(),
       entropy: this.entropy,
     };
@@ -66,6 +77,19 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
    */
   getOwnerId() {
     return this.getDataContract().getOwnerId();
+  }
+
+  /**
+   * Create state transition from JSON
+   *
+   * @param {RawDataContractCreateTransition} rawStateTransition
+   *
+   * @return {DataContractCreateTransition}
+   */
+  static fromJSON(rawStateTransition) {
+    return new DataContractCreateTransition(
+      AbstractStateTransitionIdentitySigned.translateJsonToObject(rawStateTransition),
+    );
   }
 }
 

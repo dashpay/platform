@@ -1,16 +1,23 @@
 const rewiremock = require('rewiremock/node');
 
+const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
+
+const DocumentsBatchTransition = require(
+  '../../../../lib/document/stateTransition/DocumentsBatchTransition',
+);
 
 describe('DocumentsBatchTransition', () => {
   let stateTransition;
   let documents;
   let hashMock;
   let encodeMock;
+  let dataContract;
 
   beforeEach(function beforeEach() {
-    documents = getDocumentsFixture();
+    dataContract = getDataContractFixture();
+    documents = getDocumentsFixture(dataContract);
 
     hashMock = this.sinonSandbox.stub();
     const serializerMock = { encode: this.sinonSandbox.stub() };
@@ -52,12 +59,25 @@ describe('DocumentsBatchTransition', () => {
   });
 
   describe('#toJSON', () => {
-    it('should return State Transition as plain JS object', () => {
+    it('should return State Transition as JSON', () => {
       expect(stateTransition.toJSON()).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
         ownerId: documents[0].getOwnerId(),
         transitions: stateTransition.getTransitions().map((d) => d.toJSON()),
+        signaturePublicKeyId: null,
+        signature: null,
+      });
+    });
+  });
+
+  describe('#toObject', () => {
+    it('should return State Transition as plain object', () => {
+      expect(stateTransition.toObject()).to.deep.equal({
+        protocolVersion: 0,
+        type: stateTransitionTypes.DOCUMENTS_BATCH,
+        ownerId: documents[0].getOwnerId(),
+        transitions: stateTransition.getTransitions().map((d) => d.toObject()),
         signaturePublicKeyId: null,
         signature: null,
       });
@@ -74,7 +94,7 @@ describe('DocumentsBatchTransition', () => {
 
       expect(result).to.equal(serializedStateTransition);
 
-      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toJSON());
+      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toObject());
     });
   });
 
@@ -90,7 +110,7 @@ describe('DocumentsBatchTransition', () => {
 
       expect(result).to.equal(hashedDocument);
 
-      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toJSON());
+      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toObject());
       expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
     });
   });
@@ -100,6 +120,20 @@ describe('DocumentsBatchTransition', () => {
       const result = stateTransition.getOwnerId();
 
       expect(result).to.equal(getDocumentsFixture.ownerId);
+    });
+  });
+
+  describe('#fromJSON', () => {
+    it('should create an instance using plain object converted from JSON', async () => {
+      const rawStateTransition = stateTransition.toJSON();
+
+      const result = DocumentsBatchTransition.fromJSON(
+        rawStateTransition, [dataContract],
+      );
+
+      expect(result.toJSON()).to.deep.equal(
+        stateTransition.toJSON(),
+      );
     });
   });
 });

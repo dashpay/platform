@@ -24,6 +24,7 @@ const BLOCK_TIME_WINDOW_MINUTES = 5;
  * @param {StateRepository} stateRepository
  * @param {fetchDocuments} fetchDocuments
  * @param {validateDocumentsUniquenessByIndices} validateDocumentsUniquenessByIndices
+ * @param {validatePartialCompoundIndices} validatePartialCompoundIndices
  * @param {executeDataTriggers} executeDataTriggers
  * @return {validateDocumentsBatchTransitionData}
  */
@@ -31,6 +32,7 @@ function validateDocumentsBatchTransitionDataFactory(
   stateRepository,
   fetchDocuments,
   validateDocumentsUniquenessByIndices,
+  validatePartialCompoundIndices,
   executeDataTriggers,
 ) {
   /**
@@ -187,6 +189,14 @@ function validateDocumentsBatchTransitionDataFactory(
     if (nonDeleteDocumentTransitions.length > 0) {
       result.merge(
         await validateDocumentsUniquenessByIndices(
+          ownerId,
+          nonDeleteDocumentTransitions,
+          dataContract,
+        ),
+      );
+
+      result.merge(
+        validatePartialCompoundIndices(
           ownerId,
           nonDeleteDocumentTransitions,
           dataContract,

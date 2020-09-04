@@ -134,6 +134,14 @@ class IdentityPublicKey {
   }
 }
 
+/**
+ * @typedef {Object} RawIdentityPublicKey
+ * @property {number} id
+ * @property {number} type
+ * @property {string} data
+ * @property {boolean} isEnabled
+ */
+
 IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
 };

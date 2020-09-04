@@ -93,8 +93,6 @@ describe('StateTransitionFactory', () => {
         expect(validateStateTransitionStructureMock).to.have.been.calledOnceWith(
           rawStateTransition,
         );
-
-        expect(createStateTransitionMock).to.have.not.been.called();
       }
     });
   });
@@ -109,7 +107,7 @@ describe('StateTransitionFactory', () => {
 
       decodeMock.returns(rawStateTransition);
 
-      factory.createFromObject.returns(stateTransition);
+      factory.createFromObject.resolves(stateTransition);
 
       const result = await factory.createFromSerialized(serializedStateTransition);
 

@@ -11,10 +11,11 @@ const InvalidIndexPropertyTypeError = require('../errors/InvalidIndexPropertyTyp
 const SystemPropertyIndexAlreadyPresentError = require('../errors/SystemPropertyIndexAlreadyPresentError');
 const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReachedError');
 const InvalidIndexedPropertyConstraintError = require('../errors/InvalidIndexedPropertyConstraintError');
+const InvalidCompoundIndexError = require('../errors/InvalidCompoundIndexError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
-const systemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
+const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
 
 const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
@@ -87,7 +88,7 @@ module.exports = function validateDataContractFactory(
     }
 
     // Validate indices
-    Object.entries(rawDataContract.documents).filter(([, documentSchema]) => (
+    Object.entries(enrichedDataContract.documents).filter(([, documentSchema]) => (
       Object.prototype.hasOwnProperty.call(documentSchema, 'indices')
     ))
       .forEach(([documentType, documentSchema]) => {
@@ -96,6 +97,10 @@ module.exports = function validateDataContractFactory(
         let isUniqueIndexLimitReached = false;
 
         documentSchema.indices.forEach((indexDefinition) => {
+          const indexPropertyNames = indexDefinition.properties
+            .map((property) => Object.keys(property)[0]);
+
+          // Ensure there are no more than 3 unique indices
           if (!isUniqueIndexLimitReached && indexDefinition.unique) {
             uniqueIndexCount++;
 
@@ -109,9 +114,7 @@ module.exports = function validateDataContractFactory(
             }
           }
 
-          const indexPropertyNames = indexDefinition.properties
-            .map((property) => Object.keys(property)[0]);
-
+          // Ensure there are no duplicate system indices
           prebuiltIndices
             .forEach((propertyName) => {
               const isSingleIndex = indexPropertyNames.length === 1
@@ -127,11 +130,40 @@ module.exports = function validateDataContractFactory(
               }
             });
 
-          indexPropertyNames.forEach((propertyName) => {
-            const propertyDefinition = (getPropertyDefinitionByPath(
-              documentSchema, propertyName,
-            ) || {});
+          // Ensure index properties are defined in the document
+          const userDefinedProperties = indexPropertyNames
+            .filter((name) => !allowedSystemProperties.includes(name));
 
+          const propertyDefinitionEntities = userDefinedProperties
+            .map((propertyName) => (
+              [
+                propertyName,
+                getPropertyDefinitionByPath(documentSchema, propertyName),
+              ]
+            ), {});
+
+          const undefinedProperties = propertyDefinitionEntities
+            .filter(([, propertyDefinition]) => !propertyDefinition)
+            .map(([propertyName]) => {
+              result.addError(
+                new UndefinedIndexPropertyError(
+                  rawDataContract,
+                  documentType,
+                  indexDefinition,
+                  propertyName,
+                ),
+              );
+
+              return propertyName;
+            });
+
+          // Skip further validation if there are undefined properties
+          if (undefinedProperties.length > 0) {
+            return;
+          }
+
+          // Validate indexed property definitions
+          propertyDefinitionEntities.forEach(([propertyName, propertyDefinition]) => {
             const { type: propertyType } = propertyDefinition;
 
             let invalidPropertyType;
@@ -189,9 +221,24 @@ module.exports = function validateDataContractFactory(
             }
           });
 
-          const indicesFingerprint = JSON.stringify(indexDefinition.properties);
+          // Make sure that compound unique indices contain all fields
+          if (indexPropertyNames.length > 1) {
+            const requiredFields = documentSchema.required || [];
+            const allAreRequired = indexPropertyNames
+              .every((propertyName) => requiredFields.includes(propertyName));
+            const allAreNotRequired = indexPropertyNames
+              .every((propertyName) => !requiredFields.includes(propertyName));
+
+            if (!allAreRequired && !allAreNotRequired) {
+              result.addError(
+                new InvalidCompoundIndexError(documentType, indexDefinition),
+              );
+            }
+          }
 
           // Ensure index definition uniqueness
+          const indicesFingerprint = JSON.stringify(indexDefinition.properties);
+
           if (indicesFingerprints.includes(indicesFingerprint)) {
             result.addError(
               new DuplicateIndexError(
@@ -203,24 +250,6 @@ module.exports = function validateDataContractFactory(
           }
 
           indicesFingerprints.push(indicesFingerprint);
-
-          // Ensure index properties definition
-          const userDefinedProperties = indexPropertyNames
-            .filter((name) => systemProperties.indexOf(name) === -1);
-
-          userDefinedProperties.filter((propertyName) => (
-            !getPropertyDefinitionByPath(documentSchema, propertyName)
-          ))
-            .forEach((undefinedPropertyName) => {
-              result.addError(
-                new UndefinedIndexPropertyError(
-                  rawDataContract,
-                  documentType,
-                  indexDefinition,
-                  undefinedPropertyName,
-                ),
-              );
-            });
         });
       });
 

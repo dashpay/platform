@@ -53,9 +53,8 @@ class DocumentFactory {
       documentEntropy,
     );
 
-    const creationTime = new Date().getTime();
-
     const rawDocument = {
+      $protocolVersion: Document.PROTOCOL_VERSION,
       $id: id,
       $type: type,
       $dataContractId: dataContractId,
@@ -68,6 +67,8 @@ class DocumentFactory {
     // Only if they are required by the contract
     const { required: documentRequiredFields } = dataContract.getDocumentSchema(type);
 
+    const creationTime = new Date().getTime();
+
     if (documentRequiredFields
         && documentRequiredFields.includes('$createdAt')) {
       rawDocument.$createdAt = creationTime;
@@ -78,7 +79,7 @@ class DocumentFactory {
       rawDocument.$updatedAt = creationTime;
     }
 
-    const document = new Document(rawDocument);
+    const document = new Document(rawDocument, dataContract);
 
     document.setEntropy(documentEntropy);
 
@@ -95,29 +96,62 @@ class DocumentFactory {
    * @return {Document}
    */
   async createFromObject(rawDocument, options = {}) {
+    const dataContract = await this.validateDataContractForDocument(rawDocument, options);
+
+    return new Document(rawDocument, dataContract);
+  }
+
+  /**
+   * Create Document from JSON
+   *
+   * @param {RawDocument} rawDocument
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
+   * @param {boolean} [options.action]
+   * @return {Document}
+   */
+  async createFromJson(rawDocument, options = {}) {
+    const dataContract = await this.validateDataContractForDocument(rawDocument, options);
+
+    return Document.fromJSON(rawDocument, dataContract);
+  }
+
+  /**
+   * @private
+   *
+   * @param {RawDocument} rawDocument
+   * @param {Object} options
+   * @param {boolean} [options.skipValidation=false]
+   * @param {boolean} [options.action]
+   *
+   * @return {Promise<DataContract>}
+   */
+  async validateDataContractForDocument(rawDocument, options = {}) {
     const opts = { skipValidation: false, ...options };
 
+    const result = await this.fetchAndValidateDataContract(rawDocument);
+
+    if (!result.isValid()) {
+      throw new InvalidDocumentError(result.getErrors(), rawDocument);
+    }
+
+    const dataContract = result.getData();
+
     if (!opts.skipValidation) {
-      const result = await this.fetchAndValidateDataContract(rawDocument);
-
-      if (result.isValid()) {
-        const dataContract = result.getData();
-
-        result.merge(
-          this.validateDocument(
-            rawDocument,
-            dataContract,
-            opts,
-          ),
-        );
-      }
+      result.merge(
+        this.validateDocument(
+          rawDocument,
+          dataContract,
+          opts,
+        ),
+      );
 
       if (!result.isValid()) {
         throw new InvalidDocumentError(result.getErrors(), rawDocument);
       }
     }
 
-    return new Document(rawDocument);
+    return dataContract;
   }
 
   /**
@@ -258,10 +292,14 @@ class DocumentFactory {
       .concat(rawDocumentReplaceTransitions)
       .concat(rawDocumentDeleteTransitions);
 
+    const dataContracts = documentsFlattened
+      .map((document) => document.getDataContract());
+
     return new DocumentsBatchTransition({
+      protocolVersion: Document.PROTOCOL_VERSION,
       ownerId,
       transitions: rawDocumentTransitions,
-    });
+    }, dataContracts);
   }
 }
 

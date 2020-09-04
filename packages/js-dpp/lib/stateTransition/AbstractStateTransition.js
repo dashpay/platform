@@ -27,9 +27,14 @@ class AbstractStateTransition {
    */
   constructor(rawStateTransition = {}) {
     this.signature = null;
+    this.protocolVersion = null;
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'signature')) {
       this.signature = rawStateTransition.signature;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'protocolVersion')) {
+      this.protocolVersion = rawStateTransition.protocolVersion;
     }
   }
 
@@ -39,7 +44,7 @@ class AbstractStateTransition {
    * @return {number}
    */
   getProtocolVersion() {
-    return 0;
+    return this.protocolVersion;
   }
 
   /**
@@ -70,26 +75,42 @@ class AbstractStateTransition {
   }
 
   /**
-   * @abstract
+   * Get state transition as plain object
+   *
    * @param {Object} [options]
-   * @return {{protocolVersion: number, type: number, [signature]: string}}
+   * @param {boolean} [options.skipSignature]
+   *
+   * @return {Object}
    */
-  toJSON(options = {}) {
+  toObject(options = {}) {
     const skipSignature = !!options.skipSignature;
 
-    let json = {
+    let plainObject = {
       protocolVersion: this.getProtocolVersion(),
       type: this.getType(),
     };
 
     if (!skipSignature) {
-      json = {
-        ...json,
+      plainObject = {
+        ...plainObject,
         signature: this.getSignature(),
       };
     }
 
-    return json;
+    return plainObject;
+  }
+
+  /**
+   * Get state transition as JSON
+   *
+   * @param {Object} [options]
+   *
+   * @return {Object}
+   */
+  toJSON(options = {}) {
+    return this.toObject({
+      ...options,
+    });
   }
 
   /**
@@ -99,7 +120,7 @@ class AbstractStateTransition {
    * @return {Buffer}
    */
   serialize(options = {}) {
-    return encode(this.toJSON(options));
+    return encode(this.toObject(options));
   }
 
   /**
@@ -159,6 +180,17 @@ class AbstractStateTransition {
    */
   calculateFee() {
     return calculateStateTransitionFee(this);
+  }
+
+  /**
+   * @protected
+   *
+   * @param {Object} rawStateTransition
+   *
+   * @return {Object}
+   */
+  static translateJsonToObject(rawStateTransition) {
+    return rawStateTransition;
   }
 }
 

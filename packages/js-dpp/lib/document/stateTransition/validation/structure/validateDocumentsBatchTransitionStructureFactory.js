@@ -44,16 +44,8 @@ function validateDocumentsBatchTransitionStructureFactory(
 ) {
   const { ACTIONS } = AbstractDocumentTransition;
 
-  async function validateDocumentTransitions(dataContractId, ownerId, documentTransitions) {
+  async function validateDocumentTransitions(dataContract, ownerId, documentTransitions) {
     const result = new ValidationResult();
-
-    const dataContract = await stateRepository.fetchDataContract(dataContractId);
-
-    if (!dataContract) {
-      result.addError(
-        new DataContractNotPresentError(dataContractId),
-      );
-    }
 
     if (!result.isValid()) {
       return result;
@@ -137,7 +129,7 @@ function validateDocumentsBatchTransitionStructureFactory(
           if (ACTIONS.CREATE === rawDocumentTransition.$action) {
             // validate id generation
             const documentId = generateDocumentId(
-              dataContractId,
+              dataContract.getId(),
               ownerId,
               rawDocumentTransition.$type,
               rawDocumentTransition.$entropy,
@@ -207,16 +199,16 @@ function validateDocumentsBatchTransitionStructureFactory(
 
   /**
    * @typedef validateDocumentsBatchTransitionStructure
-   * @param {RawDocumentsBatchTransition} rawStateTransition
+   * @param {RawDocumentsBatchTransition} stateTransitionJson
    * @return {ValidationResult}
    */
-  async function validateDocumentsBatchTransitionStructure(rawStateTransition) {
+  async function validateDocumentsBatchTransitionStructure(stateTransitionJson) {
     const result = new ValidationResult();
 
-    const { ownerId } = rawStateTransition;
+    const { ownerId } = stateTransitionJson;
 
     // Group document transitions by data contracts
-    const documentTransitionsByContracts = rawStateTransition.transitions
+    const documentTransitionsByContracts = stateTransitionJson.transitions
       .reduce((obj, rawDocumentTransition) => {
         if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$dataContractId')) {
           result.addError(
@@ -244,10 +236,32 @@ function validateDocumentsBatchTransitionStructureFactory(
         return obj;
       }, {});
 
+    const dataContracts = [];
+
     const documentTransitionResultsPromises = Object.entries(documentTransitionsByContracts)
-      .map(([dataContractId, documentTransitions]) => (
-        validateDocumentTransitions(dataContractId, ownerId, documentTransitions)
-      ));
+      .map(async ([dataContractId, documentTransitions]) => {
+        const perDocumentResult = new ValidationResult();
+
+        const dataContract = await stateRepository.fetchDataContract(dataContractId);
+
+        if (!dataContract) {
+          perDocumentResult.addError(
+            new DataContractNotPresentError(dataContractId),
+          );
+        }
+
+        if (!perDocumentResult.isValid()) {
+          return perDocumentResult;
+        }
+
+        dataContracts.push(dataContract);
+
+        perDocumentResult.merge(
+          await validateDocumentTransitions(dataContract, ownerId, documentTransitions),
+        );
+
+        return perDocumentResult;
+      });
 
     const documentTransitionResults = await Promise.all(documentTransitionResultsPromises);
     documentTransitionResults.forEach(result.merge.bind(result));
@@ -267,7 +281,7 @@ function validateDocumentsBatchTransitionStructureFactory(
       return result;
     }
 
-    const stateTransition = new DocumentsBatchTransition(rawStateTransition);
+    const stateTransition = DocumentsBatchTransition.fromJSON(stateTransitionJson, dataContracts);
 
     // Verify ST signature
     result.merge(

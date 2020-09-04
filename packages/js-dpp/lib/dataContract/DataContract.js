@@ -1,6 +1,8 @@
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
+const getEncodedPropertiesFromSchema = require('./getEncodedPropertiesFromSchema');
+
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 
 class DataContract {
@@ -10,10 +12,22 @@ class DataContract {
   constructor(rawDataContract) {
     this.id = rawDataContract.$id;
     this.ownerId = rawDataContract.ownerId;
+    this.protocolVersion = rawDataContract.protocolVersion;
 
     this.setJsonMetaSchema(rawDataContract.$schema);
     this.setDocuments(rawDataContract.documents);
     this.setDefinitions(rawDataContract.definitions);
+
+    this.encodedProperties = {};
+  }
+
+  /**
+   * Get Data Contract protocol version
+   *
+   * @returns {number}
+   */
+  getProtocolVersion() {
+    return this.protocolVersion;
   }
 
   /**
@@ -146,12 +160,36 @@ class DataContract {
   }
 
   /**
+   * Get properties with `contentEncoding` constraint
+   *
+   * @param {string} type
+   *
+   * @return {Object}
+   */
+  getEncodedProperties(type) {
+    if (!this.isDocumentDefined(type)) {
+      throw new InvalidDocumentTypeError(type, this);
+    }
+
+    if (this.encodedProperties[type]) {
+      return this.encodedProperties[type];
+    }
+
+    this.encodedProperties[type] = getEncodedPropertiesFromSchema(
+      this.documents[type],
+    );
+
+    return this.encodedProperties[type];
+  }
+
+  /**
    * Return Data Contract as plain object
    *
    * @return {RawDataContract}
    */
   toJSON() {
     const json = {
+      protocolVersion: this.getProtocolVersion(),
       $id: this.getId(),
       $schema: this.getJsonMetaSchema(),
       ownerId: this.getOwnerId(),
@@ -209,12 +247,15 @@ class DataContract {
 
 /**
  * @typedef {Object} RawDataContract
+ * @property {number} protocolVersion
  * @property {string} $id
  * @property {string} $schema
  * @property {string} ownerId
  * @property {Object<string, Object>} documents
- * @property {Object<string, Object>|undefined} definitions
+ * @property {Object<string, Object>} [definitions]
  */
+
+DataContract.PROTOCOL_VERSION = 0;
 
 DataContract.DEFAULTS = {
   SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract',

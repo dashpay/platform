@@ -7,6 +7,7 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
@@ -22,7 +23,7 @@ describe('DocumentFacade', () => {
   let stateRepositoryMock;
 
   beforeEach(function beforeEach() {
-    dataContract = getDocumentsFixture.dataContract;
+    dataContract = getDataContractFixture();
     ownerId = '5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq';
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
@@ -33,7 +34,7 @@ describe('DocumentFacade', () => {
       stateRepository: stateRepositoryMock,
     });
 
-    documents = getDocumentsFixture();
+    documents = getDocumentsFixture(dataContract);
     ([document] = documents);
   });
 
@@ -67,12 +68,6 @@ describe('DocumentFacade', () => {
       }
     });
 
-    it('should skip checking for state repository if skipValidation is set', async () => {
-      dpp = new DashPlatformProtocol();
-
-      await dpp.document.createFromObject(document.toJSON(), { skipValidation: true });
-    });
-
     it('should create Document from plain object', async () => {
       const result = await dpp.document.createFromObject(document.toJSON());
 
@@ -94,12 +89,6 @@ describe('DocumentFacade', () => {
         expect(e).to.be.an.instanceOf(MissingOptionError);
         expect(e.getOptionName()).to.equal('stateRepository');
       }
-    });
-
-    it('should skip checking for state repository if skipValidation is set', async () => {
-      dpp = new DashPlatformProtocol();
-
-      await dpp.document.createFromSerialized(document.serialize(), { skipValidation: true });
     });
 
     it('should create Document from string', async () => {

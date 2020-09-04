@@ -7,8 +7,7 @@ const getDpnsDocumentFixture = require('../../../lib/test/fixtures/getDpnsDocume
 const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
 
 const createDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
-const updateDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/updateDomainDataTrigger');
-const deleteDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/deleteDomainDataTrigger');
+const rejectDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/rejectDataTrigger');
 
 const generateRandomId = require('../../../lib/test/utils/generateRandomId');
 
@@ -22,6 +21,9 @@ describe('getDataTriggers', () => {
   let createTrigger;
   let updateTrigger;
   let deleteTrigger;
+
+  let updatePreorderTrigger;
+  let deletePreorderTrigger;
 
   let dataContractId;
   let topLevelIdentity;
@@ -39,10 +41,16 @@ describe('getDataTriggers', () => {
       dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.CREATE, createDomainDataTrigger, topLevelIdentity,
     );
     updateTrigger = new DataTrigger(
-      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.REPLACE, updateDomainDataTrigger, topLevelIdentity,
+      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger, topLevelIdentity,
     );
     deleteTrigger = new DataTrigger(
-      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.DELETE, deleteDomainDataTrigger, topLevelIdentity,
+      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger, topLevelIdentity,
+    );
+    updatePreorderTrigger = new DataTrigger(
+      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger, topLevelIdentity,
+    );
+    deletePreorderTrigger = new DataTrigger(
+      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger, topLevelIdentity,
     );
 
     this.sinonSandbox.stub(process, 'env').value({
@@ -71,6 +79,18 @@ describe('getDataTriggers', () => {
     );
 
     expect(result).to.deep.equal([deleteTrigger]);
+
+    result = getDataTriggers(
+      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.REPLACE,
+    );
+
+    expect(result).to.deep.equal([updatePreorderTrigger]);
+
+    result = getDataTriggers(
+      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.DELETE,
+    );
+
+    expect(result).to.deep.equal([deletePreorderTrigger]);
   });
 
   it('should return empty trigger array for any other type except `domain`', () => {

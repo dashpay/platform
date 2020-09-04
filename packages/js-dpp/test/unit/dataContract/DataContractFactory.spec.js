@@ -28,8 +28,11 @@ describe('DataContractFactory', () => {
 
     decodeMock = this.sinonSandbox.stub();
     validateDataContractMock = this.sinonSandbox.stub();
+
     DataContractMock = this.sinonSandbox.stub().returns(dataContract);
     DataContractMock.DEFAULTS = DataContract.DEFAULTS;
+    DataContractMock.PROTOCOL_VERSION = DataContract.PROTOCOL_VERSION;
+
     entropyMock = {
       generate: this.sinonSandbox.stub(),
     };
@@ -61,6 +64,7 @@ describe('DataContractFactory', () => {
       expect(result).to.equal(dataContract);
 
       expect(DataContractMock).to.have.been.calledOnceWith({
+        protocolVersion: DataContract.PROTOCOL_VERSION,
         $schema: DataContract.DEFAULTS.SCHEMA,
         $id: rawDataContract.$id,
         ownerId: rawDataContract.ownerId,
@@ -168,6 +172,9 @@ describe('DataContractFactory', () => {
       const result = factory.createStateTransition(dataContract);
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
+
+      expect(result.getProtocolVersion()).to.equal(DataContract.PROTOCOL_VERSION);
+      expect(result.getEntropy()).to.equal(dataContract.getEntropy());
       expect(result.getDataContract().toJSON()).to.deep.equal(dataContract.toJSON());
     });
   });

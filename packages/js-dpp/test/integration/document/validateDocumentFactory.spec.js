@@ -3,9 +3,12 @@ const Ajv = require('ajv');
 const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator');
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
+const DataContract = require('../../../lib/dataContract/DataContract');
+
 const validateDocumentFactory = require('../../../lib/document/validateDocumentFactory');
 const enrichDataContractWithBaseSchema = require('../../../lib/dataContract/enrichDataContractWithBaseSchema');
 
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 
 const MissingDocumentTypeError = require('../../../lib/errors/MissingDocumentTypeError');
@@ -32,19 +35,87 @@ describe('validateDocumentFactory', () => {
     validator = new JsonSchemaValidator(ajv);
     this.sinonSandbox.spy(validator, 'validate');
 
-    dataContract = getDocumentsFixture.dataContract;
+    dataContract = getDataContractFixture();
 
     validateDocument = validateDocumentFactory(
       validator,
       enrichDataContractWithBaseSchema,
     );
 
-    const documents = getDocumentsFixture();
+    const documents = getDocumentsFixture(dataContract);
     rawDocuments = documents.map((o) => o.toJSON());
     [rawDocument] = rawDocuments;
   });
 
   describe('Base schema', () => {
+    describe('$protocolVersion', () => {
+      it('should be present', () => {
+        delete rawDocument.$protocolVersion;
+
+        const result = validateDocument(rawDocument, dataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('');
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal('$protocolVersion');
+      });
+
+      it('should be an integer', () => {
+        rawDocument.$protocolVersion = '1';
+
+        const result = validateDocument(rawDocument, dataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.$protocolVersion');
+        expect(error.keyword).to.equal('type');
+      });
+
+      it('should not be less than 0', () => {
+        rawDocument.$protocolVersion = -1;
+
+        const result = validateDocument(rawDocument, dataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.$protocolVersion');
+        expect(error.keyword).to.equal('minimum');
+      });
+
+      it('should not be greater than current Document protocol version (0)', () => {
+        rawDocument.$protocolVersion = 1;
+
+        const result = validateDocument(rawDocument, dataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.$protocolVersion');
+        expect(error.keyword).to.equal('maximum');
+      });
+
+      it('should be base58 encoded', () => {
+        rawDocument.$id = '&'.repeat(44);
+
+        const result = validateDocument(rawDocument, dataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.keyword).to.equal('pattern');
+        expect(error.dataPath).to.equal('.$id');
+      });
+    });
+
     describe('$id', () => {
       it('should be present', () => {
         delete rawDocument.$id;
@@ -147,7 +218,7 @@ describe('validateDocumentFactory', () => {
       it('should throw an error if getDocumentSchemaRef throws error', function it() {
         const someError = new Error();
 
-        this.sinonSandbox.stub(dataContract, 'getDocumentSchemaRef').throws(someError);
+        this.sinonSandbox.stub(DataContract.prototype, 'getDocumentSchemaRef').throws(someError);
 
         let error;
         try {
@@ -396,6 +467,23 @@ describe('validateDocumentFactory', () => {
 
     expect(error.getDataContract()).to.equal(dataContract);
     expect(error.getRawDocument()).to.equal(rawDocument);
+  });
+
+  it('return invalid result if binary field exceeds `maxLength`', () => {
+    const document = getDocumentsFixture(dataContract)[8];
+
+    document.data.binaryField = Buffer.alloc(32);
+
+    rawDocument = document.toJSON();
+
+    const result = validateDocument(rawDocument, dataContract);
+
+    expectJsonSchemaError(result);
+
+    const [error] = result.getErrors();
+
+    expect(error.dataPath).to.equal('.binaryField');
+    expect(error.keyword).to.equal('maxLength');
   });
 
   it('should return valid result is a document is valid', () => {

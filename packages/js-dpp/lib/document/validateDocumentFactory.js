@@ -47,18 +47,18 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    const documentSchemaRef = dataContract.getDocumentSchemaRef(
-      rawDocument.$type,
-    );
-
     const enrichedDataContract = enrichDataContractWithBaseSchema(
       dataContract,
       baseDocumentSchema,
       'document_base_',
     );
 
+    const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(
+      rawDocument.$type,
+    );
+
     const additionalSchemas = {
-      [dataContract.getJsonSchemaId()]: enrichedDataContract.toJSON(),
+      [enrichedDataContract.getJsonSchemaId()]: enrichedDataContract.toJSON(),
     };
 
     result.merge(

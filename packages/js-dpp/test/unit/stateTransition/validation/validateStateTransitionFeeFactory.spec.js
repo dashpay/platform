@@ -3,8 +3,8 @@ const validateStateTransitionFeeFactory = require('../../../../lib/stateTransiti
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
 const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getIdentityCreateSTFixture = require('../../../../lib/test/fixtures/getIdentityCreateSTFixture');
 const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const getIdentityTopUpTransitionFixture = require('../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
@@ -50,7 +50,7 @@ describe('validateStateTransitionFeeFactory', () => {
       getLockedTransactionOutputMock,
     );
     dataContract = getDataContractFixture();
-    documents = getDocumentsFixture();
+    documents = getDocumentsFixture(dataContract);
   });
 
   it('should return invalid result if balance is not enough', async () => {
@@ -98,7 +98,7 @@ describe('validateStateTransitionFeeFactory', () => {
       ownerId: getDocumentsFixture.ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
     identity.balance = Buffer.byteLength(stateTransition.serialize({ skipSignature: true }));
 
     const result = await validateStateTransitionFee(stateTransition);

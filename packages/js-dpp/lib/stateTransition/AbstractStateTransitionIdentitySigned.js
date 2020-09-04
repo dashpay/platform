@@ -114,28 +114,37 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   }
 
   /**
-   * @abstract
+   * Get state transition as plain object
+   *
    * @param {Object} [options]
-   * @return {{
-   * protocolVersion: number,
-   * type: number,
-   * [signature]: string,
-   * [signaturePublicKeyId]: number
-   * }}
+   * @param {boolean} [options.skipSignature]
+   *
+   * @return {Object}
    */
-  toJSON(options = {}) {
+  toObject(options = {}) {
     const skipSignature = !!options.skipSignature;
 
-    let json = super.toJSON(options);
+    let plainObject = super.toObject(options);
 
     if (!skipSignature) {
-      json = {
-        ...json,
+      plainObject = {
+        ...plainObject,
         signaturePublicKeyId: this.getSignaturePublicKeyId(),
       };
     }
 
-    return json;
+    return plainObject;
+  }
+
+  /**
+   * @protected
+   *
+   * @param {Object} rawStateTransition
+   *
+   * @return {Object}
+   */
+  static translateJsonToObject(rawStateTransition) {
+    return AbstractStateTransition.translateJsonToObject(rawStateTransition);
   }
 }
 

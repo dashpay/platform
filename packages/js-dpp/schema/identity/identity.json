@@ -1,6 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
   "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 0,
+      "$comment": "Maximum is the latest Identity protocol version"
+    },
     "id": {
       "type": "string",
       "minLength": 42,
@@ -18,6 +24,7 @@
     }
   },
   "required": [
+    "protocolVersion",
     "id",
     "publicKeys",
     "balance"

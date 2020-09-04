@@ -61,7 +61,7 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
                 }
                   break;
                 default:
-                  propertyValue = documentTransition.getData()[propertyName];
+                  propertyValue = documentTransition.get(propertyName);
               }
 
               if (propertyValue !== undefined) {
@@ -82,24 +82,33 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
 
     // 2. Fetch Document by indexed properties
     const fetchRawDocumentPromises = documentIndexQueries
-      .map(({
+      .filter(({ where }) => where.length > 0)
+      .map(async ({
         type,
         where,
         indexDefinition,
         documentTransition,
-      }) => (
-        stateRepository.fetchDocuments(
+      }) => {
+        const doc = await stateRepository.fetchDocuments(
           dataContract.getId(),
           type,
           { where },
-        )
-          .then((doc) => Object.assign(doc, {
-            indexDefinition,
-            documentTransition,
-          }))
-      ));
+        );
 
-    const fetchedDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
+        return Object.assign(doc, {
+          indexDefinition,
+          documentTransition,
+        });
+      });
+
+    let fetchedDocumentsByIndices;
+
+    try {
+      fetchedDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
+    } catch (e) {
+      result.addError(e);
+      return result;
+    }
 
     // 3. Create errors if duplicates found
     fetchedDocumentsByIndices

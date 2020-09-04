@@ -29,6 +29,7 @@ function applyIdentityCreateTransitionFactory(
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
 
     const identity = new Identity({
+      protocolVersion: stateTransition.getProtocolVersion(),
       id: stateTransition.getIdentityId(),
       publicKeys: stateTransition.getPublicKeys().map((key) => key.toJSON()),
       balance: creditsAmount,

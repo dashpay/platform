@@ -1,6 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
   "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 0,
+      "$comment": "Maximum is the latest Identity TopUp Transition protocol version"
+    },
     "lockedOutPoint": {
       "type": "string",
       "minLength": 48,
@@ -15,6 +21,7 @@
     }
   },
   "required": [
+    "protocolVersion",
     "lockedOutPoint",
     "identityId"
   ]

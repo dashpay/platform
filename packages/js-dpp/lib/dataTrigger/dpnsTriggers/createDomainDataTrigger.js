@@ -1,6 +1,4 @@
-const bs58 = require('bs58');
-
-const multihash = require('../../util/multihashDoubleSHA256');
+const hash = require('../../util/hash');
 
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../errors/DataTriggerConditionError');
@@ -18,12 +16,12 @@ const MAX_PRINTABLE_DOMAIN_NAME_LENGTH = 253;
  */
 async function createDomainDataTrigger(documentTransition, context, topLevelIdentity) {
   const {
-    nameHash,
     label,
     normalizedLabel,
     normalizedParentDomainName,
     preorderSalt,
     records,
+    subdomainRules,
   } = documentTransition.getData();
 
   const result = new DataTriggerExecutionResult();
@@ -44,30 +42,6 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
   }
 
-  const isHashValidMultihash = multihash.validate(Buffer.from(nameHash, 'hex'));
-
-  if (!isHashValidMultihash) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'nameHash is not a valid multihash',
-      ),
-    );
-  }
-
-  if (nameHash !== multihash.hash(Buffer.from(fullDomainName)).toString('hex')) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'Document nameHash doesn\'t match actual hash',
-      ),
-    );
-  }
-
   if (normalizedLabel !== label.toLowerCase()) {
     result.addError(
       new DataTriggerConditionError(
@@ -79,25 +53,24 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
   }
 
-  if (context.getOwnerId() !== records.dashIdentity) {
+  if (records.dashUniqueIdentityId && context.getOwnerId() !== records.dashUniqueIdentityId) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,
         context.getDataContract(),
         context.getOwnerId(),
-        'ownerId doesn\'t match dashIdentity',
+        'ownerId doesn\'t match dashUniqueIdentityId',
       ),
     );
   }
 
-  // TODO: Move this to DPNS contract
-  if (normalizedParentDomainName !== normalizedParentDomainName.toLowerCase()) {
+  if (records.dashAliasIdentityId && context.getOwnerId() !== records.dashAliasIdentityId) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,
         context.getDataContract(),
         context.getOwnerId(),
-        'Parent domain name is not normalized (e.g. contains non-lowercase letter)',
+        'ownerId doesn\'t match dashAliasIdentityId',
       ),
     );
   }
@@ -114,13 +87,20 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
   }
 
   if (normalizedParentDomainName.length > 0) {
-    const parentDomainHash = multihash.hash(Buffer.from(normalizedParentDomainName))
-      .toString('hex');
+    const parentDomainSegments = normalizedParentDomainName.split('.');
+
+    const parentDomainLabel = parentDomainSegments[0];
+    const grandParentDomainName = parentDomainSegments.slice(1).join('.');
 
     const [parentDomain] = await context.getStateRepository().fetchDocuments(
       context.getDataContract().getId(),
       documentTransition.getType(),
-      { where: [['nameHash', '==', parentDomainHash]] },
+      {
+        where: [
+          ['normalizedParentDomainName', '==', grandParentDomainName],
+          ['normalizedLabel', '==', parentDomainLabel],
+        ],
+      },
     );
 
     if (!parentDomain) {
@@ -129,19 +109,43 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
           documentTransition,
           context.getDataContract(),
           context.getOwnerId(),
-          'Can\'t find parent domain matching parent hash',
+          'Parent domain is not present',
+        ),
+      );
+
+      return result;
+    }
+
+    if (subdomainRules.allowSubdomains === true) {
+      result.addError(
+        new DataTriggerConditionError(
+          documentTransition,
+          context.getDataContract(),
+          context.getOwnerId(),
+          'Allowing subdomains registration is forbidden for non top level domains',
+        ),
+      );
+    }
+
+    if (parentDomain.getData().subdomainRules.allowSubdomains === false
+      && context.getOwnerId() !== parentDomain.getOwnerId()) {
+      result.addError(
+        new DataTriggerConditionError(
+          documentTransition,
+          context.getDataContract(),
+          context.getOwnerId(),
+          'The subdomain can be created only by the parent domain owner',
         ),
       );
     }
   }
 
-  const saltedPreorderDomainNameHashBuffer = Buffer.concat([
-    bs58.decode(preorderSalt),
-    Buffer.from(nameHash, 'hex'),
+  const saltedDomainBuffer = Buffer.concat([
+    preorderSalt,
+    Buffer.from(fullDomainName),
   ]);
 
-  const saltedDomainHash = multihash.hash(saltedPreorderDomainNameHashBuffer)
-    .toString('hex');
+  const saltedDomainHash = hash(saltedDomainBuffer);
 
   const [preorderDocument] = await context.getStateRepository()
     .fetchDocuments(

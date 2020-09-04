@@ -3,9 +3,10 @@ const AbstractDocumentTransition = require('./AbstractDocumentTransition');
 class DocumentDeleteTransition extends AbstractDocumentTransition {
   /**
    * @param {RawDocumentDeleteTransition} rawTransition
+   * @param {DataContract} dataContract
    */
-  constructor(rawTransition) {
-    super(rawTransition);
+  constructor(rawTransition, dataContract) {
+    super(rawTransition, dataContract);
 
     this.id = rawTransition.$id;
     this.type = rawTransition.$type;
@@ -39,16 +40,32 @@ class DocumentDeleteTransition extends AbstractDocumentTransition {
   }
 
   /**
-   * Get document transition as a plain object
+   * Get plain object representation
    *
-   * @return {RawDocumentDeleteTransition}
+   * @return {Object}
    */
-  toJSON() {
+  toObject() {
     return {
-      ...super.toJSON(),
+      ...super.toObject(),
       $id: this.getId(),
       $type: this.getType(),
     };
+  }
+
+  /**
+   * Create document transition from JSON
+   *
+   * @param {RawDocumentDeleteTransition} rawDocumentTransition
+   * @param {DataContract} dataContract
+   *
+   * @return {DocumentDeleteTransition}
+   */
+  static fromJSON(rawDocumentTransition, dataContract) {
+    const plainObjectDocumentTransition = AbstractDocumentTransition.translateJsonToObject(
+      rawDocumentTransition, dataContract,
+    );
+
+    return new DocumentDeleteTransition(plainObjectDocumentTransition, dataContract);
   }
 }
 

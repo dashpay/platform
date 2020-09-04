@@ -4,22 +4,33 @@ const IdentityPublicKey = require('./IdentityPublicKey');
 
 class Identity {
   /**
-   * @param {RawIdentity} [rawIdentity]
+   * @param {RawIdentity} rawIdentity
    */
-  constructor(rawIdentity = undefined) {
-    this.publicKeys = [];
-    this.balance = 0;
-
-    if (rawIdentity) {
-      this.id = rawIdentity.id;
-      this.balance = rawIdentity.balance;
-
-      if (rawIdentity.publicKeys) {
-        this.setPublicKeys(
-          rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
-        );
-      }
+  constructor(rawIdentity) {
+    if (Object.prototype.hasOwnProperty.call(rawIdentity, 'protocolVersion')) {
+      this.protocolVersion = rawIdentity.protocolVersion;
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentity, 'id')) {
+      this.id = rawIdentity.id;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentity, 'publicKeys')) {
+      this.publicKeys = rawIdentity.publicKeys.map((rawPublicKey) => (
+        new IdentityPublicKey(rawPublicKey)
+      ));
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentity, 'balance')) {
+      this.balance = rawIdentity.balance;
+    }
+  }
+
+  /**
+   * @returns {number}
+   */
+  getProtocolVersion() {
+    return this.protocolVersion;
   }
 
   /**
@@ -61,6 +72,7 @@ class Identity {
    */
   toJSON() {
     return {
+      protocolVersion: this.getProtocolVersion(),
       id: this.getId(),
       publicKeys: this.getPublicKeys()
         .map((publicKey) => publicKey.toJSON()),
@@ -107,7 +119,7 @@ class Identity {
    * Increase balance
    *
    * @param {number} amount
-   * @return {Identity}
+   * @return {number}
    */
   increaseBalance(amount) {
     this.balance += amount;
@@ -119,7 +131,7 @@ class Identity {
    * Reduce balance
    *
    * @param {number} amount
-   * @return {Identity}
+   * @return {number}
    */
   reduceBalance(amount) {
     this.balance -= amount;
@@ -148,5 +160,15 @@ class Identity {
     return this.lockedOutPoint;
   }
 }
+
+/**
+ * @typedef {Object} RawIdentity
+ * @property {number} protocolVersion
+ * @property {string} id
+ * @property {RawIdentityPublicKey[]} publicKeys
+ * @property {number} balance
+ */
+
+Identity.PROTOCOL_VERSION = 0;
 
 module.exports = Identity;

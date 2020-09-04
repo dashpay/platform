@@ -107,19 +107,44 @@ class IdentityCreateTransition extends AbstractStateTransition {
   }
 
   /**
-   * Get Documents State Transition as plain object
+   * Get state transition as plain object
    *
    * @param {Object} [options]
-   * @return {RawIdentityCreateTransition}
+   * @param {boolean} [options.skipSignature]
+   *
+   * @return {Object}
    */
-  toJSON(options) {
+  toObject(options = {}) {
     return {
-      ...super.toJSON(options),
+      ...super.toObject(options),
       lockedOutPoint: this.getLockedOutPoint(),
-      publicKeys: this.getPublicKeys()
-        .map((publicKey) => publicKey.toJSON()),
+      publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toJSON()),
     };
   }
+
+  /**
+   * Create state transition from JSON
+   *
+   * @param {RawIdentityCreateTransition} rawStateTransition
+   *
+   * @return {IdentityCreateTransition}
+   */
+  static fromJSON(rawStateTransition) {
+    return new IdentityCreateTransition(
+      AbstractStateTransition.translateJsonToObject(rawStateTransition),
+    );
+  }
 }
+
+/**
+ * @typedef {Object} RawIdentityCreateTransition
+ * @extends AbstractStateTransition
+ * @property {number} protocolVersion
+ * @property {number} type
+ * @property {string} lockedOutPoint
+ * @property {RawIdentityPublicKey[]} publicKeys
+ * @property {number|null} signaturePublicKeyId
+ * @property {string|null} signature
+ */
 
 module.exports = IdentityCreateTransition;

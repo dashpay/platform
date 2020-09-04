@@ -9,7 +9,7 @@ const DataTriggerConditionError = require('../../errors/DataTriggerConditionErro
  *
  * @return {Promise<DataTriggerExecutionResult>}
  */
-async function updateDomainDataTrigger(documentTransition, context) {
+async function rejectUpdateDataTrigger(documentTransition, context) {
   const result = new DataTriggerExecutionResult();
 
   result.addError(
@@ -24,4 +24,4 @@ async function updateDomainDataTrigger(documentTransition, context) {
   return result;
 }
 
-module.exports = updateDomainDataTrigger;
+module.exports = rejectUpdateDataTrigger;

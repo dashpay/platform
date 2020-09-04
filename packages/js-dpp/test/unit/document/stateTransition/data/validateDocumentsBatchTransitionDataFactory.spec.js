@@ -7,6 +7,7 @@ const DataTriggerExecutionContext = require('../../../../../lib/dataTrigger/Data
 const DataTriggerExecutionError = require('../../../../../lib/errors/DataTriggerExecutionError');
 const DataTriggerExecutionResult = require('../../../../../lib/dataTrigger/DataTriggerExecutionResult');
 
+const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
@@ -40,10 +41,11 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
   let documentTransitions;
   let abciHeader;
   let fakeTime;
+  let validatePartialCompoundIndicesMock;
 
   beforeEach(function beforeEach() {
-    documents = getDocumentsFixture();
-    dataContract = getDocumentsFixture.dataContract;
+    dataContract = getDataContractFixture();
+    documents = getDocumentsFixture(dataContract);
     ownerId = getDocumentsFixture.ownerId;
 
     documentTransitions = getDocumentTransitionsFixture({
@@ -53,7 +55,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
 
     const timeInSeconds = Math.ceil(new Date().getTime() / 1000);
 
@@ -80,10 +82,14 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     validateDocumentsUniquenessByIndicesMock = this.sinonSandbox.stub();
     validateDocumentsUniquenessByIndicesMock.resolves(new ValidationResult());
 
+    validatePartialCompoundIndicesMock = this.sinonSandbox.stub();
+    validatePartialCompoundIndicesMock.returns(new ValidationResult());
+
     validateData = validateDocumentsBatchTransitionDataFactory(
       stateRepositoryMock,
       fetchDocumentsMock,
       validateDocumentsUniquenessByIndicesMock,
+      validatePartialCompoundIndicesMock,
       executeDataTriggersMock,
     );
 
@@ -111,6 +117,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
     expect(fetchDocumentsMock).to.have.not.been.called();
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+    expect(validatePartialCompoundIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
@@ -130,11 +137,12 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       dataContract.getId(),
     );
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      documentTransitions,
+    expect(fetchDocumentsMock.getCall(0).args[0].map((t) => t.toJSON())).to.have.deep.members(
+      documentTransitions.map((t) => t.toJSON()),
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+    expect(validatePartialCompoundIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
@@ -148,7 +156,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
 
     const result = await validateData(stateTransition);
 
@@ -167,6 +175,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+    expect(validatePartialCompoundIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
@@ -180,7 +189,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
 
     const result = await validateData(stateTransition);
 
@@ -199,11 +208,12 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+    expect(validatePartialCompoundIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
   it('should return invalid result if document transition with action "replace" has wrong revision', async () => {
-    const replaceDocument = new Document(documents[0].toJSON());
+    const replaceDocument = new Document(documents[0].toJSON(), dataContract);
     replaceDocument.setRevision(3);
 
     documentTransitions = getDocumentTransitionsFixture({
@@ -215,7 +225,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
 
     documents[0].setCreatedAt(replaceDocument.getCreatedAt());
     fetchDocumentsMock.resolves([documents[0]]);
@@ -238,14 +248,15 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+    expect(validatePartialCompoundIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
   it('should return invalid result if document transition with action "replace" has mismatch of ownerId with previous revision', async () => {
-    const replaceDocument = new Document(documents[0].toJSON());
+    const replaceDocument = new Document(documents[0].toJSON(), dataContract);
     replaceDocument.setRevision(1);
 
-    const fetchedDocument = new Document(documents[0].toJSON());
+    const fetchedDocument = new Document(documents[0].toJSON(), dataContract);
     fetchedDocument.ownerId = generateRandomId();
 
     documentTransitions = getDocumentTransitionsFixture({
@@ -257,7 +268,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
 
     fetchDocumentsMock.resolves([fetchedDocument]);
 
@@ -279,6 +290,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+    expect(validatePartialCompoundIndicesMock).to.have.not.been.called();
     expect(executeDataTriggersMock).to.have.not.been.called();
   });
 
@@ -287,7 +299,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
 
     stateTransition.transitions[0].getAction = () => 5;
 
@@ -312,6 +324,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       );
 
       expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+      expect(validatePartialCompoundIndicesMock).to.have.not.been.called();
       expect(executeDataTriggersMock).to.have.not.been.called();
     }
   });
@@ -339,12 +352,24 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       stateTransition.transitions,
     );
 
-    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
-      ownerId,
-      documentTransitions,
-      dataContract,
+    const [callOwnerId, callDocumentTransitions, callDataContract] = (
+      validateDocumentsUniquenessByIndicesMock.getCall(0).args
     );
+
+    const callArgs = [
+      callOwnerId,
+      callDocumentTransitions.map((t) => t.toJSON()),
+      callDataContract,
+    ];
+
+    expect(callArgs).to.have.deep.members([
+      ownerId,
+      documentTransitions.map((t) => t.toJSON()),
+      dataContract,
+    ]);
     expect(executeDataTriggersMock).to.have.not.been.called();
+
+    expect(validatePartialCompoundIndicesMock).to.have.been.calledOnce();
   });
 
   it('should return invalid result if data triggers execution failed', async () => {
@@ -381,16 +406,37 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       stateTransition.transitions,
     );
 
-    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
-      ownerId,
-      documentTransitions,
-      dataContract,
+    const [callOwnerId, callDocumentTransitions, callDataContract] = (
+      validateDocumentsUniquenessByIndicesMock.getCall(0).args
     );
 
-    expect(executeDataTriggersMock).to.have.been.calledOnceWithExactly(
-      documentTransitions,
-      dataTriggersExecutionContext,
+    const callArgs = [
+      callOwnerId,
+      callDocumentTransitions.map((t) => t.toJSON()),
+      callDataContract,
+    ];
+
+    expect(callArgs).to.have.deep.members([
+      ownerId,
+      documentTransitions.map((t) => t.toJSON()),
+      dataContract,
+    ]);
+
+    const [triggerCallDocumentTransitions, triggerCallDataTriggersExecutionContext] = (
+      executeDataTriggersMock.getCall(0).args
     );
+
+    const triggerCallArgs = [
+      triggerCallDocumentTransitions.map((t) => t.toJSON()),
+      triggerCallDataTriggersExecutionContext,
+    ];
+
+    expect(triggerCallArgs).to.have.deep.members([
+      documentTransitions.map((t) => t.toJSON()),
+      dataTriggersExecutionContext,
+    ]);
+
+    expect(validatePartialCompoundIndicesMock).to.have.been.calledOnce();
   });
 
   describe('Timestamps', () => {
@@ -404,7 +450,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
           ownerId,
           contractId: dataContract.getId(),
           transitions: documentTransitions.map((t) => t.toJSON()),
-        });
+        }, [dataContract]);
 
         stateTransition.transitions.forEach((t) => {
           // eslint-disable-next-line no-param-reassign
@@ -431,7 +477,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
           ownerId,
           contractId: dataContract.getId(),
           transitions: documentTransitions.map((t) => t.toJSON()),
-        });
+        }, [dataContract]);
 
         stateTransition.transitions.forEach((t) => {
           // eslint-disable-next-line no-param-reassign
@@ -464,7 +510,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
           ownerId,
           contractId: dataContract.getId(),
           transitions: documentTransitions.map((t) => t.toJSON()),
-        });
+        }, [dataContract]);
 
         stateTransition.transitions.forEach((t) => {
           // eslint-disable-next-line no-param-reassign
@@ -500,7 +546,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
           ownerId,
           contractId: dataContract.getId(),
           transitions: documentTransitions.map((t) => t.toJSON()),
-        });
+        }, [dataContract]);
 
         documents[1].updatedAt.setMinutes(
           documents[1].updatedAt.getMinutes() - 6,
@@ -532,8 +578,8 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
   it('should return valid result if document transitions are valid', async () => {
     const fetchedDocuments = [
-      new Document(documents[1].toJSON()),
-      new Document(documents[2].toJSON()),
+      new Document(documents[1].toJSON(), dataContract),
+      new Document(documents[2].toJSON(), dataContract),
     ];
 
     fetchDocumentsMock.resolves(fetchedDocuments);
@@ -551,7 +597,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toJSON()),
-    });
+    }, [dataContract]);
 
     const dataTriggersExecutionContext = new DataTriggerExecutionContext(
       stateRepositoryMock,
@@ -582,9 +628,64 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       dataContract,
     );
 
+    expect(validatePartialCompoundIndicesMock).to.have.been.calledOnceWithExactly(
+      ownerId,
+      [documentTransitions[0]],
+      dataContract,
+    );
+
     expect(executeDataTriggersMock).to.have.been.calledOnceWithExactly(
       documentTransitions,
       dataTriggersExecutionContext,
     );
+  });
+
+  it('should return invalid result if document has partially set compound index data', async () => {
+    const inconsistentCompoundIndexDataError = new ConsensusError('error');
+
+    validatePartialCompoundIndicesMock.returns(
+      new ValidationResult([inconsistentCompoundIndexDataError]),
+    );
+
+    const fetchedDocuments = [
+      new Document(documents[1].toJSON(), dataContract),
+      new Document(documents[2].toJSON(), dataContract),
+    ];
+
+    fetchDocumentsMock.resolves(fetchedDocuments);
+
+    documentTransitions = getDocumentTransitionsFixture({
+      create: [],
+      replace: [documents[1]],
+      delete: [documents[2]],
+    });
+
+    stateTransition = new DocumentsBatchTransition({
+      ownerId,
+      contractId: dataContract.getId(),
+      transitions: documentTransitions.map((t) => t.toJSON()),
+    }, [dataContract]);
+
+    const result = await validateData(stateTransition);
+
+    expectValidationError(result);
+
+    const [error] = result.getErrors();
+
+    expect(error).to.equal(inconsistentCompoundIndexDataError);
+
+    expect(validatePartialCompoundIndicesMock).to.have.been.calledOnceWithExactly(
+      ownerId,
+      [documentTransitions[0]],
+      dataContract,
+    );
+
+    expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
+      ownerId,
+      [documentTransitions[0]],
+      dataContract,
+    );
+
+    expect(executeDataTriggersMock).to.have.not.been.called();
   });
 });

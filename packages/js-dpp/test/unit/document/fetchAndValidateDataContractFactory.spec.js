@@ -18,9 +18,9 @@ describe('fetchAndValidateDataContractFactory', () => {
   let document;
 
   beforeEach(function beforeEach() {
-    [document] = getDocumentsFixture();
-
     const dataContract = getDataContractFixture();
+
+    [document] = getDocumentsFixture(dataContract);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 

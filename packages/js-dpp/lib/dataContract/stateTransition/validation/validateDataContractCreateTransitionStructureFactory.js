@@ -21,37 +21,37 @@ function validateDataContractCreateTransitionStructureFactory(
 ) {
   /**
    * @typedef validateDataContractCreateTransitionStructure
-   * @param {RawDataContractCreateTransition} rawStateTransition
+   * @param {RawDataContractCreateTransition} stateTransitionJson
    * @return {ValidationResult}
    */
-  async function validateDataContractCreateTransitionStructure(rawStateTransition) {
+  async function validateDataContractCreateTransitionStructure(stateTransitionJson) {
     const result = new ValidationResult();
 
     result.merge(
-      await validateDataContract(rawStateTransition.dataContract),
+      await validateDataContract(stateTransitionJson.dataContract),
     );
 
     if (!result.isValid()) {
       return result;
     }
 
-    const dataContract = new DataContract(rawStateTransition.dataContract);
+    const dataContract = new DataContract(stateTransitionJson.dataContract);
     const dataContractId = dataContract.getId();
 
-    if (!entropy.validate(rawStateTransition.entropy)) {
+    if (!entropy.validate(stateTransitionJson.entropy)) {
       result.addError(
-        new InvalidDataContractEntropyError(rawStateTransition.dataContract),
+        new InvalidDataContractEntropyError(stateTransitionJson.dataContract),
       );
       return result;
     }
 
     const generatedId = generateDataContractId(
-      dataContract.getOwnerId(), rawStateTransition.entropy,
+      dataContract.getOwnerId(), stateTransitionJson.entropy,
     );
 
     if (generatedId !== dataContractId) {
       result.addError(
-        new InvalidDataContractIdError(rawStateTransition.dataContract),
+        new InvalidDataContractIdError(stateTransitionJson.dataContract),
       );
       return result;
     }
@@ -66,7 +66,7 @@ function validateDataContractCreateTransitionStructureFactory(
     }
 
     // Verify ST signature
-    const stateTransition = new DataContractCreateTransition(rawStateTransition);
+    const stateTransition = DataContractCreateTransition.fromJSON(stateTransitionJson);
 
     result.merge(
       await validateStateTransitionSignature(stateTransition, dataContract.getOwnerId()),

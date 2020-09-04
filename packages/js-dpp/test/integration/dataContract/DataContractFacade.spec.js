@@ -8,14 +8,19 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
+const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
+
 describe('DataContractFacade', () => {
   let dpp;
   let dataContract;
+  let dataContractFactory;
 
   beforeEach(() => {
     dpp = new DashPlatformProtocol();
 
     dataContract = getDataContractFixture();
+
+    dataContractFactory = new DataContractFactory(undefined);
   });
 
   describe('create', () => {
@@ -54,10 +59,7 @@ describe('DataContractFacade', () => {
 
   describe('createStateTransition', () => {
     it('should create DataContractCreateTransition from DataContract', () => {
-      const stateTransition = new DataContractCreateTransition({
-        dataContract: dataContract.toJSON(),
-        entropy: dataContract.getEntropy(),
-      });
+      const stateTransition = dataContractFactory.createStateTransition(dataContract);
 
       const result = dpp.dataContract.createStateTransition(dataContract);
 

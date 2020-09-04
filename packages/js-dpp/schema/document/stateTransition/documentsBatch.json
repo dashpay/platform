@@ -1,6 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
   "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 0,
+      "$comment": "Maximum is the latest Documents Batch Transition protocol version"
+    },
     "ownerId": {
       "type": "string",
       "minLength": 42,
@@ -17,6 +23,7 @@
     }
   },
   "required": [
+    "protocolVersion",
     "ownerId",
     "transitions"
   ]

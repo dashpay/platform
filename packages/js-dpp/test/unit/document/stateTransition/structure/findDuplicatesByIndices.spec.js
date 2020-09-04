@@ -57,19 +57,25 @@ describe('findDuplicatesByIndices', () => {
       additionalProperties: false,
     });
 
-    documents = getDocumentsFixture();
+    documents = getDocumentsFixture(contract);
+    documents.forEach((doc) => {
+      // eslint-disable-next-line no-param-reassign
+      doc.dataContract = contract;
+      // eslint-disable-next-line no-param-reassign
+      doc.dataContractId = contract.getId();
+    });
 
     const [, , , william] = documents;
 
     documents.push(new Document({
       ...william.toJSON(),
       $type: 'nonUniqueIndexDocument',
-    }));
+    }, contract));
 
     documents.push(new Document({
       ...william.toJSON(),
       $type: 'singleDocument',
-    }));
+    }, contract));
 
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,

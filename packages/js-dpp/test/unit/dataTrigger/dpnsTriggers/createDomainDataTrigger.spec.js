@@ -1,17 +1,15 @@
-const bs58 = require('bs58');
-
 const createDomainDataTrigger = require('../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 
 const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTriggerExecutionContext');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 
-const { getParentDocumentFixture, getChildDocumentFixture } = require('../../../../lib/test/fixtures/getDpnsDocumentFixture');
+const { getParentDocumentFixture, getChildDocumentFixture, getTopDocumentFixture } = require('../../../../lib/test/fixtures/getDpnsDocumentFixture');
 const getPreorderDocumentFixture = require('../../../../lib/test/fixtures/getPreorderDocumentFixture');
 const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsContractFixture');
 const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
-const multihash = require('../../../../lib/util/multihashDoubleSHA256');
+const hash = require('../../../../lib/util/hash');
 
 const DataTriggerConditionError = require('../../../../lib/errors/DataTriggerConditionError');
 
@@ -19,6 +17,8 @@ describe('createDomainDataTrigger', () => {
   let parentDocumentTransition;
   let childDocumentTransition;
   let childDocument;
+  let parentDocument;
+  let topDocument;
   let context;
   let stateRepositoryMock;
   let dataContract;
@@ -27,7 +27,8 @@ describe('createDomainDataTrigger', () => {
   beforeEach(function beforeEach() {
     dataContract = getDpnsContractFixture();
 
-    const parentDocument = getParentDocumentFixture();
+    topDocument = getTopDocumentFixture();
+    parentDocument = getParentDocumentFixture();
     childDocument = getChildDocumentFixture();
     const preorderDocument = getPreorderDocumentFixture();
 
@@ -40,31 +41,41 @@ describe('createDomainDataTrigger', () => {
     });
 
     const {
-      preorderSalt, nameHash, records, normalizedParentDomainName,
+      preorderSalt, records, normalizedParentDomainName, normalizedLabel,
     } = childDocument.getData();
 
-    const parentDomainHash = multihash.hash(
-      Buffer.from(normalizedParentDomainName),
-    ).toString('hex');
+    let fullDomainName = normalizedLabel;
+    if (normalizedParentDomainName.length > 0) {
+      fullDomainName = `${normalizedLabel}.${normalizedParentDomainName}`;
+    }
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDocuments.resolves([]);
+
+    const [normalizedParentLabel] = normalizedParentDomainName.split('.');
+    const normalizedGrandParentDomainName = normalizedParentDomainName.split('.')
+      .slice(1)
+      .join('.');
+
     stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId(),
         childDocument.getType(),
-        { where: [['nameHash', '==', parentDomainHash]] },
+        {
+          where: [
+            ['normalizedParentDomainName', '==', normalizedGrandParentDomainName],
+            ['normalizedLabel', '==', normalizedParentLabel],
+          ],
+        },
       )
-      .resolves([parentDocument.toJSON()]);
+      .resolves([parentDocument]);
 
     const saltedDomainHashBuffer = Buffer.concat([
-      bs58.decode(preorderSalt),
-      Buffer.from(nameHash, 'hex'),
+      preorderSalt,
+      Buffer.from(fullDomainName),
     ]);
 
-    const saltedDomainHash = multihash.hash(
-      saltedDomainHashBuffer,
-    ).toString('hex');
+    const saltedDomainHash = hash(saltedDomainHashBuffer);
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
@@ -78,13 +89,13 @@ describe('createDomainDataTrigger', () => {
 
     stateRepositoryMock.fetchTransaction
       .withArgs(
-        records.dashIdentity,
+        records.dashUniqueIdentityId,
       )
       .resolves({ confirmations: 10 });
 
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
-      records.dashIdentity,
+      records.dashUniqueIdentityId,
       dataContract,
     );
 
@@ -99,38 +110,11 @@ describe('createDomainDataTrigger', () => {
     expect(result.isOk()).to.be.true();
   });
 
-  it('should fail with invalid hash', async () => {
-    childDocument = getChildDocumentFixture({
-      nameHash: multihash.hash(Buffer.from('invalidHash')).toString('hex'),
-    });
-    stateRepositoryMock.fetchTransaction
-      .withArgs(
-        childDocument.getData().records.dashIdentity,
-      )
-      .resolves({ confirmations: 10 });
-
-    [childDocumentTransition] = getDocumentTransitionFixture({
-      create: [childDocument],
-    });
-
-    const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
-    );
-
-    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(result.isOk()).to.be.false();
-
-    const [error] = result.getErrors();
-
-    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('Document nameHash doesn\'t match actual hash');
-  });
-
   it('should fail with invalid normalizedLabel', async () => {
     childDocument = getChildDocumentFixture({ normalizedLabel: childDocument.getData().label });
     stateRepositoryMock.fetchTransaction
       .withArgs(
-        childDocument.getData().records.dashIdentity,
+        childDocument.getData().records.dashUniqueIdentityId,
       )
       .resolves({ confirmations: 10 });
 
@@ -155,13 +139,12 @@ describe('createDomainDataTrigger', () => {
     childDocument = getChildDocumentFixture({
       label: 'label',
       normalizedLabel: 'label',
-      nameHash: multihash.hash(Buffer.from('label.invalidname')).toString('hex'),
-      normalizedParentDomainName: 'invalidname',
+      normalizedParentDomainName: 'parent.invalidname',
     });
 
     stateRepositoryMock.fetchTransaction
       .withArgs(
-        childDocument.getData().records.dashIdentity,
+        childDocument.getData().records.dashUniqueIdentityId,
       )
       .resolves({ confirmations: 10 });
 
@@ -179,13 +162,24 @@ describe('createDomainDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('Can\'t find parent domain matching parent hash');
+    expect(error.message).to.equal('Parent domain is not present');
+
+    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnceWithExactly(
+      context.getDataContract().getId(),
+      'domain',
+      {
+        where: [
+          ['normalizedParentDomainName', '==', 'invalidname'],
+          ['normalizedLabel', '==', 'parent'],
+        ],
+      },
+    );
   });
 
-  it('should fail with invalid ownerId', async () => {
+  it('should fail with invalid dashUniqueIdentityId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
-        dashIdentity: 'invalidHash',
+        dashUniqueIdentityId: 'invalidHash',
       },
     });
 
@@ -203,12 +197,36 @@ describe('createDomainDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('ownerId doesn\'t match dashIdentity');
+    expect(error.message).to.equal('ownerId doesn\'t match dashUniqueIdentityId');
+  });
+
+  it('should fail with invalid dashAliasIdentityId', async () => {
+    childDocument = getChildDocumentFixture({
+      records: {
+        dashAliasIdentityId: 'invalidHash',
+      },
+    });
+
+    [childDocumentTransition] = getDocumentTransitionFixture({
+      create: [childDocument],
+    });
+
+    const result = await createDomainDataTrigger(
+      childDocumentTransition, context, topLevelIdentity,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal('ownerId doesn\'t match dashAliasIdentityId');
   });
 
   it('should fail with preorder document was not found', async () => {
     childDocument = getChildDocumentFixture({
-      preorderSalt: bs58.encode(Buffer.alloc(256, '012fd')),
+      preorderSalt: Buffer.alloc(256, '012fd'),
     });
 
     [childDocumentTransition] = getDocumentTransitionFixture({
@@ -226,28 +244,6 @@ describe('createDomainDataTrigger', () => {
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
     expect(error.message).to.equal('preorderDocument was not found');
-  });
-
-  it('should fail with hash not being a valid multihash', async () => {
-    childDocument = getChildDocumentFixture({
-      nameHash: '01',
-    });
-
-    [childDocumentTransition] = getDocumentTransitionFixture({
-      create: [childDocument],
-    });
-
-    const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
-    );
-
-    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(result.isOk()).to.be.false();
-
-    const [error] = result.getErrors();
-
-    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('nameHash is not a valid multihash');
   });
 
   it('should fail with invalid full domain name length', async () => {
@@ -274,34 +270,8 @@ describe('createDomainDataTrigger', () => {
     );
   });
 
-  it('should fail with normalizedParentDomainName not being lower case', async () => {
-    childDocument = getChildDocumentFixture({
-      nameHash: multihash.hash(Buffer.from('child.Parent.domain')).toString('hex'),
-      normalizedParentDomainName: 'Parent.domain',
-    });
-
-    [childDocumentTransition] = getDocumentTransitionFixture({
-      create: [childDocument],
-    });
-
-    const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
-    );
-
-    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(result.isOk()).to.be.false();
-
-    const [error] = result.getErrors();
-
-    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal(
-      'Parent domain name is not normalized (e.g. contains non-lowercase letter)',
-    );
-  });
-
   it('should fail with identity can\'t create top level domain', async () => {
     parentDocumentTransition.data.normalizedParentDomainName = '';
-    parentDocumentTransition.data.nameHash = multihash.hash(Buffer.from('parent')).toString('hex');
 
     topLevelIdentity = 'someIdentity';
 
@@ -318,5 +288,56 @@ describe('createDomainDataTrigger', () => {
     expect(error.message).to.equal(
       'Can\'t create top level domain for this identity',
     );
+  });
+
+  it('should fail with disallowed domain creation', async () => {
+    parentDocument.ownerId = 'newId';
+
+    const result = await createDomainDataTrigger(
+      childDocumentTransition, context, topLevelIdentity,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal(
+      'The subdomain can be created only by the parent domain owner',
+    );
+  });
+
+  it('should fail with allowing subdomains for non top level domain', async () => {
+    childDocument = getChildDocumentFixture({ subdomainRules: { allowSubdomains: true } });
+
+    [childDocumentTransition] = getDocumentTransitionFixture({
+      create: [childDocument],
+    });
+
+    const result = await createDomainDataTrigger(
+      childDocumentTransition, context, topLevelIdentity,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal(
+      'Allowing subdomains registration is forbidden for non top level domains',
+    );
+  });
+
+  it('should allow creating a second level domain by any identity', async () => {
+    topDocument.ownerId = 'anotherId';
+
+    stateRepositoryMock.fetchDocuments.resolves([topDocument]);
+
+    const result = await createDomainDataTrigger(
+      parentDocumentTransition, context, topLevelIdentity,
+    );
+
+    expect(result.isOk()).to.be.true();
   });
 });

@@ -34,6 +34,7 @@ class IdentityFactory {
     );
 
     const identity = new Identity({
+      protocolVersion: Identity.PROTOCOL_VERSION,
       id,
       balance: 0,
       publicKeys: publicKeys.map((publicKey, i) => ({
@@ -61,15 +62,17 @@ class IdentityFactory {
   createFromObject(rawIdentity, options = {}) {
     const opts = { skipValidation: false, ...options };
 
+    const identity = new Identity(rawIdentity);
+
     if (!opts.skipValidation) {
-      const result = this.validateIdentity(rawIdentity);
+      const result = this.validateIdentity(identity.toJSON());
 
       if (!result.isValid()) {
         throw new InvalidIdentityError(result.getErrors(), rawIdentity);
       }
     }
 
-    return new Identity(rawIdentity);
+    return identity;
   }
 
   /**
@@ -106,6 +109,7 @@ class IdentityFactory {
     const lockedOutPoint = identity.getLockedOutPoint().toString('base64');
 
     const stateTransition = new IdentityCreateTransition({
+      protocolVersion: Identity.PROTOCOL_VERSION,
       lockedOutPoint,
     });
 
@@ -125,6 +129,7 @@ class IdentityFactory {
     const lockedOutPoint = lockedOutPointBuffer.toString('base64');
 
     return new IdentityTopUpTransition({
+      protocolVersion: Identity.PROTOCOL_VERSION,
       identityId,
       lockedOutPoint,
     });

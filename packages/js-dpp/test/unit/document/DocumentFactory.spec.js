@@ -41,7 +41,7 @@ describe('DocumentFactory', () => {
     ({ ownerId } = getDocumentsFixture);
     dataContract = getDataContractFixture();
 
-    documents = getDocumentsFixture();
+    documents = getDocumentsFixture(dataContract);
     ([,,, document] = documents);
     rawDocument = document.toJSON();
 
@@ -145,14 +145,23 @@ describe('DocumentFactory', () => {
       );
     });
 
-    it('should return new Document without validation if "skipValidation" option is passed', async () => {
+    it('should return new Document without validation if "skipValidation" option is passed', async function it() {
+      const resultMock = {
+        isValid: () => true,
+        merge: this.sinonSandbox.stub(),
+        getData: () => getDataContractFixture(),
+      };
+
+      fetchAndValidateDataContractMock.resolves(resultMock);
+
       const result = await factory.createFromObject(rawDocument, { skipValidation: true });
 
       expect(result).to.be.an.instanceOf(Document);
       expect(result.toJSON()).to.deep.equal(rawDocument);
 
-      expect(fetchAndValidateDataContractMock).to.have.not.been.called();
+      expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(rawDocument);
       expect(validateDocumentMock).to.have.not.been.called();
+      expect(resultMock.merge).to.have.not.been.called();
     });
 
     it('should throw InvalidDocumentError if passed object is not valid', async () => {
@@ -210,12 +219,14 @@ describe('DocumentFactory', () => {
   describe('createFromSerialized', () => {
     beforeEach(function beforeEach() {
       this.sinonSandbox.stub(factory, 'createFromObject');
+      // eslint-disable-next-line prefer-destructuring
+      document = documents[8]; // document with binary fields
     });
 
-    it('should return new Data Contract from serialized Contract', async () => {
+    it('should return new Document from serialized one', async () => {
       const serializedDocument = document.serialize();
 
-      decodeMock.returns(rawDocument);
+      decodeMock.returns(document.toObject());
 
       factory.createFromObject.returns(document);
 
@@ -223,7 +234,7 @@ describe('DocumentFactory', () => {
 
       expect(result).to.equal(document);
 
-      expect(factory.createFromObject).to.have.been.calledOnceWith(rawDocument);
+      expect(factory.createFromObject).to.have.been.calledOnceWith(document.toObject());
 
       expect(decodeMock).to.have.been.calledOnceWith(serializedDocument);
     });
@@ -299,7 +310,7 @@ describe('DocumentFactory', () => {
     });
 
     it('should create DocumentsBatchTransition with passed documents', () => {
-      const [newDocument] = getDocumentsFixture();
+      const [newDocument] = getDocumentsFixture(dataContract);
 
       fakeTime.tick(1000);
 

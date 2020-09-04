@@ -15,14 +15,23 @@ const actionsToClasses = {
 class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   /**
    * @param {RawDocumentsBatchTransition} [rawStateTransition]
+   * @param {DataContract[]} dataContracts
    */
-  constructor(rawStateTransition = {}) {
+  constructor(rawStateTransition = {}, dataContracts) {
     super(rawStateTransition);
 
     this.ownerId = rawStateTransition.ownerId;
 
+    const dataContractsMap = dataContracts.reduce((map, dataContract) => ({
+      ...map,
+      [dataContract.getId()]: dataContract,
+    }), {});
+
     this.transitions = (rawStateTransition.transitions || []).map((rawDocumentTransition) => (
-      new actionsToClasses[rawDocumentTransition.$action](rawDocumentTransition)
+      new actionsToClasses[rawDocumentTransition.$action](
+        rawDocumentTransition,
+        dataContractsMap[rawDocumentTransition.$dataContractId],
+      )
     ));
   }
 
@@ -54,17 +63,68 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   }
 
   /**
-   * Get Documents State Transition as plain object
+   * Get state transition as plain object
    *
    * @param {Object} [options]
-   * @return {RawDocumentsBatchTransition}
+   * @param {boolean} [options.skipSignature]
+   *
+   * @return {Object}
+   */
+  toObject(options = {}) {
+    return {
+      ...super.toObject(options),
+      ownerId: this.getOwnerId(),
+      transitions: this.getTransitions().map((t) => t.toObject()),
+    };
+  }
+
+  /**
+   * Get state transition as JSON
+   *
+   * @param {Object} [options]
+   * @param {boolean} [options.skipSignature]
+   *
+   * @return {Object}
    */
   toJSON(options = {}) {
-    return {
-      ...super.toJSON(options),
-      ownerId: this.getOwnerId(),
-      transitions: this.getTransitions().map((t) => t.toJSON()),
-    };
+    const json = super.toJSON(options);
+
+    // overwrite plain object transitions
+    json.transitions = this.getTransitions().map((t) => t.toJSON());
+
+    return json;
+  }
+
+  /**
+   * Create state transition from JSON
+   *
+   * @param {RawDocumentsBatchTransition} rawStateTransition
+   * @param {DataContract[]} dataContracts
+   *
+   * @return {DocumentsBatchTransition}
+   */
+  static fromJSON(rawStateTransition, dataContracts) {
+    const plainObject = AbstractStateTransitionIdentitySigned
+      .translateJsonToObject(rawStateTransition);
+
+    const dataContractsMap = dataContracts.reduce((map, dataContract) => (
+      {
+        ...map,
+        [dataContract.getId()]: dataContract,
+      }
+    ), {});
+
+    plainObject.transitions = plainObject.transitions
+      .map((jsonTransition) => (
+        actionsToClasses[jsonTransition.$action]
+          .fromJSON(jsonTransition, dataContractsMap[jsonTransition.$dataContractId])
+          .toObject()
+      ));
+
+    return new DocumentsBatchTransition(
+      plainObject,
+      dataContracts,
+    );
   }
 }
 

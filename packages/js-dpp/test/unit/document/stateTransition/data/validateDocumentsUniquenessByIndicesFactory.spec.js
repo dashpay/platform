@@ -22,7 +22,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
   beforeEach(function beforeEach() {
     ({ ownerId } = getDocumentsFixture);
 
-    documents = getDocumentsFixture();
+    documents = getDocumentsFixture(dataContract);
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,
     });

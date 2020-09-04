@@ -8,7 +8,7 @@ const getDataContractFixture = require('../../../../lib/test/fixtures/getDataCon
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
-const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition');
+const DataContractFactory = require('../../../../lib/dataContract/DataContractFactory');
 
 const InvalidStateTransitionTypeError = require('../../../../lib/errors/InvalidStateTransitionTypeError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
@@ -16,9 +16,15 @@ const ConsensusError = require('../../../../lib/errors/ConsensusError');
 describe('validateStateTransitionDataFactory', () => {
   let validateDataContractSTDataMock;
   let validateStateTransitionData;
+  let stateTransition;
 
   beforeEach(function beforeEach() {
     validateDataContractSTDataMock = this.sinonSandbox.stub();
+
+    const dataContractFactory = new DataContractFactory(undefined);
+
+    const dataContract = getDataContractFixture();
+    stateTransition = dataContractFactory.createStateTransition(dataContract);
 
     validateStateTransitionData = validateStateTransitionDataFactory({
       [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractSTDataMock,
@@ -27,7 +33,7 @@ describe('validateStateTransitionDataFactory', () => {
 
   it('should return invalid result if State Transition type is invalid', async () => {
     const rawStateTransition = {};
-    const stateTransition = {
+    stateTransition = {
       getType() {
         return 4343;
       },
@@ -55,12 +61,6 @@ describe('validateStateTransitionDataFactory', () => {
 
     validateDataContractSTDataMock.resolves(dataContractResult);
 
-    const dataContract = getDataContractFixture();
-    const stateTransition = new DataContractCreateTransition({
-      dataContract: dataContract.toJSON(),
-      entropy: dataContract.getEntropy(),
-    });
-
     const result = await validateStateTransitionData(stateTransition);
 
     expectValidationError(result);
@@ -76,12 +76,6 @@ describe('validateStateTransitionDataFactory', () => {
     const dataContractResult = new ValidationResult();
 
     validateDataContractSTDataMock.resolves(dataContractResult);
-
-    const dataContract = getDataContractFixture();
-    const stateTransition = new DataContractCreateTransition({
-      dataContract: dataContract.toJSON(),
-      entropy: dataContract.getEntropy(),
-    });
 
     const result = await validateStateTransitionData(stateTransition);
 

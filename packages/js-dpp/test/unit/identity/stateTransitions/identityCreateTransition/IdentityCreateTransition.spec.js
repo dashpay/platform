@@ -6,6 +6,8 @@ const stateTransitionTypes = require(
   '../../../../../lib/stateTransition/stateTransitionTypes',
 );
 
+const Identity = require('../../../../../lib/identity/Identity');
+
 describe('IdentityCreateTransition', () => {
   let rawStateTransition;
   let stateTransition;
@@ -15,6 +17,7 @@ describe('IdentityCreateTransition', () => {
 
   beforeEach(function beforeEach() {
     rawStateTransition = {
+      protocolVersion: Identity.PROTOCOL_VERSION,
       lockedOutPoint: 'c3BlY2lhbEJ1ZmZlcg==',
       publicKeys: [
         {
@@ -145,7 +148,7 @@ describe('IdentityCreateTransition', () => {
       const jsonWithASig = stateTransition.toJSON();
 
       expect(jsonWithASig).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: Identity.PROTOCOL_VERSION,
         type: stateTransitionTypes.IDENTITY_CREATE,
         lockedOutPoint: rawStateTransition.lockedOutPoint,
         publicKeys: rawStateTransition.publicKeys,
@@ -155,7 +158,7 @@ describe('IdentityCreateTransition', () => {
       const jsonWithSig = stateTransition.toJSON({ skipSignature: true });
 
       expect(jsonWithSig).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: Identity.PROTOCOL_VERSION,
         type: stateTransitionTypes.IDENTITY_CREATE,
         lockedOutPoint: rawStateTransition.lockedOutPoint,
         publicKeys: rawStateTransition.publicKeys,

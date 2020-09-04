@@ -3,9 +3,10 @@ const AbstractDocumentTransition = require('./AbstractDocumentTransition');
 class DocumentCreateTransition extends AbstractDocumentTransition {
   /**
    * @param {RawDocumentCreateTransition} rawTransition
+   * @param {DataContract} dataContract
    */
-  constructor(rawTransition) {
-    super(rawTransition);
+  constructor(rawTransition, dataContract) {
+    super(rawTransition, dataContract);
 
     const data = { ...rawTransition };
 
@@ -96,28 +97,44 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
   }
 
   /**
-   * Get document transition as a plain object
+   * Get plain object representation
    *
-   * @return {RawDocumentCreateTransition}
+   * @return {Object}
    */
-  toJSON() {
-    const json = {
-      ...super.toJSON(),
+  toObject() {
+    const rawDocumentTransition = {
+      ...super.toObject(),
       $id: this.getId(),
       $type: this.getType(),
       $entropy: this.getEntropy(),
-      ...this.data,
+      ...this.getData(),
     };
 
-    if (this.getCreatedAt()) {
-      json.$createdAt = this.getCreatedAt().getTime();
+    if (this.createdAt) {
+      rawDocumentTransition.$createdAt = this.getCreatedAt().getTime();
     }
 
-    if (this.getUpdatedAt()) {
-      json.$updatedAt = this.getUpdatedAt().getTime();
+    if (this.updatedAt) {
+      rawDocumentTransition.$updatedAt = this.getUpdatedAt().getTime();
     }
 
-    return json;
+    return rawDocumentTransition;
+  }
+
+  /**
+   * Create document transition from JSON
+   *
+   * @param {RawDocumentCreateTransition} rawDocumentTransition
+   * @param {DataContract} dataContract
+   *
+   * @return {DocumentCreateTransition}
+   */
+  static fromJSON(rawDocumentTransition, dataContract) {
+    const plainObjectDocumentTransition = AbstractDocumentTransition.translateJsonToObject(
+      rawDocumentTransition, dataContract,
+    );
+
+    return new DocumentCreateTransition(plainObjectDocumentTransition, dataContract);
   }
 }
 

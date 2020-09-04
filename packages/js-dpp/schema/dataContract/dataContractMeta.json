@@ -146,14 +146,33 @@
         "format": {
           "$ref": "http://json-schema.org/draft-07/schema#/properties/format"
         },
-        "contentMediaType": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/contentMediaType"
-        },
         "contentEncoding": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/contentEncoding"
+          "type": "string",
+          "const": "base64"
         }
       },
       "dependencies": {
+        "contentEncoding": {
+          "description": "force to use base64 pattern without padding",
+          "if": {
+            "properties": {
+              "contentEncoding": {
+                "const": "base64"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "const": "^([A-Za-z0-9+/])*$"
+              }
+            },
+            "required": [
+              "pattern"
+            ]
+          }
+        },
         "uniqueItems": {
           "description": "prevent slow validation of large non-scalar arrays",
           "if": {
@@ -275,6 +294,12 @@
     }
   },
   "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 0,
+      "$comment": "Maximum is the latest Data Contract protocol version"
+    },
     "$schema": {
       "type": "string",
       "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
@@ -434,6 +459,7 @@
     }
   },
   "required": [
+    "protocolVersion",
     "$schema",
     "$id",
     "ownerId",

@@ -1,12 +1,17 @@
-const deleteDomainDataTrigger = require('../../../../lib/dataTrigger/dpnsTriggers/deleteDomainDataTrigger');
+const rejectDataTrigger = require('../../../../lib/dataTrigger/dpnsTriggers/rejectDataTrigger');
+
 const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTriggerExecutionContext');
+
 const { getChildDocumentFixture } = require('../../../../lib/test/fixtures/getDpnsDocumentFixture');
+
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
+
 const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsContractFixture');
 const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 
-describe('deleteDomainDataTrigger', () => {
+describe('rejectDataTrigger', () => {
   let documentTransition;
   let context;
   let stateRepositoryMock;
@@ -30,10 +35,10 @@ describe('deleteDomainDataTrigger', () => {
   });
 
   it('should always fail', async () => {
-    const result = await deleteDomainDataTrigger(documentTransition, context);
+    const result = await rejectDataTrigger(documentTransition, context);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(result.getErrors()[0].message).to.equal('Delete action is not allowed');
+    expect(result.getErrors()[0].message).to.equal('Action is not allowed');
     expect(result.isOk()).to.be.false();
   });
 });

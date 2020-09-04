@@ -15,6 +15,7 @@ const identityCreateTransitionSchema = require('../../schema/identity/stateTrans
 const identityTopUpTransitionSchema = require('../../schema/identity/stateTransition/identityTopUp');
 
 const createStateTransitionFactory = require('./createStateTransitionFactory');
+
 const validateDataContractFactory = require('../dataContract/validateDataContractFactory');
 const validateDataContractCreateTransitionStructureFactory = require('../dataContract/stateTransition/validation/validateDataContractCreateTransitionStructureFactory');
 const validateStateTransitionStructureFactory = require('./validation/validateStateTransitionStructureFactory');
@@ -38,6 +39,7 @@ const findDuplicatesByIndices = require('../document/stateTransition/validation/
 const validateDocumentsBatchTransitionDataFactory = require('../document/stateTransition/validation/data/validateDocumentsBatchTransitionDataFactory');
 const fetchDocumentsFactory = require('../document/stateTransition/validation/data/fetchDocumentsFactory');
 const validateDocumentsUniquenessByIndicesFactory = require('../document/stateTransition/validation/data/validateDocumentsUniquenessByIndicesFactory');
+const validatePartialCompoundIndices = require('../document/stateTransition/validation/data/validatePartialCompoundIndices');
 const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/validation/data/executeDataTriggersFactory');
 const validateIdentityExistenceFactory = require('./validation/validateIdentityExistenceFactory');
@@ -93,7 +95,7 @@ class StateTransitionFacade {
       validateIdentityExistence,
     );
 
-    this.createStateTransition = createStateTransitionFactory();
+    this.createStateTransition = createStateTransitionFactory(stateRepository);
 
     const validateDocumentsBatchTransitionStructure = (
       validateDocumentsBatchTransitionStructureFactory(
@@ -189,6 +191,7 @@ class StateTransitionFacade {
       stateRepository,
       fetchDocuments,
       validateDocumentsUniquenessByIndices,
+      validatePartialCompoundIndices,
       executeDataTriggers,
     );
 
@@ -297,7 +300,9 @@ class StateTransitionFacade {
     let stateTransitionModel = stateTransition;
 
     if (!(stateTransition instanceof AbstractStateTransition)) {
-      stateTransitionModel = this.createStateTransition(stateTransition);
+      stateTransitionModel = this.createStateTransition(stateTransition, {
+        fromJSON: true,
+      });
     }
 
     return this.validateData(stateTransitionModel);

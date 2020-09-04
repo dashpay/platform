@@ -10,19 +10,6 @@ describe('Identity', () => {
   let encodeMock;
 
   beforeEach(function beforeEach() {
-    rawIdentity = {
-      id: 'someId',
-      publicKeys: [
-        {
-          id: 0,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: 'somePublicKey',
-          isEnabled: true,
-        },
-      ],
-      balance: 0,
-    };
-
     hashMock = this.sinonSandbox.stub();
     encodeMock = this.sinonSandbox.stub();
 
@@ -36,18 +23,24 @@ describe('Identity', () => {
       },
     );
 
+    rawIdentity = {
+      protocolVersion: Identity.PROTOCOL_VERSION,
+      id: 'someId',
+      publicKeys: [
+        {
+          id: 0,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          data: 'somePublicKey',
+          isEnabled: true,
+        },
+      ],
+      balance: 0,
+    };
+
     identity = new Identity(rawIdentity);
   });
 
   describe('#constructor', () => {
-    it('should not set anything if nothing passed', () => {
-      const instance = new Identity();
-
-      expect(instance.id).to.be.undefined();
-      expect(instance.type).to.be.undefined();
-      expect(instance.publicKeys).to.deep.equal([]);
-    });
-
     it('should set variables from raw model', () => {
       const instance = new Identity(rawIdentity);
 

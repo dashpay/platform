@@ -10,6 +10,7 @@ const id = generateRandomId();
  */
 module.exports = function getIdentityFixture() {
   const rawIdentity = {
+    protocolVersion: 0,
     id,
     balance: 10,
     publicKeys: [

@@ -1,11 +1,38 @@
-const entropy = require('../../util/entropy');
-const multihash = require('../../util/multihashDoubleSHA256');
+const crypto = require('crypto');
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
 const generateRandomId = require('../utils/generateRandomId');
 
 const ownerId = generateRandomId();
 const dataContract = getDpnsContractFixture();
+
+/**
+ * @return {Document}
+ */
+function getTopDocumentFixture(options = {}) {
+  const factory = new DocumentFactory(
+    () => {},
+    () => {},
+  );
+
+  const label = options.label || 'grandparent';
+  const normalizedLabel = options.normalizedLabel || label.toLowerCase();
+  const data = {
+    label,
+    normalizedLabel,
+    normalizedParentDomainName: '',
+    preorderSalt: crypto.randomBytes(32),
+    records: {
+      dashUniqueIdentityId: ownerId,
+    },
+    subdomainRules: {
+      allowSubdomains: true,
+    },
+    ...options,
+  };
+
+  return factory.create(dataContract, ownerId, 'domain', data);
+}
 
 /**
  * @return {Document}
@@ -18,15 +45,16 @@ function getParentDocumentFixture(options = {}) {
 
   const label = options.label || 'Parent';
   const normalizedLabel = options.normalizedLabel || label.toLowerCase();
-  const fullDomainName = `${normalizedLabel}.grandparent`;
   const data = {
-    nameHash: multihash.hash(Buffer.from(fullDomainName)).toString('hex'),
     label,
     normalizedLabel,
     normalizedParentDomainName: 'grandparent',
-    preorderSalt: entropy.generate(),
+    preorderSalt: crypto.randomBytes(32),
     records: {
-      dashIdentity: ownerId,
+      dashUniqueIdentityId: ownerId,
+    },
+    subdomainRules: {
+      allowSubdomains: false,
     },
     ...options,
   };
@@ -47,15 +75,16 @@ function getChildDocumentFixture(options = {}) {
   const normalizedLabel = options.normalizedLabel || label.toLowerCase();
   const parent = getParentDocumentFixture();
   const parentDomainName = `${parent.getData().normalizedLabel}.${parent.getData().normalizedParentDomainName}`;
-  const fullDomainName = `${normalizedLabel}.${parentDomainName}`;
   const data = {
-    nameHash: multihash.hash(Buffer.from(fullDomainName)).toString('hex'),
     label,
     normalizedLabel,
     normalizedParentDomainName: parentDomainName,
-    preorderSalt: entropy.generate(),
+    preorderSalt: crypto.randomBytes(32),
     records: {
-      dashIdentity: ownerId,
+      dashUniqueIdentityId: ownerId,
+    },
+    subdomainRules: {
+      allowSubdomains: false,
     },
     ...options,
   };
@@ -64,6 +93,7 @@ function getChildDocumentFixture(options = {}) {
 }
 
 module.exports = {
+  getTopDocumentFixture,
   getParentDocumentFixture,
   getChildDocumentFixture,
 };

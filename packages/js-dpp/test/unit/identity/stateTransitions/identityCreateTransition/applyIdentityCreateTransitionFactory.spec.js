@@ -39,6 +39,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
     const balance = convertSatoshiToCredits(output.satoshis);
 
     const identity = new Identity({
+      protocolVersion: Identity.PROTOCOL_VERSION,
       id: stateTransition.getIdentityId(),
       publicKeys: stateTransition.getPublicKeys().map((key) => key.toJSON()),
       balance,

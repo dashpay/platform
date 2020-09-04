@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const getDataContractFixture = require('./getDataContractFixture');
 
 const DocumentFactory = require('../../document/DocumentFactory');
@@ -5,12 +7,12 @@ const DocumentFactory = require('../../document/DocumentFactory');
 const generateRandomId = require('../utils/generateRandomId');
 
 const ownerId = generateRandomId();
-const dataContract = getDataContractFixture();
 
 /**
+ * @param {DataContract} [dataContract]
  * @return {Document[]}
  */
-module.exports = function getDocumentsFixture() {
+module.exports = function getDocumentsFixture(dataContract = getDataContractFixture()) {
   const factory = new DocumentFactory(
     () => {},
     () => {},
@@ -24,9 +26,10 @@ module.exports = function getDocumentsFixture() {
     factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Leon', lastName: 'Kennedy' }),
     factory.create(dataContract, ownerId, 'noTimeDocument', { name: 'ImOutOfTime' }),
     factory.create(dataContract, ownerId, 'uniqueDates', { firstName: 'John' }),
-    factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Bill' }),
+    factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Bill', lastName: 'Gates' }),
+    factory.create(dataContract, ownerId, 'withContentEncoding', { binaryField: crypto.randomBytes(10) }),
+    factory.create(dataContract, ownerId, 'optionalUniqueIndexedDocument', { firstName: 'Jacques-Yves', lastName: 'Cousteau' }),
   ];
 };
 
 module.exports.ownerId = ownerId;
-module.exports.dataContract = dataContract;

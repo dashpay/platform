@@ -1,3 +1,40 @@
+# [0.15.0](https://github.com/dashevo/js-dpp/compare/v0.14.0...v0.15.0) (2020-09-04)
+
+
+### Features
+
+* protocol versioning ([#217](https://github.com/dashevo/js-dpp/issues/217))
+* document binary properties ([#199](https://github.com/dashevo/js-dpp/issues/199), [#211](https://github.com/dashevo/js-dpp/issues/211), [#215](https://github.com/dashevo/js-dpp/issues/215), [#218](https://github.com/dashevo/js-dpp/issues/218), [#213](https://github.com/dashevo/js-dpp/issues/213))
+* handle unique and alias identities in DPNS data triggers ([#201](https://github.com/dashevo/js-dpp/issues/213))
+* add data trigger condition to check allowing subdomain rules ([#224](https://github.com/dashevo/js-dpp/issues/224), [#228](https://github.com/dashevo/js-dpp/pull/228))
+* reject `replace` and `delete` actions for DPNS preorder document ([#210](https://github.com/dashevo/js-dpp/issues/224))
+
+
+### Bug Fixes
+
+* empty where conditions were sent during unique indices validation ([#222](https://github.com/dashevo/js-dpp/issues/222))
+* duplicate key error in case of unique index on optional fields ([#230](https://github.com/dashevo/js-dpp/pull/230))
+* invalid arguments were submitted to search for parent domain ([#226](https://github.com/dashevo/js-dpp/issues/226))
+* invalid where clause was sent, invalid query error was not handled by unique index validation method ([#220](https://github.com/dashevo/js-dpp/issues/220))
+* undefined in data contract schema id ([#209](https://github.com/dashevo/js-dpp/issues/209))
+* data contract fixture was not isolated properly ([#207](https://github.com/dashevo/js-dpp/issues/207))
+* schema with key or id already exists ([#203](https://github.com/dashevo/js-dpp/issues/203))
+
+
+### BREAKING CHANGES
+
+* `protocolVersion` property equals to `0` is required for all data structures
+* `Document` now awaits `DataContract` as a second argument in constructor
+* `DocumentsBatchTransition` now awaits `DataContract` as a second argument in constructor
+* a document compound unique index shouldn't contain both required and optional properties
+* a document with a compound unique index must contain all indexed properties or non of them
+* only second-level DPNS domain owner is allowed to create its subdomains
+* DPNS preorder document is immutable now. Modification and deletion of preorder are restricted.
+* `getDocumentsFixture.dataContract` is not available anymore
+* DPNS data trigger expect `dashUniqueIdentityId` and `dashAliasIdentityId` records, instead of oboslete `dashIdentity`
+
+
+
 # [0.14.0](https://github.com/dashevo/js-dpp/compare/v0.13.1...v0.14.0) (2020-07-22)
 
 

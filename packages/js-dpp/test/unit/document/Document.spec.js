@@ -1,8 +1,12 @@
 const rewiremock = require('rewiremock/node');
 
+const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
+
 const generateRandomId = require('../../../lib/test/utils/generateRandomId');
 
-const DocumentCreateTransition = require('../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition');
+const DocumentCreateTransition = require(
+  '../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition',
+);
 
 describe('Document', () => {
   let lodashGetMock;
@@ -12,6 +16,7 @@ describe('Document', () => {
   let Document;
   let rawDocument;
   let document;
+  let dataContract;
 
   beforeEach(function beforeEach() {
     lodashGetMock = this.sinonSandbox.stub();
@@ -29,17 +34,32 @@ describe('Document', () => {
       '../../../lib/util/serializer': serializerMock,
     });
 
+    const ownerId = generateRandomId();
+
+    const dataContractFactory = new DataContractFactory(() => {});
+
+    dataContract = dataContractFactory.create(ownerId, {
+      test: {
+        properties: {
+          name: {
+            type: 'string',
+          },
+        },
+      },
+    });
+
     rawDocument = {
+      $protocolVersion: Document.PROTOCOL_VERSION,
       $id: 'D3AT6rBtyTqx3hXFckwtP81ncu49y5ndE7ot9JkuNSeB',
       $type: 'test',
-      $dataContractId: generateRandomId(),
-      $ownerId: generateRandomId(),
+      $dataContractId: dataContract.getId(),
+      $ownerId: ownerId,
       $revision: DocumentCreateTransition.INITIAL_REVISION,
       $createdAt: now,
       $updatedAt: now,
     };
 
-    document = new Document(rawDocument);
+    document = new Document(rawDocument, dataContract);
   });
 
   describe('constructor', () => {

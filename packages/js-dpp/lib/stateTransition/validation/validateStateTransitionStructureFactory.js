@@ -17,7 +17,11 @@ const baseSchema = require('../../../schema/stateTransition/stateTransitionBase'
  * @param {createStateTransition} createStateTransition
  * @return {validateStateTransitionStructure}
  */
-function validateStateTransitionStructureFactory(validator, typeExtensions, createStateTransition) {
+function validateStateTransitionStructureFactory(
+  validator,
+  typeExtensions,
+  createStateTransition,
+) {
   /**
    * @typedef validateStateTransitionStructure
    * @param {
@@ -27,35 +31,35 @@ function validateStateTransitionStructureFactory(validator, typeExtensions, crea
    * DocumentsBatchTransition} stateTransition
    */
   async function validateStateTransitionStructure(stateTransition) {
-    let rawStateTransition;
+    let stateTransitionJson;
     let stateTransitionModel;
 
     if (stateTransition instanceof AbstractStateTransition) {
-      rawStateTransition = stateTransition.toJSON();
+      stateTransitionJson = stateTransition.toJSON();
       stateTransitionModel = stateTransition;
     } else {
-      rawStateTransition = stateTransition;
+      stateTransitionJson = stateTransition;
     }
 
     const result = new ValidationResult();
 
-    if (!Object.prototype.hasOwnProperty.call(rawStateTransition, 'type')) {
+    if (!Object.prototype.hasOwnProperty.call(stateTransitionJson, 'type')) {
       result.addError(
-        new MissingStateTransitionTypeError(rawStateTransition),
+        new MissingStateTransitionTypeError(stateTransitionJson),
       );
 
       return result;
     }
 
-    if (!typeExtensions[rawStateTransition.type]) {
+    if (!typeExtensions[stateTransitionJson.type]) {
       result.addError(
-        new InvalidStateTransitionTypeError(rawStateTransition),
+        new InvalidStateTransitionTypeError(stateTransitionJson),
       );
 
       return result;
     }
 
-    const { validationFunction, schema } = typeExtensions[rawStateTransition.type];
+    const { validationFunction, schema } = typeExtensions[stateTransitionJson.type];
 
     const extendedSchema = mergeWith({}, baseSchema, schema, (objValue, srcValue) => (
       Array.isArray(objValue) ? objValue.concat(srcValue) : undefined
@@ -64,7 +68,7 @@ function validateStateTransitionStructureFactory(validator, typeExtensions, crea
     result.merge(
       validator.validate(
         extendedSchema,
-        rawStateTransition,
+        stateTransitionJson,
       ),
     );
 
@@ -73,7 +77,7 @@ function validateStateTransitionStructureFactory(validator, typeExtensions, crea
     }
 
     result.merge(
-      await validationFunction(rawStateTransition),
+      await validationFunction(stateTransitionJson),
     );
 
     if (!result.isValid()) {
@@ -81,7 +85,9 @@ function validateStateTransitionStructureFactory(validator, typeExtensions, crea
     }
 
     if (!stateTransitionModel) {
-      stateTransitionModel = createStateTransition(rawStateTransition);
+      stateTransitionModel = await createStateTransition(stateTransitionJson, {
+        fromJSON: true,
+      });
     }
 
     try {
@@ -89,7 +95,7 @@ function validateStateTransitionStructureFactory(validator, typeExtensions, crea
     } catch (e) {
       if (e instanceof MaxEncodedBytesReachedError) {
         result.addError(
-          new StateTransitionMaxSizeExceededError(rawStateTransition, e.getMaxSizeKBytes()),
+          new StateTransitionMaxSizeExceededError(stateTransitionJson, e.getMaxSizeKBytes()),
         );
       } else {
         throw e;

@@ -9,7 +9,7 @@ const DataTriggerConditionError = require('../../errors/DataTriggerConditionErro
  *
  * @return {Promise<DataTriggerExecutionResult>}
  */
-async function deleteDomainDataTrigger(documentTransition, context) {
+async function rejectDataTrigger(documentTransition, context) {
   const result = new DataTriggerExecutionResult();
 
   result.addError(
@@ -17,11 +17,11 @@ async function deleteDomainDataTrigger(documentTransition, context) {
       documentTransition,
       context.getDataContract(),
       context.getOwnerId(),
-      'Delete action is not allowed',
+      'Action is not allowed',
     ),
   );
 
   return result;
 }
 
-module.exports = deleteDomainDataTrigger;
+module.exports = rejectDataTrigger;

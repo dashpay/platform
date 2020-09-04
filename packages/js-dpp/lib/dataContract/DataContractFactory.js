@@ -32,6 +32,7 @@ class DataContractFactory {
     const dataContractId = generateDataContractId(ownerId, dataContractEntropy);
 
     const dataContract = new DataContract({
+      protocolVersion: DataContract.PROTOCOL_VERSION,
       $schema: DataContract.DEFAULTS.SCHEMA,
       $id: dataContractId,
       ownerId,
@@ -98,6 +99,7 @@ class DataContractFactory {
    */
   createStateTransition(dataContract) {
     return new DataContractCreateTransition({
+      protocolVersion: DataContract.PROTOCOL_VERSION,
       dataContract: dataContract.toJSON(),
       entropy: dataContract.getEntropy(),
     });

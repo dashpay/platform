@@ -74,17 +74,32 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   }
 
   /**
-   * Get Documents State Transition as plain object
+   * Get state transition as plain object
    *
    * @param {Object} [options]
-   * @return {RawIdentityTopUpTransition}
+   * @param {boolean} [options.skipSignature]
+   *
+   * @return {Object}
    */
-  toJSON(options) {
+  toObject(options = {}) {
     return {
-      ...super.toJSON(options),
+      ...super.toObject(options),
       identityId: this.getIdentityId(),
       lockedOutPoint: this.getLockedOutPoint(),
     };
+  }
+
+  /**
+   * Create state transition from JSON
+   *
+   * @param {RawIdentityTopUpTransition} rawStateTransition
+   *
+   * @return {IdentityTopUpTransition}
+   */
+  static fromJSON(rawStateTransition) {
+    return new IdentityTopUpTransition(
+      AbstractStateTransition.translateJsonToObject(rawStateTransition),
+    );
   }
 }
 

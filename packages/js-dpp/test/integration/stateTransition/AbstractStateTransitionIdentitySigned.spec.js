@@ -37,7 +37,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
       expect(serializedData).to.deep.equal({
         signaturePublicKeyId: null,
-        protocolVersion: 0,
+        protocolVersion: null,
         signature: null,
         type: 0,
       });
@@ -47,7 +47,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const serializedData = stateTransition.toJSON({ skipSignature: true });
 
       expect(serializedData).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: null,
         type: 0,
       });
     });
@@ -57,7 +57,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     it('should return serialized hash', () => {
       const hash = stateTransition.hash();
 
-      expect(hash).to.be.equal('6b05d28bc9e9d7ceb53eeb42e243815359032c6b43d0657da27cfa7d1c9b63bf');
+      expect(hash).to.be.equal('9177fcb220cbab84abcb9ebd5c048facf47f455f6826bf37d97a9908e09fcafd');
     });
   });
 
@@ -65,13 +65,13 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     it('should return serialized data', () => {
       const serializedData = stateTransition.serialize();
 
-      expect(serializedData.toString('hex')).to.be.equal('a4647479706500697369676e6174757265f66f70726f746f636f6c56657273696f6e00747369676e61747572655075626c69634b65794964f6');
+      expect(serializedData.toString('hex')).to.be.equal('a4647479706500697369676e6174757265f66f70726f746f636f6c56657273696f6ef6747369676e61747572655075626c69634b65794964f6');
     });
 
     it('should return serialized data without signature data', () => {
       const serializedData = stateTransition.serialize({ skipSignature: true });
 
-      expect(serializedData.toString('hex')).to.be.equal('a26474797065006f70726f746f636f6c56657273696f6e00');
+      expect(serializedData.toString('hex')).to.be.equal('a26474797065006f70726f746f636f6c56657273696f6ef6');
     });
   });
 
@@ -81,14 +81,6 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
       const keyId = stateTransition.getSignaturePublicKeyId();
       expect(keyId).to.be.equal(publicKeyId);
-    });
-  });
-
-  describe('#getProtocolVersion', () => {
-    it('should return protocol version', async () => {
-      const protocolVersion = stateTransition.getProtocolVersion();
-
-      expect(protocolVersion).to.be.equal(0);
     });
   });
 

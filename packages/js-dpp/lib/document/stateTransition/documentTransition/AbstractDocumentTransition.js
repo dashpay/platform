@@ -1,9 +1,15 @@
+const lodashGet = require('lodash.get');
+const lodashSet = require('lodash.set');
+
+const encodeToBase64WithoutPadding = require('../../../util/encodeToBase64WithoutPadding');
+
 /**
  * @abstract
  */
 class AbstractDocumentTransition {
-  constructor(rawDocumentTransition) {
+  constructor(rawDocumentTransition, dataContract) {
     this.dataContractId = rawDocumentTransition.$dataContractId;
+    this.dataContract = dataContract;
   }
 
   /**
@@ -23,15 +29,97 @@ class AbstractDocumentTransition {
   }
 
   /**
-   * Get JSON representation
+   * Get plain object representation
    *
-   * @returns { { $action: string, $dataContractId: string } }
+   * @return {Object}
    */
-  toJSON() {
+  toObject() {
     return {
       $action: this.getAction(),
       $dataContractId: this.getDataContractId(),
     };
+  }
+
+  /**
+   * Get transition property by path
+   *
+   * @param {string} propertyPath
+   *
+   * @return {*}
+   */
+  get(propertyPath) {
+    return lodashGet(this.getData(), propertyPath);
+  }
+
+  /**
+   * Get JSON representation
+   *
+   * @return {Object}
+   */
+  toJSON() {
+    const data = this.toObject();
+
+    const encodedProperties = this.dataContract.getEncodedProperties(
+      this.getType(),
+    );
+
+    Object.keys(encodedProperties)
+      .forEach((propertyPath) => {
+        const property = encodedProperties[propertyPath];
+
+        if (property.contentEncoding === 'base64') {
+          const value = lodashGet(data, propertyPath);
+          if (value !== undefined) {
+            lodashSet(
+              data,
+              propertyPath,
+              encodeToBase64WithoutPadding(
+                value,
+              ),
+            );
+          }
+        }
+      });
+
+    return data;
+  }
+
+  /**
+   * Translate document transition from JSON to plain object
+   *
+   * @protected
+   *
+   * @param {
+   *   RawDocumentCreateTransition | RawDocumentReplaceTransition | RawDocumentDeleteTransition
+   * } rawDocumentTransition
+   * @param {DataContract} dataContract
+   *
+   * @return {
+   *   RawDocumentCreateTransition | RawDocumentReplaceTransition | RawDocumentDeleteTransition
+   * }
+   */
+  static translateJsonToObject(rawDocumentTransition, dataContract) {
+    const encodedProperties = dataContract.getEncodedProperties(
+      rawDocumentTransition.$type,
+    );
+
+    Object.keys(encodedProperties)
+      .forEach((propertyPath) => {
+        const property = encodedProperties[propertyPath];
+
+        if (property.contentEncoding === 'base64') {
+          const value = lodashGet(rawDocumentTransition, propertyPath);
+          if (value !== undefined) {
+            lodashSet(
+              rawDocumentTransition,
+              propertyPath,
+              Buffer.from(value, 'base64'),
+            );
+          }
+        }
+      });
+
+    return rawDocumentTransition;
   }
 }
 

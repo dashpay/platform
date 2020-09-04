@@ -3,15 +3,24 @@ const lodashSet = require('lodash.set');
 
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
+const encodeToBase64WithoutPadding = require('../util/encodeToBase64WithoutPadding');
 
 class Document {
   /**
    * @param {RawDocument} rawDocument
+   * @param {DataContract} dataContract
    */
-  constructor(rawDocument) {
+  constructor(rawDocument, dataContract) {
+    this.dataContract = dataContract;
+
     const data = { ...rawDocument };
 
     this.entropy = undefined;
+
+    if (Object.prototype.hasOwnProperty.call(rawDocument, '$protocolVersion')) {
+      this.protocolVersion = rawDocument.$protocolVersion;
+      delete data.$protocolVersion;
+    }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$id')) {
       this.id = rawDocument.$id;
@@ -52,6 +61,15 @@ class Document {
   }
 
   /**
+   * Get Document protocol version
+   *
+   * @returns {number}
+   */
+  getProtocolVersion() {
+    return this.protocolVersion;
+  }
+
+  /**
    * Get ID
    *
    * @return {string}
@@ -76,6 +94,15 @@ class Document {
    */
   getDataContractId() {
     return this.dataContractId;
+  }
+
+  /**
+   * Get Data Contract
+   *
+   * @return {DataContract}
+   */
+  getDataContract() {
+    return this.dataContract;
   }
 
   /**
@@ -216,12 +243,46 @@ class Document {
   }
 
   /**
-   * Return Document as plain object
+   * Return Document as JSON object
    *
    * @return {RawDocument}
    */
   toJSON() {
-    const json = {
+    const rawDocument = this.toObject();
+
+    const encodedProperties = this.dataContract.getEncodedProperties(
+      this.getType(),
+    );
+
+    Object.keys(encodedProperties)
+      .forEach((propertyPath) => {
+        const property = encodedProperties[propertyPath];
+
+        if (property.contentEncoding === 'base64') {
+          const value = lodashGet(rawDocument, propertyPath);
+          if (value !== undefined) {
+            lodashSet(
+              rawDocument,
+              propertyPath,
+              encodeToBase64WithoutPadding(
+                Buffer.from(value),
+              ),
+            );
+          }
+        }
+      });
+
+    return rawDocument;
+  }
+
+  /**
+   * Return Document as plain object (without converting encoded fields)
+   *
+   * @return {RawDocument}
+   */
+  toObject() {
+    const rawDocument = {
+      $protocolVersion: this.getProtocolVersion(),
       $id: this.getId(),
       $type: this.getType(),
       $dataContractId: this.getDataContractId(),
@@ -231,14 +292,14 @@ class Document {
     };
 
     if (this.createdAt) {
-      json.$createdAt = this.getCreatedAt().getTime();
+      rawDocument.$createdAt = this.getCreatedAt().getTime();
     }
 
     if (this.updatedAt) {
-      json.$updatedAt = this.getUpdatedAt().getTime();
+      rawDocument.$updatedAt = this.getUpdatedAt().getTime();
     }
 
-    return json;
+    return rawDocument;
   }
 
   /**
@@ -247,9 +308,9 @@ class Document {
    * @return {Buffer}
    */
   serialize() {
-    const json = this.toJSON();
+    const plainObject = this.toObject();
 
-    return encode(json);
+    return encode(plainObject);
   }
 
   /**
@@ -260,10 +321,43 @@ class Document {
   hash() {
     return hash(this.serialize()).toString('hex');
   }
+
+  /**
+   * Create document from JSON
+   *
+   * @param {RawDocument} rawDocument
+   * @param {DataContract} dataContract
+   *
+   * @return {Document}
+   */
+  static fromJSON(rawDocument, dataContract) {
+    const encodedProperties = dataContract.getEncodedProperties(
+      rawDocument.$type,
+    );
+
+    Object.keys(encodedProperties)
+      .forEach((propertyPath) => {
+        const property = encodedProperties[propertyPath];
+
+        if (property.contentEncoding === 'base64') {
+          const value = lodashGet(rawDocument, propertyPath);
+          if (value !== undefined) {
+            lodashSet(
+              rawDocument,
+              propertyPath,
+              Buffer.from(value, 'base64'),
+            );
+          }
+        }
+      });
+
+    return new Document(rawDocument, dataContract);
+  }
 }
 
 /**
  * @typedef {Object} RawDocument
+ * @property {number} $protocolVersion
  * @property {string} $id
  * @property {string} $type
  * @property {string} $dataContractId
@@ -272,6 +366,8 @@ class Document {
  * @property {number} [$createdAt]
  * @property {number} [$updatedAt]
  */
+
+Document.PROTOCOL_VERSION = 0;
 
 Document.SYSTEM_PREFIX = '$';
 
