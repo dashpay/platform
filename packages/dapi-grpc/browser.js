@@ -1,10 +1,10 @@
-const core = require('./clients/web/core_grpc_web_pb');
-const transactionsFilterStream = require('./clients/web/transactions_filter_stream_grpc_web_pb');
-const platform = require('./clients/web/platform_grpc_web_pb');
+const core = require('./clients/core/v0/web/core_grpc_web_pb');
+const platform = require('./clients/platform/v0/web/platform_grpc_web_pb');
 
-module.exports = Object.assign(
-  { },
-  core,
-  transactionsFilterStream,
-  platform,
-);
+module.exports = {
+  v0: Object.assign(
+    { },
+    core,
+    platform,
+  ),
+};

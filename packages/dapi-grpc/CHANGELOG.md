@@ -1,3 +1,20 @@
+# [0.15.0](https://github.com/dashevo/dapi-grpc/compare/v0.14.0...v0.15.0) (2020-09-04)
+
+
+### Features
+
+* build version specific clients ([#85](https://github.com/dashevo/dapi-grpc/issues/86), [#86](https://github.com/dashevo/dapi-grpc/issues/86))
+* combine `Core` and `TxFilterStream` services ([#84]((https://github.com/dashevo/dapi-grpc/issues/84)))
+* update gRPC-Web to 1.2.0 version ([#83](https://github.com/dashevo/dapi-grpc/issues/83))
+
+
+### BREAKING CHANGES
+
+* paths to generated clients are changed
+* `TxFilterStream` is removed. `subscribeToTransactionsWithProofs` included in Core service.
+
+
+
 # [0.14.0](https://github.com/dashevo/dapi-grpc/compare/v0.13.0...v0.14.0) (2020-07-22)
 
 

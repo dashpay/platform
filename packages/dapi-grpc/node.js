@@ -1,17 +1,11 @@
-const CorePromiseClient = require('./clients/nodejs/CorePromiseClient');
-const PlatformPromiseClient = require('./clients/nodejs/PlatformPromiseClient');
-const TransactionsFilterStreamPromiseClient = require('./clients/nodejs/TransactionsFilterStreamPromiseClient');
+const CorePromiseClient = require('./clients/core/v0/nodejs/CorePromiseClient');
+const PlatformPromiseClient = require('./clients/platform/v0/nodejs/PlatformPromiseClient');
 
-const protocCoreMessages = require('./clients/nodejs/core_protoc');
-const protocPlatformMessages = require('./clients/nodejs/platform_protoc');
-const protocTransactionsFilterStreamMessages = require('./clients/nodejs/transactions_filter_stream_protoc');
+const protocCoreMessages = require('./clients/core/v0/nodejs/core_protoc');
+const protocPlatformMessages = require('./clients/platform/v0/nodejs/platform_protoc');
 
 const getCoreDefinition = require('./lib/getCoreDefinition');
 const getPlatformDefinition = require('./lib/getPlatformDefinition');
-
-const getTransactionsFilterStreamDefinition = require(
-  './lib/getTransactionsFilterStreamDefinition',
-);
 
 const {
   org: {
@@ -23,7 +17,7 @@ const {
       },
     },
   },
-} = require('./clients/nodejs/core_pbjs');
+} = require('./clients/core/v0/nodejs/core_pbjs');
 
 const {
   org: {
@@ -35,31 +29,18 @@ const {
       },
     },
   },
-} = require('./clients/nodejs/platform_pbjs');
+} = require('./clients/platform/v0/nodejs/platform_pbjs');
 
-const {
-  org: {
-    dash: {
-      platform: {
-        dapi: {
-          v0: pbjsTransactionsFilterStreamMessages,
-        },
-      },
-    },
-  },
-} = require('./clients/nodejs/transactions_filter_stream_pbjs');
-
-module.exports = Object.assign({
-  CorePromiseClient,
-  TransactionsFilterStreamPromiseClient,
-  PlatformPromiseClient,
+module.exports = {
   getCoreDefinition,
-  getTransactionsFilterStreamDefinition,
   getPlatformDefinition,
-  pbjs: Object.assign(
-    {},
-    pbjsCoreMessages,
-    pbjsTransactionsFilterStreamMessages,
-    pbjsPlatformMessages,
-  ),
-}, protocCoreMessages, protocTransactionsFilterStreamMessages, protocPlatformMessages);
+  v0: Object.assign({
+    CorePromiseClient,
+    PlatformPromiseClient,
+    pbjs: Object.assign(
+      {},
+      pbjsCoreMessages,
+      pbjsPlatformMessages,
+    ),
+  }, protocCoreMessages, protocPlatformMessages),
+};

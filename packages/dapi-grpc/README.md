@@ -20,36 +20,6 @@ npm install @dashevo/dapi-grpc
 
 ## Usage
 
-```js
-import {
-  TransactionsFilterStreamPromiseClient,
-  TransactionsWithProofsRequest,
-  BloomFilter,
-} from '@dashevo/dapi-grpc';
-
-const client = new TransactionsFilterStreamPromiseClient('http://localhost:8080');
-
-const filter = new BloomFilter();
-
-const request = new TransactionsWithProofsRequest();
-request.setBloomFilter(filter);
-
-const stream = client.subscribeToTransactionsWithProofs(filter);
-
-stream.on('data', function(response) {
-  console.log(response.getData());
-});
-
-stream.on('status', function(status) {
-  console.log(status.code);
-  console.log(status.details);
-  console.log(status.metadata);
-});
-
-stream.on('end', function(end) {
-  // stream end signal
-});
-```
 
 ## Maintainer
 

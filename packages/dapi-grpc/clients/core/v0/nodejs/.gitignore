@@ -1,0 +1,3 @@
+# Ignore build artifacts
+core_protoc.js
+core_pbjs.js
