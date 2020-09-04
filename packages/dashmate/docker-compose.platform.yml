@@ -6,23 +6,16 @@ services:
     restart: unless-stopped
     volumes:
       - drive_mongodb_data:/data/db
+      - ./docker/mongodb/initiate_mongodb_replica.js:/docker-entrypoint-initdb.d/initiate_mongodb_replica.js
     extra_hosts:
       - "drive_mongodb:127.0.0.1"
     command: mongod --replSet driveDocumentIndices --bind_ip_all
-
-  drive_mongodb_replica_init:
-    image: ${PLATFORM_DRIVE_MONGODB_DOCKER_IMAGE:?err}
-    depends_on:
-      - drive_mongodb
-    volumes:
-      - ./scripts/initiate_mongodb_replica.sh:/initiate_mongodb_replica.sh
-    entrypoint: /initiate_mongodb_replica.sh
 
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
     restart: unless-stopped
     depends_on:
-      - drive_mongodb_replica_init
+      - drive_mongodb
       - core
     volumes:
       - drive_abci_leveldb:/usr/src/app/db

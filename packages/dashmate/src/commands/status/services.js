@@ -26,7 +26,6 @@ class ServicesStatusCommand extends BaseCommand {
 
     if (config.options.network !== 'testnet') {
       Object.assign(serviceHumanNames, {
-        drive_mongodb_replica_init: 'Initiate Drive MongoDB replica',
         drive_mongodb: 'Drive MongoDB',
         drive_abci: 'Drive ABCI',
         drive_tendermint: 'Drive Tendermint',
@@ -45,7 +44,6 @@ class ServicesStatusCommand extends BaseCommand {
     for (const [serviceName, serviceDescription] of Object.entries(serviceHumanNames)) {
       let containerId;
       let status;
-      let exitCode;
       let version;
 
       try {
@@ -53,7 +51,6 @@ class ServicesStatusCommand extends BaseCommand {
           Id: containerId,
           State: {
             Status: status,
-            ExitCode: exitCode,
           },
           Config: {
             Labels: {
@@ -65,11 +62,6 @@ class ServicesStatusCommand extends BaseCommand {
         if (e instanceof ContainerIsNotPresentError) {
           status = 'not started';
         }
-      }
-
-      if (serviceName === 'drive_mongodb_replica_init' && status === 'exited' && exitCode === 0) {
-        // noinspection UnnecessaryContinueJS
-        continue;
       }
 
       let statusText;
