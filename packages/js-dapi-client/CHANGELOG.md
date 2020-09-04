@@ -1,3 +1,105 @@
+# [0.14.0](https://github.com/dashevo/dapi-client/compare/v0.13.6...v0.14.0) (2020-07-23)
+
+We completely rewrote DAPI Client to improve code quality, usability, and testability.
+
+In the new version, you can specify not just seeds to connect but also specific DAPI addresses
+and even inject own logic to obtain/select nodes. API methods accept the same options
+as the `DAPIClient` constructor so you can specify different behavior for each API call.
+
+Previously, faulty nodes were excluded for a specific API call. Now they are banning
+for a period of time, and this time increments exponentially in the event of repeated faults.
+
+
+### Bug Fixes
+
+* cannot read property 'getHttpPort' of undefined ([#173](https://github.com/dashevo/dapi-client/issues/173))
+* internal error when submitting `fromBlockHeight` as 0 to `subscribeToTransactionsWithProofs` ([#174](https://github.com/dashevo/dapi-client/issues/174))
+* ambiguity in `addresses` option ([#170](https://github.com/dashevo/dapi-client/issues/170))
+* JSON RPC does not retry on `ETIMEDOUT` ([#156](https://github.com/dashevo/dapi-client/issues/156))
+* 2 seconds timeout not enough for some requests ([#151](https://github.com/dashevo/dapi-client/issues/151))
+* construct DAPIClient with network option didn't work properly ([#150](https://github.com/dashevo/dapi-client/issues/150))
+* global default timeout applies for streams ([#152](https://github.com/dashevo/dapi-client/issues/152))
+
+
+### Features
+
+* add ports to string representation of DAPIAddress ([#171](https://github.com/dashevo/dapi-client/issues/171)) ([1f4ffb7](https://github.com/dashevo/dapi-client/commit/1f4ffb7ed2cd8079eccf938ede2d43f37a5f80d3))
+* allow to specify network with other connection options ([#160](https://github.com/dashevo/dapi-client/issues/160)) ([cfbc5cd](https://github.com/dashevo/dapi-client/commit/cfbc5cd649358420df99f76f1ca84b8c7ae826a4))
+* update DAPI gRPC to 0.14.0-dev.1 ([#149](https://github.com/dashevo/dapi-client/issues/149)) ([4598def](https://github.com/dashevo/dapi-client/commit/4598def13dbdba9c9c1392c65e2c97ceb322c34c))
+* timeout options for gRPC requests and simplified URL for gRPC client ([#146](https://github.com/dashevo/dapi-client/issues/146)) ([35685b9](https://github.com/dashevo/dapi-client/commit/35685b98fa05fc4436630f165113419b3f48833f))
+
+
+### Documentation
+
+* readme standard updates ([#167](https://github.com/dashevo/dapi-client/issues/147))
+
+
+### Code Refactoring
+
+* rewrite DAPI Client from scratch ([#140](https://github.com/dashevo/dapi-client/issues/140))
+
+
+### BREAKING CHANGES
+
+* DAPI Client options [are changed](https://github.com/dashevo/dapi-client/blob/1ec21652f1615ba95ea537c38632692f81deefa3/lib/DAPIClient.js#L42-L51)
+* Core and Platform methods moved to specific namespaces (ie. `client.platform.getIdentity()`, `client.core.getStatus()`)
+
+
+
+## [0.13.6](https://github.com/dashevo/dapi-client/compare/v0.13.5...v0.13.6) (2020-06-30)
+
+
+### Features
+
+* update dapi-client to `0.18.11` ([#163](https://github.com/dashevo/dapi-client/issues/163))
+
+
+
+## [0.13.5](https://github.com/dashevo/dapi-client/compare/v0.13.4...v0.13.5) (2020-06-30)
+
+
+### Features
+
+* update `dashcore-lib` to `0.18.10` ([#162](https://github.com/dashevo/dapi-client/issues/162))
+
+
+
+## [0.13.4](https://github.com/dashevo/dapi-client/compare/v0.13.3...v0.13.4) (2020-06-30)
+
+
+### Bug Fixes
+
+* network is not set to `SimplifiedMNListDiff` ([#161](https://github.com/dashevo/dapi-client/issues/161))
+
+
+
+## [0.13.3](https://github.com/dashevo/dapi-client/compare/v0.13.2...v0.13.3) (2020-06-18)
+
+
+### Bug Fixes
+
+* calling method `getIp` of `undefined` ([#159](https://github.com/dashevo/dapi-client/issues/159))
+
+
+
+## [0.13.2](https://github.com/dashevo/dapi-client/compare/v0.13.1...v0.13.2) (2020-06-11)
+
+
+### Bug Fixes
+
+* retries don't work for MN discovery ([#157](https://github.com/dashevo/dapi-client/issues/157))
+
+
+
+## [0.13.1](https://github.com/dashevo/dapi-client/compare/v0.13.0...v0.13.1) (2020-06-11)
+
+
+### Bug Fixes
+
+* JSON RPC doesn't retry on `ETIMEDOUT ([#155](https://github.com/dashevo/dapi-client/issues/155))
+
+
+
 # [0.13.0](https://github.com/dashevo/dapi-client/compare/v0.12.0...v0.13.0) (2020-06-08)
 
 
