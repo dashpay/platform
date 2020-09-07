@@ -2,6 +2,7 @@ const { decode } = require('../util/serializer');
 
 const InvalidStateTransitionError = require('./errors/InvalidStateTransitionError');
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
+const ConsensusError = require('../errors/ConsensusError');
 
 class StateTransitionFactory {
   /**
@@ -60,7 +61,17 @@ class StateTransitionFactory {
     });
 
     if (!opts.skipValidation) {
-      const result = await this.validateStateTransitionStructure(stateTransition.toJSON());
+      let stateTransitionJson;
+      try {
+        stateTransitionJson = stateTransition.toJSON();
+      } catch (e) {
+        if (e instanceof ConsensusError) {
+          throw new InvalidStateTransitionError([e], rawStateTransition);
+        }
+        throw e;
+      }
+
+      const result = await this.validateStateTransitionStructure(stateTransitionJson);
 
       if (!result.isValid()) {
         throw new InvalidStateTransitionError(result.getErrors(), rawStateTransition);

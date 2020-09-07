@@ -95,6 +95,23 @@ describe('StateTransitionFactory', () => {
         );
       }
     });
+
+
+    it('should throw InvalidStateTransitionError if stateTransition.toJSON throws ConsensusError', async function it() {
+      const error = new ConsensusError('json error');
+
+      stateTransition.toJSON = this.sinonSandbox.stub().throws(error);
+
+      try {
+        await factory.createFromObject(rawStateTransition);
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(InvalidStateTransitionError);
+
+        const [innerError] = e.getErrors();
+        expect(innerError).to.be.equal(error);
+      }
+    });
   });
 
   describe('createFromSerialized', () => {
