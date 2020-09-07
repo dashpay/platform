@@ -1,3 +1,12 @@
+## [3.15.1](https://github.com/dashevo/DashJS/compare/v3.15.0...v3.15.1) (2020-09-07)
+
+
+### Bug Fixes
+
+* invalid argument type: script error from dashcore-lib ([#138](https://github.com/dashevo/DashJS/issues/138))
+
+
+
 # [3.15.0](https://github.com/dashevo/DashJS/compare/v3.14.1...v3.15.0) (2020-09-04)
 
 
