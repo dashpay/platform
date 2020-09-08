@@ -1,5 +1,4 @@
 const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
-const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/InvalidDocumentTypeError');
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/BalanceIsNotEnoughError');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
@@ -34,10 +33,6 @@ function unserializeStateTransitionFactory(createIsolatedDpp) {
     } catch (e) {
       if (e instanceof InvalidStateTransitionError) {
         throw new InvalidArgumentAbciError('State Transition is invalid', { errors: e.getErrors() });
-      }
-
-      if (e instanceof InvalidDocumentTypeError) {
-        throw new InvalidArgumentAbciError('State Transition is invalid', { errors: [e] });
       }
 
       if (e.message === 'Script execution timed out.') {
