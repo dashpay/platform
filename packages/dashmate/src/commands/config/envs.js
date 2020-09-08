@@ -22,7 +22,7 @@ class ConfigEnvsCommand extends BaseCommand {
     let envOutput = '';
 
     for (const [key, value] of Object.entries(config.toEnvs())) {
-      envOutput += `${key}="${value}"\n`;
+      envOutput += `${key}=${value}\n`;
     }
 
     if (outputFile !== null) {
