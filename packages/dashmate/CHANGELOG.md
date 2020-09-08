@@ -1,3 +1,12 @@
+## [0.15.1](https://github.com/dashevo/mn-bootstrap/compare/v0.15.0...v0.15.1) (2020-09-08)
+
+
+### Bug Fixes
+
+* services.core.ports contains an invalid type ([#149](https://github.com/dashevo/mn-bootstrap/issues/149))
+
+
+
 # [0.15.0](https://github.com/dashevo/mn-bootstrap/compare/v0.14.0...v0.15.0) (2020-09-04)
 
 
