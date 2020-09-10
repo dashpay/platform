@@ -222,6 +222,21 @@ describe('validateIdentityFactory', () => {
       expect(validatePublicKeysMock).to.not.be.called();
     });
 
+    it('should be unique', async () => {
+      rawIdentity.publicKeys.push(rawIdentity.publicKeys[0]);
+
+      const result = validateIdentity(rawIdentity);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.keyword).to.equal('uniqueItems');
+      expect(error.dataPath).to.equal('.publicKeys');
+
+      expect(validatePublicKeysMock).to.not.be.called();
+    });
+
     it('should throw an error if publicKeys have more than 100 keys', () => {
       const [key] = rawIdentity.publicKeys;
 

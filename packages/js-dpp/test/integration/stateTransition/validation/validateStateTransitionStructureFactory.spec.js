@@ -871,6 +871,23 @@ describe('validateStateTransitionStructureFactory', () => {
 
       expect(extensionFunctionMock).to.be.calledOnceWith(rawStateTransition);
     });
+
+    it('should be unique', async () => {
+      rawStateTransition.publicKeys.push(rawStateTransition.publicKeys[0]);
+
+      const result = await validateStateTransitionStructure(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.keyword).to.equal('uniqueItems');
+      expect(error.dataPath).to.equal('.publicKeys');
+
+      expect(extensionFunctionMock).to.not.be.called();
+    });
   });
 
   describe('Identity TopUp Transition', () => {
