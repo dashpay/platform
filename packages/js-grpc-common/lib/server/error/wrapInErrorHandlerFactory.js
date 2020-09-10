@@ -1,12 +1,13 @@
 const GrpcError = require('./GrpcError');
 const InternalGrpcError = require('./InternalGrpcError');
+const VerboseInternalGrpcError = require('./VerboseInternalGrpcError');
 
 /**
  * @param {Object} logger
- * @param {Metadata} [metadata]
+ * @param {boolean=true} isProductionEnvironment
  * @return wrapInErrorHandler
  */
-module.exports = function wrapInErrorHandlerFactory(logger, metadata = undefined) {
+module.exports = function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
   /**
    * Wrap RPC method in error handler
    *
@@ -17,14 +18,14 @@ module.exports = function wrapInErrorHandlerFactory(logger, metadata = undefined
   function wrapInErrorHandler(method) {
     /**
      * @param {grpc.ServerWriteableStream} call
-     * @param {function(Error, *, Metadata?)} [callback]
+     * @param {function(Error, *)} [callback]
      */
     async function rpcMethodErrorHandler(call, callback = undefined) {
       try {
         const result = await method(call);
 
         if (callback) {
-          callback(null, result, metadata);
+          callback(null, result);
         }
       } catch (e) {
         let error = e;
@@ -37,15 +38,9 @@ module.exports = function wrapInErrorHandlerFactory(logger, metadata = undefined
         // Log only internal GRPC errors
         if (error instanceof InternalGrpcError) {
           logger.error(error.getError());
-        }
 
-        if (metadata) {
-          if (error.metadata) {
-            Object.entries(metadata.getMap()).forEach(([key, value]) => {
-              error.metadata.set(key, value);
-            });
-          } else {
-            error.metadata = metadata;
+          if (!isProductionEnvironment) {
+            error = new VerboseInternalGrpcError(error);
           }
         }
 

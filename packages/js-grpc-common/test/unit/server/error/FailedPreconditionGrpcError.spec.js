@@ -32,7 +32,7 @@ describe('FailedPreconditionGrpcError', () => {
 
   describe('#getMetadata', () => {
     it('should return metadata', () => {
-      const result = error.getMetadata();
+      const result = error.getRawMetadata();
 
       expect(result).to.equal(metadata);
     });

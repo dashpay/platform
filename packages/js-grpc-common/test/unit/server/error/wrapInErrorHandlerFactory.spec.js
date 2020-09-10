@@ -1,5 +1,6 @@
 const wrapInErrorHandlerFactory = require('../../../../lib/server/error/wrapInErrorHandlerFactory');
 const InternalGrpcError = require('../../../../lib/server/error/InternalGrpcError');
+const VerboseInternalGrpcError = require('../../../../lib/server/error/VerboseInternalGrpcError');
 const InvalidArgumentGrpcError = require('../../../../lib/server/error/InvalidArgumentGrpcError');
 
 describe('wrapInErrorHandlerFactory', () => {
@@ -14,7 +15,7 @@ describe('wrapInErrorHandlerFactory', () => {
       error: this.sinon.stub(),
     };
 
-    wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock);
+    wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock, false);
 
     rpcMethod = this.sinon.stub();
     callback = this.sinon.stub();
@@ -75,6 +76,41 @@ describe('wrapInErrorHandlerFactory', () => {
 
       expect(grpcError).to.be.instanceOf(InternalGrpcError);
       expect(grpcError.getError()).to.equal(someError);
+
+      expect(loggerMock.error).to.be.calledOnceWith(someError);
+    });
+
+    it('should return VerboseInternalGrpcError in development environment', async () => {
+      wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock, false);
+
+      const wrappedRpcMethod = wrapInErrorHandler(rpcMethod);
+
+      const someError = new Error('error');
+
+      const [, errorPath] = someError.stack.toString().split(/\r\n|\n/);
+
+      const errorMessage = `${someError.message} ${errorPath.trim()}`;
+      const metadata = {
+        stack: someError.stack,
+      };
+
+      rpcMethod.throws(someError);
+
+      await wrappedRpcMethod(call, callback);
+
+      expect(rpcMethod).to.be.calledOnceWith(call);
+
+      expect(rpcMethod).to.be.calledOnceWith(call);
+
+      expect(callback).to.be.calledOnce();
+      expect(callback.getCall(0).args).to.have.lengthOf(2);
+
+      const [grpcError] = callback.getCall(0).args;
+
+      expect(grpcError).to.be.instanceOf(VerboseInternalGrpcError);
+      expect(grpcError.getError()).to.equal(someError);
+      expect(grpcError.getMessage()).to.equal(errorMessage);
+      expect(grpcError.getRawMetadata()).to.deep.equal(metadata);
 
       expect(loggerMock.error).to.be.calledOnceWith(someError);
     });

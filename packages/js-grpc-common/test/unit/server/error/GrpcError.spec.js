@@ -30,11 +30,32 @@ describe('GrpcError', () => {
     });
   });
 
-  describe('#getMetadata', () => {
+  describe('#getRawMetadata', () => {
     it('should return metadata', () => {
-      const result = error.getMetadata();
+      const result = error.getRawMetadata();
 
       expect(result).to.equal(metadata);
+    });
+  });
+
+  describe('#setMessage', () => {
+    it('should set message', async () => {
+      message = 'error message';
+      error.setMessage(message);
+
+      expect(error.getMessage()).to.equal(message);
+    });
+  });
+
+  describe('#setRawMetadata', () => {
+    it('should set metadata', async () => {
+      metadata = {
+        stack: 'stack info',
+      };
+
+      error.setRawMetadata(metadata);
+
+      expect(error.getRawMetadata()).to.deep.equal(metadata);
     });
   });
 });

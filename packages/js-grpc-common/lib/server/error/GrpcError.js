@@ -4,18 +4,18 @@ class GrpcError extends Error {
   /**
    * @param {string} message
    * @param {number} code
-   * @param {Object} [metadata]
+   * @param {Object} [rawMetadata]
    */
-  constructor(code, message, metadata = undefined) {
+  constructor(code, message, rawMetadata = undefined) {
     super(message);
 
     this.code = code;
 
-    if (metadata) {
-      this.metadata = convertObjectToMetadata(metadata);
+    if (rawMetadata) {
+      this.metadata = convertObjectToMetadata(rawMetadata);
     }
 
-    this.metadataObject = metadata;
+    this.rawMetadata = rawMetadata;
   }
 
   /**
@@ -41,8 +41,32 @@ class GrpcError extends Error {
    *
    * @return {Object}
    */
-  getMetadata() {
-    return this.metadataObject;
+  getRawMetadata() {
+    return this.rawMetadata;
+  }
+
+  /**
+   *
+   * @param {Object} rawMetadata
+   * @return {GrpcError}
+   */
+  setRawMetadata(rawMetadata) {
+    this.metadata = convertObjectToMetadata(rawMetadata);
+
+    this.rawMetadata = rawMetadata;
+
+    return this;
+  }
+
+  /**
+   *
+   * @param {string} message
+   * @return {GrpcError}
+   */
+  setMessage(message) {
+    this.message = message;
+
+    return this;
   }
 }
 
