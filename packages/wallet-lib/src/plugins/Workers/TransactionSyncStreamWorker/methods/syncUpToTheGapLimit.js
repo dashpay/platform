@@ -1,5 +1,10 @@
 const logger = require('../../../../logger');
 
+function isAnyIntersection(arrayA, arrayB) {
+  const intersection = arrayA.filter((e) => arrayB.indexOf(e) > -1);
+  return intersection.length > 0;
+}
+
 /**
  *
  * @param options
@@ -14,7 +19,7 @@ module.exports = async function syncUpToTheGapLimit({
 }) {
   const self = this;
   const addresses = this.getAddressesToSync();
-  logger.debug(`syncing up to the gap limit: - fromBlockHeight: ${fromBlockHash || fromBlockHeight} Count: ${count}`);
+  logger.debug(`syncing up to the gap limit: - from block: ${fromBlockHash || fromBlockHeight} Count: ${count}`);
 
   if (fromBlockHash == null && fromBlockHeight == null) {
     throw new Error('fromBlockHash ot fromBlockHeight should be present');
@@ -39,13 +44,7 @@ module.exports = async function syncUpToTheGapLimit({
   return new Promise((resolve, reject) => {
     stream
       .on('data', async (response) => {
-        const merkleBlockFromResponse = this.constructor
-          .getMerkleBlockFromStreamResponse(response);
-
-        if (merkleBlockFromResponse) {
-          self.importBlockHeader(merkleBlockFromResponse.header);
-        }
-
+        /* Incoming transactions handling */
         const transactionsFromResponse = this.constructor
           .getTransactionListFromStreamResponse(response);
         const walletTransactions = this.constructor
@@ -68,6 +67,20 @@ module.exports = async function syncUpToTheGapLimit({
             // DO not setting null this.stream allow to know we
             // need to reset our stream (as we pass along the error)
             stream.cancel();
+          }
+        }
+
+        /* Incoming Merkle block handling */
+        const merkleBlockFromResponse = this.constructor
+          .getMerkleBlockFromStreamResponse(response);
+
+        if (merkleBlockFromResponse) {
+          // Reverse hashes, as they're little endian in the header
+          const transactionsInHeader = merkleBlockFromResponse.hashes.map((hashHex) => Buffer.from(hashHex, 'hex').reverse().toString('hex'));
+          const transactionsInWallet = Object.keys(self.storage.getStore().transactions);
+          const isTruePositive = isAnyIntersection(transactionsInHeader, transactionsInWallet);
+          if (isTruePositive) {
+            self.importBlockHeader(merkleBlockFromResponse.header);
           }
         }
       })

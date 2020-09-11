@@ -3,6 +3,7 @@ const { expect } = require('chai');
 const { Wallet } = require('../../src/index');
 
 const { fundWallet } = require('../../src/utils');
+const { EVENTS } = require('../../src');
 
 const seeds = process.env.DAPI_SEED
   .split(',');
@@ -101,7 +102,9 @@ describe('Wallet-lib - functional ', function suite() {
       );
 
       const balanceAfterTopUp = account.getTotalBalance();
+      const transactions = account.getTransactions();
 
+      expect(Object.keys(transactions).length).to.be.equal(1);
       expect(balanceBeforeTopUp).to.be.equal(0);
       expect(balanceAfterTopUp).to.be.equal(amountToTopUp);
     });
@@ -129,6 +132,31 @@ describe('Wallet-lib - functional ', function suite() {
       expect(newTx.constructor.name).to.equal('Transaction');
       expect(newTx.outputs.length).to.not.equal(0);
       expect(newTx.inputs.length).to.not.equal(0);
+    });
+
+    it('should be able to restore wallet to the same state with a mnemonic', async () => {
+      const restoredWallet = new Wallet({
+        mnemonic: wallet.mnemonic,
+        transport: {
+          seeds,
+        },
+        network: process.env.NETWORK,
+      });
+      const restoredAccount = await restoredWallet.getAccount();
+
+      // Due to the limitations of DAPI, we need to wait for a block to be mined if we connected in the
+      // moment when transaction already entered the mempool, but haven't been mined yet
+      await new Promise(resolve => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
+
+      const expectedAddresses = account.getAddresses();
+      const expectedTransactions = account.getTransactions();
+
+      const addresses = restoredAccount.getAddresses();
+      const transactions = restoredAccount.getTransactions();
+
+      expect(Object.keys(transactions).length).to.be.equal(1);
+      expect(addresses).to.be.deep.equal(expectedAddresses);
+      expect(Object.keys(transactions)).to.be.deep.equal(Object.keys(expectedTransactions));
     });
   });
 });

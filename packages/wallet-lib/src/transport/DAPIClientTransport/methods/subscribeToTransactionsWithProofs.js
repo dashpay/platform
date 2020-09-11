@@ -42,5 +42,6 @@ module.exports = async function subscribeToTransactionWithProofs(
     opts.fromBlockHeight = 1;
   }
 
+  logger.debug(`Options: ${JSON.stringify(opts)}`);
   return client.core.subscribeToTransactionsWithProofs(bloomfilter, opts);
 };
