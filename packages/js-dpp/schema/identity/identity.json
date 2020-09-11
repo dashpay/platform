@@ -22,12 +22,18 @@
     "balance": {
       "type": "integer",
       "minimum": 0
-    }
-  },
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Identity update revision"
+  }
+},
   "required": [
     "protocolVersion",
     "id",
     "publicKeys",
-    "balance"
+    "balance",
+    "revision"
   ]
 }

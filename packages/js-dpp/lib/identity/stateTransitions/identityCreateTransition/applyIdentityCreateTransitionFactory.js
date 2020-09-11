@@ -33,6 +33,7 @@ function applyIdentityCreateTransitionFactory(
       id: stateTransition.getIdentityId(),
       publicKeys: stateTransition.getPublicKeys().map((key) => key.toJSON()),
       balance: creditsAmount,
+      revision: 0,
     });
 
     await stateRepository.storeIdentity(identity);

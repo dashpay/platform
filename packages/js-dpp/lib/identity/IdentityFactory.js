@@ -43,6 +43,7 @@ class IdentityFactory {
         data: publicKey.toBuffer()
           .toString('base64'),
       })),
+      revision: 0,
     });
 
     identity.setLockedOutPoint(lockedOutPoint);

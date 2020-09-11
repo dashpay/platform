@@ -43,6 +43,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
       id: stateTransition.getIdentityId(),
       publicKeys: stateTransition.getPublicKeys().map((key) => key.toJSON()),
       balance,
+      revision: 0,
     });
 
     expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(

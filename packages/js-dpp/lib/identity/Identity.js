@@ -24,6 +24,10 @@ class Identity {
     if (Object.prototype.hasOwnProperty.call(rawIdentity, 'balance')) {
       this.balance = rawIdentity.balance;
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentity, 'revision')) {
+      this.revision = rawIdentity.revision;
+    }
   }
 
   /**
@@ -77,6 +81,7 @@ class Identity {
       publicKeys: this.getPublicKeys()
         .map((publicKey) => publicKey.toJSON()),
       balance: this.getBalance(),
+      revision: this.getRevision(),
     };
   }
 
@@ -159,6 +164,27 @@ class Identity {
   getLockedOutPoint() {
     return this.lockedOutPoint;
   }
+
+  /**
+   * Get Identity revision
+   *
+   * @return {number}
+   */
+  getRevision() {
+    return this.revision;
+  }
+
+  /**
+   * Set Identity revision
+   *
+   * @param {number} revision
+   * @return {Identity}
+   */
+  setRevision(revision) {
+    this.revision = revision;
+
+    return this;
+  }
 }
 
 /**
@@ -167,6 +193,7 @@ class Identity {
  * @property {string} id
  * @property {RawIdentityPublicKey[]} publicKeys
  * @property {number} balance
+ * @property {number} revision
  */
 
 Identity.PROTOCOL_VERSION = 0;

@@ -13,6 +13,7 @@ module.exports = function getIdentityFixture() {
     protocolVersion: 0,
     id,
     balance: 10,
+    revision: 0,
     publicKeys: [
       {
         id: 0,

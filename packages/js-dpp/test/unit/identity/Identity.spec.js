@@ -34,6 +34,7 @@ describe('Identity', () => {
         },
       ],
       balance: 0,
+      revision: 0,
     };
 
     identity = new Identity(rawIdentity);

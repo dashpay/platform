@@ -258,6 +258,60 @@ describe('validateIdentityFactory', () => {
     });
   });
 
+  describe('revision', () => {
+    it('should be present', async () => {
+      rawIdentity.revision = undefined;
+
+      const result = validateIdentity(rawIdentity);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.dataPath).to.equal('');
+      expect(error.params.missingProperty).to.equal('revision');
+      expect(error.keyword).to.equal('required');
+
+      expect(validatePublicKeysMock).to.not.be.called();
+    });
+
+    it('should be an integer', async () => {
+      rawIdentity.revision = 1.2;
+
+      const result = validateIdentity(rawIdentity);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.keyword).to.equal('type');
+      expect(error.dataPath).to.equal('.revision');
+
+      expect(validatePublicKeysMock).to.not.be.called();
+    });
+
+    it('should be greater or equal 0', async () => {
+      rawIdentity.revision = -1;
+
+      let result = validateIdentity(rawIdentity);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.keyword).to.equal('minimum');
+      expect(error.dataPath).to.equal('.revision');
+
+      expect(validatePublicKeysMock).to.not.be.called();
+
+      rawIdentity.revision = 0;
+
+      result = validateIdentity(rawIdentity);
+
+      expect(result.isValid()).to.be.true();
+    });
+  });
+
   it('should return valid result if a raw identity is valid', () => {
     const result = validateIdentity(rawIdentity);
 
