@@ -42,7 +42,6 @@ class IdentityFactory {
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: publicKey.toBuffer()
           .toString('base64'),
-        isEnabled: true,
       })),
     });
 

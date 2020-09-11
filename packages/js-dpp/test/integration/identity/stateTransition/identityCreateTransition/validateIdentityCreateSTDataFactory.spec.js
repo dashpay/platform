@@ -46,7 +46,6 @@ describe('validateIdentityCreateSTDataFactory', () => {
           id: 0,
           type: 1,
           data: 'Alw8x/v8UvcQyUFJf9AYdsGJFx6iJ0WPUBr8s4opfWW0',
-          isEnabled: true,
         },
       ],
     });

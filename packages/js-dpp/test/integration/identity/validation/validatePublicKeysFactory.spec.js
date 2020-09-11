@@ -192,35 +192,6 @@ describe('validatePublicKeysFactory', () => {
     });
   });
 
-  describe('isEnabled', () => {
-    it('should be present', () => {
-      delete publicKeys[1].isEnabled;
-
-      const result = validatePublicKeys(publicKeys);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.dataPath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('isEnabled');
-    });
-
-    it('should be a number', () => {
-      publicKeys[1].isEnabled = 'string';
-
-      const result = validatePublicKeys(publicKeys);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.dataPath).to.equal('.isEnabled');
-      expect(error.keyword).to.equal('type');
-    });
-  });
-
   it('should return invalid result if there are duplicate key ids', () => {
     publicKeys[1].id = publicKeys[0].id;
 

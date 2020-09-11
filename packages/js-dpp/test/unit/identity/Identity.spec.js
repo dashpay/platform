@@ -31,7 +31,6 @@ describe('Identity', () => {
           id: 0,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
           data: 'somePublicKey',
-          isEnabled: true,
         },
       ],
       balance: 0,

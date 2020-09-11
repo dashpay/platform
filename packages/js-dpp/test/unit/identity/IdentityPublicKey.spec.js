@@ -10,7 +10,6 @@ describe('IdentityPublicKey', () => {
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: 'somePublicKey',
-      isEnabled: true,
     };
 
     publicKey = new IdentityPublicKey(rawPublicKey);
@@ -32,7 +31,6 @@ describe('IdentityPublicKey', () => {
       expect(instance.id).to.equal(rawPublicKey.id);
       expect(instance.type).to.equal(rawPublicKey.type);
       expect(instance.data).to.deep.equal(rawPublicKey.data);
-      expect(instance.enabled).to.deep.equal(rawPublicKey.isEnabled);
     });
   });
 
@@ -80,27 +78,12 @@ describe('IdentityPublicKey', () => {
     });
   });
 
-  describe('#isEnabled', () => {
-    it('should return set enabled', () => {
-      expect(publicKey.isEnabled()).to.equal(rawPublicKey.isEnabled);
-    });
-  });
-
-  describe('#setEnabled', () => {
-    it('should set enabled', () => {
-      publicKey.setEnabled(false);
-
-      expect(publicKey.enabled).to.equal(false);
-    });
-  });
-
   describe('#hash', () => {
     it('should return original public key hash', () => {
       publicKey = new IdentityPublicKey({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: 'Az7vgL9THE2e1nq8zwK98gx5Oy6Tro3pxc8PQxJA+oTx',
-        isEnabled: true,
       });
 
       const result = publicKey.hash();
@@ -112,7 +95,6 @@ describe('IdentityPublicKey', () => {
       publicKey = new IdentityPublicKey({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        isEnabled: true,
       });
 
       try {

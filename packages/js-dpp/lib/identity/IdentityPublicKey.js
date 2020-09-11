@@ -12,8 +12,7 @@ class IdentityPublicKey {
     if (rawIdentityPublicKey) {
       this.setId(rawIdentityPublicKey.id)
         .setType(rawIdentityPublicKey.type)
-        .setData(rawIdentityPublicKey.data)
-        .setEnabled(rawIdentityPublicKey.isEnabled);
+        .setData(rawIdentityPublicKey.data);
     }
   }
 
@@ -81,27 +80,6 @@ class IdentityPublicKey {
   }
 
   /**
-   * Disable/enable public key
-   *
-   * @param {boolean} enabled
-   * @return {IdentityPublicKey}
-   */
-  setEnabled(enabled) {
-    this.enabled = enabled;
-
-    return this;
-  }
-
-  /**
-   * Is Public key enabled?
-   *
-   * @return {boolean}
-   */
-  isEnabled() {
-    return this.enabled;
-  }
-
-  /**
    * Get original public key hash
    *
    * @returns {string}
@@ -129,7 +107,6 @@ class IdentityPublicKey {
       id: this.getId(),
       type: this.getType(),
       data: this.getData(),
-      isEnabled: this.isEnabled(),
     };
   }
 }
@@ -139,7 +116,6 @@ class IdentityPublicKey {
  * @property {number} id
  * @property {number} type
  * @property {string} data
- * @property {boolean} isEnabled
  */
 
 IdentityPublicKey.TYPES = {
