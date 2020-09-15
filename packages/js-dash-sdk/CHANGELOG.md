@@ -1,3 +1,12 @@
+## [3.15.2](https://github.com/dashevo/DashJS/compare/v3.15.1...v3.15.2) (2020-09-14)
+
+
+### Bug Fixes
+
+* Update wallet-lib to a version with sync process fixes ([#185](https://github.com/dashevo/wallet-lib/pull/185))
+
+
+
 ## [3.15.1](https://github.com/dashevo/DashJS/compare/v3.15.0...v3.15.1) (2020-09-07)
 
 
