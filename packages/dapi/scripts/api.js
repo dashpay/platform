@@ -42,6 +42,8 @@ async function main() {
     process.exit();
   }
 
+  const isProductionEnvironment = process.env.NODE_ENV === 'production';
+
   log.info('Connecting to Drive');
   const driveStateRepository = new DriveStateRepository({
     host: config.tendermintCore.host,
@@ -66,8 +68,15 @@ async function main() {
   // Start GRPC server
   log.info('Starting GRPC server');
 
-  const coreHandlers = coreHandlersFactory(insightAPI);
-  const platformHandlers = platformHandlersFactory(rpcClient, driveStateRepository);
+  const coreHandlers = coreHandlersFactory(
+    insightAPI,
+    isProductionEnvironment,
+  );
+  const platformHandlers = platformHandlersFactory(
+    rpcClient,
+    driveStateRepository,
+    isProductionEnvironment,
+  );
 
   const grpcApiServer = createServer(getCoreDefinition(0), coreHandlers);
 

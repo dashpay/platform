@@ -64,10 +64,15 @@ const getIdentityIdByFirstPublicKeyHandlerFactory = require(
 /**
  * @param {jaysonClient} rpcClient
  * @param {DriveStateRepository} driveStateRepository
+ * @param {boolean} isProductionEnvironment
  * @returns {Object<string, function>}
  */
-function platformHandlersFactory(rpcClient, driveStateRepository) {
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
+function platformHandlersFactory(
+  rpcClient,
+  driveStateRepository,
+  isProductionEnvironment,
+) {
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
 
   // broadcastStateTransition
   const broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(

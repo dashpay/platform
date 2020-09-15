@@ -49,10 +49,11 @@ const broadcastTransactionHandlerFactory = require(
 
 /**
  * @param {InsightAPI} insightAPI
+ * @param {boolean} isProductionEnvironment
  * @returns {Object<string, function>}
  */
-function coreHandlersFactory(insightAPI) {
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
+function coreHandlersFactory(insightAPI, isProductionEnvironment) {
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
 
   // getBlock
   const getBlockHandler = getBlockHandlerFactory(insightAPI);

@@ -57,6 +57,8 @@ async function main() {
     process.exit();
   }
 
+  const isProductionEnvironment = process.env.NODE_ENV === 'production';
+
   // Subscribe to events from Dash Core
   const dashCoreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
 
@@ -96,7 +98,7 @@ async function main() {
   // Start GRPC server
   log.info('Starting GRPC server');
 
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log);
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
 
   const getHistoricalTransactionsIterator = getHistoricalTransactionsIteratorFactory(
     dashCoreRpcClient,
