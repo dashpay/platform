@@ -9,6 +9,8 @@ const getDAPISeeds = require('../../lib/test/getDAPISeeds');
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForBalanceToChange = require('../../lib/test/waitForBalanceToChange');
 
+const { EVENTS } = Dash.WalletLib;
+
 describe('e2e', () => {
   describe('Wallet', function main() {
     this.timeout(950000);
@@ -90,7 +92,7 @@ describe('e2e', () => {
     });
 
     describe('restored wallet', () => {
-      it.skip('should have all transaction from before at first', async () => {
+      it('should have all transaction from before at first', async () => {
         restoredWallet = new Dash.Client({
           wallet: {
             mnemonic,
@@ -101,6 +103,10 @@ describe('e2e', () => {
 
         restoredAccount = await restoredWallet.getWalletAccount();
 
+        // Due to the limitations of DAPI, we need to wait for a block to be mined if we connected
+        // in the moment when transaction already entered the mempool, but haven't been mined yet
+        await new Promise((resolve) => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
+
         await waitForBalanceToChange(restoredAccount);
 
         const transactionIds = Object.keys(restoredAccount.getTransactions());
@@ -110,7 +116,7 @@ describe('e2e', () => {
         expect(transactionIds[0]).to.equal(firstTransaction.id);
       });
 
-      it.skip('should receive a transaction when as it has been sent', async () => {
+      it('should receive a transaction when as it has been sent', async () => {
         secondTransaction = await fundedAccount.createTransaction({
           recipient: restoredAccount.getUnusedAddress().address,
           satoshis: 1000,
@@ -133,7 +139,7 @@ describe('e2e', () => {
     });
 
     describe('empty wallet', () => {
-      it.skip('should receive a transaction when as it has been sent to restored wallet', () => {
+      it('should receive a transaction when as it has been sent to restored wallet', () => {
         const transactionIds = Object.keys(emptyAccount.getTransactions());
 
         expect(transactionIds).to.have.lengthOf(2);
