@@ -1,9 +1,9 @@
 const validateIdentityPublicKeyUniquenessFactory = require(
-  '../../../../../lib/identity/stateTransitions/identityCreateTransition/validateIdentityPublicKeyUniquenessFactory',
+  '../../../../../lib/identity/stateTransitions/identityCreateTransition/validateIdentityPublicKeysUniquenessFactory',
 );
 
-const IdentityFirstPublicKeyAlreadyExistsError = require(
-  '../../../../../lib/errors/IdentityFirstPublicKeyAlreadyExistsError',
+const IdentityPublicKeyAlreadyExistsError = require(
+  '../../../../../lib/errors/IdentityPublicKeyAlreadyExistsError',
 );
 
 const getIdentityFixture = require('../../../../../lib/test/fixtures/getIdentityFixture');
@@ -23,20 +23,26 @@ describe('validateIdentityPublicKeyUniquenessFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
+    stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves({});
+
     validateIdentityPublicKeyUniqueness = validateIdentityPublicKeyUniquenessFactory(
       stateRepositoryMock,
     );
   });
 
   it('should return invalid result if identity id was found', async () => {
-    stateRepositoryMock.fetchPublicKeyIdentityId.resolves(identity.getId());
+    const publicKeys = identity.getPublicKeys();
+    const publicKeyHash = publicKeys[0].hash();
 
-    const [firstPublicKey] = identity.getPublicKeys();
+    stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves({
+      [publicKeyHash]: identity.getId(),
+    });
+
     const result = await validateIdentityPublicKeyUniqueness(
-      firstPublicKey,
+      publicKeys,
     );
 
-    expectValidationError(result, IdentityFirstPublicKeyAlreadyExistsError);
+    expectValidationError(result, IdentityPublicKeyAlreadyExistsError);
 
     const [error] = result.getErrors();
 
@@ -45,7 +51,7 @@ describe('validateIdentityPublicKeyUniquenessFactory', () => {
 
   it('should return valid result if no identity id was not found', async () => {
     const result = await validateIdentityPublicKeyUniqueness(
-      identity.getPublicKeyById(0),
+      identity.getPublicKeys(),
     );
 
     expect(result.isValid()).to.be.true();

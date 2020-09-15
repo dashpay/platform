@@ -38,10 +38,13 @@ function applyIdentityCreateTransitionFactory(
 
     await stateRepository.storeIdentity(identity);
 
-    const [firstPublicKey] = identity.getPublicKeys();
-    await stateRepository.storePublicKeyIdentityId(
-      firstPublicKey.hash(),
+    const publicKeyHashes = identity
+      .getPublicKeys()
+      .map((publicKey) => publicKey.hash());
+
+    await stateRepository.storeIdentityPublicKeyHashes(
       identity.getId(),
+      publicKeyHashes,
     );
   }
 

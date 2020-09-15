@@ -26,5 +26,7 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     storePublicKeyIdentityId: sinonSandbox.stub(),
     fetchPublicKeyIdentityId: sinonSandbox.stub(),
     fetchLatestPlatformBlockHeader: sinonSandbox.stub(),
+    storeIdentityPublicKeyHashes: sinonSandbox.stub(),
+    fetchIdentityIdsByPublicKeyHashes: sinonSandbox.stub(),
   };
 };

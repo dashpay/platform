@@ -102,6 +102,17 @@
  */
 
 /**
+ * Store public keys hashes and identity id pair
+ *
+ * @async
+ * @method
+ * @name StateRepository#storeIdentityPublicKeyHashes
+ * @param {string} identityId
+ * @param {string[]} publicKeyHashes
+ * @returns {Promise<void>}
+ */
+
+/**
  * Fetch identity id by public key hash
  *
  * @async
@@ -109,6 +120,16 @@
  * @name StateRepository#fetchPublicKeyIdentityId
  * @param {string} publicKeyHash
  * @returns {Promise<string|null>}
+ */
+
+/**
+ * Fetch identity ids by public keys hashes
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchIdentityIdsByPublicKeyHashes
+ * @param {string[]} publicKeyHashes
+ * @returns {Promise<Object>}
  */
 
 /**

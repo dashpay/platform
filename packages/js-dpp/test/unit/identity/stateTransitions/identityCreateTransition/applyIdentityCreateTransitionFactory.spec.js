@@ -53,10 +53,13 @@ describe('applyIdentityCreateTransitionFactory', () => {
       identity,
     );
 
-    const [firstPublicKey] = identity.getPublicKeys();
-    expect(stateRepositoryMock.storePublicKeyIdentityId).to.have.been.calledOnceWithExactly(
-      firstPublicKey.hash(),
+    const publicKeyHashes = identity
+      .getPublicKeys()
+      .map((publicKey) => publicKey.hash());
+
+    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
       identity.getId(),
+      publicKeyHashes,
     );
   });
 });

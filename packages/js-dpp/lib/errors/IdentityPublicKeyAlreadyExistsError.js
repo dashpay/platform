@@ -1,11 +1,11 @@
 const ConsensusError = require('./ConsensusError');
 
-class IdentityFirstPublicKeyAlreadyExistsError extends ConsensusError {
+class IdentityPublicKeyAlreadyExistsError extends ConsensusError {
   /**
    * @param {string} publicKeyHash
    */
   constructor(publicKeyHash) {
-    super('Identity first public key already exists');
+    super('Identity public key already exists');
 
     this.publicKeyHash = publicKeyHash;
   }
@@ -20,4 +20,4 @@ class IdentityFirstPublicKeyAlreadyExistsError extends ConsensusError {
   }
 }
 
-module.exports = IdentityFirstPublicKeyAlreadyExistsError;
+module.exports = IdentityPublicKeyAlreadyExistsError;
