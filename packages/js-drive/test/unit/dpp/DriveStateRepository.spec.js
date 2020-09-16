@@ -129,6 +129,31 @@ describe('DriveStateRepository', () => {
     });
   });
 
+  describe('#storeIdentityPublicKeyHashes', () => {
+    it('should store public key hashes for an identity id to repository', async () => {
+      await stateRepository.storeIdentityPublicKeyHashes(
+        identity.getId(),
+        [
+          identity.getPublicKeyById(0).hash(),
+          identity.getPublicKeyById(1).hash(),
+        ],
+      );
+
+      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('identity');
+      expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledTwice();
+      expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
+        identity.getPublicKeyById(0).hash(),
+        identity.getId(),
+        transactionMock,
+      ]);
+      expect(publicKeyIdentityIdRepositoryMock.store.getCall(1).args).to.have.deep.members([
+        identity.getPublicKeyById(1).hash(),
+        identity.getId(),
+        transactionMock,
+      ]);
+    });
+  });
+
   describe('#fetchPublicKeyIdentityId', () => {
     it('should fetch previously stored public key hash and identity id pair', async () => {
       const publicKeyHash = identity.getPublicKeyById(0).hash();

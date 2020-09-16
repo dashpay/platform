@@ -57,6 +57,8 @@ class DriveStateRepository {
   /**
    * Store public key hash and identity id pair
    *
+   * @deprecated
+   *
    * @param {string} publicKeyHash
    * @param {string} identityId
    *
@@ -67,6 +69,25 @@ class DriveStateRepository {
 
     await this.publicKeyIdentityIdMapLevelDBRepository.store(
       publicKeyHash, identityId, transaction,
+    );
+  }
+
+  /**
+   * Store public key hashes for an identity id
+   *
+   * @param {string} identityId
+   * @param {string[]} publicKeyHashes
+   *
+   * @returns {Promise<void>}
+   */
+  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
+    const transaction = this.getDBTransaction('identity');
+
+    await Promise.all(
+      publicKeyHashes.map(async (publicKeyHash) => this.publicKeyIdentityIdMapLevelDBRepository
+        .store(
+          publicKeyHash, identityId, transaction,
+        )),
     );
   }
 
