@@ -10,6 +10,7 @@ const InvalidSignatureTypeError = require('./errors/InvalidSignatureTypeError');
 const InvalidSignaturePublicKeyError = require('./errors/InvalidSignaturePublicKeyError');
 const StateTransitionIsNotSignedError = require('./errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('./errors/PublicKeyMismatchError');
+const InvalidIdentityPublicKeyTypeError = require('../errors/InvalidIdentityPublicKeyTypeError');
 
 /**
  * @abstract
@@ -71,6 +72,8 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
         this.signByPrivateKey(privateKeyModel);
         break;
+      case IdentityPublicKey.TYPES.BLS12_381:
+        throw new InvalidIdentityPublicKeyTypeError(identityPublicKey.getType());
       default:
         throw new InvalidSignatureTypeError(identityPublicKey.getType());
     }

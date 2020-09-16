@@ -120,6 +120,7 @@ class IdentityPublicKey {
 
 IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
+  BLS12_381: 1,
 };
 
 module.exports = IdentityPublicKey;

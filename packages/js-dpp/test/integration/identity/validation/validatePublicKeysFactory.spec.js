@@ -152,34 +152,8 @@ describe('validatePublicKeysFactory', () => {
       expect(error.keyword).to.equal('type');
     });
 
-    it('should be no less than 1 character', () => {
-      publicKeys[1].data = Buffer.alloc(0).toString('base64');
-
-      const result = validatePublicKeys(publicKeys);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.dataPath).to.equal('.data');
-      expect(error.keyword).to.equal('minLength');
-    });
-
-    it('should be no longer than 2048 character', () => {
-      publicKeys[1].data = Buffer.alloc(2000).toString('base64');
-
-      const result = validatePublicKeys(publicKeys);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.dataPath).to.equal('.data');
-      expect(error.keyword).to.equal('maxLength');
-    });
-
-    it('should be in base64 format', () => {
-      publicKeys[1].data = '&'.repeat(64);
+    it('should be base64 encoded string without padding', () => {
+      publicKeys[1].data = '&'.repeat(44);
 
       const result = validatePublicKeys(publicKeys);
 
@@ -189,6 +163,64 @@ describe('validatePublicKeysFactory', () => {
 
       expect(error.dataPath).to.equal('.data');
       expect(error.keyword).to.equal('pattern');
+    });
+
+    describe('ECDSA_SECP256K1', () => {
+      it('should be no less than 44 character', () => {
+        publicKeys[1].data = Buffer.alloc(33).toString('base64').slice(1);
+
+        const result = validatePublicKeys(publicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.data');
+        expect(error.keyword).to.equal('minLength');
+      });
+
+      it('should be no longer than 44 character', () => {
+        publicKeys[1].data = `${Buffer.alloc(33).toString('base64')}a`;
+
+        const result = validatePublicKeys(publicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.data');
+        expect(error.keyword).to.equal('maxLength');
+      });
+    });
+
+    describe('BLS12_381', () => {
+      it('should be no less than 64 character', () => {
+        publicKeys[1].data = Buffer.alloc(48).toString('base64').slice(1);
+        publicKeys[1].type = 1;
+
+        const result = validatePublicKeys(publicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.data');
+        expect(error.keyword).to.equal('minLength');
+      });
+
+      it('should be no longer than 64 character', () => {
+        publicKeys[1].data = `${Buffer.alloc(48).toString('base64')}a`;
+        publicKeys[1].type = 1;
+
+        const result = validatePublicKeys(publicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.data');
+        expect(error.keyword).to.equal('maxLength');
+      });
     });
   });
 
@@ -217,7 +249,7 @@ describe('validatePublicKeysFactory', () => {
   });
 
   it('should return invalid result if key data is not a valid DER', () => {
-    publicKeys[1].data = Buffer.alloc(36).toString('base64');
+    publicKeys[1].data = Buffer.alloc(33).toString('base64');
 
     const result = validatePublicKeys(publicKeys);
 

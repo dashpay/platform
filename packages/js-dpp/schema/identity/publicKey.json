@@ -4,19 +4,60 @@
   "properties": {
     "id": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Public key ID",
+      "$comment": "Must be unique for the identity. It can’t be changed after adding a key. Included when signing state transitions to indicate which identity key was used to sign."
     },
     "type": {
       "type": "integer",
-      "enum": [0]
+      "enum": [0, 1],
+      "description": "Public key type. 0 - ECDSA Secp256k1, 1 - BLS 12-381",
+      "$comment": "It can't be changed after adding a key"
     },
     "data": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 2048,
-      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+      "contentEncoding": "base64",
+      "pattern": "^([A-Za-z0-9+/])+$",
+      "description": "Base64-encoded raw public key",
+      "$commit": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
     }
   },
+  "allOf": [
+    {
+      "if": {
+         "properties": {
+            "type": {
+              "const": 0
+            }
+         }
+      },
+      "then": {
+         "properties": {
+            "data": {
+               "minLength": 44,
+               "maxLength": 44
+            }
+         }
+      }
+    },
+    {
+      "if": {
+         "properties": {
+            "type": {
+              "const": 1
+            }
+         }
+      },
+      "then": {
+         "properties": {
+            "data": {
+               "minLength": 64,
+               "maxLength": 64
+            }
+         }
+      }
+    }
+  ],
   "required": [
     "id",
     "type",
