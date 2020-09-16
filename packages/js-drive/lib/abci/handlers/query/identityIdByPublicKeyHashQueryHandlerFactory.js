@@ -11,16 +11,16 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 /**
  *
  * @param {PublicKeyIdentityIdMapLevelDBRepository} publicKeyIdentityIdRepository
- * @return {identityIdByFirstPublicKeyQueryHandler}
+ * @return {identityIdByPublicKeyHashQueryHandler}
  */
-function identityIdByFirstPublicKeyQueryHandlerFactory(publicKeyIdentityIdRepository) {
+function identityIdByPublicKeyHashQueryHandlerFactory(publicKeyIdentityIdRepository) {
   /**
-   * @typedef identityIdByFirstPublicKeyQueryHandler
+   * @typedef identityIdByPublicKeyHashQueryHandler
    * @param {Object} params
    * @param {string} params.publicKeyHash
    * @return {Promise<ResponseQuery>}
    */
-  async function identityIdByFirstPublicKeyQueryHandler({ publicKeyHash }) {
+  async function identityIdByPublicKeyHashQueryHandler({ publicKeyHash }) {
     const identityId = await publicKeyIdentityIdRepository.fetch(publicKeyHash);
 
     if (!identityId) {
@@ -32,7 +32,7 @@ function identityIdByFirstPublicKeyQueryHandlerFactory(publicKeyIdentityIdReposi
     });
   }
 
-  return identityIdByFirstPublicKeyQueryHandler;
+  return identityIdByPublicKeyHashQueryHandler;
 }
 
-module.exports = identityIdByFirstPublicKeyQueryHandlerFactory;
+module.exports = identityIdByPublicKeyHashQueryHandlerFactory;

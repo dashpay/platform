@@ -62,8 +62,8 @@ const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecor
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
-const identityByFirstPublicKeyQueryHandlerFactory = require('./abci/handlers/query/identityByFirstPublicKeyQueryHandlerFactory');
-const identityIdByFirstPublicKeyQueryHandlerFactory = require('./abci/handlers/query/identityIdByFirstPublicKeyQueryHandlerFactory');
+const identityByPublicKeyHashQueryHandlerFactory = require('./abci/handlers/query/identityByPublicKeyHashQueryHandlerFactory');
+const identityIdByPublicKeyHashQueryHandlerFactory = require('./abci/handlers/query/identityIdByPublicKeyHashQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 
@@ -396,17 +396,17 @@ async function createDIContainer(options) {
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
     dataContractQueryHandler: asFunction(dataContractQueryHandlerFactory).singleton(),
     documentQueryHandler: asFunction(documentQueryHandlerFactory).singleton(),
-    identityByFirstPublicKeyQueryHandler:
-      asFunction(identityByFirstPublicKeyQueryHandlerFactory).singleton(),
-    identityIdByFirstPublicKeyQueryHandler:
-      asFunction(identityIdByFirstPublicKeyQueryHandlerFactory).singleton(),
+    identityByPublicKeyHashQueryHandler:
+      asFunction(identityByPublicKeyHashQueryHandlerFactory).singleton(),
+    identityIdByPublicKeyHashQueryHandler:
+      asFunction(identityIdByPublicKeyHashQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
       identityQueryHandler,
       dataContractQueryHandler,
       documentQueryHandler,
-      identityByFirstPublicKeyQueryHandler,
-      identityIdByFirstPublicKeyQueryHandler,
+      identityByPublicKeyHashQueryHandler,
+      identityIdByPublicKeyHashQueryHandler,
     ) => {
       const router = findMyWay({
         ignoreTrailingSlash: true,
@@ -415,8 +415,12 @@ async function createDIContainer(options) {
       router.on('GET', '/identities/:id', identityQueryHandler);
       router.on('GET', '/dataContracts/:id', dataContractQueryHandler);
       router.on('GET', '/dataContracts/:contractId/documents/:type', documentQueryHandler);
-      router.on('GET', '/identities/by-first-public-key/:publicKeyHash', identityByFirstPublicKeyQueryHandler);
-      router.on('GET', '/identities/by-first-public-key/:publicKeyHash/id', identityIdByFirstPublicKeyQueryHandler);
+      router.on('GET', '/identities/by-public-key-hash/:publicKeyHash', identityByPublicKeyHashQueryHandler);
+      router.on('GET', '/identities/by-public-key-hash/:publicKeyHash/id', identityIdByPublicKeyHashQueryHandler);
+
+      // TODO: remove in the next PR, keeping for functional test to work
+      router.on('GET', '/identities/by-first-public-key/:publicKeyHash', identityByPublicKeyHashQueryHandler);
+      router.on('GET', '/identities/by-first-public-key/:publicKeyHash/id', identityIdByPublicKeyHashQueryHandler);
 
       return router;
     }).singleton(),

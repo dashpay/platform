@@ -6,17 +6,17 @@ const {
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
-const identityByFirstPublicKeyQueryHandlerFactory = require(
-  '../../../../../lib/abci/handlers/query/identityByFirstPublicKeyQueryHandlerFactory',
+const identityByPublicKeyHashQueryHandlerFactory = require(
+  '../../../../../lib/abci/handlers/query/identityByPublicKeyHashQueryHandlerFactory',
 );
 
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
 const AbciError = require('../../../../../lib/abci/errors/AbciError');
 
-describe('identityByFirstPublicKeyQueryHandlerFactory', () => {
+describe('identityByPublicKeyHashQueryHandlerFactory', () => {
   let identityRepositoryMock;
   let publicKeyIdentityIdRepositoryMock;
-  let identityByFirstPublicKeyQueryHandler;
+  let identityByPublicKeyHashQueryHandler;
   let publicKeyHash;
   let identity;
   let identityId;
@@ -29,7 +29,7 @@ describe('identityByFirstPublicKeyQueryHandlerFactory', () => {
       fetch: this.sinon.stub(),
     };
 
-    identityByFirstPublicKeyQueryHandler = identityByFirstPublicKeyQueryHandlerFactory(
+    identityByPublicKeyHashQueryHandler = identityByPublicKeyHashQueryHandlerFactory(
       publicKeyIdentityIdRepositoryMock,
       identityRepositoryMock,
     );
@@ -44,7 +44,7 @@ describe('identityByFirstPublicKeyQueryHandlerFactory', () => {
     identityRepositoryMock.fetch.resolves(identity);
     publicKeyIdentityIdRepositoryMock.fetch.resolves(identityId);
 
-    const result = await identityByFirstPublicKeyQueryHandler({ publicKeyHash });
+    const result = await identityByPublicKeyHashQueryHandler({ publicKeyHash });
 
     expect(identityRepositoryMock.fetch).to.be.calledOnceWith(identityId);
     expect(publicKeyIdentityIdRepositoryMock.fetch).to.be.calledOnceWith(publicKeyHash);
@@ -55,7 +55,7 @@ describe('identityByFirstPublicKeyQueryHandlerFactory', () => {
 
   it('should throw NotFoundAbciError if identityId not found', async () => {
     try {
-      await identityByFirstPublicKeyQueryHandler({ publicKeyHash });
+      await identityByPublicKeyHashQueryHandler({ publicKeyHash });
 
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
@@ -71,7 +71,7 @@ describe('identityByFirstPublicKeyQueryHandlerFactory', () => {
     publicKeyIdentityIdRepositoryMock.fetch.resolves(identityId);
 
     try {
-      await identityByFirstPublicKeyQueryHandler({ publicKeyHash });
+      await identityByPublicKeyHashQueryHandler({ publicKeyHash });
 
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
