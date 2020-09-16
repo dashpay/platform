@@ -47,12 +47,26 @@ class CachedStateRepositoryDecorator {
   /**
    * Fetch identity id by public key hash
    *
+   * @deprecated
+   *
    * @param {string} publicKeyHash
    *
    * @returns {Promise<null|string>}
    */
   async fetchPublicKeyIdentityId(publicKeyHash) {
     return this.stateRepository.fetchPublicKeyIdentityId(publicKeyHash);
+  }
+
+  /**
+   * Fetch identity ids mapped by related public keys
+   * using public key hashes
+   *
+   * @param {string[]} publicKeyHashes
+   *
+   * @returns {Promise<Object>}
+   */
+  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
+    return this.stateRepository.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
   }
 
   /**

@@ -73,6 +73,8 @@ class DriveStateRepository {
   /**
    * Fetch identity id by public key hash
    *
+   * @deprecated
+   *
    * @param {string} publicKeyHash
    *
    * @returns {Promise<null|string>}
@@ -81,6 +83,33 @@ class DriveStateRepository {
     const transaction = this.getDBTransaction('identity');
 
     return this.publicKeyIdentityIdMapLevelDBRepository.fetch(publicKeyHash, transaction);
+  }
+
+  /**
+   * Fetch identity ids mapped by related public keys
+   * using public key hashes
+   *
+   * @param {string[]} publicKeyHashes
+   *
+   * @returns {Promise<Object>}
+   */
+  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
+    const transaction = this.getDBTransaction('identity');
+
+    const hashIdentityIdPairs = await Promise.all(
+      publicKeyHashes.map(async (publicKeyHash) => {
+        const identityId = await this.publicKeyIdentityIdMapLevelDBRepository.fetch(
+          publicKeyHash, transaction,
+        );
+
+        return { [publicKeyHash]: identityId };
+      }),
+    );
+
+    return hashIdentityIdPairs.reduce((result, nextPair) => ({
+      ...result,
+      ...nextPair,
+    }), {});
   }
 
   /**

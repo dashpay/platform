@@ -161,6 +161,60 @@ describe('DriveStateRepository', () => {
     });
   });
 
+  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
+    it('should fetch map of previously stored public key hash and identity id pairs', async () => {
+      const publicKeyHashes = [
+        identity.getPublicKeyById(0).hash(),
+        identity.getPublicKeyById(1).hash(),
+      ];
+
+      publicKeyIdentityIdRepositoryMock
+        .fetch
+        .withArgs(publicKeyHashes[0])
+        .resolves(identity.getId());
+
+      publicKeyIdentityIdRepositoryMock
+        .fetch
+        .withArgs(publicKeyHashes[1])
+        .resolves(identity.getId());
+
+      const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
+        publicKeyHashes,
+      );
+
+      expect(result).to.deep.equal({
+        [publicKeyHashes[0]]: identity.getId(),
+        [publicKeyHashes[1]]: identity.getId(),
+      });
+    });
+
+    it('should have null as value if pair was not found', async () => {
+      const publicKeyHashes = [
+        identity.getPublicKeyById(0).hash(),
+        identity.getPublicKeyById(1).hash(),
+      ];
+
+      publicKeyIdentityIdRepositoryMock
+        .fetch
+        .withArgs(publicKeyHashes[0])
+        .resolves(identity.getId());
+
+      publicKeyIdentityIdRepositoryMock
+        .fetch
+        .withArgs(publicKeyHashes[1])
+        .resolves(null);
+
+      const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
+        publicKeyHashes,
+      );
+
+      expect(result).to.deep.equal({
+        [publicKeyHashes[0]]: identity.getId(),
+        [publicKeyHashes[1]]: null,
+      });
+    });
+  });
+
   describe('#fetchDocuments', () => {
     it('should fetch documents from repository', async () => {
       const contractId = 'id';
