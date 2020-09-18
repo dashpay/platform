@@ -240,44 +240,60 @@ class DocumentFactory {
           throw new InvalidInitialRevisionError(document);
         }
 
-        const json = {
+        const rawDocument = document.toObject();
+
+        const keysToStay = [
+          '$id',
+          '$type',
+          '$dataContractId',
+          '$createdAt',
+          '$updatedAt',
+        ];
+
+        Object.keys(rawDocument).forEach((key) => {
+          if (key.startsWith('$') && !keysToStay.includes(key)) {
+            delete rawDocument[key];
+          }
+        });
+
+        return {
+          ...rawDocument,
           $action: AbstractDocumentTransition.ACTIONS.CREATE,
-          $id: document.getId(),
-          $type: document.getType(),
-          $dataContractId: document.getDataContractId(),
           $entropy: document.getEntropy(),
-          ...document.getData(),
         };
-
-        if (document.getCreatedAt()) {
-          json.$createdAt = document.getCreatedAt().getTime();
-        }
-
-        if (document.getUpdatedAt()) {
-          json.$updatedAt = document.getUpdatedAt().getTime();
-        }
-
-        return json;
       });
 
     const rawDocumentReplaceTransitions = (replaceDocuments || [])
       .map((document) => {
-        const json = {
+        let rawDocument = document.toObject();
+
+        const keysToStay = [
+          '$id',
+          '$type',
+          '$dataContractId',
+          '$revision',
+          '$updatedAt',
+        ];
+
+        Object.keys(rawDocument).forEach((key) => {
+          if (key.startsWith('$') && !keysToStay.includes(key)) {
+            delete rawDocument[key];
+          }
+        });
+
+        rawDocument = {
+          ...rawDocument,
           $action: AbstractDocumentTransition.ACTIONS.REPLACE,
-          $id: document.getId(),
-          $type: document.getType(),
-          $dataContractId: document.getDataContractId(),
-          $revision: document.getRevision() + 1,
-          ...document.getData(),
+          $revision: rawDocument.$revision + 1,
         };
 
         // If document have an originally set `updatedAt`
         // we should update it then
-        if (document.getUpdatedAt()) {
-          json.$updatedAt = new Date().getTime();
+        if (rawDocument.$updatedAt) {
+          rawDocument.$updatedAt = new Date().getTime();
         }
 
-        return json;
+        return rawDocument;
       });
 
     const rawDocumentDeleteTransitions = (deleteDocuments || [])

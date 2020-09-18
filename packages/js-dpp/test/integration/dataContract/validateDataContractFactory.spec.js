@@ -1065,7 +1065,7 @@ describe('validateDataContractFactory', () => {
       });
 
       it('should have `pattern` set if `contentEncoding` is set to `base64`', async () => {
-        delete rawDataContract.documents.withContentEncoding.properties.binaryField.pattern;
+        delete rawDataContract.documents.withContentEncoding.properties.base64Field.pattern;
 
         const result = await validateDataContract(rawDataContract);
 
@@ -1073,12 +1073,12 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'withContentEncoding\'].properties[\'binaryField\']');
+        expect(error.dataPath).to.equal('.documents[\'withContentEncoding\'].properties[\'base64Field\']');
         expect(error.keyword).to.equal('required');
       });
 
       it('should have specific `pattern` set if `contentEncoding` is set to `base64`', async () => {
-        rawDataContract.documents.withContentEncoding.properties.binaryField.pattern = '.*';
+        rawDataContract.documents.withContentEncoding.properties.base64Field.pattern = '.*';
 
         const result = await validateDataContract(rawDataContract);
 
@@ -1087,13 +1087,26 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal(
-          '.documents[\'withContentEncoding\'].properties[\'binaryField\'].pattern',
+          '.documents[\'withContentEncoding\'].properties[\'base64Field\'].pattern',
         );
         expect(error.keyword).to.equal('const');
       });
 
-      it('should have `contentEncoding` set to `base64` if former has been set', async () => {
-        rawDataContract.documents.withContentEncoding.properties.binaryField.contentEncoding = 'binary';
+      it('should have `pattern` set if `contentEncoding` is set to `base58`', async () => {
+        delete rawDataContract.documents.withContentEncoding.properties.base58Field.pattern;
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal('.documents[\'withContentEncoding\'].properties[\'base58Field\']');
+        expect(error.keyword).to.equal('required');
+      });
+
+      it('should have specific `pattern` set if `contentEncoding` is set to `base58`', async () => {
+        rawDataContract.documents.withContentEncoding.properties.base58Field.pattern = '.*';
 
         const result = await validateDataContract(rawDataContract);
 
@@ -1102,9 +1115,24 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal(
-          '.documents[\'withContentEncoding\'].properties[\'binaryField\'].contentEncoding',
+          '.documents[\'withContentEncoding\'].properties[\'base58Field\'].pattern',
         );
         expect(error.keyword).to.equal('const');
+      });
+
+      it('should have contentEncoding set to either base64 or base58', async () => {
+        rawDataContract.documents.withContentEncoding.properties.base58Field.contentEncoding = 'binary';
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.dataPath).to.equal(
+          '.documents[\'withContentEncoding\'].properties[\'base58Field\'].contentEncoding',
+        );
+        expect(error.keyword).to.equal('enum');
       });
     });
   });

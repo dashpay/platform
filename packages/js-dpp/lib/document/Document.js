@@ -1,9 +1,11 @@
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
+const lodashCloneDeep = require('lodash.clonedeep');
 
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
-const encodeToBase64WithoutPadding = require('../util/encodeToBase64WithoutPadding');
+const transpileEncodedProperties = require('../util/encoding/transpileEncodedProperties');
+const EncodedBuffer = require('../util/encoding/EncodedBuffer');
 
 class Document {
   /**
@@ -195,7 +197,29 @@ class Document {
    * @return {Document}
    */
   set(path, value) {
-    lodashSet(this.data, path, value);
+    let encodedValue = lodashCloneDeep(value);
+
+    const encodedProperties = this.dataContract.getEncodedProperties(
+      this.getType(),
+    );
+
+    Object.entries(encodedProperties).forEach(([propertyPath, { contentEncoding }]) => {
+      if (path === propertyPath) {
+        encodedValue = EncodedBuffer.from(value, contentEncoding);
+      } else if (propertyPath.includes(path)) {
+        // in case of object we need to remove
+        // first dot as we removed beginning of the path
+        // e.g. `1.2.3` and '1.2` in the result would be `.2`
+        const partialPath = propertyPath.substring(path.length + 1, propertyPath.length);
+        const buffer = lodashGet(encodedValue, partialPath);
+
+        if (buffer !== undefined) {
+          lodashSet(encodedValue, partialPath, EncodedBuffer.from(buffer, contentEncoding));
+        }
+      }
+    });
+
+    lodashSet(this.data, path, encodedValue);
 
     return this;
   }
@@ -248,39 +272,32 @@ class Document {
    * @return {RawDocument}
    */
   toJSON() {
-    const rawDocument = this.toObject();
+    const rawDocument = this.toObject({ encodedBuffer: true });
 
-    const encodedProperties = this.dataContract.getEncodedProperties(
+    return transpileEncodedProperties(
+      this.dataContract,
       this.getType(),
+      rawDocument,
+      (encodedBuffer) => encodedBuffer.toString(),
     );
-
-    Object.keys(encodedProperties)
-      .forEach((propertyPath) => {
-        const property = encodedProperties[propertyPath];
-
-        if (property.contentEncoding === 'base64') {
-          const value = lodashGet(rawDocument, propertyPath);
-          if (value !== undefined) {
-            lodashSet(
-              rawDocument,
-              propertyPath,
-              encodeToBase64WithoutPadding(
-                Buffer.from(value),
-              ),
-            );
-          }
-        }
-      });
-
-    return rawDocument;
   }
 
   /**
    * Return Document as plain object (without converting encoded fields)
    *
+   * @param {Object} [options]
+   * @param {boolean} [options.encodedBuffer=false]
    * @return {RawDocument}
    */
-  toObject() {
+  toObject(options = {}) {
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        ...options,
+      },
+    );
+
     const rawDocument = {
       $protocolVersion: this.getProtocolVersion(),
       $id: this.getId(),
@@ -297,6 +314,15 @@ class Document {
 
     if (this.updatedAt) {
       rawDocument.$updatedAt = this.getUpdatedAt().getTime();
+    }
+
+    if (!options.encodedBuffer) {
+      return transpileEncodedProperties(
+        this.dataContract,
+        this.getType(),
+        rawDocument,
+        (encodedBuffer) => encodedBuffer.toBuffer(),
+      );
     }
 
     return rawDocument;
@@ -325,31 +351,18 @@ class Document {
   /**
    * Create document from JSON
    *
-   * @param {RawDocument} rawDocument
+   * @param {RawDocument} jsonDocument
    * @param {DataContract} dataContract
    *
    * @return {Document}
    */
-  static fromJSON(rawDocument, dataContract) {
-    const encodedProperties = dataContract.getEncodedProperties(
-      rawDocument.$type,
+  static fromJSON(jsonDocument, dataContract) {
+    const rawDocument = transpileEncodedProperties(
+      dataContract,
+      jsonDocument.$type,
+      jsonDocument,
+      (string, encoding) => EncodedBuffer.from(string, encoding).toBuffer(),
     );
-
-    Object.keys(encodedProperties)
-      .forEach((propertyPath) => {
-        const property = encodedProperties[propertyPath];
-
-        if (property.contentEncoding === 'base64') {
-          const value = lodashGet(rawDocument, propertyPath);
-          if (value !== undefined) {
-            lodashSet(
-              rawDocument,
-              propertyPath,
-              Buffer.from(value, 'base64'),
-            );
-          }
-        }
-      });
 
     return new Document(rawDocument, dataContract);
   }

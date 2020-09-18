@@ -148,30 +148,54 @@
         },
         "contentEncoding": {
           "type": "string",
-          "const": "base64"
+          "enum": ["base58", "base64"]
         }
       },
       "dependencies": {
         "contentEncoding": {
-          "description": "force to use base64 pattern without padding",
-          "if": {
-            "properties": {
-              "contentEncoding": {
-                "const": "base64"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "pattern": {
-                "type": "string",
-                "const": "^([A-Za-z0-9+/])*$"
+          "description": "force to use either base64 pattern without padding or base58",
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "contentEncoding": {
+                    "const": "base58"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "const": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+                  }
+                },
+                "required": [
+                  "pattern"
+                ]
               }
             },
-            "required": [
-              "pattern"
-            ]
-          }
+            {
+              "if": {
+                "properties": {
+                  "contentEncoding": {
+                    "const": "base64"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "const": "^([A-Za-z0-9+/])*$"
+                  }
+                },
+                "required": [
+                  "pattern"
+                ]
+              }
+            }
+          ]
         },
         "uniqueItems": {
           "description": "prevent slow validation of large non-scalar arrays",

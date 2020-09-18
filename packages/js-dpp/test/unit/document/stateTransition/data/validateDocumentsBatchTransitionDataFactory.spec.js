@@ -54,7 +54,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
     stateTransition = new DocumentsBatchTransition({
       ownerId,
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     const timeInSeconds = Math.ceil(new Date().getTime() / 1000);
@@ -298,7 +298,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     stateTransition.transitions[0].getAction = () => 5;

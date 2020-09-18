@@ -42,9 +42,12 @@ class DocumentDeleteTransition extends AbstractDocumentTransition {
   /**
    * Get plain object representation
    *
+   * @param {Object} [options]
+   * @param {boolean} [options.encodedBuffer=false]
    * @return {Object}
    */
-  toObject() {
+  // eslint-disable-next-line no-unused-vars
+  toObject(options = {}) {
     return {
       ...super.toObject(),
       $id: this.getId(),

@@ -227,7 +227,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
         stateTransition = new DocumentsBatchTransition({
           ownerId,
           contractId: dataContract.getId(),
-          transitions: documentTransitions.map((t) => t.toJSON()),
+          transitions: documentTransitions.map((t) => t.toObject()),
         }, [dataContract]);
 
         rawStateTransition = stateTransition.toJSON();
@@ -682,7 +682,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validateStructure(rawStateTransition, dataContract);
+    const result = await validateStructure(rawStateTransition);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

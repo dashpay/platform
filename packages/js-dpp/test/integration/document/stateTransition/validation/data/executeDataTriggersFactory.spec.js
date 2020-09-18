@@ -213,7 +213,9 @@ describe('executeDataTriggersFactory', () => {
   });
 
   it("should call only one trigger if there's one document with a trigger and one without", async () => {
-    childDocument.dataContractId = getDataContractFixture().getId();
+    const dataContractId = getDataContractFixture().getId();
+    childDocument.dataContractId = dataContractId;
+    childDocument.dataContract.id = dataContractId;
     childDocument.ownerId = getDocumentsFixture.ownerId;
 
     documentTransitions = getDocumentTransitionsFixture({

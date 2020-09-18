@@ -27,7 +27,7 @@ module.exports = function getDocumentsFixture(dataContract = getDataContractFixt
     factory.create(dataContract, ownerId, 'noTimeDocument', { name: 'ImOutOfTime' }),
     factory.create(dataContract, ownerId, 'uniqueDates', { firstName: 'John' }),
     factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Bill', lastName: 'Gates' }),
-    factory.create(dataContract, ownerId, 'withContentEncoding', { binaryField: crypto.randomBytes(10) }),
+    factory.create(dataContract, ownerId, 'withContentEncoding', { base64Field: crypto.randomBytes(10), base58Field: crypto.randomBytes(10) }),
     factory.create(dataContract, ownerId, 'optionalUniqueIndexedDocument', { firstName: 'Jacques-Yves', lastName: 'Cousteau' }),
   ];
 };

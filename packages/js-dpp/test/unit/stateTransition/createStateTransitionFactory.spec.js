@@ -44,7 +44,7 @@ describe('createStateTransitionFactory', () => {
     const stateTransition = new DocumentsBatchTransition({
       ownerId: getDocumentsFixture.ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     const result = await createStateTransition(stateTransition.toJSON(), {

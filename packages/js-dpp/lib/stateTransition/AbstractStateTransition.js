@@ -3,6 +3,7 @@ const {
   PrivateKey,
   Signer: { sign, verifySignature },
 } = require('@dashevo/dashcore-lib');
+const lodashCloneDeep = require('lodash.clonedeep');
 
 const StateTransitionIsNotSignedError = require(
   './errors/StateTransitionIsNotSignedError',
@@ -190,7 +191,7 @@ class AbstractStateTransition {
    * @return {Object}
    */
   static translateJsonToObject(rawStateTransition) {
-    return rawStateTransition;
+    return lodashCloneDeep(rawStateTransition);
   }
 }
 

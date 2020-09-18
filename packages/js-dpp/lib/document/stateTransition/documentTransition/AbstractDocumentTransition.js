@@ -1,7 +1,7 @@
 const lodashGet = require('lodash.get');
-const lodashSet = require('lodash.set');
 
-const encodeToBase64WithoutPadding = require('../../../util/encodeToBase64WithoutPadding');
+const transpileEncodedProperties = require('../../../util/encoding/transpileEncodedProperties');
+const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
 
 /**
  * @abstract
@@ -31,9 +31,12 @@ class AbstractDocumentTransition {
   /**
    * Get plain object representation
    *
+   * @param {Object} [options]
+   * @param {boolean} [options.encodedBuffer=false]
    * @return {Object}
    */
-  toObject() {
+  // eslint-disable-next-line no-unused-vars
+  toObject(options = {}) {
     return {
       $action: this.getAction(),
       $dataContractId: this.getDataContractId(),
@@ -57,31 +60,14 @@ class AbstractDocumentTransition {
    * @return {Object}
    */
   toJSON() {
-    const data = this.toObject();
+    const data = this.toObject({ encodedBuffer: true });
 
-    const encodedProperties = this.dataContract.getEncodedProperties(
+    return transpileEncodedProperties(
+      this.dataContract,
       this.getType(),
+      data,
+      (encodedBuffer) => encodedBuffer.toString(),
     );
-
-    Object.keys(encodedProperties)
-      .forEach((propertyPath) => {
-        const property = encodedProperties[propertyPath];
-
-        if (property.contentEncoding === 'base64') {
-          const value = lodashGet(data, propertyPath);
-          if (value !== undefined) {
-            lodashSet(
-              data,
-              propertyPath,
-              encodeToBase64WithoutPadding(
-                value,
-              ),
-            );
-          }
-        }
-      });
-
-    return data;
   }
 
   /**
@@ -99,27 +85,12 @@ class AbstractDocumentTransition {
    * }
    */
   static translateJsonToObject(rawDocumentTransition, dataContract) {
-    const encodedProperties = dataContract.getEncodedProperties(
+    return transpileEncodedProperties(
+      dataContract,
       rawDocumentTransition.$type,
+      rawDocumentTransition,
+      (string, encoding) => EncodedBuffer.from(string, encoding).toBuffer(),
     );
-
-    Object.keys(encodedProperties)
-      .forEach((propertyPath) => {
-        const property = encodedProperties[propertyPath];
-
-        if (property.contentEncoding === 'base64') {
-          const value = lodashGet(rawDocumentTransition, propertyPath);
-          if (value !== undefined) {
-            lodashSet(
-              rawDocumentTransition,
-              propertyPath,
-              Buffer.from(value, 'base64'),
-            );
-          }
-        }
-      });
-
-    return rawDocumentTransition;
   }
 }
 

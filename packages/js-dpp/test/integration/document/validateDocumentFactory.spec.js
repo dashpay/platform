@@ -15,6 +15,8 @@ const MissingDocumentTypeError = require('../../../lib/errors/MissingDocumentTyp
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 const MismatchDocumentContractIdAndDataContractError = require('../../../lib/errors/MismatchDocumentContractIdAndDataContractError');
 
+const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
+
 const {
   expectValidationError,
   expectJsonSchemaError,
@@ -472,7 +474,7 @@ describe('validateDocumentFactory', () => {
   it('return invalid result if binary field exceeds `maxLength`', () => {
     const document = getDocumentsFixture(dataContract)[8];
 
-    document.data.binaryField = Buffer.alloc(32);
+    document.data.base64Field = new EncodedBuffer(Buffer.alloc(32), 'base64');
 
     rawDocument = document.toJSON();
 
@@ -482,7 +484,7 @@ describe('validateDocumentFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.dataPath).to.equal('.binaryField');
+    expect(error.dataPath).to.equal('.base64Field');
     expect(error.keyword).to.equal('maxLength');
   });
 

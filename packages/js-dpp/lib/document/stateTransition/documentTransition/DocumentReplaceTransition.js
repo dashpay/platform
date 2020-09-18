@@ -1,5 +1,8 @@
 const AbstractDocumentTransition = require('./AbstractDocumentTransition');
 
+const transpileEncodedProperties = require('../../../util/encoding/transpileEncodedProperties');
+const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
+
 class DocumentReplaceTransition extends AbstractDocumentTransition {
   /**
    * @param {RawDocumentReplaceTransition} rawTransition
@@ -25,7 +28,12 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
     delete data.$dataContractId;
     delete data.$updatedAt;
 
-    this.data = data;
+    this.data = transpileEncodedProperties(
+      dataContract,
+      this.getType(),
+      data,
+      (buffer, encoding) => new EncodedBuffer(buffer, encoding),
+    );
   }
 
   /**
@@ -85,9 +93,19 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
   /**
    * Get plain object representation
    *
+   * @param {Object} [options]
+   * @param {boolean} [options.encodedBuffer=false]
    * @return {Object}
    */
-  toObject() {
+  toObject(options = {}) {
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        ...options,
+      },
+    );
+
     const rawDocumentTransition = {
       ...super.toObject(),
       $id: this.getId(),
@@ -98,6 +116,15 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
 
     if (this.getUpdatedAt()) {
       rawDocumentTransition.$updatedAt = this.getUpdatedAt().getTime();
+    }
+
+    if (!options.encodedBuffer) {
+      return transpileEncodedProperties(
+        this.dataContract,
+        this.getType(),
+        rawDocumentTransition,
+        (encodedBuffer) => encodedBuffer.toBuffer(),
+      );
     }
 
     return rawDocumentTransition;

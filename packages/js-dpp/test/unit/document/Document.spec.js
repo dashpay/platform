@@ -8,9 +8,12 @@ const DocumentCreateTransition = require(
   '../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition',
 );
 
+const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
+
 describe('Document', () => {
   let lodashGetMock;
   let lodashSetMock;
+  let lodashCloneDeepMock;
   let hashMock;
   let encodeMock;
   let Document;
@@ -21,6 +24,7 @@ describe('Document', () => {
   beforeEach(function beforeEach() {
     lodashGetMock = this.sinonSandbox.stub();
     lodashSetMock = this.sinonSandbox.stub();
+    lodashCloneDeepMock = this.sinonSandbox.stub().returnsArg(0);
     hashMock = this.sinonSandbox.stub();
     const serializerMock = { encode: this.sinonSandbox.stub() };
     encodeMock = serializerMock.encode;
@@ -30,6 +34,7 @@ describe('Document', () => {
     Document = rewiremock.proxy('../../../lib/document/Document', {
       '../../../node_modules/lodash.get': lodashGetMock,
       '../../../node_modules/lodash.set': lodashSetMock,
+      '../../../node_modules/lodash.clonedeep': lodashCloneDeepMock,
       '../../../lib/util/hash': hashMock,
       '../../../lib/util/serializer': serializerMock,
     });
@@ -43,6 +48,22 @@ describe('Document', () => {
         properties: {
           name: {
             type: 'string',
+          },
+          dataObject: {
+            type: 'object',
+            properties: {
+              binaryObject: {
+                type: 'object',
+                properties: {
+                  base64Value: {
+                    type: 'string',
+                    contentEncoding: 'base64',
+                    maxLength: 64,
+                    pattern: '^([A-Za-z0-9+/])*$',
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -74,10 +95,11 @@ describe('Document', () => {
 
       rawDocument = {
         $id: 'id',
+        $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.id).to.equal(rawDocument.$id);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -93,7 +115,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.type).to.equal(rawDocument.$type);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -106,10 +128,11 @@ describe('Document', () => {
 
       rawDocument = {
         $dataContractId: generateRandomId(),
+        $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.dataContractId).to.equal(rawDocument.$dataContractId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -122,10 +145,11 @@ describe('Document', () => {
 
       rawDocument = {
         $ownerId: generateRandomId(),
+        $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.ownerId).to.equal(rawDocument.$ownerId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -137,10 +161,11 @@ describe('Document', () => {
       };
 
       rawDocument = {
+        $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.action).to.equal(undefined);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -153,10 +178,11 @@ describe('Document', () => {
 
       rawDocument = {
         $revision: 'test',
+        $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.revision).to.equal(rawDocument.$revision);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -171,10 +197,11 @@ describe('Document', () => {
 
       rawDocument = {
         $createdAt: createdAt,
+        $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.getCreatedAt().getTime()).to.equal(rawDocument.$createdAt);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -189,10 +216,11 @@ describe('Document', () => {
 
       rawDocument = {
         $updatedAt: updatedAt,
+        $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument);
+      document = new Document(rawDocument, dataContract);
 
       expect(document.getUpdatedAt().getTime()).to.equal(rawDocument.$updatedAt);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
@@ -298,6 +326,40 @@ describe('Document', () => {
       expect(result).to.equal(document);
 
       expect(lodashSetMock).to.have.been.calledOnceWith(document.data, path, value);
+    });
+
+    it('should set binary encoded field directly', () => {
+      const path = 'dataObject.binaryObject.base64Value';
+      const buffer = Buffer.alloc(36);
+
+      const result = document.set(path, buffer);
+
+      expect(result).to.equal(document);
+
+      const valueToSet = new EncodedBuffer(buffer, 'base64');
+
+      expect(lodashSetMock).to.have.been.calledOnceWith(document.data, path, valueToSet);
+    });
+
+    it('should set binary field as part of object', () => {
+      const path = 'dataObject.binaryObject';
+      const value = { base64Value: Buffer.alloc(36) };
+
+      lodashGetMock.returns(value.base64Value);
+
+      const result = document.set(path, value);
+
+      expect(result).to.equal(document);
+
+      const valueToSet = new EncodedBuffer(value.base64Value, 'base64');
+
+      expect(lodashSetMock).to.have.been.calledTwice();
+      expect(lodashSetMock.getCall(0).args).to.have.deep.members(
+        [value, 'base64Value', valueToSet],
+      );
+      expect(lodashSetMock.getCall(1).args).to.have.deep.members(
+        [document.data, path, { base64Value: valueToSet }],
+      );
     });
   });
 

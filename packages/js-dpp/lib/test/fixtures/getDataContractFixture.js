@@ -112,14 +112,20 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
     },
     withContentEncoding: {
       properties: {
-        binaryField: {
+        base64Field: {
           type: 'string',
           contentEncoding: 'base64',
           maxLength: 16,
           pattern: '^([A-Za-z0-9+/])*$',
         },
+        base58Field: {
+          type: 'string',
+          contentEncoding: 'base58',
+          maxLength: 16,
+          pattern: '^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$',
+        },
       },
-      required: ['binaryField'],
+      required: ['base64Field', 'base58Field'],
       additionalProperties: false,
     },
     optionalUniqueIndexedDocument: {
