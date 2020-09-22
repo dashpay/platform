@@ -95,6 +95,7 @@
  *
  * @async
  * @method
+ * @deprecated
  * @name StateRepository#storePublicKeyIdentityId
  * @param {string} publicKeyHash
  * @param {string} identityId
@@ -117,6 +118,7 @@
  *
  * @async
  * @method
+ * @deprecated
  * @name StateRepository#fetchPublicKeyIdentityId
  * @param {string} publicKeyHash
  * @returns {Promise<string|null>}
@@ -129,7 +131,7 @@
  * @method
  * @name StateRepository#fetchIdentityIdsByPublicKeyHashes
  * @param {string[]} publicKeyHashes
- * @returns {Promise<Object>}
+ * @returns {Promise<Object.<string, string>>}
  */
 
 /**
