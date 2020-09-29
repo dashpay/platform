@@ -116,7 +116,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           type: 'string',
           contentEncoding: 'base64',
           maxLength: 16,
-          pattern: '^([A-Za-z0-9+/])*$',
+          pattern: '^([A-Za-z0-9+/])+$',
         },
         base58Field: {
           type: 'string',
