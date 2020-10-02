@@ -7,8 +7,14 @@ service Platform {
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getIdentityByFirstPublicKey (GetIdentityByFirstPublicKeyRequest) returns (GetIdentityByFirstPublicKeyResponse);
-  rpc getIdentityIdByFirstPublicKey (GetIdentityIdByFirstPublicKeyRequest) returns (GetIdentityIdByFirstPublicKeyResponse);
+  rpc getIdentityByFirstPublicKey (GetIdentityByFirstPublicKeyRequest) returns (GetIdentityByFirstPublicKeyResponse) {
+    option deprecated = true;
+  };
+  rpc getIdentityIdByFirstPublicKey (GetIdentityIdByFirstPublicKeyRequest) returns (GetIdentityIdByFirstPublicKeyResponse) {
+    option deprecated = true;
+  };
+  rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
+  rpc getIdentityIdsByPublicKeyHashes (GetIdentityIdsByPublicKeyHashesRequest) returns (GetIdentityIdsByPublicKeyHashesResponse);
 }
 
 message BroadcastStateTransitionRequest {
@@ -68,4 +74,20 @@ message GetIdentityIdByFirstPublicKeyRequest {
 
 message GetIdentityIdByFirstPublicKeyResponse {
   string id = 1;
+}
+
+message GetIdentitiesByPublicKeyHashesRequest {
+  repeated bytes public_key_hashes = 1;
+}
+
+message GetIdentitiesByPublicKeyHashesResponse {
+  repeated bytes identities = 1;
+}
+
+message GetIdentityIdsByPublicKeyHashesRequest {
+  repeated bytes public_key_hashes = 1;
+}
+
+message GetIdentityIdsByPublicKeyHashesResponse {
+  repeated bytes identity_ids = 1;
 }

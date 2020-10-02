@@ -624,6 +624,178 @@ typedef struct GetIdentityIdByFirstPublicKeyResponse__storage_ {
 
 @end
 
+#pragma mark - GetIdentitiesByPublicKeyHashesRequest
+
+@implementation GetIdentitiesByPublicKeyHashesRequest
+
+@dynamic publicKeyHashesArray, publicKeyHashesArray_Count;
+
+typedef struct GetIdentitiesByPublicKeyHashesRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *publicKeyHashesArray;
+} GetIdentitiesByPublicKeyHashesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "publicKeyHashesArray",
+        .dataTypeSpecific.className = NULL,
+        .number = GetIdentitiesByPublicKeyHashesRequest_FieldNumber_PublicKeyHashesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesByPublicKeyHashesRequest__storage_, publicKeyHashesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesByPublicKeyHashesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesByPublicKeyHashesRequest__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesByPublicKeyHashesResponse
+
+@implementation GetIdentitiesByPublicKeyHashesResponse
+
+@dynamic identitiesArray, identitiesArray_Count;
+
+typedef struct GetIdentitiesByPublicKeyHashesResponse__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *identitiesArray;
+} GetIdentitiesByPublicKeyHashesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identitiesArray",
+        .dataTypeSpecific.className = NULL,
+        .number = GetIdentitiesByPublicKeyHashesResponse_FieldNumber_IdentitiesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesByPublicKeyHashesResponse__storage_, identitiesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesByPublicKeyHashesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesByPublicKeyHashesResponse__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentityIdsByPublicKeyHashesRequest
+
+@implementation GetIdentityIdsByPublicKeyHashesRequest
+
+@dynamic publicKeyHashesArray, publicKeyHashesArray_Count;
+
+typedef struct GetIdentityIdsByPublicKeyHashesRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *publicKeyHashesArray;
+} GetIdentityIdsByPublicKeyHashesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "publicKeyHashesArray",
+        .dataTypeSpecific.className = NULL,
+        .number = GetIdentityIdsByPublicKeyHashesRequest_FieldNumber_PublicKeyHashesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentityIdsByPublicKeyHashesRequest__storage_, publicKeyHashesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityIdsByPublicKeyHashesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityIdsByPublicKeyHashesRequest__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentityIdsByPublicKeyHashesResponse
+
+@implementation GetIdentityIdsByPublicKeyHashesResponse
+
+@dynamic identityIdsArray, identityIdsArray_Count;
+
+typedef struct GetIdentityIdsByPublicKeyHashesResponse__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *identityIdsArray;
+} GetIdentityIdsByPublicKeyHashesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityIdsArray",
+        .dataTypeSpecific.className = NULL,
+        .number = GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_IdentityIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentityIdsByPublicKeyHashesResponse__storage_, identityIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityIdsByPublicKeyHashesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityIdsByPublicKeyHashesResponse__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 
 #pragma clang diagnostic pop
 

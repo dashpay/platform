@@ -35,6 +35,10 @@ const {
             GetIdentityByFirstPublicKeyResponse: PBJSGetIdentityByFirstPublicKeyResponse,
             GetIdentityIdByFirstPublicKeyRequest: PBJSGetIdentityIdByFirstPublicKeyRequest,
             GetIdentityIdByFirstPublicKeyResponse: PBJSGetIdentityIdByFirstPublicKeyResponse,
+            GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
+            GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
+            GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
+            GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
           },
         },
       },
@@ -49,6 +53,8 @@ const {
   GetDocumentsResponse: ProtocGetDocumentsResponse,
   GetIdentityByFirstPublicKeyResponse: ProtocGetIdentityByFirstPublicKeyResponse,
   GetIdentityIdByFirstPublicKeyResponse: ProtocGetIdentityIdByFirstPublicKeyResponse,
+  GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
+  GetIdentityIdsByPublicKeyHashesResponse: ProtocGetIdentityIdsByPublicKeyHashesResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -89,6 +95,14 @@ class PlatformPromiseClient {
 
     this.client.getIdentityIdByFirstPublicKey = promisify(
       this.client.getIdentityIdByFirstPublicKey.bind(this.client),
+    );
+
+    this.client.getIdentitiesByPublicKeyHashes = promisify(
+      this.client.getIdentitiesByPublicKeyHashes.bind(this.client),
+    );
+
+    this.client.getIdentityIdsByPublicKeyHashes = promisify(
+      this.client.getIdentityIdsByPublicKeyHashes.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -221,11 +235,11 @@ class PlatformPromiseClient {
   }
 
   /**
-   *
+   * @deprecated
    * @param {!GetIdentityByFirstPublicKeyRequest} getIdentityByFirstPublicKeyRequest
    * @param {?Object<string, string>} metadata
    * @param {CallOptions} [options={}]
-   * @returns {Promise<!GetDocumentsResponse>}
+   * @returns {Promise<!GetIdentityByFirstPublicKeyResponse>}
    */
   getIdentityByFirstPublicKey(getIdentityByFirstPublicKeyRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
@@ -253,11 +267,11 @@ class PlatformPromiseClient {
   }
 
   /**
-   *
+   * @deprecated
    * @param {!GetIdentityIdByFirstPublicKeyRequest} getIdentityIdByFirstPublicKeyRequest
    * @param {?Object<string, string>} metadata
    * @param {CallOptions} [options={}]
-   * @returns {Promise<!GetDocumentsResponse>}
+   * @returns {Promise<!GetIdentityIdByFirstPublicKeyResponse>}
    */
   getIdentityIdByFirstPublicKey(getIdentityIdByFirstPublicKeyRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
@@ -276,6 +290,72 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityIdByFirstPublicKeyRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetIdentitiesByPublicKeyHashesRequest} getIdentitiesByPublicKeyHashesRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetIdentitiesByPublicKeyHashesResponse>}
+   */
+  getIdentitiesByPublicKeyHashes(
+    getIdentitiesByPublicKeyHashesRequest, metadata = {}, options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentitiesByPublicKeyHashes(
+      getIdentitiesByPublicKeyHashesRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentitiesByPublicKeyHashesResponse,
+              PBJSGetIdentitiesByPublicKeyHashesResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentitiesByPublicKeyHashesRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetIdentityIdsByPublicKeyHashesRequest} getIdentityIdsByPublicKeyHashesRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetIdentityIdsByPublicKeyHashesResponse>}
+   */
+  getIdentityIdsByPublicKeyHashes(
+    getIdentityIdsByPublicKeyHashesRequest, metadata = {}, options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityIdsByPublicKeyHashes(
+      getIdentityIdsByPublicKeyHashesRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityIdsByPublicKeyHashesResponse,
+              PBJSGetIdentityIdsByPublicKeyHashesResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityIdsByPublicKeyHashesRequest,
             ),
           ),
         ],

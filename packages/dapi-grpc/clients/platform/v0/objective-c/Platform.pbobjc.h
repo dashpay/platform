@@ -215,6 +215,62 @@ typedef GPB_ENUM(GetIdentityIdByFirstPublicKeyResponse_FieldNumber) {
 
 @end
 
+#pragma mark - GetIdentitiesByPublicKeyHashesRequest
+
+typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesRequest_FieldNumber) {
+  GetIdentitiesByPublicKeyHashesRequest_FieldNumber_PublicKeyHashesArray = 1,
+};
+
+@interface GetIdentitiesByPublicKeyHashesRequest : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *publicKeyHashesArray;
+/** The number of items in @c publicKeyHashesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger publicKeyHashesArray_Count;
+
+@end
+
+#pragma mark - GetIdentitiesByPublicKeyHashesResponse
+
+typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesResponse_FieldNumber) {
+  GetIdentitiesByPublicKeyHashesResponse_FieldNumber_IdentitiesArray = 1,
+};
+
+@interface GetIdentitiesByPublicKeyHashesResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesArray;
+/** The number of items in @c identitiesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identitiesArray_Count;
+
+@end
+
+#pragma mark - GetIdentityIdsByPublicKeyHashesRequest
+
+typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesRequest_FieldNumber) {
+  GetIdentityIdsByPublicKeyHashesRequest_FieldNumber_PublicKeyHashesArray = 1,
+};
+
+@interface GetIdentityIdsByPublicKeyHashesRequest : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *publicKeyHashesArray;
+/** The number of items in @c publicKeyHashesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger publicKeyHashesArray_Count;
+
+@end
+
+#pragma mark - GetIdentityIdsByPublicKeyHashesResponse
+
+typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesResponse_FieldNumber) {
+  GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_IdentityIdsArray = 1,
+};
+
+@interface GetIdentityIdsByPublicKeyHashesResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identityIdsArray;
+/** The number of items in @c identityIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identityIdsArray_Count;
+
+@end
+
 NS_ASSUME_NONNULL_END
 
 CF_EXTERN_C_END
