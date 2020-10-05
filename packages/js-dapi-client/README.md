@@ -101,7 +101,7 @@ client.core.getBestBlockHash(options).then((r) => {
 
 ## Documentation
 
-More extensive documentation available at https://dashevo.github.io/dapi-client/.
+More extensive documentation available at https://dashevo.github.io/js-dapi-client/.
 
 
 ## Contributing
