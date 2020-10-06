@@ -27,15 +27,16 @@ function validateIdentityPublicKeysUniquenessFactory(stateRepository) {
     const identityPublicKeyHashes = identityPublicKeys
       .map((identityPublicKey) => identityPublicKey.hash());
 
-    const identitiesByKeys = await stateRepository
+    const identityIds = await stateRepository
       .fetchIdentityIdsByPublicKeyHashes(identityPublicKeyHashes);
 
-    Object.entries(identitiesByKeys)
-      .filter(([, identityId]) => identityId !== null)
-      .forEach(([identityPublicKeyHash]) => {
-        validationResult.addError(
-          new IdentityPublicKeyAlreadyExistsError(identityPublicKeyHash),
-        );
+    identityPublicKeyHashes
+      .forEach((publicKeyHash, index) => {
+        if (identityIds[index]) {
+          validationResult.addError(
+            new IdentityPublicKeyAlreadyExistsError(publicKeyHash),
+          );
+        }
       });
 
     return validationResult;
