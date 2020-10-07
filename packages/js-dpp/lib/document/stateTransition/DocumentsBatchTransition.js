@@ -139,11 +139,4 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
  * } transitions
  */
 
-DocumentsBatchTransition.ENCODED_PROPERTIES = {
-  ...AbstractStateTransitionIdentitySigned.ENCODED_PROPERTIES,
-  ownerId: {
-    contentEncoding: 'base58',
-  },
-};
-
 module.exports = DocumentsBatchTransition;

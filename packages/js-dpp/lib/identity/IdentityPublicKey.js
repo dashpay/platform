@@ -163,10 +163,4 @@ IdentityPublicKey.TYPES = {
   BLS12_381: 1,
 };
 
-IdentityPublicKey.ENCODED_PROPERTIES = {
-  data: {
-    contentEncoding: 'base64',
-  },
-};
-
 module.exports = IdentityPublicKey;

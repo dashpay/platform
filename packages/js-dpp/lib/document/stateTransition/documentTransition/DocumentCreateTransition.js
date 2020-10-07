@@ -170,11 +170,4 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
 
 DocumentCreateTransition.INITIAL_REVISION = 1;
 
-DocumentCreateTransition.ENCODED_PROPERTIES = {
-  ...AbstractDocumentTransition.ENCODED_PROPERTIES,
-  $entropy: {
-    contentEncoding: 'base58',
-  },
-};
-
 module.exports = DocumentCreateTransition;

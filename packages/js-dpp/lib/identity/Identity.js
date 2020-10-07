@@ -215,10 +215,4 @@ class Identity {
 
 Identity.PROTOCOL_VERSION = 0;
 
-Identity.ENCODED_PROPERTIES = {
-  id: {
-    contentEncoding: 'base58',
-  },
-};
-
 module.exports = Identity;

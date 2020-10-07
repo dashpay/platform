@@ -1,4 +1,4 @@
-const Ajv = require('ajv');
+const createAjv = require('./ajv/createAjv');
 
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
@@ -23,7 +23,9 @@ class DashPlatformProtocol {
 
     this.jsonSchemaValidator = options.jsonSchemaValidator;
     if (this.jsonSchemaValidator === undefined) {
-      this.jsonSchemaValidator = new JsonSchemaValidator(new Ajv());
+      const ajv = createAjv();
+
+      this.jsonSchemaValidator = new JsonSchemaValidator(ajv);
     }
 
     const skipAssetLockConfirmationValidation = options.identities

@@ -164,11 +164,4 @@ class IdentityCreateTransition extends AbstractStateTransition {
  * @property {JsonIdentityPublicKey[]} publicKeys
  */
 
-IdentityCreateTransition.ENCODED_PROPERTIES = {
-  ...AbstractStateTransition.ENCODED_PROPERTIES,
-  lockedOutPoint: {
-    contentEncoding: 'base64',
-  },
-};
-
 module.exports = IdentityCreateTransition;

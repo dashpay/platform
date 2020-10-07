@@ -329,18 +329,16 @@
       "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
     },
     "$id":{
-      "type": "string",
-      "contentEncoding": "base58",
-      "minLength": 42,
-      "maxLength": 44,
-      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 32,
+      "maxBytesLength": 32
     },
     "ownerId":{
-      "type": "string",
-      "contentEncoding": "base58",
-      "minLength": 42,
-      "maxLength": 44,
-      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 32,
+      "maxBytesLength": 32
     },
     "documents": {
       "type": "object",

@@ -1,5 +1,6 @@
-const Ajv = require('ajv');
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
+
+const createAjv = require('../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator');
 
@@ -30,8 +31,7 @@ describe('validateDataContractFactory', () => {
     dataContract = getDataContractFixture();
     rawDataContract = dataContract.toObject();
 
-    const ajv = new Ajv();
-    const jsonSchemaValidator = new JsonSchemaValidator(ajv);
+    const jsonSchemaValidator = new JsonSchemaValidator(createAjv());
 
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
 
@@ -154,8 +154,8 @@ describe('validateDataContractFactory', () => {
       expect(error.params.missingProperty).to.equal('ownerId');
     });
 
-    it('should be a string', async () => {
-      rawDataContract.ownerId = 1;
+    it('should be a byte array', async () => {
+      rawDataContract.ownerId = {};
 
       const result = await validateDataContract(rawDataContract);
 
@@ -164,11 +164,11 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('type');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should be no less than 42 chars', async () => {
-      rawDataContract.ownerId = '1'.repeat(41);
+    it('should be no less than 32 bytes', async () => {
+      rawDataContract.ownerId = Buffer.alloc(31);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -177,11 +177,11 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('minLength');
+      expect(error.keyword).to.equal('minBytesLength');
     });
 
-    it('should be no longer than 44 chars', async () => {
-      rawDataContract.ownerId = '1'.repeat(45);
+    it('should be no longer than 32 bytes', async () => {
+      rawDataContract.ownerId = Buffer.alloc(33);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -190,20 +190,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('maxLength');
-    });
-
-    it('should be base58 encoded', async () => {
-      rawDataContract.ownerId = '&'.repeat(44);
-
-      const result = await validateDataContract(rawDataContract);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.keyword).to.equal('pattern');
-      expect(error.dataPath).to.equal('.ownerId');
+      expect(error.keyword).to.equal('maxBytesLength');
     });
   });
 
@@ -222,8 +209,8 @@ describe('validateDataContractFactory', () => {
       expect(error.params.missingProperty).to.equal('$id');
     });
 
-    it('should be a string', async () => {
-      rawDataContract.$id = 1;
+    it('should be a byte array', async () => {
+      rawDataContract.$id = {};
 
       const result = await validateDataContract(rawDataContract);
 
@@ -232,11 +219,11 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.$id');
-      expect(error.keyword).to.equal('type');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should be no less than 42 chars', async () => {
-      rawDataContract.$id = '1'.repeat(41);
+    it('should be no less than 32 bytes', async () => {
+      rawDataContract.$id = Buffer.alloc(31);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -245,11 +232,11 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.$id');
-      expect(error.keyword).to.equal('minLength');
+      expect(error.keyword).to.equal('minBytesLength');
     });
 
-    it('should be no longer than 44 chars', async () => {
-      rawDataContract.$id = '1'.repeat(45);
+    it('should be no longer than 32 bytes', async () => {
+      rawDataContract.$id = Buffer.alloc(33);
 
       const result = await validateDataContract(rawDataContract);
 
@@ -258,20 +245,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.$id');
-      expect(error.keyword).to.equal('maxLength');
-    });
-
-    it('should be base58 encoded', async () => {
-      rawDataContract.$id = '&'.repeat(44);
-
-      const result = await validateDataContract(rawDataContract);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.keyword).to.equal('pattern');
-      expect(error.dataPath).to.equal('.$id');
+      expect(error.keyword).to.equal('maxBytesLength');
     });
   });
 

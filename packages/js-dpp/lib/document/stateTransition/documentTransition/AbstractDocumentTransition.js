@@ -150,13 +150,4 @@ AbstractDocumentTransition.ACTION_NAMES = {
   DELETE: 'delete',
 };
 
-AbstractDocumentTransition.ENCODED_PROPERTIES = {
-  $id: {
-    contentEncoding: 'base58',
-  },
-  $dataContractId: {
-    contentEncoding: 'base58',
-  },
-};
-
 module.exports = AbstractDocumentTransition;

@@ -125,11 +125,4 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
  * @property {string} entropy
  */
 
-DataContractCreateTransition.ENCODED_PROPERTIES = {
-  ...AbstractStateTransitionIdentitySigned.ENCODED_PROPERTIES,
-  entropy: {
-    contentEncoding: 'base58',
-  },
-};
-
 module.exports = DataContractCreateTransition;

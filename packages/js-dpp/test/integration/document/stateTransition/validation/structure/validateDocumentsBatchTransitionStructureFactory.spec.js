@@ -1,4 +1,4 @@
-const Ajv = require('ajv');
+const createAjv = require('../../../../../../lib/ajv/createAjv');
 
 const Document = require('../../../../../../lib/document/Document');
 
@@ -90,7 +90,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
-    validator = new JsonSchemaValidator(new Ajv());
+    validator = new JsonSchemaValidator(createAjv());
 
     enrichSpy = this.sinonSandbox.spy(enrichDataContractWithBaseSchema);
 
@@ -207,8 +207,8 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       expect(error.params.missingProperty).to.equal('ownerId');
     });
 
-    it('should be a binary (encoded string)', async () => {
-      rawStateTransition.ownerId = 1;
+    it('should be a byte array', async () => {
+      rawStateTransition.ownerId = {};
 
       const result = await validateDocumentsBatchTransitionStructure(
         rawStateTransition,
@@ -219,12 +219,11 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('type');
-      expect(error.params.type).to.equal('string');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should be no less than 42 chars', async () => {
-      rawStateTransition.ownerId = '1'.repeat(41);
+    it('should be no less than 32 bytes', async () => {
+      rawStateTransition.ownerId = Buffer.alloc(31);
 
       const result = await validateDocumentsBatchTransitionStructure(
         rawStateTransition,
@@ -235,11 +234,11 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('minLength');
+      expect(error.keyword).to.equal('minBytesLength');
     });
 
-    it('should be no longer than 44 chars', async () => {
-      rawStateTransition.ownerId = '1'.repeat(45);
+    it('should be no longer than 32 bytes', async () => {
+      rawStateTransition.ownerId = Buffer.alloc(33);
 
       const result = await validateDocumentsBatchTransitionStructure(
         rawStateTransition,
@@ -250,22 +249,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('maxLength');
-    });
-
-    it('should be base58 encoded', async () => {
-      rawStateTransition.ownerId = '&'.repeat(44);
-
-      const result = await validateDocumentsBatchTransitionStructure(
-        rawStateTransition,
-      );
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.keyword).to.equal('pattern');
-      expect(error.dataPath).to.equal('.ownerId');
+      expect(error.keyword).to.equal('maxBytesLength');
     });
 
     it('should exists', async () => {
@@ -396,7 +380,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.params.missingProperty).to.equal('$id');
         });
 
-        it('should be a string', async () => {
+        it('should be a byte array', async () => {
           const [documentTransition] = rawStateTransition.transitions;
 
           documentTransition.$id = 1;
@@ -411,10 +395,10 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.keyword).to.equal('type');
         });
 
-        it('should be no less than 42 chars', async () => {
+        it('should be no less than 20 bytes', async () => {
           const [documentTransition] = rawStateTransition.transitions;
 
-          documentTransition.$id = '1'.repeat(41);
+          documentTransition.$id = Buffer.alloc(19);
 
           const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -423,13 +407,13 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.dataPath).to.equal('.$id');
-          expect(error.keyword).to.equal('minLength');
+          expect(error.keyword).to.equal('minBytesLength');
         });
 
-        it('should be no longer than 44 chars', async () => {
+        it('should be no longer than 35 bytes', async () => {
           const [documentTransition] = rawStateTransition.transitions;
 
-          documentTransition.$id = '1'.repeat(45);
+          documentTransition.$id = Buffer.alloc(36);
 
           const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -438,22 +422,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.dataPath).to.equal('.$id');
-          expect(error.keyword).to.equal('maxLength');
-        });
-
-        it('should be base58 encoded', async () => {
-          const [documentTransition] = rawStateTransition.transitions;
-
-          documentTransition.$id = '&'.repeat(44);
-
-          const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
-
-          expectJsonSchemaError(result);
-
-          const [error] = result.getErrors();
-
-          expect(error.keyword).to.equal('pattern');
-          expect(error.dataPath).to.equal('.$id');
+          expect(error.keyword).to.equal('maxBytesLength');
         });
 
         it('should no have duplicate IDs in the state transition', async () => {
@@ -514,7 +483,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(validateStateTransitionSignatureMock).to.have.not.been.called();
         });
 
-        it('should be string', async () => {
+        it('should be byte array', async () => {
           const [firstDocumentTransition] = rawStateTransition.transitions;
 
           firstDocumentTransition.$dataContractId = null;
@@ -713,10 +682,10 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
             expect(error.params.missingProperty).to.equal('$entropy');
           });
 
-          it('should be a string', async () => {
+          it('should be a byte array', async () => {
             const [documentTransition] = rawStateTransition.transitions;
 
-            documentTransition.$entropy = 1;
+            documentTransition.$entropy = {};
 
             const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -725,13 +694,13 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal('.$entropy');
-            expect(error.keyword).to.equal('type');
+            expect(error.keyword).to.equal('byteArray');
           });
 
-          it('should be no less than 26 chars', async () => {
+          it('should be no less than 20 bytes', async () => {
             const [documentTransition] = rawStateTransition.transitions;
 
-            documentTransition.$entropy = '1'.repeat(24);
+            documentTransition.$entropy = Buffer.alloc(19);
 
             const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -740,13 +709,13 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal('.$entropy');
-            expect(error.keyword).to.equal('minLength');
+            expect(error.keyword).to.equal('minBytesLength');
           });
 
-          it('should be no longer than 35 chars', async () => {
+          it('should be no longer than 35 bytes', async () => {
             const [documentTransition] = rawStateTransition.transitions;
 
-            documentTransition.$entropy = '1'.repeat(36);
+            documentTransition.$entropy = Buffer.alloc(36);
 
             const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -755,7 +724,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal('.$entropy');
-            expect(error.keyword).to.equal('maxLength');
+            expect(error.keyword).to.equal('maxBytesLength');
           });
 
           it('should be valid generated entropy', async () => {
@@ -913,8 +882,8 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       expect(error.params.missingProperty).to.equal('signature');
     });
 
-    it('should be a binary (encoded string)', async () => {
-      rawStateTransition.signature = 1;
+    it('should be a byte array', async () => {
+      rawStateTransition.signature = { };
 
       const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -923,12 +892,11 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('type');
-      expect(error.params.type).to.equal('string');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should have length of 65 bytes (87 chars)', async () => {
-      rawStateTransition.signature = Buffer.alloc(10);
+    it('should be not less than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(64);
 
       const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -937,12 +905,12 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('minLength');
-      expect(error.params.limit).to.equal(87);
+      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.params.limit).to.equal(65);
     });
 
-    it('should be base64 encoded', async () => {
-      rawStateTransition.signature = '&'.repeat(87);
+    it('should be not longer than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(66);
 
       const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
@@ -951,7 +919,8 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('pattern');
+      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.params.limit).to.equal(65);
     });
 
     it('should be valid', async () => {

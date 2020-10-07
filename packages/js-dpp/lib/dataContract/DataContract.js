@@ -302,13 +302,4 @@ DataContract.DEFAULTS = {
   SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract',
 };
 
-DataContract.ENCODED_PROPERTIES = {
-  $id: {
-    contentEncoding: 'base58',
-  },
-  ownerId: {
-    contentEncoding: 'base58',
-  },
-};
-
 module.exports = DataContract;

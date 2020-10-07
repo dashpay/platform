@@ -1,9 +1,5 @@
 const identitySchema = require('../../../schema/identity/identity');
 
-const Identity = require('../Identity');
-
-const encodeObjectProperties = require('../../util/encoding/encodeObjectProperties');
-
 /**
  * @param {JsonSchemaValidator} validator
  * @param {validatePublicKeys} validatePublicKeys
@@ -21,11 +17,9 @@ function validateIdentityFactory(
    * @return {ValidationResult}
    */
   function validateIdentity(rawIdentity) {
-    const jsonIdentity = encodeObjectProperties(rawIdentity, Identity.ENCODED_PROPERTIES);
-
     const result = validator.validate(
       identitySchema,
-      jsonIdentity,
+      rawIdentity,
     );
 
     if (!result.isValid()) {

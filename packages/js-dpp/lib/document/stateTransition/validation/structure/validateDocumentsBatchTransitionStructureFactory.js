@@ -1,9 +1,6 @@
 const ValidationResult = require('../../../../validation/ValidationResult');
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
-const DocumentCreateTransition = require('../../documentTransition/DocumentCreateTransition');
-const DocumentReplaceTransition = require('../../documentTransition/DocumentReplaceTransition');
-const DocumentDeleteTransition = require('../../documentTransition/DocumentDeleteTransition');
 
 const DataContractNotPresentError = require('../../../../errors/DataContractNotPresentError');
 const InvalidDocumentTransitionIdError = require('../../../../errors/InvalidDocumentTransitionIdError');
@@ -83,12 +80,6 @@ function validateDocumentsBatchTransitionStructureFactory(
       ),
     };
 
-    const encodedPropertiesByActions = {
-      [ACTIONS.CREATE]: DocumentCreateTransition.ENCODED_PROPERTIES,
-      [ACTIONS.REPLACE]: DocumentReplaceTransition.ENCODED_PROPERTIES,
-      [ACTIONS.DELETE]: DocumentDeleteTransition.ENCODED_PROPERTIES,
-    };
-
     documentTransitions.forEach((rawDocumentTransition) => {
       // Validate $type
       if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$type')) {
@@ -117,14 +108,11 @@ function validateDocumentsBatchTransitionStructureFactory(
       }
 
       // Convert document transition to JSON for JSON Schema validation
-      const encodedSystemProperties = encodedPropertiesByActions[rawDocumentTransition.$action]
-        || { };
-
       const encodedUserProperties = dataContract.getEncodedProperties(rawDocumentTransition.$type);
 
       const jsonDocumentTransition = encodeObjectProperties(
         rawDocumentTransition,
-        { ...encodedSystemProperties, ...encodedUserProperties },
+        encodedUserProperties,
       );
 
       // Validate document schema
@@ -233,15 +221,9 @@ function validateDocumentsBatchTransitionStructureFactory(
    * @return {ValidationResult}
    */
   async function validateDocumentsBatchTransitionStructure(rawStateTransition) {
-    // Validate state transition against JSON Schema
-    const jsonStateTransition = encodeObjectProperties(
-      rawStateTransition,
-      DocumentsBatchTransition.ENCODED_PROPERTIES,
-    );
-
     const result = jsonSchemaValidator.validate(
       documentsBatchTransitionSchema,
-      jsonStateTransition,
+      rawStateTransition,
     );
 
     if (!result.isValid()) {

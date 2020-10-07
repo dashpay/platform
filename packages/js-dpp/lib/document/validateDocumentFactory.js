@@ -1,5 +1,3 @@
-const Document = require('./Document');
-
 const encodeObjectProperties = require('../util/encoding/encodeObjectProperties');
 
 const baseDocumentSchema = require('../../schema/document/documentBase');
@@ -44,12 +42,11 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    const encodedSystemProperties = Document.ENCODED_PROPERTIES;
     const encodedUserProperties = dataContract.getEncodedProperties(rawDocument.$type);
 
     const jsonDocument = encodeObjectProperties(
       rawDocument,
-      { ...encodedSystemProperties, ...encodedUserProperties },
+      encodedUserProperties,
     );
 
     const enrichedDataContract = enrichDataContractWithBaseSchema(

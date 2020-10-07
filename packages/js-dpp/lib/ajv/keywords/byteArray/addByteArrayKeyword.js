@@ -3,7 +3,7 @@ const minBytesLength = require('./minBytesLength');
 const maxBytesLength = require('./maxBytesLength');
 
 /**
- * @param {Ajv} ajv
+ * @param {ajv.Ajv} ajv
  */
 function addByteArrayKeyword(ajv) {
   ajv.addKeyword('byteArray', byteArrayKeyword);

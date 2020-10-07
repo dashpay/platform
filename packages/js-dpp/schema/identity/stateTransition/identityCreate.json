@@ -12,11 +12,10 @@
       "const": 2
     },
     "lockedOutPoint": {
-      "type": "string",
-      "contentEncoding": "base64",
-      "minLength": 48,
-      "maxLength": 48,
-      "pattern": "^([A-Za-z0-9+/])+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 36,
+      "maxBytesLength": 36
     },
     "publicKeys": {
       "type": "array",
@@ -25,11 +24,10 @@
       "uniqueItems": true
     },
     "signature": {
-      "type": "string",
-      "contentEncoding": "base64",
-      "minLength": 87,
-      "maxLength": 87,
-      "pattern": "^([A-Za-z0-9+/])+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 65,
+      "maxBytesLength": 65
     }
   },
   "additionalProperties": false,

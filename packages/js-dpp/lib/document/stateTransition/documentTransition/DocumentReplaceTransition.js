@@ -155,8 +155,4 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
  * @property {number} [$updatedAt]
  */
 
-DocumentReplaceTransition.ENCODED_PROPERTIES = {
-  ...AbstractDocumentTransition.ENCODED_PROPERTIES,
-};
-
 module.exports = DocumentReplaceTransition;

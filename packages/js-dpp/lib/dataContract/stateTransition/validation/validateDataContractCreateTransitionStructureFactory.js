@@ -3,7 +3,6 @@ const DataContractCreateTransition = require('../DataContractCreateTransition');
 const InvalidDataContractEntropyError = require('../../../errors/InvalidDataContractEntropyError');
 
 const InvalidDataContractIdError = require('../../../errors/InvalidDataContractIdError');
-const encodeObjectProperties = require('../../../util/encoding/encodeObjectProperties');
 
 const entropy = require('../../../util/entropy');
 
@@ -30,15 +29,9 @@ function validateDataContractCreateTransitionStructureFactory(
    * @return {ValidationResult}
    */
   async function validateDataContractCreateTransitionStructure(rawStateTransition) {
-    // Validate state transition against JSON Schema
-    const jsonStateTransition = encodeObjectProperties(
-      rawStateTransition,
-      DataContractCreateTransition.ENCODED_PROPERTIES,
-    );
-
     const result = jsonSchemaValidator.validate(
       dataContractCreateTransitionSchema,
-      jsonStateTransition,
+      rawStateTransition,
     );
 
     if (!result.isValid()) {

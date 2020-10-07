@@ -10,51 +10,55 @@
     },
     "type": {
       "type": "integer",
-      "enum": [0, 1],
+      "enum": [
+        0,
+        1
+      ],
       "description": "Public key type. 0 - ECDSA Secp256k1, 1 - BLS 12-381",
       "$comment": "It can't be changed after adding a key"
     },
     "data": {
-      "type": "string",
-      "contentEncoding": "base64",
-      "pattern": "^([A-Za-z0-9+/])+$",
-      "description": "Base64-encoded raw public key",
+      "type": "object",
+      "byteArray": true,
+      "description": "Raw public key",
       "$commit": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
     }
   },
   "allOf": [
     {
       "if": {
-         "properties": {
-            "type": {
-              "const": 0
-            }
-         }
+        "properties": {
+          "type": {
+            "const": 0
+          }
+        }
       },
       "then": {
-         "properties": {
-            "data": {
-               "minLength": 44,
-               "maxLength": 44
-            }
-         }
+        "properties": {
+          "data": {
+            "byteArray": true,
+            "minBytesLength": 33,
+            "maxBytesLength": 33
+          }
+        }
       }
     },
     {
       "if": {
-         "properties": {
-            "type": {
-              "const": 1
-            }
-         }
+        "properties": {
+          "type": {
+            "const": 1
+          }
+        }
       },
       "then": {
-         "properties": {
-            "data": {
-               "minLength": 64,
-               "maxLength": 64
-            }
-         }
+        "properties": {
+          "data": {
+            "byteArray": true,
+            "minBytesLength": 48,
+            "maxBytesLength": 48
+          }
+        }
       }
     }
   ],

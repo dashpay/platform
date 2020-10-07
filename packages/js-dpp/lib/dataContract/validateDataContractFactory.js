@@ -14,7 +14,6 @@ const InvalidIndexedPropertyConstraintError = require('../errors/InvalidIndexedP
 const InvalidCompoundIndexError = require('../errors/InvalidCompoundIndexError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
-const encodeObjectProperties = require('../util/encoding/encodeObjectProperties');
 
 const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
@@ -40,16 +39,11 @@ module.exports = function validateDataContractFactory(
   async function validateDataContract(rawDataContract) {
     const result = new ValidationResult();
 
-    const jsonDataContract = encodeObjectProperties(
-      rawDataContract,
-      DataContract.ENCODED_PROPERTIES,
-    );
-
     // Validate Data Contract schema
     result.merge(
       jsonSchemaValidator.validate(
         JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
-        jsonDataContract,
+        rawDataContract,
       ),
     );
 

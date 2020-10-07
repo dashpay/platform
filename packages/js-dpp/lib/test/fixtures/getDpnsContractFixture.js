@@ -10,5 +10,5 @@ const ownerId = generateRandomId();
  */
 module.exports = function getDataContractFixture() {
   const factory = new DataContractFactory(() => {});
-  return factory.create(ownerId.toBuffer(), dpnsDocuments);
+  return factory.create(ownerId, dpnsDocuments);
 };

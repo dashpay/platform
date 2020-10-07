@@ -406,16 +406,4 @@ Document.PROTOCOL_VERSION = 0;
 
 Document.SYSTEM_PREFIX = '$';
 
-Document.ENCODED_PROPERTIES = {
-  $id: {
-    contentEncoding: 'base58',
-  },
-  $dataContractId: {
-    contentEncoding: 'base58',
-  },
-  $ownerId: {
-    contentEncoding: 'base58',
-  },
-};
-
 module.exports = Document;

@@ -3,11 +3,10 @@
   "type": "object",
   "properties": {
     "$entropy": {
-      "type": "string",
-      "contentEncoding": "base58",
-      "minLength": 26,
-      "maxLength": 35,
-      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 20,
+      "maxBytesLength": 35
     },
     "$createdAt": {
       "type": "integer",

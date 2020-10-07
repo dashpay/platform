@@ -1,4 +1,4 @@
-const Ajv = require('ajv');
+const createAjv = require('../../../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require('../../../../../lib/validation/JsonSchemaValidator');
 
@@ -25,7 +25,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
   beforeEach(function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
-    const ajv = new Ajv();
+    const ajv = createAjv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     validateIdentityCreateTransitionStructure = validateIdentityCreateTransitionStructureFactory(
@@ -144,8 +144,8 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       expect(error.keyword).to.equal('required');
     });
 
-    it('should be a binary (encoded string)', async () => {
-      rawStateTransition.lockedOutPoint = 1;
+    it('should be a byte array', async () => {
+      rawStateTransition.lockedOutPoint = {};
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
@@ -154,12 +154,11 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.lockedOutPoint');
-      expect(error.keyword).to.equal('type');
-      expect(error.params.type).to.equal('string');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should not be less than 36 bytes (48 characters) in length', async () => {
-      rawStateTransition.lockedOutPoint = '1';
+    it('should not be less than 36 bytes', async () => {
+      rawStateTransition.lockedOutPoint = Buffer.alloc(35);
 
       const result = await validateIdentityCreateTransitionStructure(
         rawStateTransition,
@@ -169,12 +168,12 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minLength');
+      expect(error.keyword).to.equal('minBytesLength');
       expect(error.dataPath).to.equal('.lockedOutPoint');
     });
 
-    it('should not be more than 36 bytes (48 characters) in length', async () => {
-      rawStateTransition.lockedOutPoint = Buffer.alloc(48).toString('base64');
+    it('should not be more than 36 bytes', async () => {
+      rawStateTransition.lockedOutPoint = Buffer.alloc(37);
 
       const result = await validateIdentityCreateTransitionStructure(
         rawStateTransition,
@@ -184,22 +183,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maxLength');
-      expect(error.dataPath).to.equal('.lockedOutPoint');
-    });
-
-    it('should be base64 encoded', async () => {
-      rawStateTransition.lockedOutPoint = '&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&';
-
-      const result = await validateIdentityCreateTransitionStructure(
-        rawStateTransition,
-      );
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.keyword).to.equal('pattern');
+      expect(error.keyword).to.equal('maxBytesLength');
       expect(error.dataPath).to.equal('.lockedOutPoint');
     });
   });
@@ -305,8 +289,8 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       expect(error.params.missingProperty).to.equal('signature');
     });
 
-    it('should be a binary (encoded string)', async () => {
-      rawStateTransition.signature = 1;
+    it('should be a byte array', async () => {
+      rawStateTransition.signature = { };
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
@@ -315,12 +299,11 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('type');
-      expect(error.params.type).to.equal('string');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should have length of 65 bytes (87 chars)', async () => {
-      rawStateTransition.signature = Buffer.alloc(10);
+    it('should be not shorter than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(64);
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
@@ -329,12 +312,11 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('minLength');
-      expect(error.params.limit).to.equal(87);
+      expect(error.keyword).to.equal('minBytesLength');
     });
 
-    it('should be base64 encoded', async () => {
-      rawStateTransition.signature = '&'.repeat(87);
+    it('should be not longer than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(66);
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
@@ -343,7 +325,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('pattern');
+      expect(error.keyword).to.equal('maxBytesLength');
     });
   });
 

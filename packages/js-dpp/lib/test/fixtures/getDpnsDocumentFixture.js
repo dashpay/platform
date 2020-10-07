@@ -23,7 +23,7 @@ function getTopDocumentFixture(options = {}) {
     normalizedParentDomainName: '',
     preorderSalt: crypto.randomBytes(32),
     records: {
-      dashUniqueIdentityId: ownerId.toBuffer(),
+      dashUniqueIdentityId: ownerId,
     },
     subdomainRules: {
       allowSubdomains: true,
@@ -31,7 +31,7 @@ function getTopDocumentFixture(options = {}) {
     ...options,
   };
 
-  return factory.create(dataContract, ownerId.toBuffer(), 'domain', data);
+  return factory.create(dataContract, ownerId, 'domain', data);
 }
 
 /**
@@ -51,7 +51,7 @@ function getParentDocumentFixture(options = {}) {
     normalizedParentDomainName: 'grandparent',
     preorderSalt: crypto.randomBytes(32),
     records: {
-      dashUniqueIdentityId: ownerId.toBuffer(),
+      dashUniqueIdentityId: ownerId,
     },
     subdomainRules: {
       allowSubdomains: false,
@@ -59,7 +59,7 @@ function getParentDocumentFixture(options = {}) {
     ...options,
   };
 
-  return factory.create(dataContract, ownerId.toBuffer(), 'domain', data);
+  return factory.create(dataContract, ownerId, 'domain', data);
 }
 
 /**
@@ -81,7 +81,7 @@ function getChildDocumentFixture(options = {}) {
     normalizedParentDomainName: parentDomainName,
     preorderSalt: crypto.randomBytes(32),
     records: {
-      dashUniqueIdentityId: ownerId.toBuffer(),
+      dashUniqueIdentityId: ownerId,
     },
     subdomainRules: {
       allowSubdomains: false,
@@ -89,7 +89,7 @@ function getChildDocumentFixture(options = {}) {
     ...options,
   };
 
-  return factory.create(dataContract, ownerId.toBuffer(), 'domain', data);
+  return factory.create(dataContract, ownerId, 'domain', data);
 }
 
 module.exports = {

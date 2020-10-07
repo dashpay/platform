@@ -213,10 +213,4 @@ class AbstractStateTransition {
  * @property {string} [signature]
  */
 
-AbstractStateTransition.ENCODED_PROPERTIES = {
-  signature: {
-    contentEncoding: 'base64',
-  },
-};
-
 module.exports = AbstractStateTransition;

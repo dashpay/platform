@@ -12,25 +12,22 @@
       "const": 3
     },
     "lockedOutPoint": {
-      "type": "string",
-      "contentEncoding": "base64",
-      "minLength": 48,
-      "maxLength": 48,
-      "pattern": "^([A-Za-z0-9+/])+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 36,
+      "maxBytesLength": 36
     },
     "identityId": {
-      "type": "string",
-      "contentEncoding": "base58",
-      "minLength": 42,
-      "maxLength": 44,
-      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 32,
+      "maxBytesLength": 32
     },
     "signature": {
-      "type": "string",
-      "contentEncoding": "base64",
-      "minLength": 87,
-      "maxLength": 87,
-      "pattern": "^([A-Za-z0-9+/])+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 65,
+      "maxBytesLength": 65
     }
   },
   "additionalProperties": false,

@@ -145,8 +145,4 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
  * @property {string} [signaturePublicKeyId]
  */
 
-AbstractStateTransitionIdentitySigned.ENCODED_PROPERTIES = {
-  ...AbstractStateTransition.ENCODED_PROPERTIES,
-};
-
 module.exports = AbstractStateTransitionIdentitySigned;

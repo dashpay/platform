@@ -1,4 +1,4 @@
-const Ajv = require('ajv');
+const createAjv = require('../../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require(
   '../../../../lib/validation/JsonSchemaValidator',
@@ -33,7 +33,7 @@ describe('validatePublicKeysFactory', () => {
   beforeEach(() => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
-    const validator = new JsonSchemaValidator(new Ajv());
+    const validator = new JsonSchemaValidator(createAjv());
 
     validatePublicKeys = validatePublicKeysFactory(
       validator,
@@ -139,8 +139,8 @@ describe('validatePublicKeysFactory', () => {
       expect(error.params.missingProperty).to.equal('data');
     });
 
-    it('should be a binary (encoded string)', () => {
-      rawPublicKeys[1].data = 1;
+    it('should be a byte array', () => {
+      rawPublicKeys[1].data = {};
 
       const result = validatePublicKeys(rawPublicKeys);
 
@@ -149,77 +149,64 @@ describe('validatePublicKeysFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.data');
-      expect(error.keyword).to.equal('type');
-    });
-
-    it('should be base64 encoded string without padding', () => {
-      rawPublicKeys[1].data = '&'.repeat(44);
-
-      const result = validatePublicKeys(rawPublicKeys);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.dataPath).to.equal('.data');
-      expect(error.keyword).to.equal('pattern');
+      expect(error.keyword).to.equal('byteArray');
     });
 
     describe('ECDSA_SECP256K1', () => {
-      it('should be no less than 44 character', () => {
-        rawPublicKeys[1].data = Buffer.alloc(33).toString('base64').slice(1);
+      it('should be no less than 33 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(32);
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('minLength');
+        expect(error.keyword).to.equal('minBytesLength');
       });
 
-      it('should be no longer than 44 character', () => {
-        rawPublicKeys[1].data = `${Buffer.alloc(33).toString('base64')}a`;
+      it('should be no longer than 33 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(34);
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('maxLength');
+        expect(error.keyword).to.equal('maxBytesLength');
       });
     });
 
     describe('BLS12_381', () => {
-      it('should be no less than 64 character', () => {
-        rawPublicKeys[1].data = Buffer.alloc(48).toString('base64').slice(1);
+      it('should be no less than 48 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(47);
         rawPublicKeys[1].type = 1;
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('minLength');
+        expect(error.keyword).to.equal('minBytesLength');
       });
 
-      it('should be no longer than 64 character', () => {
-        rawPublicKeys[1].data = `${Buffer.alloc(48).toString('base64')}a`;
+      it('should be no longer than 48 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(49);
         rawPublicKeys[1].type = 1;
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('maxLength');
+        expect(error.keyword).to.equal('maxBytesLength');
       });
     });
   });
@@ -249,7 +236,7 @@ describe('validatePublicKeysFactory', () => {
   });
 
   it('should return invalid result if key data is not a valid DER', () => {
-    rawPublicKeys[1].data = Buffer.alloc(33).toString('base64');
+    rawPublicKeys[1].data = Buffer.alloc(33);
 
     const result = validatePublicKeys(rawPublicKeys);
 

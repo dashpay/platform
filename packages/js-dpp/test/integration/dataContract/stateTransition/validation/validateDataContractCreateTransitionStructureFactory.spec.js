@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const Ajv = require('ajv');
+
+const createAjv = require('../../../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require('../../../../../lib/validation/JsonSchemaValidator');
 
@@ -55,7 +56,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       new ValidationResult(),
     );
 
-    const ajv = new Ajv();
+    const ajv = createAjv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     // eslint-disable-next-line max-len
@@ -255,8 +256,8 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       expect(error.params.missingProperty).to.equal('entropy');
     });
 
-    it('should be a string (encoded string)', async () => {
-      rawStateTransition.entropy = 1;
+    it('should be a binary', async () => {
+      rawStateTransition.entropy = {};
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -265,12 +266,11 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.entropy');
-      expect(error.keyword).to.equal('type');
-      expect(error.params.type).to.equal('string');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should be no less than 26 chars', async () => {
-      rawStateTransition.entropy = Buffer.alloc(4);
+    it('should be no less than 20 bytes', async () => {
+      rawStateTransition.entropy = Buffer.alloc(19);
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -279,11 +279,12 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.entropy');
-      expect(error.keyword).to.equal('minLength');
+      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.params.limit).to.equal(20);
     });
 
-    it('should be no longer than 35 chars', async () => {
-      rawStateTransition.entropy = Buffer.alloc(45);
+    it('should be no longer than 35 bytes', async () => {
+      rawStateTransition.entropy = Buffer.alloc(36);
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -292,7 +293,8 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.entropy');
-      expect(error.keyword).to.equal('maxLength');
+      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.params.limit).to.equal(35);
     });
 
     it('should return invalid result on invalid entropy', async () => {
@@ -314,8 +316,6 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       expect(error).to.be.an.instanceOf(InvalidDataContractEntropyError);
       expect(error.getRawDataContract()).to.deep.equal(rawStateTransition.dataContract);
     });
-
-    it('should be base58 encoded');
   });
 
   describe('signature', () => {
@@ -333,8 +333,8 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       expect(error.params.missingProperty).to.equal('signature');
     });
 
-    it('should be a binary (encoded string)', async () => {
-      rawStateTransition.signature = 1;
+    it('should be a byte array', async () => {
+      rawStateTransition.signature = {};
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -343,12 +343,11 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('type');
-      expect(error.params.type).to.equal('string');
+      expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should have length of 65 bytes (87 chars)', async () => {
-      rawStateTransition.signature = Buffer.alloc(10);
+    it('should be not less than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(64);
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -357,12 +356,12 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('minLength');
-      expect(error.params.limit).to.equal(87);
+      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.params.limit).to.equal(65);
     });
 
-    it('should be base64 encoded', async () => {
-      rawStateTransition.signature = '&'.repeat(87);
+    it('should be not longer than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(66);
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -371,7 +370,8 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('pattern');
+      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.params.limit).to.equal(65);
     });
 
     it('should be valid', async () => {

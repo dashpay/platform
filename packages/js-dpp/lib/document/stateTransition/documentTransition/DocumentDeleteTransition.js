@@ -19,8 +19,4 @@ class DocumentDeleteTransition extends AbstractDocumentTransition {
  * @typedef {JsonDocumentTransition & Object} JsonDocumentDeleteTransition
  */
 
-DocumentDeleteTransition.ENCODED_PROPERTIES = {
-  ...AbstractDocumentTransition.ENCODED_PROPERTIES,
-};
-
 module.exports = DocumentDeleteTransition;

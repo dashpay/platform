@@ -8,11 +8,10 @@
       "$comment": "Maximum is the latest Identity protocol version"
     },
     "id": {
-      "type": "string",
-      "contentEncoding": "base58",
-      "minLength": 42,
-      "maxLength": 44,
-      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 32,
+      "maxBytesLength": 32
     },
     "publicKeys": {
       "type": "array",

@@ -1,4 +1,4 @@
-const Ajv = require('ajv');
+const createAjv = require('../../../../lib/ajv/createAjv');
 
 const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 
@@ -27,7 +27,7 @@ describe('validateIdentityFactory', () => {
   let validatePublicKeysMock;
 
   beforeEach(function beforeEach() {
-    const schemaValidator = new JsonSchemaValidator(new Ajv());
+    const schemaValidator = new JsonSchemaValidator(createAjv());
 
     validatePublicKeysMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
@@ -58,8 +58,8 @@ describe('validateIdentityFactory', () => {
       expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should be a string', () => {
-      rawIdentity.id = 1;
+    it('should be a byte array', () => {
+      rawIdentity.id = {};
 
       const result = validateIdentity(rawIdentity);
 
@@ -68,13 +68,13 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.id');
-      expect(error.keyword).to.equal('type');
+      expect(error.keyword).to.equal('byteArray');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should not be less than 42 characters', () => {
-      rawIdentity.id = '1'.repeat(41);
+    it('should not be less than 32 bytes', () => {
+      rawIdentity.id = Buffer.alloc(31);
 
       const result = validateIdentity(rawIdentity);
 
@@ -82,14 +82,14 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minLength');
+      expect(error.keyword).to.equal('minBytesLength');
       expect(error.dataPath).to.equal('.id');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should not be more than 44 characters', () => {
-      rawIdentity.id = '1'.repeat(45);
+    it('should not be more than 32 bytes', () => {
+      rawIdentity.id = Buffer.alloc(33);
 
       const result = validateIdentity(rawIdentity);
 
@@ -97,22 +97,7 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maxLength');
-      expect(error.dataPath).to.equal('.id');
-
-      expect(validatePublicKeysMock).to.not.be.called();
-    });
-
-    it('should be base58 encoded', () => {
-      rawIdentity.id = '&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&';
-
-      const result = validateIdentity(rawIdentity);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.keyword).to.equal('pattern');
+      expect(error.keyword).to.equal('maxBytesLength');
       expect(error.dataPath).to.equal('.id');
 
       expect(validatePublicKeysMock).to.not.be.called();

@@ -134,14 +134,4 @@ class IdentityTopUpTransition extends AbstractStateTransition {
  * @property {string} identityId
  */
 
-IdentityTopUpTransition.ENCODED_PROPERTIES = {
-  ...AbstractStateTransition.ENCODED_PROPERTIES,
-  identityId: {
-    contentEncoding: 'base58',
-  },
-  lockedOutPoint: {
-    contentEncoding: 'base64',
-  },
-};
-
 module.exports = IdentityTopUpTransition;

@@ -15,22 +15,20 @@
       "type": "object"
     },
     "entropy": {
-      "type": "string",
-      "contentEncoding": "base58",
-      "minLength": 26,
-      "maxLength": 35,
-      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 20,
+      "maxBytesLength": 35
     },
     "signaturePublicKeyId": {
       "type": "integer",
       "minimum": 0
     },
     "signature": {
-      "type": "string",
-      "contentEncoding": "base64",
-      "minLength": 87,
-      "maxLength": 87,
-      "pattern": "^([A-Za-z0-9+/])+$"
+      "type": "object",
+      "byteArray": true,
+      "minBytesLength": 65,
+      "maxBytesLength": 65
     }
   },
   "additionalProperties": false,

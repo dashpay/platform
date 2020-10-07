@@ -1,7 +1,3 @@
-const IdentityCreateTransition = require('./IdentityCreateTransition');
-
-const encodeObjectProperties = require('../../../util/encoding/encodeObjectProperties');
-
 const identityCreateTransitionSchema = require('../../../../schema/identity/stateTransition/identityCreate');
 
 /**
@@ -20,14 +16,9 @@ function validateIdentityCreateTransitionStructureFactory(
    */
   function validateIdentityCreateTransitionStructure(rawStateTransition) {
     // Validate state transition against JSON Schema
-    const jsonStateTransition = encodeObjectProperties(
-      rawStateTransition,
-      IdentityCreateTransition.ENCODED_PROPERTIES,
-    );
-
     const result = jsonSchemaValidator.validate(
       identityCreateTransitionSchema,
-      jsonStateTransition,
+      rawStateTransition,
     );
 
     if (!result.isValid()) {

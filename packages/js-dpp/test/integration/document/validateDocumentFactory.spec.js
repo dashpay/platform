@@ -1,4 +1,4 @@
-const Ajv = require('ajv');
+const createAjv = require('../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator');
 const ValidationResult = require('../../../lib/validation/ValidationResult');
@@ -31,7 +31,7 @@ describe('validateDocumentFactory', () => {
   let validator;
 
   beforeEach(function beforeEach() {
-    const ajv = new Ajv();
+    const ajv = createAjv();
 
     validator = new JsonSchemaValidator(ajv);
     this.sinonSandbox.spy(validator, 'validate');
@@ -102,19 +102,6 @@ describe('validateDocumentFactory', () => {
         expect(error.dataPath).to.equal('.$protocolVersion');
         expect(error.keyword).to.equal('maximum');
       });
-
-      it('should be base58 encoded', () => {
-        rawDocument.$id = '&'.repeat(44);
-
-        const result = validateDocument(rawDocument, dataContract);
-
-        expectJsonSchemaError(result);
-
-        const [error] = result.getErrors();
-
-        expect(error.keyword).to.equal('pattern');
-        expect(error.dataPath).to.equal('.$id');
-      });
     });
 
     describe('$id', () => {
@@ -132,8 +119,8 @@ describe('validateDocumentFactory', () => {
         expect(error.params.missingProperty).to.equal('$id');
       });
 
-      it('should be a binary (encoded string)', () => {
-        rawDocument.$id = 1;
+      it('should be a byte array', () => {
+        rawDocument.$id = {};
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -142,12 +129,11 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$id');
-        expect(error.keyword).to.equal('type');
-        expect(error.params.type).to.equal('string');
+        expect(error.keyword).to.equal('byteArray');
       });
 
-      it('should be no less than 42 chars', () => {
-        rawDocument.$id = '1'.repeat(41);
+      it('should be no less than 32 bytes', () => {
+        rawDocument.$id = Buffer.alloc(31);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -156,11 +142,11 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$id');
-        expect(error.keyword).to.equal('minLength');
+        expect(error.keyword).to.equal('minBytesLength');
       });
 
-      it('should be no longer than 44 chars', () => {
-        rawDocument.$id = '1'.repeat(45);
+      it('should be no longer than 32 bytes', () => {
+        rawDocument.$id = Buffer.alloc(33);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -169,20 +155,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$id');
-        expect(error.keyword).to.equal('maxLength');
-      });
-
-      it('should be base58 encoded', () => {
-        rawDocument.$id = '&'.repeat(44);
-
-        const result = validateDocument(rawDocument, dataContract);
-
-        expectJsonSchemaError(result);
-
-        const [error] = result.getErrors();
-
-        expect(error.keyword).to.equal('pattern');
-        expect(error.dataPath).to.equal('.$id');
+        expect(error.keyword).to.equal('maxBytesLength');
       });
     });
 
@@ -305,8 +278,8 @@ describe('validateDocumentFactory', () => {
         expect(error.params.missingProperty).to.equal('$dataContractId');
       });
 
-      it('should be a binary (encoded string)', () => {
-        rawDocument.$dataContractId = 1;
+      it('should be a byte array', () => {
+        rawDocument.$dataContractId = {};
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -315,11 +288,11 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$dataContractId');
-        expect(error.keyword).to.equal('type');
+        expect(error.keyword).to.equal('byteArray');
       });
 
-      it('should be no less than 42 chars', () => {
-        rawDocument.$dataContractId = '1'.repeat(41);
+      it('should be no less than 32 bytes', () => {
+        rawDocument.$dataContractId = Buffer.alloc(31);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -328,11 +301,11 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$dataContractId');
-        expect(error.keyword).to.equal('minLength');
+        expect(error.keyword).to.equal('minBytesLength');
       });
 
-      it('should be no longer than 44 chars', () => {
-        rawDocument.$dataContractId = '1'.repeat(45);
+      it('should be no longer than 32 bytes', () => {
+        rawDocument.$dataContractId = Buffer.alloc(33);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -341,20 +314,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$dataContractId');
-        expect(error.keyword).to.equal('maxLength');
-      });
-
-      it('should be base58 encoded', () => {
-        rawDocument.$dataContractId = '&'.repeat(44);
-
-        const result = validateDocument(rawDocument, dataContract);
-
-        expectJsonSchemaError(result);
-
-        const [error] = result.getErrors();
-
-        expect(error.keyword).to.equal('pattern');
-        expect(error.dataPath).to.equal('.$dataContractId');
+        expect(error.keyword).to.equal('maxBytesLength');
       });
     });
 
@@ -373,8 +333,8 @@ describe('validateDocumentFactory', () => {
         expect(error.params.missingProperty).to.equal('$ownerId');
       });
 
-      it('should be a string', () => {
-        rawDocument.$ownerId = 1;
+      it('should be a byte array', () => {
+        rawDocument.$ownerId = {};
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -383,11 +343,11 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$ownerId');
-        expect(error.keyword).to.equal('type');
+        expect(error.keyword).to.equal('byteArray');
       });
 
-      it('should be no less than 42 chars', () => {
-        rawDocument.$ownerId = '1'.repeat(41);
+      it('should be no less than 32 bytes', () => {
+        rawDocument.$ownerId = Buffer.alloc(31);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -396,11 +356,11 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$ownerId');
-        expect(error.keyword).to.equal('minLength');
+        expect(error.keyword).to.equal('minBytesLength');
       });
 
-      it('should be no longer than 44 chars', () => {
-        rawDocument.$ownerId = '1'.repeat(45);
+      it('should be no longer than 32 bytes', () => {
+        rawDocument.$ownerId = Buffer.alloc(33);
 
         const result = validateDocument(rawDocument, dataContract);
 
@@ -409,20 +369,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$ownerId');
-        expect(error.keyword).to.equal('maxLength');
-      });
-
-      it('should be base58 encoded', () => {
-        rawDocument.$ownerId = '&'.repeat(44);
-
-        const result = validateDocument(rawDocument, dataContract);
-
-        expectJsonSchemaError(result);
-
-        const [error] = result.getErrors();
-
-        expect(error.keyword).to.equal('pattern');
-        expect(error.dataPath).to.equal('.$ownerId');
+        expect(error.keyword).to.equal('maxBytesLength');
       });
     });
   });
