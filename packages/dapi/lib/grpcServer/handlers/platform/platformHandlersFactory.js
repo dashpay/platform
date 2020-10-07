@@ -21,6 +21,8 @@ const {
     GetDocumentsRequest,
     GetIdentityByFirstPublicKeyRequest,
     GetIdentityIdByFirstPublicKeyRequest,
+    GetIdentitiesByPublicKeyHashesRequest,
+    GetIdentityIdsByPublicKeyHashesRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -34,6 +36,10 @@ const {
       GetIdentityByFirstPublicKeyRequest: PBJSGetIdentityByFirstPublicKeyRequest,
       GetIdentityIdByFirstPublicKeyResponse: PBJSGetIdentityIdByFirstPublicKeyResponse,
       GetIdentityIdByFirstPublicKeyRequest: PBJSGetIdentityIdByFirstPublicKeyRequest,
+      GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
+      GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
+      GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
+      GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -59,6 +65,12 @@ const getIdentityByFirstPublicKeyHandlerFactory = require(
 );
 const getIdentityIdByFirstPublicKeyHandlerFactory = require(
   './getIdentityIdByFirstPublicKeyHandlerFactory',
+);
+const getIdentitiesByPublicKeyHashesHandlerFactory = require(
+  './getIdentitiesByPublicKeyHashesHandlerFactory',
+);
+const getIdentityIdsByPublicKeyHashesHandlerFactory = require(
+  './getIdentityIdsByPublicKeyHashesHandlerFactory',
 );
 
 /**
@@ -171,6 +183,38 @@ function platformHandlersFactory(
     wrapInErrorHandler(getIdentityIdByFirstPublicKeyHandler),
   );
 
+  // getIdentitiesByPublicKeyHashes
+  const getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
+    driveStateRepository, handleAbciResponseError,
+  );
+
+  const wrappedGetIdentitiesByPublicKeyHashes = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentitiesByPublicKeyHashesRequest,
+      PBJSGetIdentitiesByPublicKeyHashesRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentitiesByPublicKeyHashesResponse,
+    ),
+    wrapInErrorHandler(getIdentitiesByPublicKeyHashesHandler),
+  );
+
+  // getIdentityIdsByPublicKeyHashes
+  const getIdentityIdsByPublicKeyHashesHandler = getIdentityIdsByPublicKeyHashesHandlerFactory(
+    driveStateRepository, handleAbciResponseError,
+  );
+
+  const wrappedGetIdentityIdsByPublicKeyHashes = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityIdsByPublicKeyHashesRequest,
+      PBJSGetIdentityIdsByPublicKeyHashesRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityIdsByPublicKeyHashesResponse,
+    ),
+    wrapInErrorHandler(getIdentityIdsByPublicKeyHashesHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -178,6 +222,8 @@ function platformHandlersFactory(
     getDataContract: wrappedGetDataContract,
     getIdentityByFirstPublicKey: wrappedGetIdentityByFirstPublicKey,
     getIdentityIdByFirstPublicKey: wrappedGetIdentityIdByFirstPublicKey,
+    getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
+    getIdentityIdsByPublicKeyHashes: wrappedGetIdentityIdsByPublicKeyHashes,
   };
 }
 

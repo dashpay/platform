@@ -10,4 +10,4 @@ class DriveFixture extends DriveStateRepository {
   fetchContract(contractId) { return Promise.resolve({}); }
 }
 
-module.exports = new DriveFixture();
+module.exports = new DriveFixture({});

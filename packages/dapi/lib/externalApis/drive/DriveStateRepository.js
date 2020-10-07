@@ -129,6 +129,42 @@ class DriveStateRepository {
   async fetchIdentityIdByFirstPublicKey(publicKeyHash) {
     return this.request(`/identities/by-first-public-key/${publicKeyHash}/id`);
   }
+
+  /**
+   * Fetch serialized identities by it's public key hashes
+   *
+   * @param {Buffer[]} publicKeyHashes
+   *
+   * @return {Promise<Buffer[]>}
+   */
+  async fetchIdentitiesByPublicKeyHashes(publicKeyHashes) {
+    const serializedIdentitiesArray = await this.request(
+      '/identities/by-public-key-hash',
+      {
+        publicKeyHashes,
+      },
+    );
+
+    return cbor.decode(serializedIdentitiesArray);
+  }
+
+  /**
+   * Fetch serialized identity ids by it's public key hashes
+   *
+   * @param {Buffer[]} publicKeyHashes
+   *
+   * @return {Promise<Buffer[]>}
+   */
+  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
+    const serializedIdentityIdsArray = await this.request(
+      '/identities/by-public-key-hash/id',
+      {
+        publicKeyHashes,
+      },
+    );
+
+    return cbor.decode(serializedIdentityIdsArray);
+  }
 }
 
 module.exports = DriveStateRepository;
