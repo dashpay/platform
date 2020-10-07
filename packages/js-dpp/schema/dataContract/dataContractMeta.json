@@ -330,12 +330,14 @@
     },
     "$id":{
       "type": "string",
+      "contentEncoding": "base58",
       "minLength": 42,
       "maxLength": 44,
       "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
     },
     "ownerId":{
       "type": "string",
+      "contentEncoding": "base58",
       "minLength": 42,
       "maxLength": 44,
       "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"

@@ -9,7 +9,7 @@ const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransi
 function validateStateTransitionDataFactory(validationFunctions) {
   /**
    * @typedef validateStateTransitionData
-   * @param {DataContractCreateTransition|DocumentsBatchTransition} stateTransition
+   * @param {AbstractStateTransition} stateTransition
    * @return {ValidationResult}
    */
   async function validateStateTransitionData(stateTransition) {
@@ -19,7 +19,7 @@ function validateStateTransitionDataFactory(validationFunctions) {
 
     if (!validationFunction) {
       result.addError(
-        new InvalidStateTransitionTypeError(stateTransition.toJSON()),
+        new InvalidStateTransitionTypeError(stateTransition.toObject()),
       );
 
       return result;

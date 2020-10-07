@@ -22,7 +22,7 @@ describe('validateDataContractCreateTransitionDataFactory', () => {
 
     dataContract = getDataContractFixture();
     stateTransition = new DataContractCreateTransition({
-      dataContract: dataContract.toJSON(),
+      dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
 
@@ -40,7 +40,7 @@ describe('validateDataContractCreateTransitionDataFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getDataContract().toJSON()).to.deep.equal(dataContract.toJSON());
+    expect(error.getDataContract().toObject()).to.deep.equal(dataContract.toObject());
 
     expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
   });

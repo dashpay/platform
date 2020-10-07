@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const rejectDataTrigger = require('../../../../lib/dataTrigger/dpnsTriggers/rejectDataTrigger');
 
 const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTriggerExecutionContext');
@@ -29,7 +30,7 @@ describe('rejectDataTrigger', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
-      '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
+      bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq'),
       dataContract,
     );
   });

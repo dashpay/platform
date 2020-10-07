@@ -23,15 +23,15 @@ function applyIdentityCreateTransitionFactory(
    */
   async function applyIdentityCreateTransition(stateTransition) {
     const output = await fetchConfirmedAssetLockTransactionOutput(
-      stateTransition.getLockedOutPoint(),
+      stateTransition.getLockedOutPoint().toString(),
     );
 
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
 
     const identity = new Identity({
       protocolVersion: stateTransition.getProtocolVersion(),
-      id: stateTransition.getIdentityId(),
-      publicKeys: stateTransition.getPublicKeys().map((key) => key.toJSON()),
+      id: stateTransition.getIdentityId().toBuffer(),
+      publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
       balance: creditsAmount,
       revision: 0,
     });
@@ -43,7 +43,7 @@ function applyIdentityCreateTransitionFactory(
       .map((publicKey) => publicKey.hash());
 
     await stateRepository.storeIdentityPublicKeyHashes(
-      identity.getId(),
+      identity.getId().toString(),
       publicKeyHashes,
     );
   }

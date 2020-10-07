@@ -17,7 +17,7 @@ function validateStateTransitionSignatureFactory(stateRepository) {
    * DataContractCreateTransition|
    * DocumentsBatchTransition
    * } stateTransition
-   * @param {string} ownerId
+   * @param {Buffer|EncodedBuffer} ownerId
    * @returns {Promise<ValidationResult>}
    */
   async function validateStateTransitionSignature(stateTransition, ownerId) {

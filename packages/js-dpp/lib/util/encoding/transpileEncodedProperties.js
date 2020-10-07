@@ -1,8 +1,6 @@
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
-const lodashCloneDeepWith = require('lodash.clonedeepwith');
-const EncodedBuffer = require('./EncodedBuffer');
-
+const cloneDeepRawData = require('../cloneDeepRawData');
 /**
  *
  * @param {DataContract} dataContract
@@ -12,12 +10,7 @@ const EncodedBuffer = require('./EncodedBuffer');
  * @return {Object}
  */
 function transpileEncodedProperties(dataContract, type, originalObject, transpileFunction) {
-  // eslint-disable-next-line consistent-return
-  const clonedObject = lodashCloneDeepWith(originalObject, (value) => {
-    if (value instanceof EncodedBuffer) {
-      return new EncodedBuffer(value.toBuffer(), value.getEncoding());
-    }
-  });
+  const clonedObject = cloneDeepRawData(originalObject);
 
   const encodedProperties = dataContract.getEncodedProperties(type);
 

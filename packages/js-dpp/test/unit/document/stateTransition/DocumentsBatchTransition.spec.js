@@ -4,10 +4,6 @@ const getDataContractFixture = require('../../../../lib/test/fixtures/getDataCon
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
 
-const DocumentsBatchTransition = require(
-  '../../../../lib/document/stateTransition/DocumentsBatchTransition',
-);
-
 describe('DocumentsBatchTransition', () => {
   let stateTransition;
   let documents;
@@ -63,10 +59,10 @@ describe('DocumentsBatchTransition', () => {
       expect(stateTransition.toJSON()).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
-        ownerId: documents[0].getOwnerId(),
+        ownerId: documents[0].getOwnerId().toString(),
         transitions: stateTransition.getTransitions().map((d) => d.toJSON()),
-        signaturePublicKeyId: null,
-        signature: null,
+        signaturePublicKeyId: undefined,
+        signature: undefined,
       });
     });
   });
@@ -78,19 +74,19 @@ describe('DocumentsBatchTransition', () => {
         type: stateTransitionTypes.DOCUMENTS_BATCH,
         ownerId: documents[0].getOwnerId(),
         transitions: stateTransition.getTransitions().map((d) => d.toObject()),
-        signaturePublicKeyId: null,
-        signature: null,
+        signaturePublicKeyId: undefined,
+        signature: undefined,
       });
     });
   });
 
-  describe('#serialize', () => {
+  describe('#toBuffer', () => {
     it('should return serialized Documents State Transition', () => {
       const serializedStateTransition = '123';
 
       encodeMock.returns(serializedStateTransition);
 
-      const result = stateTransition.serialize();
+      const result = stateTransition.toBuffer();
 
       expect(result).to.equal(serializedStateTransition);
 
@@ -119,21 +115,7 @@ describe('DocumentsBatchTransition', () => {
     it('should return owner id', async () => {
       const result = stateTransition.getOwnerId();
 
-      expect(result).to.equal(getDocumentsFixture.ownerId);
-    });
-  });
-
-  describe('#fromJSON', () => {
-    it('should create an instance using plain object converted from JSON', async () => {
-      const rawStateTransition = stateTransition.toJSON();
-
-      const result = DocumentsBatchTransition.fromJSON(
-        rawStateTransition, [dataContract],
-      );
-
-      expect(result.toJSON()).to.deep.equal(
-        stateTransition.toJSON(),
-      );
+      expect(result).to.deep.equal(getDocumentsFixture.ownerId);
     });
   });
 });

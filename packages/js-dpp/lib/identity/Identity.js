@@ -1,6 +1,7 @@
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 const IdentityPublicKey = require('./IdentityPublicKey');
+const EncodedBuffer = require('../util/encoding/EncodedBuffer');
 
 class Identity {
   /**
@@ -12,7 +13,7 @@ class Identity {
     }
 
     if (Object.prototype.hasOwnProperty.call(rawIdentity, 'id')) {
-      this.id = rawIdentity.id;
+      this.id = EncodedBuffer.from(rawIdentity.id, EncodedBuffer.ENCODING.BASE58);
     }
 
     if (Object.prototype.hasOwnProperty.call(rawIdentity, 'publicKeys')) {
@@ -38,7 +39,7 @@ class Identity {
   }
 
   /**
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getId() {
     return this.id;
@@ -72,12 +73,28 @@ class Identity {
   }
 
   /**
+   * Get plain object representation
+   *
+   * @return {Object}
+   */
+  toObject() {
+    return {
+      protocolVersion: this.getProtocolVersion(),
+      id: this.getId().toBuffer(),
+      publicKeys: this.getPublicKeys()
+        .map((publicKey) => publicKey.toObject()),
+      balance: this.getBalance(),
+      revision: this.getRevision(),
+    };
+  }
+
+  /**
    * @return {RawIdentity}
    */
   toJSON() {
     return {
       protocolVersion: this.getProtocolVersion(),
-      id: this.getId(),
+      id: this.getId().toString(),
       publicKeys: this.getPublicKeys()
         .map((publicKey) => publicKey.toJSON()),
       balance: this.getBalance(),
@@ -88,15 +105,15 @@ class Identity {
   /**
    * @return {Buffer}
    */
-  serialize() {
-    return encode(this.toJSON());
+  toBuffer() {
+    return encode(this.toObject());
   }
 
   /**
    * @return {string}
    */
   hash() {
-    return hash(this.serialize())
+    return hash(this.toBuffer())
       .toString('hex');
   }
 
@@ -151,7 +168,7 @@ class Identity {
    * @return {Identity}
    */
   setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = lockedOutPoint;
+    this.lockedOutPoint = EncodedBuffer.from(lockedOutPoint, EncodedBuffer.ENCODING.BASE64);
 
     return this;
   }
@@ -159,7 +176,7 @@ class Identity {
   /**
    * Get locked out point
    *
-   * @return {Buffer}
+   * @return {EncodedBuffer}
    */
   getLockedOutPoint() {
     return this.lockedOutPoint;
@@ -190,12 +207,18 @@ class Identity {
 /**
  * @typedef {Object} RawIdentity
  * @property {number} protocolVersion
- * @property {string} id
+ * @property {Buffer} id
  * @property {RawIdentityPublicKey[]} publicKeys
  * @property {number} balance
  * @property {number} revision
  */
 
 Identity.PROTOCOL_VERSION = 0;
+
+Identity.ENCODED_PROPERTIES = {
+  id: {
+    contentEncoding: 'base58',
+  },
+};
 
 module.exports = Identity;

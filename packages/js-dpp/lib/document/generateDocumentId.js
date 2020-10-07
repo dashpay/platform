@@ -1,25 +1,21 @@
-const bs58 = require('bs58');
-
 const hash = require('../util/hash');
 
 /**
  * Generates document ID
  *
- * @param {string} contractId
- * @param {string} ownerId
+ * @param {Buffer} contractId
+ * @param {Buffer} ownerId
  * @param {string} type
- * @param {string} entropy
- * @returns {string}
+ * @param {Buffer} entropy
+ * @returns {Buffer}
  */
 function generateDocumentId(contractId, ownerId, type, entropy) {
-  return bs58.encode(
-    hash(Buffer.concat([
-      bs58.decode(contractId),
-      bs58.decode(ownerId),
-      Buffer.from(type),
-      bs58.decode(entropy),
-    ])),
-  );
+  return hash(Buffer.concat([
+    contractId,
+    ownerId,
+    Buffer.from(type),
+    entropy,
+  ]));
 }
 
 module.exports = generateDocumentId;

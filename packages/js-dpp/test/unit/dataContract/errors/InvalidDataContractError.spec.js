@@ -9,7 +9,7 @@ describe('InvalidDataContractError', () => {
     error = new Error('Some error');
 
     const dataContract = getDataContractFixture();
-    rawDataContract = dataContract.toJSON();
+    rawDataContract = dataContract.toObject();
   });
 
   it('should return errors', () => {

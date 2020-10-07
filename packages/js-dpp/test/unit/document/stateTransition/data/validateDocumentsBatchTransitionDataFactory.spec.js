@@ -109,7 +109,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getDataContractId()).to.equal(dataContract.getId());
+    expect(error.getDataContractId()).to.deep.equal(dataContract.getId());
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
@@ -137,8 +137,8 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       dataContract.getId(),
     );
 
-    expect(fetchDocumentsMock.getCall(0).args[0].map((t) => t.toJSON())).to.have.deep.members(
-      documentTransitions.map((t) => t.toJSON()),
+    expect(fetchDocumentsMock.getCall(0).args[0].map((t) => t.toObject())).to.have.deep.members(
+      documentTransitions.map((t) => t.toObject()),
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -155,7 +155,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     const result = await validateData(stateTransition);
@@ -188,7 +188,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     const result = await validateData(stateTransition);
@@ -213,7 +213,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
   });
 
   it('should return invalid result if document transition with action "replace" has wrong revision', async () => {
-    const replaceDocument = new Document(documents[0].toJSON(), dataContract);
+    const replaceDocument = new Document(documents[0].toObject(), dataContract);
     replaceDocument.setRevision(3);
 
     documentTransitions = getDocumentTransitionsFixture({
@@ -224,7 +224,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     documents[0].setCreatedAt(replaceDocument.getCreatedAt());
@@ -253,11 +253,11 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
   });
 
   it('should return invalid result if document transition with action "replace" has mismatch of ownerId with previous revision', async () => {
-    const replaceDocument = new Document(documents[0].toJSON(), dataContract);
+    const replaceDocument = new Document(documents[0].toObject(), dataContract);
     replaceDocument.setRevision(1);
 
-    const fetchedDocument = new Document(documents[0].toJSON(), dataContract);
-    fetchedDocument.ownerId = generateRandomId();
+    const fetchedDocument = new Document(documents[0].toObject(), dataContract);
+    fetchedDocument.ownerId = generateRandomId().toBuffer();
 
     documentTransitions = getDocumentTransitionsFixture({
       create: [],
@@ -267,7 +267,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     fetchDocumentsMock.resolves([fetchedDocument]);
@@ -311,8 +311,8 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
       expect.fail('InvalidDocumentActionError should be thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidDocumentActionError);
-      expect(e.getDocumentTransition().toJSON()).to.deep.equal(
-        stateTransition.transitions[0].toJSON(),
+      expect(e.getDocumentTransition().toObject()).to.deep.equal(
+        stateTransition.transitions[0].toObject(),
       );
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
@@ -358,13 +358,13 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
     const callArgs = [
       callOwnerId,
-      callDocumentTransitions.map((t) => t.toJSON()),
+      callDocumentTransitions.map((t) => t.toObject()),
       callDataContract,
     ];
 
     expect(callArgs).to.have.deep.members([
       ownerId,
-      documentTransitions.map((t) => t.toJSON()),
+      documentTransitions.map((t) => t.toObject()),
       dataContract,
     ]);
     expect(executeDataTriggersMock).to.have.not.been.called();
@@ -412,13 +412,13 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
     const callArgs = [
       callOwnerId,
-      callDocumentTransitions.map((t) => t.toJSON()),
+      callDocumentTransitions.map((t) => t.toObject()),
       callDataContract,
     ];
 
     expect(callArgs).to.have.deep.members([
       ownerId,
-      documentTransitions.map((t) => t.toJSON()),
+      documentTransitions.map((t) => t.toObject()),
       dataContract,
     ]);
 
@@ -427,12 +427,12 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     const triggerCallArgs = [
-      triggerCallDocumentTransitions.map((t) => t.toJSON()),
+      triggerCallDocumentTransitions.map((t) => t.toObject()),
       triggerCallDataTriggersExecutionContext,
     ];
 
     expect(triggerCallArgs).to.have.deep.members([
-      documentTransitions.map((t) => t.toJSON()),
+      documentTransitions.map((t) => t.toObject()),
       dataTriggersExecutionContext,
     ]);
 
@@ -449,7 +449,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
         stateTransition = new DocumentsBatchTransition({
           ownerId,
           contractId: dataContract.getId(),
-          transitions: documentTransitions.map((t) => t.toJSON()),
+          transitions: documentTransitions.map((t) => t.toObject()),
         }, [dataContract]);
 
         stateTransition.transitions.forEach((t) => {
@@ -476,7 +476,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
         stateTransition = new DocumentsBatchTransition({
           ownerId,
           contractId: dataContract.getId(),
-          transitions: documentTransitions.map((t) => t.toJSON()),
+          transitions: documentTransitions.map((t) => t.toObject()),
         }, [dataContract]);
 
         stateTransition.transitions.forEach((t) => {
@@ -509,7 +509,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
         stateTransition = new DocumentsBatchTransition({
           ownerId,
           contractId: dataContract.getId(),
-          transitions: documentTransitions.map((t) => t.toJSON()),
+          transitions: documentTransitions.map((t) => t.toObject()),
         }, [dataContract]);
 
         stateTransition.transitions.forEach((t) => {
@@ -545,7 +545,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
         stateTransition = new DocumentsBatchTransition({
           ownerId,
           contractId: dataContract.getId(),
-          transitions: documentTransitions.map((t) => t.toJSON()),
+          transitions: documentTransitions.map((t) => t.toObject()),
         }, [dataContract]);
 
         documents[1].updatedAt.setMinutes(
@@ -578,8 +578,8 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
 
   it('should return valid result if document transitions are valid', async () => {
     const fetchedDocuments = [
-      new Document(documents[1].toJSON(), dataContract),
-      new Document(documents[2].toJSON(), dataContract),
+      new Document(documents[1].toObject(), dataContract),
+      new Document(documents[2].toObject(), dataContract),
     ];
 
     fetchDocumentsMock.resolves(fetchedDocuments);
@@ -596,7 +596,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     const dataTriggersExecutionContext = new DataTriggerExecutionContext(
@@ -648,8 +648,8 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     );
 
     const fetchedDocuments = [
-      new Document(documents[1].toJSON(), dataContract),
-      new Document(documents[2].toJSON(), dataContract),
+      new Document(documents[1].toObject(), dataContract),
+      new Document(documents[2].toObject(), dataContract),
     ];
 
     fetchDocumentsMock.resolves(fetchedDocuments);
@@ -663,7 +663,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     stateTransition = new DocumentsBatchTransition({
       ownerId,
       contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toJSON()),
+      transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
     const result = await validateData(stateTransition);

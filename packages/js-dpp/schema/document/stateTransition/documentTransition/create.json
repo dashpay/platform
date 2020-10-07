@@ -4,8 +4,10 @@
   "properties": {
     "$entropy": {
       "type": "string",
+      "contentEncoding": "base58",
       "minLength": 26,
-      "maxLength": 35
+      "maxLength": 35,
+      "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
     },
     "$createdAt": {
       "type": "integer",

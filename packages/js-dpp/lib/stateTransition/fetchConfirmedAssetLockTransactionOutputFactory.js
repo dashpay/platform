@@ -22,7 +22,7 @@ function fetchConfirmedAssetLockTransactionOutputFactory(
    * Returns lock transaction output for provided lockedOutPoint
    *
    * @typedef fetchConfirmedAssetLockTransactionOutput
-   * @param {string} lockedOutPoint
+   * @param {Buffer} lockedOutPoint
    * @return {Promise<Object>}
    */
   async function fetchConfirmedAssetLockTransactionOutput(lockedOutPoint) {

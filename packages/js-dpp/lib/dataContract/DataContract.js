@@ -4,15 +4,17 @@ const { encode } = require('../util/serializer');
 const getEncodedPropertiesFromSchema = require('./getEncodedPropertiesFromSchema');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
+const EncodedBuffer = require('../util/encoding/EncodedBuffer');
 
 class DataContract {
   /**
    * @param {RawDataContract} rawDataContract
    */
   constructor(rawDataContract) {
-    this.id = rawDataContract.$id;
-    this.ownerId = rawDataContract.ownerId;
     this.protocolVersion = rawDataContract.protocolVersion;
+
+    this.id = EncodedBuffer.from(rawDataContract.$id, EncodedBuffer.ENCODING.BASE58);
+    this.ownerId = EncodedBuffer.from(rawDataContract.ownerId, EncodedBuffer.ENCODING.BASE58);
 
     this.setJsonMetaSchema(rawDataContract.$schema);
     this.setDocuments(rawDataContract.documents);
@@ -33,7 +35,7 @@ class DataContract {
   /**
    * Get ID
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getId() {
     return this.id;
@@ -42,7 +44,7 @@ class DataContract {
   /**
    * Get owner id
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getOwnerId() {
     return this.ownerId;
@@ -54,7 +56,7 @@ class DataContract {
    * @return {string}
    */
   getJsonSchemaId() {
-    return this.getId();
+    return this.getId().toString();
   }
 
   /**
@@ -185,10 +187,21 @@ class DataContract {
   /**
    * Return Data Contract as plain object
    *
+   * @param {Object} [options]
+   * @param {boolean} [options.encodedBuffer]
+   *
    * @return {RawDataContract}
    */
-  toJSON() {
-    const json = {
+  toObject(options = {}) {
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        ...options,
+      },
+    );
+
+    const rawDataContract = {
       protocolVersion: this.getProtocolVersion(),
       $id: this.getId(),
       $schema: this.getJsonMetaSchema(),
@@ -196,22 +209,40 @@ class DataContract {
       documents: this.getDocuments(),
     };
 
+    if (!options.encodedBuffer) {
+      rawDataContract.$id = this.getId().toBuffer();
+      rawDataContract.ownerId = this.getOwnerId().toBuffer();
+    }
+
     const definitions = this.getDefinitions();
 
     if (definitions && Object.getOwnPropertyNames(definitions).length) {
-      json.definitions = definitions;
+      rawDataContract.definitions = definitions;
     }
 
-    return json;
+    return rawDataContract;
   }
 
   /**
-   * Return serialized Data Contract
+   * Return Data Contract as JSON object
    *
-   * @return {Buffer}
+   * @return {JsonDataContract}
    */
-  serialize() {
-    return encode(this.toJSON());
+  toJSON() {
+    return {
+      ...this.toObject({}),
+      $id: this.getId().toString(),
+      ownerId: this.getOwnerId().toString(),
+    };
+  }
+
+  /**
+   * Return Data Contract as a Buffer
+   *
+   * @returns {Buffer}
+   */
+  toBuffer() {
+    return encode(this.toObject());
   }
 
   /**
@@ -220,17 +251,17 @@ class DataContract {
    * @return {string}
    */
   hash() {
-    return hash(this.serialize()).toString('hex');
+    return hash(this.toBuffer()).toString('hex');
   }
 
   /**
    * Set Data Contract entropy
    *
-   * @param {string} entropy
+   * @param {Buffer} entropy
    * @return {DataContract}
    */
   setEntropy(entropy) {
-    this.entropy = entropy;
+    this.entropy = EncodedBuffer.from(entropy, EncodedBuffer.ENCODING.BASE58);
 
     return this;
   }
@@ -238,7 +269,7 @@ class DataContract {
   /**
    * Get Data Contract entropy
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getEntropy() {
     return this.entropy;
@@ -247,6 +278,16 @@ class DataContract {
 
 /**
  * @typedef {Object} RawDataContract
+ * @property {number} protocolVersion
+ * @property {Buffer} $id
+ * @property {string} $schema
+ * @property {Buffer} ownerId
+ * @property {Object<string, Object>} documents
+ * @property {Object<string, Object>} [definitions]
+ */
+
+/**
+ * @typedef {Object} JsonDataContract
  * @property {number} protocolVersion
  * @property {string} $id
  * @property {string} $schema
@@ -259,6 +300,15 @@ DataContract.PROTOCOL_VERSION = 0;
 
 DataContract.DEFAULTS = {
   SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract',
+};
+
+DataContract.ENCODED_PROPERTIES = {
+  $id: {
+    contentEncoding: 'base58',
+  },
+  ownerId: {
+    contentEncoding: 'base58',
+  },
 };
 
 module.exports = DataContract;

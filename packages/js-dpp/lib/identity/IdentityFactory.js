@@ -1,5 +1,3 @@
-const bs58 = require('bs58');
-
 const hash = require('../util/hash');
 
 const Identity = require('./Identity');
@@ -29,9 +27,7 @@ class IdentityFactory {
    * @return {Identity}
    */
   create(lockedOutPoint, publicKeys = []) {
-    const id = bs58.encode(
-      hash(lockedOutPoint),
-    );
+    const id = hash(lockedOutPoint);
 
     const identity = new Identity({
       protocolVersion: Identity.PROTOCOL_VERSION,
@@ -40,8 +36,7 @@ class IdentityFactory {
       publicKeys: publicKeys.map((publicKey, i) => ({
         id: i,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: publicKey.toBuffer()
-          .toString('base64'),
+        data: publicKey.toBuffer(),
       })),
       revision: 0,
     });
@@ -62,35 +57,33 @@ class IdentityFactory {
   createFromObject(rawIdentity, options = {}) {
     const opts = { skipValidation: false, ...options };
 
-    const identity = new Identity(rawIdentity);
-
     if (!opts.skipValidation) {
-      const result = this.validateIdentity(identity.toJSON());
+      const result = this.validateIdentity(rawIdentity);
 
       if (!result.isValid()) {
         throw new InvalidIdentityError(result.getErrors(), rawIdentity);
       }
     }
 
-    return identity;
+    return new Identity(rawIdentity);
   }
 
   /**
-   * Create Identity from a string/Buffer
+   * Create Identity from a Buffer
    *
-   * @param {Buffer|string} serializedIdentity
+   * @param {Buffer} buffer
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Identity}
    */
-  createFromSerialized(serializedIdentity, options = {}) {
+  createFromBuffer(buffer, options = {}) {
     let rawIdentity;
     try {
-      rawIdentity = decode(serializedIdentity);
+      rawIdentity = decode(buffer);
     } catch (error) {
       throw new InvalidIdentityError([
         new SerializedObjectParsingError(
-          serializedIdentity,
+          buffer,
           error,
         ),
       ]);
@@ -106,11 +99,9 @@ class IdentityFactory {
    * @return {IdentityCreateTransition}
    */
   createIdentityCreateTransition(identity) {
-    const lockedOutPoint = identity.getLockedOutPoint().toString('base64');
-
     const stateTransition = new IdentityCreateTransition({
       protocolVersion: Identity.PROTOCOL_VERSION,
-      lockedOutPoint,
+      lockedOutPoint: identity.getLockedOutPoint(),
     });
 
     stateTransition.setPublicKeys(identity.getPublicKeys());
@@ -126,12 +117,10 @@ class IdentityFactory {
    * @return {IdentityTopUpTransition}
    */
   createIdentityTopUpTransition(identityId, lockedOutPointBuffer) {
-    const lockedOutPoint = lockedOutPointBuffer.toString('base64');
-
     return new IdentityTopUpTransition({
       protocolVersion: Identity.PROTOCOL_VERSION,
       identityId,
-      lockedOutPoint,
+      lockedOutPoint: lockedOutPointBuffer,
     });
   }
 }

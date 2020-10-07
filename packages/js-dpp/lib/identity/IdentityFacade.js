@@ -1,4 +1,6 @@
+const Identity = require('./Identity');
 const IdentityFactory = require('./IdentityFactory');
+
 const validateIdentityFactory = require('./validation/validateIdentityFactory');
 const validatePublicKeysFactory = require('./validation/validatePublicKeysFactory');
 
@@ -45,15 +47,15 @@ class IdentityFacade {
   }
 
   /**
-   * Create identity from a string/Buffer
+   * Create identity from a Buffer
    *
-   * @param {Buffer|string} serializedIdentity
+   * @param {Buffer} buffer
    * @param [options]
    * @param {boolean} [options.skipValidation]
    * @return {Identity}
    */
-  createFromSerialized(serializedIdentity, options = {}) {
-    return this.factory.createFromSerialized(serializedIdentity, options);
+  createFromBuffer(buffer, options = {}) {
+    return this.factory.createFromBuffer(buffer, options);
   }
 
   /**
@@ -63,7 +65,14 @@ class IdentityFacade {
    * @return {ValidationResult}
    */
   validate(identity) {
-    return this.validateIdentity(identity);
+    let rawIdentity;
+    if (identity instanceof Identity) {
+      rawIdentity = identity.toObject();
+    } else {
+      rawIdentity = identity;
+    }
+
+    return this.validateIdentity(rawIdentity);
   }
 
   /**

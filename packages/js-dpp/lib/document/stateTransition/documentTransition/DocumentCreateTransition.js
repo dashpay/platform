@@ -13,15 +13,15 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
 
     const data = { ...rawTransition };
 
-    this.id = rawTransition.$id;
-    this.type = rawTransition.$type;
-    this.entropy = rawTransition.$entropy;
+    if (Object.prototype.hasOwnProperty.call(rawTransition, '$entropy')) {
+      this.entropy = EncodedBuffer.from(rawTransition.$entropy, EncodedBuffer.ENCODING.BASE58);
+    }
 
-    if (rawTransition.$createdAt) {
+    if (Object.prototype.hasOwnProperty.call(rawTransition, '$createdAt')) {
       this.createdAt = new Date(rawTransition.$createdAt);
     }
 
-    if (rawTransition.$updatedAt) {
+    if (Object.prototype.hasOwnProperty.call(rawTransition, '$updatedAt')) {
       this.updatedAt = new Date(rawTransition.$updatedAt);
     }
 
@@ -51,27 +51,9 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
   }
 
   /**
-   * Get id
-   *
-   * @returns {string}
-   */
-  getId() {
-    return this.id;
-  }
-
-  /**
-   * Get type
-   *
-   * @returns {string}
-   */
-  getType() {
-    return this.type;
-  }
-
-  /**
    * Get entropy
    *
-   * @returns {string}
+   * @returns {EncodedBuffer}
    */
   getEntropy() {
     return this.entropy;
@@ -109,7 +91,7 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
    *
    * @param {Object} [options]
    * @param {boolean} [options.encodedBuffer=false]
-   * @return {Object}
+   * @return {RawDocumentCreateTransition}
    */
   toObject(options = {}) {
     Object.assign(
@@ -120,10 +102,8 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
       },
     );
 
-    const rawDocumentTransition = {
-      ...super.toObject(),
-      $id: this.getId(),
-      $type: this.getType(),
+    let rawDocumentTransition = {
+      ...super.toObject(options),
       $entropy: this.getEntropy(),
       ...this.getData(),
     };
@@ -137,6 +117,12 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
     }
 
     if (!options.encodedBuffer) {
+      rawDocumentTransition = {
+        ...rawDocumentTransition,
+        $id: this.getId().toBuffer(),
+        $entropy: this.getEntropy().toBuffer(),
+      };
+
       return transpileEncodedProperties(
         this.dataContract,
         this.getType(),
@@ -149,32 +135,46 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
   }
 
   /**
-   * Create document transition from JSON
+   * Get JSON representation
    *
-   * @param {RawDocumentCreateTransition} rawDocumentTransition
-   * @param {DataContract} dataContract
-   *
-   * @return {DocumentCreateTransition}
+   * @return {JsonDocumentCreateTransition}
    */
-  static fromJSON(rawDocumentTransition, dataContract) {
-    const plainObjectDocumentTransition = AbstractDocumentTransition.translateJsonToObject(
-      rawDocumentTransition, dataContract,
-    );
+  toJSON() {
+    const jsonDocumentTransition = {
+      ...super.toJSON(),
+      $entropy: this.getEntropy().toString(),
+    };
 
-    return new DocumentCreateTransition(plainObjectDocumentTransition, dataContract);
+    return transpileEncodedProperties(
+      this.dataContract,
+      this.getType(),
+      jsonDocumentTransition,
+      (encodedBuffer) => encodedBuffer.toString(),
+    );
   }
 }
 
 /**
- * @typedef {Object} RawDocumentCreateTransition
- * @property {number} $action
- * @property {string} $id
- * @property {string} $type
+ * @typedef {RawDocumentTransition & Object} RawDocumentCreateTransition
+ * @property {Buffer} $entropy
+ * @property {number} [$createdAt]
+ * @property {number} [$updatedAt]
+ */
+
+/**
+ * @typedef {JsonDocumentTransition & Object} JsonDocumentCreateTransition
  * @property {string} $entropy
  * @property {number} [$createdAt]
  * @property {number} [$updatedAt]
  */
 
 DocumentCreateTransition.INITIAL_REVISION = 1;
+
+DocumentCreateTransition.ENCODED_PROPERTIES = {
+  ...AbstractDocumentTransition.ENCODED_PROPERTIES,
+  $entropy: {
+    contentEncoding: 'base58',
+  },
+};
 
 module.exports = DocumentCreateTransition;

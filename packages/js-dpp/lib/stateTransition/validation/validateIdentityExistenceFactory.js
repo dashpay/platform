@@ -8,7 +8,7 @@ const IdentityNotFoundError = require('../../errors/IdentityNotFoundError');
 function validateIdentityExistenceFactory(stateRepository) {
   /**
    * @typedef validateIdentityExistence
-   * @param {string} identityId
+   * @param {Buffer} identityId
    * @return {Promise<ValidationResult>}
    */
   async function validateIdentityExistence(identityId) {

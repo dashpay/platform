@@ -21,14 +21,14 @@ function applyIdentityTopUpTransitionFactory(
    */
   async function applyIdentityTopUpTransition(stateTransition) {
     const output = await fetchConfirmedAssetLockTransactionOutput(
-      stateTransition.getLockedOutPoint(),
+      stateTransition.getLockedOutPoint().toString(),
     );
 
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
 
     const identityId = stateTransition.getIdentityId();
 
-    const identity = await stateRepository.fetchIdentity(identityId);
+    const identity = await stateRepository.fetchIdentity(identityId.toBuffer());
     identity.increaseBalance(creditsAmount);
 
     await stateRepository.storeIdentity(identity);

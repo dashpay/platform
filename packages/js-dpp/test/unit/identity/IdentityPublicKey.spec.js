@@ -9,7 +9,7 @@ describe('IdentityPublicKey', () => {
     rawPublicKey = {
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: 'somePublicKey',
+      data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
     };
 
     publicKey = new IdentityPublicKey(rawPublicKey);
@@ -30,7 +30,7 @@ describe('IdentityPublicKey', () => {
 
       expect(instance.id).to.equal(rawPublicKey.id);
       expect(instance.type).to.equal(rawPublicKey.type);
-      expect(instance.data).to.deep.equal(rawPublicKey.data);
+      expect(instance.data.toString()).to.deep.equal(rawPublicKey.data);
     });
   });
 
@@ -66,15 +66,15 @@ describe('IdentityPublicKey', () => {
 
   describe('#getData', () => {
     it('should return set data', () => {
-      expect(publicKey.getData()).to.equal(rawPublicKey.data);
+      expect(publicKey.getData().toString()).to.equal(rawPublicKey.data);
     });
   });
 
   describe('#setData', () => {
     it('should set data', () => {
-      publicKey.setData('42');
+      publicKey.setData(Buffer.from('4w', 'base64'));
 
-      expect(publicKey.data).to.equal('42');
+      expect(publicKey.data.toString()).to.equal('4w');
     });
   });
 

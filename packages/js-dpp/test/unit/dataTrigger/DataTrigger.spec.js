@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const AbstractDocumentTransition = require('../../../lib/document/stateTransition/documentTransition/AbstractDocumentTransition');
 const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
 const DataTriggerExecutionContext = require('../../../lib/dataTrigger/DataTriggerExecutionContext');
@@ -22,7 +23,7 @@ describe('DataTrigger', () => {
 
     context = new DataTriggerExecutionContext(
       null,
-      '6b74011f5d2ad1a8d45b71b9702f54205ce75253593c3cfbba3fdadeca278288',
+      bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq'),
       dataContractMock,
     );
 

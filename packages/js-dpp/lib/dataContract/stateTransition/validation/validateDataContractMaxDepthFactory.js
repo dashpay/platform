@@ -1,5 +1,4 @@
-const lodashCloneDeep = require('lodash.clonedeep');
-
+const cloneDeepRawData = require('../../../util/cloneDeepRawData');
 const ValidationResult = require('../../../validation/ValidationResult');
 const JsonSchemaError = require('../../../errors/JsonSchemaError');
 const DataContractMaxDepthExceedError = require('../../../errors/DataContractMaxDepthExceedError');
@@ -47,7 +46,7 @@ function validateDataContractMaxDepthFactory(refParser) {
     const result = new ValidationResult();
     let dereferencedDataContract;
 
-    const clonedDataContract = lodashCloneDeep(rawDataContract);
+    const clonedDataContract = cloneDeepRawData(rawDataContract);
 
     try {
       dereferencedDataContract = await refParser.dereference(clonedDataContract, {

@@ -28,7 +28,7 @@ describe('validateDataContractFactory', () => {
 
   beforeEach(() => {
     dataContract = getDataContractFixture();
-    rawDataContract = dataContract.toJSON();
+    rawDataContract = dataContract.toObject();
 
     const ajv = new Ajv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);

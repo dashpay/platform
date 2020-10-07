@@ -6,9 +6,9 @@ const IdentityAlreadyExistsError = require('../../../errors/IdentityAlreadyExist
  * @param {StateRepository} stateRepository
  * @param {validateAssetLockTransaction} validateAssetLockTransaction
  * @param {validateIdentityPublicKeysUniqueness} validateIdentityPublicKeysUniqueness
- * @return {validateIdentityCreateSTData}
+ * @return {validateIdentityCreateTransitionData}
  */
-function validateIdentityCreateSTDataFactory(
+function validateIdentityCreateTransitionDataFactory(
   stateRepository,
   validateAssetLockTransaction,
   validateIdentityPublicKeysUniqueness,
@@ -23,19 +23,19 @@ function validateIdentityCreateSTDataFactory(
    */
 
   /**
-   * @typedef validateIdentityCreateSTData
-   * @param {IdentityCreateTransition} identityCreateTransition
+   * @typedef validateIdentityCreateTransitionData
+   * @param {IdentityCreateTransition} stateTransition
    * @return {ValidationResult}
    */
-  async function validateIdentityCreateSTData(identityCreateTransition) {
+  async function validateIdentityCreateTransitionData(stateTransition) {
     const result = new ValidationResult();
 
     // Check if identity with such id already exists
-    const identityId = identityCreateTransition.getIdentityId();
-    const identity = await stateRepository.fetchIdentity(identityId);
+    const identityId = stateTransition.getIdentityId();
+    const identity = await stateRepository.fetchIdentity(identityId.toBuffer());
 
     if (identity) {
-      result.addError(new IdentityAlreadyExistsError(identityCreateTransition));
+      result.addError(new IdentityAlreadyExistsError(stateTransition));
     }
 
     if (!result.isValid()) {
@@ -43,7 +43,7 @@ function validateIdentityCreateSTDataFactory(
     }
 
     result.merge(
-      await validateAssetLockTransaction(identityCreateTransition),
+      await validateAssetLockTransaction(stateTransition),
     );
 
     if (!result.isValid()) {
@@ -52,14 +52,14 @@ function validateIdentityCreateSTDataFactory(
 
     result.merge(
       await validateIdentityPublicKeysUniqueness(
-        identityCreateTransition.getPublicKeys(),
+        stateTransition.getPublicKeys(),
       ),
     );
 
     return result;
   }
 
-  return validateIdentityCreateSTData;
+  return validateIdentityCreateTransitionData;
 }
 
-module.exports = validateIdentityCreateSTDataFactory;
+module.exports = validateIdentityCreateTransitionDataFactory;

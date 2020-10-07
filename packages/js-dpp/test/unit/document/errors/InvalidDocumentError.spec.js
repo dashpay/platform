@@ -9,7 +9,7 @@ describe('InvalidDocumentError', () => {
     error = new Error('Some error');
 
     const [document] = getDocumentsFixture();
-    rawDocument = document.toJSON();
+    rawDocument = document.toObject();
   });
 
   it('should return errors', () => {

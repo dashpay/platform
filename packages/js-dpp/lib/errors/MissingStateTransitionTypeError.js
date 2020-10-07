@@ -1,6 +1,9 @@
 const ConsensusError = require('./ConsensusError');
 
 class MissingStateTransitionTypeError extends ConsensusError {
+  /**
+   * @param {RawStateTransition} rawStateTransition
+   */
   constructor(rawStateTransition) {
     super('type is not present');
 
@@ -10,7 +13,7 @@ class MissingStateTransitionTypeError extends ConsensusError {
   /**
    * Get raw State Transition
    *
-   * @return {RawDataContractCreateTransition}
+   * @return {RawStateTransition}
    */
   getRawStateTransition() {
     return this.rawStateTransition;

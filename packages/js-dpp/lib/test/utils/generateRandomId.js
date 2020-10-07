@@ -1,17 +1,18 @@
 const crypto = require('crypto');
-const bs58 = require('bs58');
+const EncodedBuffer = require('../../util/encoding/EncodedBuffer');
 
 /**
  * Generate random identity ID
  *
- * @return {string}
+ * @return {EncodedBuffer}
  */
 function generateRandomId() {
   const randomBytes = crypto.randomBytes(36);
 
-  const randomHash = crypto.createHash('sha256').update(randomBytes).digest();
-
-  return bs58.encode(randomHash);
+  return new EncodedBuffer(
+    crypto.createHash('sha256').update(randomBytes).digest(),
+    EncodedBuffer.ENCODING.BASE58,
+  );
 }
 
 module.exports = generateRandomId;

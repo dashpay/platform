@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const rewiremock = require('rewiremock/node');
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
@@ -25,12 +26,12 @@ describe('Identity', () => {
 
     rawIdentity = {
       protocolVersion: Identity.PROTOCOL_VERSION,
-      id: 'someId',
+      id: 'FSotMQ4rFrxWprRPJRmnFRBVTXxnDG5u8C27tNbnr935',
       publicKeys: [
         {
           id: 0,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: 'somePublicKey',
+          data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
         },
       ],
       balance: 0,
@@ -44,7 +45,7 @@ describe('Identity', () => {
     it('should set variables from raw model', () => {
       const instance = new Identity(rawIdentity);
 
-      expect(instance.id).to.equal(rawIdentity.id);
+      expect(instance.id.toString()).to.equal(rawIdentity.id);
       expect(instance.type).to.equal(rawIdentity.type);
       expect(instance.publicKeys).to.deep.equal(
         rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
@@ -54,7 +55,7 @@ describe('Identity', () => {
 
   describe('#getId', () => {
     it('should return set id', () => {
-      expect(identity.getId()).to.equal(rawIdentity.id);
+      expect(identity.getId().toString()).to.equal(rawIdentity.id);
     });
   });
 
@@ -86,12 +87,12 @@ describe('Identity', () => {
     });
   });
 
-  describe('#serialize', () => {
+  describe('#toBuffer', () => {
     it('should return encoded json object', () => {
       encodeMock.returns(42); // for example
-      const result = identity.serialize();
+      const result = identity.toBuffer();
 
-      expect(encodeMock).to.have.been.calledOnceWith(identity.toJSON());
+      expect(encodeMock).to.have.been.calledOnceWith(identity.toObject());
       expect(result).to.equal(42);
     });
   });
@@ -106,9 +107,29 @@ describe('Identity', () => {
 
       const result = identity.hash();
 
-      expect(encodeMock).to.have.been.calledOnceWith(identity.toJSON());
+      expect(encodeMock).to.have.been.calledOnceWith(identity.toObject());
       expect(hashMock).to.have.been.calledOnceWith(buffer);
       expect(result).to.equal(bufferHex);
+    });
+  });
+
+  describe('#toObject', () => {
+    it('should return plain object representation', () => {
+      const json = identity.toObject();
+
+      let [publicKey] = rawIdentity.publicKeys;
+      publicKey = {
+        ...publicKey,
+        data: Buffer.from(publicKey.data, 'base64'),
+      };
+
+      const plainObject = {
+        ...rawIdentity,
+        id: bs58.decode(rawIdentity.id),
+        publicKeys: [publicKey],
+      };
+
+      expect(json).to.deep.equal(plainObject);
     });
   });
 

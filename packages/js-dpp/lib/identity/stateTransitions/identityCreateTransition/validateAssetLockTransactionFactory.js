@@ -27,7 +27,7 @@ function validateAssetLockTransactionFactory(fetchConfirmedAssetLockTransactionO
 
     try {
       output = await fetchConfirmedAssetLockTransactionOutput(
-        identityStateTransition.getLockedOutPoint(),
+        identityStateTransition.getLockedOutPoint().toString(),
       );
     } catch (e) {
       if (e instanceof ConsensusError) {
@@ -66,7 +66,7 @@ function validateAssetLockTransactionFactory(fetchConfirmedAssetLockTransactionO
     try {
       signatureIsVerified = verifyHashSignature(
         Buffer.from(identityStateTransition.hash({ skipSignature: true }), 'hex'),
-        Buffer.from(identityStateTransition.getSignature(), 'base64'),
+        identityStateTransition.getSignature(),
         publicKeyHash,
       );
     } catch (e) {

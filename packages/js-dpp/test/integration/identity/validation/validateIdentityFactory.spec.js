@@ -14,8 +14,6 @@ const validateIdentityFactory = require(
   '../../../../lib/identity/validation/validateIdentityFactory',
 );
 
-const Identity = require('../../../../lib/identity/Identity');
-
 const JsonSchemaError = require(
   '../../../../lib/errors/JsonSchemaError',
 );
@@ -40,7 +38,7 @@ describe('validateIdentityFactory', () => {
 
     identity = getIdentityFixture();
 
-    rawIdentity = identity.toJSON();
+    rawIdentity = identity.toObject();
   });
 
   describe('id', () => {
@@ -321,7 +319,7 @@ describe('validateIdentityFactory', () => {
   });
 
   it('should return valid result if an identity model is valid', () => {
-    const result = validateIdentity(new Identity(rawIdentity));
+    const result = validateIdentity(rawIdentity);
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawIdentity.publicKeys);
 

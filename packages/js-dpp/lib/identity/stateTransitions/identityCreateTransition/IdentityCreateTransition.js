@@ -1,29 +1,27 @@
-const bs58 = require('bs58');
-
 const hash = require('../../../util/hash');
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const IdentityPublicKey = require('../../IdentityPublicKey');
+const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
 
 class IdentityCreateTransition extends AbstractStateTransition {
   /**
    * @param {RawIdentityCreateTransition} [rawIdentityCreateTransition]
    */
-  constructor(rawIdentityCreateTransition) {
+  constructor(rawIdentityCreateTransition = {}) {
     super(rawIdentityCreateTransition);
 
     this.publicKeys = [];
 
-    if (rawIdentityCreateTransition) {
-      if (rawIdentityCreateTransition.publicKeys) {
-        this.setPublicKeys(
-          rawIdentityCreateTransition.publicKeys
-            .map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
-        );
-      }
+    if (Object.prototype.hasOwnProperty.call(rawIdentityCreateTransition, 'publicKeys')) {
+      this.setPublicKeys(
+        rawIdentityCreateTransition.publicKeys
+          .map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
+      );
+    }
 
-      this
-        .setLockedOutPoint(rawIdentityCreateTransition.lockedOutPoint);
+    if (Object.prototype.hasOwnProperty.call(rawIdentityCreateTransition, 'lockedOutPoint')) {
+      this.setLockedOutPoint(rawIdentityCreateTransition.lockedOutPoint);
     }
   }
 
@@ -40,20 +38,22 @@ class IdentityCreateTransition extends AbstractStateTransition {
    * Sets an outPoint. OutPoint is a pointer to the output funding identity creation.
    * Its hash also serves as an identity id.
    * More about the OutPoint can be found in the identity documentation
-   * @param {string} lockedOutPoint
+   *
+   * @param {Buffer} lockedOutPoint
    * @return {IdentityCreateTransition}
    */
   setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = lockedOutPoint;
-    this.identityId = bs58.encode(
-      hash(Buffer.from(lockedOutPoint, 'base64')),
+    this.lockedOutPoint = EncodedBuffer.from(lockedOutPoint, EncodedBuffer.ENCODING.BASE64);
+    this.identityId = new EncodedBuffer(
+      hash(this.lockedOutPoint),
+      EncodedBuffer.ENCODING.BASE58,
     );
 
     return this;
   }
 
   /**
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getLockedOutPoint() {
     return this.lockedOutPoint;
@@ -91,7 +91,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
   /**
    * Returns base58 representation of the future identity id
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getIdentityId() {
     return this.identityId;
@@ -100,51 +100,75 @@ class IdentityCreateTransition extends AbstractStateTransition {
   /**
    * Returns Owner ID
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getOwnerId() {
     return this.identityId;
   }
 
   /**
-   * Get state transition as plain object
+   * Get raw state transition
    *
    * @param {Object} [options]
-   * @param {boolean} [options.skipSignature]
+   * @param {boolean} [options.skipSignature=false]
+   * @param {boolean} [options.encodedBuffer=false]
    *
-   * @return {Object}
+   * @return {RawIdentityCreateTransition}
    */
   toObject(options = {}) {
-    return {
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        ...options,
+      },
+    );
+
+    const rawStateTransition = {
       ...super.toObject(options),
       lockedOutPoint: this.getLockedOutPoint(),
-      publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toJSON()),
+      publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toObject(options)),
     };
+
+    if (!options.encodedBuffer) {
+      rawStateTransition.lockedOutPoint = rawStateTransition.lockedOutPoint.toBuffer();
+    }
+
+    return rawStateTransition;
   }
 
   /**
-   * Create state transition from JSON
+   * Get state transition as JSON
    *
-   * @param {RawIdentityCreateTransition} rawStateTransition
-   *
-   * @return {IdentityCreateTransition}
+   * @return {JsonIdentityCreateTransition}
    */
-  static fromJSON(rawStateTransition) {
-    return new IdentityCreateTransition(
-      AbstractStateTransition.translateJsonToObject(rawStateTransition),
-    );
+  // eslint-disable-next-line no-unused-vars
+  toJSON() {
+    return {
+      ...super.toJSON(),
+      lockedOutPoint: this.getLockedOutPoint().toString(),
+      publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toJSON()),
+    };
   }
 }
 
 /**
- * @typedef {Object} RawIdentityCreateTransition
- * @extends AbstractStateTransition
- * @property {number} protocolVersion
- * @property {number} type
- * @property {string} lockedOutPoint
+ * @typedef {RawStateTransition & Object} RawIdentityCreateTransition
+ * @property {Buffer} lockedOutPoint
  * @property {RawIdentityPublicKey[]} publicKeys
- * @property {number|null} signaturePublicKeyId
- * @property {string|null} signature
  */
+
+/**
+ * @typedef {JsonStateTransition & Object} JsonIdentityCreateTransition
+ * @property {Buffer} lockedOutPoint
+ * @property {JsonIdentityPublicKey[]} publicKeys
+ */
+
+IdentityCreateTransition.ENCODED_PROPERTIES = {
+  ...AbstractStateTransition.ENCODED_PROPERTIES,
+  lockedOutPoint: {
+    contentEncoding: 'base64',
+  },
+};
 
 module.exports = IdentityCreateTransition;

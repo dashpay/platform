@@ -3,31 +3,31 @@ const entropy = require('../../../lib/util/entropy');
 describe('entropy', () => {
   describe('generate', () => {
     it('should generate a string', () => {
-      const randomString = entropy.generate();
+      const randomBuffer = entropy.generate();
 
-      expect(randomString).to.be.a('string');
-      expect(randomString.length).to.be.above(1);
+      expect(Buffer.isBuffer(randomBuffer)).to.be.true();
+      expect(randomBuffer.length).to.be.above(1);
     });
 
     it('should generate random string', () => {
-      const randomString = entropy.generate();
-      const secondRandomString = entropy.generate();
+      const randomBuffer = entropy.generate();
+      const secondRandomBuffer = entropy.generate();
 
-      expect(secondRandomString).to.not.equal(randomString);
+      expect(randomBuffer).to.not.deep.equal(secondRandomBuffer);
     });
   });
 
   describe('validate', () => {
     it('should return true if entropy is valid', () => {
-      const randomString = entropy.generate();
+      const randomBuffer = entropy.generate();
 
-      const result = entropy.validate(randomString);
+      const result = entropy.validate(randomBuffer);
 
       expect(result).to.be.true();
     });
 
     it('should return false if entropy is invalid', () => {
-      const result = entropy.validate('wrong');
+      const result = entropy.validate(Buffer.from('wrong'));
 
       expect(result).to.be.false();
     });

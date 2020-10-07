@@ -1,4 +1,7 @@
 const Document = require('./Document');
+
+const encodeObjectProperties = require('../util/encoding/encodeObjectProperties');
+
 const baseDocumentSchema = require('../../schema/document/documentBase');
 
 const ValidationResult = require('../validation/ValidationResult');
@@ -6,7 +9,6 @@ const ValidationResult = require('../validation/ValidationResult');
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const MissingDocumentTypeError = require('../errors/MissingDocumentTypeError');
 const MismatchDocumentContractIdAndDataContractError = require('../errors/MismatchDocumentContractIdAndDataContractError');
-
 
 /**
  * @param {JsonSchemaValidator} validator
@@ -19,16 +21,11 @@ module.exports = function validateDocumentFactory(
 ) {
   /**
    * @typedef validateDocument
-   * @param {Document|RawDocument} document
+   * @param {RawDocument} rawDocument
    * @param {DataContract} dataContract
    * @return {ValidationResult}
    */
-  function validateDocument(document, dataContract) {
-    /**
-     * @type {RawDocument}
-     */
-    const rawDocument = (document instanceof Document) ? document.toJSON() : document;
-
+  function validateDocument(rawDocument, dataContract) {
     const result = new ValidationResult();
 
     if (!Object.prototype.hasOwnProperty.call(rawDocument, '$type')) {
@@ -47,10 +44,18 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
+    const encodedSystemProperties = Document.ENCODED_PROPERTIES;
+    const encodedUserProperties = dataContract.getEncodedProperties(rawDocument.$type);
+
+    const jsonDocument = encodeObjectProperties(
+      rawDocument,
+      { ...encodedSystemProperties, ...encodedUserProperties },
+    );
+
     const enrichedDataContract = enrichDataContractWithBaseSchema(
       dataContract,
       baseDocumentSchema,
-      'document_base_',
+      'documentBase',
     );
 
     const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(
@@ -64,7 +69,7 @@ module.exports = function validateDocumentFactory(
     result.merge(
       validator.validate(
         documentSchemaRef,
-        rawDocument,
+        jsonDocument,
         additionalSchemas,
       ),
     );
@@ -73,7 +78,7 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    if (rawDocument.$dataContractId !== dataContract.getId()) {
+    if (!rawDocument.$dataContractId.equals(dataContract.getId())) {
       result.addError(
         new MismatchDocumentContractIdAndDataContractError(rawDocument, dataContract),
       );

@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const DataTriggerExecutionContext = require('../../../lib/dataTrigger/DataTriggerExecutionContext');
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
@@ -12,7 +13,7 @@ describe('DataTriggerExecutionContext', () => {
   });
 
   it('should have all getters working', () => {
-    const ownerId = 'owner_id';
+    const ownerId = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
     const context = new DataTriggerExecutionContext(
       stateRepositoryMock, ownerId, dataContractMock,
     );

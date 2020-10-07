@@ -25,22 +25,11 @@ function createStateTransitionFactory(stateRepository) {
   /**
    * @typedef createStateTransition
    *
-   * @param {
-   *   RawDataContractCreateTransition |
-   *   RawDocumentsBatchTransition |
-   *   RawIdentityCreateTransition |
-   *   RawIdentityTopUpTransition
-   * } rawStateTransition
-   * @param {Object} [options]
-   * @param {boolean} [options.fromJSON]
+   * @param {RawStateTransition} rawStateTransition
    *
-   * @return {
-   *   Promise<DataContractCreateTransition | DocumentsBatchTransition | IdentityCreateTransition>
-   * }
+   * @return {Promise<AbstractStateTransition>}
    */
-  async function createStateTransition(rawStateTransition, options = {}) {
-    const fromJSON = !!options.fromJSON;
-
+  async function createStateTransition(rawStateTransition) {
     if (!typesToClasses[rawStateTransition.type]) {
       throw new InvalidStateTransitionTypeError(rawStateTransition);
     }
@@ -65,15 +54,7 @@ function createStateTransitionFactory(stateRepository) {
 
       const dataContracts = await Promise.all(dataContractPromises);
 
-      if (fromJSON) {
-        return typesToClasses[rawStateTransition.type].fromJSON(rawStateTransition, dataContracts);
-      }
-
       return new typesToClasses[rawStateTransition.type](rawStateTransition, dataContracts);
-    }
-
-    if (fromJSON) {
-      return typesToClasses[rawStateTransition.type].fromJSON(rawStateTransition);
     }
 
     return new typesToClasses[rawStateTransition.type](rawStateTransition);

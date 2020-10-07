@@ -1,12 +1,23 @@
 const { PrivateKey, Networks, Address } = require('@dashevo/dashcore-lib');
+const bs58 = require('bs58');
 
 module.exports = {
+  /**
+   *
+   * @return {Buffer}
+   */
   generate() {
     const privateKey = new PrivateKey();
     const publicKey = privateKey.toPublicKey();
-    return publicKey.toAddress(Networks.testnet).toString();
+
+    return bs58.decode(publicKey.toAddress(Networks.testnet).toString());
   },
-  validate(string) {
-    return Address.isValid(string, Networks.testnet, Address.PayToPublicKeyHash);
+  /**
+   *
+   * @param {Buffer} buffer
+   * @return {boolean}
+   */
+  validate(buffer) {
+    return Address.isValid(bs58.encode(buffer), Networks.testnet, Address.PayToPublicKeyHash);
   },
 };

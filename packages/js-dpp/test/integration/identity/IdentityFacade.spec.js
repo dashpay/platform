@@ -1,7 +1,8 @@
-const bs58 = require('bs58');
 const crypto = require('crypto');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
+
+const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
 
 const hash = require('../../../lib/util/hash');
 
@@ -39,17 +40,16 @@ describe('IdentityFacade', () => {
     it('should create Identity', () => {
       const lockedOutPoint = crypto.randomBytes(64);
 
-      identity.id = bs58.encode(
+      identity.id = EncodedBuffer.from(
         hash(lockedOutPoint),
+        EncodedBuffer.ENCODING.BASE58,
       );
 
       identity.setBalance(0);
 
-      const publicKeys = identity.getPublicKeys().map((identityPublicKey) => {
-        const publicKeyData = Buffer.from(identityPublicKey.getData(), 'base64');
-
-        return new PublicKey(publicKeyData);
-      });
+      const publicKeys = identity.getPublicKeys().map(
+        (identityPublicKey) => new PublicKey(identityPublicKey.getData().toBuffer()),
+      );
 
       const result = dpp.identity.create(
         lockedOutPoint,
@@ -57,13 +57,13 @@ describe('IdentityFacade', () => {
       );
 
       expect(result).to.be.an.instanceOf(Identity);
-      expect(result.toJSON()).to.deep.equal(identity.toJSON());
+      expect(result.toObject()).to.deep.equal(identity.toObject());
     });
   });
 
   describe('#createFromObject', () => {
     it('should create Identity from plain object', () => {
-      const result = dpp.identity.createFromObject(identity.toJSON());
+      const result = dpp.identity.createFromObject(identity.toObject());
 
       expect(result).to.be.an.instanceOf(Identity);
 
@@ -71,9 +71,9 @@ describe('IdentityFacade', () => {
     });
   });
 
-  describe('#createFromSerialized', () => {
+  describe('#createFromBuffer', () => {
     it('should create Identity from string', () => {
-      const result = dpp.identity.createFromSerialized(identity.serialize());
+      const result = dpp.identity.createFromBuffer(identity.toBuffer());
 
       expect(result).to.be.an.instanceOf(Identity);
 
@@ -100,7 +100,7 @@ describe('IdentityFacade', () => {
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
       expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
-      expect(stateTransition.getLockedOutPoint()).to.equal(lockedOutPoint.toString('base64'));
+      expect(stateTransition.getLockedOutPoint().toBuffer()).to.deep.equal(lockedOutPoint);
     });
   });
 
@@ -114,8 +114,8 @@ describe('IdentityFacade', () => {
         .createIdentityTopUpTransition(identity.getId(), lockedOutPoint);
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
-      expect(stateTransition.getIdentityId()).to.be.equal(identity.getId());
-      expect(stateTransition.getLockedOutPoint()).to.equal(lockedOutPoint.toString('base64'));
+      expect(stateTransition.getIdentityId().toString()).to.be.equal(identity.getId().toString());
+      expect(stateTransition.getLockedOutPoint().toBuffer()).to.deep.equal(lockedOutPoint);
     });
   });
 });

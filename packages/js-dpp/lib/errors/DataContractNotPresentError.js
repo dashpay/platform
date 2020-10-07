@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class DataContractNotPresentError extends ConsensusError {
   /**
-   * @param {string} dataContractId
+   * @param {Buffer} dataContractId
    */
   constructor(dataContractId) {
     super('Data Contract is not present with Data Contract ID specified in ST Packet');
@@ -13,7 +13,7 @@ class DataContractNotPresentError extends ConsensusError {
   /**
    * Get Data Contract ID
    *
-   * @return {string}
+   * @return {Buffer}
    */
   getDataContractId() {
     return this.dataContractId;

@@ -11,6 +11,7 @@ const InvalidSignaturePublicKeyError = require('./errors/InvalidSignaturePublicK
 const StateTransitionIsNotSignedError = require('./errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('./errors/PublicKeyMismatchError');
 const InvalidIdentityPublicKeyTypeError = require('../errors/InvalidIdentityPublicKeyTypeError');
+const encodeToBase64WithoutPadding = require('../util/encoding/encodeToBase64WithoutPadding');
 
 /**
  * @abstract
@@ -24,8 +25,6 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    */
   constructor(rawStateTransition = {}) {
     super(rawStateTransition);
-
-    this.signaturePublicKeyId = null;
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'signaturePublicKeyId')) {
       this.signaturePublicKeyId = rawStateTransition.signaturePublicKeyId;
@@ -63,10 +62,9 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
           ...privateKeyModel.toPublicKey().toObject(),
           compressed: true,
         })
-          .toBuffer()
-          .toString('base64');
+          .toBuffer();
 
-        if (pubKeyBase !== identityPublicKey.getData()) {
+        if (encodeToBase64WithoutPadding(pubKeyBase) !== identityPublicKey.getData().toString()) {
           throw new InvalidSignaturePublicKeyError(identityPublicKey.getData());
         }
 
@@ -99,7 +97,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       throw new PublicKeyMismatchError(publicKey);
     }
 
-    const publicKeyBuffer = Buffer.from(publicKey.getData(), 'base64');
+    const publicKeyBuffer = publicKey.getData();
     const publicKeyModel = PublicKey.fromBuffer(publicKeyBuffer);
 
     return this.verifySignatureByPublicKey(publicKeyModel);
@@ -127,28 +125,28 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   toObject(options = {}) {
     const skipSignature = !!options.skipSignature;
 
-    let plainObject = super.toObject(options);
+    const rawStateTransition = super.toObject(options);
 
     if (!skipSignature) {
-      plainObject = {
-        ...plainObject,
-        signaturePublicKeyId: this.getSignaturePublicKeyId(),
-      };
+      rawStateTransition.signaturePublicKeyId = this.getSignaturePublicKeyId();
     }
 
-    return plainObject;
-  }
-
-  /**
-   * @protected
-   *
-   * @param {Object} rawStateTransition
-   *
-   * @return {Object}
-   */
-  static translateJsonToObject(rawStateTransition) {
-    return AbstractStateTransition.translateJsonToObject(rawStateTransition);
+    return rawStateTransition;
   }
 }
+
+/**
+ * @typedef {RawStateTransition & Object} RawStateTransitionIdentitySigned
+ * @property {Buffer} [signaturePublicKeyId]
+ */
+
+/**
+ * @typedef {JsonStateTransition & Object} JsonStateTransitionIdentitySigned
+ * @property {string} [signaturePublicKeyId]
+ */
+
+AbstractStateTransitionIdentitySigned.ENCODED_PROPERTIES = {
+  ...AbstractStateTransition.ENCODED_PROPERTIES,
+};
 
 module.exports = AbstractStateTransitionIdentitySigned;

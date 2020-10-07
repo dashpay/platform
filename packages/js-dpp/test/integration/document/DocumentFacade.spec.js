@@ -1,3 +1,4 @@
+const generateRandomId = require('../../../lib/test/utils/generateRandomId');
 const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const Document = require('../../../lib/document/Document');
@@ -11,7 +12,7 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const MissingDataContractIdError = require('../../../lib/errors/MissingDataContractIdError');
+const DataContractNotPresentError = require('../../../lib/errors/DataContractNotPresentError');
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('DocumentFacade', () => {
@@ -23,8 +24,8 @@ describe('DocumentFacade', () => {
   let stateRepositoryMock;
 
   beforeEach(function beforeEach() {
-    dataContract = getDataContractFixture();
-    ownerId = '5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq';
+    ownerId = generateRandomId();
+    dataContract = getDataContractFixture(ownerId);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
@@ -59,7 +60,7 @@ describe('DocumentFacade', () => {
       dpp = new DashPlatformProtocol();
 
       try {
-        await dpp.document.createFromObject(document.toJSON());
+        await dpp.document.createFromObject(document.toObject());
 
         expect.fail('MissingOption should be thrown');
       } catch (e) {
@@ -69,20 +70,20 @@ describe('DocumentFacade', () => {
     });
 
     it('should create Document from plain object', async () => {
-      const result = await dpp.document.createFromObject(document.toJSON());
+      const result = await dpp.document.createFromObject(document.toObject());
 
       expect(result).to.be.an.instanceOf(Document);
 
-      expect(result.toJSON()).to.deep.equal(document.toJSON());
+      expect(result.toObject()).to.deep.equal(document.toObject());
     });
   });
 
-  describe('createFromSerialized', () => {
+  describe('createFromBuffer', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
 
       try {
-        await dpp.document.createFromSerialized(document.toJSON());
+        await dpp.document.createFromBuffer(document.toObject());
 
         expect.fail('MissingOption should be thrown');
       } catch (e) {
@@ -91,12 +92,12 @@ describe('DocumentFacade', () => {
       }
     });
 
-    it('should create Document from string', async () => {
-      const result = await dpp.document.createFromSerialized(document.serialize());
+    it('should create Document from serialized', async () => {
+      const result = await dpp.document.createFromBuffer(document.toBuffer());
 
       expect(result).to.be.an.instanceOf(Document);
 
-      expect(result.toJSON()).to.deep.equal(document.toJSON());
+      expect(result.toObject()).to.deep.equal(document.toObject());
     });
   });
 
@@ -137,14 +138,14 @@ describe('DocumentFacade', () => {
     it('should return invalid result if Data Contract is invalid', async () => {
       stateRepositoryMock.fetchDataContract.returns(null);
 
-      const result = await dpp.document.validate(dataContract, document);
+      const result = await dpp.document.validate(document);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(MissingDataContractIdError);
+      expect(error).to.be.an.instanceOf(DataContractNotPresentError);
     });
   });
 });

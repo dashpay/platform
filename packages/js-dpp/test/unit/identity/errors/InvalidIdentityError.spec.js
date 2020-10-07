@@ -9,7 +9,7 @@ describe('InvalidIdentityError', () => {
     error = new Error('Some error');
 
     const identity = getIdentityFixture();
-    rawIdentity = identity.toJSON();
+    rawIdentity = identity.toObject();
   });
 
   it('should return errors', () => {

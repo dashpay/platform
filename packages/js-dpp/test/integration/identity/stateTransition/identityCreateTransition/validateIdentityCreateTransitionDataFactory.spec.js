@@ -5,8 +5,8 @@ const { expectValidationError } = require(
   '../../../../../lib/test/expect/expectError',
 );
 
-const validateIdentityCreateSTDataFactory = require(
-  '../../../../../lib/identity/stateTransitions/identityCreateTransition/validateIdentityCreateSTDataFactory',
+const validateIdentityCreateTransitionDataFactory = require(
+  '../../../../../lib/identity/stateTransitions/identityCreateTransition/validateIdentityCreateTransitionDataFactory',
 );
 
 const IdentityAlreadyExistsError = require(
@@ -17,8 +17,8 @@ const ValidationResult = require('../../../../../lib/validation/ValidationResult
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
-describe('validateIdentityCreateSTDataFactory', () => {
-  let validateIdentityCreateSTData;
+describe('validateIdentityCreateTransitionDataFactory', () => {
+  let validateIdentityCreateTransitionData;
   let stateTransition;
   let stateRepositoryMock;
   let validateAssetLockTransactionMock;
@@ -31,7 +31,7 @@ describe('validateIdentityCreateSTDataFactory', () => {
     validateIdentityPublicKeyUniquenessMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
-    validateIdentityCreateSTData = validateIdentityCreateSTDataFactory(
+    validateIdentityCreateTransitionData = validateIdentityCreateTransitionDataFactory(
       stateRepositoryMock,
       validateAssetLockTransactionMock,
       validateIdentityPublicKeyUniquenessMock,
@@ -59,7 +59,7 @@ describe('validateIdentityCreateSTDataFactory', () => {
   it('should return invalid result if identity already exists', async () => {
     stateRepositoryMock.fetchIdentity.resolves({});
 
-    const result = await validateIdentityCreateSTData(stateTransition);
+    const result = await validateIdentityCreateTransitionData(stateTransition);
 
     expectValidationError(result, IdentityAlreadyExistsError, 1);
 
@@ -78,7 +78,7 @@ describe('validateIdentityCreateSTDataFactory', () => {
 
     validateAssetLockTransactionMock.returns(validationResult);
 
-    const result = await validateIdentityCreateSTData(stateTransition);
+    const result = await validateIdentityCreateTransitionData(stateTransition);
 
     const [error] = result.getErrors();
     expect(error).to.deep.equal(validationError);
@@ -93,14 +93,14 @@ describe('validateIdentityCreateSTDataFactory', () => {
 
     validateIdentityPublicKeyUniquenessMock.returns(validationResult);
 
-    const result = await validateIdentityCreateSTData(stateTransition);
+    const result = await validateIdentityCreateTransitionData(stateTransition);
 
     const [error] = result.getErrors();
     expect(error).to.deep.equal(validationError);
   });
 
   it('should return valid result if state transition is valid', async () => {
-    const result = await validateIdentityCreateSTData(stateTransition);
+    const result = await validateIdentityCreateTransitionData(stateTransition);
 
     expect(result.isValid()).to.be.true();
   });

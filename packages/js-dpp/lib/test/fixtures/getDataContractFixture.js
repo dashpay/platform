@@ -6,7 +6,7 @@ const randomOwnerId = generateRandomId();
 
 /**
  *
- * @param {string} [ownerId]
+ * @param {Buffer} [ownerId]
  * @return {DataContract}
  */
 module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
@@ -180,7 +180,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
     () => {},
   );
 
-  const dataContract = factory.create(ownerId, documents);
+  const dataContract = factory.create(ownerId.toBuffer(), documents);
 
   dataContract.setDefinitions({
     lastName: {

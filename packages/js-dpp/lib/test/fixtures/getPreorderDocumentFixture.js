@@ -27,12 +27,12 @@ function getPreorderDocumentFixture(options = {}) {
     parentDomainHash: '',
     preorderSalt: entropy.generate(),
     records: {
-      dashIdentity: ownerId,
+      dashIdentity: ownerId.toBuffer(),
     },
     ...options,
   };
 
-  return factory.create(dataContract, ownerId, 'preorder', data);
+  return factory.create(dataContract, ownerId.toBuffer(), 'preorder', data);
 }
 
 module.exports = getPreorderDocumentFixture;

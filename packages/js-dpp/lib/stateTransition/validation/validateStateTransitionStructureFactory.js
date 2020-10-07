@@ -1,7 +1,3 @@
-const mergeWith = require('lodash.mergewith');
-
-const AbstractStateTransition = require('../AbstractStateTransition');
-
 const ValidationResult = require('../../validation/ValidationResult');
 
 const MissingStateTransitionTypeError = require('../../errors/MissingStateTransitionTypeError');
@@ -9,93 +5,56 @@ const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransi
 const StateTransitionMaxSizeExceededError = require('../../errors/StateTransitionMaxSizeExceededError');
 const MaxEncodedBytesReachedError = require('../../util/errors/MaxEncodedBytesReachedError');
 
-const baseSchema = require('../../../schema/stateTransition/stateTransitionBase');
-
 /**
- * @param {JsonSchemaValidator} validator
- * @param {Object.<number, {validationFunction: Function, schema: Object}>} typeExtensions
+ * @param {Object.<number, Function>} validationFunctionsByType
  * @param {createStateTransition} createStateTransition
  * @return {validateStateTransitionStructure}
  */
 function validateStateTransitionStructureFactory(
-  validator,
-  typeExtensions,
+  validationFunctionsByType,
   createStateTransition,
 ) {
   /**
    * @typedef validateStateTransitionStructure
-   * @param {
-   * RawDataContractCreateTransition
-   * |DataContractCreateTransition
-   * |RawDocumentsBatchTransition|
-   * DocumentsBatchTransition} stateTransition
+   * @param {RawStateTransition} rawStateTransition
    */
-  async function validateStateTransitionStructure(stateTransition) {
-    let stateTransitionJson;
-    let stateTransitionModel;
-
-    if (stateTransition instanceof AbstractStateTransition) {
-      stateTransitionJson = stateTransition.toJSON();
-      stateTransitionModel = stateTransition;
-    } else {
-      stateTransitionJson = stateTransition;
-    }
-
+  async function validateStateTransitionStructure(rawStateTransition) {
     const result = new ValidationResult();
 
-    if (!Object.prototype.hasOwnProperty.call(stateTransitionJson, 'type')) {
+    if (!Object.prototype.hasOwnProperty.call(rawStateTransition, 'type')) {
       result.addError(
-        new MissingStateTransitionTypeError(stateTransitionJson),
+        new MissingStateTransitionTypeError(rawStateTransition),
       );
 
       return result;
     }
 
-    if (!typeExtensions[stateTransitionJson.type]) {
+    if (!validationFunctionsByType[rawStateTransition.type]) {
       result.addError(
-        new InvalidStateTransitionTypeError(stateTransitionJson),
+        new InvalidStateTransitionTypeError(rawStateTransition),
       );
 
       return result;
     }
 
-    const { validationFunction, schema } = typeExtensions[stateTransitionJson.type];
-
-    const extendedSchema = mergeWith({}, baseSchema, schema, (objValue, srcValue) => (
-      Array.isArray(objValue) ? objValue.concat(srcValue) : undefined
-    ));
+    const validationFunction = validationFunctionsByType[rawStateTransition.type];
 
     result.merge(
-      validator.validate(
-        extendedSchema,
-        stateTransitionJson,
-      ),
+      await validationFunction(rawStateTransition),
     );
 
     if (!result.isValid()) {
       return result;
     }
 
-    result.merge(
-      await validationFunction(stateTransitionJson),
-    );
-
-    if (!result.isValid()) {
-      return result;
-    }
-
-    if (!stateTransitionModel) {
-      stateTransitionModel = await createStateTransition(stateTransitionJson, {
-        fromJSON: true,
-      });
-    }
+    const stateTransition = await createStateTransition(rawStateTransition);
 
     try {
-      stateTransitionModel.serialize();
+      stateTransition.toBuffer();
     } catch (e) {
       if (e instanceof MaxEncodedBytesReachedError) {
         result.addError(
-          new StateTransitionMaxSizeExceededError(stateTransitionJson, e.getMaxSizeKBytes()),
+          new StateTransitionMaxSizeExceededError(rawStateTransition, e.getMaxSizeKBytes()),
         );
       } else {
         throw e;

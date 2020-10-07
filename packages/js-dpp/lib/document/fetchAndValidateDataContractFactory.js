@@ -1,5 +1,3 @@
-const Document = require('./Document');
-
 const MissingDataContractIdError = require('../errors/MissingDataContractIdError');
 const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
 
@@ -12,12 +10,10 @@ const ValidationResult = require('../validation/ValidationResult');
 function fetchAndValidateDataContractFactory(stateRepository) {
   /**
    * @typedef fetchAndValidateDataContract
-   * @param {Document|RawDocument} document
+   * @param {RawDocument} rawDocument
    * @return {ValidationResult}
    */
-  async function fetchAndValidateDataContract(document) {
-    const rawDocument = (document instanceof Document) ? document.toJSON() : document;
-
+  async function fetchAndValidateDataContract(rawDocument) {
     const result = new ValidationResult();
 
     if (!Object.prototype.hasOwnProperty.call(rawDocument, '$dataContractId')) {

@@ -37,7 +37,7 @@ describe('validateStateTransitionDataFactory', () => {
       getType() {
         return 4343;
       },
-      toJSON() {
+      toObject() {
         return rawStateTransition;
       },
     };

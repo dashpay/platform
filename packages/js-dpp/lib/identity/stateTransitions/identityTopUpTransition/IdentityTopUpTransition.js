@@ -1,17 +1,20 @@
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
+const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
 
 class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * @param {RawIdentityTopUpTransition} [rawIdentityTopUpTransition]
    */
-  constructor(rawIdentityTopUpTransition) {
+  constructor(rawIdentityTopUpTransition = {}) {
     super(rawIdentityTopUpTransition);
 
-    if (rawIdentityTopUpTransition) {
-      this
-        .setLockedOutPoint(rawIdentityTopUpTransition.lockedOutPoint)
-        .setIdentityId(rawIdentityTopUpTransition.identityId);
+    if (Object.prototype.hasOwnProperty.call(rawIdentityTopUpTransition, 'lockedOutPoint')) {
+      this.setLockedOutPoint(rawIdentityTopUpTransition.lockedOutPoint);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityTopUpTransition, 'identityId')) {
+      this.setIdentityId(rawIdentityTopUpTransition.identityId);
     }
   }
 
@@ -27,17 +30,17 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Sets an outPoint. OutPoint is a pointer to the output funding the top up.
    * More about the OutPoint can be found in the identity documentation
-   * @param {string} lockedOutPoint
+   * @param {EncodedBuffer|Buffer|string} lockedOutPoint
    * @return {IdentityTopUpTransition}
    */
   setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = lockedOutPoint;
+    this.lockedOutPoint = EncodedBuffer.from(lockedOutPoint, EncodedBuffer.ENCODING.BASE64);
 
     return this;
   }
 
   /**
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getLockedOutPoint() {
     return this.lockedOutPoint;
@@ -46,11 +49,11 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Returns base58 representation of the identity id top up
    *
-   * @param {string} identityId
+   * @param {string|Buffer} identityId
    * @return {IdentityTopUpTransition}
    */
   setIdentityId(identityId) {
-    this.identityId = identityId;
+    this.identityId = EncodedBuffer.from(identityId, EncodedBuffer.ENCODING.BASE58);
 
     return this;
   }
@@ -58,7 +61,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Returns base58 representation of the identity id top up
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getIdentityId() {
     return this.identityId;
@@ -67,7 +70,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Returns Owner ID
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getOwnerId() {
     return this.identityId;
@@ -77,37 +80,68 @@ class IdentityTopUpTransition extends AbstractStateTransition {
    * Get state transition as plain object
    *
    * @param {Object} [options]
-   * @param {boolean} [options.skipSignature]
+   * @param {boolean} [options.skipSignature=false]
+   * @param {boolean} [options.encodedBuffer=false]
    *
-   * @return {Object}
+   * @return {RawIdentityTopUpTransition}
    */
   toObject(options = {}) {
-    return {
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        ...options,
+      },
+    );
+
+    const rawStateTransition = {
       ...super.toObject(options),
       identityId: this.getIdentityId(),
       lockedOutPoint: this.getLockedOutPoint(),
     };
+
+    if (!options.encodedBuffer) {
+      rawStateTransition.identityId = this.getIdentityId().toBuffer();
+      rawStateTransition.lockedOutPoint = this.getLockedOutPoint().toBuffer();
+    }
+
+    return rawStateTransition;
   }
 
   /**
-   * Create state transition from JSON
+   * Get state transition as JSON
    *
-   * @param {RawIdentityTopUpTransition} rawStateTransition
-   *
-   * @return {IdentityTopUpTransition}
+   * @return {JsonIdentityTopUpTransition}
    */
-  static fromJSON(rawStateTransition) {
-    return new IdentityTopUpTransition(
-      AbstractStateTransition.translateJsonToObject(rawStateTransition),
-    );
+  toJSON() {
+    return {
+      ...super.toJSON(),
+      identityId: this.getIdentityId().toString(),
+      lockedOutPoint: this.getLockedOutPoint().toString(),
+    };
   }
 }
 
 /**
- * @typedef {Object} RawIdentityTopUpTransition
- * @extends RawStateTransition
+ * @typedef {RawStateTransition & Object} RawIdentityTopUpTransition
+ * @property {Buffer} lockedOutPoint
+ * @property {Buffer} identityId
+ */
+
+/**
+ * @typedef {JsonStateTransition & Object} JsonIdentityTopUpTransition
  * @property {string} lockedOutPoint
  * @property {string} identityId
  */
+
+IdentityTopUpTransition.ENCODED_PROPERTIES = {
+  ...AbstractStateTransition.ENCODED_PROPERTIES,
+  identityId: {
+    contentEncoding: 'base58',
+  },
+  lockedOutPoint: {
+    contentEncoding: 'base64',
+  },
+};
 
 module.exports = IdentityTopUpTransition;

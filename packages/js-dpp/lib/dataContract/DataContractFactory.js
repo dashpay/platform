@@ -22,7 +22,7 @@ class DataContractFactory {
   /**
    * Create Data Contract
    *
-   * @param {string} ownerId
+   * @param {Buffer} ownerId
    * @param {Object} documents
    * @return {DataContract}
    */
@@ -68,21 +68,21 @@ class DataContractFactory {
   }
 
   /**
-   * Create Data Contract from string/buffer
+   * Create Data Contract from buffer
    *
-   * @param {Buffer|string} payload
+   * @param {Buffer} buffer
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Promise<DataContract>}
    */
-  async createFromSerialized(payload, options = { }) {
+  async createFromBuffer(buffer, options = { }) {
     let rawDataContract;
     try {
-      rawDataContract = decode(payload);
+      rawDataContract = decode(buffer);
     } catch (error) {
       throw new InvalidDataContractError([
         new SerializedObjectParsingError(
-          payload,
+          buffer,
           error,
         ),
       ]);
@@ -100,7 +100,7 @@ class DataContractFactory {
   createStateTransition(dataContract) {
     return new DataContractCreateTransition({
       protocolVersion: DataContract.PROTOCOL_VERSION,
-      dataContract: dataContract.toJSON(),
+      dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
   }

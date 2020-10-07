@@ -1,22 +1,19 @@
-const bs58 = require('bs58');
 const hash = require('../util/hash');
 
 /**
  * Generate data contract id based on owner id and entropy
  *
- * @param {string} ownerId
- * @param {string} entropy
+ * @param {Buffer} ownerId
+ * @param {Buffer} entropy
  *
- * @return {string}
+ * @return {Buffer}
  */
 function generateDataContractId(ownerId, entropy) {
-  return bs58.encode(
-    hash(
-      Buffer.concat([
-        bs58.decode(ownerId),
-        bs58.decode(entropy),
-      ]),
-    ),
+  return hash(
+    Buffer.concat([
+      ownerId,
+      entropy,
+    ]),
   );
 }
 

@@ -15,12 +15,13 @@ const { expectValidationError } = require('../../../lib/test/expect/expectError'
 describe('fetchAndValidateDataContractFactory', () => {
   let stateRepositoryMock;
   let fetchAndValidateDataContract;
-  let document;
+  let rawDocument;
 
   beforeEach(function beforeEach() {
     const dataContract = getDataContractFixture();
 
-    [document] = getDocumentsFixture(dataContract);
+    const [document] = getDocumentsFixture(dataContract);
+    rawDocument = document.toObject();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
@@ -32,8 +33,6 @@ describe('fetchAndValidateDataContractFactory', () => {
   });
 
   it('should return with invalid result if $dataContractId is not present', async () => {
-    const rawDocument = document.toJSON();
-
     delete rawDocument.$dataContractId;
 
     const result = await fetchAndValidateDataContract(rawDocument);
@@ -48,17 +47,17 @@ describe('fetchAndValidateDataContractFactory', () => {
   it('should return with invalid result if Data Contract is not present', async () => {
     stateRepositoryMock.fetchDataContract.resolves(null);
 
-    const result = await fetchAndValidateDataContract(document);
+    const result = await fetchAndValidateDataContract(rawDocument);
 
     expectValidationError(result, DataContractNotPresentError);
 
     const [error] = result.getErrors();
 
-    expect(error.getDataContractId()).to.equal(document.getDataContractId());
+    expect(error.getDataContractId()).to.deep.equal(rawDocument.$dataContractId);
   });
 
   it('should return valid result', async () => {
-    const result = await fetchAndValidateDataContract(document);
+    const result = await fetchAndValidateDataContract(rawDocument);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

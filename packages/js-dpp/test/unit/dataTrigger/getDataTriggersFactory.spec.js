@@ -35,7 +35,7 @@ describe('getDataTriggers', () => {
     deleteDocument.data = {};
 
     dataContractId = getDpnsDocumentFixture.dataContract.getId();
-    topLevelIdentity = generateRandomId();
+    topLevelIdentity = generateRandomId().toBuffer();
 
     createTrigger = new DataTrigger(
       dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.CREATE, createDomainDataTrigger, topLevelIdentity,

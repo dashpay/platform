@@ -11,10 +11,10 @@ describe('InvalidStateTransitionError', () => {
 
     const dataContract = getDataContractFixture();
     const dataContractCreateTransition = new DataContractCreateTransition({
-      dataContract: dataContract.toJSON(),
+      dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
-    rawStateTransition = dataContractCreateTransition.toJSON();
+    rawStateTransition = dataContractCreateTransition.toObject();
   });
 
   it('should return errors', () => {

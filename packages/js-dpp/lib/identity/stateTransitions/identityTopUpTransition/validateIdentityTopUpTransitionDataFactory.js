@@ -18,15 +18,15 @@ function validateIdentityTopUpTransitionDataFactory(
 
   /**
    * @typedef validateIdentityTopUpTransitionData
-   * @param {IdentityTopUpTransition} identityTopUpTransition
+   * @param {IdentityTopUpTransition} stateTransition
    * @return {ValidationResult}
    */
-  async function validateIdentityTopUpTransitionData(identityTopUpTransition) {
+  async function validateIdentityTopUpTransitionData(stateTransition) {
     const result = new ValidationResult();
 
     result.merge(
       await validateIdentityExistence(
-        identityTopUpTransition.getIdentityId(),
+        stateTransition.getIdentityId(),
       ),
     );
 
@@ -35,7 +35,7 @@ function validateIdentityTopUpTransitionDataFactory(
     }
 
     result.merge(
-      await validateAssetLockTransaction(identityTopUpTransition),
+      await validateAssetLockTransaction(stateTransition),
     );
 
     return result;

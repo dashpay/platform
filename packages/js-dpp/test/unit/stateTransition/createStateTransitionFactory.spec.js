@@ -25,14 +25,14 @@ describe('createStateTransitionFactory', () => {
 
   it('should return DataContractCreateTransition if type is DATA_CONTRACT_CREATE', async () => {
     const stateTransition = new DataContractCreateTransition({
-      dataContract: dataContract.toJSON(),
+      dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
 
-    const result = await createStateTransition(stateTransition.toJSON());
+    const result = await createStateTransition(stateTransition.toObject());
 
     expect(result).to.be.instanceOf(DataContractCreateTransition);
-    expect(result.getDataContract().toJSON()).to.deep.equal(dataContract.toJSON());
+    expect(result.getDataContract().toObject()).to.deep.equal(dataContract.toObject());
   });
 
   it('should return DocumentsBatchTransition if type is DOCUMENTS', async () => {
@@ -47,13 +47,11 @@ describe('createStateTransitionFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
-    const result = await createStateTransition(stateTransition.toJSON(), {
-      fromJSON: true,
-    });
+    const result = await createStateTransition(stateTransition.toObject());
 
     expect(result).to.be.instanceOf(DocumentsBatchTransition);
-    expect(result.getTransitions().map((t) => t.toJSON())).to.have.deep.members(
-      documentTransitions.map((t) => t.toJSON()),
+    expect(result.getTransitions().map((t) => t.toObject())).to.have.deep.members(
+      documentTransitions.map((t) => t.toObject()),
     );
   });
 

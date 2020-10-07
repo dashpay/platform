@@ -14,6 +14,7 @@ const InvalidIndexedPropertyConstraintError = require('../errors/InvalidIndexedP
 const InvalidCompoundIndexError = require('../errors/InvalidCompoundIndexError');
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
+const encodeObjectProperties = require('../util/encoding/encodeObjectProperties');
 
 const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
@@ -33,21 +34,22 @@ module.exports = function validateDataContractFactory(
 ) {
   /**
    * @typedef validateDataContract
-   * @param {DataContract|RawDataContract} dataContract
+   * @param {RawDataContract} rawDataContract
    * @return {ValidationResult}
    */
-  async function validateDataContract(dataContract) {
-    const rawDataContract = (dataContract instanceof DataContract)
-      ? dataContract.toJSON()
-      : dataContract;
-
+  async function validateDataContract(rawDataContract) {
     const result = new ValidationResult();
+
+    const jsonDataContract = encodeObjectProperties(
+      rawDataContract,
+      DataContract.ENCODED_PROPERTIES,
+    );
 
     // Validate Data Contract schema
     result.merge(
       jsonSchemaValidator.validate(
         JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
-        rawDataContract,
+        jsonDataContract,
       ),
     );
 
@@ -61,9 +63,9 @@ module.exports = function validateDataContractFactory(
 
     // Validate Document JSON Schemas
     const enrichedDataContract = enrichDataContractWithBaseSchema(
-      dataContract,
+      new DataContract(rawDataContract),
       baseDocumentSchema,
-      'document_base_',
+      'documentBase',
     );
 
     Object.keys(enrichedDataContract.getDocuments()).forEach((documentType) => {

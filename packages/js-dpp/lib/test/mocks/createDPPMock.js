@@ -7,20 +7,20 @@ module.exports = function createDPPMock(sinonSandbox) {
   const dataContract = {
     create: sinonSandbox.stub(),
     createFromObject: sinonSandbox.stub(),
-    createFromSerialized: sinonSandbox.stub(),
+    createFromBuffer: sinonSandbox.stub(),
     validate: sinonSandbox.stub(),
   };
 
   const document = {
     create: sinonSandbox.stub(),
     createFromObject: sinonSandbox.stub(),
-    createFromSerialized: sinonSandbox.stub(),
+    createFromBuffer: sinonSandbox.stub(),
     validate: sinonSandbox.stub(),
   };
 
   const stateTransition = {
     createFromObject: sinonSandbox.stub(),
-    createFromSerialized: sinonSandbox.stub(),
+    createFromBuffer: sinonSandbox.stub(),
     validate: sinonSandbox.stub(),
     validateStructure: sinonSandbox.stub(),
     validateData: sinonSandbox.stub(),
@@ -30,7 +30,7 @@ module.exports = function createDPPMock(sinonSandbox) {
   const identity = {
     create: sinonSandbox.stub(),
     createFromObject: sinonSandbox.stub(),
-    createFromSerialized: sinonSandbox.stub(),
+    createFromBuffer: sinonSandbox.stub(),
     validate: sinonSandbox.stub(),
   };
 

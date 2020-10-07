@@ -12,7 +12,7 @@
  * @async
  * @method
  * @name StateRepository#fetchDataContract
- * @param {string} id
+ * @param {Buffer} id
  * @returns {Promise<DataContract|null>}
  */
 
@@ -32,7 +32,7 @@
  * @async
  * @method
  * @name StateRepository#fetchDocuments
- * @param {string} contractId
+ * @param {Buffer} contractId
  * @param {string} type
  * @param {{ where: Object }} [options]
  * @returns {Promise<Document[]>}
@@ -56,7 +56,7 @@
  * @name StateRepository#removeDocument
  * @param {string} contractId
  * @param {string} type
- * @param {string} id
+ * @param {Buffer} id
  * @returns {Promise<void>}
  */
 
@@ -76,7 +76,7 @@
  * @async
  * @method
  * @name StateRepository#fetchIdentity
- * @param {string} id
+ * @param {Buffer} id
  * @returns {Promise<Identity|null>}
  */
 
@@ -98,7 +98,7 @@
  * @deprecated
  * @name StateRepository#storePublicKeyIdentityId
  * @param {string} publicKeyHash
- * @param {string} identityId
+ * @param {Buffer} identityId
  * @returns {Promise<void>}
  */
 
@@ -108,7 +108,7 @@
  * @async
  * @method
  * @name StateRepository#storeIdentityPublicKeyHashes
- * @param {string} identityId
+ * @param {Buffer} identityId
  * @param {string[]} publicKeyHashes
  * @returns {Promise<void>}
  */

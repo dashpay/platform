@@ -83,7 +83,7 @@ describe('createDomainDataTrigger', () => {
         'preorder',
         { where: [['saltedDomainHash', '==', saltedDomainHash]] },
       )
-      .resolves([preorderDocument.toJSON()]);
+      .resolves([preorderDocument.toObject()]);
 
     stateRepositoryMock.fetchTransaction.resolves(null);
 
@@ -179,7 +179,7 @@ describe('createDomainDataTrigger', () => {
   it('should fail with invalid dashUniqueIdentityId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
-        dashUniqueIdentityId: 'invalidHash',
+        dashUniqueIdentityId: Buffer.from('invalidHash'),
       },
     });
 
@@ -203,7 +203,7 @@ describe('createDomainDataTrigger', () => {
   it('should fail with invalid dashAliasIdentityId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
-        dashAliasIdentityId: 'invalidHash',
+        dashAliasIdentityId: Buffer.from('invalidHash'),
       },
     });
 
@@ -273,7 +273,7 @@ describe('createDomainDataTrigger', () => {
   it('should fail with identity can\'t create top level domain', async () => {
     parentDocumentTransition.data.normalizedParentDomainName = '';
 
-    topLevelIdentity = 'someIdentity';
+    topLevelIdentity = Buffer.from('someIdentity');
 
     const result = await createDomainDataTrigger(
       parentDocumentTransition, context, topLevelIdentity,
@@ -291,7 +291,7 @@ describe('createDomainDataTrigger', () => {
   });
 
   it('should fail with disallowed domain creation', async () => {
-    parentDocument.ownerId = 'newId';
+    parentDocument.ownerId = Buffer.from('newId');
 
     const result = await createDomainDataTrigger(
       childDocumentTransition, context, topLevelIdentity,

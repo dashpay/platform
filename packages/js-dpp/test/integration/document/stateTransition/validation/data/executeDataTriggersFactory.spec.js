@@ -1,3 +1,4 @@
+const bs58 = require('bs58');
 const AbstractDocumentTransition = require('../../../../../../lib/document/stateTransition/documentTransition/AbstractDocumentTransition');
 
 const DataTrigger = require('../../../../../../lib/dataTrigger/DataTrigger');
@@ -14,6 +15,8 @@ const dpnsDeleteDomainDataTrigger = require('../../../../../../lib/dataTrigger/d
 const dpnsUpdateDomainDataTrigger = require('../../../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 
 const executeDataTriggersFactory = require('../../../../../../lib/document/stateTransition/validation/data/executeDataTriggersFactory');
+
+const EncodedBuffer = require('../../../../../../lib/util/encoding/EncodedBuffer');
 
 describe('executeDataTriggersFactory', () => {
   let childDocument;
@@ -62,7 +65,7 @@ describe('executeDataTriggersFactory', () => {
     dpnsDeleteDomainDataTriggerMock
       .execute.resolves(new DataTriggerExecutionResult());
 
-    const ownerId = '5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq';
+    const ownerId = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
 
     context = new DataTriggerExecutionContext(
       null, ownerId, contractMock,
@@ -216,7 +219,10 @@ describe('executeDataTriggersFactory', () => {
     const dataContractId = getDataContractFixture().getId();
     childDocument.dataContractId = dataContractId;
     childDocument.dataContract.id = dataContractId;
-    childDocument.ownerId = getDocumentsFixture.ownerId;
+    childDocument.ownerId = EncodedBuffer.from(
+      getDocumentsFixture.ownerId,
+      EncodedBuffer.ENCODING.BASE58,
+    );
 
     documentTransitions = getDocumentTransitionsFixture({
       create: [childDocument].concat(getDocumentsFixture(dataContract)),

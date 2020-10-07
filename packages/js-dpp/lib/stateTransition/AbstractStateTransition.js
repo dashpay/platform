@@ -3,7 +3,7 @@ const {
   PrivateKey,
   Signer: { sign, verifySignature },
 } = require('@dashevo/dashcore-lib');
-const lodashCloneDeep = require('lodash.clonedeep');
+
 
 const StateTransitionIsNotSignedError = require(
   './errors/StateTransitionIsNotSignedError',
@@ -11,6 +11,7 @@ const StateTransitionIsNotSignedError = require(
 
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
+const EncodedBuffer = require('../util/encoding/EncodedBuffer');
 
 const calculateStateTransitionFee = require('./calculateStateTransitionFee');
 
@@ -27,15 +28,13 @@ class AbstractStateTransition {
    * } [rawStateTransition]
    */
   constructor(rawStateTransition = {}) {
-    this.signature = null;
-    this.protocolVersion = null;
+    this.protocolVersion = rawStateTransition.protocolVersion;
 
-    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'signature')) {
-      this.signature = rawStateTransition.signature;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'protocolVersion')) {
-      this.protocolVersion = rawStateTransition.protocolVersion;
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'signature') && rawStateTransition.signature) {
+      this.signature = EncodedBuffer.from(
+        rawStateTransition.signature,
+        EncodedBuffer.ENCODING.BASE64,
+      );
     }
   }
 
@@ -58,7 +57,7 @@ class AbstractStateTransition {
   /**
    *  Returns signature
    *
-   * @return {string|null}
+   * @return {EncodedBuffer|null}
    */
   getSignature() {
     return this.signature;
@@ -66,11 +65,11 @@ class AbstractStateTransition {
 
   /**
    * Set signature
-   * @param {string} signature
+   * @param {Buffer} signature
    * @return {AbstractStateTransition}
    */
   setSignature(signature) {
-    this.signature = signature;
+    this.signature = EncodedBuffer.from(signature, EncodedBuffer.ENCODING.BASE64);
 
     return this;
   }
@@ -79,48 +78,64 @@ class AbstractStateTransition {
    * Get state transition as plain object
    *
    * @param {Object} [options]
-   * @param {boolean} [options.skipSignature]
+   * @param {boolean} [options.skipSignature=false]
+   * @param {boolean} [options.encodedBuffer=false]
    *
-   * @return {Object}
+   * @return {RawStateTransition}
    */
   toObject(options = {}) {
-    const skipSignature = !!options.skipSignature;
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        skipSignature: false,
+        ...options,
+      },
+    );
 
-    let plainObject = {
+    const rawStateTransition = {
       protocolVersion: this.getProtocolVersion(),
       type: this.getType(),
     };
 
-    if (!skipSignature) {
-      plainObject = {
-        ...plainObject,
-        signature: this.getSignature(),
-      };
+    if (!options.skipSignature) {
+      rawStateTransition.signature = this.getSignature();
     }
 
-    return plainObject;
+    if (!options.encodedBuffer && rawStateTransition.signature) {
+      rawStateTransition.signature = this.getSignature().toBuffer();
+    }
+
+    return rawStateTransition;
   }
 
   /**
    * Get state transition as JSON
    *
-   * @param {Object} [options]
-   *
-   * @return {Object}
+   * @return {JsonStateTransition}
    */
-  toJSON(options = {}) {
-    return this.toObject({
-      ...options,
+  toJSON() {
+    const jsonStateTransition = this.toObject({
+      encodedBuffer: true,
     });
+
+    if (jsonStateTransition.signature) {
+      // noinspection JSValidateTypes
+      jsonStateTransition.signature = jsonStateTransition.signature.toString();
+    }
+
+    // noinspection JSValidateTypes
+    return jsonStateTransition;
   }
 
   /**
    * Return serialized State Transition
    *
    * @param {Object} [options]
+   * @param {boolean} [options.skipSignature=false]
    * @return {Buffer}
    */
-  serialize(options = {}) {
+  toBuffer(options = {}) {
     return encode(this.toObject(options));
   }
 
@@ -131,7 +146,7 @@ class AbstractStateTransition {
    * @return {string}
    */
   hash(options = {}) {
-    return hash(this.serialize(options)).toString('hex');
+    return hash(this.toBuffer(options)).toString('hex');
   }
 
   /**
@@ -140,10 +155,10 @@ class AbstractStateTransition {
    * @return {AbstractStateTransition}
    */
   signByPrivateKey(privateKey) {
-    const data = this.serialize({ skipSignature: true });
+    const data = this.toBuffer({ skipSignature: true });
     const privateKeyModel = new PrivateKey(privateKey);
 
-    this.signature = sign(data, privateKeyModel).toString('base64');
+    this.setSignature(sign(data, privateKeyModel));
 
     return this;
   }
@@ -159,8 +174,8 @@ class AbstractStateTransition {
       throw new StateTransitionIsNotSignedError(this);
     }
 
-    const signatureBuffer = Buffer.from(signature, 'base64');
-    const data = this.serialize({ skipSignature: true });
+    const signatureBuffer = signature.toBuffer();
+    const data = this.toBuffer({ skipSignature: true });
 
     const publicKeyModel = new PublicKey(publicKey, {});
 
@@ -182,24 +197,26 @@ class AbstractStateTransition {
   calculateFee() {
     return calculateStateTransitionFee(this);
   }
-
-  /**
-   * @protected
-   *
-   * @param {Object} rawStateTransition
-   *
-   * @return {Object}
-   */
-  static translateJsonToObject(rawStateTransition) {
-    return lodashCloneDeep(rawStateTransition);
-  }
 }
 
 /**
  * @typedef RawStateTransition
  * @property {number} protocolVersion
  * @property {number} type
- * @property {string|null} signature
+ * @property {Buffer} [signature]
  */
+
+/**
+ * @typedef JsonStateTransition
+ * @property {number} protocolVersion
+ * @property {number} type
+ * @property {string} [signature]
+ */
+
+AbstractStateTransition.ENCODED_PROPERTIES = {
+  signature: {
+    contentEncoding: 'base64',
+  },
+};
 
 module.exports = AbstractStateTransition;

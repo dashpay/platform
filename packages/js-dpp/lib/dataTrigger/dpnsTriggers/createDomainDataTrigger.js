@@ -10,7 +10,7 @@ const MAX_PRINTABLE_DOMAIN_NAME_LENGTH = 253;
  *
  * @param {DocumentCreateTransition} documentTransition
  * @param {DataTriggerExecutionContext} context
- * @param {string} topLevelIdentity
+ * @param {Buffer} topLevelIdentity
  *
  * @return {Promise<DataTriggerExecutionResult>}
  */
@@ -53,7 +53,9 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
   }
 
-  if (records.dashUniqueIdentityId && context.getOwnerId() !== records.dashUniqueIdentityId) {
+  if (records.dashUniqueIdentityId
+    && !context.getOwnerId().equals(records.dashUniqueIdentityId)
+  ) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,
@@ -64,7 +66,8 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
   }
 
-  if (records.dashAliasIdentityId && context.getOwnerId() !== records.dashAliasIdentityId) {
+  if (records.dashAliasIdentityId
+    && !context.getOwnerId().equals(records.dashAliasIdentityId)) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,
@@ -75,7 +78,8 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
   }
 
-  if (normalizedParentDomainName.length === 0 && context.getOwnerId() !== topLevelIdentity) {
+  if (normalizedParentDomainName.length === 0
+    && !context.getOwnerId().equals(topLevelIdentity)) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,
@@ -128,7 +132,7 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     }
 
     if (parentDomain.getData().subdomainRules.allowSubdomains === false
-      && context.getOwnerId() !== parentDomain.getOwnerId()) {
+      && !context.getOwnerId().equals(parentDomain.getOwnerId())) {
       result.addError(
         new DataTriggerConditionError(
           documentTransition,

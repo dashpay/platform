@@ -19,16 +19,16 @@ module.exports = function getDocumentsFixture(dataContract = getDataContractFixt
   );
 
   return [
-    factory.create(dataContract, ownerId, 'niceDocument', { name: 'Cutie' }),
-    factory.create(dataContract, ownerId, 'prettyDocument', { lastName: 'Shiny' }),
-    factory.create(dataContract, ownerId, 'prettyDocument', { lastName: 'Sweety' }),
-    factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'William', lastName: 'Birkin' }),
-    factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Leon', lastName: 'Kennedy' }),
-    factory.create(dataContract, ownerId, 'noTimeDocument', { name: 'ImOutOfTime' }),
-    factory.create(dataContract, ownerId, 'uniqueDates', { firstName: 'John' }),
-    factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Bill', lastName: 'Gates' }),
-    factory.create(dataContract, ownerId, 'withContentEncoding', { base64Field: crypto.randomBytes(10), base58Field: crypto.randomBytes(10) }),
-    factory.create(dataContract, ownerId, 'optionalUniqueIndexedDocument', { firstName: 'Jacques-Yves', lastName: 'Cousteau' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'niceDocument', { name: 'Cutie' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'prettyDocument', { lastName: 'Shiny' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'prettyDocument', { lastName: 'Sweety' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'indexedDocument', { firstName: 'William', lastName: 'Birkin' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'indexedDocument', { firstName: 'Leon', lastName: 'Kennedy' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'noTimeDocument', { name: 'ImOutOfTime' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'uniqueDates', { firstName: 'John' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'indexedDocument', { firstName: 'Bill', lastName: 'Gates' }),
+    factory.create(dataContract, ownerId.toBuffer(), 'withContentEncoding', { base64Field: crypto.randomBytes(10), base58Field: crypto.randomBytes(10) }),
+    factory.create(dataContract, ownerId.toBuffer(), 'optionalUniqueIndexedDocument', { firstName: 'Jacques-Yves', lastName: 'Cousteau' }),
   ];
 };
 

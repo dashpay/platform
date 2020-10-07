@@ -1,64 +1,86 @@
-const ValidationResult = require('../../../validation/ValidationResult');
 const DataContractCreateTransition = require('../DataContractCreateTransition');
-const DataContract = require('../../DataContract');
 
 const InvalidDataContractEntropyError = require('../../../errors/InvalidDataContractEntropyError');
+
 const InvalidDataContractIdError = require('../../../errors/InvalidDataContractIdError');
+const encodeObjectProperties = require('../../../util/encoding/encodeObjectProperties');
 
 const entropy = require('../../../util/entropy');
+
 const generateDataContractId = require('../../generateDataContractId');
 
+const dataContractCreateTransitionSchema = require('../../../../schema/dataContract/stateTransition/dataContractCreate');
+
 /**
+ * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validateDataContract} validateDataContract
  * @param {validateStateTransitionSignature} validateStateTransitionSignature
  * @param {validateIdentityExistence} validateIdentityExistence
  * @return {validateDataContractCreateTransitionStructure}
  */
 function validateDataContractCreateTransitionStructureFactory(
+  jsonSchemaValidator,
   validateDataContract,
   validateStateTransitionSignature,
   validateIdentityExistence,
 ) {
   /**
    * @typedef validateDataContractCreateTransitionStructure
-   * @param {RawDataContractCreateTransition} stateTransitionJson
+   * @param {RawDataContractCreateTransition} rawStateTransition
    * @return {ValidationResult}
    */
-  async function validateDataContractCreateTransitionStructure(stateTransitionJson) {
-    const result = new ValidationResult();
+  async function validateDataContractCreateTransitionStructure(rawStateTransition) {
+    // Validate state transition against JSON Schema
+    const jsonStateTransition = encodeObjectProperties(
+      rawStateTransition,
+      DataContractCreateTransition.ENCODED_PROPERTIES,
+    );
 
-    result.merge(
-      await validateDataContract(stateTransitionJson.dataContract),
+    const result = jsonSchemaValidator.validate(
+      dataContractCreateTransitionSchema,
+      jsonStateTransition,
     );
 
     if (!result.isValid()) {
       return result;
     }
 
-    const dataContract = new DataContract(stateTransitionJson.dataContract);
-    const dataContractId = dataContract.getId();
+    // Validate Data Contract
+    const rawDataContract = rawStateTransition.dataContract;
 
-    if (!entropy.validate(stateTransitionJson.entropy)) {
-      result.addError(
-        new InvalidDataContractEntropyError(stateTransitionJson.dataContract),
-      );
+    result.merge(
+      await validateDataContract(rawDataContract),
+    );
+
+    if (!result.isValid()) {
       return result;
     }
 
+    // Validate entropy
+    if (!entropy.validate(rawStateTransition.entropy)) {
+      result.addError(
+        new InvalidDataContractEntropyError(rawDataContract),
+      );
+
+      return result;
+    }
+
+    // Validate Data Contract ID
     const generatedId = generateDataContractId(
-      dataContract.getOwnerId(), stateTransitionJson.entropy,
+      rawDataContract.ownerId, rawStateTransition.entropy,
     );
 
-    if (generatedId !== dataContractId) {
+    if (!generatedId.equals(rawDataContract.$id)) {
       result.addError(
-        new InvalidDataContractIdError(stateTransitionJson.dataContract),
+        new InvalidDataContractIdError(rawDataContract),
       );
+
       return result;
     }
 
     // Data Contract identity must exists and confirmed
     result.merge(
-      await validateIdentityExistence(dataContract.getOwnerId()),
+      await validateIdentityExistence(rawDataContract.ownerId),
     );
 
     if (!result.isValid()) {
@@ -66,10 +88,10 @@ function validateDataContractCreateTransitionStructureFactory(
     }
 
     // Verify ST signature
-    const stateTransition = DataContractCreateTransition.fromJSON(stateTransitionJson);
+    const stateTransition = new DataContractCreateTransition(rawStateTransition);
 
     result.merge(
-      await validateStateTransitionSignature(stateTransition, dataContract.getOwnerId()),
+      await validateStateTransitionSignature(stateTransition, rawDataContract.ownerId),
     );
 
     return result;

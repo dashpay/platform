@@ -56,7 +56,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContract.getId().toBuffer(),
         william.getType(),
         {
           where: [
@@ -69,7 +69,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContract.getId().toBuffer(),
         william.getType(),
         {
           where: [
@@ -176,7 +176,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContract.getId().toBuffer(),
         indexedDocument.getType(),
         {
           where: [
@@ -215,7 +215,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     });
     stateRepositoryMock.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContract.getId().toBuffer(),
         uniqueDatesDocument.getType(),
         {
           where: [

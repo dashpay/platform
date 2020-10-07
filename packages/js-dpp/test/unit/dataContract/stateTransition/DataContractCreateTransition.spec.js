@@ -24,8 +24,8 @@ describe('DataContractCreateTransition', () => {
     dataContract = getDataContractFixture();
     stateTransition = new DataContractCreateTransition({
       protocolVersion: DataContract.PROTOCOL_VERSION,
-      dataContract: dataContract.toJSON(),
-      entropy: dataContract.getEntropy(),
+      dataContract: dataContract.toObject(),
+      entropy: dataContract.getEntropy().toBuffer(),
     });
   });
 
@@ -49,7 +49,7 @@ describe('DataContractCreateTransition', () => {
     it('should return Data Contract', () => {
       const result = stateTransition.getDataContract();
 
-      expect(result.toJSON()).to.deep.equal(dataContract.toJSON());
+      expect(result.toObject()).to.deep.equal(dataContract.toObject());
     });
   });
 
@@ -59,24 +59,26 @@ describe('DataContractCreateTransition', () => {
         protocolVersion: DataContract.PROTOCOL_VERSION,
         type: stateTransitionTypes.DATA_CONTRACT_CREATE,
         dataContract: dataContract.toJSON(),
-        signaturePublicKeyId: null,
-        signature: null,
-        entropy: dataContract.getEntropy(),
+        signaturePublicKeyId: undefined,
+        signature: undefined,
+        entropy: dataContract.getEntropy().toString(),
       });
     });
   });
 
-  describe('#serialize', () => {
+  describe('#toBuffer', () => {
     it('should return serialized State Transition', () => {
       const serializedStateTransition = '123';
 
       encodeMock.returns(serializedStateTransition);
 
-      const result = stateTransition.serialize();
+      const result = stateTransition.toBuffer();
 
       expect(result).to.equal(serializedStateTransition);
 
-      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toJSON());
+      expect(encodeMock.getCall(0).args).to.have.deep.members([
+        stateTransition.toObject(),
+      ]);
     });
   });
 
@@ -92,7 +94,9 @@ describe('DataContractCreateTransition', () => {
 
       expect(result).to.equal(hashedDocument);
 
-      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toJSON());
+      expect(encodeMock.getCall(0).args).to.have.deep.members([
+        stateTransition.toObject(),
+      ]);
       expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
     });
   });

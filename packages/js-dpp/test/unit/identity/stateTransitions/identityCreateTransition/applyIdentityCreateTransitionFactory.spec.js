@@ -4,7 +4,7 @@ const applyIdentityCreateTransitionFactory = require(
   '../../../../../lib/identity/stateTransitions/identityCreateTransition/applyIdentityCreateTransitionFactory',
 );
 
-const getIdentityCreateSTFixture = require('../../../../../lib/test/fixtures/getIdentityCreateSTFixture');
+const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const { convertSatoshiToCredits } = require('../../../../../lib/identity/creditsConverter');
 
@@ -13,7 +13,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
   let applyIdentityCreateTransition;
-  let getLockedTransactionOutputMock;
+  let fetchConfirmedAssetLockTransactionOutputMock;
   let output;
   let stateRepositoryMock;
 
@@ -22,14 +22,14 @@ describe('applyIdentityCreateTransitionFactory', () => {
       satoshis: 10000,
     };
 
-    getLockedTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
+    fetchConfirmedAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    stateTransition = getIdentityCreateSTFixture();
+    stateTransition = getIdentityCreateTransitionFixture();
     applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
       stateRepositoryMock,
-      getLockedTransactionOutputMock,
+      fetchConfirmedAssetLockTransactionOutputMock,
     );
   });
 
@@ -41,13 +41,13 @@ describe('applyIdentityCreateTransitionFactory', () => {
     const identity = new Identity({
       protocolVersion: Identity.PROTOCOL_VERSION,
       id: stateTransition.getIdentityId(),
-      publicKeys: stateTransition.getPublicKeys().map((key) => key.toJSON()),
+      publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
       balance,
       revision: 0,
     });
 
-    expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(
-      stateTransition.getLockedOutPoint(),
+    expect(fetchConfirmedAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+      stateTransition.getLockedOutPoint().toString(),
     );
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
       identity,
@@ -58,7 +58,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
       .map((publicKey) => publicKey.hash());
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      identity.getId(),
+      identity.getId().toString(),
       publicKeyHashes,
     );
   });

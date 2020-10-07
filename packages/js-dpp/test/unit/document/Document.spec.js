@@ -39,7 +39,7 @@ describe('Document', () => {
       '../../../lib/util/serializer': serializerMock,
     });
 
-    const ownerId = generateRandomId();
+    const ownerId = generateRandomId().toBuffer();
 
     const dataContractFactory = new DataContractFactory(() => {});
 
@@ -71,7 +71,7 @@ describe('Document', () => {
 
     rawDocument = {
       $protocolVersion: Document.PROTOCOL_VERSION,
-      $id: 'D3AT6rBtyTqx3hXFckwtP81ncu49y5ndE7ot9JkuNSeB',
+      $id: EncodedBuffer.from('D3AT6rBtyTqx3hXFckwtP81ncu49y5ndE7ot9JkuNSeB', EncodedBuffer.ENCODING.BASE58).toBuffer(),
       $type: 'test',
       $dataContractId: dataContract.getId(),
       $ownerId: ownerId,
@@ -94,14 +94,14 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $id: 'id',
+        $id: EncodedBuffer('id', EncodedBuffer.ENCODING.BASE58).toBuffer(),
         $type: 'test',
         ...data,
       };
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.id).to.equal(rawDocument.$id);
+      expect(document.id).to.deep.equal(rawDocument.$id);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
@@ -127,14 +127,14 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $dataContractId: generateRandomId(),
+        $dataContractId: generateRandomId().toBuffer(),
         $type: 'test',
         ...data,
       };
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.dataContractId).to.equal(rawDocument.$dataContractId);
+      expect(document.dataContractId).to.deep.equal(rawDocument.$dataContractId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
@@ -144,14 +144,14 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $ownerId: generateRandomId(),
+        $ownerId: generateRandomId().toBuffer(),
         $type: 'test',
         ...data,
       };
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.ownerId).to.equal(rawDocument.$ownerId);
+      expect(document.ownerId.toBuffer()).to.deep.equal(rawDocument.$ownerId);
       expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
@@ -249,13 +249,13 @@ describe('Document', () => {
 
   describe('#getOwnerId', () => {
     it('should return $ownerId', () => {
-      expect(document.getOwnerId()).to.equal(rawDocument.$ownerId);
+      expect(document.getOwnerId()).to.deep.equal(rawDocument.$ownerId);
     });
   });
 
   describe('#getDataContractId', () => {
     it('should return $dataContractId', () => {
-      expect(document.getOwnerId()).to.equal(rawDocument.$ownerId);
+      expect(document.getOwnerId()).to.deep.equal(rawDocument.$ownerId);
     });
   });
 
@@ -380,34 +380,43 @@ describe('Document', () => {
 
   describe('#toJSON', () => {
     it('should return Document as plain JS object', () => {
-      expect(document.toJSON()).to.deep.equal(rawDocument);
+      const jsonDocument = {
+        ...rawDocument,
+        $dataContractId: document.dataContractId.toString(),
+        $id: document.id.toString(),
+        $ownerId: document.ownerId.toString(),
+      };
+
+      expect(document.toJSON()).to.deep.equal(jsonDocument);
     });
   });
 
-  describe('#serialize', () => {
+  describe('#toBuffer', () => {
     it('should return serialized Document', () => {
       const serializedDocument = '123';
 
       encodeMock.returns(serializedDocument);
 
-      const result = document.serialize();
+      const result = document.toBuffer();
 
       expect(result).to.equal(serializedDocument);
 
-      expect(encodeMock).to.have.been.calledOnceWith(rawDocument);
+      expect(encodeMock.getCall(0).args).to.have.deep.members([
+        rawDocument,
+      ]);
     });
   });
 
   describe('#hash', () => {
     beforeEach(function beforeEach() {
-      Document.prototype.serialize = this.sinonSandbox.stub();
+      Document.prototype.toBuffer = this.sinonSandbox.stub();
     });
 
     it('should return Document hash', () => {
       const serializedDocument = '123';
       const hashedDocument = '456';
 
-      Document.prototype.serialize.returns(serializedDocument);
+      Document.prototype.toBuffer.returns(serializedDocument);
 
       hashMock.returns(hashedDocument);
 
@@ -415,7 +424,7 @@ describe('Document', () => {
 
       expect(result).to.equal(hashedDocument);
 
-      expect(Document.prototype.serialize).to.have.been.calledOnce();
+      expect(Document.prototype.toBuffer).to.have.been.calledOnce();
 
       expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
     });

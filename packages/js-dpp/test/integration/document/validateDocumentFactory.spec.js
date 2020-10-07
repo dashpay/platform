@@ -15,8 +15,6 @@ const MissingDocumentTypeError = require('../../../lib/errors/MissingDocumentTyp
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 const MismatchDocumentContractIdAndDataContractError = require('../../../lib/errors/MismatchDocumentContractIdAndDataContractError');
 
-const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
-
 const {
   expectValidationError,
   expectJsonSchemaError,
@@ -28,6 +26,7 @@ describe('validateDocumentFactory', () => {
   let dataContract;
   let rawDocuments;
   let rawDocument;
+  let documents;
   let validateDocument;
   let validator;
 
@@ -44,8 +43,8 @@ describe('validateDocumentFactory', () => {
       enrichDataContractWithBaseSchema,
     );
 
-    const documents = getDocumentsFixture(dataContract);
-    rawDocuments = documents.map((o) => o.toJSON());
+    documents = getDocumentsFixture(dataContract);
+    rawDocuments = documents.map((o) => o.toObject());
     [rawDocument] = rawDocuments;
   });
 
@@ -133,7 +132,7 @@ describe('validateDocumentFactory', () => {
         expect(error.params.missingProperty).to.equal('$id');
       });
 
-      it('should be a string', () => {
+      it('should be a binary (encoded string)', () => {
         rawDocument.$id = 1;
 
         const result = validateDocument(rawDocument, dataContract);
@@ -144,6 +143,7 @@ describe('validateDocumentFactory', () => {
 
         expect(error.dataPath).to.equal('.$id');
         expect(error.keyword).to.equal('type');
+        expect(error.params.type).to.equal('string');
       });
 
       it('should be no less than 42 chars', () => {
@@ -305,7 +305,7 @@ describe('validateDocumentFactory', () => {
         expect(error.params.missingProperty).to.equal('$dataContractId');
       });
 
-      it('should be a string', () => {
+      it('should be a binary (encoded string)', () => {
         rawDocument.$dataContractId = 1;
 
         const result = validateDocument(rawDocument, dataContract);
@@ -429,9 +429,9 @@ describe('validateDocumentFactory', () => {
 
   describe('Data Contract schema', () => {
     it('should return an error if the first document is not valid against Data Contract', () => {
-      rawDocuments[0].name = 1;
+      rawDocument.name = 1;
 
-      const result = validateDocument(rawDocuments[0], dataContract);
+      const result = validateDocument(rawDocument, dataContract);
 
       expectJsonSchemaError(result);
 
@@ -442,9 +442,11 @@ describe('validateDocumentFactory', () => {
     });
 
     it('should return an error if the second document is not valid against Data Contract', () => {
-      rawDocuments[1].undefined = 1;
+      // eslint-disable-next-line prefer-destructuring
+      rawDocument = rawDocuments[1];
+      rawDocument.undefined = 1;
 
-      const result = validateDocument(rawDocuments[1], dataContract);
+      const result = validateDocument(rawDocument, dataContract);
 
       expectJsonSchemaError(result);
 
@@ -458,10 +460,7 @@ describe('validateDocumentFactory', () => {
   it('should return invalid result if a document contractId is not equal to Data Contract ID', () => {
     rawDocument.$dataContractId = generateRandomId();
 
-    const result = validateDocument(
-      rawDocument,
-      dataContract,
-    );
+    const result = validateDocument(rawDocument, dataContract);
 
     expectValidationError(result, MismatchDocumentContractIdAndDataContractError);
 
@@ -472,11 +471,10 @@ describe('validateDocumentFactory', () => {
   });
 
   it('return invalid result if binary field exceeds `maxLength`', () => {
-    const document = getDocumentsFixture(dataContract)[8];
+    // eslint-disable-next-line prefer-destructuring
+    rawDocument = getDocumentsFixture(dataContract)[8].toObject();
 
-    document.data.base64Field = new EncodedBuffer(Buffer.alloc(32), 'base64');
-
-    rawDocument = document.toJSON();
+    rawDocument.base64Field = Buffer.alloc(32);
 
     const result = validateDocument(rawDocument, dataContract);
 

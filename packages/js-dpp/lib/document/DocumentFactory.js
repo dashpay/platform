@@ -33,7 +33,7 @@ class DocumentFactory {
    * Create Document
    *
    * @param {DataContract} dataContract
-   * @param {string} ownerId
+   * @param {Buffer} ownerId
    * @param {string} type
    * @param {Object} [data]
    * @return {Document}
@@ -44,7 +44,7 @@ class DocumentFactory {
     }
 
     const documentEntropy = entropy.generate();
-    const dataContractId = dataContract.getId();
+    const dataContractId = dataContract.getId().toBuffer();
 
     const id = generateDocumentId(
       dataContractId,
@@ -102,21 +102,6 @@ class DocumentFactory {
   }
 
   /**
-   * Create Document from JSON
-   *
-   * @param {RawDocument} rawDocument
-   * @param {Object} options
-   * @param {boolean} [options.skipValidation=false]
-   * @param {boolean} [options.action]
-   * @return {Document}
-   */
-  async createFromJson(rawDocument, options = {}) {
-    const dataContract = await this.validateDataContractForDocument(rawDocument, options);
-
-    return Document.fromJSON(rawDocument, dataContract);
-  }
-
-  /**
    * @private
    *
    * @param {RawDocument} rawDocument
@@ -142,7 +127,6 @@ class DocumentFactory {
         this.validateDocument(
           rawDocument,
           dataContract,
-          opts,
         ),
       );
 
@@ -155,22 +139,22 @@ class DocumentFactory {
   }
 
   /**
-   * Create Document from string/buffer
+   * Create Document from buffer
    *
-   * @param {Buffer|string} payload
+   * @param {Buffer} buffer
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @param {boolean} [options.action]
    * @return {Promise<Document>}
    */
-  async createFromSerialized(payload, options = { }) {
+  async createFromBuffer(buffer, options = { }) {
     let rawDocument;
     try {
-      rawDocument = decode(payload);
+      rawDocument = decode(buffer);
     } catch (error) {
       throw new InvalidDocumentError([
         new SerializedObjectParsingError(
-          payload,
+          buffer,
           error,
         ),
       ]);
@@ -215,7 +199,7 @@ class DocumentFactory {
 
     const mismatchedOwnerIdsLength = documentsFlattened
       .reduce((result, document) => {
-        if (document.getOwnerId() !== ownerId) {
+        if (!document.getOwnerId().equals(ownerId)) {
           // eslint-disable-next-line no-param-reassign
           result += 1;
         }
@@ -259,7 +243,7 @@ class DocumentFactory {
         return {
           ...rawDocument,
           $action: AbstractDocumentTransition.ACTIONS.CREATE,
-          $entropy: document.getEntropy(),
+          $entropy: document.getEntropy().toBuffer(),
         };
       });
 

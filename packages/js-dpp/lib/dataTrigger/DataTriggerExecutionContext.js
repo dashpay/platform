@@ -1,7 +1,9 @@
+const EncodedBuffer = require('../util/encoding/EncodedBuffer');
+
 class DataTriggerExecutionContext {
   /**
    * @param {StateRepository} stateRepository
-   * @param {string} ownerId
+   * @param {Buffer} ownerId
    * @param {DataContract} dataContract
    */
   constructor(stateRepository, ownerId, dataContract) {
@@ -9,7 +11,7 @@ class DataTriggerExecutionContext {
      * @type {StateRepository}
      */
     this.stateRepository = stateRepository;
-    this.ownerId = ownerId;
+    this.ownerId = EncodedBuffer.from(ownerId, EncodedBuffer.ENCODING.BASE58);
     this.dataContract = dataContract;
   }
 
@@ -21,7 +23,7 @@ class DataTriggerExecutionContext {
   }
 
   /**
-   * @returns {string}
+   * @returns {EncodedBuffer}
    */
   getOwnerId() {
     return this.ownerId;

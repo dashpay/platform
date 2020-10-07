@@ -12,6 +12,8 @@ const actionsToClasses = {
   [AbstractDocumentTransition.ACTIONS.DELETE]: DocumentDeleteTransition,
 };
 
+const EncodedBuffer = require('../../util/encoding/EncodedBuffer');
+
 class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   /**
    * @param {RawDocumentsBatchTransition} [rawStateTransition]
@@ -20,19 +22,26 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   constructor(rawStateTransition = {}, dataContracts) {
     super(rawStateTransition);
 
-    this.ownerId = rawStateTransition.ownerId;
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'ownerId')) {
+      this.ownerId = EncodedBuffer.from(rawStateTransition.ownerId, EncodedBuffer.ENCODING.BASE58);
+    }
 
-    const dataContractsMap = dataContracts.reduce((map, dataContract) => ({
-      ...map,
-      [dataContract.getId()]: dataContract,
-    }), {});
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'transitions')) {
+      const dataContractsMap = dataContracts.reduce((map, dataContract) => ({
+        ...map,
+        [dataContract.getId().toString()]: dataContract,
+      }), {});
 
-    this.transitions = (rawStateTransition.transitions || []).map((rawDocumentTransition) => (
-      new actionsToClasses[rawDocumentTransition.$action](
-        rawDocumentTransition,
-        dataContractsMap[rawDocumentTransition.$dataContractId],
-      )
-    ));
+      this.transitions = rawStateTransition.transitions.map((rawDocumentTransition) => (
+        new actionsToClasses[rawDocumentTransition.$action](
+          rawDocumentTransition,
+          dataContractsMap[
+            EncodedBuffer
+              .from(rawDocumentTransition.$dataContractId, EncodedBuffer.ENCODING.BASE58)
+              .toString()],
+        )
+      ));
+    }
   }
 
   /**
@@ -47,7 +56,7 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   /**
    * Get owner id
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getOwnerId() {
     return this.ownerId;
@@ -66,78 +75,75 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
    * Get state transition as plain object
    *
    * @param {Object} [options]
-   * @param {boolean} [options.skipSignature]
+   * @param {boolean} [options.skipSignature=false]
+   * @param {boolean} [options.encodedBuffer=false]
    *
-   * @return {Object}
+   * @return {RawDocumentsBatchTransition}
    */
   toObject(options = {}) {
-    return {
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        ...options,
+      },
+    );
+
+    let rawDocumentsBatchTransition = {
       ...super.toObject(options),
       ownerId: this.getOwnerId(),
       transitions: this.getTransitions().map((t) => t.toObject()),
     };
+
+    if (!options.encodedBuffer) {
+      rawDocumentsBatchTransition = {
+        ...rawDocumentsBatchTransition,
+        ownerId: rawDocumentsBatchTransition.ownerId.toBuffer(),
+      };
+    }
+
+    return rawDocumentsBatchTransition;
   }
 
   /**
    * Get state transition as JSON
    *
-   * @param {Object} [options]
-   * @param {boolean} [options.skipSignature]
-   *
-   * @return {Object}
+   * @return {JsonDocumentsBatchTransition}
    */
-  toJSON(options = {}) {
-    const json = super.toJSON(options);
+  toJSON() {
+    const jsonStateTransition = {
+      ...super.toJSON(),
+      ownerId: this.getOwnerId().toString(),
+    };
 
     // overwrite plain object transitions
-    json.transitions = this.getTransitions().map((t) => t.toJSON());
+    jsonStateTransition.transitions = this.getTransitions().map((t) => t.toJSON());
 
-    return json;
-  }
-
-  /**
-   * Create state transition from JSON
-   *
-   * @param {RawDocumentsBatchTransition} rawStateTransition
-   * @param {DataContract[]} dataContracts
-   *
-   * @return {DocumentsBatchTransition}
-   */
-  static fromJSON(rawStateTransition, dataContracts) {
-    const plainObject = AbstractStateTransitionIdentitySigned
-      .translateJsonToObject(rawStateTransition);
-
-    const dataContractsMap = dataContracts.reduce((map, dataContract) => (
-      {
-        ...map,
-        [dataContract.getId()]: dataContract,
-      }
-    ), {});
-
-    plainObject.transitions = plainObject.transitions
-      .map((jsonTransition) => (
-        actionsToClasses[jsonTransition.$action]
-          .fromJSON(jsonTransition, dataContractsMap[jsonTransition.$dataContractId])
-          .toObject()
-      ));
-
-    return new DocumentsBatchTransition(
-      plainObject,
-      dataContracts,
-    );
+    return jsonStateTransition;
   }
 }
 
 /**
- * @typedef {Object} RawDocumentsBatchTransition
- * @property {number} protocolVersion
- * @property {number} type
- * @property {string} ownerId
+ * @typedef {RawStateTransitionIdentitySigned & Object} RawDocumentsBatchTransition
+ * @property {Buffer} ownerId
  * @property {
  *   Array.<RawDocumentCreateTransition|RawDocumentReplaceTransition|RawDocumentDeleteTransition>
  * } transitions
- * @property {number|null} signaturePublicKeyId
- * @property {string|null} signature
  */
+
+/**
+ * @typedef {JsonStateTransitionIdentitySigned & Object} JsonDocumentsBatchTransition
+ * @property {string} ownerId
+ * @property {
+ *   Array.<JsonDocumentCreateTransition|JsonDocumentReplaceTransition|JsonDocumentDeleteTransition>
+ * } transitions
+ */
+
+DocumentsBatchTransition.ENCODED_PROPERTIES = {
+  ...AbstractStateTransitionIdentitySigned.ENCODED_PROPERTIES,
+  ownerId: {
+    contentEncoding: 'base58',
+  },
+};
 
 module.exports = DocumentsBatchTransition;

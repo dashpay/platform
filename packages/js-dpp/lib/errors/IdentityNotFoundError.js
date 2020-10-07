@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class IdentityNotFoundError extends ConsensusError {
   /**
-   * @param {string} identityId
+   * @param {EncodedBuffer} identityId
    */
   constructor(identityId) {
     super('Identity not found');
@@ -13,7 +13,7 @@ class IdentityNotFoundError extends ConsensusError {
   /**
    * Get identity id
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getIdentityId() {
     return this.identityId;

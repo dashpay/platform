@@ -2,7 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class InvalidStateTransitionTypeError extends ConsensusError {
   /**
-   * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
+   * @param {RawStateTransition} rawStateTransition
    */
   constructor(rawStateTransition) {
     super(`Invalid State Transition type ${rawStateTransition.type}`);
@@ -13,7 +13,7 @@ class InvalidStateTransitionTypeError extends ConsensusError {
   /**
    * Get raw State Transition
    *
-   * @return {RawDataContractCreateTransition|RawDocumentsBatchTransition}
+   * @return {RawStateTransition}
    */
   getRawStateTransition() {
     return this.rawStateTransition;

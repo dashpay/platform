@@ -1,5 +1,6 @@
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
+const DataContract = require('./DataContract');
 const DataContractFactory = require('./DataContractFactory');
 const validateDataContractFactory = require('./validateDataContractFactory');
 const enrichDataContractWithBaseSchema = require('./enrichDataContractWithBaseSchema');
@@ -26,7 +27,7 @@ class DataContractFacade {
   /**
    * Create Data Contract
    *
-   * @param {string} ownerId
+   * @param {Buffer} ownerId
    * @param {Object} documents
    * @return {DataContract}
    */
@@ -47,15 +48,15 @@ class DataContractFacade {
   }
 
   /**
-   * Create Data Contract from string/buffer
+   * Create Data Contract from buffer
    *
-   * @param {Buffer|string} payload
+   * @param {Buffer} buffer
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {Promise<DataContract>}
    */
-  async createFromSerialized(payload, options = { }) {
-    return this.factory.createFromSerialized(payload, options);
+  async createFromBuffer(buffer, options = { }) {
+    return this.factory.createFromBuffer(buffer, options);
   }
 
   /**
@@ -75,7 +76,14 @@ class DataContractFacade {
    * @return {Promise<ValidationResult>}
    */
   async validate(dataContract) {
-    return this.validateDataContract(dataContract);
+    let rawDataContract;
+    if (dataContract instanceof DataContract) {
+      rawDataContract = dataContract.toObject();
+    } else {
+      rawDataContract = dataContract;
+    }
+
+    return this.validateDataContract(rawDataContract);
   }
 }
 

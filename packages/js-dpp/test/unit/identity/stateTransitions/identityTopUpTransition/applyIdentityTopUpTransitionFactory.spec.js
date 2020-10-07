@@ -45,7 +45,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     expect(identity.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
 
     expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(
-      stateTransition.getLockedOutPoint(),
+      stateTransition.getLockedOutPoint().toString(),
     );
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
       identity,

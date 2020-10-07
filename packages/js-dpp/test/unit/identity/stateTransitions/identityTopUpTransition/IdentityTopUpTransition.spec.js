@@ -4,6 +4,8 @@ const stateTransitionTypes = require(
   '../../../../../lib/stateTransition/stateTransitionTypes',
 );
 
+const EncodedBuffer = require('../../../../../lib/util/encoding/EncodedBuffer');
+
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
 describe('IdentityTopUpTransition', () => {
@@ -16,7 +18,7 @@ describe('IdentityTopUpTransition', () => {
 
   beforeEach(function beforeEach() {
     identityTopUpTransition = getIdentityTopUpTransitionFixture();
-    rawStateTransition = identityTopUpTransition.toJSON();
+    rawStateTransition = identityTopUpTransition.toObject();
 
     hashMock = this.sinonSandbox.stub();
     hashMock.returns(Buffer.alloc(32));
@@ -41,10 +43,10 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#constructor', () => {
     it('should create an instance with specified data from specified raw transition', () => {
-      expect(stateTransition.lockedOutPoint).to.be.equal(
+      expect(stateTransition.getLockedOutPoint()).to.be.deep.equal(
         rawStateTransition.lockedOutPoint,
       );
-      expect(stateTransition.identityId).to.be.equal(
+      expect(stateTransition.getIdentityId()).to.be.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -73,39 +75,61 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId()).to.equal(
-        '9egkkRs6ErFbLUh3yYn8mdgeKGpJQ41iayS1Z9bwsRM7',
+      expect(stateTransition.getIdentityId()).to.deep.equal(
+        rawStateTransition.identityId,
       );
     });
   });
 
   describe('#getOwnerId', () => {
     it('should return owner id', () => {
-      expect(stateTransition.getOwnerId()).to.equal(
-        stateTransition.getIdentityId(),
+      expect(stateTransition.getOwnerId()).to.deep.equal(
+        rawStateTransition.identityId,
       );
     });
   });
 
-  describe('#toJSON', () => {
-    it('should return JSON representation of the object', () => {
-      const jsonWithASig = stateTransition.toJSON();
+  describe('#toObject', () => {
+    it('should return raw state transition', () => {
+      rawStateTransition = stateTransition.toObject();
 
-      expect(jsonWithASig).to.deep.equal({
+      expect(rawStateTransition).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
         lockedOutPoint: rawStateTransition.lockedOutPoint,
-        identityId: '9egkkRs6ErFbLUh3yYn8mdgeKGpJQ41iayS1Z9bwsRM7',
-        signature: null,
+        identityId: rawStateTransition.identityId,
+        signature: undefined,
       });
+    });
 
-      const jsonWithSig = stateTransition.toJSON({ skipSignature: true });
+    it('should return raw state transition', () => {
+      rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
-      expect(jsonWithSig).to.deep.equal({
+      expect(rawStateTransition).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
         lockedOutPoint: rawStateTransition.lockedOutPoint,
-        identityId: '9egkkRs6ErFbLUh3yYn8mdgeKGpJQ41iayS1Z9bwsRM7',
+        identityId: rawStateTransition.identityId,
+      });
+    });
+  });
+
+  describe('#toJSON', () => {
+    it('should return JSON representation of state transition', () => {
+      const jsonStateTransition = stateTransition.toJSON();
+
+      expect(jsonStateTransition).to.deep.equal({
+        protocolVersion: 0,
+        type: stateTransitionTypes.IDENTITY_TOP_UP,
+        lockedOutPoint: EncodedBuffer.from(
+          rawStateTransition.lockedOutPoint,
+          EncodedBuffer.ENCODING.BASE64,
+        ).toString(),
+        identityId: EncodedBuffer.from(
+          rawStateTransition.identityId,
+          EncodedBuffer.ENCODING.BASE58,
+        ).toString(),
+        signature: undefined,
       });
     });
   });

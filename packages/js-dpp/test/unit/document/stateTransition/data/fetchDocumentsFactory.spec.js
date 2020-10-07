@@ -26,7 +26,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch specified Documents using StateRepository', async () => {
-    const firstDocumentDataContractId = generateRandomId();
+    const firstDocumentDataContractId = generateRandomId().toBuffer();
 
     documentTransitions[0].dataContractId = firstDocumentDataContractId;
     documents[0].dataContractId = firstDocumentDataContractId;

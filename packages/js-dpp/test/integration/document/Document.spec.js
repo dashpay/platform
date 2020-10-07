@@ -19,9 +19,11 @@ describe('Document', () => {
 
       expect(result).to.deep.equal({
         $protocolVersion: document.getProtocolVersion(),
-        $dataContractId: dataContract.getId(),
-        $id: document.getId(),
-        $ownerId: getDocumentsFixture.ownerId,
+        $dataContractId: dataContract.getId().toString(),
+        $id: document.getId().toString(),
+        $ownerId: EncodedBuffer.from(
+          getDocumentsFixture.ownerId, EncodedBuffer.ENCODING.BASE58,
+        ).toString(),
         $revision: 1,
         $type: 'withContentEncoding',
         base64Field: document.getData().base64Field.toString(),
@@ -41,8 +43,8 @@ describe('Document', () => {
         $ownerId: getDocumentsFixture.ownerId,
         $revision: 1,
         $type: 'withContentEncoding',
-        base64Field: document.getData().base64Field.toBuffer(),
-        base58Field: document.getData().base58Field.toBuffer(),
+        base64Field: document.get('base64Field'),
+        base58Field: document.get('base58Field'),
       });
     });
 

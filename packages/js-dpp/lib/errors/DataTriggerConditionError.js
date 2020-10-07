@@ -3,10 +3,10 @@ const AbstractDataTriggerError = require('./AbstractDataTriggerError');
 class DataTriggerConditionError extends AbstractDataTriggerError {
   /**
    * @param {
-   *   DocumentCreateTransition|DocumentReplaceTranition|DocumentDeleteTransition
+   *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
    * } documentTransition
    * @param {DataContract} dataContract
-   * @param {string} ownerId
+   * @param {EncodedBuffer} ownerId
    * @param {string} message
    */
   constructor(documentTransition, dataContract, ownerId, message) {
@@ -19,10 +19,10 @@ class DataTriggerConditionError extends AbstractDataTriggerError {
    * Get document transition
    *
    * @returns {
-   *   DocumentCreateTransition|DocumentReplaceTranition|DocumentDeleteTransition
+   *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
    * }
    */
-  getDocumentTransiton() {
+  getDocumentTransition() {
     return this.documentTransition;
   }
 }

@@ -6,6 +6,8 @@ const ValidationResult = require('../../validation/ValidationResult');
 
 const publicKeySchema = require('../../../schema/identity/publicKey.json');
 
+const encodeObjectProperties = require('../../util/encoding/encodeObjectProperties');
+
 const InvalidIdentityPublicKeyDataError = require(
   '../../errors/InvalidIdentityPublicKeyDataError',
 );
@@ -30,27 +32,22 @@ function validatePublicKeysFactory(validator) {
    *
    * @typedef validatePublicKeys
    *
-   * @param {IdentityPublicKey[]|RawIdentityPublicKey[]} publicKeys
+   * @param {RawIdentityPublicKey[]} rawPublicKeys
    *
    * @return {ValidationResult}
    */
-  function validatePublicKeys(publicKeys) {
+  function validatePublicKeys(rawPublicKeys) {
     const result = new ValidationResult();
 
-    // Convert everything to raw type
-    const rawPublicKeys = publicKeys
-      .map((publicKey) => {
-        if (publicKey instanceof IdentityPublicKey) {
-          return publicKey.toJSON();
-        }
-
-        return publicKey;
-      });
-
     // Validate public key structure
-    rawPublicKeys.forEach((publicKey) => {
+    rawPublicKeys.forEach((rawPublicKey) => {
+      const jsonPublicKey = encodeObjectProperties(
+        rawPublicKey,
+        IdentityPublicKey.ENCODED_PROPERTIES,
+      );
+
       result.merge(
-        validator.validate(publicKeySchema, publicKey),
+        validator.validate(publicKeySchema, jsonPublicKey),
       );
     });
 
@@ -62,42 +59,44 @@ function validatePublicKeysFactory(validator) {
     const duplicatedIds = [];
     const idsCount = {};
 
-    publicKeys.forEach((publicKey) => {
-      idsCount[publicKey.id] = !idsCount[publicKey.id] ? 1 : idsCount[publicKey.id] + 1;
-      if (idsCount[publicKey.id] > 1) {
-        duplicatedIds.push(publicKey.id);
+    rawPublicKeys.forEach((rawPublicKey) => {
+      idsCount[rawPublicKey.id] = !idsCount[rawPublicKey.id] ? 1 : idsCount[rawPublicKey.id] + 1;
+      if (idsCount[rawPublicKey.id] > 1) {
+        duplicatedIds.push(rawPublicKey.id);
       }
     });
 
     if (duplicatedIds.length > 0) {
-      result.addError(new DuplicatedIdentityPublicKeyIdError(publicKeys));
+      result.addError(new DuplicatedIdentityPublicKeyIdError(rawPublicKeys));
     }
 
     // Check that there's no duplicated keys
     const keysCount = {};
     const duplicatedKeys = [];
-    publicKeys.forEach((publicKey) => {
-      keysCount[publicKey.data] = !keysCount[publicKey.data]
-        ? 1 : keysCount[publicKey.data] + 1;
-      if (keysCount[publicKey.data] > 1) {
-        duplicatedKeys.push(publicKey.data);
+    rawPublicKeys.forEach((rawPublicKey) => {
+      const dataHex = rawPublicKey.data.toString('hex');
+
+      keysCount[dataHex] = !keysCount[dataHex]
+        ? 1 : keysCount[dataHex] + 1;
+
+      if (keysCount[dataHex] > 1) {
+        duplicatedKeys.push(dataHex);
       }
     });
 
     if (duplicatedKeys.length > 0) {
-      result.addError(new DuplicatedIdentityPublicKeyError(publicKeys));
+      result.addError(new DuplicatedIdentityPublicKeyError(rawPublicKeys));
     }
 
     // validate key data
     rawPublicKeys
-      .forEach((publicKey) => {
-        const dataHex = Buffer.from(publicKey.data, 'base64')
-          .toString('hex');
+      .forEach((rawPublicKey) => {
+        const dataHex = rawPublicKey.data.toString('hex');
 
         if (!PublicKey.isValid(dataHex)) {
           result.addError(
             new InvalidIdentityPublicKeyDataError(
-              publicKey,
+              rawPublicKey,
               PublicKey.getValidationError(dataHex),
             ),
           );

@@ -8,8 +8,38 @@ const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
  */
 class AbstractDocumentTransition {
   constructor(rawDocumentTransition, dataContract) {
-    this.dataContractId = rawDocumentTransition.$dataContractId;
+    this.type = rawDocumentTransition.$type;
+
+    if (Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$id')) {
+      this.id = EncodedBuffer.from(rawDocumentTransition.$id, EncodedBuffer.ENCODING.BASE58);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$dataContractId')) {
+      this.dataContractId = EncodedBuffer.from(
+        rawDocumentTransition.$dataContractId,
+        EncodedBuffer.ENCODING.BASE58,
+      );
+    }
+
     this.dataContract = dataContract;
+  }
+
+  /**
+   * Get id
+   *
+   * @returns {EncodedBuffer}
+   */
+  getId() {
+    return this.id;
+  }
+
+  /**
+   * Get type
+   *
+   * @returns {*}
+   */
+  getType() {
+    return this.type;
   }
 
   /**
@@ -22,25 +52,10 @@ class AbstractDocumentTransition {
   /**
    * Get Data Contract ID
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getDataContractId() {
     return this.dataContractId;
-  }
-
-  /**
-   * Get plain object representation
-   *
-   * @param {Object} [options]
-   * @param {boolean} [options.encodedBuffer=false]
-   * @return {Object}
-   */
-  // eslint-disable-next-line no-unused-vars
-  toObject(options = {}) {
-    return {
-      $action: this.getAction(),
-      $dataContractId: this.getDataContractId(),
-    };
   }
 
   /**
@@ -55,44 +70,72 @@ class AbstractDocumentTransition {
   }
 
   /**
+   * Get plain object representation
+   *
+   * @param {Object} [options]
+   * @param {boolean} [options.encodedBuffer=false]
+   * @return {RawDocumentTransition}
+   */
+  toObject(options = {}) {
+    Object.assign(
+      options,
+      {
+        encodedBuffer: false,
+        ...options,
+      },
+    );
+
+    const rawDocumentTransition = {
+      $id: this.getId(),
+      $type: this.getType(),
+      $action: this.getAction(),
+      $dataContractId: this.getDataContractId(),
+    };
+
+    if (!options.encodedBuffer) {
+      rawDocumentTransition.$id = this.getId().toBuffer();
+      rawDocumentTransition.$dataContractId = this.getDataContractId().toBuffer();
+    }
+
+    return rawDocumentTransition;
+  }
+
+  /**
    * Get JSON representation
    *
-   * @return {Object}
+   * @return {JsonDocumentTransition}
    */
   toJSON() {
-    const data = this.toObject({ encodedBuffer: true });
+    const jsonDocumentTransition = {
+      ...this.toObject({ encodedBuffer: true }),
+      $id: this.getId().toString(),
+      $dataContractId: this.getDataContractId().toString(),
+    };
 
     return transpileEncodedProperties(
       this.dataContract,
       this.getType(),
-      data,
+      jsonDocumentTransition,
       (encodedBuffer) => encodedBuffer.toString(),
     );
   }
-
-  /**
-   * Translate document transition from JSON to plain object
-   *
-   * @protected
-   *
-   * @param {
-   *   RawDocumentCreateTransition | RawDocumentReplaceTransition | RawDocumentDeleteTransition
-   * } rawDocumentTransition
-   * @param {DataContract} dataContract
-   *
-   * @return {
-   *   RawDocumentCreateTransition | RawDocumentReplaceTransition | RawDocumentDeleteTransition
-   * }
-   */
-  static translateJsonToObject(rawDocumentTransition, dataContract) {
-    return transpileEncodedProperties(
-      dataContract,
-      rawDocumentTransition.$type,
-      rawDocumentTransition,
-      (string, encoding) => EncodedBuffer.from(string, encoding).toBuffer(),
-    );
-  }
 }
+
+/**
+ * @typedef {Object} RawDocumentTransition
+ * @property {Buffer} $id
+ * @property {string} $type
+ * @property {number} $action
+ * @property {Buffer} $dataContractId
+ */
+
+/**
+ * @typedef {Object} JsonDocumentTransition
+ * @property {string} $id
+ * @property {string} $type
+ * @property {number} $action
+ * @property {string} $dataContractId
+ */
 
 AbstractDocumentTransition.ACTIONS = {
   CREATE: 0,
@@ -105,6 +148,15 @@ AbstractDocumentTransition.ACTION_NAMES = {
   CREATE: 'create',
   REPLACE: 'replace',
   DELETE: 'delete',
+};
+
+AbstractDocumentTransition.ENCODED_PROPERTIES = {
+  $id: {
+    contentEncoding: 'base58',
+  },
+  $dataContractId: {
+    contentEncoding: 'base58',
+  },
 };
 
 module.exports = AbstractDocumentTransition;

@@ -2,7 +2,6 @@ const { decode } = require('../util/serializer');
 
 const InvalidStateTransitionError = require('./errors/InvalidStateTransitionError');
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
-const ConsensusError = require('../errors/ConsensusError');
 
 class StateTransitionFactory {
   /**
@@ -18,14 +17,14 @@ class StateTransitionFactory {
   }
 
   /**
-   * Create State Transition from JSON
+   * Create State Transition from plain object
    *
-   * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
-   * @param {Object} options
+   * @param {RawStateTransition} rawStateTransition
+   * @param {Object} [options]
    * @param {boolean} [options.skipValidation=false]
-   * @return {RawDataContractCreateTransition|DocumentsBatchTransition}
+   * @return {AbstractStateTransition}
    */
-  async createFromJSON(rawStateTransition, options = {}) {
+  async createFromObject(rawStateTransition, options = {}) {
     const opts = { skipValidation: false, ...options };
 
     if (!opts.skipValidation) {
@@ -37,66 +36,27 @@ class StateTransitionFactory {
     }
 
     // noinspection UnnecessaryLocalVariableJS
-    const stateTransition = await this.createStateTransition(rawStateTransition, {
-      fromJSON: true,
-    });
+    const stateTransition = await this.createStateTransition(rawStateTransition);
 
     return stateTransition;
   }
 
   /**
-   * Create State Transition from plain object
+   * Create State Transition from buffer
    *
-   * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
+   * @param {Buffer} buffer
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @return {RawDataContractCreateTransition|DocumentsBatchTransition}
    */
-  async createFromObject(rawStateTransition, options = {}) {
-    const opts = { skipValidation: false, ...options };
-
-    // noinspection UnnecessaryLocalVariableJS
-    const stateTransition = await this.createStateTransition(rawStateTransition, {
-      fromJSON: false,
-    });
-
-    if (!opts.skipValidation) {
-      let stateTransitionJson;
-      try {
-        stateTransitionJson = stateTransition.toJSON();
-      } catch (e) {
-        if (e instanceof ConsensusError) {
-          throw new InvalidStateTransitionError([e], rawStateTransition);
-        }
-        throw e;
-      }
-
-      const result = await this.validateStateTransitionStructure(stateTransitionJson);
-
-      if (!result.isValid()) {
-        throw new InvalidStateTransitionError(result.getErrors(), rawStateTransition);
-      }
-    }
-
-    return stateTransition;
-  }
-
-  /**
-   * Create State Transition from string/buffer
-   *
-   * @param {Buffer|string} payload
-   * @param {Object} options
-   * @param {boolean} [options.skipValidation=false]
-   * @return {RawDataContractCreateTransition|DocumentsBatchTransition}
-   */
-  async createFromSerialized(payload, options = { }) {
+  async createFromBuffer(buffer, options = { }) {
     let rawStateTransition;
     try {
-      rawStateTransition = decode(payload);
+      rawStateTransition = decode(buffer);
     } catch (error) {
       throw new InvalidStateTransitionError([
         new SerializedObjectParsingError(
-          payload,
+          buffer,
           error,
         ),
       ]);

@@ -1,7 +1,7 @@
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
-const lodashCloneDeep = require('lodash.clonedeep');
 
+const cloneDeepRawData = require('../util/cloneDeepRawData');
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 const transpileEncodedProperties = require('../util/encoding/transpileEncodedProperties');
@@ -25,7 +25,7 @@ class Document {
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$id')) {
-      this.id = rawDocument.$id;
+      this.id = EncodedBuffer.from(rawDocument.$id, EncodedBuffer.ENCODING.BASE58);
       delete data.$id;
     }
 
@@ -35,12 +35,15 @@ class Document {
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$dataContractId')) {
-      this.dataContractId = rawDocument.$dataContractId;
+      this.dataContractId = EncodedBuffer.from(
+        rawDocument.$dataContractId,
+        EncodedBuffer.ENCODING.BASE58,
+      );
       delete data.$dataContractId;
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$ownerId')) {
-      this.ownerId = rawDocument.$ownerId;
+      this.ownerId = EncodedBuffer.from(rawDocument.$ownerId, EncodedBuffer.ENCODING.BASE58);
       delete data.$ownerId;
     }
 
@@ -74,7 +77,7 @@ class Document {
   /**
    * Get ID
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getId() {
     return this.id;
@@ -92,7 +95,7 @@ class Document {
   /**
    * Get Data Contract ID
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getDataContractId() {
     return this.dataContractId;
@@ -110,7 +113,7 @@ class Document {
   /**
    * Get Owner ID
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getOwnerId() {
     return this.ownerId;
@@ -140,16 +143,16 @@ class Document {
   /**
    * Set entropy
    *
-   * @param {string} entropy
+   * @param {Buffer} entropy
    */
   setEntropy(entropy) {
-    this.entropy = entropy;
+    this.entropy = EncodedBuffer.from(entropy, EncodedBuffer.ENCODING.BASE58);
   }
 
   /**
    * Get entropy
    *
-   * @return {string}
+   * @return {EncodedBuffer}
    */
   getEntropy() {
     return this.entropy;
@@ -197,7 +200,7 @@ class Document {
    * @return {Document}
    */
   set(path, value) {
-    let encodedValue = lodashCloneDeep(value);
+    let encodedValue = cloneDeepRawData(value);
 
     const encodedProperties = this.dataContract.getEncodedProperties(
       this.getType(),
@@ -269,15 +272,20 @@ class Document {
   /**
    * Return Document as JSON object
    *
-   * @return {RawDocument}
+   * @return {JsonDocument}
    */
   toJSON() {
-    const rawDocument = this.toObject({ encodedBuffer: true });
+    const jsonDocument = {
+      ...this.toObject({ encodedBuffer: true }),
+      $id: this.getId().toString(),
+      $dataContractId: this.getDataContractId().toString(),
+      $ownerId: this.getOwnerId().toString(),
+    };
 
     return transpileEncodedProperties(
       this.dataContract,
       this.getType(),
-      rawDocument,
+      jsonDocument,
       (encodedBuffer) => encodedBuffer.toString(),
     );
   }
@@ -317,6 +325,10 @@ class Document {
     }
 
     if (!options.encodedBuffer) {
+      rawDocument.$id = this.getId().toBuffer();
+      rawDocument.$dataContractId = this.getDataContractId().toBuffer();
+      rawDocument.$ownerId = this.getOwnerId().toBuffer();
+
       return transpileEncodedProperties(
         this.dataContract,
         this.getType(),
@@ -333,10 +345,8 @@ class Document {
    *
    * @return {Buffer}
    */
-  serialize() {
-    const plainObject = this.toObject();
-
-    return encode(plainObject);
+  toBuffer() {
+    return encode(this.toObject());
   }
 
   /**
@@ -345,7 +355,7 @@ class Document {
    * @return {string}
    */
   hash() {
-    return hash(this.serialize()).toString('hex');
+    return hash(this.toBuffer()).toString('hex');
   }
 
   /**
@@ -371,6 +381,18 @@ class Document {
 /**
  * @typedef {Object} RawDocument
  * @property {number} $protocolVersion
+ * @property {Buffer} $id
+ * @property {string} $type
+ * @property {Buffer} $dataContractId
+ * @property {Buffer} $ownerId
+ * @property {number} $revision
+ * @property {number} [$createdAt]
+ * @property {number} [$updatedAt]
+ */
+
+/**
+ * @typedef {Object} JsonDocument
+ * @property {number} $protocolVersion
  * @property {string} $id
  * @property {string} $type
  * @property {string} $dataContractId
@@ -383,5 +405,17 @@ class Document {
 Document.PROTOCOL_VERSION = 0;
 
 Document.SYSTEM_PREFIX = '$';
+
+Document.ENCODED_PROPERTIES = {
+  $id: {
+    contentEncoding: 'base58',
+  },
+  $dataContractId: {
+    contentEncoding: 'base58',
+  },
+  $ownerId: {
+    contentEncoding: 'base58',
+  },
+};
 
 module.exports = Document;

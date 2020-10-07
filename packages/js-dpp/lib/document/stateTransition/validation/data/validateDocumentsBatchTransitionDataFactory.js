@@ -37,8 +37,8 @@ function validateDocumentsBatchTransitionDataFactory(
 ) {
   /**
    *
-   * @param {string} dataContractId
-   * @param {string} ownerId
+   * @param {Buffer} dataContractId
+   * @param {Buffer} ownerId
    * @param {AbstractDocumentTransition} documentTransitions
    * @return {Promise<ValidationResult>}
    */
@@ -85,7 +85,7 @@ function validateDocumentsBatchTransitionDataFactory(
     documentTransitions
       .forEach((documentTransition) => {
         const fetchedDocument = fetchedDocuments
-          .find((d) => documentTransition.getId() === d.getId());
+          .find((d) => documentTransition.getId().equals(d.getId()));
 
         switch (documentTransition.getAction()) {
           case AbstractDocumentTransition.ACTIONS.CREATE:
@@ -165,7 +165,7 @@ function validateDocumentsBatchTransitionDataFactory(
               break;
             }
 
-            if (fetchedDocument.getOwnerId() !== ownerId) {
+            if (!fetchedDocument.getOwnerId().equals(ownerId)) {
               result.addError(
                 new DocumentOwnerIdMismatchError(documentTransition, fetchedDocument),
               );
@@ -243,16 +243,19 @@ function validateDocumentsBatchTransitionDataFactory(
       .reduce((obj, documentTransition) => {
         if (!obj[documentTransition.getDataContractId()]) {
           // eslint-disable-next-line no-param-reassign
-          obj[documentTransition.getDataContractId()] = [];
+          obj[documentTransition.getDataContractId()] = {
+            dataContractId: documentTransition.getDataContractId(),
+            documentTransitions: [],
+          };
         }
 
-        obj[documentTransition.getDataContractId()].push(documentTransition);
+        obj[documentTransition.getDataContractId()].documentTransitions.push(documentTransition);
 
         return obj;
       }, {});
 
     const documentTransitionResultsPromises = Object.entries(documentTransitionsByContracts)
-      .map(([dataContractId, documentTransitions]) => (
+      .map(([, { dataContractId, documentTransitions }]) => (
         validateDocumentTransitions(dataContractId, ownerId, documentTransitions)
       ));
 

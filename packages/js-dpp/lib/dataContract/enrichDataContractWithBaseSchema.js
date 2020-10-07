@@ -1,11 +1,11 @@
-const lodashCloneDeep = require('lodash.clonedeep');
+const cloneDeepRawData = require('../util/cloneDeepRawData');
 
 const DataContract = require('./DataContract');
 
 /**
  * @typedef {enrichDataContractWithBaseSchema}
  *
- * @param {DataContract|RawDataContract} dataContract
+ * @param {DataContract} dataContract
  * @param {Object} baseSchema
  * @param {string} [schemaIdPrefix='']
  * @param {string[]} [excludeProperties]
@@ -18,11 +18,7 @@ function enrichDataContractWithBaseSchema(
   schemaIdPrefix = '',
   excludeProperties = [],
 ) {
-  const rawDataContract = (dataContract instanceof DataContract)
-    ? dataContract.toJSON()
-    : dataContract;
-
-  const clonedDataContract = lodashCloneDeep(rawDataContract);
+  const clonedDataContract = cloneDeepRawData(dataContract.toObject());
 
   delete clonedDataContract.$schema;
 
@@ -56,7 +52,10 @@ function enrichDataContractWithBaseSchema(
   });
 
   // Add schema $id prefix
-  clonedDataContract.$id = schemaIdPrefix + clonedDataContract.$id;
+  clonedDataContract.$id = Buffer.concat([
+    Buffer.from(schemaIdPrefix),
+    clonedDataContract.$id,
+  ]);
 
   return new DataContract(clonedDataContract);
 }

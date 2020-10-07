@@ -21,10 +21,7 @@ function validateStateTransitionFeeFactory(
 ) {
   /**
    * @typedef validateStateTransitionFee
-   * @param {
-   * DataContractCreateTransition|
-   * DocumentsBatchTransition|
-   * IdentityCreateTransition} stateTransition
+   * @param {AbstractStateTransition} stateTransition
    * @return {ValidationResult}
    */
   async function validateStateTransitionFee(stateTransition) {
@@ -73,7 +70,7 @@ function validateStateTransitionFeeFactory(
         break;
       }
       default:
-        throw new InvalidStateTransitionTypeError(stateTransition.toJSON());
+        throw new InvalidStateTransitionTypeError(stateTransition.toObject());
     }
 
     if (balance < feeSize) {

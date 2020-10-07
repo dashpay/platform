@@ -1,8 +1,9 @@
 const rewiremock = require('rewiremock/node');
-const bs58 = require('bs58');
 const crypto = require('crypto');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
+
+const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
 
 const hash = require('../../../lib/util/hash');
 
@@ -58,8 +59,9 @@ describe('IdentityFactory', () => {
     it('should create Identity from transaction out point and public keys', () => {
       const lockedOutPoint = crypto.randomBytes(64);
 
-      identity.id = bs58.encode(
+      identity.id = EncodedBuffer.from(
         hash(lockedOutPoint),
+        EncodedBuffer.ENCODING.BASE58,
       );
 
       identity.setBalance(0);
@@ -76,7 +78,7 @@ describe('IdentityFactory', () => {
       );
 
       expect(result).to.be.an.instanceOf(Identity);
-      expect(result.toJSON()).to.deep.equal(identity.toJSON());
+      expect(result.toObject()).to.deep.equal(identity.toObject());
     });
   });
 
@@ -93,43 +95,43 @@ describe('IdentityFactory', () => {
       validateIdentityMock.returns(new ValidationResult(errors));
 
       try {
-        factory.createFromObject(identity.toJSON());
+        factory.createFromObject(identity.toObject());
 
         expect.fail('error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidIdentityError);
         expect(e.getErrors()).to.have.deep.members(errors);
-        expect(e.getRawIdentity()).to.deep.equal(identity.toJSON());
+        expect(e.getRawIdentity()).to.deep.equal(identity.toObject());
       }
     });
 
     it('should create an identity if validation passed', () => {
       validateIdentityMock.returns(new ValidationResult());
 
-      const result = factory.createFromObject(identity.toJSON());
+      const result = factory.createFromObject(identity.toObject());
 
       expect(result).to.be.an.instanceOf(Identity);
       expect(result).to.deep.equal(identity);
     });
   });
 
-  describe('#createFromSerialized', () => {
+  describe('#createFromBuffer', () => {
     beforeEach(function beforeEach() {
       this.sinonSandbox.stub(factory, 'createFromObject');
     });
 
     it('should return new Identity from serialized one', () => {
-      const serializedIdentity = identity.serialize();
+      const serializedIdentity = identity.toBuffer();
 
-      decodeMock.returns(identity.toJSON());
+      decodeMock.returns(identity.toObject());
 
       factory.createFromObject.returns(identity);
 
-      const result = factory.createFromSerialized(serializedIdentity);
+      const result = factory.createFromBuffer(serializedIdentity);
 
       expect(result).to.equal(identity);
 
-      expect(factory.createFromObject).to.have.been.calledOnceWith(identity.toJSON());
+      expect(factory.createFromObject).to.have.been.calledOnceWith(identity.toObject());
 
       expect(decodeMock).to.have.been.calledOnceWith(serializedIdentity);
     });
@@ -137,12 +139,12 @@ describe('IdentityFactory', () => {
     it('should throw consensus error if `decode` fails', () => {
       const parsingError = new Error('Something failed during parsing');
 
-      const serializedIdentity = identity.serialize();
+      const serializedIdentity = identity.toBuffer();
 
       decodeMock.throws(parsingError);
 
       try {
-        factory.createFromSerialized(serializedIdentity);
+        factory.createFromBuffer(serializedIdentity);
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidIdentityError);
@@ -165,7 +167,7 @@ describe('IdentityFactory', () => {
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
       expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
-      expect(stateTransition.getLockedOutPoint()).to.equal(lockedOutPoint.toString('base64'));
+      expect(stateTransition.getLockedOutPoint()).to.deep.equal(lockedOutPoint);
     });
   });
 
@@ -179,8 +181,8 @@ describe('IdentityFactory', () => {
         .createIdentityTopUpTransition(identity.getId(), lockedOutPoint);
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
-      expect(stateTransition.getIdentityId()).to.be.equal(identity.getId());
-      expect(stateTransition.getLockedOutPoint()).to.equal(lockedOutPoint.toString('base64'));
+      expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
+      expect(stateTransition.getLockedOutPoint()).to.deep.equal(lockedOutPoint);
     });
   });
 });

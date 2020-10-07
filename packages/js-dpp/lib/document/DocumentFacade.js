@@ -2,6 +2,7 @@ const enrichDataContractWithBaseSchema = require('../dataContract/enrichDataCont
 const validateDocumentFactory = require('./validateDocumentFactory');
 const fetchAndValidateDataContractFactory = require('./fetchAndValidateDataContractFactory');
 
+const Document = require('./Document');
 const DocumentFactory = require('./DocumentFactory');
 
 const MissingOptionError = require('../errors/MissingOptionError');
@@ -33,7 +34,7 @@ class DocumentFacade {
    * Create Document
    *
    * @param {DataContract} dataContract
-   * @param {string} ownerId
+   * @param {Buffer} ownerId
    * @param {string} type
    * @param {Object} [data]
    * @return {Document}
@@ -64,15 +65,15 @@ class DocumentFacade {
   }
 
   /**
-   * Create Document from string/buffer
+   * Create Document from buffer
    *
-   * @param {Buffer|string} payload
+   * @param {Buffer} buffer
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @param {boolean} [options.action]
    * @return {Promise<Document>}
    */
-  async createFromSerialized(payload, options = { }) {
+  async createFromBuffer(buffer, options = { }) {
     if (!this.stateRepository && !options.skipValidation) {
       throw new MissingOptionError(
         'stateRepository',
@@ -81,7 +82,7 @@ class DocumentFacade {
       );
     }
 
-    return this.factory.createFromSerialized(payload, options);
+    return this.factory.createFromBuffer(buffer, options);
   }
 
   /**
@@ -102,11 +103,9 @@ class DocumentFacade {
    * Validate document
    *
    * @param {Document|RawDocument} document
-   * @param {Object} options
-   * @param {number} [options.action=1]
    * @return {ValidationResult}
    */
-  async validate(document, options = {}) {
+  async validate(document) {
     if (!this.stateRepository) {
       throw new MissingOptionError(
         'stateRepository',
@@ -115,7 +114,14 @@ class DocumentFacade {
       );
     }
 
-    const result = await this.fetchAndValidateDataContract(document);
+    let rawDocument;
+    if (document instanceof Document) {
+      rawDocument = document.toObject();
+    } else {
+      rawDocument = document;
+    }
+
+    const result = await this.fetchAndValidateDataContract(rawDocument);
 
     if (!result.isValid()) {
       return result;
@@ -123,7 +129,7 @@ class DocumentFacade {
 
     const dataContract = result.getData();
 
-    return this.validateDocument(document, dataContract, options);
+    return this.validateDocument(rawDocument, dataContract);
   }
 }
 

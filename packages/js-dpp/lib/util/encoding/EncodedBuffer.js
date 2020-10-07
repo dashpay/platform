@@ -64,7 +64,11 @@ EncodedBuffer.prototype.toBuffer = function toBuffer() {
  *
  * @return {string}
  */
-EncodedBuffer.prototype.toString = function toString() {
+EncodedBuffer.prototype.toString = function toString(variableEncoding) {
+  if (variableEncoding) {
+    throw new TypeError('Encoding is preset already');
+  }
+
   const encoding = this.getEncoding();
 
   switch (this.getEncoding()) {
@@ -82,14 +86,14 @@ EncodedBuffer.prototype.toString = function toString() {
  *
  * @return {string}
  */
-EncodedBuffer.prototype.toJSON = function toBuffer() {
+EncodedBuffer.prototype.toJSON = function toJSON() {
   return this.toString();
 };
 
 /**
  * Convert from string to EncodedBuffer class
  *
- * @param {string|buffer} value
+ * @param {string|Buffer} value
  * @param {EncodedBufferEncoding} encoding
  * @return {EncodedBuffer}
  */

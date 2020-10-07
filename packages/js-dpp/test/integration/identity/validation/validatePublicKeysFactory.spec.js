@@ -27,11 +27,11 @@ const InvalidIdentityPublicKeyDataError = require(
 );
 
 describe('validatePublicKeysFactory', () => {
-  let publicKeys;
+  let rawPublicKeys;
   let validatePublicKeys;
 
   beforeEach(() => {
-    ({ publicKeys } = getIdentityFixture().toJSON());
+    ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
     const validator = new JsonSchemaValidator(new Ajv());
 
@@ -42,9 +42,9 @@ describe('validatePublicKeysFactory', () => {
 
   describe('id', () => {
     it('should be present', () => {
-      delete publicKeys[1].id;
+      delete rawPublicKeys[1].id;
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -56,9 +56,9 @@ describe('validatePublicKeysFactory', () => {
     });
 
     it('should be a number', () => {
-      publicKeys[1].id = 'string';
+      rawPublicKeys[1].id = 'string';
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -69,9 +69,9 @@ describe('validatePublicKeysFactory', () => {
     });
 
     it('should be an integer', () => {
-      publicKeys[1].id = 1.1;
+      rawPublicKeys[1].id = 1.1;
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -82,9 +82,9 @@ describe('validatePublicKeysFactory', () => {
     });
 
     it('should be greater or equal to one', () => {
-      publicKeys[1].id = -1;
+      rawPublicKeys[1].id = -1;
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -97,9 +97,9 @@ describe('validatePublicKeysFactory', () => {
 
   describe('type', () => {
     it('should be present', () => {
-      delete publicKeys[1].type;
+      delete rawPublicKeys[1].type;
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -111,9 +111,9 @@ describe('validatePublicKeysFactory', () => {
     });
 
     it('should be a number', () => {
-      publicKeys[1].type = 'string';
+      rawPublicKeys[1].type = 'string';
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -126,9 +126,9 @@ describe('validatePublicKeysFactory', () => {
 
   describe('data', () => {
     it('should be present', () => {
-      delete publicKeys[1].data;
+      delete rawPublicKeys[1].data;
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -139,10 +139,10 @@ describe('validatePublicKeysFactory', () => {
       expect(error.params.missingProperty).to.equal('data');
     });
 
-    it('should be a string', () => {
-      publicKeys[1].data = 1;
+    it('should be a binary (encoded string)', () => {
+      rawPublicKeys[1].data = 1;
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -153,9 +153,9 @@ describe('validatePublicKeysFactory', () => {
     });
 
     it('should be base64 encoded string without padding', () => {
-      publicKeys[1].data = '&'.repeat(44);
+      rawPublicKeys[1].data = '&'.repeat(44);
 
-      const result = validatePublicKeys(publicKeys);
+      const result = validatePublicKeys(rawPublicKeys);
 
       expectJsonSchemaError(result);
 
@@ -167,9 +167,9 @@ describe('validatePublicKeysFactory', () => {
 
     describe('ECDSA_SECP256K1', () => {
       it('should be no less than 44 character', () => {
-        publicKeys[1].data = Buffer.alloc(33).toString('base64').slice(1);
+        rawPublicKeys[1].data = Buffer.alloc(33).toString('base64').slice(1);
 
-        const result = validatePublicKeys(publicKeys);
+        const result = validatePublicKeys(rawPublicKeys);
 
         expectJsonSchemaError(result);
 
@@ -180,9 +180,9 @@ describe('validatePublicKeysFactory', () => {
       });
 
       it('should be no longer than 44 character', () => {
-        publicKeys[1].data = `${Buffer.alloc(33).toString('base64')}a`;
+        rawPublicKeys[1].data = `${Buffer.alloc(33).toString('base64')}a`;
 
-        const result = validatePublicKeys(publicKeys);
+        const result = validatePublicKeys(rawPublicKeys);
 
         expectJsonSchemaError(result);
 
@@ -195,10 +195,10 @@ describe('validatePublicKeysFactory', () => {
 
     describe('BLS12_381', () => {
       it('should be no less than 64 character', () => {
-        publicKeys[1].data = Buffer.alloc(48).toString('base64').slice(1);
-        publicKeys[1].type = 1;
+        rawPublicKeys[1].data = Buffer.alloc(48).toString('base64').slice(1);
+        rawPublicKeys[1].type = 1;
 
-        const result = validatePublicKeys(publicKeys);
+        const result = validatePublicKeys(rawPublicKeys);
 
         expectJsonSchemaError(result);
 
@@ -209,10 +209,10 @@ describe('validatePublicKeysFactory', () => {
       });
 
       it('should be no longer than 64 character', () => {
-        publicKeys[1].data = `${Buffer.alloc(48).toString('base64')}a`;
-        publicKeys[1].type = 1;
+        rawPublicKeys[1].data = `${Buffer.alloc(48).toString('base64')}a`;
+        rawPublicKeys[1].type = 1;
 
-        const result = validatePublicKeys(publicKeys);
+        const result = validatePublicKeys(rawPublicKeys);
 
         expectJsonSchemaError(result);
 
@@ -225,44 +225,44 @@ describe('validatePublicKeysFactory', () => {
   });
 
   it('should return invalid result if there are duplicate key ids', () => {
-    publicKeys[1].id = publicKeys[0].id;
+    rawPublicKeys[1].id = rawPublicKeys[0].id;
 
-    const result = validatePublicKeys(publicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
 
     const [error] = result.getErrors();
 
-    expect(error.getRawPublicKeys()).to.equal(publicKeys);
+    expect(error.getRawPublicKeys()).to.equal(rawPublicKeys);
   });
 
   it('should return invalid result if there are duplicate keys', () => {
-    publicKeys[1].data = publicKeys[0].data;
+    rawPublicKeys[1].data = rawPublicKeys[0].data;
 
-    const result = validatePublicKeys(publicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expectValidationError(result, DuplicatedIdentityPublicKeyError);
 
     const [error] = result.getErrors();
 
-    expect(error.getRawPublicKeys()).to.equal(publicKeys);
+    expect(error.getRawPublicKeys()).to.equal(rawPublicKeys);
   });
 
   it('should return invalid result if key data is not a valid DER', () => {
-    publicKeys[1].data = Buffer.alloc(33).toString('base64');
+    rawPublicKeys[1].data = Buffer.alloc(33).toString('base64');
 
-    const result = validatePublicKeys(publicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expectValidationError(result, InvalidIdentityPublicKeyDataError);
 
     const [error] = result.getErrors();
 
-    expect(error.getPublicKey()).to.deep.equal(publicKeys[1]);
+    expect(error.getPublicKey()).to.deep.equal(rawPublicKeys[1]);
     expect(error.getValidationError()).to.be.an.instanceOf(TypeError);
   });
 
   it('should pass valid public keys', () => {
-    const result = validatePublicKeys(publicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expect(result.isValid()).to.be.true();
   });

@@ -7,8 +7,13 @@
       "maximum": 0,
       "$comment": "Maximum is the latest Documents Batch Transition protocol version"
     },
+    "type": {
+      "type": "integer",
+      "const": 1
+    },
     "ownerId": {
       "type": "string",
+      "contentEncoding": "base58",
       "minLength": 42,
       "maxLength": 44,
       "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
@@ -20,11 +25,26 @@
       },
       "minItems": 1,
       "maxItems": 10
+    },
+    "signaturePublicKeyId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "signature": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "minLength": 87,
+      "maxLength": 87,
+      "pattern": "^([A-Za-z0-9+/])+$"
     }
   },
+  "additionalProperties": false,
   "required": [
     "protocolVersion",
+    "type",
     "ownerId",
-    "transitions"
+    "transitions",
+    "signaturePublicKeyId",
+    "signature"
   ]
 }

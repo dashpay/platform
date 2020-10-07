@@ -1,6 +1,9 @@
 const ValidationResult = require('../../../../validation/ValidationResult');
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
+const DocumentCreateTransition = require('../../documentTransition/DocumentCreateTransition');
+const DocumentReplaceTransition = require('../../documentTransition/DocumentReplaceTransition');
+const DocumentDeleteTransition = require('../../documentTransition/DocumentDeleteTransition');
 
 const DataContractNotPresentError = require('../../../../errors/DataContractNotPresentError');
 const InvalidDocumentTransitionIdError = require('../../../../errors/InvalidDocumentTransitionIdError');
@@ -21,6 +24,9 @@ const replaceTransitionSchema = require('../../../../../schema/document/stateTra
 
 const generateDocumentId = require('../../../generateDocumentId');
 const entropy = require('../../../../util/entropy');
+const encodeObjectProperties = require('../../../../util/encoding/encodeObjectProperties');
+
+const documentsBatchTransitionSchema = require('../../../../../schema/document/stateTransition/documentsBatch');
 
 /**
  * @param {findDuplicatesById} findDuplicatesById
@@ -28,7 +34,7 @@ const entropy = require('../../../../util/entropy');
  * @param {validateStateTransitionSignature} validateStateTransitionSignature
  * @param {validateIdentityExistence} validateIdentityExistence
  * @param {StateRepository} stateRepository
- * @param {JsonSchemaValidator} validator
+ * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
  *
  * @return {validateDocumentsBatchTransitionStructure}
@@ -39,11 +45,18 @@ function validateDocumentsBatchTransitionStructureFactory(
   validateStateTransitionSignature,
   validateIdentityExistence,
   stateRepository,
-  validator,
+  jsonSchemaValidator,
   enrichDataContractWithBaseSchema,
 ) {
   const { ACTIONS } = AbstractDocumentTransition;
 
+  /**
+   *
+   * @param dataContract
+   * @param {Buffer} ownerId
+   * @param documentTransitions
+   * @return {Promise<ValidationResult>}
+   */
   async function validateDocumentTransitions(dataContract, ownerId, documentTransitions) {
     const result = new ValidationResult();
 
@@ -60,14 +73,20 @@ function validateDocumentsBatchTransitionStructureFactory(
       [ACTIONS.CREATE]: enrichDataContractWithBaseSchema(
         enrichedBaseDataContract,
         createTransitionSchema,
-        'document_create_transition_',
+        'documentCreateTransition',
       ),
       [ACTIONS.REPLACE]: enrichDataContractWithBaseSchema(
         enrichedBaseDataContract,
         replaceTransitionSchema,
-        'document_replace_transition_',
+        'documentReplaceTransition',
         ['$createdAt'],
       ),
+    };
+
+    const encodedPropertiesByActions = {
+      [ACTIONS.CREATE]: DocumentCreateTransition.ENCODED_PROPERTIES,
+      [ACTIONS.REPLACE]: DocumentReplaceTransition.ENCODED_PROPERTIES,
+      [ACTIONS.DELETE]: DocumentDeleteTransition.ENCODED_PROPERTIES,
     };
 
     documentTransitions.forEach((rawDocumentTransition) => {
@@ -97,6 +116,17 @@ function validateDocumentsBatchTransitionStructureFactory(
         return;
       }
 
+      // Convert document transition to JSON for JSON Schema validation
+      const encodedSystemProperties = encodedPropertiesByActions[rawDocumentTransition.$action]
+        || { };
+
+      const encodedUserProperties = dataContract.getEncodedProperties(rawDocumentTransition.$type);
+
+      const jsonDocumentTransition = encodeObjectProperties(
+        rawDocumentTransition,
+        { ...encodedSystemProperties, ...encodedUserProperties },
+      );
+
       // Validate document schema
       switch (rawDocumentTransition.$action) {
         case ACTIONS.CREATE:
@@ -113,9 +143,9 @@ function validateDocumentsBatchTransitionStructureFactory(
             enrichedDataContract.toJSON(),
           };
 
-          const schemaResult = validator.validate(
+          const schemaResult = jsonSchemaValidator.validate(
             documentSchemaRef,
-            rawDocumentTransition,
+            jsonDocumentTransition,
             additionalSchemas,
           );
 
@@ -135,7 +165,7 @@ function validateDocumentsBatchTransitionStructureFactory(
               rawDocumentTransition.$entropy,
             );
 
-            if (rawDocumentTransition.$id !== documentId) {
+            if (!rawDocumentTransition.$id.equals(documentId)) {
               result.addError(
                 new InvalidDocumentTransitionIdError(rawDocumentTransition),
               );
@@ -153,9 +183,9 @@ function validateDocumentsBatchTransitionStructureFactory(
         }
         case ACTIONS.DELETE:
           result.merge(
-            validator.validate(
+            jsonSchemaValidator.validate(
               baseTransitionSchema,
-              rawDocumentTransition,
+              jsonDocumentTransition,
             ),
           );
 
@@ -164,7 +194,7 @@ function validateDocumentsBatchTransitionStructureFactory(
           result.addError(
             new InvalidDocumentTransitionActionError(
               rawDocumentTransition.$action,
-              rawDocumentTransition,
+              jsonDocumentTransition,
             ),
           );
       }
@@ -199,16 +229,27 @@ function validateDocumentsBatchTransitionStructureFactory(
 
   /**
    * @typedef validateDocumentsBatchTransitionStructure
-   * @param {RawDocumentsBatchTransition} stateTransitionJson
+   * @param {RawDocumentsBatchTransition} rawStateTransition
    * @return {ValidationResult}
    */
-  async function validateDocumentsBatchTransitionStructure(stateTransitionJson) {
-    const result = new ValidationResult();
+  async function validateDocumentsBatchTransitionStructure(rawStateTransition) {
+    // Validate state transition against JSON Schema
+    const jsonStateTransition = encodeObjectProperties(
+      rawStateTransition,
+      DocumentsBatchTransition.ENCODED_PROPERTIES,
+    );
 
-    const { ownerId } = stateTransitionJson;
+    const result = jsonSchemaValidator.validate(
+      documentsBatchTransitionSchema,
+      jsonStateTransition,
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
 
     // Group document transitions by data contracts
-    const documentTransitionsByContracts = stateTransitionJson.transitions
+    const documentTransitionsByContracts = rawStateTransition.transitions
       .reduce((obj, rawDocumentTransition) => {
         if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$dataContractId')) {
           result.addError(
@@ -218,7 +259,7 @@ function validateDocumentsBatchTransitionStructureFactory(
           return obj;
         }
 
-        if (typeof rawDocumentTransition.$dataContractId !== 'string') {
+        if (!Buffer.isBuffer(rawDocumentTransition.$dataContractId)) {
           result.addError(
             new InvalidDataContractIdError(rawDocumentTransition.$dataContractId),
           );
@@ -226,12 +267,14 @@ function validateDocumentsBatchTransitionStructureFactory(
           return obj;
         }
 
-        if (!obj[rawDocumentTransition.$dataContractId]) {
+        const dataContractIdString = rawDocumentTransition.$dataContractId.toString('hex');
+
+        if (!obj[dataContractIdString]) {
           // eslint-disable-next-line no-param-reassign
-          obj[rawDocumentTransition.$dataContractId] = [];
+          obj[dataContractIdString] = [];
         }
 
-        obj[rawDocumentTransition.$dataContractId].push(rawDocumentTransition);
+        obj[dataContractIdString].push(rawDocumentTransition);
 
         return obj;
       }, {});
@@ -239,14 +282,16 @@ function validateDocumentsBatchTransitionStructureFactory(
     const dataContracts = [];
 
     const documentTransitionResultsPromises = Object.entries(documentTransitionsByContracts)
-      .map(async ([dataContractId, documentTransitions]) => {
+      .map(async ([dataContractIdString, documentTransitions]) => {
         const perDocumentResult = new ValidationResult();
 
-        const dataContract = await stateRepository.fetchDataContract(dataContractId);
+        const dataContractIdBuffer = Buffer.from(dataContractIdString, 'hex');
+
+        const dataContract = await stateRepository.fetchDataContract(dataContractIdBuffer);
 
         if (!dataContract) {
           perDocumentResult.addError(
-            new DataContractNotPresentError(dataContractId),
+            new DataContractNotPresentError(dataContractIdBuffer),
           );
         }
 
@@ -257,7 +302,11 @@ function validateDocumentsBatchTransitionStructureFactory(
         dataContracts.push(dataContract);
 
         perDocumentResult.merge(
-          await validateDocumentTransitions(dataContract, ownerId, documentTransitions),
+          await validateDocumentTransitions(
+            dataContract,
+            rawStateTransition.ownerId,
+            documentTransitions,
+          ),
         );
 
         return perDocumentResult;
@@ -273,7 +322,7 @@ function validateDocumentsBatchTransitionStructureFactory(
     // User must exist and confirmed
     result.merge(
       await validateIdentityExistence(
-        ownerId,
+        rawStateTransition.ownerId,
       ),
     );
 
@@ -281,11 +330,14 @@ function validateDocumentsBatchTransitionStructureFactory(
       return result;
     }
 
-    const stateTransition = DocumentsBatchTransition.fromJSON(stateTransitionJson, dataContracts);
-
     // Verify ST signature
+    const stateTransition = new DocumentsBatchTransition(rawStateTransition, dataContracts);
+
     result.merge(
-      await validateStateTransitionSignature(stateTransition, ownerId),
+      await validateStateTransitionSignature(
+        stateTransition,
+        stateTransition.getOwnerId(),
+      ),
     );
 
     return result;

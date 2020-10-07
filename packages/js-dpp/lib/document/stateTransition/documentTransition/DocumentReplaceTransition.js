@@ -13,11 +13,9 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
 
     const data = { ...rawTransition };
 
-    this.id = rawTransition.$id;
-    this.type = rawTransition.$type;
     this.revision = rawTransition.$revision;
 
-    if (rawTransition.$updatedAt) {
+    if (Object.prototype.hasOwnProperty.call(rawTransition, '$updatedAt')) {
       this.updatedAt = new Date(rawTransition.$updatedAt);
     }
 
@@ -48,7 +46,7 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
   /**
    * Get id
    *
-   * @returns {string}
+   * @returns {EncodedBuffer}
    */
   getId() {
     return this.id;
@@ -91,11 +89,27 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
   }
 
   /**
+   * Get JSON representation
+   *
+   * @return {JsonDocumentReplaceTransition}
+   */
+  toJSON() {
+    const jsonDocumentTransition = super.toJSON();
+
+    return transpileEncodedProperties(
+      this.dataContract,
+      this.getType(),
+      jsonDocumentTransition,
+      (encodedBuffer) => encodedBuffer.toString(),
+    );
+  }
+
+  /**
    * Get plain object representation
    *
    * @param {Object} [options]
    * @param {boolean} [options.encodedBuffer=false]
-   * @return {Object}
+   * @return {RawDocumentReplaceTransition}
    */
   toObject(options = {}) {
     Object.assign(
@@ -107,9 +121,7 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
     );
 
     const rawDocumentTransition = {
-      ...super.toObject(),
-      $id: this.getId(),
-      $type: this.getType(),
+      ...super.toObject(options),
       $revision: this.getRevision(),
       ...this.getData(),
     };
@@ -129,31 +141,22 @@ class DocumentReplaceTransition extends AbstractDocumentTransition {
 
     return rawDocumentTransition;
   }
-
-  /**
-   * Create document transition from JSON
-   *
-   * @param {RawDocumentReplaceTransition} rawDocumentTransition
-   * @param {DataContract} dataContract
-   *
-   * @return {DocumentReplaceTransition}
-   */
-  static fromJSON(rawDocumentTransition, dataContract) {
-    const plainObjectDocumentTransition = AbstractDocumentTransition.translateJsonToObject(
-      rawDocumentTransition, dataContract,
-    );
-
-    return new DocumentReplaceTransition(plainObjectDocumentTransition, dataContract);
-  }
 }
 
 /**
- * @typedef {Object} RawDocumentReplaceTransition
- * @property {number} $action
- * @property {string} $id
- * @property {string} $type
+ * @typedef {RawDocumentTransition & Object} RawDocumentReplaceTransition
  * @property {number} $revision
  * @property {number} [$updatedAt]
  */
+
+/**
+ * @typedef {JsonDocumentTransition & Object} JsonDocumentReplaceTransition
+ * @property {number} $revision
+ * @property {number} [$updatedAt]
+ */
+
+DocumentReplaceTransition.ENCODED_PROPERTIES = {
+  ...AbstractDocumentTransition.ENCODED_PROPERTIES,
+};
 
 module.exports = DocumentReplaceTransition;
