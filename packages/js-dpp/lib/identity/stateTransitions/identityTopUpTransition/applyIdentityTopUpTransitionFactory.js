@@ -21,7 +21,7 @@ function applyIdentityTopUpTransitionFactory(
    */
   async function applyIdentityTopUpTransition(stateTransition) {
     const output = await fetchConfirmedAssetLockTransactionOutput(
-      stateTransition.getLockedOutPoint().toString(),
+      stateTransition.getLockedOutPoint(),
     );
 
     const creditsAmount = convertSatoshiToCredits(output.satoshis);

@@ -29,10 +29,8 @@ function fetchConfirmedAssetLockTransactionOutputFactory(
     let transactionHash;
     let outputIndex;
 
-    const lockedOutBuffer = Buffer.from(lockedOutPoint, 'base64');
-
     try {
-      ({ transactionHash, outputIndex } = parseTransactionOutPointBuffer(lockedOutBuffer));
+      ({ transactionHash, outputIndex } = parseTransactionOutPointBuffer(lockedOutPoint));
     } catch (e) {
       if (e instanceof WrongOutPointError) {
         throw new InvalidIdentityAssetLockTransactionOutPointError(e.message);

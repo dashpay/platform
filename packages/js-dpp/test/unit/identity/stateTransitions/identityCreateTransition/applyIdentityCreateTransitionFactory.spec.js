@@ -47,7 +47,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
     });
 
     expect(fetchConfirmedAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
-      stateTransition.getLockedOutPoint().toString(),
+      stateTransition.getLockedOutPoint(),
     );
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
       identity,

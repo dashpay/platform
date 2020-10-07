@@ -27,7 +27,7 @@ function validateAssetLockTransactionFactory(fetchConfirmedAssetLockTransactionO
 
     try {
       output = await fetchConfirmedAssetLockTransactionOutput(
-        identityStateTransition.getLockedOutPoint().toString(),
+        identityStateTransition.getLockedOutPoint(),
       );
     } catch (e) {
       if (e instanceof ConsensusError) {

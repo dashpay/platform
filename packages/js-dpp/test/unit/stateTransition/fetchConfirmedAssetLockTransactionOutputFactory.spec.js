@@ -42,7 +42,7 @@ describe('fetchConfirmedAssetLockTransactionOutputFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchTransaction.resolves(rawTransaction);
 
-    lockedOutPoint = 'azW1UgBiB0CmdphN6of4DbT91t0Xv3/c3YUV4CnoV/kAAAAA';
+    lockedOutPoint = Buffer.from('azW1UgBiB0CmdphN6of4DbT91t0Xv3/c3YUV4CnoV/kAAAAA', 'base64');
 
     transactionHash = 'hash';
     outputIndex = 0;
@@ -67,7 +67,7 @@ describe('fetchConfirmedAssetLockTransactionOutputFactory', () => {
     const result = await fetchConfirmedAssetLockTransactionOutput(lockedOutPoint);
 
     expect(result).to.deep.equal(transaction.outputs[outputIndex]);
-    expect(parseTransactionOutPointBufferMock).to.be.calledOnceWithExactly(Buffer.from(lockedOutPoint, 'base64'));
+    expect(parseTransactionOutPointBufferMock).to.be.calledOnceWithExactly(lockedOutPoint);
     expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(transactionHash);
   });
 

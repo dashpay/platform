@@ -63,7 +63,7 @@ describe('validateAssetLockTransactionFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(fetchConfirmedAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
-      stateTransition.getLockedOutPoint().toString(),
+      stateTransition.getLockedOutPoint(),
     );
   });
 
