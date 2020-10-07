@@ -107,30 +107,24 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch identity ids mapped by related public keys
-   * using public key hashes
+   * Fetch identity ids by related public key hashes
    *
    * @param {string[]} publicKeyHashes
    *
-   * @returns {Promise<Object>}
+   * @returns {Promise<Array<string|null>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
     const transaction = this.getDBTransaction('identity');
 
-    const hashIdentityIdPairs = await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => {
-        const identityId = await this.publicKeyIdentityIdMapLevelDBRepository.fetch(
+    const identityIds = await Promise.all(
+      publicKeyHashes.map(async (publicKeyHash) => (
+        this.publicKeyIdentityIdMapLevelDBRepository.fetch(
           publicKeyHash, transaction,
-        );
-
-        return { [publicKeyHash]: identityId };
-      }),
+        )
+      )),
     );
 
-    return hashIdentityIdPairs.reduce((result, nextPair) => ({
-      ...result,
-      ...nextPair,
-    }), {});
+    return identityIds;
   }
 
   /**

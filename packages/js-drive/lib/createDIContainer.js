@@ -64,6 +64,8 @@ const identityQueryHandlerFactory = require('./abci/handlers/query/identityQuery
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
 const identityByPublicKeyHashQueryHandlerFactory = require('./abci/handlers/query/identityByPublicKeyHashQueryHandlerFactory');
 const identityIdByPublicKeyHashQueryHandlerFactory = require('./abci/handlers/query/identityIdByPublicKeyHashQueryHandlerFactory');
+const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
+const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 
@@ -400,6 +402,10 @@ async function createDIContainer(options) {
       asFunction(identityByPublicKeyHashQueryHandlerFactory).singleton(),
     identityIdByPublicKeyHashQueryHandler:
       asFunction(identityIdByPublicKeyHashQueryHandlerFactory).singleton(),
+    identitiesByPublicKeyHashesQueryHandler:
+      asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
+    identityIdsByPublicKeyHashesQueryHandler:
+      asFunction(identityIdsByPublicKeyHashesQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
       identityQueryHandler,
@@ -407,6 +413,8 @@ async function createDIContainer(options) {
       documentQueryHandler,
       identityByPublicKeyHashQueryHandler,
       identityIdByPublicKeyHashQueryHandler,
+      identitiesByPublicKeyHashesQueryHandler,
+      identityIdsByPublicKeyHashesQueryHandler,
     ) => {
       const router = findMyWay({
         ignoreTrailingSlash: true,
@@ -415,8 +423,8 @@ async function createDIContainer(options) {
       router.on('GET', '/identities/:id', identityQueryHandler);
       router.on('GET', '/dataContracts/:id', dataContractQueryHandler);
       router.on('GET', '/dataContracts/:contractId/documents/:type', documentQueryHandler);
-      router.on('GET', '/identities/by-public-key-hash/:publicKeyHash', identityByPublicKeyHashQueryHandler);
-      router.on('GET', '/identities/by-public-key-hash/:publicKeyHash/id', identityIdByPublicKeyHashQueryHandler);
+      router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
+      router.on('GET', '/identities/by-public-key-hash/id', identityIdsByPublicKeyHashesQueryHandler);
 
       // TODO: remove in the next PR, keeping for functional test to work
       router.on('GET', '/identities/by-first-public-key/:publicKeyHash', identityByPublicKeyHashQueryHandler);

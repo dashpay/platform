@@ -207,10 +207,10 @@ describe('DriveStateRepository', () => {
         publicKeyHashes,
       );
 
-      expect(result).to.deep.equal({
-        [publicKeyHashes[0]]: identity.getId(),
-        [publicKeyHashes[1]]: identity.getId(),
-      });
+      expect(result).to.have.deep.members([
+        identity.getId(),
+        identity.getId(),
+      ]);
     });
 
     it('should have null as value if pair was not found', async () => {
@@ -233,10 +233,10 @@ describe('DriveStateRepository', () => {
         publicKeyHashes,
       );
 
-      expect(result).to.deep.equal({
-        [publicKeyHashes[0]]: identity.getId(),
-        [publicKeyHashes[1]]: null,
-      });
+      expect(result).to.have.deep.members([
+        identity.getId(),
+        null,
+      ]);
     });
   });
 
