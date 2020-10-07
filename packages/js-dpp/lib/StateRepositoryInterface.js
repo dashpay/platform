@@ -109,7 +109,7 @@
  * @method
  * @name StateRepository#storeIdentityPublicKeyHashes
  * @param {Buffer} identityId
- * @param {string[]} publicKeyHashes
+ * @param {Buffer[]} publicKeyHashes
  * @returns {Promise<void>}
  */
 

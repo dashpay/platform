@@ -32,7 +32,7 @@ function validateIdentityCreateTransitionDataFactory(
 
     // Check if identity with such id already exists
     const identityId = stateTransition.getIdentityId();
-    const identity = await stateRepository.fetchIdentity(identityId.toBuffer());
+    const identity = await stateRepository.fetchIdentity(identityId);
 
     if (identity) {
       result.addError(new IdentityAlreadyExistsError(stateTransition));

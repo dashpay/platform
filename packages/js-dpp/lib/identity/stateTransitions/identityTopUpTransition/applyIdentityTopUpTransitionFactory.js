@@ -28,7 +28,7 @@ function applyIdentityTopUpTransitionFactory(
 
     const identityId = stateTransition.getIdentityId();
 
-    const identity = await stateRepository.fetchIdentity(identityId.toBuffer());
+    const identity = await stateRepository.fetchIdentity(identityId);
     identity.increaseBalance(creditsAmount);
 
     await stateRepository.storeIdentity(identity);

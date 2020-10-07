@@ -114,7 +114,7 @@ describe('IdentityFacade', () => {
         .createIdentityTopUpTransition(identity.getId(), lockedOutPoint);
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
-      expect(stateTransition.getIdentityId().toString()).to.be.equal(identity.getId().toString());
+      expect(stateTransition.getIdentityId()).to.be.deep.equal(identity.getId());
       expect(stateTransition.getLockedOutPoint().toBuffer()).to.deep.equal(lockedOutPoint);
     });
   });

@@ -43,7 +43,7 @@ function applyIdentityCreateTransitionFactory(
       .map((publicKey) => publicKey.hash());
 
     await stateRepository.storeIdentityPublicKeyHashes(
-      identity.getId().toString(),
+      identity.getId(),
       publicKeyHashes,
     );
   }
