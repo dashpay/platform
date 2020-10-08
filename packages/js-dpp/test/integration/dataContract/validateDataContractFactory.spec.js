@@ -1038,75 +1038,135 @@ describe('validateDataContractFactory', () => {
         expect(error.keyword).to.equal('maximum');
       });
 
-      it('should have `pattern` set if `contentEncoding` is set to `base64`', async () => {
-        delete rawDataContract.documents.withContentEncoding.properties.base64Field.pattern;
+      describe('byteArray', () => {
+        it('should be a boolean', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = 1;
 
-        const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+          expectJsonSchemaError(result);
 
-        const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'withContentEncoding\'].properties[\'base64Field\']');
-        expect(error.keyword).to.equal('required');
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].byteArray');
+          expect(error.keyword).to.equal('type');
+          expect(error.params.type).to.equal('boolean');
+        });
+
+        it('should equal to true', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = false;
+
+          const result = await validateDataContract(rawDataContract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].byteArray');
+          expect(error.keyword).to.equal('const');
+          expect(error.params.allowedValue).to.equal(true);
+        });
+
+        it('should be used with type `object`', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.type = 'string';
+
+          const result = await validateDataContract(rawDataContract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].type');
+          expect(error.keyword).to.equal('const');
+        });
       });
 
-      it('should have specific `pattern` set if `contentEncoding` is set to `base64`', async () => {
-        rawDataContract.documents.withContentEncoding.properties.base64Field.pattern = '.*';
+      describe('minBytesLength', () => {
+        it('should be a integer', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.minBytesLength = 'something';
 
-        const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+          expectJsonSchemaError(result);
 
-        const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal(
-          '.documents[\'withContentEncoding\'].properties[\'base64Field\'].pattern',
-        );
-        expect(error.keyword).to.equal('const');
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].minBytesLength');
+          expect(error.keyword).to.equal('type');
+          expect(error.params.type).to.equal('integer');
+        });
+
+        it('should be not less than 0', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.minBytesLength = -1;
+
+          const result = await validateDataContract(rawDataContract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].minBytesLength');
+          expect(error.keyword).to.equal('minimum');
+        });
+
+        it('should be used with `byteArray`', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField = {
+            minBytesLength: 1,
+          };
+
+          const result = await validateDataContract(rawDataContract);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\']');
+          expect(error.keyword).to.equal('dependencies');
+        });
       });
 
-      it('should have `pattern` set if `contentEncoding` is set to `base58`', async () => {
-        delete rawDataContract.documents.withContentEncoding.properties.base58Field.pattern;
+      describe('maxBytesLength', () => {
+        it('should be a integer', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.minBytesLength = 'something';
 
-        const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+          expectJsonSchemaError(result);
 
-        const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'withContentEncoding\'].properties[\'base58Field\']');
-        expect(error.keyword).to.equal('required');
-      });
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].minBytesLength');
+          expect(error.keyword).to.equal('type');
+          expect(error.params.type).to.equal('integer');
+        });
 
-      it('should have specific `pattern` set if `contentEncoding` is set to `base58`', async () => {
-        rawDataContract.documents.withContentEncoding.properties.base58Field.pattern = '.*';
+        it('should be not less than 0', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.maxBytesLength = -1;
 
-        const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+          expectJsonSchemaError(result);
 
-        const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal(
-          '.documents[\'withContentEncoding\'].properties[\'base58Field\'].pattern',
-        );
-        expect(error.keyword).to.equal('const');
-      });
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].maxBytesLength');
+          expect(error.keyword).to.equal('minimum');
+        });
 
-      it('should have contentEncoding set to either base64 or base58', async () => {
-        rawDataContract.documents.withContentEncoding.properties.base58Field.contentEncoding = 'binary';
+        it('should be used with `byteArray`', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField = {
+            maxBytesLength: 1,
+          };
 
-        const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+          expectJsonSchemaError(result);
 
-        const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal(
-          '.documents[\'withContentEncoding\'].properties[\'base58Field\'].contentEncoding',
-        );
-        expect(error.keyword).to.equal('enum');
+          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\']');
+          expect(error.keyword).to.equal('dependencies');
+        });
       });
     });
   });

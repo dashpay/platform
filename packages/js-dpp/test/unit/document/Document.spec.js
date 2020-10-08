@@ -55,11 +55,10 @@ describe('Document', () => {
               binaryObject: {
                 type: 'object',
                 properties: {
-                  base64Value: {
-                    type: 'string',
-                    contentEncoding: 'base64',
-                    maxLength: 64,
-                    pattern: '^([A-Za-z0-9+/])+$',
+                  byteArrayProperty: {
+                    type: 'object',
+                    byteArray: true,
+                    maxBytesLength: 64,
                   },
                 },
               },
@@ -329,36 +328,36 @@ describe('Document', () => {
     });
 
     it('should set binary encoded field directly', () => {
-      const path = 'dataObject.binaryObject.base64Value';
+      const path = 'dataObject.binaryObject.byteArrayProperty';
       const buffer = Buffer.alloc(36);
 
       const result = document.set(path, buffer);
 
       expect(result).to.equal(document);
 
-      const valueToSet = new EncodedBuffer(buffer, 'base64');
+      const valueToSet = new EncodedBuffer(buffer, EncodedBuffer.ENCODING.BASE64);
 
       expect(lodashSetMock).to.have.been.calledOnceWith(document.data, path, valueToSet);
     });
 
     it('should set binary field as part of object', () => {
       const path = 'dataObject.binaryObject';
-      const value = { base64Value: Buffer.alloc(36) };
+      const value = { byteArrayProperty: Buffer.alloc(36) };
 
-      lodashGetMock.returns(value.base64Value);
+      lodashGetMock.returns(value.byteArrayProperty);
 
       const result = document.set(path, value);
 
       expect(result).to.equal(document);
 
-      const valueToSet = new EncodedBuffer(value.base64Value, 'base64');
+      const valueToSet = new EncodedBuffer(value.byteArrayProperty, 'base64');
 
       expect(lodashSetMock).to.have.been.calledTwice();
       expect(lodashSetMock.getCall(0).args).to.have.deep.members(
-        [value, 'base64Value', valueToSet],
+        [value, 'byteArrayProperty', valueToSet],
       );
       expect(lodashSetMock.getCall(1).args).to.have.deep.members(
-        [document.data, path, { base64Value: valueToSet }],
+        [document.data, path, { byteArrayProperty: valueToSet }],
       );
     });
   });

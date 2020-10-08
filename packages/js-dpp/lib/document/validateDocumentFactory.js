@@ -1,5 +1,3 @@
-const encodeObjectProperties = require('../util/encoding/encodeObjectProperties');
-
 const baseDocumentSchema = require('../../schema/document/documentBase');
 
 const ValidationResult = require('../validation/ValidationResult');
@@ -42,13 +40,6 @@ module.exports = function validateDocumentFactory(
       return result;
     }
 
-    const encodedUserProperties = dataContract.getEncodedProperties(rawDocument.$type);
-
-    const jsonDocument = encodeObjectProperties(
-      rawDocument,
-      encodedUserProperties,
-    );
-
     const enrichedDataContract = enrichDataContractWithBaseSchema(
       dataContract,
       baseDocumentSchema,
@@ -66,7 +57,7 @@ module.exports = function validateDocumentFactory(
     result.merge(
       validator.validate(
         documentSchemaRef,
-        jsonDocument,
+        rawDocument,
         additionalSchemas,
       ),
     );

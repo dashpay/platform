@@ -1,7 +1,7 @@
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
-const getEncodedPropertiesFromSchema = require('./getEncodedPropertiesFromSchema');
+const getBinaryPropertiesFromSchema = require('./getBinaryPropertiesFromSchema');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const EncodedBuffer = require('../util/encoding/EncodedBuffer');
@@ -20,7 +20,7 @@ class DataContract {
     this.setDocuments(rawDataContract.documents);
     this.setDefinitions(rawDataContract.definitions);
 
-    this.encodedProperties = {};
+    this.binaryProperties = {};
   }
 
   /**
@@ -168,20 +168,20 @@ class DataContract {
    *
    * @return {Object}
    */
-  getEncodedProperties(type) {
+  getBinaryProperties(type) {
     if (!this.isDocumentDefined(type)) {
       throw new InvalidDocumentTypeError(type, this);
     }
 
-    if (this.encodedProperties[type]) {
-      return this.encodedProperties[type];
+    if (this.binaryProperties[type]) {
+      return this.binaryProperties[type];
     }
 
-    this.encodedProperties[type] = getEncodedPropertiesFromSchema(
+    this.binaryProperties[type] = getBinaryPropertiesFromSchema(
       this.documents[type],
     );
 
-    return this.encodedProperties[type];
+    return this.binaryProperties[type];
   }
 
   /**

@@ -21,7 +21,6 @@ const replaceTransitionSchema = require('../../../../../schema/document/stateTra
 
 const generateDocumentId = require('../../../generateDocumentId');
 const entropy = require('../../../../util/entropy');
-const encodeObjectProperties = require('../../../../util/encoding/encodeObjectProperties');
 
 const documentsBatchTransitionSchema = require('../../../../../schema/document/stateTransition/documentsBatch');
 
@@ -107,14 +106,6 @@ function validateDocumentsBatchTransitionStructureFactory(
         return;
       }
 
-      // Convert document transition to JSON for JSON Schema validation
-      const encodedUserProperties = dataContract.getEncodedProperties(rawDocumentTransition.$type);
-
-      const jsonDocumentTransition = encodeObjectProperties(
-        rawDocumentTransition,
-        encodedUserProperties,
-      );
-
       // Validate document schema
       switch (rawDocumentTransition.$action) {
         case ACTIONS.CREATE:
@@ -133,7 +124,7 @@ function validateDocumentsBatchTransitionStructureFactory(
 
           const schemaResult = jsonSchemaValidator.validate(
             documentSchemaRef,
-            jsonDocumentTransition,
+            rawDocumentTransition,
             additionalSchemas,
           );
 
@@ -173,7 +164,7 @@ function validateDocumentsBatchTransitionStructureFactory(
           result.merge(
             jsonSchemaValidator.validate(
               baseTransitionSchema,
-              jsonDocumentTransition,
+              rawDocumentTransition,
             ),
           );
 
@@ -182,7 +173,7 @@ function validateDocumentsBatchTransitionStructureFactory(
           result.addError(
             new InvalidDocumentTransitionActionError(
               rawDocumentTransition.$action,
-              jsonDocumentTransition,
+              rawDocumentTransition,
             ),
           );
       }

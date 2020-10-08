@@ -25,9 +25,8 @@ describe('Document', () => {
           getDocumentsFixture.ownerId, EncodedBuffer.ENCODING.BASE58,
         ).toString(),
         $revision: 1,
-        $type: 'withContentEncoding',
-        base64Field: document.getData().base64Field.toString(),
-        base58Field: document.getData().base58Field.toString(),
+        $type: 'withByteArrays',
+        byteArrayField: document.getData().byteArrayField.toString(),
       });
     });
   });
@@ -42,9 +41,8 @@ describe('Document', () => {
         $id: document.getId(),
         $ownerId: getDocumentsFixture.ownerId,
         $revision: 1,
-        $type: 'withContentEncoding',
-        base64Field: document.get('base64Field'),
-        base58Field: document.get('base58Field'),
+        $type: 'withByteArrays',
+        byteArrayField: document.get('byteArrayField'),
       });
     });
 
@@ -57,13 +55,11 @@ describe('Document', () => {
         $id: document.getId(),
         $ownerId: getDocumentsFixture.ownerId,
         $revision: 1,
-        $type: 'withContentEncoding',
-        base64Field: document.getData().base64Field,
-        base58Field: document.getData().base58Field,
+        $type: 'withByteArrays',
+        byteArrayField: document.getData().byteArrayField,
       });
 
-      expect(result.base64Field).to.be.an.instanceOf(EncodedBuffer);
-      expect(result.base58Field).to.be.an.instanceOf(EncodedBuffer);
+      expect(result.byteArrayField).to.be.an.instanceOf(EncodedBuffer);
     });
   });
 

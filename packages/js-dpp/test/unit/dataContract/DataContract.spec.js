@@ -16,19 +16,19 @@ describe('DataContract', () => {
   let ownerId;
   let entropy;
   let contractId;
-  let getEncodedPropertiesFromSchemaMock;
+  let getBinaryPropertiesFromSchemaMock;
 
   beforeEach(function beforeEach() {
     hashMock = this.sinonSandbox.stub();
     const serializerMock = { encode: this.sinonSandbox.stub() };
     encodeMock = serializerMock.encode;
 
-    getEncodedPropertiesFromSchemaMock = this.sinonSandbox.stub();
+    getBinaryPropertiesFromSchemaMock = this.sinonSandbox.stub();
 
     DataContract = rewiremock.proxy('../../../lib/dataContract/DataContract', {
       '../../../lib/util/hash': hashMock,
       '../../../lib/util/serializer': serializerMock,
-      '../../../lib/dataContract/getEncodedPropertiesFromSchema': getEncodedPropertiesFromSchemaMock,
+      '../../../lib/dataContract/getBinaryPropertiesFromSchema': getBinaryPropertiesFromSchemaMock,
     });
 
     documentType = 'niceDocument';
@@ -45,10 +45,10 @@ describe('DataContract', () => {
       [documentType]: documentSchema,
     };
 
-    getEncodedPropertiesFromSchemaMock.withArgs(documentSchema)
+    getBinaryPropertiesFromSchemaMock.withArgs(documentSchema)
       .returns({
         'firstLevel.secondLevel': {
-          contentEncoding: 'base64',
+          byteArray: true,
         },
       });
 
@@ -331,29 +331,29 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#getEncodedProperties', () => {
+  describe('#getBinaryProperties', () => {
     it('should return flat map of properties with `contentEncoding` keywords', () => {
-      const result = dataContract.getEncodedProperties(documentType);
+      const result = dataContract.getBinaryProperties(documentType);
       expect(result).to.deep.equal(
-        { 'firstLevel.secondLevel': { contentEncoding: 'base64' } },
+        { 'firstLevel.secondLevel': { byteArray: true } },
       );
-      expect(getEncodedPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
+      expect(getBinaryPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
     });
 
     it('should return cached flat map of properties with `contentEncoding` keywords', () => {
-      dataContract.getEncodedProperties(documentType);
+      dataContract.getBinaryProperties(documentType);
 
-      const result = dataContract.getEncodedProperties(documentType);
+      const result = dataContract.getBinaryProperties(documentType);
 
       expect(result).to.deep.equal(
-        { 'firstLevel.secondLevel': { contentEncoding: 'base64' } },
+        { 'firstLevel.secondLevel': { byteArray: true } },
       );
-      expect(getEncodedPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
+      expect(getBinaryPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
     });
 
     it('should throw an error if document type is not found', () => {
       try {
-        dataContract.getEncodedProperties('unknown');
+        dataContract.getBinaryProperties('unknown');
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidDocumentTypeError);

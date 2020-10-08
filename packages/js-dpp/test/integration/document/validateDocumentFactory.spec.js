@@ -417,11 +417,11 @@ describe('validateDocumentFactory', () => {
     expect(error.getRawDocument()).to.equal(rawDocument);
   });
 
-  it('return invalid result if binary field exceeds `maxLength`', () => {
+  it('return invalid result if binary field exceeds `maxBytesLength`', () => {
     // eslint-disable-next-line prefer-destructuring
     rawDocument = getDocumentsFixture(dataContract)[8].toObject();
 
-    rawDocument.base64Field = Buffer.alloc(32);
+    rawDocument.byteArrayField = Buffer.alloc(32);
 
     const result = validateDocument(rawDocument, dataContract);
 
@@ -429,8 +429,8 @@ describe('validateDocumentFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.dataPath).to.equal('.base64Field');
-    expect(error.keyword).to.equal('maxLength');
+    expect(error.dataPath).to.equal('.byteArrayField');
+    expect(error.keyword).to.equal('maxBytesLength');
   });
 
   it('should return valid result is a document is valid', () => {

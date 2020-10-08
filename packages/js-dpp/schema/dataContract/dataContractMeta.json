@@ -146,57 +146,34 @@
         "format": {
           "$ref": "http://json-schema.org/draft-07/schema#/properties/format"
         },
-        "contentEncoding": {
-          "type": "string",
-          "enum": ["base58", "base64"]
+        "contentMediaType": {
+          "$ref": "http://json-schema.org/draft-07/schema#/properties/contentMediaType"
+        },
+        "byteArray": {
+          "type": "boolean",
+          "const": true
+        },
+        "maxBytesLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minBytesLength": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "dependencies": {
-        "contentEncoding": {
-          "description": "force to use either base64 pattern without padding or base58",
-          "allOf": [
-            {
-              "if": {
-                "properties": {
-                  "contentEncoding": {
-                    "const": "base58"
-                  }
-                }
-              },
-              "then": {
-                "properties": {
-                  "pattern": {
-                    "type": "string",
-                    "const": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$"
-                  }
-                },
-                "required": [
-                  "pattern"
-                ]
-              }
-            },
-            {
-              "if": {
-                "properties": {
-                  "contentEncoding": {
-                    "const": "base64"
-                  }
-                }
-              },
-              "then": {
-                "properties": {
-                  "pattern": {
-                    "type": "string",
-                    "const": "^([A-Za-z0-9+/])+$"
-                  }
-                },
-                "required": [
-                  "pattern"
-                ]
-              }
+        "byteArray": {
+          "description": "should be used only with object type",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "object"
             }
-          ]
+          }
         },
+        "maxBytesLength": ["byteArray"],
+        "minBytesLength": ["byteArray"],
         "uniqueItems": {
           "description": "prevent slow validation of large non-scalar arrays",
           "if": {
@@ -306,7 +283,14 @@
               }
             },
             "not": {
-              "required": ["$ref"]
+              "anyOf": [
+                {
+                  "required": ["$ref"]
+                },
+                {
+                  "required": ["byteArray"]
+                }
+              ]
             }
           },
           "then": {

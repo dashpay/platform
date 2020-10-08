@@ -44,7 +44,7 @@ class DocumentFactory {
     }
 
     const documentEntropy = entropy.generate();
-    const dataContractId = dataContract.getId().toBuffer();
+    const dataContractId = dataContract.getId();
 
     const id = generateDocumentId(
       dataContractId,

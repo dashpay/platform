@@ -1,8 +1,8 @@
-const getEncodedPropertiesFromSchema = require(
-  '../../../lib/dataContract/getEncodedPropertiesFromSchema',
+const getBinaryPropertiesFromSchema = require(
+  '../../../lib/dataContract/getBinaryPropertiesFromSchema',
 );
 
-describe('getEncodedPropertiesFromSchema', () => {
+describe('getBinaryPropertiesFromSchema', () => {
   let documentSchema;
 
   beforeEach(() => {
@@ -11,9 +11,9 @@ describe('getEncodedPropertiesFromSchema', () => {
         simple: {
           type: 'string',
         },
-        withEncoding: {
-          type: 'string',
-          contentEncoding: 'base64',
+        withByteArray: {
+          type: 'object',
+          byteArray: true,
         },
         nestedObject: {
           type: 'object',
@@ -21,9 +21,9 @@ describe('getEncodedPropertiesFromSchema', () => {
             simple: {
               type: 'string',
             },
-            withEncoding: {
-              type: 'string',
-              contentEncoding: 'base64',
+            withByteArray: {
+              type: 'object',
+              byteArray: true,
             },
           },
         },
@@ -35,9 +35,9 @@ describe('getEncodedPropertiesFromSchema', () => {
               simple: {
                 type: 'string',
               },
-              withEncoding: {
-                type: 'string',
-                contentEncoding: 'base64',
+              withByteArray: {
+                type: 'object',
+                byteArray: true,
               },
             },
           },
@@ -51,9 +51,9 @@ describe('getEncodedPropertiesFromSchema', () => {
                 simple: {
                   type: 'string',
                 },
-                withEncoding: {
-                  type: 'string',
-                  contentEncoding: 'base64',
+                withByteArray: {
+                  type: 'object',
+                  byteArray: true,
                 },
               },
             },
@@ -69,9 +69,9 @@ describe('getEncodedPropertiesFromSchema', () => {
                     simple: {
                       type: 'string',
                     },
-                    withEncoding: {
-                      type: 'string',
-                      contentEncoding: 'base64',
+                    withByteArray: {
+                      type: 'object',
+                      byteArray: true,
                     },
                   },
                 },
@@ -84,20 +84,20 @@ describe('getEncodedPropertiesFromSchema', () => {
   });
 
   it('should return an empty object if not `properties` property found', () => {
-    const result = getEncodedPropertiesFromSchema({});
+    const result = getBinaryPropertiesFromSchema({});
 
     expect(result).to.deep.equal({});
   });
 
   it('should return flat object with properties having contentEncoding keyword', () => {
-    const result = getEncodedPropertiesFromSchema(documentSchema);
+    const result = getBinaryPropertiesFromSchema(documentSchema);
 
     expect(result).to.deep.equal({
-      withEncoding: { type: 'string', contentEncoding: 'base64' },
-      'nestedObject.withEncoding': { type: 'string', contentEncoding: 'base64' },
-      'arrayOfObject.withEncoding': { type: 'string', contentEncoding: 'base64' },
-      'arrayOfObjects[0].withEncoding': { type: 'string', contentEncoding: 'base64' },
-      'arrayOfObjects[2][0].withEncoding': { type: 'string', contentEncoding: 'base64' },
+      withByteArray: { type: 'object', byteArray: true },
+      'nestedObject.withByteArray': { type: 'object', byteArray: true },
+      'arrayOfObject.withByteArray': { type: 'object', byteArray: true },
+      'arrayOfObjects[0].withByteArray': { type: 'object', byteArray: true },
+      'arrayOfObjects[2][0].withByteArray': { type: 'object', byteArray: true },
     });
   });
 });

@@ -202,13 +202,13 @@ class Document {
   set(path, value) {
     let encodedValue = cloneDeepRawData(value);
 
-    const encodedProperties = this.dataContract.getEncodedProperties(
+    const encodedProperties = this.dataContract.getBinaryProperties(
       this.getType(),
     );
 
-    Object.entries(encodedProperties).forEach(([propertyPath, { contentEncoding }]) => {
+    Object.entries(encodedProperties).forEach(([propertyPath]) => {
       if (path === propertyPath) {
-        encodedValue = EncodedBuffer.from(value, contentEncoding);
+        encodedValue = EncodedBuffer.from(value, EncodedBuffer.ENCODING.BASE64);
       } else if (propertyPath.includes(path)) {
         // in case of object we need to remove
         // first dot as we removed beginning of the path
@@ -217,7 +217,11 @@ class Document {
         const buffer = lodashGet(encodedValue, partialPath);
 
         if (buffer !== undefined) {
-          lodashSet(encodedValue, partialPath, EncodedBuffer.from(buffer, contentEncoding));
+          lodashSet(
+            encodedValue,
+            partialPath,
+            EncodedBuffer.from(buffer, EncodedBuffer.ENCODING.BASE64),
+          );
         }
       }
     });

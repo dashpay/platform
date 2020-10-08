@@ -6,7 +6,7 @@
  *
  * @return {Object}
  */
-function buildEncodedPropertiesMap(schema, propertyName = undefined) {
+function buildBinaryPropertiesMap(schema, propertyName = undefined) {
   const propertyNames = Object.keys(schema.properties);
 
   // We iterate over every property defined in the document schema while
@@ -23,7 +23,8 @@ function buildEncodedPropertiesMap(schema, propertyName = undefined) {
 
     const propertyPath = propertyName ? `${propertyName}.${name}` : name;
 
-    if (property.type === 'object') {
+    if (property.type === 'object'
+      && Object.prototype.hasOwnProperty.call(property, 'properties')) {
       // In case property is an object we recursively call build method
       // passing property as schema and assigning property path to current property name,
       // this will allow for property name chaining e.g. `first.second: value`
@@ -32,11 +33,12 @@ function buildEncodedPropertiesMap(schema, propertyName = undefined) {
       // eslint-disable-next-line no-param-reassign
       map = {
         ...map,
-        ...buildEncodedPropertiesMap(property, propertyPath),
+        ...buildBinaryPropertiesMap(property, propertyPath),
       };
     }
 
-    if (property.type === 'array' && property.items.type === 'object') {
+    if (property.type === 'array' && property.items.type === 'object'
+      && Object.prototype.hasOwnProperty.call(property.items, 'properties')) {
       // In case property is an array of a single type we recursively call build method
       // passing array `item` property as schema and assigning property path to current
       // property name, this will allow for property name chaining e.g. `first.second: value`
@@ -45,7 +47,7 @@ function buildEncodedPropertiesMap(schema, propertyName = undefined) {
       // eslint-disable-next-line no-param-reassign
       map = {
         ...map,
-        ...buildEncodedPropertiesMap(property.items, propertyPath),
+        ...buildBinaryPropertiesMap(property.items, propertyPath),
       };
     }
 
@@ -76,11 +78,11 @@ function buildEncodedPropertiesMap(schema, propertyName = undefined) {
       // eslint-disable-next-line no-param-reassign
       map = {
         ...map,
-        ...buildEncodedPropertiesMap(arraySchema),
+        ...buildBinaryPropertiesMap(arraySchema),
       };
     }
 
-    if (property.contentEncoding !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(property, 'byteArray')) {
       // eslint-disable-next-line no-param-reassign
       map[propertyPath] = property;
     }
@@ -96,12 +98,12 @@ function buildEncodedPropertiesMap(schema, propertyName = undefined) {
  *
  * @return {Object}
  */
-function getEncodedPropertiesFromSchema(documentSchema) {
+function getBinaryPropertiesFromSchema(documentSchema) {
   if (!documentSchema.properties) {
     return {};
   }
 
-  return buildEncodedPropertiesMap(documentSchema);
+  return buildBinaryPropertiesMap(documentSchema);
 }
 
-module.exports = getEncodedPropertiesFromSchema;
+module.exports = getBinaryPropertiesFromSchema;

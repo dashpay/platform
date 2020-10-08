@@ -1,6 +1,10 @@
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
+
 const cloneDeepRawData = require('../cloneDeepRawData');
+
+const EncodedBuffer = require('./EncodedBuffer');
+
 /**
  *
  * @param {DataContract} dataContract
@@ -12,21 +16,17 @@ const cloneDeepRawData = require('../cloneDeepRawData');
 function transpileEncodedProperties(dataContract, type, originalObject, transpileFunction) {
   const clonedObject = cloneDeepRawData(originalObject);
 
-  const encodedProperties = dataContract.getEncodedProperties(type);
+  const encodedProperties = dataContract.getBinaryProperties(type);
 
   Object.keys(encodedProperties)
     .forEach((propertyPath) => {
-      const property = encodedProperties[propertyPath];
-
-      if (property.contentEncoding) {
-        const value = lodashGet(clonedObject, propertyPath);
-        if (value !== undefined) {
-          lodashSet(
-            clonedObject,
-            propertyPath,
-            transpileFunction(value, property.contentEncoding, propertyPath),
-          );
-        }
+      const value = lodashGet(clonedObject, propertyPath);
+      if (value !== undefined) {
+        lodashSet(
+          clonedObject,
+          propertyPath,
+          transpileFunction(value, EncodedBuffer.ENCODING.BASE64, propertyPath),
+        );
       }
     });
 
