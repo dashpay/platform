@@ -1,4 +1,4 @@
-## Persistence
+# Persistence
 
 Wallet-lib allows the use of a persistence adapter in order to store information fetched via the transporter in order to provide faster loading on later uses.  
 
@@ -10,7 +10,7 @@ This adapter can be useful for multiple cases, for instance:
 When no persistence is set, Wallet-lib will use by default, an In Memory adapter, which won't persist information except in local RAM.  
 A message will warn you about this on starting up, and won't be displayed with a properly set adapter.
 
-### Create your own persistence adapter
+## Create your own persistence adapter
 
 By just providing a class or instance of a class containing a certain minimal set of methods, one can provide an adapter for various databases, remote services or file storage.  
 

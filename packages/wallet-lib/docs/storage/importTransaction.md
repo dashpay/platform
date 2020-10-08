@@ -6,7 +6,7 @@ Parameters:
 
 | parameters             | type              | required       | Description                                                             |  
 |------------------------|-------------------|----------------| ------------------------------------------------------------------------|
-| **transaction**        | Object            | yes            | The transaction to import to the store                                  |
+| **transaction**        | Object/Transaction| yes            | The transaction to import to the store                                  |
 
 
 Returns: Boolean     

@@ -1,3 +1,5 @@
+# Using a plugin 
+
 ## About plugins
 
 In order to add features and logic to the Wallet-library and be able to share independant module and request them together. 

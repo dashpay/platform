@@ -2,13 +2,25 @@ const { Transaction } = require('@dashevo/dashcore-lib');
 const { Output } = Transaction;
 const { InvalidDashcoreTransaction } = require('../../../errors');
 const { FETCHED_CONFIRMED_TRANSACTION } = require('../../../EVENTS');
+
+const parseStringifiedTransaction = (stringified) => new Transaction(stringified);
 /**
  * This method is used to import a transaction in Store.
- * @param {Transaction} transaction - A valid Transaction
+ * @param {Transaction/String} transaction - A valid Transaction
  * @return void
  */
 const importTransaction = function importTransaction(transaction) {
-  if (!(transaction instanceof Transaction)) throw new InvalidDashcoreTransaction(transaction);
+  if (!(transaction instanceof Transaction)) {
+    try {
+      // eslint-disable-next-line no-param-reassign
+      transaction = parseStringifiedTransaction(transaction);
+      if (!transaction.hash || !transaction.inputs.length || !transaction.outputs.length) {
+        throw new InvalidDashcoreTransaction(transaction);
+      }
+    } catch (e) {
+      throw new InvalidDashcoreTransaction(transaction);
+    }
+  }
   const { store, network, mappedAddress } = this;
   const { transactions } = store;
   const { inputs, outputs } = transaction;

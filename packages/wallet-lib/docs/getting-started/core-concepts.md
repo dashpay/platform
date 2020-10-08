@@ -1,4 +1,4 @@
-## Core concepts
+# Core concepts
 
 The [Dash Core Developer Guide](https://dashcore.readme.io/docs/core-guide-introduction) will answer most of the questions about the fundamentals of Dash.   
 

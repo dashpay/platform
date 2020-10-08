@@ -1,4 +1,4 @@
-## Writing a new plugin
+# Writing a new plugin
 
 There is no control nor monitoring over third-party plugin. So anyone can write it's own plugin. 
 

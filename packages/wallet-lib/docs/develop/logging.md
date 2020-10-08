@@ -1,8 +1,8 @@
-## Logging
+# Logging
 
 Wallet-lib will log multiple events happening which might help you to debug, or get a better understanding at what is happening internally. 
 
-### Log levels 
+## Log levels 
 
 These are the different levels used internally sorted from the least verbose to the most.
  
@@ -12,7 +12,7 @@ These are the different levels used internally sorted from the least verbose to 
 - `debug` - Inform about basic steps (plugin initialisations, ...)
 - `silly` - Inform about everything going on (each transporter call, storage and worker execution,...)
 
-### Set a log level 
+## Set a log level 
 
 In order to control the granularity of the logger, simply put the environment variable `LOG_LEVEL` at the desired level. 
 

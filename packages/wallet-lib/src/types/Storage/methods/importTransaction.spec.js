@@ -43,19 +43,24 @@ const tx = new Transaction({
 describe('Storage - importTransaction', function suite() {
   this.timeout(10000);
   it('should throw on failed import', () => {
+    const mockStorage = {
+      store:{
+        transactions:{}
+      }
+    }
     const mockOpts1 = {};
     const mockOpts2 = '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23';
     const mockOpts3 = {'688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23': {}};
     const mockOpts4 = {txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23'};
     const mockOpts5 = {txid: '688dd18dea2b6f3c2d3892d13b41922fde7be01cd6040be9f3568dafbf9b1a23', vin: []};
 
-    const exceptedException1 = 'A Dashcore transaction object is required';
+    const exceptedException1 = 'A Dashcore Transaction object or valid rawTransaction is required';
 
-    expect(() => importTransaction.call({}, mockOpts1)).to.throw(exceptedException1);
-    expect(() => importTransaction.call({}, mockOpts2)).to.throw(exceptedException1);
-    expect(() => importTransaction.call({}, mockOpts3)).to.throw(exceptedException1);
-    expect(() => importTransaction.call({}, mockOpts4)).to.throw(exceptedException1);
-    expect(() => importTransaction.call({}, mockOpts5)).to.throw(exceptedException1);
+    expect(() => importTransaction.call(mockStorage, mockOpts1)).to.throw(exceptedException1);
+    expect(() => importTransaction.call(mockStorage, mockOpts2)).to.throw(exceptedException1);
+    expect(() => importTransaction.call(mockStorage, mockOpts3)).to.throw(exceptedException1);
+    expect(() => importTransaction.call(mockStorage, mockOpts4)).to.throw(exceptedException1);
+    expect(() => importTransaction.call(mockStorage, mockOpts5)).to.throw(exceptedException1);
   });
   it('should import a transaction', () => {
     const mockedSearchAddress = () => ({found: false});

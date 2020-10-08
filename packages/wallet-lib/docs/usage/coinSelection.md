@@ -1,10 +1,10 @@
-## Coin Selection
+# Coin Selection
 
-### Purpose 
+## Purpose 
 
 In order to decide which set of input to use for making payments, wallet-lib use the coin selection helper which will decide which unspent transaction output (UTXO) to select.  
 
-### Strategies
+## Strategies
 
 There are multiples strategy algorithms provided with Wallet-lib, that you can chose from. 
 
@@ -30,7 +30,7 @@ const coinSelection = coinSelection(utxosList, outputsList);
 const selectedUTXO = coinSelection(utxosList, outputsList);
 ```
 
-#### Implements your own algorithm
+## Implements your own algorithm
 
 By creating a simple function algorithm that you pass to the createTransaction parameter, you can provide your own algorithm that will be used to the coinSelection.   
 

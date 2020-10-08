@@ -1,4 +1,4 @@
-## Wallet workers
+# Wallet workers
 
 In order to perform it's duty of being in-sync with the network and to always keep a pre-generated set of unused addresses, wallet-lib uses internally two workers : 
 - Sync Worker : Used to keep in sync with the network (utxo, received transactions,...)

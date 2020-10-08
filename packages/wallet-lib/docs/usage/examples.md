@@ -1,6 +1,6 @@
 # Examples
 
-## Table of Contents
+### Table of Contents
 
 - [Offline / Cold-wallet usage](#offline-cold-wallet-usage)
 - [Server usage](#server-usage)

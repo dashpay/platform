@@ -1,6 +1,6 @@
 # Quick start
 
-### ES5/ES6 via NPM
+## ES5/ES6 via NPM
 
 In order to use this library in Node, you will need to add it to your project as a dependency.
 
@@ -10,7 +10,7 @@ Having [NodeJS](https://nodejs.org/) installed, just type in your terminal :
 npm install @dashevo/wallet-lib
 ```
 
-### CDN Standalone
+## CDN Standalone
 
 For browser usage, you can also directly rely on unpkg for wallet-lib, and [localForage](https://github.com/localForage/localForage) as adapter for persistence.  
 
