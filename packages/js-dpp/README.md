@@ -22,9 +22,7 @@ npm install @dashevo/dpp
 
 ## Usage
 
-```sh
-npm start
-```
+See [documentation](https://dashevo.github.io/js-dpp/usage/DashPlatformProtocol) 
 
 ## Maintainer
 

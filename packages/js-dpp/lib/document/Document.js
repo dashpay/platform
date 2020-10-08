@@ -365,7 +365,7 @@ class Document {
   /**
    * Create document from JSON
    *
-   * @param {RawDocument} jsonDocument
+   * @param {JsonDocument} jsonDocument
    * @param {DataContract} dataContract
    *
    * @return {Document}

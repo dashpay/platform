@@ -50,7 +50,7 @@ class DocumentFacade {
    * @param {Object} options
    * @param {boolean} [options.skipValidation=false]
    * @param {boolean} [options.action]
-   * @return {Document}
+   * @return {Promise<Document>}
    */
   async createFromObject(rawDocument, options = {}) {
     if (!this.stateRepository && !options.skipValidation) {
@@ -103,7 +103,7 @@ class DocumentFacade {
    * Validate document
    *
    * @param {Document|RawDocument} document
-   * @return {ValidationResult}
+   * @return {<ValidationResult>}
    */
   async validate(document) {
     if (!this.stateRepository) {
