@@ -23,7 +23,6 @@ const ConsensusError = require('../../../../../lib/errors/ConsensusError');
 
 const InvalidIdentityPublicKeyTypeError = require('../../../../../lib/errors/InvalidIdentityPublicKeyTypeError');
 const InvalidDataContractIdError = require('../../../../../lib/errors/InvalidDataContractIdError');
-const InvalidDataContractEntropyError = require('../../../../../lib/errors/InvalidDataContractEntropyError');
 
 describe('validateDataContractCreateTransitionStructureFactory', () => {
   let validateDataContractMock;
@@ -295,26 +294,6 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       expect(error.dataPath).to.equal('.entropy');
       expect(error.keyword).to.equal('maxBytesLength');
       expect(error.params.limit).to.equal(35);
-    });
-
-    it('should return invalid result on invalid entropy', async () => {
-      const dataContractResult = new ValidationResult();
-
-      validateDataContractMock.returns(dataContractResult);
-
-      rawStateTransition.entropy = Buffer.alloc(34);
-
-      const validateSignatureResult = new ValidationResult();
-      validateStateTransitionSignatureMock.resolves(validateSignatureResult);
-
-      const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
-
-      expectValidationError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.be.an.instanceOf(InvalidDataContractEntropyError);
-      expect(error.getRawDataContract()).to.deep.equal(rawStateTransition.dataContract);
     });
   });
 

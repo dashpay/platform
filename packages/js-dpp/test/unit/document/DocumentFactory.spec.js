@@ -27,7 +27,7 @@ const generateRandomId = require('../../../lib/test/utils/generateRandomId');
 
 describe('DocumentFactory', () => {
   let decodeMock;
-  let generateMock;
+  let generateEntropyMock;
   let validateDocumentMock;
   let fetchAndValidateDataContractMock;
   let DocumentFactory;
@@ -49,7 +49,7 @@ describe('DocumentFactory', () => {
     rawDocument = document.toObject();
 
     decodeMock = this.sinonSandbox.stub();
-    generateMock = this.sinonSandbox.stub();
+    generateEntropyMock = this.sinonSandbox.stub();
     validateDocumentMock = this.sinonSandbox.stub();
 
     const fetchContractResult = new ValidationResult();
@@ -59,7 +59,7 @@ describe('DocumentFactory', () => {
 
     DocumentFactory = rewiremock.proxy('../../../lib/document/DocumentFactory', {
       '../../../lib/util/serializer': { decode: decodeMock },
-      '../../../lib/util/entropy': { generate: generateMock },
+      '../../../lib/util/generateEntropy': generateEntropyMock,
       '../../../lib/document/Document': Document,
       '../../../lib/document/stateTransition/DocumentsBatchTransition': DocumentsBatchTransition,
     });
@@ -86,7 +86,7 @@ describe('DocumentFactory', () => {
       ownerId = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
       dataContract.id = EncodedBuffer.from(contractId, EncodedBuffer.ENCODING.BASE58);
 
-      generateMock.returns(entropy);
+      generateEntropyMock.returns(entropy);
 
       const newDocument = factory.create(
         dataContract,
@@ -104,7 +104,7 @@ describe('DocumentFactory', () => {
       expect(newDocument.getDataContractId().toBuffer()).to.deep.equal(contractId);
       expect(newDocument.getOwnerId().toBuffer()).to.deep.equal(ownerId);
 
-      expect(generateMock).to.have.been.calledOnce();
+      expect(generateEntropyMock).to.have.been.calledOnce();
       expect(newDocument.getEntropy()).to.deep.equal(entropy);
 
       expect(newDocument.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);

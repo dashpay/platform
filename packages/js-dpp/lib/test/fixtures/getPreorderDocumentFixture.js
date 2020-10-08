@@ -1,7 +1,7 @@
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
 const hash = require('../../util/hash');
-const entropy = require('../../util/entropy');
+const generateEntropy = require('../../util/generateEntropy');
 
 const generateRandomId = require('../utils/generateRandomId');
 
@@ -25,7 +25,7 @@ function getPreorderDocumentFixture(options = {}) {
     label,
     normalizedLabel,
     parentDomainHash: '',
-    preorderSalt: entropy.generate(),
+    preorderSalt: generateEntropy(),
     records: {
       dashIdentity: ownerId,
     },

@@ -7,7 +7,7 @@ const DataContractCreateTransition = require('./stateTransition/DataContractCrea
 
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
 
-const entropy = require('../util/entropy');
+const generateEntropy = require('../util/generateEntropy');
 
 const { decode } = require('../util/serializer');
 
@@ -27,7 +27,7 @@ class DataContractFactory {
    * @return {DataContract}
    */
   create(ownerId, documents) {
-    const dataContractEntropy = entropy.generate();
+    const dataContractEntropy = generateEntropy();
 
     const dataContractId = generateDataContractId(ownerId, dataContractEntropy);
 

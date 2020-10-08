@@ -25,7 +25,6 @@ const createStateRepositoryMock = require('../../../../../../lib/test/mocks/crea
 const ConsensusError = require('../../../../../../lib/errors/ConsensusError');
 const DuplicateDocumentTransitionsError = require('../../../../../../lib/errors/DuplicateDocumentTransitionsError');
 const InvalidDocumentTransitionIdError = require('../../../../../../lib/errors/InvalidDocumentTransitionIdError');
-const InvalidDocumentTransitionEntropyError = require('../../../../../../lib/errors/InvalidDocumentTransitionEntropyError');
 const InvalidIdentityPublicKeyTypeError = require('../../../../../../lib/errors/InvalidIdentityPublicKeyTypeError');
 const DataContractNotPresentError = require('../../../../../../lib/errors/DataContractNotPresentError');
 const MissingDataContractIdError = require('../../../../../../lib/errors/MissingDataContractIdError');
@@ -725,33 +724,6 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             expect(error.dataPath).to.equal('.$entropy');
             expect(error.keyword).to.equal('maxBytesLength');
-          });
-
-          it('should be valid generated entropy', async () => {
-            const [firstTransition] = rawStateTransition.transitions;
-
-            firstTransition.$entropy = Buffer.alloc(32); // invalid generated entropy
-
-            const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
-
-            expect(result.isValid()).to.be.false();
-
-            const [, error] = result.getErrors();
-
-            expect(error).to.be.an.instanceOf(InvalidDocumentTransitionEntropyError);
-
-            expect(error.getRawDocumentTransition()).to.deep.equal(firstTransition);
-
-            expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-              dataContract.getId().toBuffer(),
-            );
-
-            expect(enrichSpy).to.have.been.calledThrice();
-
-            expect(findDuplicatesByIdMock).to.have.not.been.called();
-            expect(findDuplicatesByIndicesMock).to.have.not.been.called();
-            expect(validateIdentityExistenceMock).to.have.not.been.called();
-            expect(validateStateTransitionSignatureMock).to.have.not.been.called();
           });
         });
       });

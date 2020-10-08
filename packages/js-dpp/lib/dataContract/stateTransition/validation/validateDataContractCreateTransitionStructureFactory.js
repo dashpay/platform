@@ -1,10 +1,6 @@
 const DataContractCreateTransition = require('../DataContractCreateTransition');
 
-const InvalidDataContractEntropyError = require('../../../errors/InvalidDataContractEntropyError');
-
 const InvalidDataContractIdError = require('../../../errors/InvalidDataContractIdError');
-
-const entropy = require('../../../util/entropy');
 
 const generateDataContractId = require('../../generateDataContractId');
 
@@ -46,15 +42,6 @@ function validateDataContractCreateTransitionStructureFactory(
     );
 
     if (!result.isValid()) {
-      return result;
-    }
-
-    // Validate entropy
-    if (!entropy.validate(rawStateTransition.entropy)) {
-      result.addError(
-        new InvalidDataContractEntropyError(rawDataContract),
-      );
-
       return result;
     }
 

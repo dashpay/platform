@@ -6,7 +6,7 @@ const getDataContractFixture = require('../../../../../lib/test/fixtures/getData
 const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const entropy = require('../../../../../lib/util/entropy');
+const generateEntropy = require('../../../../../lib/util/generateEntropy');
 
 describe('findDuplicatesByIndices', () => {
   let documents;
@@ -72,20 +72,20 @@ describe('findDuplicatesByIndices', () => {
     let document = new Document({
       ...william.toObject(),
       $type: 'nonUniqueIndexDocument',
-      $entropy: entropy.generate(),
+      $entropy: generateEntropy(),
     }, contract);
 
-    document.setEntropy(entropy.generate());
+    document.setEntropy(generateEntropy());
 
     documents.push(document);
 
     document = new Document({
       ...william.toObject(),
       $type: 'singleDocument',
-      $entropy: entropy.generate(),
+      $entropy: generateEntropy(),
     }, contract);
 
-    document.setEntropy(entropy.generate());
+    document.setEntropy(generateEntropy());
 
     documents.push(document);
 

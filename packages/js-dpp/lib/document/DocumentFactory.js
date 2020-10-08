@@ -1,7 +1,7 @@
 const Document = require('./Document');
 
 const { decode } = require('../util/serializer');
-const entropy = require('../util/entropy');
+const generateEntropy = require('../util/generateEntropy');
 
 const DocumentsBatchTransition = require('./stateTransition/DocumentsBatchTransition');
 
@@ -43,7 +43,7 @@ class DocumentFactory {
       throw new InvalidDocumentTypeError(type, dataContract);
     }
 
-    const documentEntropy = entropy.generate();
+    const documentEntropy = generateEntropy();
     const dataContractId = dataContract.getId();
 
     const id = generateDocumentId(

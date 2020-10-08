@@ -4,7 +4,6 @@ const AbstractDocumentTransition = require('../../documentTransition/AbstractDoc
 
 const DataContractNotPresentError = require('../../../../errors/DataContractNotPresentError');
 const InvalidDocumentTransitionIdError = require('../../../../errors/InvalidDocumentTransitionIdError');
-const InvalidDocumentTransitionEntropyError = require('../../../../errors/InvalidDocumentTransitionEntropyError');
 const DuplicateDocumentTransitionsError = require('../../../../errors/DuplicateDocumentTransitionsError');
 const MissingDocumentTypeError = require('../../../../errors/MissingDocumentTypeError');
 const InvalidDocumentTypeError = require('../../../../errors/InvalidDocumentTypeError');
@@ -20,7 +19,6 @@ const createTransitionSchema = require('../../../../../schema/document/stateTran
 const replaceTransitionSchema = require('../../../../../schema/document/stateTransition/documentTransition/replace');
 
 const generateDocumentId = require('../../../generateDocumentId');
-const entropy = require('../../../../util/entropy');
 
 const documentsBatchTransitionSchema = require('../../../../../schema/document/stateTransition/documentsBatch');
 
@@ -147,13 +145,6 @@ function validateDocumentsBatchTransitionStructureFactory(
             if (!rawDocumentTransition.$id.equals(documentId)) {
               result.addError(
                 new InvalidDocumentTransitionIdError(rawDocumentTransition),
-              );
-            }
-
-            // validate entropy
-            if (!entropy.validate(rawDocumentTransition.$entropy)) {
-              result.addError(
-                new InvalidDocumentTransitionEntropyError(rawDocumentTransition),
               );
             }
           }
