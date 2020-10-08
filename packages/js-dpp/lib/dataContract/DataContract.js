@@ -248,10 +248,10 @@ class DataContract {
   /**
    * Returns hex string with Data Contract hash
    *
-   * @return {string}
+   * @return {Buffer}
    */
   hash() {
-    return hash(this.toBuffer()).toString('hex');
+    return hash(this.toBuffer());
   }
 
   /**

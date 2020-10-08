@@ -110,11 +110,10 @@ class Identity {
   }
 
   /**
-   * @return {string}
+   * @return {Buffer}
    */
   hash() {
-    return hash(this.toBuffer())
-      .toString('hex');
+    return hash(this.toBuffer());
   }
 
   /**

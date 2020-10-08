@@ -100,7 +100,6 @@ describe('Identity', () => {
   describe('#hash', () => {
     it('should return hex string of a buffer return by serialize', () => {
       const buffer = Buffer.from('someString');
-      const bufferHex = buffer.toString('hex');
 
       encodeMock.returns(buffer);
       hashMock.returns(buffer);
@@ -109,7 +108,7 @@ describe('Identity', () => {
 
       expect(encodeMock).to.have.been.calledOnceWith(identity.toObject());
       expect(hashMock).to.have.been.calledOnceWith(buffer);
-      expect(result).to.equal(bufferHex);
+      expect(result).to.equal(buffer);
     });
   });
 

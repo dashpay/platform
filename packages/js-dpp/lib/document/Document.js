@@ -352,10 +352,10 @@ class Document {
   /**
    * Returns hex string with object hash
    *
-   * @return {string}
+   * @return {Buffer}
    */
   hash() {
-    return hash(this.toBuffer()).toString('hex');
+    return hash(this.toBuffer());
   }
 
   /**

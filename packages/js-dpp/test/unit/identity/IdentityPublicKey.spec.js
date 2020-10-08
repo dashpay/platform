@@ -88,7 +88,7 @@ describe('IdentityPublicKey', () => {
 
       const result = publicKey.hash();
 
-      expect(result).to.deep.equal('24940ae1982187675fc3ad95aac68769322d95f2');
+      expect(result).to.deep.equal(Buffer.from('24940ae1982187675fc3ad95aac68769322d95f2', 'hex'));
     });
 
     it('should throw invalid argument error if data was not originally provided', () => {

@@ -45,7 +45,7 @@ describe('validateIdentityPublicKeyUniquenessFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getPublicKeyHash()).to.equal(identity.getPublicKeyById(0).hash());
+    expect(error.getPublicKeyHash()).to.deep.equal(identity.getPublicKeyById(0).hash());
   });
 
   it('should return valid result if no identity id was not found', async () => {

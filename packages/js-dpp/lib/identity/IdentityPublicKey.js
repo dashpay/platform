@@ -86,7 +86,7 @@ class IdentityPublicKey {
   /**
    * Get original public key hash
    *
-   * @returns {string}
+   * @returns {Buffer}
    */
   hash() {
     if (!this.getData()) {
@@ -97,8 +97,7 @@ class IdentityPublicKey {
       this.getData(),
     );
 
-    return originalPublicKey.hash
-      .toString('hex');
+    return originalPublicKey.hash;
   }
 
   /**
