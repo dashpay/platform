@@ -1,11 +1,11 @@
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 
-const cloneDeepRawData = require('../util/cloneDeepRawData');
+const cloneDeepWithIdentifiers = require('../util/cloneDeepWithIdentifiers');
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
-const transpileEncodedProperties = require('../util/encoding/transpileEncodedProperties');
-const EncodedBuffer = require('../util/encoding/EncodedBuffer');
+const transpileProperties = require('../util/transpileProperties');
+const Identifier = require('../Identifier');
 
 class Document {
   /**
@@ -25,7 +25,7 @@ class Document {
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$id')) {
-      this.id = EncodedBuffer.from(rawDocument.$id, EncodedBuffer.ENCODING.BASE58);
+      this.id = Identifier.from(rawDocument.$id);
       delete data.$id;
     }
 
@@ -35,15 +35,12 @@ class Document {
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$dataContractId')) {
-      this.dataContractId = EncodedBuffer.from(
-        rawDocument.$dataContractId,
-        EncodedBuffer.ENCODING.BASE58,
-      );
+      this.dataContractId = Identifier.from(rawDocument.$dataContractId);
       delete data.$dataContractId;
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocument, '$ownerId')) {
-      this.ownerId = EncodedBuffer.from(rawDocument.$ownerId, EncodedBuffer.ENCODING.BASE58);
+      this.ownerId = Identifier.from(rawDocument.$ownerId);
       delete data.$ownerId;
     }
 
@@ -77,7 +74,7 @@ class Document {
   /**
    * Get ID
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getId() {
     return this.id;
@@ -95,7 +92,7 @@ class Document {
   /**
    * Get Data Contract ID
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getDataContractId() {
     return this.dataContractId;
@@ -113,7 +110,7 @@ class Document {
   /**
    * Get Owner ID
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getOwnerId() {
     return this.ownerId;
@@ -146,13 +143,13 @@ class Document {
    * @param {Buffer} entropy
    */
   setEntropy(entropy) {
-    this.entropy = EncodedBuffer.from(entropy, EncodedBuffer.ENCODING.BASE58);
+    this.entropy = entropy;
   }
 
   /**
    * Get entropy
    *
-   * @return {EncodedBuffer}
+   * @return {Buffer}
    */
   getEntropy() {
     return this.entropy;
@@ -200,33 +197,35 @@ class Document {
    * @return {Document}
    */
   set(path, value) {
-    let encodedValue = cloneDeepRawData(value);
+    let clonedValue = cloneDeepWithIdentifiers(value);
 
-    const encodedProperties = this.dataContract.getBinaryProperties(
+    const binaryProperties = this.dataContract.getBinaryProperties(
       this.getType(),
     );
 
-    Object.entries(encodedProperties).forEach(([propertyPath]) => {
-      if (path === propertyPath) {
-        encodedValue = EncodedBuffer.from(value, EncodedBuffer.ENCODING.BASE64);
-      } else if (propertyPath.includes(path)) {
-        // in case of object we need to remove
-        // first dot as we removed beginning of the path
-        // e.g. `1.2.3` and '1.2` in the result would be `.2`
-        const partialPath = propertyPath.substring(path.length + 1, propertyPath.length);
-        const buffer = lodashGet(encodedValue, partialPath);
+    Object.entries(binaryProperties)
+      .filter(([, property]) => property.contentMediaType === Identifier.MEDIA_TYPE)
+      .forEach(([propertyPath]) => {
+        if (path === propertyPath) {
+          clonedValue = Identifier.from(value);
+        } else if (propertyPath.includes(path)) {
+          // in case of object we need to remove
+          // first dot as we removed beginning of the path
+          // e.g. `1.2.3` and '1.2` in the result would be `.2`
+          const partialPath = propertyPath.substring(path.length + 1, propertyPath.length);
+          const buffer = lodashGet(clonedValue, partialPath);
 
-        if (buffer !== undefined) {
-          lodashSet(
-            encodedValue,
-            partialPath,
-            EncodedBuffer.from(buffer, EncodedBuffer.ENCODING.BASE64),
-          );
+          if (buffer !== undefined) {
+            lodashSet(
+              clonedValue,
+              partialPath,
+              Identifier.from(buffer),
+            );
+          }
         }
-      }
-    });
+      });
 
-    lodashSet(this.data, path, encodedValue);
+    lodashSet(this.data, path, clonedValue);
 
     return this;
   }
@@ -274,38 +273,17 @@ class Document {
   }
 
   /**
-   * Return Document as JSON object
-   *
-   * @return {JsonDocument}
-   */
-  toJSON() {
-    const jsonDocument = {
-      ...this.toObject({ encodedBuffer: true }),
-      $id: this.getId().toString(),
-      $dataContractId: this.getDataContractId().toString(),
-      $ownerId: this.getOwnerId().toString(),
-    };
-
-    return transpileEncodedProperties(
-      this.dataContract,
-      this.getType(),
-      jsonDocument,
-      (encodedBuffer) => encodedBuffer.toString(),
-    );
-  }
-
-  /**
-   * Return Document as plain object (without converting encoded fields)
+   * Return Document as plain object
    *
    * @param {Object} [options]
-   * @param {boolean} [options.encodedBuffer=false]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    * @return {RawDocument}
    */
   toObject(options = {}) {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
@@ -328,20 +306,68 @@ class Document {
       rawDocument.$updatedAt = this.getUpdatedAt().getTime();
     }
 
-    if (!options.encodedBuffer) {
+    if (!options.skipIdentifiersConversion) {
       rawDocument.$id = this.getId().toBuffer();
       rawDocument.$dataContractId = this.getDataContractId().toBuffer();
       rawDocument.$ownerId = this.getOwnerId().toBuffer();
 
-      return transpileEncodedProperties(
-        this.dataContract,
+      const binaryProperties = this.dataContract.getBinaryProperties(
         this.getType(),
+      );
+
+      const identifierProperties = Object.fromEntries(
+        Object.entries(binaryProperties)
+          .filter(([, property]) => property.contentMediaType === Identifier.MEDIA_TYPE),
+      );
+
+      return transpileProperties(
         rawDocument,
-        (encodedBuffer) => encodedBuffer.toBuffer(),
+        identifierProperties,
+        (value) => {
+          if (value instanceof Identifier) {
+            return value.toBuffer();
+          }
+
+          return value;
+        },
       );
     }
 
     return rawDocument;
+  }
+
+  /**
+   * Return Document as JSON object
+   *
+   * @return {JsonDocument}
+   */
+  toJSON() {
+    const jsonDocument = {
+      ...this.toObject({ skipIdentifiersConversion: true }),
+      $id: this.getId().toString(),
+      $dataContractId: this.getDataContractId().toString(),
+      $ownerId: this.getOwnerId().toString(),
+    };
+
+    const binaryProperties = this.dataContract.getBinaryProperties(
+      this.getType(),
+    );
+
+    return transpileProperties(
+      jsonDocument,
+      binaryProperties,
+      (value) => {
+        if (value instanceof Identifier) {
+          return value.toString();
+        }
+
+        if (Buffer.isBuffer(value)) {
+          return value.toString('base64');
+        }
+
+        return value;
+      },
+    );
   }
 
   /**
@@ -360,25 +386,6 @@ class Document {
    */
   hash() {
     return hash(this.toBuffer());
-  }
-
-  /**
-   * Create document from JSON
-   *
-   * @param {JsonDocument} jsonDocument
-   * @param {DataContract} dataContract
-   *
-   * @return {Document}
-   */
-  static fromJSON(jsonDocument, dataContract) {
-    const rawDocument = transpileEncodedProperties(
-      dataContract,
-      jsonDocument.$type,
-      jsonDocument,
-      (string, encoding) => EncodedBuffer.from(string, encoding).toBuffer(),
-    );
-
-    return new Document(rawDocument, dataContract);
   }
 }
 

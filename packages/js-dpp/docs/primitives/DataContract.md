@@ -177,7 +177,7 @@
 | parameters                | type    | required | Description                      |  
 |---------------------------|---------|----------| -------------------------------- |
 | **options**               | Object  | no       |                                  |
-| **options.encodedBuffer** | Boolean | no       |                                  |
+| **options.skipIdentifiersConversion** | Boolean | no       |                                  |
 
 **Returns**: {RawDataContract}
 

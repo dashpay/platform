@@ -1,22 +1,22 @@
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
-const EncodedBuffer = require('../util/encoding/EncodedBuffer');
 const EmptyPublicKeyDataError = require('./errors/EmptyPublicKeyDataError');
 
 class IdentityPublicKey {
   /**
    * @param {RawIdentityPublicKey} [rawIdentityPublicKey]
    */
-  constructor(rawIdentityPublicKey = undefined) {
-    this.enabled = true;
+  constructor(rawIdentityPublicKey = { }) {
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'id')) {
+      this.setId(rawIdentityPublicKey.id);
+    }
 
-    if (rawIdentityPublicKey) {
-      this.setId(rawIdentityPublicKey.id)
-        .setType(rawIdentityPublicKey.type);
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'type')) {
+      this.setType(rawIdentityPublicKey.type);
+    }
 
-      if (rawIdentityPublicKey.data) {
-        this.setData(rawIdentityPublicKey.data);
-      }
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'data')) {
+      this.setData(rawIdentityPublicKey.data);
     }
   }
 
@@ -63,21 +63,21 @@ class IdentityPublicKey {
   }
 
   /**
-   * Set base64 encoded public key
+   * Set raw public key
    *
    * @param {Buffer} data
    * @return {IdentityPublicKey}
    */
   setData(data) {
-    this.data = EncodedBuffer.from(data, EncodedBuffer.ENCODING.BASE64);
+    this.data = data;
 
     return this;
   }
 
   /**
-   * Get base64 encoded public key
+   * Get raw public key
    *
-   * @return {EncodedBuffer}
+   * @return {Buffer}
    */
   getData() {
     return this.data;
@@ -103,31 +103,14 @@ class IdentityPublicKey {
   /**
    * Get plain object representation
    *
-   * @param {Object} [options]
-   * @param {boolean} [options.encodedBuffer=false]
-   *
    * @return {RawIdentityPublicKey}
    */
-  toObject(options = {}) {
-    Object.assign(
-      options,
-      {
-        encodedBuffer: false,
-        ...options,
-      },
-    );
-
-    const rawPublicKey = {
+  toObject() {
+    return {
       id: this.getId(),
       type: this.getType(),
       data: this.getData(),
     };
-
-    if (!options.encodedBuffer) {
-      rawPublicKey.data = rawPublicKey.data.toBuffer();
-    }
-
-    return rawPublicKey;
   }
 
   /**
@@ -137,8 +120,8 @@ class IdentityPublicKey {
    */
   toJSON() {
     return {
-      ...this.toObject({ encodedBuffer: true }),
-      data: this.getData().toString(),
+      ...this.toObject(),
+      data: this.getData().toString('base64'),
     };
   }
 }

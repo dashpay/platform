@@ -1,4 +1,4 @@
-const generateRandomId = require('../../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../../lib/test/utils/generateRandomIdentifier');
 
 const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
 
@@ -25,7 +25,7 @@ describe('validateIdentityExistence', () => {
       stateRepositoryMock,
     );
 
-    ownerId = generateRandomId();
+    ownerId = generateRandomIdentifier();
 
     rawIdentityUser = {
       id: ownerId,

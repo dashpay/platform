@@ -1,9 +1,7 @@
 const AbstractDocumentTransition = require('./AbstractDocumentTransition');
+const AbstractDataDocumentTransition = require('./AbstractDataDocumentTransition');
 
-const transpileEncodedProperties = require('../../../util/encoding/transpileEncodedProperties');
-const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
-
-class DocumentCreateTransition extends AbstractDocumentTransition {
+class DocumentCreateTransition extends AbstractDataDocumentTransition {
   /**
    * @param {RawDocumentCreateTransition} rawTransition
    * @param {DataContract} dataContract
@@ -11,10 +9,8 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
   constructor(rawTransition, dataContract) {
     super(rawTransition, dataContract);
 
-    const data = { ...rawTransition };
-
     if (Object.prototype.hasOwnProperty.call(rawTransition, '$entropy')) {
-      this.entropy = EncodedBuffer.from(rawTransition.$entropy, EncodedBuffer.ENCODING.BASE58);
+      this.entropy = rawTransition.$entropy;
     }
 
     if (Object.prototype.hasOwnProperty.call(rawTransition, '$createdAt')) {
@@ -24,21 +20,6 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
     if (Object.prototype.hasOwnProperty.call(rawTransition, '$updatedAt')) {
       this.updatedAt = new Date(rawTransition.$updatedAt);
     }
-
-    delete data.$id;
-    delete data.$type;
-    delete data.$entropy;
-    delete data.$action;
-    delete data.$dataContractId;
-    delete data.$createdAt;
-    delete data.$updatedAt;
-
-    this.data = transpileEncodedProperties(
-      dataContract,
-      this.getType(),
-      data,
-      (buffer, encoding) => new EncodedBuffer(buffer, encoding),
-    );
   }
 
   /**
@@ -53,19 +34,10 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
   /**
    * Get entropy
    *
-   * @returns {EncodedBuffer}
+   * @returns {Buffer}
    */
   getEntropy() {
     return this.entropy;
-  }
-
-  /**
-   * Get data
-   *
-   * @returns {Object}
-   */
-  getData() {
-    return this.data;
   }
 
   /**
@@ -90,22 +62,21 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
    * Get plain object representation
    *
    * @param {Object} [options]
-   * @param {boolean} [options.encodedBuffer=false]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    * @return {RawDocumentCreateTransition}
    */
   toObject(options = {}) {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
 
-    let rawDocumentTransition = {
+    const rawDocumentTransition = {
       ...super.toObject(options),
       $entropy: this.getEntropy(),
-      ...this.getData(),
     };
 
     if (this.createdAt) {
@@ -114,21 +85,6 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
 
     if (this.updatedAt) {
       rawDocumentTransition.$updatedAt = this.getUpdatedAt().getTime();
-    }
-
-    if (!options.encodedBuffer) {
-      rawDocumentTransition = {
-        ...rawDocumentTransition,
-        $id: this.getId().toBuffer(),
-        $entropy: this.getEntropy().toBuffer(),
-      };
-
-      return transpileEncodedProperties(
-        this.dataContract,
-        this.getType(),
-        rawDocumentTransition,
-        (encodedBuffer) => encodedBuffer.toBuffer(),
-      );
     }
 
     return rawDocumentTransition;
@@ -140,17 +96,10 @@ class DocumentCreateTransition extends AbstractDocumentTransition {
    * @return {JsonDocumentCreateTransition}
    */
   toJSON() {
-    const jsonDocumentTransition = {
+    return {
       ...super.toJSON(),
       $entropy: this.getEntropy().toString(),
     };
-
-    return transpileEncodedProperties(
-      this.dataContract,
-      this.getType(),
-      jsonDocumentTransition,
-      (encodedBuffer) => encodedBuffer.toString(),
-    );
   }
 }
 

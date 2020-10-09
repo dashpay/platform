@@ -4,7 +4,7 @@ const Document = require('../../../../../../lib/document/Document');
 
 const JsonSchemaValidator = require('../../../../../../lib/validation/JsonSchemaValidator');
 
-const generateRandomId = require('../../../../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../../../../lib/test/utils/generateRandomIdentifier');
 
 const enrichDataContractWithBaseSchema = require('../../../../../../lib/dataContract/enrichDataContractWithBaseSchema');
 
@@ -641,7 +641,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           it('should be valid generated ID', async () => {
             const [firstTransition] = rawStateTransition.transitions;
 
-            firstTransition.$id = generateRandomId();
+            firstTransition.$id = generateRandomIdentifier();
 
             const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 

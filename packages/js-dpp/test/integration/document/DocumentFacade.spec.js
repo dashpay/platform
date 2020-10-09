@@ -1,4 +1,4 @@
-const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const Document = require('../../../lib/document/Document');
@@ -24,7 +24,7 @@ describe('DocumentFacade', () => {
   let stateRepositoryMock;
 
   beforeEach(function beforeEach() {
-    ownerId = generateRandomId();
+    ownerId = generateRandomIdentifier();
     dataContract = getDataContractFixture(ownerId);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);

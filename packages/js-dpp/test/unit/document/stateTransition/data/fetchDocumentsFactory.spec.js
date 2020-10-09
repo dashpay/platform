@@ -5,7 +5,7 @@ const fetchDocumentsFactory = require('../../../../../lib/document/stateTransiti
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
-const generateRandomId = require('../../../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../../../lib/test/utils/generateRandomIdentifier');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
@@ -26,7 +26,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch specified Documents using StateRepository', async () => {
-    const firstDocumentDataContractId = generateRandomId().toBuffer();
+    const firstDocumentDataContractId = generateRandomIdentifier().toBuffer();
 
     documentTransitions[0].dataContractId = firstDocumentDataContractId;
     documents[0].dataContractId = firstDocumentDataContractId;

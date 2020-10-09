@@ -112,15 +112,15 @@ class IdentityFactory {
   /**
    * Create identity top up transition
    *
-   * @param {string} identityId - identity to top up, base58 encoded
-   * @param {Buffer} lockedOutPointBuffer - pointer to outpoint of funding transaction
+   * @param {Identifier|Buffer|string} identityId - identity to top up
+   * @param {Buffer} lockedOutPoint - pointer to outpoint of funding transaction
    * @return {IdentityTopUpTransition}
    */
-  createIdentityTopUpTransition(identityId, lockedOutPointBuffer) {
+  createIdentityTopUpTransition(identityId, lockedOutPoint) {
     return new IdentityTopUpTransition({
       protocolVersion: Identity.PROTOCOL_VERSION,
       identityId,
-      lockedOutPoint: lockedOutPointBuffer,
+      lockedOutPoint,
     });
   }
 }

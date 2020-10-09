@@ -1,11 +1,10 @@
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
-const hash = require('../../util/hash');
 const generateEntropy = require('../../util/generateEntropy');
 
-const generateRandomId = require('../utils/generateRandomId');
+const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
-const ownerId = generateRandomId();
+const ownerId = generateRandomIdentifier();
 
 /**
  * @return {Document}
@@ -21,7 +20,6 @@ function getPreorderDocumentFixture(options = {}) {
   const label = options.label || 'Preorder';
   const normalizedLabel = options.normalizedLabel || label.toLowerCase();
   const data = {
-    hash: hash(Buffer.from(normalizedLabel)).toString('hex'),
     label,
     normalizedLabel,
     parentDomainHash: '',

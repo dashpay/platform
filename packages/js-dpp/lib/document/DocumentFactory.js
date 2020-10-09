@@ -243,7 +243,7 @@ class DocumentFactory {
         return {
           ...rawDocument,
           $action: AbstractDocumentTransition.ACTIONS.CREATE,
-          $entropy: document.getEntropy().toBuffer(),
+          $entropy: document.getEntropy(),
         };
       });
 

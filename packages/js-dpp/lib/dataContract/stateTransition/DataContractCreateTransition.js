@@ -1,7 +1,6 @@
 const AbstractStateTransitionIdentitySigned = require('../../stateTransition/AbstractStateTransitionIdentitySigned');
 const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes');
 const DataContract = require('../DataContract');
-const EncodedBuffer = require('../../util/encoding/EncodedBuffer');
 
 class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned {
   /**
@@ -11,10 +10,7 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
     super(rawDataContractCreateTransition);
 
     if (Object.prototype.hasOwnProperty.call(rawDataContractCreateTransition, 'entropy')) {
-      this.entropy = EncodedBuffer.from(
-        rawDataContractCreateTransition.entropy,
-        EncodedBuffer.ENCODING.BASE58,
-      );
+      this.entropy = rawDataContractCreateTransition.entropy;
     }
 
     const dataContract = new DataContract(rawDataContractCreateTransition.dataContract);
@@ -55,7 +51,7 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
   /**
    * Get entropy
    *
-   * @returns {EncodedBuffer}
+   * @returns {Buffer}
    */
   getEntropy() {
     return this.entropy;
@@ -66,29 +62,23 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
    *
    * @param {Object} [options]
    * @param {boolean} [options.skipSignature=false]
-   * @param {boolean} [options.encodedBuffer=false]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    * @return {RawDataContractCreateTransition}
    */
   toObject(options = {}) {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
 
-    const rawStateTransition = {
+    return {
       ...super.toObject(options),
       dataContract: this.getDataContract().toObject(),
       entropy: this.getEntropy(),
     };
-
-    if (!options.encodedBuffer) {
-      rawStateTransition.entropy = this.getEntropy().toBuffer();
-    }
-
-    return rawStateTransition;
   }
 
   /**
@@ -99,14 +89,14 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
   toJSON() {
     return {
       ...super.toJSON(),
-      entropy: this.getEntropy().toString(),
       dataContract: this.getDataContract().toJSON(),
+      entropy: this.getEntropy().toString('base64'),
     };
   }
 
   /**
    * Get owner ID
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getOwnerId() {
     return this.getDataContract().getOwnerId();

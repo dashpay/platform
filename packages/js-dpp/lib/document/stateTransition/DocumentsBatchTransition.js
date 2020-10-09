@@ -12,7 +12,7 @@ const actionsToClasses = {
   [AbstractDocumentTransition.ACTIONS.DELETE]: DocumentDeleteTransition,
 };
 
-const EncodedBuffer = require('../../util/encoding/EncodedBuffer');
+const Identifier = require('../../Identifier');
 
 class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   /**
@@ -23,22 +23,19 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
     super(rawStateTransition);
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'ownerId')) {
-      this.ownerId = EncodedBuffer.from(rawStateTransition.ownerId, EncodedBuffer.ENCODING.BASE58);
+      this.ownerId = Identifier.from(rawStateTransition.ownerId);
     }
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'transitions')) {
       const dataContractsMap = dataContracts.reduce((map, dataContract) => ({
         ...map,
-        [dataContract.getId().toString()]: dataContract,
+        [dataContract.getId().toString('hex')]: dataContract,
       }), {});
 
       this.transitions = rawStateTransition.transitions.map((rawDocumentTransition) => (
         new actionsToClasses[rawDocumentTransition.$action](
           rawDocumentTransition,
-          dataContractsMap[
-            EncodedBuffer
-              .from(rawDocumentTransition.$dataContractId, EncodedBuffer.ENCODING.BASE58)
-              .toString()],
+          dataContractsMap[rawDocumentTransition.$dataContractId.toString('hex')],
         )
       ));
     }
@@ -56,7 +53,7 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   /**
    * Get owner id
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getOwnerId() {
     return this.ownerId;
@@ -76,7 +73,7 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
    *
    * @param {Object} [options]
    * @param {boolean} [options.skipSignature=false]
-   * @param {boolean} [options.encodedBuffer=false]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    *
    * @return {RawDocumentsBatchTransition}
    */
@@ -84,22 +81,19 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
 
-    let rawDocumentsBatchTransition = {
+    const rawDocumentsBatchTransition = {
       ...super.toObject(options),
       ownerId: this.getOwnerId(),
       transitions: this.getTransitions().map((t) => t.toObject()),
     };
 
-    if (!options.encodedBuffer) {
-      rawDocumentsBatchTransition = {
-        ...rawDocumentsBatchTransition,
-        ownerId: rawDocumentsBatchTransition.ownerId.toBuffer(),
-      };
+    if (!options.skipIdentifiersConversion) {
+      rawDocumentsBatchTransition.ownerId = this.getOwnerId().toBuffer();
     }
 
     return rawDocumentsBatchTransition;

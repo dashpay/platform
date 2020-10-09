@@ -1,9 +1,9 @@
-const generateRandomId = require('../utils/generateRandomId');
+const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
 const Identity = require('../../identity/Identity');
 const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 
-const id = generateRandomId();
+const id = generateRandomIdentifier();
 
 /**
  * @return {Identity}

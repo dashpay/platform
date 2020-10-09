@@ -4,8 +4,8 @@ language: node_js
 
 # Support Active LTS versions of Node.js
 node_js:
-  - '10'
   - '12'
+  - '14'
 
 branches:
   only:

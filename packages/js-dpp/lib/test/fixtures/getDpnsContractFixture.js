@@ -1,9 +1,9 @@
 const dpnsDocuments = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
 const DataContractFactory = require('../../dataContract/DataContractFactory');
 
-const generateRandomId = require('../utils/generateRandomId');
+const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
-const ownerId = generateRandomId();
+const ownerId = generateRandomIdentifier();
 
 /**
  * @return {DataContract}

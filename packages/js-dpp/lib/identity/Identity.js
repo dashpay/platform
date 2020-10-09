@@ -1,7 +1,7 @@
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 const IdentityPublicKey = require('./IdentityPublicKey');
-const EncodedBuffer = require('../util/encoding/EncodedBuffer');
+const Identifier = require('../Identifier');
 
 class Identity {
   /**
@@ -13,7 +13,7 @@ class Identity {
     }
 
     if (Object.prototype.hasOwnProperty.call(rawIdentity, 'id')) {
-      this.id = EncodedBuffer.from(rawIdentity.id, EncodedBuffer.ENCODING.BASE58);
+      this.id = Identifier.from(rawIdentity.id);
     }
 
     if (Object.prototype.hasOwnProperty.call(rawIdentity, 'publicKeys')) {
@@ -39,7 +39,7 @@ class Identity {
   }
 
   /**
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getId() {
     return this.id;
@@ -167,7 +167,7 @@ class Identity {
    * @return {Identity}
    */
   setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = EncodedBuffer.from(lockedOutPoint, EncodedBuffer.ENCODING.BASE64);
+    this.lockedOutPoint = lockedOutPoint;
 
     return this;
   }
@@ -175,7 +175,7 @@ class Identity {
   /**
    * Get locked out point
    *
-   * @return {EncodedBuffer}
+   * @return {Buffer}
    */
   getLockedOutPoint() {
     return this.lockedOutPoint;

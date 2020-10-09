@@ -3,7 +3,7 @@ const crypto = require('crypto');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
-const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
+const Identifier = require('../../../lib/Identifier');
 
 const hash = require('../../../lib/util/hash');
 
@@ -59,9 +59,8 @@ describe('IdentityFactory', () => {
     it('should create Identity from transaction out point and public keys', () => {
       const lockedOutPoint = crypto.randomBytes(64);
 
-      identity.id = EncodedBuffer.from(
+      identity.id = Identifier.from(
         hash(lockedOutPoint),
-        EncodedBuffer.ENCODING.BASE58,
       );
 
       identity.setBalance(0);

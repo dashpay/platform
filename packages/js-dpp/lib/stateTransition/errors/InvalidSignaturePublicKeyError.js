@@ -1,7 +1,7 @@
 class InvalidSignaturePublicKeyError extends Error {
   /**
    *
-   * @param {EncodedBuffer} signaturePublicKey
+   * @param {Buffer} signaturePublicKey
    */
   constructor(signaturePublicKey) {
     super();
@@ -13,7 +13,7 @@ class InvalidSignaturePublicKeyError extends Error {
 
   /**
    *
-   * @returns {EncodedBuffer}
+   * @returns {Buffer}
    */
   getSignaturePublicKey() {
     return this.publicKey;

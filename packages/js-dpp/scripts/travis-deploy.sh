@@ -4,7 +4,7 @@ set -xe
 
 # Update this whenever the latest Node.js LTS version changes (~ every year).
 # Do not forget to add this version to .travis.yml config also.
-LATEST_LTS_VERSION="12"
+LATEST_LTS_VERSION="14"
 
 # We want this command to succeed whether or not the Node.js version is the
 # latest (so that the build does not show as failed), but _only_ the latest

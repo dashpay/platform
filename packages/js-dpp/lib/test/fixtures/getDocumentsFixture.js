@@ -4,9 +4,9 @@ const getDataContractFixture = require('./getDataContractFixture');
 
 const DocumentFactory = require('../../document/DocumentFactory');
 
-const generateRandomId = require('../utils/generateRandomId');
+const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
-const ownerId = generateRandomId();
+const ownerId = generateRandomIdentifier();
 
 /**
  * @param {DataContract} [dataContract]
@@ -27,7 +27,7 @@ module.exports = function getDocumentsFixture(dataContract = getDataContractFixt
     factory.create(dataContract, ownerId, 'noTimeDocument', { name: 'ImOutOfTime' }),
     factory.create(dataContract, ownerId, 'uniqueDates', { firstName: 'John' }),
     factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Bill', lastName: 'Gates' }),
-    factory.create(dataContract, ownerId, 'withByteArrays', { byteArrayField: crypto.randomBytes(10) }),
+    factory.create(dataContract, ownerId, 'withByteArrays', { byteArrayField: crypto.randomBytes(10), identifierField: generateRandomIdentifier().toBuffer() }),
     factory.create(dataContract, ownerId, 'optionalUniqueIndexedDocument', { firstName: 'Jacques-Yves', lastName: 'Cousteau' }),
   ];
 };

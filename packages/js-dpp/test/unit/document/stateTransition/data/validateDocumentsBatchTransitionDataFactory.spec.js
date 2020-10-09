@@ -26,7 +26,7 @@ const DocumentOwnerIdMismatchError = require('../../../../../lib/errors/Document
 const DocumentTimestampsMismatchError = require('../../../../../lib/errors/DocumentTimestampsMismatchError');
 const DocumentTimestampWindowViolationError = require('../../../../../lib/errors/DocumentTimestampWindowViolationError');
 
-const generateRandomId = require('../../../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../../../lib/test/utils/generateRandomIdentifier');
 
 describe('validateDocumentsBatchTransitionDataFactory', () => {
   let validateData;
@@ -257,7 +257,7 @@ describe('validateDocumentsBatchTransitionDataFactory', () => {
     replaceDocument.setRevision(1);
 
     const fetchedDocument = new Document(documents[0].toObject(), dataContract);
-    fetchedDocument.ownerId = generateRandomId().toBuffer();
+    fetchedDocument.ownerId = generateRandomIdentifier().toBuffer();
 
     documentTransitions = getDocumentTransitionsFixture({
       create: [],

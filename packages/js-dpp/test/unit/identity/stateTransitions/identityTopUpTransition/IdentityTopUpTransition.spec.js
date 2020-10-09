@@ -4,7 +4,7 @@ const stateTransitionTypes = require(
   '../../../../../lib/stateTransition/stateTransitionTypes',
 );
 
-const EncodedBuffer = require('../../../../../lib/util/encoding/EncodedBuffer');
+const Identifier = require('../../../../../lib/Identifier');
 
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
@@ -121,14 +121,8 @@ describe('IdentityTopUpTransition', () => {
       expect(jsonStateTransition).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
-        lockedOutPoint: EncodedBuffer.from(
-          rawStateTransition.lockedOutPoint,
-          EncodedBuffer.ENCODING.BASE64,
-        ).toString(),
-        identityId: EncodedBuffer.from(
-          rawStateTransition.identityId,
-          EncodedBuffer.ENCODING.BASE58,
-        ).toString(),
+        lockedOutPoint: rawStateTransition.lockedOutPoint.toString('base64'),
+        identityId: Identifier(rawStateTransition.identityId).toString(),
         signature: undefined,
       });
     });

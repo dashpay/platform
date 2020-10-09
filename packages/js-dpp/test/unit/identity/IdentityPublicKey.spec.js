@@ -9,7 +9,7 @@ describe('IdentityPublicKey', () => {
     rawPublicKey = {
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
+      data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
     };
 
     publicKey = new IdentityPublicKey(rawPublicKey);
@@ -22,7 +22,6 @@ describe('IdentityPublicKey', () => {
       expect(instance.id).to.be.undefined();
       expect(instance.type).to.be.undefined();
       expect(instance.data).to.be.undefined();
-      expect(instance.enabled).to.be.true();
     });
 
     it('should set variables from raw model', () => {
@@ -30,7 +29,7 @@ describe('IdentityPublicKey', () => {
 
       expect(instance.id).to.equal(rawPublicKey.id);
       expect(instance.type).to.equal(rawPublicKey.type);
-      expect(instance.data.toString()).to.deep.equal(rawPublicKey.data);
+      expect(instance.data).to.equal(rawPublicKey.data);
     });
   });
 
@@ -66,29 +65,27 @@ describe('IdentityPublicKey', () => {
 
   describe('#getData', () => {
     it('should return set data', () => {
-      expect(publicKey.getData().toString()).to.equal(rawPublicKey.data);
+      expect(publicKey.getData()).to.equal(rawPublicKey.data);
     });
   });
 
   describe('#setData', () => {
     it('should set data', () => {
-      publicKey.setData(Buffer.from('4w', 'base64'));
+      const buffer = Buffer.alloc(36);
 
-      expect(publicKey.data.toString()).to.equal('4w');
+      publicKey.setData(buffer);
+
+      expect(publicKey.data).to.equal(buffer);
     });
   });
 
   describe('#hash', () => {
     it('should return original public key hash', () => {
-      publicKey = new IdentityPublicKey({
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: 'Az7vgL9THE2e1nq8zwK98gx5Oy6Tro3pxc8PQxJA+oTx',
-      });
-
       const result = publicKey.hash();
 
-      expect(result).to.deep.equal(Buffer.from('24940ae1982187675fc3ad95aac68769322d95f2', 'hex'));
+      const expectedHash = Buffer.from('Q/5mfilFPdZt+Fr5JWC1+tg0cPs=', 'base64');
+
+      expect(result).to.deep.equal(expectedHash);
     });
 
     it('should throw invalid argument error if data was not originally provided', () => {
@@ -111,9 +108,13 @@ describe('IdentityPublicKey', () => {
 
   describe('#toJSON', () => {
     it('should return JSON representation', () => {
-      const json = publicKey.toJSON();
+      const jsonPublicKey = publicKey.toJSON();
 
-      expect(json).to.deep.equal(rawPublicKey);
+      expect(jsonPublicKey).to.deep.equal({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
+      });
     });
   });
 });

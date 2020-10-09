@@ -1,9 +1,9 @@
 const crypto = require('crypto');
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
-const generateRandomId = require('../utils/generateRandomId');
+const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
-const ownerId = generateRandomId();
+const ownerId = generateRandomIdentifier();
 const dataContract = getDpnsContractFixture();
 
 /**

@@ -43,7 +43,7 @@ module.exports = function validateDocumentFactory(
     const enrichedDataContract = enrichDataContractWithBaseSchema(
       dataContract,
       baseDocumentSchema,
-      'documentBase',
+      enrichDataContractWithBaseSchema.PREFIX_BYTE_0,
     );
 
     const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(

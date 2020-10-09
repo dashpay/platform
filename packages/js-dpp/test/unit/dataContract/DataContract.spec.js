@@ -1,9 +1,11 @@
 const rewiremock = require('rewiremock/node');
 const bs58 = require('bs58');
 
+const Identifier = require('../../../lib/Identifier');
+
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 
-const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 describe('DataContract', () => {
   let hashMock;
@@ -52,9 +54,9 @@ describe('DataContract', () => {
         },
       });
 
-    ownerId = generateRandomId().toBuffer();
-    entropy = bs58.decode('ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgzh');
-    contractId = bs58.decode('ydhM7GjG4QUbcuXpZDVoi7TTn7LL8Rhgza');
+    ownerId = generateRandomIdentifier();
+    entropy = Buffer.alloc(32);
+    contractId = generateRandomIdentifier();
 
     dataContract = new DataContract({
       $schema: DataContract.DEFAULTS.SCHEMA,
@@ -67,7 +69,7 @@ describe('DataContract', () => {
 
   describe('constructor', () => {
     it('should create new DataContract', () => {
-      const id = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
+      const id = generateRandomIdentifier();
 
       dataContract = new DataContract({
         $schema: DataContract.DEFAULTS.SCHEMA,
@@ -86,18 +88,16 @@ describe('DataContract', () => {
   });
 
   describe('#getId', () => {
-    it('should return base58 encoded DataContract ID', () => {
+    it('should return DataContract Identifier', () => {
       const result = dataContract.getId();
 
       expect(result).to.deep.equal(contractId);
+      expect(result).to.be.instanceof(Identifier);
     });
   });
 
   describe('#getJsonSchemaId', () => {
     it('should return JSON Schema ID', () => {
-      const hashed = Buffer.from(ownerId + entropy);
-      hashMock.returns(hashed);
-
       const result = dataContract.getJsonSchemaId();
 
       expect(result).to.equal(dataContract.getId().toString());

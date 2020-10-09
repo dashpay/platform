@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
-const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
+const Identifier = require('../../../lib/Identifier');
 
 const hash = require('../../../lib/util/hash');
 
@@ -40,15 +40,14 @@ describe('IdentityFacade', () => {
     it('should create Identity', () => {
       const lockedOutPoint = crypto.randomBytes(64);
 
-      identity.id = EncodedBuffer.from(
+      identity.id = Identifier.from(
         hash(lockedOutPoint),
-        EncodedBuffer.ENCODING.BASE58,
       );
 
       identity.setBalance(0);
 
       const publicKeys = identity.getPublicKeys().map(
-        (identityPublicKey) => new PublicKey(identityPublicKey.getData().toBuffer()),
+        (identityPublicKey) => new PublicKey(identityPublicKey.getData()),
       );
 
       const result = dpp.identity.create(
@@ -100,7 +99,7 @@ describe('IdentityFacade', () => {
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
       expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
-      expect(stateTransition.getLockedOutPoint().toBuffer()).to.deep.equal(lockedOutPoint);
+      expect(stateTransition.getLockedOutPoint()).to.deep.equal(lockedOutPoint);
     });
   });
 
@@ -115,7 +114,7 @@ describe('IdentityFacade', () => {
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
       expect(stateTransition.getIdentityId()).to.be.deep.equal(identity.getId());
-      expect(stateTransition.getLockedOutPoint().toBuffer()).to.deep.equal(lockedOutPoint);
+      expect(stateTransition.getLockedOutPoint()).to.deep.equal(lockedOutPoint);
     });
   });
 });

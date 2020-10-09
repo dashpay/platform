@@ -174,6 +174,26 @@
         },
         "maxBytesLength": ["byteArray"],
         "minBytesLength": ["byteArray"],
+        "contentMediaType": {
+          "if": {
+            "properties": {
+              "contentMediaType": {
+                "const": "application/x.dash.dpp.identifier"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "minBytesLength": {
+                "const": 32
+              },
+              "maxBytesLength": {
+                "const": 32
+              }
+            },
+            "required": ["minBytesLength", "maxBytesLength"]
+          }
+        },
         "uniqueItems": {
           "description": "prevent slow validation of large non-scalar arrays",
           "if": {
@@ -316,13 +336,15 @@
       "type": "object",
       "byteArray": true,
       "minBytesLength": 32,
-      "maxBytesLength": 32
+      "maxBytesLength": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "ownerId":{
       "type": "object",
       "byteArray": true,
       "minBytesLength": 32,
-      "maxBytesLength": 32
+      "maxBytesLength": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "documents": {
       "type": "object",

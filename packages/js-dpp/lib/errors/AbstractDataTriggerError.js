@@ -7,7 +7,7 @@ class AbstractDataTriggerError extends ConsensusError {
   /**
    * @param {string} message
    * @param {DataContract} dataContract
-   * @param {EncodedBuffer} ownerId
+   * @param {Identifier} ownerId
    */
   constructor(message, dataContract, ownerId) {
     super(message);
@@ -28,7 +28,7 @@ class AbstractDataTriggerError extends ConsensusError {
   /**
    * Get data trigger owner id
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getOwnerId() {
     return this.ownerId;

@@ -12,7 +12,7 @@ const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDoc
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
-const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
+const Identifier = require('../../../lib/Identifier');
 
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 const InvalidDocumentError = require('../../../lib/document/errors/InvalidDocumentError');
@@ -23,7 +23,7 @@ const InvalidInitialRevisionError = require('../../../lib/document/errors/Invali
 const ConsensusError = require('../../../lib/errors/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
 
-const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 describe('DocumentFactory', () => {
   let decodeMock;
@@ -84,7 +84,7 @@ describe('DocumentFactory', () => {
       const name = 'Cutie';
 
       ownerId = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
-      dataContract.id = EncodedBuffer.from(contractId, EncodedBuffer.ENCODING.BASE58);
+      dataContract.id = Identifier.from(contractId);
 
       generateEntropyMock.returns(entropy);
 
@@ -285,7 +285,7 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw and error if documents have mixed owner ids', () => {
-      documents[0].ownerId = generateRandomId().toBuffer();
+      documents[0].ownerId = generateRandomIdentifier().toBuffer();
       try {
         factory.createStateTransition({
           create: documents,

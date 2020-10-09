@@ -25,7 +25,7 @@ describe('DataContractCreateTransition', () => {
     stateTransition = new DataContractCreateTransition({
       protocolVersion: DataContract.PROTOCOL_VERSION,
       dataContract: dataContract.toObject(),
-      entropy: dataContract.getEntropy().toBuffer(),
+      entropy: dataContract.getEntropy(),
     });
   });
 
@@ -61,7 +61,7 @@ describe('DataContractCreateTransition', () => {
         dataContract: dataContract.toJSON(),
         signaturePublicKeyId: undefined,
         signature: undefined,
-        entropy: dataContract.getEntropy().toString(),
+        entropy: dataContract.getEntropy().toString('base64'),
       });
     });
   });

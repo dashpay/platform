@@ -1,5 +1,6 @@
-const bs58 = require('bs58');
 const rewiremock = require('rewiremock/node');
+
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 
@@ -26,12 +27,12 @@ describe('Identity', () => {
 
     rawIdentity = {
       protocolVersion: Identity.PROTOCOL_VERSION,
-      id: 'FSotMQ4rFrxWprRPJRmnFRBVTXxnDG5u8C27tNbnr935',
+      id: generateRandomIdentifier(),
       publicKeys: [
         {
           id: 0,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
+          data: Buffer.alloc(36).fill('a'),
         },
       ],
       balance: 0,
@@ -45,7 +46,7 @@ describe('Identity', () => {
     it('should set variables from raw model', () => {
       const instance = new Identity(rawIdentity);
 
-      expect(instance.id.toString()).to.equal(rawIdentity.id);
+      expect(instance.id).to.deep.equal(rawIdentity.id);
       expect(instance.type).to.equal(rawIdentity.type);
       expect(instance.publicKeys).to.deep.equal(
         rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
@@ -55,7 +56,7 @@ describe('Identity', () => {
 
   describe('#getId', () => {
     it('should return set id', () => {
-      expect(identity.getId().toString()).to.equal(rawIdentity.id);
+      expect(identity.getId()).to.deep.equal(rawIdentity.id);
     });
   });
 
@@ -88,7 +89,7 @@ describe('Identity', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return encoded json object', () => {
+    it('should return serialized Identity', () => {
       encodeMock.returns(42); // for example
       const result = identity.toBuffer();
 
@@ -114,29 +115,27 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
-      const json = identity.toObject();
-
-      let [publicKey] = rawIdentity.publicKeys;
-      publicKey = {
-        ...publicKey,
-        data: Buffer.from(publicKey.data, 'base64'),
-      };
-
-      const plainObject = {
-        ...rawIdentity,
-        id: bs58.decode(rawIdentity.id),
-        publicKeys: [publicKey],
-      };
-
-      expect(json).to.deep.equal(plainObject);
+      expect(identity.toObject()).to.deep.equal(rawIdentity);
     });
   });
 
   describe('#toJSON', () => {
     it('should return json representation', () => {
-      const json = identity.toJSON();
+      const jsonIdentity = identity.toJSON();
 
-      expect(json).to.deep.equal(rawIdentity);
+      expect(jsonIdentity).to.deep.equal({
+        protocolVersion: Identity.PROTOCOL_VERSION,
+        id: rawIdentity.id.toString(),
+        publicKeys: [
+          {
+            id: 0,
+            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            data: rawIdentity.publicKeys[0].data.toString('base64'),
+          },
+        ],
+        balance: 0,
+        revision: 0,
+      });
     });
   });
 

@@ -1,7 +1,6 @@
 const lodashGet = require('lodash.get');
 
-const transpileEncodedProperties = require('../../../util/encoding/transpileEncodedProperties');
-const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
+const Identifier = require('../../../Identifier');
 
 /**
  * @abstract
@@ -11,14 +10,11 @@ class AbstractDocumentTransition {
     this.type = rawDocumentTransition.$type;
 
     if (Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$id')) {
-      this.id = EncodedBuffer.from(rawDocumentTransition.$id, EncodedBuffer.ENCODING.BASE58);
+      this.id = Identifier.from(rawDocumentTransition.$id);
     }
 
     if (Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$dataContractId')) {
-      this.dataContractId = EncodedBuffer.from(
-        rawDocumentTransition.$dataContractId,
-        EncodedBuffer.ENCODING.BASE58,
-      );
+      this.dataContractId = Identifier.from(rawDocumentTransition.$dataContractId);
     }
 
     this.dataContract = dataContract;
@@ -27,7 +23,7 @@ class AbstractDocumentTransition {
   /**
    * Get id
    *
-   * @returns {EncodedBuffer}
+   * @returns {Identifier}
    */
   getId() {
     return this.id;
@@ -52,7 +48,7 @@ class AbstractDocumentTransition {
   /**
    * Get Data Contract ID
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getDataContractId() {
     return this.dataContractId;
@@ -73,14 +69,14 @@ class AbstractDocumentTransition {
    * Get plain object representation
    *
    * @param {Object} [options]
-   * @param {boolean} [options.encodedBuffer=false]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    * @return {RawDocumentTransition}
    */
   toObject(options = {}) {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
@@ -92,7 +88,7 @@ class AbstractDocumentTransition {
       $dataContractId: this.getDataContractId(),
     };
 
-    if (!options.encodedBuffer) {
+    if (!options.skipIdentifiersConversion) {
       rawDocumentTransition.$id = this.getId().toBuffer();
       rawDocumentTransition.$dataContractId = this.getDataContractId().toBuffer();
     }
@@ -106,18 +102,11 @@ class AbstractDocumentTransition {
    * @return {JsonDocumentTransition}
    */
   toJSON() {
-    const jsonDocumentTransition = {
-      ...this.toObject({ encodedBuffer: true }),
+    return {
+      ...this.toObject({ skipIdentifiersConversion: true }),
       $id: this.getId().toString(),
       $dataContractId: this.getDataContractId().toString(),
     };
-
-    return transpileEncodedProperties(
-      this.dataContract,
-      this.getType(),
-      jsonDocumentTransition,
-      (encodedBuffer) => encodedBuffer.toString(),
-    );
   }
 }
 

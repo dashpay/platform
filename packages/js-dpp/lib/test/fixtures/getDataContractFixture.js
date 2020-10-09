@@ -1,8 +1,10 @@
-const generateRandomId = require('../utils/generateRandomId');
+const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
 const DataContractFactory = require('../../dataContract/DataContractFactory');
 
-const randomOwnerId = generateRandomId();
+const randomOwnerId = generateRandomIdentifier();
+
+const Identifier = require('../../Identifier');
 
 /**
  *
@@ -117,6 +119,13 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           byteArray: true,
           maxBytesLength: 16,
         },
+        identifierField: {
+          type: 'object',
+          byteArray: true,
+          contentMediaType: Identifier.MEDIA_TYPE,
+          minBytesLength: 32,
+          maxBytesLength: 32,
+        },
       },
       required: ['byteArrayField'],
       additionalProperties: false,
@@ -173,7 +182,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
     () => {},
   );
 
-  const dataContract = factory.create(ownerId.toBuffer(), documents);
+  const dataContract = factory.create(ownerId, documents);
 
   dataContract.setDefinitions({
     lastName: {

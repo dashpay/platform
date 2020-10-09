@@ -1,6 +1,6 @@
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
-const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
+const Identifier = require('../../../Identifier');
 
 class IdentityTopUpTransition extends AbstractStateTransition {
   /**
@@ -30,17 +30,18 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Sets an outPoint. OutPoint is a pointer to the output funding the top up.
    * More about the OutPoint can be found in the identity documentation
-   * @param {EncodedBuffer|Buffer|string} lockedOutPoint
+   *
+   * @param {Buffer} lockedOutPoint
    * @return {IdentityTopUpTransition}
    */
   setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = EncodedBuffer.from(lockedOutPoint, EncodedBuffer.ENCODING.BASE64);
+    this.lockedOutPoint = lockedOutPoint;
 
     return this;
   }
 
   /**
-   * @return {EncodedBuffer}
+   * @return {Buffer}
    */
   getLockedOutPoint() {
     return this.lockedOutPoint;
@@ -49,19 +50,19 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Returns base58 representation of the identity id top up
    *
-   * @param {string|Buffer} identityId
+   * @param {Buffer} identityId
    * @return {IdentityTopUpTransition}
    */
   setIdentityId(identityId) {
-    this.identityId = EncodedBuffer.from(identityId, EncodedBuffer.ENCODING.BASE58);
+    this.identityId = Identifier.from(identityId);
 
     return this;
   }
 
   /**
-   * Returns base58 representation of the identity id top up
+   * Returns identity id
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getIdentityId() {
     return this.identityId;
@@ -70,7 +71,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Returns Owner ID
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getOwnerId() {
     return this.identityId;
@@ -81,7 +82,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
    *
    * @param {Object} [options]
    * @param {boolean} [options.skipSignature=false]
-   * @param {boolean} [options.encodedBuffer=false]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    *
    * @return {RawIdentityTopUpTransition}
    */
@@ -89,7 +90,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
@@ -100,9 +101,8 @@ class IdentityTopUpTransition extends AbstractStateTransition {
       lockedOutPoint: this.getLockedOutPoint(),
     };
 
-    if (!options.encodedBuffer) {
+    if (!options.skipIdentifiersConversion) {
       rawStateTransition.identityId = this.getIdentityId().toBuffer();
-      rawStateTransition.lockedOutPoint = this.getLockedOutPoint().toBuffer();
     }
 
     return rawStateTransition;
@@ -117,7 +117,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
     return {
       ...super.toJSON(),
       identityId: this.getIdentityId().toString(),
-      lockedOutPoint: this.getLockedOutPoint().toString(),
+      lockedOutPoint: this.getLockedOutPoint().toString('base64'),
     };
   }
 }

@@ -11,7 +11,6 @@ const InvalidSignaturePublicKeyError = require('./errors/InvalidSignaturePublicK
 const StateTransitionIsNotSignedError = require('./errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('./errors/PublicKeyMismatchError');
 const InvalidIdentityPublicKeyTypeError = require('../errors/InvalidIdentityPublicKeyTypeError');
-const encodeToBase64WithoutPadding = require('../util/encoding/encodeToBase64WithoutPadding');
 
 /**
  * @abstract
@@ -34,7 +33,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   /**
    * Returns public key id
    *
-   * @returns {number|null}
+   * @returns {number}
    */
   getSignaturePublicKeyId() {
     return this.signaturePublicKeyId;
@@ -64,7 +63,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
         })
           .toBuffer();
 
-        if (encodeToBase64WithoutPadding(pubKeyBase) !== identityPublicKey.getData().toString()) {
+        if (!pubKeyBase.equals(identityPublicKey.getData())) {
           throw new InvalidSignaturePublicKeyError(identityPublicKey.getData());
         }
 

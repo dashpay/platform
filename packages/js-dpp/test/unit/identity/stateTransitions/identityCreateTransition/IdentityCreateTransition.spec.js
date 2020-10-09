@@ -18,7 +18,7 @@ describe('IdentityCreateTransition', () => {
   beforeEach(function beforeEach() {
     rawStateTransition = {
       protocolVersion: Identity.PROTOCOL_VERSION,
-      lockedOutPoint: 'c3BlY2lhbEJ1ZmZlcg',
+      lockedOutPoint: Buffer.alloc(36).fill('b'),
       publicKeys: [
         {
           id: 0,
@@ -57,8 +57,8 @@ describe('IdentityCreateTransition', () => {
     });
 
     it('should create an instance with specified data from specified raw transition', () => {
-      expect(stateTransition.lockedOutPoint.toString()).to.deep.equal(
-        rawStateTransition.lockedOutPoint.replace(/=/g, ''),
+      expect(stateTransition.lockedOutPoint).to.deep.equal(
+        rawStateTransition.lockedOutPoint,
       );
       expect(stateTransition.publicKeys).to.deep.equal([
         new IdentityPublicKey(rawStateTransition.publicKeys[0]),
@@ -92,8 +92,8 @@ describe('IdentityCreateTransition', () => {
 
   describe('#getLockedOutPoint', () => {
     it('should return currently set locked OutPoint', () => {
-      expect(stateTransition.getLockedOutPoint().toString()).to.deep.equal(
-        rawStateTransition.lockedOutPoint.replace(/=/g, ''),
+      expect(stateTransition.getLockedOutPoint()).to.deep.equal(
+        rawStateTransition.lockedOutPoint,
       );
     });
   });
@@ -174,7 +174,7 @@ describe('IdentityCreateTransition', () => {
       expect(jsonStateTransition).to.deep.equal({
         protocolVersion: Identity.PROTOCOL_VERSION,
         type: stateTransitionTypes.IDENTITY_CREATE,
-        lockedOutPoint: rawStateTransition.lockedOutPoint,
+        lockedOutPoint: rawStateTransition.lockedOutPoint.toString('base64'),
         publicKeys: rawStateTransition.publicKeys,
         signature: undefined,
       });

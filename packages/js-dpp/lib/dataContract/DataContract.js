@@ -4,7 +4,7 @@ const { encode } = require('../util/serializer');
 const getBinaryPropertiesFromSchema = require('./getBinaryPropertiesFromSchema');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
-const EncodedBuffer = require('../util/encoding/EncodedBuffer');
+const Identifier = require('../Identifier');
 
 class DataContract {
   /**
@@ -13,8 +13,8 @@ class DataContract {
   constructor(rawDataContract) {
     this.protocolVersion = rawDataContract.protocolVersion;
 
-    this.id = EncodedBuffer.from(rawDataContract.$id, EncodedBuffer.ENCODING.BASE58);
-    this.ownerId = EncodedBuffer.from(rawDataContract.ownerId, EncodedBuffer.ENCODING.BASE58);
+    this.id = Identifier.from(rawDataContract.$id);
+    this.ownerId = Identifier.from(rawDataContract.ownerId);
 
     this.setJsonMetaSchema(rawDataContract.$schema);
     this.setDocuments(rawDataContract.documents);
@@ -35,7 +35,7 @@ class DataContract {
   /**
    * Get ID
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getId() {
     return this.id;
@@ -44,7 +44,7 @@ class DataContract {
   /**
    * Get owner id
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getOwnerId() {
     return this.ownerId;
@@ -162,6 +162,27 @@ class DataContract {
   }
 
   /**
+   * Set Data Contract entropy
+   *
+   * @param {Buffer} entropy
+   * @return {DataContract}
+   */
+  setEntropy(entropy) {
+    this.entropy = entropy;
+
+    return this;
+  }
+
+  /**
+   * Get Data Contract entropy
+   *
+   * @return {Buffer}
+   */
+  getEntropy() {
+    return this.entropy;
+  }
+
+  /**
    * Get properties with `contentEncoding` constraint
    *
    * @param {string} type
@@ -188,7 +209,7 @@ class DataContract {
    * Return Data Contract as plain object
    *
    * @param {Object} [options]
-   * @param {boolean} [options.encodedBuffer]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    *
    * @return {RawDataContract}
    */
@@ -196,7 +217,7 @@ class DataContract {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
@@ -209,7 +230,7 @@ class DataContract {
       documents: this.getDocuments(),
     };
 
-    if (!options.encodedBuffer) {
+    if (!options.skipIdentifiersConversion) {
       rawDataContract.$id = this.getId().toBuffer();
       rawDataContract.ownerId = this.getOwnerId().toBuffer();
     }
@@ -230,7 +251,7 @@ class DataContract {
    */
   toJSON() {
     return {
-      ...this.toObject({}),
+      ...this.toObject({ skipIdentifiersConversion: true }),
       $id: this.getId().toString(),
       ownerId: this.getOwnerId().toString(),
     };
@@ -252,27 +273,6 @@ class DataContract {
    */
   hash() {
     return hash(this.toBuffer());
-  }
-
-  /**
-   * Set Data Contract entropy
-   *
-   * @param {Buffer} entropy
-   * @return {DataContract}
-   */
-  setEntropy(entropy) {
-    this.entropy = EncodedBuffer.from(entropy, EncodedBuffer.ENCODING.BASE58);
-
-    return this;
-  }
-
-  /**
-   * Get Data Contract entropy
-   *
-   * @return {EncodedBuffer}
-   */
-  getEntropy() {
-    return this.entropy;
   }
 }
 

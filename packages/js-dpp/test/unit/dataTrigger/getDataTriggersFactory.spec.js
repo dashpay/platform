@@ -9,7 +9,7 @@ const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
 const createDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 const rejectDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/rejectDataTrigger');
 
-const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 describe('getDataTriggers', () => {
   let getDataTriggers;
@@ -35,7 +35,7 @@ describe('getDataTriggers', () => {
     deleteDocument.data = {};
 
     dataContractId = getDpnsDocumentFixture.dataContract.getId();
-    topLevelIdentity = generateRandomId().toBuffer();
+    topLevelIdentity = generateRandomIdentifier().toBuffer();
 
     createTrigger = new DataTrigger(
       dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.CREATE, createDomainDataTrigger, topLevelIdentity,

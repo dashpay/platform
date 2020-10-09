@@ -59,7 +59,7 @@ module.exports = function validateDataContractFactory(
     const enrichedDataContract = enrichDataContractWithBaseSchema(
       new DataContract(rawDataContract),
       baseDocumentSchema,
-      'documentBase',
+      enrichDataContractWithBaseSchema.PREFIX_BYTE_0,
     );
 
     Object.keys(enrichedDataContract.getDocuments()).forEach((documentType) => {

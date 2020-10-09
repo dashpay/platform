@@ -2,7 +2,7 @@ const hash = require('../../../util/hash');
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const IdentityPublicKey = require('../../IdentityPublicKey');
-const EncodedBuffer = require('../../../util/encoding/EncodedBuffer');
+const Identifier = require('../../../Identifier');
 
 class IdentityCreateTransition extends AbstractStateTransition {
   /**
@@ -43,17 +43,17 @@ class IdentityCreateTransition extends AbstractStateTransition {
    * @return {IdentityCreateTransition}
    */
   setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = EncodedBuffer.from(lockedOutPoint, EncodedBuffer.ENCODING.BASE64);
-    this.identityId = new EncodedBuffer(
+    this.lockedOutPoint = lockedOutPoint;
+
+    this.identityId = new Identifier(
       hash(this.lockedOutPoint),
-      EncodedBuffer.ENCODING.BASE58,
     );
 
     return this;
   }
 
   /**
-   * @return {EncodedBuffer}
+   * @return {Buffer}
    */
   getLockedOutPoint() {
     return this.lockedOutPoint;
@@ -89,9 +89,9 @@ class IdentityCreateTransition extends AbstractStateTransition {
   }
 
   /**
-   * Returns base58 representation of the future identity id
+   * Returns identity id
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getIdentityId() {
     return this.identityId;
@@ -100,7 +100,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
   /**
    * Returns Owner ID
    *
-   * @return {EncodedBuffer}
+   * @return {Identifier}
    */
   getOwnerId() {
     return this.identityId;
@@ -111,7 +111,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
    *
    * @param {Object} [options]
    * @param {boolean} [options.skipSignature=false]
-   * @param {boolean} [options.encodedBuffer=false]
+   * @param {boolean} [options.skipIdentifiersConversion=false]
    *
    * @return {RawIdentityCreateTransition}
    */
@@ -119,22 +119,17 @@ class IdentityCreateTransition extends AbstractStateTransition {
     Object.assign(
       options,
       {
-        encodedBuffer: false,
+        skipIdentifiersConversion: false,
         ...options,
       },
     );
 
-    const rawStateTransition = {
+    return {
       ...super.toObject(options),
       lockedOutPoint: this.getLockedOutPoint(),
-      publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toObject(options)),
+      publicKeys: this.getPublicKeys()
+        .map((publicKey) => publicKey.toObject()),
     };
-
-    if (!options.encodedBuffer) {
-      rawStateTransition.lockedOutPoint = rawStateTransition.lockedOutPoint.toBuffer();
-    }
-
-    return rawStateTransition;
   }
 
   /**
@@ -146,7 +141,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
   toJSON() {
     return {
       ...super.toJSON(),
-      lockedOutPoint: this.getLockedOutPoint().toString(),
+      lockedOutPoint: this.getLockedOutPoint().toString('base64'),
       publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toJSON()),
     };
   }

@@ -15,7 +15,8 @@
       "type": "object",
       "byteArray": true,
       "minBytesLength": 32,
-      "maxBytesLength": 32
+      "maxBytesLength": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "transitions": {
       "type": "array",

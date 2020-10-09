@@ -1,4 +1,4 @@
-const cloneDeepRawData = require('../util/cloneDeepRawData');
+const lodashCloneDeep = require('lodash.clonedeep');
 
 const DataContract = require('./DataContract');
 
@@ -7,7 +7,7 @@ const DataContract = require('./DataContract');
  *
  * @param {DataContract} dataContract
  * @param {Object} baseSchema
- * @param {string} [schemaIdPrefix='']
+ * @param {number} schemaIdBytePrefix
  * @param {string[]} [excludeProperties]
  *
  * @return {DataContract}
@@ -15,10 +15,10 @@ const DataContract = require('./DataContract');
 function enrichDataContractWithBaseSchema(
   dataContract,
   baseSchema,
-  schemaIdPrefix = '',
+  schemaIdBytePrefix,
   excludeProperties = [],
 ) {
-  const clonedDataContract = cloneDeepRawData(dataContract.toObject());
+  const clonedDataContract = lodashCloneDeep(dataContract.toObject());
 
   delete clonedDataContract.$schema;
 
@@ -51,13 +51,20 @@ function enrichDataContractWithBaseSchema(
       .filter((property) => !excludeProperties.includes(property));
   });
 
-  // Add schema $id prefix
-  clonedDataContract.$id = Buffer.concat([
-    Buffer.from(schemaIdPrefix),
-    clonedDataContract.$id,
-  ]);
+  // Ajv caches schemas using $id internally
+  // so we can't pass two different schemas with the same $id.
+  // Hacky solution for that is to replace first four bytes
+  // in $id with passed prefix byte
+  clonedDataContract.$id[0] = schemaIdBytePrefix;
+  clonedDataContract.$id[1] = schemaIdBytePrefix;
+  clonedDataContract.$id[2] = schemaIdBytePrefix;
+  clonedDataContract.$id[4] = schemaIdBytePrefix;
 
   return new DataContract(clonedDataContract);
 }
+
+enrichDataContractWithBaseSchema.PREFIX_BYTE_0 = 0;
+enrichDataContractWithBaseSchema.PREFIX_BYTE_1 = 0;
+enrichDataContractWithBaseSchema.PREFIX_BYTE_2 = 0;
 
 module.exports = enrichDataContractWithBaseSchema;

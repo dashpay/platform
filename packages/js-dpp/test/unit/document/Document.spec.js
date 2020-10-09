@@ -2,13 +2,13 @@ const rewiremock = require('rewiremock/node');
 
 const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
 
-const generateRandomId = require('../../../lib/test/utils/generateRandomId');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const DocumentCreateTransition = require(
   '../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition',
 );
 
-const EncodedBuffer = require('../../../lib/util/encoding/EncodedBuffer');
+const Identifier = require('../../../lib/Identifier');
 
 describe('Document', () => {
   let lodashGetMock;
@@ -39,7 +39,7 @@ describe('Document', () => {
       '../../../lib/util/serializer': serializerMock,
     });
 
-    const ownerId = generateRandomId().toBuffer();
+    const ownerId = generateRandomIdentifier().toBuffer();
 
     const dataContractFactory = new DataContractFactory(() => {});
 
@@ -55,10 +55,12 @@ describe('Document', () => {
               binaryObject: {
                 type: 'object',
                 properties: {
-                  byteArrayProperty: {
+                  identifier: {
                     type: 'object',
                     byteArray: true,
-                    maxBytesLength: 64,
+                    contentMediaType: Identifier.MEDIA_TYPE,
+                    minBytesLength: 32,
+                    maxBytesLength: 32,
                   },
                 },
               },
@@ -70,7 +72,7 @@ describe('Document', () => {
 
     rawDocument = {
       $protocolVersion: Document.PROTOCOL_VERSION,
-      $id: EncodedBuffer.from('D3AT6rBtyTqx3hXFckwtP81ncu49y5ndE7ot9JkuNSeB', EncodedBuffer.ENCODING.BASE58).toBuffer(),
+      $id: generateRandomIdentifier(),
       $type: 'test',
       $dataContractId: dataContract.getId(),
       $ownerId: ownerId,
@@ -93,7 +95,7 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $id: EncodedBuffer('id', EncodedBuffer.ENCODING.BASE58).toBuffer(),
+        $id: Buffer.alloc(32),
         $type: 'test',
         ...data,
       };
@@ -126,7 +128,7 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $dataContractId: generateRandomId().toBuffer(),
+        $dataContractId: generateRandomIdentifier().toBuffer(),
         $type: 'test',
         ...data,
       };
@@ -143,7 +145,7 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $ownerId: generateRandomId().toBuffer(),
+        $ownerId: generateRandomIdentifier().toBuffer(),
         $type: 'test',
         ...data,
       };
@@ -327,37 +329,44 @@ describe('Document', () => {
       expect(lodashSetMock).to.have.been.calledOnceWith(document.data, path, value);
     });
 
-    it('should set binary encoded field directly', () => {
-      const path = 'dataObject.binaryObject.byteArrayProperty';
-      const buffer = Buffer.alloc(36);
+    it('should set identifier', () => {
+      const path = 'dataObject.binaryObject.identifier';
+      const buffer = Buffer.alloc(32);
 
       const result = document.set(path, buffer);
 
       expect(result).to.equal(document);
 
-      const valueToSet = new EncodedBuffer(buffer, EncodedBuffer.ENCODING.BASE64);
+      expect(lodashSetMock).to.have.been.calledOnce();
 
-      expect(lodashSetMock).to.have.been.calledOnceWith(document.data, path, valueToSet);
+      expect(lodashSetMock.getCall(0).args).to.have.deep.members(
+        [document.data, path, buffer],
+      );
+
+      expect(lodashSetMock.getCall(0).args[2]).to.be.instanceof(Identifier);
     });
 
-    it('should set binary field as part of object', () => {
+    it('should set identifier as part of object', () => {
+      const buffer = Buffer.alloc(32).fill('a');
       const path = 'dataObject.binaryObject';
-      const value = { byteArrayProperty: Buffer.alloc(36) };
+      const value = { identifier: buffer };
 
-      lodashGetMock.returns(value.byteArrayProperty);
+      lodashGetMock.returns(value.identifier);
 
       const result = document.set(path, value);
 
       expect(result).to.equal(document);
 
-      const valueToSet = new EncodedBuffer(value.byteArrayProperty, 'base64');
-
       expect(lodashSetMock).to.have.been.calledTwice();
+
       expect(lodashSetMock.getCall(0).args).to.have.deep.members(
-        [value, 'byteArrayProperty', valueToSet],
+        [value, 'identifier', buffer],
       );
+
+      expect(lodashSetMock.getCall(0).args[2]).to.be.instanceof(Identifier);
+
       expect(lodashSetMock.getCall(1).args).to.have.deep.members(
-        [document.data, path, { byteArrayProperty: valueToSet }],
+        [document.data, path, value],
       );
     });
   });

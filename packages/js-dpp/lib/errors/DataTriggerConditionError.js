@@ -6,7 +6,7 @@ class DataTriggerConditionError extends AbstractDataTriggerError {
    *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
    * } documentTransition
    * @param {DataContract} dataContract
-   * @param {EncodedBuffer} ownerId
+   * @param {Identifier} ownerId
    * @param {string} message
    */
   constructor(documentTransition, dataContract, ownerId, message) {
