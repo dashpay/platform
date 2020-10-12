@@ -40,7 +40,7 @@ describe('getIdentityHandlerFactory', () => {
     handleAbciResponseErrorMock = this.sinon.stub();
 
     driveStateRepositoryMock = {
-      fetchIdentity: this.sinon.stub().resolves(identity.serialize()),
+      fetchIdentity: this.sinon.stub().resolves(identity.toBuffer()),
     };
 
     getIdentityHandler = getIdentityHandlerFactory(
@@ -53,7 +53,7 @@ describe('getIdentityHandlerFactory', () => {
     const result = await getIdentityHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
-    expect(result.getIdentity()).to.deep.equal(identity.serialize());
+    expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
     expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
     expect(handleAbciResponseErrorMock).to.not.be.called();
   });

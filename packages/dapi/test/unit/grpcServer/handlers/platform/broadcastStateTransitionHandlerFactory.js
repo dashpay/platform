@@ -38,7 +38,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     stateTransitionFixture = dpp.dataContract.createStateTransition(dataContractFixture);
 
     call = new GrpcCallMock(this.sinon, {
-      getStateTransition: this.sinon.stub().returns(stateTransitionFixture.serialize()),
+      getStateTransition: this.sinon.stub().returns(stateTransitionFixture.toBuffer()),
     });
 
     log = JSON.stringify({
@@ -99,7 +99,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
   it('should return valid result', async () => {
     const result = await broadcastStateTransitionHandler(call);
 
-    const tx = stateTransitionFixture.serialize().toString('base64');
+    const tx = stateTransitionFixture.toBuffer().toString('base64');
 
     expect(result).to.be.an.instanceOf(BroadcastStateTransitionResponse);
     expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });

@@ -65,7 +65,7 @@ describe('getDocumentsHandlerFactory', () => {
 
     documentsFixture = [document];
 
-    documentsSerialized = documentsFixture.map(documentItem => documentItem.serialize());
+    documentsSerialized = documentsFixture.map(documentItem => documentItem.toBuffer());
 
     driveStateRepositoryMock = {
       fetchDocuments: this.sinon.stub().resolves(documentsSerialized),

@@ -42,7 +42,7 @@ describe('getDataContractHandlerFactory', () => {
     dataContractFixture = getDataContractFixture();
 
     driveStateRepositoryMock = {
-      fetchDataContract: this.sinon.stub().resolves(dataContractFixture.serialize()),
+      fetchDataContract: this.sinon.stub().resolves(dataContractFixture.toBuffer()),
     };
 
     handleAbciResponseErrorMock = this.sinon.stub();
@@ -63,7 +63,7 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(handleAbciResponseErrorMock).to.not.be.called();
 
-    expect(contractBinary).to.deep.equal(dataContractFixture.serialize());
+    expect(contractBinary).to.deep.equal(dataContractFixture.toBuffer());
 
     expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
   });

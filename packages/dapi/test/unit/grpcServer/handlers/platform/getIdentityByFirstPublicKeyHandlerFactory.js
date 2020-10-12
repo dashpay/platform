@@ -44,7 +44,7 @@ describe('getIdentityByFirstPublicKeyHandlerFactory', () => {
     handleAbciResponseErrorMock = this.sinon.stub();
 
     driveStateRepositoryMock = {
-      fetchIdentityByFirstPublicKey: this.sinon.stub().resolves(identity.serialize()),
+      fetchIdentityByFirstPublicKey: this.sinon.stub().resolves(identity.toBuffer()),
     };
 
     getIdentityByFirstPublicKeyHandler = getIdentityByFirstPublicKeyHandlerFactory(
@@ -57,7 +57,7 @@ describe('getIdentityByFirstPublicKeyHandlerFactory', () => {
     const result = await getIdentityByFirstPublicKeyHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityByFirstPublicKeyResponse);
-    expect(result.getIdentity()).to.deep.equal(identity.serialize());
+    expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
     expect(driveStateRepositoryMock.fetchIdentityByFirstPublicKey)
       .to.be.calledOnceWith(publicKeyHash);
     expect(handleAbciResponseErrorMock).to.not.be.called();

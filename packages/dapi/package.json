@@ -33,7 +33,6 @@
     "@dashevo/dapi-grpc": "~0.16.0-dev.1",
     "@dashevo/dashcore-lib": "~0.18.12",
     "@dashevo/dashd-rpc": "^2.0.0",
-    "@dashevo/dpp": "~0.15.0",
     "@dashevo/grpc-common": "~0.3.1",
     "ajv": "^6.4.0",
     "bs58": "^4.0.1",
@@ -51,6 +50,7 @@
   "devDependencies": {
     "@dashevo/dapi-client": "~0.15.0",
     "@dashevo/dp-services-ctl": "~0.14.0",
+    "@dashevo/dpp": "~0.16.0-dev.2",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
