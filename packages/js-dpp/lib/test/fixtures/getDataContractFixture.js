@@ -113,6 +113,13 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       additionalProperties: false,
     },
     withByteArrays: {
+      indices: [
+        {
+          properties: [
+            { byteArrayField: 'asc' },
+          ],
+        },
+      ],
       properties: {
         byteArrayField: {
           type: 'object',

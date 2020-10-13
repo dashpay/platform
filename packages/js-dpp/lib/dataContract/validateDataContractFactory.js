@@ -136,7 +136,7 @@ module.exports = function validateDataContractFactory(
                 propertyName,
                 getPropertyDefinitionByPath(documentSchema, propertyName),
               ]
-            ), {});
+            ));
 
           const undefinedProperties = propertyDefinitionEntities
             .filter(([, propertyDefinition]) => !propertyDefinition)
@@ -160,11 +160,14 @@ module.exports = function validateDataContractFactory(
 
           // Validate indexed property definitions
           propertyDefinitionEntities.forEach(([propertyName, propertyDefinition]) => {
-            const { type: propertyType } = propertyDefinition;
+            const {
+              type: propertyType,
+              byteArray: isByteArray,
+            } = propertyDefinition;
 
             let invalidPropertyType;
 
-            if (propertyType === 'object') {
+            if (propertyType === 'object' && !isByteArray) {
               invalidPropertyType = 'object';
             }
 
