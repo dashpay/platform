@@ -11,7 +11,9 @@ const dataContract = getDpnsContractFixture();
  */
 function getTopDocumentFixture(options = {}) {
   const factory = new DocumentFactory(
-    () => {},
+    () => ({
+      isValid: () => true,
+    }),
     () => {},
   );
 
@@ -39,7 +41,9 @@ function getTopDocumentFixture(options = {}) {
  */
 function getParentDocumentFixture(options = {}) {
   const factory = new DocumentFactory(
-    () => {},
+    () => ({
+      isValid: () => true,
+    }),
     () => {},
   );
 
@@ -67,7 +71,9 @@ function getParentDocumentFixture(options = {}) {
  */
 function getChildDocumentFixture(options = {}) {
   const factory = new DocumentFactory(
-    () => {},
+    () => ({
+      isValid: () => true,
+    }),
     () => {},
   );
 

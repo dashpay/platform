@@ -14,7 +14,9 @@ const ownerId = generateRandomIdentifier();
  */
 module.exports = function getDocumentsFixture(dataContract = getDataContractFixture()) {
   const factory = new DocumentFactory(
-    () => {},
+    () => ({
+      isValid: () => true,
+    }),
     () => {},
   );
 

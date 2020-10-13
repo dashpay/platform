@@ -79,6 +79,15 @@ class DocumentFactory {
       rawDocument.$updatedAt = creationTime;
     }
 
+    const result = this.validateDocument(
+      rawDocument,
+      dataContract,
+    );
+
+    if (!result.isValid()) {
+      throw new InvalidDocumentError(result.getErrors(), rawDocument);
+    }
+
     const document = new Document(rawDocument, dataContract);
 
     document.setEntropy(documentEntropy);

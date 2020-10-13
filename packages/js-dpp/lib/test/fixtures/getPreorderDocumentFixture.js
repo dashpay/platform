@@ -13,7 +13,9 @@ function getPreorderDocumentFixture(options = {}) {
   const dataContract = getDpnsContractFixture();
 
   const factory = new DocumentFactory(
-    () => {},
+    () => ({
+      isValid: () => true,
+    }),
     () => {},
   );
 

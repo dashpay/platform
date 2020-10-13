@@ -39,6 +39,7 @@ describe('DocumentFactory', () => {
   let factory;
   let fakeTime;
   let fakeTimeDate;
+  let entropy;
 
   beforeEach(function beforeEach() {
     ({ ownerId } = getDocumentsFixture);
@@ -51,6 +52,12 @@ describe('DocumentFactory', () => {
     decodeMock = this.sinonSandbox.stub();
     generateEntropyMock = this.sinonSandbox.stub();
     validateDocumentMock = this.sinonSandbox.stub();
+
+    validateDocumentMock.returns(new ValidationResult());
+
+    entropy = bs58.decode('789');
+
+    generateEntropyMock.returns(entropy);
 
     const fetchContractResult = new ValidationResult();
     fetchContractResult.setData(dataContract);
@@ -80,13 +87,10 @@ describe('DocumentFactory', () => {
   describe('create', () => {
     it('should return new Document with specified type and data', () => {
       const contractId = bs58.decode('FQco85WbwNgb5ix8QQAH6wurMcgEC5ENSCv5ixG9cj12');
-      const entropy = bs58.decode('789');
       const name = 'Cutie';
 
       ownerId = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
       dataContract.id = Identifier.from(contractId);
-
-      generateEntropyMock.returns(entropy);
 
       const newDocument = factory.create(
         dataContract,
@@ -126,6 +130,22 @@ describe('DocumentFactory', () => {
         expect(e).to.be.an.instanceOf(InvalidDocumentTypeError);
         expect(e.getType()).to.equal(type);
         expect(e.getDataContract()).to.equal(dataContract);
+      }
+    });
+
+    it('should throw an error if validation faled', () => {
+      const error = new Error('validation failed');
+      const validationResult = new ValidationResult();
+      validationResult.addError(error);
+
+      validateDocumentMock.returns(validationResult);
+
+      try {
+        factory.create(dataContract, ownerId, rawDocument.$type);
+
+        expect.fail('InvalidDocumentError should be thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(InvalidDocumentError);
       }
     });
   });
