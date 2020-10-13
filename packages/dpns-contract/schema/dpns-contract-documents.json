@@ -22,7 +22,7 @@
       }
     ],
     "properties": {
-        "label": {
+      "label": {
         "type": "string",
         "pattern": "^((?!-)[a-zA-Z0-9-]{0,62}[a-zA-Z0-9])$",
         "minLength": 3,
@@ -33,46 +33,47 @@
         "type": "string",
         "pattern": "^((?!-)[a-z0-9-]{0,62}[a-z0-9])$",
         "maxLength": 63,
-        "description": "Domain label in a lower case for case insensitive uniqueness validation. e.g. 'bob'",
-        "$comment": "This property will be deprecated due to case insensitive indices. Must be equal to label in lowercase"
+        "description": "Domain label in lowercase for case-insensitive uniqueness validation. e.g. 'bob'",
+        "$comment": "Must be equal to the label in lowercase. This property will be deprecated due to case insensitive indices"
       },
       "normalizedParentDomainName": {
         "type": "string",
         "pattern": "^$|^((?!-)[a-z0-9-\\.]{0,189}[a-z0-9])$",
         "minLength": 0,
         "maxLength": 190,
-        "description": "A full parent domain name in lower case for case insensitive uniqueness validation. e.g. 'dash'",
-        "$comment": "Must be equal to existing domain or can be empty if you want to create a top level domain. Only the contract owner can create top level domains"
+        "description": "A full parent domain name in lowercase for case-insensitive uniqueness validation. e.g. 'dash'",
+        "$comment": "Must either be equal to an existing domain or empty to create a top level domain. Only the data contract owner can create top level domains."
       },
       "preorderSalt": {
-        "type": "string",
-        "contentEncoding": "base64",
-        "minLength": 43,
-        "maxLength": 43,
-        "pattern": "^([A-Za-z0-9+/])*$",
-        "description": "Domain pre-order salt. 32 random bytes"
+        "type": "object",
+        "byteArray": true,
+        "minBytesLength": 32,
+        "maxBytesLength": 32,
+        "description": "Salt used in the preorder document"
       },
       "records": {
         "type": "object",
         "properties": {
           "dashUniqueIdentityId": {
-            "type": "string",
-            "minLength": 42,
-            "maxLength": 44,
-            "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$",
-            "description": "Identity ID string should be used to create a primary name for Identity. base58 string",
-            "$comment": "Should be equal to the document owner"
+            "type": "object",
+            "byteArray": true,
+            "minBytesLength": 32,
+            "maxBytesLength": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "description": "Identity ID to be used to create the primary name the Identity",
+            "$comment": "Must be equal to the document owner"
           },
           "dashAliasIdentityId": {
-            "type": "string",
-            "minLength": 42,
-            "maxLength": 44,
-            "pattern": "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$",
-            "description": "Identity ID string should be used to create multiple alias names for Identity. base58 string",
-            "$comment": "Should be equal to the document owner"
+            "type": "object",
+            "byteArray": true,
+            "minBytesLength": 32,
+            "maxBytesLength": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "description": "Identity ID to be used to create alias names for the Identity",
+            "$comment": "Must be equal to the document owner"
           }
         },
-        "$comment": "Constraint with max and min properties ensure that only one identity record is used either `dashUniqueIdentityId` or `dashAliasIdentityId`",
+        "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`",
         "minProperties": 1,
         "maxProperties": 1,
         "additionalProperties": false
@@ -82,10 +83,11 @@
         "properties": {
           "allowSubdomains": {
             "type": "boolean",
-            "description": "This option defines who can create subdomains"
+            "description": "This option defines who can create subdomains: true - anyone; false - only the domain owner",
+            "$comment": "Only the domain owner is allowed to create subdomains for non top-level domains"
           }
         },
-        "description": "Subdomain rules allows to define rules for subdomains",
+        "description": "Subdomain rules allow domain owners to define rules for subdomains",
         "additionalProperties": false,
         "required": ["allowSubdomains"]
       }
@@ -99,7 +101,7 @@
       "subdomainRules"
     ],
     "additionalProperties": false,
-    "$comment": "In order to register domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"
+    "$comment": "In order to register a domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"
   },
   "preorder": {
     "indices": [
@@ -114,12 +116,11 @@
     ],
     "properties": {
       "saltedDomainHash": {
-        "type": "string",
-        "contentEncoding": "base64",
-        "minLength": 43,
-        "maxLength": 43,
-        "pattern": "^([A-Za-z0-9+/])*$",
-        "description": "Double sha-256 of concatenated salt, `normalizedLabel` and `normalizedParentDomainName`. Salt should be 32 random bytes"
+        "type": "object",
+        "byteArray": true,
+        "minBytesLength": 32,
+        "maxBytesLength": 32,
+        "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
       }
     },
     "required": [

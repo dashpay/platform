@@ -3,8 +3,6 @@
   "version": "0.3.0-dev.4",
   "description": "A contract and helper scripts for DPNS DApp",
   "scripts": {
-    "register": "node scripts/register",
-    "fetch": "node scripts/fetch",
     "check-package": "npm run check-package:name && npm run check-package:version",
     "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
@@ -36,9 +34,9 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dapi-client": "~0.15.0-dev.5",
+    "@dashevo/dapi-client": "~0.16.0-dev.1",
     "@dashevo/dashcore-lib": "~0.18.12",
-    "@dashevo/dpp": "~0.15.0-dev.7",
+    "@dashevo/dpp": "~0.16.0-dev.4",
     "chai": "^4.2.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^6.7.2",
