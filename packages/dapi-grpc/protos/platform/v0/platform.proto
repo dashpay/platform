@@ -26,7 +26,7 @@ message BroadcastStateTransitionResponse {
 }
 
 message GetIdentityRequest {
-  string id = 1;
+  bytes id = 1;
 }
 
 message GetIdentityResponse {
@@ -34,7 +34,7 @@ message GetIdentityResponse {
 }
 
 message GetDataContractRequest {
-  string id = 1;
+  bytes id = 1;
 }
 
 message GetDataContractResponse {
@@ -42,7 +42,7 @@ message GetDataContractResponse {
 }
 
 message GetDocumentsRequest {
-  string data_contract_id = 1;
+  bytes data_contract_id = 1;
   string document_type = 2;
 
   bytes where = 3;

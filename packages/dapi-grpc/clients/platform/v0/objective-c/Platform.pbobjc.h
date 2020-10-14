@@ -70,7 +70,7 @@ typedef GPB_ENUM(GetIdentityRequest_FieldNumber) {
 
 @interface GetIdentityRequest : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *id_p;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
 @end
 
@@ -94,7 +94,7 @@ typedef GPB_ENUM(GetDataContractRequest_FieldNumber) {
 
 @interface GetDataContractRequest : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *id_p;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
 @end
 
@@ -130,7 +130,7 @@ typedef GPB_ENUM(GetDocumentsRequest_Start_OneOfCase) {
 
 @interface GetDocumentsRequest : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *dataContractId;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 

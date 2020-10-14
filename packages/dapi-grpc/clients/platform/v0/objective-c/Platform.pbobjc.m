@@ -124,7 +124,7 @@ typedef struct BroadcastStateTransitionResponse__storage_ {
 
 typedef struct GetIdentityRequest__storage_ {
   uint32_t _has_storage_[1];
-  NSString *id_p;
+  NSData *id_p;
 } GetIdentityRequest__storage_;
 
 // This method is threadsafe because it is initially called
@@ -140,7 +140,7 @@ typedef struct GetIdentityRequest__storage_ {
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetIdentityRequest__storage_, id_p),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeString,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -210,7 +210,7 @@ typedef struct GetIdentityResponse__storage_ {
 
 typedef struct GetDataContractRequest__storage_ {
   uint32_t _has_storage_[1];
-  NSString *id_p;
+  NSData *id_p;
 } GetDataContractRequest__storage_;
 
 // This method is threadsafe because it is initially called
@@ -226,7 +226,7 @@ typedef struct GetDataContractRequest__storage_ {
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetDataContractRequest__storage_, id_p),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeString,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -306,7 +306,7 @@ typedef struct GetDocumentsRequest__storage_ {
   uint32_t limit;
   uint32_t startAfter;
   uint32_t startAt;
-  NSString *dataContractId;
+  NSData *dataContractId;
   NSString *documentType;
   NSData *where;
   NSData *orderBy;
@@ -325,7 +325,7 @@ typedef struct GetDocumentsRequest__storage_ {
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetDocumentsRequest__storage_, dataContractId),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeString,
+        .dataType = GPBDataTypeBytes,
       },
       {
         .name = "documentType",
