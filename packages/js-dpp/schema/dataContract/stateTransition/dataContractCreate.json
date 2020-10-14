@@ -17,8 +17,8 @@
     "entropy": {
       "type": "object",
       "byteArray": true,
-      "minBytesLength": 20,
-      "maxBytesLength": 35
+      "minBytesLength": 32,
+      "maxBytesLength": 32
     },
     "signaturePublicKeyId": {
       "type": "integer",

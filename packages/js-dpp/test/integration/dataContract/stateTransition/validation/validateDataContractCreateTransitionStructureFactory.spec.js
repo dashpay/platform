@@ -268,8 +268,8 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       expect(error.keyword).to.equal('byteArray');
     });
 
-    it('should be no less than 20 bytes', async () => {
-      rawStateTransition.entropy = Buffer.alloc(19);
+    it('should be no less than 32 bytes', async () => {
+      rawStateTransition.entropy = Buffer.alloc(31);
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -279,11 +279,11 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
 
       expect(error.dataPath).to.equal('.entropy');
       expect(error.keyword).to.equal('minBytesLength');
-      expect(error.params.limit).to.equal(20);
+      expect(error.params.limit).to.equal(32);
     });
 
-    it('should be no longer than 35 bytes', async () => {
-      rawStateTransition.entropy = Buffer.alloc(36);
+    it('should be no longer than 32 bytes', async () => {
+      rawStateTransition.entropy = Buffer.alloc(33);
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
@@ -293,7 +293,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
 
       expect(error.dataPath).to.equal('.entropy');
       expect(error.keyword).to.equal('maxBytesLength');
-      expect(error.params.limit).to.equal(35);
+      expect(error.params.limit).to.equal(32);
     });
   });
 
