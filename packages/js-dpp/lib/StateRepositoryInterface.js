@@ -91,18 +91,6 @@
  */
 
 /**
- * Store public key hash and identity id pair
- *
- * @async
- * @method
- * @deprecated
- * @name StateRepository#storePublicKeyIdentityId
- * @param {string} publicKeyHash
- * @param {Buffer} identityId
- * @returns {Promise<void>}
- */
-
-/**
  * Store public keys hashes and identity id pair
  *
  * @async
@@ -111,17 +99,6 @@
  * @param {Buffer} identityId
  * @param {Buffer[]} publicKeyHashes
  * @returns {Promise<void>}
- */
-
-/**
- * Fetch identity id by public key hash
- *
- * @async
- * @method
- * @deprecated
- * @name StateRepository#fetchPublicKeyIdentityId
- * @param {string} publicKeyHash
- * @returns {Promise<string|null>}
  */
 
 /**
