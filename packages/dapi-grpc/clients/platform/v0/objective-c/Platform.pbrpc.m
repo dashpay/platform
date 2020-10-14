@@ -70,30 +70,6 @@
              responseClass:[GetDocumentsResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-#pragma mark getIdentityByFirstPublicKey(GetIdentityByFirstPublicKeyRequest) returns (GetIdentityByFirstPublicKeyResponse)
-
-- (void)getIdentityByFirstPublicKeyWithRequest:(GetIdentityByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetIdentityByFirstPublicKeyWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityByFirstPublicKeyWithRequest:(GetIdentityByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getIdentityByFirstPublicKey"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetIdentityByFirstPublicKeyResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-#pragma mark getIdentityIdByFirstPublicKey(GetIdentityIdByFirstPublicKeyRequest) returns (GetIdentityIdByFirstPublicKeyResponse)
-
-- (void)getIdentityIdByFirstPublicKeyWithRequest:(GetIdentityIdByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityIdByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetIdentityIdByFirstPublicKeyWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityIdByFirstPublicKeyWithRequest:(GetIdentityIdByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityIdByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getIdentityIdByFirstPublicKey"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetIdentityIdByFirstPublicKeyResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
 #pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
 
 - (void)getIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler{

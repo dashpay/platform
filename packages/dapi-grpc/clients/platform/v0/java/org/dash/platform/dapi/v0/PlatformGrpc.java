@@ -76,30 +76,6 @@ public final class PlatformGrpc {
               org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse.getDefaultInstance()))
           .build();
   @io.grpc.ExperimentalApi("https://github.com/grpc/grpc-java/issues/1901")
-  public static final io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse> METHOD_GET_IDENTITY_BY_FIRST_PUBLIC_KEY =
-      io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse>newBuilder()
-          .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-          .setFullMethodName(generateFullMethodName(
-              "org.dash.platform.dapi.v0.Platform", "getIdentityByFirstPublicKey"))
-          .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-              org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest.getDefaultInstance()))
-          .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-              org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse.getDefaultInstance()))
-          .build();
-  @io.grpc.ExperimentalApi("https://github.com/grpc/grpc-java/issues/1901")
-  public static final io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse> METHOD_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY =
-      io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse>newBuilder()
-          .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-          .setFullMethodName(generateFullMethodName(
-              "org.dash.platform.dapi.v0.Platform", "getIdentityIdByFirstPublicKey"))
-          .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-              org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest.getDefaultInstance()))
-          .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-              org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse.getDefaultInstance()))
-          .build();
-  @io.grpc.ExperimentalApi("https://github.com/grpc/grpc-java/issues/1901")
   public static final io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> METHOD_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES =
       io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse>newBuilder()
@@ -181,20 +157,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getIdentityByFirstPublicKey(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse> responseObserver) {
-      asyncUnimplementedUnaryCall(METHOD_GET_IDENTITY_BY_FIRST_PUBLIC_KEY, responseObserver);
-    }
-
-    /**
-     */
-    public void getIdentityIdByFirstPublicKey(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse> responseObserver) {
-      asyncUnimplementedUnaryCall(METHOD_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY, responseObserver);
-    }
-
-    /**
-     */
     public void getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> responseObserver) {
       asyncUnimplementedUnaryCall(METHOD_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES, responseObserver);
@@ -237,20 +199,6 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>(
                   this, METHODID_GET_DOCUMENTS)))
-          .addMethod(
-            METHOD_GET_IDENTITY_BY_FIRST_PUBLIC_KEY,
-            asyncUnaryCall(
-              new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse>(
-                  this, METHODID_GET_IDENTITY_BY_FIRST_PUBLIC_KEY)))
-          .addMethod(
-            METHOD_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY,
-            asyncUnaryCall(
-              new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse>(
-                  this, METHODID_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY)))
           .addMethod(
             METHOD_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES,
             asyncUnaryCall(
@@ -321,22 +269,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getIdentityByFirstPublicKey(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse> responseObserver) {
-      asyncUnaryCall(
-          getChannel().newCall(METHOD_GET_IDENTITY_BY_FIRST_PUBLIC_KEY, getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
-    public void getIdentityIdByFirstPublicKey(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse> responseObserver) {
-      asyncUnaryCall(
-          getChannel().newCall(METHOD_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY, getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
     public void getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> responseObserver) {
       asyncUnaryCall(
@@ -396,20 +328,6 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse getDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest request) {
       return blockingUnaryCall(
           getChannel(), METHOD_GET_DOCUMENTS, getCallOptions(), request);
-    }
-
-    /**
-     */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse getIdentityByFirstPublicKey(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest request) {
-      return blockingUnaryCall(
-          getChannel(), METHOD_GET_IDENTITY_BY_FIRST_PUBLIC_KEY, getCallOptions(), request);
-    }
-
-    /**
-     */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse getIdentityIdByFirstPublicKey(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest request) {
-      return blockingUnaryCall(
-          getChannel(), METHOD_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY, getCallOptions(), request);
     }
 
     /**
@@ -479,22 +397,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse> getIdentityByFirstPublicKey(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest request) {
-      return futureUnaryCall(
-          getChannel().newCall(METHOD_GET_IDENTITY_BY_FIRST_PUBLIC_KEY, getCallOptions()), request);
-    }
-
-    /**
-     */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse> getIdentityIdByFirstPublicKey(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest request) {
-      return futureUnaryCall(
-          getChannel().newCall(METHOD_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY, getCallOptions()), request);
-    }
-
-    /**
-     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> getIdentitiesByPublicKeyHashes(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request) {
       return futureUnaryCall(
@@ -514,10 +416,8 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY = 1;
   private static final int METHODID_GET_DATA_CONTRACT = 2;
   private static final int METHODID_GET_DOCUMENTS = 3;
-  private static final int METHODID_GET_IDENTITY_BY_FIRST_PUBLIC_KEY = 4;
-  private static final int METHODID_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY = 5;
-  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 6;
-  private static final int METHODID_GET_IDENTITY_IDS_BY_PUBLIC_KEY_HASHES = 7;
+  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 4;
+  private static final int METHODID_GET_IDENTITY_IDS_BY_PUBLIC_KEY_HASHES = 5;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -551,14 +451,6 @@ public final class PlatformGrpc {
         case METHODID_GET_DOCUMENTS:
           serviceImpl.getDocuments((org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>) responseObserver);
-          break;
-        case METHODID_GET_IDENTITY_BY_FIRST_PUBLIC_KEY:
-          serviceImpl.getIdentityByFirstPublicKey((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByFirstPublicKeyResponse>) responseObserver);
-          break;
-        case METHODID_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY:
-          serviceImpl.getIdentityIdByFirstPublicKey((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdByFirstPublicKeyResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES:
           serviceImpl.getIdentitiesByPublicKeyHashes((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest) request,
@@ -605,8 +497,6 @@ public final class PlatformGrpc {
               .addMethod(METHOD_GET_IDENTITY)
               .addMethod(METHOD_GET_DATA_CONTRACT)
               .addMethod(METHOD_GET_DOCUMENTS)
-              .addMethod(METHOD_GET_IDENTITY_BY_FIRST_PUBLIC_KEY)
-              .addMethod(METHOD_GET_IDENTITY_ID_BY_FIRST_PUBLIC_KEY)
               .addMethod(METHOD_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES)
               .addMethod(METHOD_GET_IDENTITY_IDS_BY_PUBLIC_KEY_HASHES)
               .build();

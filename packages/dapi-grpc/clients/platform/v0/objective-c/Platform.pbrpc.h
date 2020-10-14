@@ -39,20 +39,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentityByFirstPublicKey(GetIdentityByFirstPublicKeyRequest) returns (GetIdentityByFirstPublicKeyResponse)
-
-- (void)getIdentityByFirstPublicKeyWithRequest:(GetIdentityByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetIdentityByFirstPublicKeyWithRequest:(GetIdentityByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getIdentityIdByFirstPublicKey(GetIdentityIdByFirstPublicKeyRequest) returns (GetIdentityIdByFirstPublicKeyResponse)
-
-- (void)getIdentityIdByFirstPublicKeyWithRequest:(GetIdentityIdByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityIdByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetIdentityIdByFirstPublicKeyWithRequest:(GetIdentityIdByFirstPublicKeyRequest *)request handler:(void(^)(GetIdentityIdByFirstPublicKeyResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
 #pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
 
 - (void)getIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
