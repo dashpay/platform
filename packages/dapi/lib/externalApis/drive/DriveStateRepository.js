@@ -61,7 +61,12 @@ class DriveStateRepository {
    * @return {Promise<Buffer>}
    */
   async fetchDataContract(contractId) {
-    return this.request(`/dataContracts/${contractId}`);
+    return this.request(
+      '/dataContracts',
+      {
+        contractId,
+      },
+    );
   }
 
   /**
@@ -81,8 +86,12 @@ class DriveStateRepository {
    */
   async fetchDocuments(contractId, type, options) {
     const serializedDocumentsArray = await this.request(
-      `/dataContracts/${contractId}/documents/${type}`,
-      options,
+      '/dataContracts/documents',
+      {
+        ...options,
+        contractId,
+        type,
+      },
     );
 
     return cbor.decode(serializedDocumentsArray);
@@ -96,7 +105,12 @@ class DriveStateRepository {
    * @return {Promise<Buffer>}
    */
   async fetchIdentity(id) {
-    return this.request(`/identities/${id}`);
+    return this.request(
+      '/identities',
+      {
+        id,
+      },
+    );
   }
 
   /**

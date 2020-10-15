@@ -93,8 +93,8 @@ describe('DriveStateRepository', () => {
       const result = await drive.fetchDataContract(contractId);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: `/dataContracts/${contractId}`,
-        data: cbor.encode({}).toString('hex'), // cbor encoded empty object
+        path: '/dataContracts',
+        data: cbor.encode({ contractId }).toString('hex'), // cbor encoded empty object
       });
       expect(result).to.be.deep.equal(buffer);
     });
@@ -121,8 +121,8 @@ describe('DriveStateRepository', () => {
       const result = await drive.fetchDocuments(contractId, type, options);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: `/dataContracts/${contractId}/documents/${type}`,
-        data: cbor.encode(options).toString('hex'), // cbor encoded empty object
+        path: '/dataContracts/documents',
+        data: cbor.encode({ ...options, contractId, type }).toString('hex'), // cbor encoded empty object
       });
       expect(result).to.be.deep.equal([]);
     });
@@ -145,8 +145,8 @@ describe('DriveStateRepository', () => {
       const result = await drive.fetchIdentity(identityId);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: `/identities/${identityId}`,
-        data: cbor.encode({}).toString('hex'), // cbor encoded empty object
+        path: '/identities',
+        data: cbor.encode({ id: identityId }).toString('hex'), // cbor encoded empty object
       });
       expect(result).to.be.deep.equal(buffer);
     });
