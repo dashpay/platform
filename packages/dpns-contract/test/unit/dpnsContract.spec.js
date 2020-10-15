@@ -77,7 +77,7 @@ describe('DPNS Contract', () => {
             const [error] = e.getErrors();
 
             expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minBytesLength');
+            expect(error.keyword).to.equal('minItems');
             expect(error.dataPath).to.equal('.saltedDomainHash');
           }
         });
@@ -96,7 +96,7 @@ describe('DPNS Contract', () => {
             const [error] = e.getErrors();
 
             expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minBytesLength');
+            expect(error.keyword).to.equal('minItems');
             expect(error.dataPath).to.equal('.saltedDomainHash');
           }
         });
@@ -115,7 +115,7 @@ describe('DPNS Contract', () => {
             const [error] = e.getErrors();
 
             expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxBytesLength');
+            expect(error.keyword).to.equal('maxItems');
             expect(error.dataPath).to.equal('.saltedDomainHash');
           }
         });
@@ -397,7 +397,7 @@ describe('DPNS Contract', () => {
             const [error] = e.getErrors();
 
             expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minBytesLength');
+            expect(error.keyword).to.equal('minItems');
             expect(error.dataPath).to.equal('.preorderSalt');
           }
         });
@@ -416,7 +416,7 @@ describe('DPNS Contract', () => {
             const [error] = e.getErrors();
 
             expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minBytesLength');
+            expect(error.keyword).to.equal('minItems');
             expect(error.dataPath).to.equal('.preorderSalt');
           }
         });
@@ -435,7 +435,7 @@ describe('DPNS Contract', () => {
             const [error] = e.getErrors();
 
             expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxBytesLength');
+            expect(error.keyword).to.equal('maxItems');
             expect(error.dataPath).to.equal('.preorderSalt');
           }
         });
@@ -569,7 +569,7 @@ describe('DPNS Contract', () => {
                 const [error] = e.getErrors();
 
                 expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('minBytesLength');
+                expect(error.keyword).to.equal('minItems');
                 expect(error.dataPath).to.equal('.records.dashUniqueIdentityId');
               }
             });
@@ -590,7 +590,7 @@ describe('DPNS Contract', () => {
                 const [error] = e.getErrors();
 
                 expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('maxBytesLength');
+                expect(error.keyword).to.equal('maxItems');
                 expect(error.dataPath).to.equal('.records.dashUniqueIdentityId');
               }
             });
@@ -613,7 +613,7 @@ describe('DPNS Contract', () => {
                 const [error] = e.getErrors();
 
                 expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('minBytesLength');
+                expect(error.keyword).to.equal('minItems');
                 expect(error.dataPath).to.equal('.records.dashAliasIdentityId');
               }
             });
@@ -634,7 +634,7 @@ describe('DPNS Contract', () => {
                 const [error] = e.getErrors();
 
                 expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('maxBytesLength');
+                expect(error.keyword).to.equal('maxItems');
                 expect(error.dataPath).to.equal('.records.dashAliasIdentityId');
               }
             });

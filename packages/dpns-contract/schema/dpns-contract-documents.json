@@ -52,29 +52,29 @@
         "$comment": "Must either be equal to an existing domain or empty to create a top level domain. Only the data contract owner can create top level domains."
       },
       "preorderSalt": {
-        "type": "object",
+        "type": "array",
         "byteArray": true,
-        "minBytesLength": 32,
-        "maxBytesLength": 32,
+        "minItems": 32,
+        "maxItems": 32,
         "description": "Salt used in the preorder document"
       },
       "records": {
         "type": "object",
         "properties": {
           "dashUniqueIdentityId": {
-            "type": "object",
+            "type": "array",
             "byteArray": true,
-            "minBytesLength": 32,
-            "maxBytesLength": 32,
+            "minItems": 32,
+            "maxItems": 32,
             "contentMediaType": "application/x.dash.dpp.identifier",
             "description": "Identity ID to be used to create the primary name the Identity",
             "$comment": "Must be equal to the document owner"
           },
           "dashAliasIdentityId": {
-            "type": "object",
+            "type": "array",
             "byteArray": true,
-            "minBytesLength": 32,
-            "maxBytesLength": 32,
+            "minItems": 32,
+            "maxItems": 32,
             "contentMediaType": "application/x.dash.dpp.identifier",
             "description": "Identity ID to be used to create alias names for the Identity",
             "$comment": "Must be equal to the document owner"
@@ -123,10 +123,10 @@
     ],
     "properties": {
       "saltedDomainHash": {
-        "type": "object",
+        "type": "array",
         "byteArray": true,
-        "minBytesLength": 32,
-        "maxBytesLength": 32,
+        "minItems": 32,
+        "maxItems": 32,
         "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
       }
     },

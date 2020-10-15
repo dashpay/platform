@@ -36,7 +36,7 @@
   "devDependencies": {
     "@dashevo/dapi-client": "~0.16.0-dev.1",
     "@dashevo/dashcore-lib": "~0.18.12",
-    "@dashevo/dpp": "~0.16.0-dev.4",
+    "@dashevo/dpp": "~0.16.0-dev.6",
     "chai": "^4.2.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^6.7.2",
