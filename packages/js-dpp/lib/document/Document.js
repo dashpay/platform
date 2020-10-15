@@ -1,10 +1,11 @@
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
+const lodashCloneDeepWith = require('lodash.clonedeepwith');
 
 const cloneDeepWithIdentifiers = require('../util/cloneDeepWithIdentifiers');
+
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
-const transpileProperties = require('../util/transpileProperties');
 const Identifier = require('../Identifier');
 
 class Document {
@@ -311,26 +312,12 @@ class Document {
       rawDocument.$dataContractId = this.getDataContractId().toBuffer();
       rawDocument.$ownerId = this.getOwnerId().toBuffer();
 
-      const binaryProperties = this.dataContract.getBinaryProperties(
-        this.getType(),
-      );
-
-      const identifierProperties = Object.fromEntries(
-        Object.entries(binaryProperties)
-          .filter(([, property]) => property.contentMediaType === Identifier.MEDIA_TYPE),
-      );
-
-      return transpileProperties(
-        rawDocument,
-        identifierProperties,
-        (value) => {
-          if (value instanceof Identifier) {
-            return value.toBuffer();
-          }
-
-          return value;
-        },
-      );
+      // eslint-disable-next-line consistent-return
+      return lodashCloneDeepWith(rawDocument, (value) => {
+        if (value instanceof Identifier) {
+          return value.toBuffer();
+        }
+      });
     }
 
     return rawDocument;
@@ -349,25 +336,16 @@ class Document {
       $ownerId: this.getOwnerId().toString(),
     };
 
-    const binaryProperties = this.dataContract.getBinaryProperties(
-      this.getType(),
-    );
+    // eslint-disable-next-line consistent-return
+    return lodashCloneDeepWith(jsonDocument, (value) => {
+      if (value instanceof Identifier) {
+        return value.toString();
+      }
 
-    return transpileProperties(
-      jsonDocument,
-      binaryProperties,
-      (value) => {
-        if (value instanceof Identifier) {
-          return value.toString();
-        }
-
-        if (Buffer.isBuffer(value)) {
-          return value.toString('base64');
-        }
-
-        return value;
-      },
-    );
+      if (Buffer.isBuffer(value)) {
+        return value.toString('base64');
+      }
+    });
   }
 
   /**

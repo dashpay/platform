@@ -1,9 +1,12 @@
+const lodashCloneDeepWith = require('lodash.clonedeepwith');
+const lodashGet = require('lodash.get');
+const lodashSet = require('lodash.set');
+
+const cloneDeepWithIdentifiers = require('../../../util/cloneDeepWithIdentifiers');
+
 const AbstractDocumentTransition = require('./AbstractDocumentTransition');
 
 const Identifier = require('../../../Identifier');
-
-const transpileProperties = require('../../../util/transpileProperties');
-
 
 /**
  * @abstract
@@ -29,11 +32,22 @@ class AbstractDataDocumentTransition extends AbstractDocumentTransition {
       Object.entries(rawTransition).filter(([propertyName]) => !propertyName.startsWith('$')),
     );
 
-    this.data = transpileProperties(
-      data,
-      identifierProperties,
-      (value) => Identifier.from(value),
-    );
+    this.data = cloneDeepWithIdentifiers(data);
+
+    Object.keys(identifierProperties)
+      .forEach((propertyPath) => {
+        const value = lodashGet(this.data, propertyPath);
+
+        if (value !== undefined) {
+          const clonedValue = Identifier.from(value);
+
+          lodashSet(
+            this.data,
+            propertyPath,
+            clonedValue,
+          );
+        }
+      });
   }
 
   /**
@@ -68,26 +82,12 @@ class AbstractDataDocumentTransition extends AbstractDocumentTransition {
     };
 
     if (!options.skipIdentifiersConversion) {
-      const binaryProperties = this.dataContract.getBinaryProperties(
-        this.getType(),
-      );
-
-      const identifierProperties = Object.fromEntries(
-        Object.entries(binaryProperties)
-          .filter(([, property]) => property.contentMediaType === Identifier.MEDIA_TYPE),
-      );
-
-      return transpileProperties(
-        rawDocumentTransition,
-        identifierProperties,
-        (value) => {
-          if (value instanceof Identifier) {
-            return value.toBuffer();
-          }
-
-          return value;
-        },
-      );
+      // eslint-disable-next-line consistent-return
+      return lodashCloneDeepWith(rawDocumentTransition, (value) => {
+        if (value instanceof Identifier) {
+          return value.toBuffer();
+        }
+      });
     }
 
     return rawDocumentTransition;
@@ -101,25 +101,16 @@ class AbstractDataDocumentTransition extends AbstractDocumentTransition {
   toJSON() {
     const jsonDocumentTransition = super.toJSON();
 
-    const binaryProperties = this.dataContract.getBinaryProperties(
-      this.getType(),
-    );
+    // eslint-disable-next-line consistent-return
+    return lodashCloneDeepWith(jsonDocumentTransition, (value) => {
+      if (value instanceof Identifier) {
+        return value.toString();
+      }
 
-    return transpileProperties(
-      jsonDocumentTransition,
-      binaryProperties,
-      (value) => {
-        if (value instanceof Identifier) {
-          return value.toString();
-        }
-
-        if (Buffer.isBuffer(value)) {
-          return value.toString('base64');
-        }
-
-        return value;
-      },
-    );
+      if (Buffer.isBuffer(value)) {
+        return value.toString('base64');
+      }
+    });
   }
 }
 
