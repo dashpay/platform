@@ -15,6 +15,8 @@ const InvalidCompoundIndexError = require('../errors/InvalidCompoundIndexError')
 
 const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
+const convertBuffersToArrays = require('../util/convertBuffersToArrays');
+
 const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
 
@@ -43,7 +45,7 @@ module.exports = function validateDataContractFactory(
     result.merge(
       jsonSchemaValidator.validate(
         JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
-        rawDataContract,
+        convertBuffersToArrays(rawDataContract),
       ),
     );
 
@@ -167,11 +169,11 @@ module.exports = function validateDataContractFactory(
 
             let invalidPropertyType;
 
-            if (propertyType === 'object' && !isByteArray) {
+            if (propertyType === 'object') {
               invalidPropertyType = 'object';
             }
 
-            if (propertyType === 'array') {
+            if (propertyType === 'array' && !isByteArray) {
               const { items } = propertyDefinition;
 
               if (Array.isArray(items) || items.type === 'object' || items.type === 'array') {

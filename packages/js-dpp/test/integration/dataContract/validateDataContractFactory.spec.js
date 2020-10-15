@@ -155,16 +155,18 @@ describe('validateDataContractFactory', () => {
     });
 
     it('should be a byte array', async () => {
-      rawDataContract.ownerId = {};
+      rawDataContract.ownerId = new Array(32).fill('string');
 
       const result = await validateDataContract(rawDataContract);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.ownerId[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -177,7 +179,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.keyword).to.equal('minItems');
     });
 
     it('should be no longer than 32 bytes', async () => {
@@ -190,7 +192,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.ownerId');
-      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.keyword).to.equal('maxItems');
     });
   });
 
@@ -210,16 +212,18 @@ describe('validateDataContractFactory', () => {
     });
 
     it('should be a byte array', async () => {
-      rawDataContract.$id = {};
+      rawDataContract.$id = new Array(32).fill('string');
 
       const result = await validateDataContract(rawDataContract);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.$id');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.$id[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -232,7 +236,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.$id');
-      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.keyword).to.equal('minItems');
     });
 
     it('should be no longer than 32 bytes', async () => {
@@ -245,7 +249,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.$id');
-      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.keyword).to.equal('maxItems');
     });
   });
 
@@ -1067,7 +1071,7 @@ describe('validateDataContractFactory', () => {
           expect(error.params.allowedValue).to.equal(true);
         });
 
-        it('should be used with type `object`', async () => {
+        it('should be used with type `array`', async () => {
           rawDataContract.documents.withByteArrays.properties.byteArrayField.type = 'string';
 
           const result = await validateDataContract(rawDataContract);
@@ -1079,39 +1083,10 @@ describe('validateDataContractFactory', () => {
           expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].type');
           expect(error.keyword).to.equal('const');
         });
-      });
 
-      describe('minBytesLength', () => {
-        it('should be a integer', async () => {
-          rawDataContract.documents.withByteArrays.properties.byteArrayField.minBytesLength = 'something';
-
-          const result = await validateDataContract(rawDataContract);
-
-          expectJsonSchemaError(result);
-
-          const [error] = result.getErrors();
-
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].minBytesLength');
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
-        });
-
-        it('should be not less than 0', async () => {
-          rawDataContract.documents.withByteArrays.properties.byteArrayField.minBytesLength = -1;
-
-          const result = await validateDataContract(rawDataContract);
-
-          expectJsonSchemaError(result);
-
-          const [error] = result.getErrors();
-
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].minBytesLength');
-          expect(error.keyword).to.equal('minimum');
-        });
-
-        it('should be used with `byteArray`', async () => {
-          rawDataContract.documents.withByteArrays.properties.byteArrayField = {
-            minBytesLength: 1,
+        it('should not be used with `items`', async () => {
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.items = {
+            type: 'string',
           };
 
           const result = await validateDataContract(rawDataContract);
@@ -1120,104 +1095,51 @@ describe('validateDataContractFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\']');
-          expect(error.keyword).to.equal('dependencies');
-        });
-
-        it('should be present if contentMediaType is "application/x.dash.dpp.identifier"', async () => {
-          delete rawDataContract.documents.withByteArrays.properties.identifierField.minBytesLength;
-
-          const result = await validateDataContract(rawDataContract);
-
-          expectJsonSchemaError(result);
-
-          const [error] = result.getErrors();
-
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\']');
-          expect(error.keyword).to.equal('required');
-        });
-
-        it('should be 32 bytes long if contentMediaType is "application/x.dash.dpp.identifier"', async () => {
-          rawDataContract.documents.withByteArrays.properties.identifierField.minBytesLength = 31;
-
-          const result = await validateDataContract(rawDataContract);
-
-          expectJsonSchemaError(result);
-
-          const [error] = result.getErrors();
-
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\'].minBytesLength');
-          expect(error.keyword).to.equal('const');
+          expect(error.schemaPath).to.equal('#/dependencies/byteArray/not');
+          expect(error.keyword).to.equal('not');
         });
       });
 
-      describe('maxBytesLength', () => {
-        it('should be a integer', async () => {
-          rawDataContract.documents.withByteArrays.properties.byteArrayField.minBytesLength = 'something';
+      describe('contentMediaType', () => {
+        describe('application/x.dash.dpp.identifier', () => {
+          it('should be used with byte array only', async () => {
+            delete rawDataContract.documents.withByteArrays.properties.identifierField.byteArray;
 
-          const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result);
+            expectJsonSchemaError(result);
 
-          const [error] = result.getErrors();
+            const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].minBytesLength');
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
-        });
+            expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\']');
+            expect(error.keyword).to.equal('required');
+          });
 
-        it('should be not less than 0', async () => {
-          rawDataContract.documents.withByteArrays.properties.byteArrayField.maxBytesLength = -1;
+          it('should be used with byte array not shorter than 32 bytes', async () => {
+            rawDataContract.documents.withByteArrays.properties.identifierField.minItems = 31;
 
-          const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result);
+            expectJsonSchemaError(result);
 
-          const [error] = result.getErrors();
+            const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].maxBytesLength');
-          expect(error.keyword).to.equal('minimum');
-        });
+            expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\'].minItems');
+            expect(error.keyword).to.equal('const');
+          });
 
-        it('should be used with `byteArray`', async () => {
-          rawDataContract.documents.withByteArrays.properties.byteArrayField = {
-            maxBytesLength: 1,
-          };
+          it('should be used with byte array not longer than 32 bytes', async () => {
+            rawDataContract.documents.withByteArrays.properties.identifierField.maxItems = 31;
 
-          const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result);
+            expectJsonSchemaError(result);
 
-          const [error] = result.getErrors();
+            const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\']');
-          expect(error.keyword).to.equal('dependencies');
-        });
-
-        it('should be present if contentMediaType is "application/x.dash.dpp.identifier"', async () => {
-          delete rawDataContract.documents.withByteArrays.properties.identifierField.maxBytesLength;
-
-          const result = await validateDataContract(rawDataContract);
-
-          expectJsonSchemaError(result);
-
-          const [error] = result.getErrors();
-
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\']');
-          expect(error.keyword).to.equal('required');
-        });
-
-        it('should be 32 bytes long if contentMediaType is "application/x.dash.dpp.identifier"', async () => {
-          rawDataContract.documents.withByteArrays.properties.identifierField.maxBytesLength = 31;
-
-          const result = await validateDataContract(rawDataContract);
-
-          expectJsonSchemaError(result);
-
-          const [error] = result.getErrors();
-
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\'].maxBytesLength');
-          expect(error.keyword).to.equal('const');
+            expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\'].maxItems');
+            expect(error.keyword).to.equal('const');
+          });
         });
       });
     });

@@ -1,5 +1,7 @@
 const identityCreateTransitionSchema = require('../../../../schema/identity/stateTransition/identityCreate');
 
+const convertBuffersToArrays = require('../../../util/convertBuffersToArrays');
+
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validatePublicKeys} validatePublicKeys
@@ -18,7 +20,7 @@ function validateIdentityCreateTransitionStructureFactory(
     // Validate state transition against JSON Schema
     const result = jsonSchemaValidator.validate(
       identityCreateTransitionSchema,
-      rawStateTransition,
+      convertBuffersToArrays(rawStateTransition),
     );
 
     if (!result.isValid()) {

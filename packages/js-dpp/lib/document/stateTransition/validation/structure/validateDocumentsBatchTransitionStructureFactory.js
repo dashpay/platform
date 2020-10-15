@@ -19,6 +19,7 @@ const createTransitionSchema = require('../../../../../schema/document/stateTran
 const replaceTransitionSchema = require('../../../../../schema/document/stateTransition/documentTransition/replace');
 
 const generateDocumentId = require('../../../generateDocumentId');
+const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
 
 const documentsBatchTransitionSchema = require('../../../../../schema/document/stateTransition/documentsBatch');
 
@@ -122,7 +123,7 @@ function validateDocumentsBatchTransitionStructureFactory(
 
           const schemaResult = jsonSchemaValidator.validate(
             documentSchemaRef,
-            rawDocumentTransition,
+            convertBuffersToArrays(rawDocumentTransition),
             additionalSchemas,
           );
 
@@ -155,7 +156,7 @@ function validateDocumentsBatchTransitionStructureFactory(
           result.merge(
             jsonSchemaValidator.validate(
               baseTransitionSchema,
-              rawDocumentTransition,
+              convertBuffersToArrays(rawDocumentTransition),
             ),
           );
 
@@ -205,7 +206,7 @@ function validateDocumentsBatchTransitionStructureFactory(
   async function validateDocumentsBatchTransitionStructure(rawStateTransition) {
     const result = jsonSchemaValidator.validate(
       documentsBatchTransitionSchema,
-      rawStateTransition,
+      convertBuffersToArrays(rawStateTransition),
     );
 
     if (!result.isValid()) {

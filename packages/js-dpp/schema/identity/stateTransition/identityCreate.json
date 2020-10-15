@@ -12,10 +12,10 @@
       "const": 2
     },
     "lockedOutPoint": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 36,
-      "maxBytesLength": 36
+      "minItems": 36,
+      "maxItems": 36
     },
     "publicKeys": {
       "type": "array",
@@ -24,10 +24,10 @@
       "uniqueItems": true
     },
     "signature": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 65,
-      "maxBytesLength": 65
+      "minItems": 65,
+      "maxItems": 65
     }
   },
   "additionalProperties": false,

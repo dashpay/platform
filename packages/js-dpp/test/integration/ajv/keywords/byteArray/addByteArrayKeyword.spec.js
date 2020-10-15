@@ -1,9 +1,7 @@
 const Ajv = require('ajv');
 
 const addByteArrayKeyword = require('../../../../../lib/ajv/keywords/byteArray/addByteArrayKeyword');
-const byteArrayKeyword = require('../../../../../lib/ajv/keywords/byteArray/byteArray');
-const minBytesLength = require('../../../../../lib/ajv/keywords/byteArray/minBytesLength');
-const maxBytesLength = require('../../../../../lib/ajv/keywords/byteArray/maxBytesLength');
+const byteArray = require('../../../../../lib/ajv/keywords/byteArray/byteArray');
 
 describe('addByteArrayKeyword', () => {
   let ajv;
@@ -12,20 +10,12 @@ describe('addByteArrayKeyword', () => {
     ajv = new Ajv();
   });
 
-  it('should add byteArray, minBytesLength and maxBytesLength keywords', () => {
+  it('should add byteArray keyword', () => {
     addByteArrayKeyword(ajv);
 
     expect(
       ajv.getKeyword('byteArray'),
-    ).to.equal(byteArrayKeyword);
-
-    expect(
-      ajv.getKeyword('minBytesLength'),
-    ).to.equal(minBytesLength);
-
-    expect(
-      ajv.getKeyword('maxBytesLength'),
-    ).to.equal(maxBytesLength);
+    ).to.equal(byteArray);
   });
 
   describe('byteArray', () => {
@@ -34,7 +24,7 @@ describe('addByteArrayKeyword', () => {
     });
 
     describe('compilation', () => {
-      it('should be used with object type', () => {
+      it('should be used with array type', () => {
         const schema = {
           type: 'string',
           byteArray: true,
@@ -47,9 +37,27 @@ describe('addByteArrayKeyword', () => {
         expect(ajv.errors[0].params.type).to.equal('string');
       });
 
+      it('should not be used with `items` keyword', () => {
+        const schema = {
+          type: 'array',
+          byteArray: true,
+          items: {
+            type: 'string',
+          },
+        };
+
+        try {
+          ajv.validate(schema, Buffer.alloc(0));
+
+          expect.fail('should fail with keyword schema error');
+        } catch (e) {
+          expect(e.message).to.equal('\'byteArray\' should not be used with \'items\'');
+        }
+      });
+
       it('should be boolean', () => {
         const schema = {
-          type: 'object',
+          type: 'array',
           byteArray: 'something',
         };
 
@@ -64,7 +72,7 @@ describe('addByteArrayKeyword', () => {
 
       it('should have value of true', () => {
         const schema = {
-          type: 'object',
+          type: 'array',
           byteArray: false,
         };
 
@@ -79,239 +87,61 @@ describe('addByteArrayKeyword', () => {
     });
 
     describe('validation', () => {
-      it('should invalidate everything but Buffer', () => {
+      it('should accept array of integers', () => {
         const schema = {
-          type: 'object',
+          type: 'array',
           byteArray: true,
         };
 
-        ajv.validate(schema, { });
+        ajv.validate(schema, ['string']);
 
-        expect(ajv.errors).to.have.lengthOf(1);
+        expect(ajv.errors).to.have.lengthOf(2);
 
-        const [error] = ajv.errors;
-
-        expect(error.keyword).to.equal('byteArray');
-        expect(error.message).to.equal('should be a byte array');
-      });
-
-      it('should accept Buffer', () => {
-        const schema = {
-          type: 'object',
-          byteArray: true,
-        };
-
-        const result = ajv.validate(schema, Buffer.alloc(0));
-
-        expect(result).to.be.true();
-      });
-    });
-  });
-
-  describe('minBytesLength', () => {
-    beforeEach(() => {
-      addByteArrayKeyword(ajv);
-    });
-
-    describe('compilation', () => {
-      it('should be used with object type', () => {
-        const schema = {
-          byteArray: true,
-          type: 'string',
-          minBytesLength: 1,
-        };
-
-        ajv.validate(schema, Buffer.alloc(0));
-
-        expect(ajv.errors).to.have.lengthOf(1);
-
-        const [error] = ajv.errors;
+        const [error, byteArrayError] = ajv.errors;
 
         expect(error.keyword).to.equal('type');
-        expect(error.params.type).to.equal('string');
+        expect(error.schemaPath).to.equal('#/items/type');
+        expect(error.message).to.equal('should be integer');
+
+        expect(byteArrayError.keyword).to.equal('byteArray');
       });
 
-      it('should be used together with byteArray', () => {
+      it('should accept array of integers not less than 0', () => {
         const schema = {
-          type: 'object',
-          minBytesLength: 1,
-        };
-
-        try {
-          ajv.validate(schema, Buffer.alloc(0));
-
-          expect.fail('should fail with keyword schema error');
-        } catch (e) {
-          expect(e.message).to.equal('parent schema must have all required keywords: byteArray');
-        }
-      });
-
-      it('should be an integer', () => {
-        const schema = {
-          type: 'object',
+          type: 'array',
           byteArray: true,
-          minBytesLength: 'something',
         };
 
-        try {
-          ajv.validate(schema, Buffer.alloc(0));
+        ajv.validate(schema, [-1]);
 
-          expect.fail('should fail with keyword schema error');
-        } catch (e) {
-          expect(e.message).to.equal('keyword schema is invalid: data should be integer');
-        }
+        expect(ajv.errors).to.have.lengthOf(2);
+
+        const [error, byteArrayError] = ajv.errors;
+
+        expect(error.keyword).to.equal('minimum');
+        expect(error.schemaPath).to.equal('#/items/minimum');
+        expect(error.message).to.equal('should be >= 0');
+
+        expect(byteArrayError.keyword).to.equal('byteArray');
       });
 
-      it('should not be less than 0', () => {
+      it('should accept array of integers not greater than 255', () => {
         const schema = {
-          type: 'object',
+          type: 'array',
           byteArray: true,
-          minBytesLength: -1,
         };
 
-        try {
-          ajv.validate(schema, Buffer.alloc(0));
+        ajv.validate(schema, [0, 256]);
 
-          expect.fail('should fail with keyword schema error');
-        } catch (e) {
-          expect(e.message).to.equal('keyword schema is invalid: data should be >= 0');
-        }
-      });
-    });
+        expect(ajv.errors).to.have.lengthOf(2);
 
-    describe('validation', () => {
-      it('should invalidate a byte array shorter than specified', () => {
-        const schema = {
-          type: 'object',
-          byteArray: true,
-          minBytesLength: 2,
-        };
+        const [error, byteArrayError] = ajv.errors;
 
-        ajv.validate(schema, Buffer.alloc(1));
+        expect(error.keyword).to.equal('maximum');
+        expect(error.schemaPath).to.equal('#/items/maximum');
+        expect(error.message).to.equal('should be <= 255');
 
-        expect(ajv.errors).to.have.lengthOf(1);
-
-        const [error] = ajv.errors;
-
-        expect(error.keyword).to.equal('minBytesLength');
-        expect(error.message).to.equal('should NOT be shorter than 2 bytes');
-        expect(error.params.limit).to.equal(2);
-      });
-
-      it('should accept byte array longer than specified', () => {
-        const schema = {
-          type: 'object',
-          byteArray: true,
-          minBytesLength: 2,
-        };
-
-        const result = ajv.validate(schema, Buffer.alloc(2));
-
-        expect(result).to.be.true();
-      });
-    });
-  });
-
-  describe('maxBytesLength', () => {
-    beforeEach(() => {
-      addByteArrayKeyword(ajv);
-    });
-
-    describe('compilation', () => {
-      it('should be used with object type', () => {
-        const schema = {
-          byteArray: true,
-          type: 'string',
-          maxBytesLength: 1,
-        };
-
-        ajv.validate(schema, Buffer.alloc(0));
-
-        expect(ajv.errors).to.have.lengthOf(1);
-
-        const [error] = ajv.errors;
-
-        expect(error.keyword).to.equal('type');
-        expect(error.params.type).to.equal('string');
-      });
-
-      it('should be used together with byteArray', () => {
-        const schema = {
-          type: 'object',
-          maxBytesLength: 1,
-        };
-
-        try {
-          ajv.validate(schema, Buffer.alloc(0));
-
-          expect.fail('should fail with keyword schema error');
-        } catch (e) {
-          expect(e.message).to.equal('parent schema must have all required keywords: byteArray');
-        }
-      });
-
-      it('should be an integer', () => {
-        const schema = {
-          type: 'object',
-          byteArray: true,
-          maxBytesLength: 'something',
-        };
-
-        try {
-          ajv.validate(schema, Buffer.alloc(0));
-
-          expect.fail('should fail with keyword schema error');
-        } catch (e) {
-          expect(e.message).to.equal('keyword schema is invalid: data should be integer');
-        }
-      });
-
-      it('should not be less than 0', () => {
-        const schema = {
-          type: 'object',
-          byteArray: true,
-          maxBytesLength: -1,
-        };
-
-        try {
-          ajv.validate(schema, Buffer.alloc(0));
-
-          expect.fail('should fail with keyword schema error');
-        } catch (e) {
-          expect(e.message).to.equal('keyword schema is invalid: data should be >= 0');
-        }
-      });
-    });
-
-    describe('validation', () => {
-      it('should invalidate a byte array shorter than specified', () => {
-        const schema = {
-          type: 'object',
-          byteArray: true,
-          maxBytesLength: 2,
-        };
-
-        ajv.validate(schema, Buffer.alloc(3));
-
-        expect(ajv.errors).to.have.lengthOf(1);
-
-        const [error] = ajv.errors;
-
-        expect(error.keyword).to.equal('maxBytesLength');
-        expect(error.message).to.equal('should NOT be longer than 2 bytes');
-        expect(error.params.limit).to.equal(2);
-      });
-
-      it('should accept byte array shorter than specified', () => {
-        const schema = {
-          type: 'object',
-          byteArray: true,
-          maxBytesLength: 2,
-        };
-
-        const result = ajv.validate(schema, Buffer.alloc(1));
-
-        expect(result).to.be.true();
+        expect(byteArrayError.keyword).to.equal('byteArray');
       });
     });
   });

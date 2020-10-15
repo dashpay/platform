@@ -50,6 +50,7 @@ describe('DataContract', () => {
     getBinaryPropertiesFromSchemaMock.withArgs(documentSchema)
       .returns({
         'firstLevel.secondLevel': {
+          type: 'array',
           byteArray: true,
         },
       });
@@ -334,9 +335,13 @@ describe('DataContract', () => {
   describe('#getBinaryProperties', () => {
     it('should return flat map of properties with `contentEncoding` keywords', () => {
       const result = dataContract.getBinaryProperties(documentType);
-      expect(result).to.deep.equal(
-        { 'firstLevel.secondLevel': { byteArray: true } },
-      );
+      expect(result).to.deep.equal({
+        'firstLevel.secondLevel': {
+          type: 'array',
+          byteArray: true,
+        },
+      });
+
       expect(getBinaryPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
     });
 
@@ -345,9 +350,13 @@ describe('DataContract', () => {
 
       const result = dataContract.getBinaryProperties(documentType);
 
-      expect(result).to.deep.equal(
-        { 'firstLevel.secondLevel': { byteArray: true } },
-      );
+      expect(result).to.deep.equal({
+        'firstLevel.secondLevel': {
+          type: 'array',
+          byteArray: true,
+        },
+      });
+
       expect(getBinaryPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
     });
 

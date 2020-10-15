@@ -37,7 +37,7 @@ function buildBinaryPropertiesMap(schema, propertyName = undefined) {
       };
     }
 
-    if (property.type === 'array' && property.items.type === 'object'
+    if (property.type === 'array' && property.items && property.items.type === 'object'
       && Object.prototype.hasOwnProperty.call(property.items, 'properties')) {
       // In case property is an array of a single type we recursively call build method
       // passing array `item` property as schema and assigning property path to current

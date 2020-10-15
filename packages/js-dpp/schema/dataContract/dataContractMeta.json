@@ -152,28 +152,21 @@
         "byteArray": {
           "type": "boolean",
           "const": true
-        },
-        "maxBytesLength": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "minBytesLength": {
-          "type": "integer",
-          "minimum": 0
         }
       },
       "dependencies": {
         "byteArray": {
-          "description": "should be used only with object type",
+          "description": "should be used only with array type",
           "properties": {
             "type": {
               "type": "string",
-              "const": "object"
+              "const": "array"
             }
+          },
+          "not": {
+            "required": ["items"]
           }
         },
-        "maxBytesLength": ["byteArray"],
-        "minBytesLength": ["byteArray"],
         "contentMediaType": {
           "if": {
             "properties": {
@@ -184,14 +177,17 @@
           },
           "then": {
             "properties": {
-              "minBytesLength": {
+              "byteArray": {
+                "const": true
+              },
+              "minItems": {
                 "const": 32
               },
-              "maxBytesLength": {
+              "maxItems": {
                 "const": 32
               }
             },
-            "required": ["minBytesLength", "maxBytesLength"]
+            "required": ["byteArray", "minItems", "maxItems"]
           }
         },
         "uniqueItems": {
@@ -273,7 +269,10 @@
                 "const": "array"
               }
             },
-            "required": ["type"]
+            "required": ["type"],
+            "not": {
+              "required": ["byteArray"]
+            }
           },
           "then": {
             "required": ["items"]
@@ -289,7 +288,7 @@
                 "type": "array"
               }
             },
-            "required": ["type","items"]
+            "required": ["type", "items"]
           },
           "then": {
             "required": ["additionalItems"]
@@ -333,17 +332,17 @@
       "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
     },
     "$id":{
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 32,
-      "maxBytesLength": 32,
+      "minItems": 32,
+      "maxItems": 32,
       "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "ownerId":{
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 32,
-      "maxBytesLength": 32,
+      "minItems": 32,
+      "maxItems": 32,
       "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "documents": {

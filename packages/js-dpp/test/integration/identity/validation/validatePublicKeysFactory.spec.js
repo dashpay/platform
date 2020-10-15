@@ -140,16 +140,18 @@ describe('validatePublicKeysFactory', () => {
     });
 
     it('should be a byte array', () => {
-      rawPublicKeys[1].data = {};
+      rawPublicKeys[1].data = new Array(33).fill('string');
 
       const result = validatePublicKeys(rawPublicKeys);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.data');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.data[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
     describe('ECDSA_SECP256K1', () => {
@@ -158,12 +160,12 @@ describe('validatePublicKeysFactory', () => {
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result, 2);
+        expectJsonSchemaError(result);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('minBytesLength');
+        expect(error.keyword).to.equal('minItems');
       });
 
       it('should be no longer than 33 bytes', () => {
@@ -171,12 +173,12 @@ describe('validatePublicKeysFactory', () => {
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result, 2);
+        expectJsonSchemaError(result);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('maxBytesLength');
+        expect(error.keyword).to.equal('maxItems');
       });
     });
 
@@ -187,12 +189,12 @@ describe('validatePublicKeysFactory', () => {
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result, 2);
+        expectJsonSchemaError(result);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('minBytesLength');
+        expect(error.keyword).to.equal('minItems');
       });
 
       it('should be no longer than 48 bytes', () => {
@@ -201,12 +203,12 @@ describe('validatePublicKeysFactory', () => {
 
         const result = validatePublicKeys(rawPublicKeys);
 
-        expectJsonSchemaError(result, 2);
+        expectJsonSchemaError(result);
 
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.data');
-        expect(error.keyword).to.equal('maxBytesLength');
+        expect(error.keyword).to.equal('maxItems');
       });
     });
   });

@@ -122,16 +122,16 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       ],
       properties: {
         byteArrayField: {
-          type: 'object',
+          type: 'array',
           byteArray: true,
-          maxBytesLength: 16,
+          maxItems: 16,
         },
         identifierField: {
-          type: 'object',
+          type: 'array',
           byteArray: true,
           contentMediaType: Identifier.MEDIA_TYPE,
-          minBytesLength: 32,
-          maxBytesLength: 32,
+          minItems: 32,
+          maxItems: 32,
         },
       },
       required: ['byteArrayField'],

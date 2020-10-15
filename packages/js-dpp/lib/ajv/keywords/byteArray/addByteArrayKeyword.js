@@ -1,14 +1,10 @@
-const byteArrayKeyword = require('./byteArray');
-const minBytesLength = require('./minBytesLength');
-const maxBytesLength = require('./maxBytesLength');
+const byteArray = require('./byteArray');
 
 /**
  * @param {ajv.Ajv} ajv
  */
 function addByteArrayKeyword(ajv) {
-  ajv.addKeyword('byteArray', byteArrayKeyword);
-  ajv.addKeyword('minBytesLength', minBytesLength);
-  ajv.addKeyword('maxBytesLength', maxBytesLength);
+  ajv.addKeyword('byteArray', byteArray);
 }
 
 module.exports = addByteArrayKeyword;

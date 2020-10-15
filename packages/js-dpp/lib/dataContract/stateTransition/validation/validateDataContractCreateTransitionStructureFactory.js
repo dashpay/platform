@@ -4,6 +4,8 @@ const InvalidDataContractIdError = require('../../../errors/InvalidDataContractI
 
 const generateDataContractId = require('../../generateDataContractId');
 
+const convertBuffersToArrays = require('../../../util/convertBuffersToArrays');
+
 const dataContractCreateTransitionSchema = require('../../../../schema/dataContract/stateTransition/dataContractCreate');
 
 /**
@@ -27,7 +29,7 @@ function validateDataContractCreateTransitionStructureFactory(
   async function validateDataContractCreateTransitionStructure(rawStateTransition) {
     const result = jsonSchemaValidator.validate(
       dataContractCreateTransitionSchema,
-      rawStateTransition,
+      convertBuffersToArrays(rawStateTransition),
     );
 
     if (!result.isValid()) {

@@ -59,16 +59,18 @@ describe('validateIdentityFactory', () => {
     });
 
     it('should be a byte array', () => {
-      rawIdentity.id = {};
+      rawIdentity.id = new Array(32).fill('string');
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.id');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.id[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -82,7 +84,7 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.keyword).to.equal('minItems');
       expect(error.dataPath).to.equal('.id');
 
       expect(validatePublicKeysMock).to.not.be.called();
@@ -97,7 +99,7 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.keyword).to.equal('maxItems');
       expect(error.dataPath).to.equal('.id');
 
       expect(validatePublicKeysMock).to.not.be.called();

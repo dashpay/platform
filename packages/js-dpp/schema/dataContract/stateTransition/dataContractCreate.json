@@ -15,20 +15,20 @@
       "type": "object"
     },
     "entropy": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 32,
-      "maxBytesLength": 32
+      "minItems": 32,
+      "maxItems": 32
     },
     "signaturePublicKeyId": {
       "type": "integer",
       "minimum": 0
     },
     "signature": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 65,
-      "maxBytesLength": 65
+      "minItems": 65,
+      "maxItems": 65
     }
   },
   "additionalProperties": false,

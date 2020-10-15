@@ -8,10 +8,10 @@
       "$comment": "Maximum is the latest Identity protocol version"
     },
     "id": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 32,
-      "maxBytesLength": 32,
+      "minItems": 32,
+      "maxItems": 32,
       "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "publicKeys": {

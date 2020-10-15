@@ -2,6 +2,8 @@ const { PublicKey } = require('@dashevo/dashcore-lib');
 
 const ValidationResult = require('../../validation/ValidationResult');
 
+const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
+
 const publicKeySchema = require('../../../schema/identity/publicKey.json');
 
 const InvalidIdentityPublicKeyDataError = require(
@@ -38,7 +40,10 @@ function validatePublicKeysFactory(validator) {
     // Validate public key structure
     rawPublicKeys.forEach((rawPublicKey) => {
       result.merge(
-        validator.validate(publicKeySchema, rawPublicKey),
+        validator.validate(
+          publicKeySchema,
+          convertBuffersToArrays(rawPublicKey),
+        ),
       );
     });
 

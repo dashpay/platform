@@ -1,5 +1,7 @@
 const identitySchema = require('../../../schema/identity/identity');
 
+const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
+
 /**
  * @param {JsonSchemaValidator} validator
  * @param {validatePublicKeys} validatePublicKeys
@@ -19,7 +21,7 @@ function validateIdentityFactory(
   function validateIdentity(rawIdentity) {
     const result = validator.validate(
       identitySchema,
-      rawIdentity,
+      convertBuffersToArrays(rawIdentity),
     );
 
     if (!result.isValid()) {

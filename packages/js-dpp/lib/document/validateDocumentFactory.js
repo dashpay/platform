@@ -2,6 +2,8 @@ const baseDocumentSchema = require('../../schema/document/documentBase');
 
 const ValidationResult = require('../validation/ValidationResult');
 
+const convertBuffersToArrays = require('../util/convertBuffersToArrays');
+
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const MissingDocumentTypeError = require('../errors/MissingDocumentTypeError');
 const MismatchDocumentContractIdAndDataContractError = require('../errors/MismatchDocumentContractIdAndDataContractError');
@@ -57,7 +59,7 @@ module.exports = function validateDocumentFactory(
     result.merge(
       validator.validate(
         documentSchemaRef,
-        rawDocument,
+        convertBuffersToArrays(rawDocument),
         additionalSchemas,
       ),
     );

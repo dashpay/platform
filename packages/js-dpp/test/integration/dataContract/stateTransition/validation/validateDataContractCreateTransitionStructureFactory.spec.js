@@ -255,17 +255,19 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       expect(error.params.missingProperty).to.equal('entropy');
     });
 
-    it('should be a binary', async () => {
-      rawStateTransition.entropy = {};
+    it('should be a byte array', async () => {
+      rawStateTransition.entropy = new Array(32).fill('string');
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.entropy');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.entropy[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -278,7 +280,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.entropy');
-      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.keyword).to.equal('minItems');
       expect(error.params.limit).to.equal(32);
     });
 
@@ -292,7 +294,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.entropy');
-      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.keyword).to.equal('maxItems');
       expect(error.params.limit).to.equal(32);
     });
   });
@@ -313,16 +315,18 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
     });
 
     it('should be a byte array', async () => {
-      rawStateTransition.signature = {};
+      rawStateTransition.signature = new Array(65).fill('string');
 
       const result = await validateDataContractCreateTransitionStructure(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.signature[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
     it('should be not less than 65 bytes', async () => {
@@ -335,7 +339,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.keyword).to.equal('minItems');
       expect(error.params.limit).to.equal(65);
     });
 
@@ -349,7 +353,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.keyword).to.equal('maxItems');
       expect(error.params.limit).to.equal(65);
     });
 

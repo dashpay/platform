@@ -56,11 +56,11 @@ describe('Document', () => {
                 type: 'object',
                 properties: {
                   identifier: {
-                    type: 'object',
+                    type: 'array',
                     byteArray: true,
                     contentMediaType: Identifier.MEDIA_TYPE,
-                    minBytesLength: 32,
-                    maxBytesLength: 32,
+                    minItems: 32,
+                    maxItems: 32,
                   },
                 },
               },

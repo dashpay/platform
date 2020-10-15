@@ -120,16 +120,18 @@ describe('validateDocumentFactory', () => {
       });
 
       it('should be a byte array', () => {
-        rawDocument.$id = {};
+        rawDocument.$id = new Array(32).fill('string');
 
         const result = validateDocument(rawDocument, dataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
-        const [error] = result.getErrors();
+        const [error, byteArrayError] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$id');
-        expect(error.keyword).to.equal('byteArray');
+        expect(error.dataPath).to.equal('.$id[0]');
+        expect(error.keyword).to.equal('type');
+
+        expect(byteArrayError.keyword).to.equal('byteArray');
       });
 
       it('should be no less than 32 bytes', () => {
@@ -142,7 +144,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$id');
-        expect(error.keyword).to.equal('minBytesLength');
+        expect(error.keyword).to.equal('minItems');
       });
 
       it('should be no longer than 32 bytes', () => {
@@ -155,7 +157,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$id');
-        expect(error.keyword).to.equal('maxBytesLength');
+        expect(error.keyword).to.equal('maxItems');
       });
     });
 
@@ -279,16 +281,18 @@ describe('validateDocumentFactory', () => {
       });
 
       it('should be a byte array', () => {
-        rawDocument.$dataContractId = {};
+        rawDocument.$dataContractId = new Array(32).fill('string');
 
         const result = validateDocument(rawDocument, dataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
-        const [error] = result.getErrors();
+        const [error, byteArrayError] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$dataContractId');
-        expect(error.keyword).to.equal('byteArray');
+        expect(error.dataPath).to.equal('.$dataContractId[0]');
+        expect(error.keyword).to.equal('type');
+
+        expect(byteArrayError.keyword).to.equal('byteArray');
       });
 
       it('should be no less than 32 bytes', () => {
@@ -301,7 +305,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$dataContractId');
-        expect(error.keyword).to.equal('minBytesLength');
+        expect(error.keyword).to.equal('minItems');
       });
 
       it('should be no longer than 32 bytes', () => {
@@ -314,7 +318,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$dataContractId');
-        expect(error.keyword).to.equal('maxBytesLength');
+        expect(error.keyword).to.equal('maxItems');
       });
     });
 
@@ -334,16 +338,18 @@ describe('validateDocumentFactory', () => {
       });
 
       it('should be a byte array', () => {
-        rawDocument.$ownerId = {};
+        rawDocument.$ownerId = new Array(32).fill('string');
 
         const result = validateDocument(rawDocument, dataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
-        const [error] = result.getErrors();
+        const [error, byteArrayError] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$ownerId');
-        expect(error.keyword).to.equal('byteArray');
+        expect(error.dataPath).to.equal('.$ownerId[0]');
+        expect(error.keyword).to.equal('type');
+
+        expect(byteArrayError.keyword).to.equal('byteArray');
       });
 
       it('should be no less than 32 bytes', () => {
@@ -356,7 +362,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$ownerId');
-        expect(error.keyword).to.equal('minBytesLength');
+        expect(error.keyword).to.equal('minItems');
       });
 
       it('should be no longer than 32 bytes', () => {
@@ -369,7 +375,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal('.$ownerId');
-        expect(error.keyword).to.equal('maxBytesLength');
+        expect(error.keyword).to.equal('maxItems');
       });
     });
   });
@@ -417,7 +423,7 @@ describe('validateDocumentFactory', () => {
     expect(error.getRawDocument()).to.equal(rawDocument);
   });
 
-  it('return invalid result if binary field exceeds `maxBytesLength`', () => {
+  it('return invalid result if a byte array exceeds `maxItems`', () => {
     // eslint-disable-next-line prefer-destructuring
     rawDocument = getDocumentsFixture(dataContract)[8].toObject();
 
@@ -430,7 +436,7 @@ describe('validateDocumentFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.dataPath).to.equal('.byteArrayField');
-    expect(error.keyword).to.equal('maxBytesLength');
+    expect(error.keyword).to.equal('maxItems');
   });
 
   it('should return valid result is a document is valid', () => {

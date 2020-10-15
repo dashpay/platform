@@ -12,23 +12,23 @@
       "const": 3
     },
     "lockedOutPoint": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 36,
-      "maxBytesLength": 36
+      "minItems": 36,
+      "maxItems": 36
     },
     "identityId": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 32,
-      "maxBytesLength": 32,
+      "minItems": 32,
+      "maxItems": 32,
       "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "signature": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
-      "minBytesLength": 65,
-      "maxBytesLength": 65
+      "minItems": 65,
+      "maxItems": 65
     }
   },
   "additionalProperties": false,

@@ -145,16 +145,18 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
     });
 
     it('should be a byte array', async () => {
-      rawStateTransition.lockedOutPoint = {};
+      rawStateTransition.lockedOutPoint = new Array(36).fill('string');
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.lockedOutPoint');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.lockedOutPoint[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
     it('should not be less than 36 bytes', async () => {
@@ -168,7 +170,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.keyword).to.equal('minItems');
       expect(error.dataPath).to.equal('.lockedOutPoint');
     });
 
@@ -183,7 +185,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.keyword).to.equal('maxItems');
       expect(error.dataPath).to.equal('.lockedOutPoint');
     });
   });
@@ -290,16 +292,18 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
     });
 
     it('should be a byte array', async () => {
-      rawStateTransition.signature = { };
+      rawStateTransition.signature = new Array(65).fill('string');
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      expectJsonSchemaError(result, 2);
 
-      const [error] = result.getErrors();
+      const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('byteArray');
+      expect(error.dataPath).to.equal('.signature[0]');
+      expect(error.keyword).to.equal('type');
+
+      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
     it('should be not shorter than 65 bytes', async () => {
@@ -312,7 +316,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('minBytesLength');
+      expect(error.keyword).to.equal('minItems');
     });
 
     it('should be not longer than 65 bytes', async () => {
@@ -325,7 +329,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('.signature');
-      expect(error.keyword).to.equal('maxBytesLength');
+      expect(error.keyword).to.equal('maxItems');
     });
   });
 

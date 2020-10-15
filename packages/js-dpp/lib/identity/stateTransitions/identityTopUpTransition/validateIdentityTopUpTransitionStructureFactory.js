@@ -1,5 +1,7 @@
 const identityTopUpTransitionSchema = require('../../../../schema/identity/stateTransition/identityTopUp.json');
 
+const convertBuffersToArrays = require('../../../util/convertBuffersToArrays');
+
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @return {validateIdentityTopUpTransitionStructure}
@@ -13,7 +15,7 @@ function validateIdentityTopUpTransitionStructureFactory(jsonSchemaValidator) {
   function validateIdentityTopUpTransitionStructure(rawStateTransition) {
     return jsonSchemaValidator.validate(
       identityTopUpTransitionSchema,
-      rawStateTransition,
+      convertBuffersToArrays(rawStateTransition),
     );
   }
 

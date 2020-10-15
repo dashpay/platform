@@ -18,7 +18,7 @@
       "$comment": "It can't be changed after adding a key"
     },
     "data": {
-      "type": "object",
+      "type": "array",
       "byteArray": true,
       "description": "Raw public key",
       "$commit": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
@@ -37,8 +37,8 @@
         "properties": {
           "data": {
             "byteArray": true,
-            "minBytesLength": 33,
-            "maxBytesLength": 33
+            "minItems": 33,
+            "maxItems": 33
           }
         }
       }
@@ -55,8 +55,8 @@
         "properties": {
           "data": {
             "byteArray": true,
-            "minBytesLength": 48,
-            "maxBytesLength": 48
+            "minItems": 48,
+            "maxItems": 48
           }
         }
       }

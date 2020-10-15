@@ -1,28 +1,23 @@
-/**
- * @param {boolean} schema
- * @param {*} data
- * @return {boolean}
- */
-function validate(schema, data) {
-  if (!Buffer.isBuffer(data)) {
-    validate.errors = [{
-      keyword: 'byteArray',
-      message: 'should be a byte array',
-    }];
-
-    return false;
-  }
-
-  return true;
-}
-
 const byteArray = {
-  type: 'object',
+  type: 'array',
+  macro(schema, parentSchema) {
+    if (parentSchema.items) {
+      throw new Error("'byteArray' should not be used with 'items'");
+    }
+
+    return {
+      items: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 255,
+      },
+    };
+  },
+  errors: false,
   metaSchema: {
     type: 'boolean',
     const: true,
   },
-  validate,
 };
 
 module.exports = byteArray;
