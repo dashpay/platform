@@ -64,7 +64,8 @@ function enrichDataContractWithBaseSchema(
 }
 
 enrichDataContractWithBaseSchema.PREFIX_BYTE_0 = 0;
-enrichDataContractWithBaseSchema.PREFIX_BYTE_1 = 0;
-enrichDataContractWithBaseSchema.PREFIX_BYTE_2 = 0;
+enrichDataContractWithBaseSchema.PREFIX_BYTE_1 = 1;
+enrichDataContractWithBaseSchema.PREFIX_BYTE_2 = 2;
+enrichDataContractWithBaseSchema.PREFIX_BYTE_3 = 3;
 
 module.exports = enrichDataContractWithBaseSchema;

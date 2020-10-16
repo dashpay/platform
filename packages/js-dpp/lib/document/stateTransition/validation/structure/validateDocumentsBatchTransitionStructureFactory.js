@@ -62,18 +62,19 @@ function validateDocumentsBatchTransitionStructureFactory(
     const enrichedBaseDataContract = enrichDataContractWithBaseSchema(
       dataContract,
       baseTransitionSchema,
+      enrichDataContractWithBaseSchema.PREFIX_BYTE_1,
     );
 
     const enrichedDataContractsByActions = {
       [ACTIONS.CREATE]: enrichDataContractWithBaseSchema(
         enrichedBaseDataContract,
         createTransitionSchema,
-        enrichDataContractWithBaseSchema.PREFIX_BYTE_1,
+        enrichDataContractWithBaseSchema.PREFIX_BYTE_2,
       ),
       [ACTIONS.REPLACE]: enrichDataContractWithBaseSchema(
         enrichedBaseDataContract,
         replaceTransitionSchema,
-        enrichDataContractWithBaseSchema.PREFIX_BYTE_2,
+        enrichDataContractWithBaseSchema.PREFIX_BYTE_3,
         ['$createdAt'],
       ),
     };
