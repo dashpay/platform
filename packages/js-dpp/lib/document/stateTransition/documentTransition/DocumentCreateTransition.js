@@ -89,18 +89,6 @@ class DocumentCreateTransition extends AbstractDataDocumentTransition {
 
     return rawDocumentTransition;
   }
-
-  /**
-   * Get JSON representation
-   *
-   * @return {JsonDocumentCreateTransition}
-   */
-  toJSON() {
-    return {
-      ...super.toJSON(),
-      $entropy: this.getEntropy().toString(),
-    };
-  }
 }
 
 /**

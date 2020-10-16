@@ -2,7 +2,7 @@ const DocumentFactory = require('../../document/DocumentFactory');
 
 const getDocumentsFixture = require('./getDocumentsFixture');
 
-function getDocumentTransitionFixture(documents = {}) {
+function getDocumentTransitionsFixture(documents = {}) {
   const {
     create: createDocuments,
     replace: replaceDocuments,
@@ -22,4 +22,4 @@ function getDocumentTransitionFixture(documents = {}) {
   return stateTransition.getTransitions();
 }
 
-module.exports = getDocumentTransitionFixture;
+module.exports = getDocumentTransitionsFixture;

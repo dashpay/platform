@@ -73,15 +73,6 @@ class DocumentReplaceTransition extends AbstractDataDocumentTransition {
 
     return rawDocumentTransition;
   }
-
-  /**
-   * Get JSON representation
-   *
-   * @return {JsonDocumentReplaceTransition}
-   */
-  toJSON() {
-    return super.toJSON();
-  }
 }
 
 /**

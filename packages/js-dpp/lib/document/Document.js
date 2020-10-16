@@ -329,15 +329,10 @@ class Document {
    * @return {JsonDocument}
    */
   toJSON() {
-    const jsonDocument = {
-      ...this.toObject({ skipIdentifiersConversion: true }),
-      $id: this.getId().toString(),
-      $dataContractId: this.getDataContractId().toString(),
-      $ownerId: this.getOwnerId().toString(),
-    };
+    const rawDocument = this.toObject({ skipIdentifiersConversion: true });
 
     // eslint-disable-next-line consistent-return
-    return lodashCloneDeepWith(jsonDocument, (value) => {
+    return lodashCloneDeepWith(rawDocument, (value) => {
       if (value instanceof Identifier) {
         return value.toString();
       }
