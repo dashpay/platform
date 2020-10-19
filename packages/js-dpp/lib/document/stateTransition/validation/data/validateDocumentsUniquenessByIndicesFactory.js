@@ -115,7 +115,7 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
       .filter((docs) => {
         const isEmpty = docs.length === 0;
         const onlyOriginDocument = docs.length === 1
-          && docs[0].getId() === docs.documentTransition.getId();
+          && docs[0].getId().equals(docs.documentTransition.getId());
 
         return !isEmpty && !onlyOriginDocument;
       }).forEach((rawDocuments) => {
