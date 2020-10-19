@@ -4,7 +4,7 @@ const DataTriggerInvalidResultError = require('../errors/DataTriggerInvalidResul
 
 class DataTrigger {
   /**
-   * @param {string} dataContractId
+   * @param {Buffer|Identifier} dataContractId
    * @param {string} documentType
    * @param {number} transitionAction
    * @param {
@@ -12,7 +12,7 @@ class DataTrigger {
    *    |DocumentReplaceTransition[]
    *    |DocumentDeleteTransition[], DataTriggerExecutionContext, string):DataTriggerExecutionResult
    * } trigger
-   * @param {string} topLevelIdentity
+   * @param {Buffer|Identifier} topLevelIdentity
    */
   constructor(dataContractId, documentType, transitionAction, trigger, topLevelIdentity) {
     this.dataContractId = dataContractId;
@@ -32,7 +32,7 @@ class DataTrigger {
    * @return {boolean}
    */
   isMatchingTriggerForData(dataContractId, documentType, transitionAction) {
-    return this.dataContractId === dataContractId
+    return this.dataContractId.equals(dataContractId)
       && this.documentType === documentType
       && this.transitionAction === transitionAction;
   }
@@ -55,7 +55,10 @@ class DataTrigger {
     } catch (e) {
       result.addError(
         new DataTriggerExecutionError(
-          this, context.getDataContract(), context.getOwnerId(), e,
+          this,
+          context.getDataContract(),
+          context.getOwnerId(),
+          e,
         ),
       );
     }
@@ -64,7 +67,9 @@ class DataTrigger {
       result = new DataTriggerExecutionResult();
       result.addError(
         new DataTriggerInvalidResultError(
-          this, context.getDataContract(), context.getOwnerId(),
+          this,
+          context.getDataContract(),
+          context.getOwnerId(),
         ),
       );
     }

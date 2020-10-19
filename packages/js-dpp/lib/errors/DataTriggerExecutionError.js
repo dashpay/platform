@@ -4,7 +4,7 @@ class DataTriggerExecutionError extends AbstractDataTriggerError {
   /**
    * @param {DataTrigger} dataTrigger
    * @param {DataContract} dataContract
-   * @param {Buffer} ownerId
+   * @param {Identifier|Buffer} ownerId
    * @param {Error} error
    */
   constructor(dataTrigger, dataContract, ownerId, error) {

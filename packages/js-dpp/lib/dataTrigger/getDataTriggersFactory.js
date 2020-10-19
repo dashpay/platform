@@ -1,3 +1,5 @@
+const Identifier = require('../Identifier');
+
 const AbstractDocumentTransition = require('../document/stateTransition/documentTransition/AbstractDocumentTransition');
 
 const DataTrigger = require('./DataTrigger');
@@ -11,41 +13,51 @@ const rejectDataTrigger = require('./dpnsTriggers/rejectDataTrigger');
  * @return {getDataTriggers}
  */
 function getDataTriggersFactory() {
+  let dpnsDataContractId = Buffer.alloc(0);
+  if (process.env.DPNS_CONTRACT_ID) {
+    dpnsDataContractId = Identifier.from(process.env.DPNS_CONTRACT_ID);
+  }
+
+  let dpnsTopLevelIdentityId = Buffer.alloc(0);
+  if (process.env.DPNS_TOP_LEVEL_IDENTITY) {
+    dpnsTopLevelIdentityId = Identifier.from(process.env.DPNS_TOP_LEVEL_IDENTITY);
+  }
+
   const dataTriggers = [
     new DataTrigger(
-      process.env.DPNS_CONTRACT_ID,
+      dpnsDataContractId,
       'domain',
       AbstractDocumentTransition.ACTIONS.CREATE,
       createDomainDataTrigger,
-      process.env.DPNS_TOP_LEVEL_IDENTITY,
+      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
-      process.env.DPNS_CONTRACT_ID,
+      dpnsDataContractId,
       'domain',
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
-      process.env.DPNS_TOP_LEVEL_IDENTITY,
+      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
-      process.env.DPNS_CONTRACT_ID,
+      dpnsDataContractId,
       'domain',
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
-      process.env.DPNS_TOP_LEVEL_IDENTITY,
+      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
-      process.env.DPNS_CONTRACT_ID,
+      dpnsDataContractId,
       'preorder',
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
-      process.env.DPNS_TOP_LEVEL_IDENTITY,
+      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
-      process.env.DPNS_CONTRACT_ID,
+      dpnsDataContractId,
       'preorder',
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
-      process.env.DPNS_TOP_LEVEL_IDENTITY,
+      dpnsTopLevelIdentityId,
     ),
   ];
 
@@ -54,7 +66,7 @@ function getDataTriggersFactory() {
    *
    * @typedef getDataTriggers
    *
-   * @param {string} dataContractId
+   * @param {Identifier|Buffer} dataContractId
    * @param {string} documentType
    * @param {number} transitionAction
    *

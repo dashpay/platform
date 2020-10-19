@@ -10,7 +10,7 @@ const MAX_PRINTABLE_DOMAIN_NAME_LENGTH = 253;
  *
  * @param {DocumentCreateTransition} documentTransition
  * @param {DataTriggerExecutionContext} context
- * @param {Buffer} topLevelIdentity
+ * @param {Identifier|Buffer} topLevelIdentity
  *
  * @return {Promise<DataTriggerExecutionResult>}
  */

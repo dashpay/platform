@@ -1,9 +1,7 @@
-const Identifier = require('../Identifier');
-
 class DataTriggerExecutionContext {
   /**
    * @param {StateRepository} stateRepository
-   * @param {Buffer} ownerId
+   * @param {Buffer|Identifier} ownerId
    * @param {DataContract} dataContract
    */
   constructor(stateRepository, ownerId, dataContract) {
@@ -11,7 +9,7 @@ class DataTriggerExecutionContext {
      * @type {StateRepository}
      */
     this.stateRepository = stateRepository;
-    this.ownerId = Identifier.from(ownerId);
+    this.ownerId = ownerId;
     this.dataContract = dataContract;
   }
 
@@ -23,7 +21,7 @@ class DataTriggerExecutionContext {
   }
 
   /**
-   * @returns {Identifier}
+   * @returns {Buffer|Identifier}
    */
   getOwnerId() {
     return this.ownerId;
