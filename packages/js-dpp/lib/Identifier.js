@@ -44,7 +44,7 @@ Identifier.prototype.toBuffer = function toBuffer() {
  * @return {boolean}
  */
 Identifier.prototype.encodeCBOR = function encodeCBOR(encoder) {
-  encoder.push(this.toBuffer());
+  encoder.pushAny(this.toBuffer());
 
   return true;
 };

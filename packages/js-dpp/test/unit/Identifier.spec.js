@@ -43,7 +43,7 @@ describe('Identifier', () => {
 
     beforeEach(function before() {
       encoderMock = {
-        push: this.sinonSandbox.stub(),
+        pushAny: this.sinonSandbox.stub(),
       };
     });
 
@@ -53,7 +53,7 @@ describe('Identifier', () => {
       const result = identifier.encodeCBOR(encoderMock);
 
       expect(result).to.be.true();
-      expect(encoderMock.push).to.be.calledOnceWithExactly(buffer);
+      expect(encoderMock.pushAny).to.be.calledOnceWithExactly(buffer);
     });
   });
 
