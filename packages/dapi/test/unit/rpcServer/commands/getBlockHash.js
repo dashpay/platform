@@ -49,7 +49,7 @@ describe('getBlockHash', () => {
     expect(spy.callCount).to.be.equal(0);
     await expect(getBlockHash({ height: 'string' })).to.be.rejectedWith('params.height should be integer');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash([-1])).to.be.rejected;
+    await expect(getBlockHash([-1])).to.be.rejectedWith('params should be object');
     expect(spy.callCount).to.be.equal(0);
   });
 });

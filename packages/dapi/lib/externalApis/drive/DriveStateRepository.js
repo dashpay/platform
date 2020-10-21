@@ -64,7 +64,7 @@ class DriveStateRepository {
     return this.request(
       '/dataContracts',
       {
-        contractId,
+        id: contractId,
       },
     );
   }

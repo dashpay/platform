@@ -12,6 +12,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+/* eslint-disable import/no-extraneous-dependencies */
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
@@ -32,7 +34,7 @@ describe('getDataContractHandlerFactory', () => {
   let handleAbciResponseErrorMock;
 
   beforeEach(function beforeEach() {
-    id = 1;
+    id = generateRandomIdentifier();
     request = {
       getId: this.sinon.stub().returns(id),
     };

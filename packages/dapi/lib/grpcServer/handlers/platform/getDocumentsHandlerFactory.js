@@ -55,7 +55,7 @@ function getDocumentsHandlerFactory(driveStateRepository, handleAbciResponseErro
     const whereBinary = request.getWhere();
 
     let where;
-    if (whereBinary) {
+    if (whereBinary && whereBinary.length > 0) {
       where = cbor.decode(
         Buffer.from(whereBinary),
       );
@@ -66,7 +66,7 @@ function getDocumentsHandlerFactory(driveStateRepository, handleAbciResponseErro
     const orderByBinary = request.getOrderBy();
 
     let orderBy;
-    if (orderByBinary) {
+    if (orderByBinary && orderByBinary.length > 0) {
       orderBy = cbor.decode(
         Buffer.from(orderByBinary),
       );

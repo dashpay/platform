@@ -14,6 +14,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+/* eslint-disable import/no-extraneous-dependencies */
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
@@ -41,7 +43,7 @@ describe('getDocumentsHandlerFactory', () => {
   let documentsSerialized;
 
   beforeEach(function beforeEach() {
-    dataContractId = 'contractId';
+    dataContractId = generateRandomIdentifier();
     documentType = 'document';
     where = [['name', '==', 'John']];
     orderBy = [{ order: 'asc' }];
