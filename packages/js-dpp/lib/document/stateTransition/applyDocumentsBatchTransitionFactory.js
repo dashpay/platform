@@ -43,8 +43,6 @@ function applyDocumentsBatchTransitionFactory(
     ), {});
 
     return Promise.all(stateTransition.getTransitions().map(async (documentTransition) => {
-      const documentId = documentTransition.getId();
-
       switch (documentTransition.getAction()) {
         case AbstractDocumentTransition.ACTIONS.CREATE: {
           const dataContract = await stateRepository.fetchDataContract(
@@ -80,7 +78,7 @@ function applyDocumentsBatchTransitionFactory(
           return stateRepository.storeDocument(newDocument);
         }
         case AbstractDocumentTransition.ACTIONS.REPLACE: {
-          const document = fetchedDocumentsById[documentId];
+          const document = fetchedDocumentsById[documentTransition.getId()];
 
           if (!document) {
             throw new DocumentNotProvidedError(documentTransition);
@@ -99,7 +97,7 @@ function applyDocumentsBatchTransitionFactory(
           return stateRepository.removeDocument(
             documentTransition.getDataContractId(),
             documentTransition.getType(),
-            documentId,
+            documentTransition.getId(),
           );
         }
         default:

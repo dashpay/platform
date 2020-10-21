@@ -37,8 +37,8 @@ function validateDocumentsBatchTransitionDataFactory(
 ) {
   /**
    *
-   * @param {Buffer} dataContractId
-   * @param {Buffer} ownerId
+   * @param {Identifier} dataContractId
+   * @param {Identifier} ownerId
    * @param {AbstractDocumentTransition} documentTransitions
    * @return {Promise<ValidationResult>}
    */

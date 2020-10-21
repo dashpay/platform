@@ -32,7 +32,8 @@ const MissingDocumentTypeError = require('../../../../../../lib/errors/MissingDo
 const InvalidDocumentTypeError = require('../../../../../../lib/errors/InvalidDocumentTypeError');
 const MissingDocumentTransitionActionError = require('../../../../../../lib/errors/MissingDocumentTransitionActionError');
 const InvalidDocumentTransitionActionError = require('../../../../../../lib/errors/InvalidDocumentTransitionActionError');
-const InvalidDataContractIdError = require('../../../../../../lib/errors/InvalidDataContractIdError');
+const InvalidIdentifierError = require('../../../../../../lib/errors/InvalidIdentifierError');
+const IdentifierError = require('../../../../../../lib/identifier/errors/IdentifierError');
 
 describe('validateDocumentsBatchTransitionStructureFactory', () => {
   let dataContract;
@@ -257,7 +258,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const validationResult = new ValidationResult();
       validationResult.addError(new ConsensusError('no identity'));
 
-      validateIdentityExistenceMock.withArgs(stateTransition.getOwnerId().toBuffer())
+      validateIdentityExistenceMock.withArgs(stateTransition.getOwnerId())
         .resolves(validationResult);
 
       const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
@@ -269,7 +270,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       expect(error.message).to.equal('no identity');
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId().toBuffer(),
+        dataContract.getId(),
       );
 
       expect(enrichSpy).to.have.been.calledThrice();
@@ -282,7 +283,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
         rawStateTransition.transitions, dataContract,
       );
 
-      expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId.toBuffer());
+      expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId);
 
       expect(validateStateTransitionSignatureMock).to.have.not.been.called();
     });
@@ -444,7 +445,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.getRawDocumentTransitions()).to.deep.equal(duplicates);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
           expect(enrichSpy).to.have.been.calledThrice();
           expect(findDuplicatesByIdMock).to.have.been.calledOnceWithExactly(
@@ -473,7 +474,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.getRawDocument()).to.equal(firstDocumentTransition);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -495,14 +496,16 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
           const result = await validateDocumentsBatchTransitionStructure(rawStateTransition);
 
-          expectValidationError(result, InvalidDataContractIdError);
+          expectValidationError(result, InvalidIdentifierError);
 
           const [error] = result.getErrors();
 
-          expect(error.getRawDataContract()).to.equal(firstDocumentTransition.$dataContractId);
+          expect(error.getIdentifierName()).to.equal('$dataContractId');
+          expect(error.getIdentifierError()).to.be.instanceOf(IdentifierError);
+          expect(error.getIdentifierError().message).to.equal('Identifier expects Buffer');
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -529,7 +532,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.getDataContractId()).to.deep.equal(dataContract.getId());
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
 
           expect(enrichSpy).to.have.not.been.called();
@@ -555,7 +558,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.getRawDocument()).to.equal(firstDocumentTransition);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -580,7 +583,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.getDataContract()).to.equal(dataContract);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -606,7 +609,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.getRawDocumentTransition()).to.equal(firstDocumentTransition);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -631,7 +634,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
           expect(error.getRawDocumentTransition()).to.deep.equal(firstDocumentTransition);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId().toBuffer(),
+            dataContract.getId(),
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -658,7 +661,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
             expect(error.getRawDocumentTransition()).to.deep.equal(firstTransition);
 
             expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-              dataContract.getId().toBuffer(),
+              dataContract.getId(),
             );
 
             expect(enrichSpy).to.have.been.calledThrice();
@@ -834,7 +837,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
         expect(error.getRawDocumentTransitions()).to.deep.equal(duplicates);
 
         expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-          dataContract.getId().toBuffer(),
+          dataContract.getId(),
         );
         expect(enrichSpy).to.have.been.calledThrice();
         expect(findDuplicatesByIdMock).to.have.been.calledOnceWithExactly(
@@ -928,7 +931,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       expect(error).to.equal(validationError);
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId().toBuffer(),
+        dataContract.getId(),
       );
 
       expect(enrichSpy).to.have.been.calledThrice();
@@ -941,7 +944,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
         rawStateTransition.transitions, dataContract,
       );
 
-      expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId.toBuffer());
+      expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId);
 
       expect(validateStateTransitionSignatureMock).to.be.calledOnce();
       expect(validateStateTransitionSignatureMock.getCall(0).args[0]).to.deep.equal(
@@ -988,7 +991,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-      dataContract.getId().toBuffer(),
+      dataContract.getId(),
     );
 
     expect(enrichSpy).to.have.been.calledThrice();
@@ -1001,7 +1004,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       rawStateTransition.transitions, dataContract,
     );
 
-    expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId.toBuffer());
+    expect(validateIdentityExistenceMock).to.have.been.calledOnceWithExactly(ownerId);
 
     expect(validateStateTransitionSignatureMock).to.be.calledOnce();
     expect(validateStateTransitionSignatureMock.getCall(0).args[0]).to.deep.equal(

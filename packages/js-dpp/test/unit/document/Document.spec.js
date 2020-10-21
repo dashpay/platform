@@ -8,7 +8,7 @@ const DocumentCreateTransition = require(
   '../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition',
 );
 
-const Identifier = require('../../../lib/Identifier');
+const Identifier = require('../../../lib/identifier/Identifier');
 
 describe('Document', () => {
   let lodashGetMock;

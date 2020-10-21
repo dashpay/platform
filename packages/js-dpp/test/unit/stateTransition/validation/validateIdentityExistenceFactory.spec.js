@@ -33,7 +33,7 @@ describe('validateIdentityExistence', () => {
         {
           id: 0,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: 'z3HAPrJkpgffXX0b3w0lb/PZs6A5IXzHj1p8Fnzmgmk=',
+          data: Buffer.from('z3HAPrJkpgffXX0b3w0lb/PZs6A5IXzHj1p8Fnzmgmk=', 'base64'),
         },
       ],
     };

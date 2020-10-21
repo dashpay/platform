@@ -18,7 +18,7 @@ const dpnsUpdateDomainDataTrigger = require('../../../../../../lib/dataTrigger/d
 
 const executeDataTriggersFactory = require('../../../../../../lib/document/stateTransition/validation/data/executeDataTriggersFactory');
 
-const Identifier = require('../../../../../../lib/Identifier');
+const Identifier = require('../../../../../../lib/identifier/Identifier');
 
 describe('executeDataTriggersFactory', () => {
   let childDocument;

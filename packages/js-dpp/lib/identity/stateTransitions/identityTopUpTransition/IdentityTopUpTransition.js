@@ -1,6 +1,6 @@
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
-const Identifier = require('../../../Identifier');
+const Identifier = require('../../../identifier/Identifier');
 
 class IdentityTopUpTransition extends AbstractStateTransition {
   /**

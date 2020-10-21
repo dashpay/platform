@@ -7,7 +7,9 @@ const IdentityTopUpTransition = require('../identity/stateTransitions/identityTo
 
 const InvalidStateTransitionTypeError = require('../errors/InvalidStateTransitionTypeError');
 const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
-const InvalidDataContractIdError = require('../errors/InvalidDataContractIdError');
+const MissingDataContractIdError = require('../errors/MissingDataContractIdError');
+
+const Identifier = require('../identifier/Identifier');
 
 const typesToClasses = {
   [types.DATA_CONTRACT_CREATE]: DataContractCreateTransition,
@@ -37,13 +39,13 @@ function createStateTransitionFactory(stateRepository) {
     if (rawStateTransition.type === types.DOCUMENTS_BATCH) {
       const dataContractPromises = rawStateTransition.transitions
         .map(async (documentTransition) => {
-          if (!documentTransition.$dataContractId) {
-            throw new InvalidDataContractIdError(documentTransition.$dataContractId);
+          if (!Object.prototype.hasOwnProperty.call(documentTransition, '$dataContractId')) {
+            throw new MissingDataContractIdError(documentTransition);
           }
 
-          const dataContract = await stateRepository.fetchDataContract(
-            documentTransition.$dataContractId,
-          );
+          const dataContractId = new Identifier(documentTransition.$dataContractId);
+
+          const dataContract = await stateRepository.fetchDataContract(dataContractId);
 
           if (!dataContract) {
             throw new DataContractNotPresentError(rawStateTransition.$dataContractId);

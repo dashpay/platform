@@ -2,7 +2,7 @@ const hash = require('../../../util/hash');
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const IdentityPublicKey = require('../../IdentityPublicKey');
-const Identifier = require('../../../Identifier');
+const Identifier = require('../../../identifier/Identifier');
 
 class IdentityCreateTransition extends AbstractStateTransition {
   /**

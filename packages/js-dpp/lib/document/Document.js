@@ -6,7 +6,7 @@ const cloneDeepWithIdentifiers = require('../util/cloneDeepWithIdentifiers');
 
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
-const Identifier = require('../Identifier');
+const Identifier = require('../identifier/Identifier');
 
 class Document {
   /**

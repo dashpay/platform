@@ -1,5 +1,5 @@
 const lodashCloneDeepWith = require('lodash.clonedeepwith');
-const Identifier = require('../Identifier');
+const Identifier = require('../identifier/Identifier');
 
 /**
  * Clone data which contains Identifiers

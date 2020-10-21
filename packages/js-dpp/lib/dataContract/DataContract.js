@@ -4,7 +4,7 @@ const { encode } = require('../util/serializer');
 const getBinaryPropertiesFromSchema = require('./getBinaryPropertiesFromSchema');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
-const Identifier = require('../Identifier');
+const Identifier = require('../identifier/Identifier');
 
 class DataContract {
   /**

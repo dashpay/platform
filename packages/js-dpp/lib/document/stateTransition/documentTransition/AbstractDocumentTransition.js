@@ -1,6 +1,6 @@
 const lodashGet = require('lodash.get');
 
-const Identifier = require('../../../Identifier');
+const Identifier = require('../../../identifier/Identifier');
 
 /**
  * @abstract

@@ -12,7 +12,7 @@ const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDoc
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
-const Identifier = require('../../../lib/Identifier');
+const Identifier = require('../../../lib/identifier/Identifier');
 
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 const InvalidDocumentError = require('../../../lib/document/errors/InvalidDocumentError');

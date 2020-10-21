@@ -5,6 +5,7 @@ const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
 const InvalidIdentityPublicKeyTypeError = require('../../../../lib/errors/InvalidIdentityPublicKeyTypeError');
 const InvalidStateTransitionSignatureError = require('../../../../lib/errors/InvalidStateTransitionSignatureError');
 const MissingPublicKeyError = require('../../../../lib/errors/MissingPublicKeyError');
+const generateRandomIdentifier = require('../../../../lib/test/utils/generateRandomIdentifier');
 
 describe('validateStateTransitionSignatureFactory', () => {
   let validateStateTransitionSignature;
@@ -16,6 +17,7 @@ describe('validateStateTransitionSignatureFactory', () => {
   let publicKeyId;
 
   beforeEach(function beforeEach() {
+    ownerId = generateRandomIdentifier();
     publicKeyId = 1;
     stateTransition = {
       verifySignature: this.sinonSandbox.stub().returns(true),

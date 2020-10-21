@@ -1,7 +1,7 @@
 const rewiremock = require('rewiremock/node');
 const bs58 = require('bs58');
 
-const Identifier = require('../../../lib/Identifier');
+const Identifier = require('../../../lib/identifier/Identifier');
 
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 

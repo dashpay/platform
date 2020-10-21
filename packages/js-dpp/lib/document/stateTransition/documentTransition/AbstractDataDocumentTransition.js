@@ -6,7 +6,7 @@ const cloneDeepWithIdentifiers = require('../../../util/cloneDeepWithIdentifiers
 
 const AbstractDocumentTransition = require('./AbstractDocumentTransition');
 
-const Identifier = require('../../../Identifier');
+const Identifier = require('../../../identifier/Identifier');
 
 /**
  * @abstract

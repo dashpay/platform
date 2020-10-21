@@ -1,7 +1,10 @@
 const MissingDataContractIdError = require('../errors/MissingDataContractIdError');
 const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
 
+const createAndValidateIdentifier = require('../identifier/createAndValidateIdentifier');
+
 const ValidationResult = require('../validation/ValidationResult');
+
 
 /**
  * @param {StateRepository} stateRepository
@@ -26,7 +29,15 @@ function fetchAndValidateDataContractFactory(stateRepository) {
       return result;
     }
 
-    const dataContractId = rawDocument.$dataContractId;
+    const dataContractId = createAndValidateIdentifier(
+      '$dataContractId',
+      rawDocument.$dataContractId,
+      result,
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
 
     const dataContract = await stateRepository.fetchDataContract(dataContractId);
 

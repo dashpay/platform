@@ -1,4 +1,4 @@
-const Identifier = require('../Identifier');
+const Identifier = require('../identifier/Identifier');
 
 const AbstractDocumentTransition = require('../document/stateTransition/documentTransition/AbstractDocumentTransition');
 

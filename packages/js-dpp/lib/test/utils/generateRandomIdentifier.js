@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const Identifier = require('../../Identifier');
+const Identifier = require('../../identifier/Identifier');
 
 /**
  * Generate random identity ID

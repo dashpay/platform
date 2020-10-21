@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
-const Identifier = require('../../../lib/Identifier');
+const Identifier = require('../../../lib/identifier/Identifier');
 
 const hash = require('../../../lib/util/hash');
 

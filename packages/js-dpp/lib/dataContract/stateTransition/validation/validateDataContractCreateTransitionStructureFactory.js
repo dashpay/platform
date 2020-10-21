@@ -7,6 +7,7 @@ const generateDataContractId = require('../../generateDataContractId');
 const convertBuffersToArrays = require('../../../util/convertBuffersToArrays');
 
 const dataContractCreateTransitionSchema = require('../../../../schema/dataContract/stateTransition/dataContractCreate');
+const Identifier = require('../../../identifier/Identifier');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -60,9 +61,11 @@ function validateDataContractCreateTransitionStructureFactory(
       return result;
     }
 
+    const ownerId = new Identifier(rawDataContract.ownerId);
+
     // Data Contract identity must exists and confirmed
     result.merge(
-      await validateIdentityExistence(rawDataContract.ownerId),
+      await validateIdentityExistence(ownerId),
     );
 
     if (!result.isValid()) {
@@ -73,7 +76,7 @@ function validateDataContractCreateTransitionStructureFactory(
     const stateTransition = new DataContractCreateTransition(rawStateTransition);
 
     result.merge(
-      await validateStateTransitionSignature(stateTransition, rawDataContract.ownerId),
+      await validateStateTransitionSignature(stateTransition, ownerId),
     );
 
     return result;

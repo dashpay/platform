@@ -12,7 +12,7 @@ const actionsToClasses = {
   [AbstractDocumentTransition.ACTIONS.DELETE]: DocumentDeleteTransition,
 };
 
-const Identifier = require('../../Identifier');
+const Identifier = require('../../identifier/Identifier');
 
 class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   /**

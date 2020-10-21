@@ -1,7 +1,7 @@
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 const IdentityPublicKey = require('./IdentityPublicKey');
-const Identifier = require('../Identifier');
+const Identifier = require('../identifier/Identifier');
 
 class Identity {
   /**

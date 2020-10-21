@@ -1,4 +1,4 @@
-const Identifier = require('../../../lib/Identifier');
+const Identifier = require('../../../lib/identifier/Identifier');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');

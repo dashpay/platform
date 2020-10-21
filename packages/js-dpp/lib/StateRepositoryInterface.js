@@ -12,7 +12,7 @@
  * @async
  * @method
  * @name StateRepository#fetchDataContract
- * @param {Buffer} id
+ * @param {Identifier} id
  * @returns {Promise<DataContract|null>}
  */
 
@@ -32,7 +32,7 @@
  * @async
  * @method
  * @name StateRepository#fetchDocuments
- * @param {Buffer} contractId
+ * @param {Identifier} contractId
  * @param {string} type
  * @param {{ where: Object }} [options]
  * @returns {Promise<Document[]>}
@@ -54,9 +54,9 @@
  * @async
  * @method
  * @name StateRepository#removeDocument
- * @param {string} contractId
+ * @param {Identifier} contractId
  * @param {string} type
- * @param {Buffer} id
+ * @param {Identifier} id
  * @returns {Promise<void>}
  */
 
@@ -76,7 +76,7 @@
  * @async
  * @method
  * @name StateRepository#fetchIdentity
- * @param {Buffer} id
+ * @param {Identifier} id
  * @returns {Promise<Identity|null>}
  */
 
@@ -96,7 +96,7 @@
  * @async
  * @method
  * @name StateRepository#storeIdentityPublicKeyHashes
- * @param {Buffer} identityId
+ * @param {Identifier} identityId
  * @param {Buffer[]} publicKeyHashes
  * @returns {Promise<void>}
  */
@@ -107,8 +107,8 @@
  * @async
  * @method
  * @name StateRepository#fetchIdentityIdsByPublicKeyHashes
- * @param {string[]} publicKeyHashes
- * @returns {Promise<Object.<string, string>>}
+ * @param {Buffer[]} publicKeyHashes
+ * @returns {Promise<Array<Identifier|null>>}
  */
 
 /**

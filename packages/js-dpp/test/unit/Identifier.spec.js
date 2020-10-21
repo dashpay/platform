@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bs58 = require('bs58');
-const Identifier = require('../../lib/Identifier');
+const Identifier = require('../../lib/identifier/Identifier');
+const IdentifierError = require('../../lib/identifier/errors/IdentifierError');
 
 describe('Identifier', () => {
   let buffer;
@@ -20,13 +21,13 @@ describe('Identifier', () => {
     it('should throw error if first argument is not Buffer', () => {
       expect(
         () => new Identifier(1),
-      ).to.throw(TypeError, 'Identifier expects Buffer');
+      ).to.throw(IdentifierError, 'Identifier expects Buffer');
     });
 
     it('should throw error if buffer is not 32 bytes long', () => {
       expect(
         () => new Identifier(Buffer.alloc(30)),
-      ).to.throw(TypeError, 'Identifier must be 32 long');
+      ).to.throw(IdentifierError, 'Identifier must be 32 long');
     });
   });
 
@@ -98,7 +99,7 @@ describe('Identifier', () => {
     it('should throw error if buffer is passed among with encoding', async () => {
       expect(
         () => Identifier.from(buffer, 'base64'),
-      ).to.throw(TypeError, 'encoding accepted only with type string');
+      ).to.throw(IdentifierError, 'encoding accepted only with type string');
     });
 
     it('should create an instance with a base58 string', () => {

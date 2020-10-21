@@ -29,6 +29,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
   let validateDataContractCreateTransitionStructure;
   let stateTransition;
   let rawStateTransition;
+  let dataContract;
   let rawDataContract;
   let validateStateTransitionSignatureMock;
   let validateIdentityExistenceMock;
@@ -36,7 +37,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
   beforeEach(function beforeEach() {
     validateDataContractMock = this.sinonSandbox.stub();
 
-    const dataContract = getDataContractFixture();
+    dataContract = getDataContractFixture();
     rawDataContract = dataContract.toObject();
 
     stateTransition = new DataContractCreateTransition({
@@ -235,7 +236,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       expect(error).to.equal(blockchainUserError);
 
       expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(
-        rawDataContract.ownerId,
+        dataContract.getOwnerId(),
       );
     });
   });
@@ -381,11 +382,11 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
 
       expect(validateStateTransitionSignatureMock).to.be.calledOnceWith(
         stateTransition,
-        rawDataContract.ownerId,
+        dataContract.getOwnerId(),
       );
 
       expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(
-        rawDataContract.ownerId,
+        dataContract.getOwnerId(),
       );
     });
   });
@@ -435,13 +436,13 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
 
     expect(validateStateTransitionSignatureMock).to.be.calledOnceWith(
       stateTransition,
-      rawDataContract.ownerId,
+      dataContract.getOwnerId(),
     );
 
     stateTransition = new DataContractCreateTransition(rawStateTransition);
 
     expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(
-      rawDataContract.ownerId,
+      dataContract.getOwnerId(),
     );
   });
 });

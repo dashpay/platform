@@ -4,7 +4,7 @@ const DataContractFactory = require('../../dataContract/DataContractFactory');
 
 const randomOwnerId = generateRandomIdentifier();
 
-const Identifier = require('../../Identifier');
+const Identifier = require('../../identifier/Identifier');
 
 /**
  *

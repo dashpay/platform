@@ -4,7 +4,7 @@ const stateTransitionTypes = require(
   '../../../../../lib/stateTransition/stateTransitionTypes',
 );
 
-const Identifier = require('../../../../../lib/Identifier');
+const Identifier = require('../../../../../lib/identifier/Identifier');
 
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 

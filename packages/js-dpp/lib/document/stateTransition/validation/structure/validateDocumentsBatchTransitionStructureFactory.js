@@ -10,7 +10,7 @@ const InvalidDocumentTypeError = require('../../../../errors/InvalidDocumentType
 const InvalidDocumentTransitionActionError = require('../../../../errors/InvalidDocumentTransitionActionError');
 const MissingDocumentTransitionActionError = require('../../../../errors/MissingDocumentTransitionActionError');
 const MissingDataContractIdError = require('../../../../errors/MissingDataContractIdError');
-const InvalidDataContractIdError = require('../../../../errors/InvalidDataContractIdError');
+const Identifier = require('../../../../identifier/Identifier');
 
 const DocumentsBatchTransition = require('../../DocumentsBatchTransition');
 
@@ -22,6 +22,7 @@ const generateDocumentId = require('../../../generateDocumentId');
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
 
 const documentsBatchTransitionSchema = require('../../../../../schema/document/stateTransition/documentsBatch');
+const createAndValidateIdentifier = require('../../../../identifier/createAndValidateIdentifier');
 
 /**
  * @param {findDuplicatesById} findDuplicatesById
@@ -225,22 +226,22 @@ function validateDocumentsBatchTransitionStructureFactory(
           return obj;
         }
 
-        if (!Buffer.isBuffer(rawDocumentTransition.$dataContractId)) {
-          result.addError(
-            new InvalidDataContractIdError(rawDocumentTransition.$dataContractId),
-          );
+        const dataContractId = createAndValidateIdentifier(
+          '$dataContractId',
+          rawDocumentTransition.$dataContractId,
+          result,
+        );
 
+        if (!dataContractId) {
           return obj;
         }
 
-        const dataContractIdString = rawDocumentTransition.$dataContractId.toString('hex');
-
-        if (!obj[dataContractIdString]) {
+        if (!obj[dataContractId]) {
           // eslint-disable-next-line no-param-reassign
-          obj[dataContractIdString] = [];
+          obj[dataContractId] = [];
         }
 
-        obj[dataContractIdString].push(rawDocumentTransition);
+        obj[dataContractId].push(rawDocumentTransition);
 
         return obj;
       }, {});
@@ -251,13 +252,13 @@ function validateDocumentsBatchTransitionStructureFactory(
       .map(async ([dataContractIdString, documentTransitions]) => {
         const perDocumentResult = new ValidationResult();
 
-        const dataContractIdBuffer = Buffer.from(dataContractIdString, 'hex');
+        const dataContractId = Identifier.from(dataContractIdString);
 
-        const dataContract = await stateRepository.fetchDataContract(dataContractIdBuffer);
+        const dataContract = await stateRepository.fetchDataContract(dataContractId);
 
         if (!dataContract) {
           perDocumentResult.addError(
-            new DataContractNotPresentError(dataContractIdBuffer),
+            new DataContractNotPresentError(dataContractId),
           );
         }
 
@@ -285,10 +286,12 @@ function validateDocumentsBatchTransitionStructureFactory(
       return result;
     }
 
+    const stateTransition = new DocumentsBatchTransition(rawStateTransition, dataContracts);
+
     // User must exist and confirmed
     result.merge(
       await validateIdentityExistence(
-        rawStateTransition.ownerId,
+        stateTransition.getOwnerId(),
       ),
     );
 
@@ -297,8 +300,6 @@ function validateDocumentsBatchTransitionStructureFactory(
     }
 
     // Verify ST signature
-    const stateTransition = new DocumentsBatchTransition(rawStateTransition, dataContracts);
-
     result.merge(
       await validateStateTransitionSignature(
         stateTransition,
