@@ -66,7 +66,7 @@
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.18.13",
     "@dashevo/dashd-rpc": "^2.0.2",
-    "@dashevo/dpp": "~0.16.0-dev.9",
+    "@dashevo/dpp": "~0.16.0-dev.10",
     "abci": "^5.0.1",
     "ajv": "^6.10.0",
     "ajv-keywords": "^3.5.2",

@@ -5,6 +5,7 @@ const DashPlatformProtocol = require('@dashevo/dpp');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const convertWhereToMongoDbQuery = require('../../../lib/document/mongoDbRepository/convertWhereToMongoDbQuery');
 const validateQueryFactory = require('../../../lib/document/query/validateQueryFactory');
@@ -218,12 +219,8 @@ describe('fetchDocumentsFactory', () => {
     expect(result).to.have.length(0);
   });
 
-  it('should throw InvalidQueryError if contract ID does not exist', async () => {
-    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
-
-    await documentRepository.store(document);
-
-    contractId = 'Unknown';
+  it('should throw InvalidQueryError if contract ID is not valid', async () => {
+    contractId = 'something';
 
     try {
       await fetchDocuments(contractId, documentType);
@@ -236,7 +233,28 @@ describe('fetchDocumentsFactory', () => {
 
       const [error] = e.getErrors();
 
-      expect(error.getContractId()).to.be.equal(contractId);
+      expect(error.getContractId()).to.be.deep.equal(contractId);
+    }
+  });
+
+  it('should throw InvalidQueryError if contract ID does not exist', async () => {
+    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
+    await documentRepository.store(document);
+
+    contractId = generateRandomIdentifier();
+
+    try {
+      await fetchDocuments(contractId, documentType);
+
+      expect.fail('should throw InvalidQueryError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidQueryError);
+      expect(e.getErrors()).to.be.an('array');
+      expect(e.getErrors()).to.have.lengthOf(1);
+
+      const [error] = e.getErrors();
+
+      expect(error.getContractId()).to.be.deep.equal(contractId);
     }
   });
 

@@ -58,6 +58,7 @@ const unserializeStateTransitionFactory = require(
 
 const DriveStateRepository = require('./dpp/DriveStateRepository');
 const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
+const LoggedStateRepositoryDecorator = require('./dpp/LoggedStateRepositoryDecorator');
 
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
@@ -310,7 +311,10 @@ async function createDIContainer(options) {
         blockExecutionState,
       );
 
-      return new CachedStateRepositoryDecorator(stateRepository, dataContractCache);
+      return new CachedStateRepositoryDecorator(
+        stateRepository,
+        dataContractCache,
+      );
     }).singleton(),
 
     transactionalStateRepository: asFunction((
@@ -323,6 +327,7 @@ async function createDIContainer(options) {
       blockExecutionDBTransactions,
       dataContractCache,
       blockExecutionState,
+      logger,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -335,7 +340,14 @@ async function createDIContainer(options) {
         blockExecutionDBTransactions,
       );
 
-      return new CachedStateRepositoryDecorator(stateRepository, dataContractCache);
+      const cachedRepository = new CachedStateRepositoryDecorator(
+        stateRepository, dataContractCache,
+      );
+
+      return new LoggedStateRepositoryDecorator(
+        cachedRepository,
+        logger,
+      );
     }).singleton(),
 
     unserializeStateTransition: asFunction((

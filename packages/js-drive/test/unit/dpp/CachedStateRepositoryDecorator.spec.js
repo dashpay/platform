@@ -32,9 +32,7 @@ describe('CachedStateRepositoryDecorator', () => {
       storeIdentity: this.sinon.stub(),
       storeDocument: this.sinon.stub(),
       removeDocument: this.sinon.stub(),
-      storePublicKeyIdentityId: this.sinon.stub(),
       storeIdentityPublicKeyHashes: this.sinon.stub(),
-      fetchPublicKeyIdentityId: this.sinon.stub(),
       fetchLatestPlatformBlockHeader: this.sinon.stub(),
       fetchIdentityIdsByPublicKeyHashes: this.sinon.stub(),
     };

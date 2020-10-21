@@ -32,7 +32,7 @@ class DriveStateRepository {
   /**
    * Fetch Identity by ID
    *
-   * @param {Buffer} id
+   * @param {Identifier} id
    *
    * @return {Promise<Identity|null>}
    */
@@ -57,7 +57,7 @@ class DriveStateRepository {
   /**
    * Store public key hashes for an identity id
    *
-   * @param {Buffer} identityId
+   * @param {Identifier} identityId
    * @param {Buffer[]} publicKeyHashes
    *
    * @returns {Promise<void>}
@@ -78,11 +78,13 @@ class DriveStateRepository {
    *
    * @param {Buffer[]} publicKeyHashes
    *
-   * @returns {Promise<Array<Buffer|null>>}
+   * @returns {Promise<Array<Identifier|null>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
     const transaction = this.getDBTransaction('identity');
 
+    // Keep await here.
+    // noinspection UnnecessaryLocalVariableJS
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
         this.publicKeyIdentityIdMapLevelDBRepository.fetch(
@@ -97,7 +99,7 @@ class DriveStateRepository {
   /**
    * Fetch Data Contract by ID
    *
-   * @param {Buffer} id
+   * @param {Identifier} id
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id) {
@@ -122,7 +124,7 @@ class DriveStateRepository {
   /**
    * Fetch Documents by contract ID and type
    *
-   * @param {Buffer} contractId
+   * @param {Identifier} contractId
    * @param {string} type
    * @param {{ where: Object }} [options]
    * @returns {Promise<Document[]>}
@@ -153,9 +155,9 @@ class DriveStateRepository {
   /**
    * Remove document
    *
-   * @param {Buffer} contractId
+   * @param {Identifier} contractId
    * @param {string} type
-   * @param {Buffer} id
+   * @param {Identifier} id
    * @returns {Promise<void>}
    */
   async removeDocument(contractId, type, id) {
@@ -191,6 +193,15 @@ class DriveStateRepository {
   }
 
   /**
+   * Fetch latest platform block header
+   *
+   * @return {Promise<IHeader>}
+   */
+  async fetchLatestPlatformBlockHeader() {
+    return this.blockExecutionState.getHeader();
+  }
+
+  /**
    * @private
    * @param {string} name
    * @return {LevelDBTransaction|MongoDBTransaction}
@@ -203,15 +214,6 @@ class DriveStateRepository {
     }
 
     return transaction;
-  }
-
-  /**
-   * Fetch latest platform block header
-   *
-   * @return {Promise<IHeader>}
-   */
-  async fetchLatestPlatformBlockHeader() {
-    return this.blockExecutionState.getHeader();
   }
 }
 

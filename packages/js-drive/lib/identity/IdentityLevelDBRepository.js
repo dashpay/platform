@@ -34,7 +34,7 @@ class IdentityLevelDBRepository {
   /**
    * Fetch identity by id from database
    *
-   * @param {Buffer|Identifier} id
+   * @param {Identifier} id
    * @param {LevelDBTransaction} [transaction]
    * @return {Promise<null|Identity>}
    */

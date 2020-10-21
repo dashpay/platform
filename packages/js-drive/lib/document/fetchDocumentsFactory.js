@@ -1,3 +1,5 @@
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const InvalidDocumentTypeError = require('./query/errors/InvalidDocumentTypeError');
 const InvalidContractIdError = require('./query/errors/InvalidContractIdError');
@@ -16,7 +18,7 @@ function fetchDocumentsFactory(
    * Fetch original Documents by Contract ID and type
    *
    * @typedef {Promise} fetchDocuments
-   * @param {Buffer} contractId
+   * @param {Buffer|Identifier} contractId
    * @param {string} type
    * @param {Object} [options] options
    * @param {MongoDBTransaction} [dbTransaction]
@@ -34,7 +36,12 @@ function fetchDocumentsFactory(
       throw error;
     }
 
-    let dataContract = dataContractCache.get(contractId);
+    // eslint-disable-next-line no-param-reassign
+    contractId = new Identifier(contractId);
+
+    const contractIdString = contractId.toString();
+
+    let dataContract = dataContractCache.get(contractIdString);
 
     if (!dataContract) {
       dataContract = await dataContractRepository.fetch(contractId);
@@ -45,7 +52,7 @@ function fetchDocumentsFactory(
         throw new InvalidQueryError([error]);
       }
 
-      dataContractCache.set(contractId, dataContract);
+      dataContractCache.set(contractIdString, dataContract);
     }
 
     if (!dataContract.isDocumentDefined(type)) {

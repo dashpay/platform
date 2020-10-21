@@ -1,4 +1,5 @@
 const Identifier = require('@dashevo/dpp/lib/Identifier');
+const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 
 const DocumentMongoDbRepository = require('./DocumentMongoDbRepository');
 const InvalidContractIdError = require('../query/errors/InvalidContractIdError');
@@ -31,7 +32,7 @@ function createDocumentMongoDbRepositoryFactory(
       // eslint-disable-next-line no-param-reassign
       dataContractId = new Identifier(dataContractId);
     } catch (e) {
-      if (e instanceof TypeError) {
+      if (e instanceof IdentifierError) {
         throw new InvalidContractIdError(dataContractId);
       }
 

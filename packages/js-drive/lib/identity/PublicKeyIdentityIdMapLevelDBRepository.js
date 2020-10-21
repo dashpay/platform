@@ -15,7 +15,7 @@ class PublicKeyIdentityIdMapLevelDBRepository {
    * Store public key to identity id map into database
    *
    * @param {Buffer} publicKeyHash
-   * @param {Buffer|Identifier} identityId
+   * @param {Identifier} identityId
    * @param {LevelDBTransaction} [transaction]
    *
    * @return {Promise<PublicKeyIdentityIdMapLevelDBRepository>}

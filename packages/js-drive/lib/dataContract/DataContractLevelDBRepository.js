@@ -34,7 +34,7 @@ class DataContractLevelDBRepository {
   /**
    * Fetch Data Contract by ID from database
    *
-   * @param {Buffer|Identifier} id
+   * @param {Identifier} id
    * @param {LevelDBTransaction} [transaction]
    * @return {Promise<null|DataContract>}
    */

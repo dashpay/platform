@@ -14,7 +14,7 @@ class CachedStateRepositoryDecorator {
   /**
    * Fetch Identity by ID
    *
-   * @param {Buffer} id
+   * @param {Identifier} id
    *
    * @return {Promise<Identity|null>}
    */
@@ -35,7 +35,7 @@ class CachedStateRepositoryDecorator {
   /**
    * Store public key hashes for an identity id
    *
-   * @param {Buffer} identityId
+   * @param {Identifier} identityId
    * @param {Buffer[]} publicKeyHashes
    *
    * @returns {Promise<void>}
@@ -50,7 +50,7 @@ class CachedStateRepositoryDecorator {
    *
    * @param {Buffer[]} publicKeyHashes
    *
-   * @returns {Promise<Object>}
+   * @returns {Promise<Array<Identifier|null>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
     return this.stateRepository.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
@@ -59,11 +59,13 @@ class CachedStateRepositoryDecorator {
   /**
    * Fetch Data Contract by ID
    *
-   * @param {Buffer} id
+   * @param {Identifier} id
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id) {
-    let dataContract = this.contractCache.get(id);
+    const idString = id.toString();
+
+    let dataContract = this.contractCache.get(idString);
 
     if (dataContract !== undefined) {
       return dataContract;
@@ -72,7 +74,7 @@ class CachedStateRepositoryDecorator {
     dataContract = await this.stateRepository.fetchDataContract(id);
 
     if (dataContract !== null) {
-      this.contractCache.set(id, dataContract);
+      this.contractCache.set(idString, dataContract);
     }
 
     return dataContract;
@@ -91,7 +93,7 @@ class CachedStateRepositoryDecorator {
   /**
    * Fetch Documents by contract ID and type
    *
-   * @param {Buffer} contractId
+   * @param {Identifier} contractId
    * @param {string} type
    * @param {{ where: Object }} [options]
    * @returns {Promise<Document[]>}
@@ -113,9 +115,9 @@ class CachedStateRepositoryDecorator {
   /**
    * Remove document
    *
-   * @param {Buffer} contractId
+   * @param {Identifier} contractId
    * @param {string} type
-   * @param {Buffer} id
+   * @param {Identifier} id
    * @returns {Promise<void>}
    */
   async removeDocument(contractId, type, id) {
