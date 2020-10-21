@@ -38,7 +38,7 @@ describe('DPNS', () => {
       const createdDataContract = await client.platform.contracts.get(process.env.DPNS_CONTRACT_ID);
 
       expect(createdDataContract).to.exist();
-      expect(createdDataContract.getId()).to.equal(process.env.DPNS_CONTRACT_ID);
+      expect(createdDataContract.getId().toString()).to.equal(process.env.DPNS_CONTRACT_ID);
     });
   });
 

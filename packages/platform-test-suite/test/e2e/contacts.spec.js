@@ -1,4 +1,5 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 
@@ -45,11 +46,16 @@ describe('e2e', () => {
           ],
           properties: {
             toUserId: {
-              type: 'string',
-              maxLength: 1024,
+              type: 'array',
+              byteArray: true,
+              contentMediaType: Identifier.MEDIA_TYPE,
+              minItems: 32,
+              maxItems: 32,
             },
             publicKey: {
-              type: 'string',
+              type: 'array',
+              byteArray: true,
+              maxItems: 33,
             },
           },
           required: ['toUserId', 'publicKey'],
@@ -86,10 +92,10 @@ describe('e2e', () => {
 
         await bobClient.platform.contracts.broadcast(dataContract, bobIdentity);
 
-        bobClient.apps.contacts = {
+        bobClient.getApps().set('contacts', {
           contractId: dataContract.getId(),
           contract: dataContract,
-        };
+        });
 
         // 2. Fetch and check data contract
         const fetchedDataContract = await bobClient.platform.contracts.get(
@@ -125,10 +131,10 @@ describe('e2e', () => {
         // Create Alice wallet
         aliceClient = await createClientWithFundedWallet();
 
-        aliceClient.apps.contacts = {
+        aliceClient.getApps().set('contacts', {
           contractId: dataContract.getId(),
           contract: dataContract,
-        };
+        });
 
         aliceIdentity = await aliceClient.platform.identities.register(10);
 

@@ -25,11 +25,10 @@ describe('Platform', () => {
 
       await client.platform.contracts.broadcast(dataContractFixture, identity);
 
-      // noinspection JSAccessibilityCheck
-      client.apps.customContracts = {
+      client.getApps().set('customContracts', {
         contractId: dataContractFixture.getId(),
         contract: dataContractFixture,
-      };
+      });
     });
 
     beforeEach(() => {
@@ -42,9 +41,9 @@ describe('Platform', () => {
       }
     });
 
-    it('should fail to create new document with an unknown type', async () => {
+    it('should fail to create new document with an unknown type', async function it() {
       // Add undefined document type for
-      client.apps.customContracts.contract.documents.undefinedType = {
+      client.getApps().get('customContracts').contract.documents.undefinedType = {
         properties: {
           name: {
             type: 'string',
@@ -60,6 +59,13 @@ describe('Platform', () => {
           name: 'anotherName',
         },
       );
+
+      // mock validateStructure to skip validation in SDK
+      this.sinon.stub(client.platform.dpp.stateTransition, 'validateStructure');
+
+      client.platform.dpp.stateTransition.validateStructure.returns({
+        isValid: () => true,
+      });
 
       try {
         await client.platform.documents.broadcast({

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/plaform-test-suite",
-  "version": "0.15.0",
+  "version": "0.16.0-dev.1",
   "description": "Dash Network end-to-end tests",
   "private": true,
   "scripts": {
@@ -23,18 +23,20 @@
   "homepage": "https://github.com/dashevo/plaform-test-suite#readme",
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.18.12",
-    "@dashevo/dpns-contract": "~0.3.0-dev.4",
-    "@dashevo/dpp": "~0.15.0",
-    "@dashevo/wallet-lib": "~7.15.1",
-    "@dashevo/grpc-common": "~0.3.0",
+    "@dashevo/dpns-contract": "~0.3.0-dev.6",
+    "@dashevo/dpp": "~0.16.0-dev.9",
+    "@dashevo/grpc-common": "~0.3.1",
+    "@dashevo/wallet-lib": "github:dashevo/wallet-lib#bump-version",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
-    "dash": "~3.15.2",
+    "dash": "github:dashevo/js-dash-sdk#update-dpp",
     "dirty-chai": "^2.0.1",
     "dotenv-safe": "^8.2.0",
     "github-api": "^3.3.0",
     "mocha": "^7.2.0",
-    "semver": "^7.3.2"
+    "semver": "^7.3.2",
+    "sinon": "^9.2.0",
+    "sinon-chai": "^3.5.0"
   },
   "devDependencies": {
     "eslint": "^6.8.0",

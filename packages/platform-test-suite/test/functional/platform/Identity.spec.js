@@ -48,7 +48,7 @@ describe('Platform', () => {
 
       try {
         await client.getDAPIClient().platform.broadcastStateTransition(
-          identityCreateTransition.serialize(),
+          identityCreateTransition.toBuffer(),
         );
         expect.fail('Error was not thrown');
       } catch (e) {
@@ -92,14 +92,14 @@ describe('Platform', () => {
 
       try {
         await client.getDAPIClient().platform.broadcastStateTransition(
-          otherIdentityCreateTransition.serialize(),
+          otherIdentityCreateTransition.toBuffer(),
         );
 
         expect.fail('Error was not thrown');
       } catch (e) {
         const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('IdentityFirstPublicKeyAlreadyExistsError');
-        expect(error.publicKeyHash).to.equal(identity.getPublicKeyById(0).hash());
+        expect(error.name).to.equal('IdentityPublicKeyAlreadyExistsError');
+        expect(Buffer.from(error.publicKeyHash)).to.deep.equal(identity.getPublicKeyById(0).hash());
       }
     });
 
@@ -111,7 +111,7 @@ describe('Platform', () => {
       expect(fetchedIdentity).to.be.not.null();
       expect(fetchedIdentity.toJSON()).to.deep.equal({
         ...identity.toJSON(),
-        balance: 1826,
+        balance: 1860,
       });
 
       // updating balance
@@ -119,30 +119,31 @@ describe('Platform', () => {
     });
 
     it('should be able to get newly created identity by it\'s first public key', async () => {
-      const serializedIdentity = await client.getDAPIClient().platform.getIdentityByFirstPublicKey(
-        identity.getPublicKeyById(0).hash(),
-      );
+      const [serializedIdentity] = await client.getDAPIClient().platform
+        .getIdentitiesByPublicKeyHashes(
+          [identity.getPublicKeyById(0).hash()],
+        );
 
       expect(serializedIdentity).to.be.not.null();
 
-      const receivedIdentity = dpp.identity.createFromSerialized(
+      const receivedIdentity = dpp.identity.createFromBuffer(
         serializedIdentity,
         { skipValidation: true },
       );
 
       expect(receivedIdentity.toJSON()).to.deep.equal({
         ...identity.toJSON(),
-        balance: 1826,
+        balance: 1860,
       });
     });
 
     it('should be able to get newly created identity id by it\'s first public key', async () => {
-      const identityId = await client.getDAPIClient().platform.getIdentityIdByFirstPublicKey(
-        identity.getPublicKeyById(0).hash(),
+      const [identityId] = await client.getDAPIClient().platform.getIdentityIdsByPublicKeyHashes(
+        [identity.getPublicKeyById(0).hash()],
       );
 
       expect(identityId).to.be.not.null();
-      expect(identityId).to.equal(identity.getId());
+      expect(identityId).to.deep.equal(identity.getId());
     });
 
     describe('Credits', () => {
@@ -153,10 +154,10 @@ describe('Platform', () => {
 
         await client.platform.contracts.broadcast(dataContractFixture, identity);
 
-        client.apps.customContracts = {
+        client.getApps().set('customContracts', {
           contractId: dataContractFixture.getId(),
           contract: dataContractFixture,
-        };
+        });
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
@@ -201,7 +202,7 @@ describe('Platform', () => {
 
         try {
           await client.getDAPIClient().platform.broadcastStateTransition(
-            identityTopUpTransition.serialize(),
+            identityTopUpTransition.toBuffer(),
           );
 
           expect.fail('Error was not thrown');
