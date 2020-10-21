@@ -4,7 +4,7 @@ const {
   },
 } = require('abci/types');
 
-const getIdentityCreateSTFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateSTFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const checkTxHandlerFactory = require('../../../../lib/abci/handlers/checkTxHandlerFactory');
 
@@ -15,10 +15,10 @@ describe('checkTxHandlerFactory', () => {
   let unserializeStateTransitionMock;
 
   beforeEach(function beforeEach() {
-    stateTransitionFixture = getIdentityCreateSTFixture();
+    stateTransitionFixture = getIdentityCreateTransitionFixture();
 
     request = {
-      tx: stateTransitionFixture.serialize(),
+      tx: stateTransitionFixture.toBuffer(),
     };
 
     unserializeStateTransitionMock = this.sinon.stub()

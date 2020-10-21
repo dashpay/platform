@@ -15,10 +15,11 @@ function dataContractQueryHandlerFactory(dataContractRepository) {
   /**
    * @typedef dataContractQueryHandler
    * @param {Object} params
-   * @param {string} params.id
+   * @param {Object} data
+   * @param {Buffer} data.id
    * @return {Promise<ResponseQuery>}
    */
-  async function dataContractQueryHandler({ id }) {
+  async function dataContractQueryHandler(params, { id }) {
     const dataContract = await dataContractRepository.fetch(id);
 
     if (!dataContract) {
@@ -26,7 +27,7 @@ function dataContractQueryHandlerFactory(dataContractRepository) {
     }
 
     return new ResponseQuery({
-      value: dataContract.serialize(),
+      value: dataContract.toBuffer(),
     });
   }
 

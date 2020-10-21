@@ -13,23 +13,20 @@ describe('DataContractLevelDBRepository', () => {
   let db;
   let repository;
   let dataContract;
-  let key;
   let dppMock;
 
   beforeEach(function beforeEach() {
-    db = level('./db/data-contract-test', { valueEncoding: 'binary' });
+    db = level('./db/data-contract-test', { keyEncoding: 'binary', valueEncoding: 'binary' });
 
     dataContract = getDataContractFixture();
 
     dppMock = createDPPMock(this.sinon);
     dppMock
       .dataContract
-      .createFromSerialized
+      .createFromBuffer
       .resolves(dataContract);
 
     repository = new DataContractLevelDBRepository(db, dppMock);
-
-    key = `${DataContractLevelDBRepository.KEY_PREFIX}:${dataContract.getId()}`;
   });
 
   afterEach(async () => {
@@ -43,13 +40,13 @@ describe('DataContractLevelDBRepository', () => {
 
       expect(repositoryInstance).to.equal(repository);
 
-      const storedDataContractBuffer = await db.get(key);
+      const storedDataContractBuffer = await db.get(dataContract.getId());
 
       expect(storedDataContractBuffer).to.be.instanceOf(Buffer);
 
       const storedDataContract = cbor.decode(storedDataContractBuffer);
 
-      expect(storedDataContract).to.deep.equal(dataContract.toJSON());
+      expect(storedDataContract).to.deep.equal(dataContract.toObject());
     });
 
     it('should store data contract in transaction', async () => {
@@ -64,7 +61,7 @@ describe('DataContractLevelDBRepository', () => {
 
       // check we don't have data in db before commit
       try {
-        await db.get(key);
+        await db.get(dataContract.getId());
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
@@ -72,7 +69,7 @@ describe('DataContractLevelDBRepository', () => {
       }
 
       // check we can't fetch data without transaction
-      const notFoundDataContract = await repository.fetch(key);
+      const notFoundDataContract = await repository.fetch(dataContract.getId());
 
       expect(notFoundDataContract).to.be.null();
 
@@ -80,18 +77,18 @@ describe('DataContractLevelDBRepository', () => {
       const dataContractFromTransaction = await repository.fetch(dataContract.getId(), transaction);
 
       expect(dataContractFromTransaction).to.be.instanceOf(DataContract);
-      expect(dataContractFromTransaction.toJSON()).to.deep.equal(dataContract.toJSON());
+      expect(dataContractFromTransaction.toObject()).to.deep.equal(dataContract.toObject());
 
       await transaction.commit();
 
       // check we have data in db after commit
-      const storedDataContractBuffer = await db.get(key);
+      const storedDataContractBuffer = await db.get(dataContract.getId());
 
       expect(storedDataContractBuffer).to.be.instanceOf(Buffer);
 
       const storedDataContract = cbor.decode(storedDataContractBuffer);
 
-      expect(storedDataContract).to.deep.equal(dataContract.toJSON());
+      expect(storedDataContract).to.deep.equal(dataContract.toObject());
     });
   });
 
@@ -99,17 +96,17 @@ describe('DataContractLevelDBRepository', () => {
     it('should return null if data contract was not found', async () => {
       await repository.store(dataContract);
 
-      const storedDataContract = await repository.fetch('nonExistingId');
+      const storedDataContract = await repository.fetch(Buffer.alloc(32));
 
       expect(storedDataContract).to.be.null();
     });
 
     it('should return stored data contract', async () => {
-      await db.put(key, dataContract.serialize());
+      await db.put(dataContract.getId(), dataContract.toBuffer());
 
       const storedDataContract = await repository.fetch(dataContract.getId());
 
-      expect(storedDataContract.toJSON()).to.deep.equal(dataContract.toJSON());
+      expect(storedDataContract.toObject()).to.deep.equal(dataContract.toObject());
     });
 
     it('should return stored data contract with transaction', async () => {
@@ -121,11 +118,11 @@ describe('DataContractLevelDBRepository', () => {
 
       const storedDataContract = await repository.fetch(dataContract.getId(), transaction);
 
-      expect(storedDataContract.toJSON()).to.deep.equal(dataContract.toJSON());
+      expect(storedDataContract.toObject()).to.deep.equal(dataContract.toObject());
     });
 
     it('should return null if data contract not found', async () => {
-      const storedDataContract = await repository.fetch(null);
+      const storedDataContract = await repository.fetch(Buffer.alloc(32));
 
       expect(storedDataContract).to.equal(null);
     });

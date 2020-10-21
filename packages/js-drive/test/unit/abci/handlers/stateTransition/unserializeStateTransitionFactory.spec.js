@@ -1,4 +1,4 @@
-const getIdentityCreateSTFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateSTFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const ConsensusError = require('@dashevo/dpp/lib/errors/ConsensusError');
 const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
@@ -20,12 +20,12 @@ describe('unserializeStateTransitionFactory', () => {
   let createIsolatedDppMock;
 
   beforeEach(function beforeEach() {
-    stateTransitionFixture = getIdentityCreateSTFixture().serialize();
+    stateTransitionFixture = getIdentityCreateTransitionFixture().toBuffer();
 
     isolatedDppMock = {
       dispose: this.sinon.stub(),
       stateTransition: {
-        createFromSerialized: this.sinon.stub(),
+        createFromBuffer: this.sinon.stub(),
         validateFee: this.sinon.stub(),
       },
     };
@@ -55,10 +55,10 @@ describe('unserializeStateTransitionFactory', () => {
     const consensusError = new ConsensusError('Invalid state transition');
     const error = new InvalidStateTransitionError(
       [consensusError],
-      stateTransitionFixture.toJSON(),
+      stateTransitionFixture,
     );
 
-    isolatedDppMock.stateTransition.createFromSerialized.throws(error);
+    isolatedDppMock.stateTransition.createFromBuffer.throws(error);
 
     try {
       await unserializeStateTransition(stateTransitionFixture);
@@ -78,9 +78,9 @@ describe('unserializeStateTransitionFactory', () => {
     }
   });
 
-  it('should throw the error from createFromSerialized if throws not InvalidStateTransitionError', async () => {
+  it('should throw the error from createFromBuffer if throws not InvalidStateTransitionError', async () => {
     const error = new Error('Custom error');
-    isolatedDppMock.stateTransition.createFromSerialized.throws(error);
+    isolatedDppMock.stateTransition.createFromBuffer.throws(error);
 
     try {
       await unserializeStateTransition(stateTransitionFixture);
@@ -97,7 +97,7 @@ describe('unserializeStateTransitionFactory', () => {
 
   it('should throw a ExecutionTimedOutError if the VM Isolate execution timed out error thrown', async () => {
     const error = new Error('Script execution timed out.');
-    isolatedDppMock.stateTransition.createFromSerialized.throws(error);
+    isolatedDppMock.stateTransition.createFromBuffer.throws(error);
 
     try {
       await unserializeStateTransition(stateTransitionFixture);
@@ -114,7 +114,7 @@ describe('unserializeStateTransitionFactory', () => {
 
   it('should throw a MemoryLimitExceededError if the VM Isolate memory limit exceeded error thrown', async () => {
     const error = new Error('Isolate was disposed during execution due to memory limit');
-    isolatedDppMock.stateTransition.createFromSerialized.throws(error);
+    isolatedDppMock.stateTransition.createFromBuffer.throws(error);
 
     try {
       await unserializeStateTransition(stateTransitionFixture);
@@ -152,9 +152,9 @@ describe('unserializeStateTransitionFactory', () => {
   });
 
   it('should return stateTransition', async () => {
-    const stateTransition = getIdentityCreateSTFixture();
+    const stateTransition = getIdentityCreateTransitionFixture();
 
-    isolatedDppMock.stateTransition.createFromSerialized.resolves(stateTransition);
+    isolatedDppMock.stateTransition.createFromBuffer.resolves(stateTransition);
 
     isolatedDppMock.stateTransition.validateFee.resolves(new ValidatorResult());
 

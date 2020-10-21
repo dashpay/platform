@@ -1,6 +1,3 @@
-const lodashGet = require('lodash.get');
-const lodashSet = require('lodash.set');
-
 const Document = require('@dashevo/dpp/lib/document/Document');
 
 const convertFieldName = require('./convertFieldName');
@@ -73,6 +70,9 @@ class DocumentMongoDbRepository {
    */
   async find(id, transaction = undefined) {
     const findQuery = { _id: id };
+    const findOptions = {
+      promoteBuffers: true, // Automatically convert Blob to Buffer
+    };
 
     let result;
     if (transaction) {
@@ -80,12 +80,12 @@ class DocumentMongoDbRepository {
         mongoClient
           .db(this.databaseName)
           .collection(this.collectionName)
-          .findOne(findQuery, { session })
+          .findOne(findQuery, { ...findOptions, session })
       );
 
       result = await transaction.runWithTransaction(transactionFunction);
     } else {
-      result = await this.mongoCollection.findOne(findQuery);
+      result = await this.mongoCollection.findOne(findQuery, findOptions);
     }
 
     if (!result) {
@@ -119,7 +119,9 @@ class DocumentMongoDbRepository {
     }
 
     let findQuery = {};
-    let findOptions = {};
+    let findOptions = {
+      promoteBuffers: true, // Automatically convert Blob to Buffer
+    };
 
     // Prepare find query
     if (query.where) {
@@ -177,7 +179,7 @@ class DocumentMongoDbRepository {
   store(document, transaction = undefined) {
     if (
       document.getType() !== this.documentType
-      || document.getDataContractId() !== this.dataContract.getId()
+      || !document.getDataContractId().equals(this.dataContract.getId())
     ) {
       throw new TypeError('Invalid document');
     }
@@ -238,8 +240,8 @@ class DocumentMongoDbRepository {
    * @private
    * @param {Document} document
    * @return {{
-   *   _id: string,
-   *   ownerId: string,
+   *   _id: Buffer,
+   *   ownerId: Buffer,
    *   revision: number,
    *   createdAt?: Date,
    *   updatedAt?: Date,
@@ -271,8 +273,8 @@ class DocumentMongoDbRepository {
   /**
    * @private
    * @param {{
-   * _id: string,
-   * ownerId: string,
+   * _id: Buffer,
+   * ownerId: Buffer,
    * revision: number,
    * createdAt?: Date,
    * updatedAt?: Date,
@@ -288,17 +290,6 @@ class DocumentMongoDbRepository {
     protocolVersion,
     data,
   }) {
-    const encodedProperties = this.dataContract.getEncodedProperties(this.documentType);
-
-    Object.entries(encodedProperties).forEach(([propertyPath, propertyValue]) => {
-      if (propertyValue.contentEncoding === 'base64') {
-        const dataValue = lodashGet(data, propertyPath);
-        if (dataValue !== undefined) {
-          lodashSet(data, propertyPath, dataValue.buffer);
-        }
-      }
-    });
-
     const rawDocument = {
       $id: _id,
       $type: this.documentType,

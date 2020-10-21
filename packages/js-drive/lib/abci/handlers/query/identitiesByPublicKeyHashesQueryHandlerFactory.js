@@ -20,7 +20,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
    * @typedef identitiesByPublicKeyHashesQueryHandler
    * @param {Object} params
    * @param {Object} data
-   * @param {string} data.publicKeyHashes
+   * @param {Buffer[]} data.publicKeyHashes
    * @return {Promise<ResponseQuery>}
    */
   async function identitiesByPublicKeyHashesQueryHandler(params, { publicKeyHashes }) {
@@ -34,14 +34,12 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
 
         const identity = await identityRepository.fetch(identityId);
 
-        return identity.serialize();
+        return identity.toBuffer();
       }),
     );
 
     return new ResponseQuery({
-      value: cbor.encode({
-        identities,
-      }),
+      value: await cbor.encodeAsync(identities),
     });
   }
 

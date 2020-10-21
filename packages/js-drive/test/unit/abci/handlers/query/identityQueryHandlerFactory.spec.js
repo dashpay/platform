@@ -15,6 +15,8 @@ describe('identityQueryHandlerFactory', () => {
   let identityQueryHandler;
   let identityRepositoryMock;
   let identity;
+  let params;
+  let data;
 
   beforeEach(function beforeEach() {
     identityRepositoryMock = {
@@ -26,33 +28,34 @@ describe('identityQueryHandlerFactory', () => {
     );
 
     identity = getIdentityFixture();
+
+    params = {};
+    data = {
+      id: identity.getId(),
+    };
   });
 
   it('should return serialized identity', async () => {
-    const id = 'id';
-
     identityRepositoryMock.fetch.resolves(identity);
 
-    const result = await identityQueryHandler({ id });
+    const result = await identityQueryHandler(params, data);
 
-    expect(identityRepositoryMock.fetch).to.be.calledOnceWith(id);
+    expect(identityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
-    expect(result.value).to.deep.equal(identity.serialize());
+    expect(result.value).to.deep.equal(identity.toBuffer());
   });
 
   it('should throw NotFoundAbciError if identity not found', async () => {
-    const id = 'id';
-
     try {
-      await identityQueryHandler({ id });
+      await identityQueryHandler(params, data);
 
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
       expect(e).to.be.an.instanceof(NotFoundAbciError);
       expect(e.getCode()).to.equal(AbciError.CODES.NOT_FOUND);
       expect(e.message).to.equal('Identity not found');
-      expect(identityRepositoryMock.fetch).to.be.calledOnceWith(id);
+      expect(identityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     }
   });
 });

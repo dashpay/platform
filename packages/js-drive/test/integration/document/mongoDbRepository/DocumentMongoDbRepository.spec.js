@@ -3,6 +3,7 @@ const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const Document = require('@dashevo/dpp/lib/document/Document');
+const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const DocumentMongoDbRepository = require('../../../../lib/document/mongoDbRepository/DocumentMongoDbRepository');
 
@@ -17,8 +18,8 @@ const findNotIndexedFields = require('../../../../lib/document/query/findNotInde
 const findNotIndexedOrderByFields = require('../../../../lib/document/query/findNotIndexedOrderByFields');
 const getIndexedFieldsFromDocumentSchema = require('../../../../lib/document/query/getIndexedFieldsFromDocumentSchema');
 
-function jsonizeDocuments(documents) {
-  return documents.map((d) => d.toJSON());
+function convertToRaw(documents) {
+  return documents.map((d) => d.toObject());
 }
 
 async function createDocuments(documentRepository, documents) {
@@ -159,7 +160,7 @@ describe('DocumentMongoDbRepository', function main() {
       const result = await documentRepository.find(document.getId());
 
       expect(result).to.be.an.instanceOf(Document);
-      expect(result.toJSON()).to.deep.equal(document.toJSON());
+      expect(result.toObject()).to.deep.equal(document.toObject());
     });
 
     it('should store Document in transaction', async () => {
@@ -179,9 +180,9 @@ describe('DocumentMongoDbRepository', function main() {
 
       expect(notFoundDocument).to.be.a('null');
       expect(transactionDocument).to.be.an.instanceOf(Document);
-      expect(transactionDocument.toJSON()).to.deep.equal(document.toJSON());
+      expect(transactionDocument.toObject()).to.deep.equal(document.toObject());
       expect(createdDocument).to.be.an.instanceOf(Document);
-      expect(createdDocument.toJSON()).to.deep.equal(document.toJSON());
+      expect(createdDocument.toObject()).to.deep.equal(document.toObject());
     });
   });
 
@@ -196,8 +197,8 @@ describe('DocumentMongoDbRepository', function main() {
       expect(result).to.be.an('array');
       expect(result).to.have.lengthOf(documents.length);
 
-      const actualRawDocuments = jsonizeDocuments(result);
-      const expectedRawDocuments = jsonizeDocuments(documents);
+      const actualRawDocuments = convertToRaw(result);
+      const expectedRawDocuments = convertToRaw(documents);
 
       expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
     });
@@ -212,8 +213,8 @@ describe('DocumentMongoDbRepository', function main() {
       expect(result).to.be.an('array');
       expect(result).to.have.lengthOf(documents.length);
 
-      const actualRawDocuments = jsonizeDocuments(result);
-      const expectedRawDocuments = jsonizeDocuments(documents);
+      const actualRawDocuments = convertToRaw(result);
+      const expectedRawDocuments = convertToRaw(documents);
 
       expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
     });
@@ -245,7 +246,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(documents[0].toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(documents[0].toObject());
       });
 
       it('should find Documents using "<=" operator', async () => {
@@ -258,9 +259,9 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawDocuments = jsonizeDocuments(result);
+        const actualRawDocuments = convertToRaw(result);
 
-        const expectedRawDocuments = jsonizeDocuments(documents.slice(0, 2));
+        const expectedRawDocuments = convertToRaw(documents.slice(0, 2));
 
         expect(actualRawDocuments).to.deep.members(expectedRawDocuments);
       });
@@ -277,7 +278,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(document.toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(document.toObject());
       });
 
       it('should find Documents using ">" operator', async () => {
@@ -290,9 +291,9 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length - 2);
 
-        const actualRawDocuments = jsonizeDocuments(result);
+        const actualRawDocuments = convertToRaw(result);
 
-        const expectedRawDocuments = jsonizeDocuments(documents.splice(2, documents.length));
+        const expectedRawDocuments = convertToRaw(documents.splice(2, documents.length));
 
         expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
       });
@@ -307,10 +308,10 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length - 1);
 
-        const actualRawDocuments = jsonizeDocuments(result);
+        const actualRawDocuments = convertToRaw(result);
 
         documents.shift();
-        const expectedRawDocuments = jsonizeDocuments(documents);
+        const expectedRawDocuments = convertToRaw(documents);
 
         expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
       });
@@ -330,9 +331,9 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawDocuments = jsonizeDocuments(result);
+        const actualRawDocuments = convertToRaw(result);
 
-        const expectedRawDocuments = jsonizeDocuments(documents.slice(0, 2));
+        const expectedRawDocuments = convertToRaw(documents.slice(0, 2));
 
         expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
       });
@@ -349,7 +350,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(documents[1].toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(documents[1].toObject());
       });
 
       it('should find Documents using "startsWith" operator', async () => {
@@ -364,7 +365,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(documents[2].toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(documents[2].toObject());
       });
 
       it('should find Documents using "elementMatch" operator', async () => {
@@ -383,7 +384,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(documents[1].toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(documents[1].toObject());
       });
 
       it('should find Documents using "contains" operator and array value', async () => {
@@ -400,7 +401,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(documents[2].toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(documents[2].toObject());
       });
 
       it('should find Documents using "contains" operator and scalar value', async () => {
@@ -415,9 +416,9 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawDocuments = jsonizeDocuments(result);
+        const actualRawDocuments = convertToRaw(result);
 
-        const expectedRawDocuments = jsonizeDocuments(documents.slice(1, 3));
+        const expectedRawDocuments = convertToRaw(documents.slice(1, 3));
 
         expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
       });
@@ -446,7 +447,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(documents[1].toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(documents[1].toObject());
       });
 
       it('should return Documents by several conditions', async () => {
@@ -467,7 +468,7 @@ describe('DocumentMongoDbRepository', function main() {
 
         const [expectedDocument] = result;
 
-        expect(expectedDocument.toJSON()).to.deep.equal(documents[0].toJSON());
+        expect(expectedDocument.toObject()).to.deep.equal(documents[0].toObject());
       });
     });
 
@@ -490,7 +491,7 @@ describe('DocumentMongoDbRepository', function main() {
             // Ensure unique ID
 
             // eslint-disable-next-line no-param-reassign
-            svDoc.id = i + 1;
+            svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
 
             return documentRepository.store(svDoc);
           }),
@@ -516,8 +517,8 @@ describe('DocumentMongoDbRepository', function main() {
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toJSON());
-        const expectedRawDocuments = documents.splice(1).map((d) => d.toJSON());
+        const actualRawDocuments = result.map((d) => d.toObject());
+        const expectedRawDocuments = documents.splice(1).map((d) => d.toObject());
 
         expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
       });
@@ -536,8 +537,8 @@ describe('DocumentMongoDbRepository', function main() {
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toJSON());
-        const expectedRawDocuments = documents.splice(1).map((d) => d.toJSON());
+        const actualRawDocuments = result.map((d) => d.toObject());
+        const expectedRawDocuments = documents.splice(1).map((d) => d.toObject());
 
         expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
       });
@@ -555,8 +556,8 @@ describe('DocumentMongoDbRepository', function main() {
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toJSON());
-        const expectedRawDocuments = documents.reverse().map((d) => d.toJSON());
+        const actualRawDocuments = result.map((d) => d.toObject());
+        const expectedRawDocuments = documents.reverse().map((d) => d.toObject());
 
         expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
       });
@@ -572,8 +573,8 @@ describe('DocumentMongoDbRepository', function main() {
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toJSON());
-        const expectedRawDocuments = documents.map((d) => d.toJSON());
+        const actualRawDocuments = result.map((d) => d.toObject());
+        const expectedRawDocuments = documents.map((d) => d.toObject());
 
         expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
       });
@@ -601,11 +602,11 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length);
 
-        expect(result[0].toJSON()).to.deep.equal(documents[0].toJSON());
-        expect(result[1].toJSON()).to.deep.equal(documents[2].toJSON());
-        expect(result[2].toJSON()).to.deep.equal(documents[1].toJSON());
-        expect(result[3].toJSON()).to.deep.equal(documents[3].toJSON());
-        expect(result[4].toJSON()).to.deep.equal(documents[4].toJSON());
+        expect(result[0].toObject()).to.deep.equal(documents[0].toObject());
+        expect(result[1].toObject()).to.deep.equal(documents[2].toObject());
+        expect(result[2].toObject()).to.deep.equal(documents[1].toObject());
+        expect(result[3].toObject()).to.deep.equal(documents[3].toObject());
+        expect(result[4].toObject()).to.deep.equal(documents[4].toObject());
       });
 
       it('should sort Documents by $id', async () => {
@@ -616,7 +617,7 @@ describe('DocumentMongoDbRepository', function main() {
         await Promise.all(
           documents.map((svDoc, i) => {
             // eslint-disable-next-line no-param-reassign
-            svDoc.id = i + 1;
+            svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
 
             return documentRepository.store(svDoc);
           }),
@@ -633,11 +634,11 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length);
 
-        expect(result[0].toJSON()).to.deep.equal(documents[4].toJSON());
-        expect(result[1].toJSON()).to.deep.equal(documents[3].toJSON());
-        expect(result[2].toJSON()).to.deep.equal(documents[2].toJSON());
-        expect(result[3].toJSON()).to.deep.equal(documents[1].toJSON());
-        expect(result[4].toJSON()).to.deep.equal(documents[0].toJSON());
+        expect(result[0].toObject()).to.deep.equal(documents[4].toObject());
+        expect(result[1].toObject()).to.deep.equal(documents[3].toObject());
+        expect(result[2].toObject()).to.deep.equal(documents[2].toObject());
+        expect(result[3].toObject()).to.deep.equal(documents[1].toObject());
+        expect(result[4].toObject()).to.deep.equal(documents[0].toObject());
       });
     });
   });
@@ -673,7 +674,7 @@ describe('DocumentMongoDbRepository', function main() {
 
       expect(removedDocument).to.be.a('null');
       expect(notRemovedDocument).to.be.an.instanceOf(Document);
-      expect(notRemovedDocument.toJSON()).to.deep.equal(document.toJSON());
+      expect(notRemovedDocument.toObject()).to.deep.equal(document.toObject());
       expect(completelyRemovedDocument).to.be.a('null');
     });
 
@@ -695,9 +696,9 @@ describe('DocumentMongoDbRepository', function main() {
 
       expect(removedDocument).to.be.a('null');
       expect(notRemovedDocument).to.be.an.instanceOf(Document);
-      expect(notRemovedDocument.toJSON()).to.deep.equal(document.toJSON());
+      expect(notRemovedDocument.toObject()).to.deep.equal(document.toObject());
       expect(restoredDocument).to.be.an.instanceOf(Document);
-      expect(restoredDocument.toJSON()).to.deep.equal(document.toJSON());
+      expect(restoredDocument.toObject()).to.deep.equal(document.toObject());
     });
   });
 
@@ -710,7 +711,7 @@ describe('DocumentMongoDbRepository', function main() {
       const result = await documentRepository.find(document.getId());
 
       expect(result).to.be.an.instanceof(Document);
-      expect(result.toJSON()).to.deep.equal(document.toJSON());
+      expect(result.toObject()).to.deep.equal(document.toObject());
     });
 
     it('should return null if Document was not found', async () => {

@@ -17,7 +17,6 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let publicKeyIdentityIdRepositoryMock;
   let identityRepositoryMock;
   let publicKeyHashes;
-  let identityIds;
   let identities;
   let identitiesByPublicKeyHashes;
 
@@ -36,61 +35,77 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     );
 
     publicKeyHashes = [
-      '784ca12495d2e61f992db9e55d1f9599b0cf1328',
-      '784ca12495d2e61f992db9e55d1f9599b0cf1329',
-      '784ca12495d2e61f992db9e55d1f9599b0cf1330',
+      Buffer.from('784ca12495d2e61f992db9e55d1f9599b0cf1328', 'hex'),
+      Buffer.from('784ca12495d2e61f992db9e55d1f9599b0cf1329', 'hex'),
+      Buffer.from('784ca12495d2e61f992db9e55d1f9599b0cf1330', 'hex'),
     ];
+
     identities = [
       getIdentityFixture(),
       getIdentityFixture(),
     ];
-    identityIds = identities.map((identity) => identity.getId());
 
     publicKeyIdentityIdRepositoryMock
       .fetch
       .withArgs(publicKeyHashes[0])
-      .resolves(identityIds[0]);
+      .resolves(identities[0].getId());
 
     publicKeyIdentityIdRepositoryMock
       .fetch
       .withArgs(publicKeyHashes[1])
-      .resolves(identityIds[1]);
+      .resolves(identities[1].getId());
 
     identityRepositoryMock.fetch
-      .withArgs(identityIds[0])
+      .withArgs(identities[0].getId())
       .resolves(identities[0]);
 
     identityRepositoryMock.fetch
-      .withArgs(identityIds[1])
+      .withArgs(identities[0].getId())
       .resolves(identities[1]);
 
-    identitiesByPublicKeyHashes = publicKeyHashes.map((publicKeyHash, index) => {
-      const identity = identities[index];
-
-      if (!identity) {
-        return Buffer.alloc(0);
-      }
-
-      return identity.serialize();
-    });
+    identitiesByPublicKeyHashes = [
+      identities[0].toBuffer(),
+      identities[1].toBuffer(),
+      Buffer.alloc(0),
+    ];
   });
 
   it('should return identity id map', async () => {
-    const result = await identitiesByPublicKeyHashesQueryHandler({}, {
-      publicKeyHashes,
-    });
+    const params = {};
+    const data = { publicKeyHashes };
+
+    const result = await identitiesByPublicKeyHashesQueryHandler(params, data);
 
     expect(publicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
       publicKeyHashes.length,
     );
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+      publicKeyHashes[0],
+    ]);
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+      publicKeyHashes[1],
+    ]);
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
+      publicKeyHashes[2],
+    ]);
+
     expect(identityRepositoryMock.fetch.callCount).to.equal(
-      identityIds.length,
+      identities.length,
     );
+
+    expect(identityRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+      identities[0].getId(),
+    ]);
+
+    expect(identityRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+      identities[1].getId(),
+    ]);
 
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
-    expect(result.value).to.deep.equal(cbor.encode({
-      identities: identitiesByPublicKeyHashes,
-    }));
+    expect(result.value).to.deep.equal(await cbor.encodeAsync(identitiesByPublicKeyHashes));
   });
 });

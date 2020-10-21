@@ -57,6 +57,6 @@ class BlockchainStateLevelDBRepository {
   }
 }
 
-BlockchainStateLevelDBRepository.KEY_NAME = 'blockchainState';
+BlockchainStateLevelDBRepository.KEY_NAME = Buffer.from('blockchainState');
 
 module.exports = BlockchainStateLevelDBRepository;

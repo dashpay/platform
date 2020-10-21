@@ -62,8 +62,6 @@ const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecor
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
-const identityByPublicKeyHashQueryHandlerFactory = require('./abci/handlers/query/identityByPublicKeyHashQueryHandlerFactory');
-const identityIdByPublicKeyHashQueryHandlerFactory = require('./abci/handlers/query/identityIdByPublicKeyHashQueryHandlerFactory');
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
 
@@ -192,7 +190,7 @@ async function createDIContainer(options) {
    */
   container.register({
     identityLevelDB: asFunction((identityLevelDBFile) => (
-      level(identityLevelDBFile, { valueEncoding: 'binary' })
+      level(identityLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
     )).disposer((levelDB) => levelDB.close())
       .singleton(),
 
@@ -209,7 +207,7 @@ async function createDIContainer(options) {
    */
   container.register({
     dataContractLevelDB: asFunction((dataContractLevelDBFile) => (
-      level(dataContractLevelDBFile, { valueEncoding: 'binary' })
+      level(dataContractLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
     )).disposer((levelDB) => levelDB.close())
       .singleton(),
 
@@ -260,7 +258,7 @@ async function createDIContainer(options) {
    */
   container.register({
     blockchainStateLevelDB: asFunction((blockchainStateLevelDBFile) => (
-      level(blockchainStateLevelDBFile, { valueEncoding: 'binary' })
+      level(blockchainStateLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
     )).disposer((levelDB) => levelDB.close())
       .singleton(),
 
@@ -398,10 +396,6 @@ async function createDIContainer(options) {
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
     dataContractQueryHandler: asFunction(dataContractQueryHandlerFactory).singleton(),
     documentQueryHandler: asFunction(documentQueryHandlerFactory).singleton(),
-    identityByPublicKeyHashQueryHandler:
-      asFunction(identityByPublicKeyHashQueryHandlerFactory).singleton(),
-    identityIdByPublicKeyHashQueryHandler:
-      asFunction(identityIdByPublicKeyHashQueryHandlerFactory).singleton(),
     identitiesByPublicKeyHashesQueryHandler:
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
     identityIdsByPublicKeyHashesQueryHandler:
@@ -411,8 +405,6 @@ async function createDIContainer(options) {
       identityQueryHandler,
       dataContractQueryHandler,
       documentQueryHandler,
-      identityByPublicKeyHashQueryHandler,
-      identityIdByPublicKeyHashQueryHandler,
       identitiesByPublicKeyHashesQueryHandler,
       identityIdsByPublicKeyHashesQueryHandler,
     ) => {
@@ -420,15 +412,11 @@ async function createDIContainer(options) {
         ignoreTrailingSlash: true,
       });
 
-      router.on('GET', '/identities/:id', identityQueryHandler);
-      router.on('GET', '/dataContracts/:id', dataContractQueryHandler);
-      router.on('GET', '/dataContracts/:contractId/documents/:type', documentQueryHandler);
+      router.on('GET', '/identities', identityQueryHandler);
+      router.on('GET', '/dataContracts', dataContractQueryHandler);
+      router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
       router.on('GET', '/identities/by-public-key-hash/id', identityIdsByPublicKeyHashesQueryHandler);
-
-      // TODO: remove in the next PR, keeping for functional test to work
-      router.on('GET', '/identities/by-first-public-key/:publicKeyHash', identityByPublicKeyHashQueryHandler);
-      router.on('GET', '/identities/by-first-public-key/:publicKeyHash/id', identityIdByPublicKeyHashQueryHandler);
 
       return router;
     }).singleton(),

@@ -65,7 +65,6 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
           }
         }
 
-
         const kvPairTags = Object.entries(error.getTags())
           .map(([key, value]) => new KVPair({ key, value }));
 

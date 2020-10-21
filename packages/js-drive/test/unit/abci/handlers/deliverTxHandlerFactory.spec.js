@@ -47,11 +47,11 @@ describe('deliverTxHandlerFactory', () => {
       .dataContract.createStateTransition(dataContractFixture);
 
     documentRequest = {
-      tx: documentsBatchTransitionFixture.serialize(),
+      tx: documentsBatchTransitionFixture.toBuffer(),
     };
 
     dataContractRequest = {
-      tx: dataContractCreateTransitionFixture.serialize(),
+      tx: dataContractCreateTransitionFixture.toBuffer(),
     };
 
     dppMock = createDPPMock(this.sinon);
@@ -100,7 +100,7 @@ describe('deliverTxHandlerFactory', () => {
     expect(response.code).to.equal(0);
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
-      documentsBatchTransitionFixture.serialize(),
+      documentsBatchTransitionFixture.toBuffer(),
     );
     expect(dppMock.stateTransition.validateData).to.be.calledOnceWith(
       documentsBatchTransitionFixture,
@@ -134,7 +134,7 @@ describe('deliverTxHandlerFactory', () => {
     expect(response.code).to.equal(0);
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
-      dataContractCreateTransitionFixture.serialize(),
+      dataContractCreateTransitionFixture.toBuffer(),
     );
     expect(dppMock.stateTransition.validateData).to.be.calledOnceWith(
       dataContractCreateTransitionFixture,

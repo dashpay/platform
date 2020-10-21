@@ -1,5 +1,4 @@
 const cbor = require('cbor');
-const bs58 = require('bs58');
 
 const {
   abci: {
@@ -17,7 +16,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(publicKeyIdentityIdRepo
    * @typedef identityIdsByPublicKeyHashesQueryHandler
    * @param {Object} params
    * @param {Object} data
-   * @param {string} data.publicKeyHashes
+   * @param {Buffer[]} data.publicKeyHashes
    * @return {Promise<ResponseQuery>}
    */
   async function identityIdsByPublicKeyHashesQueryHandler(params, { publicKeyHashes }) {
@@ -29,14 +28,12 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(publicKeyIdentityIdRepo
           return Buffer.alloc(0);
         }
 
-        return bs58.decode(identityId);
+        return identityId;
       }),
     );
 
     return new ResponseQuery({
-      value: cbor.encode({
-        identityIds,
-      }),
+      value: await cbor.encodeAsync(identityIds),
     });
   }
 

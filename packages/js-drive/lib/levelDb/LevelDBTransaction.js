@@ -25,7 +25,7 @@ class LevelDBTransaction {
       throw new LevelDBTransactionIsAlreadyStartedError();
     }
 
-    this.db = levelDBTransaction(this.levelDB);
+    this.db = levelDBTransaction(this.levelDB, { keyEncoding: 'binary', valueEncoding: 'binary' });
 
     // promisify methods
     this.db.commit = promisify(this.db.commit.bind(this.db));

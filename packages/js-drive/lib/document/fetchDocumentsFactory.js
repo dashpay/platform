@@ -16,7 +16,7 @@ function fetchDocumentsFactory(
    * Fetch original Documents by Contract ID and type
    *
    * @typedef {Promise} fetchDocuments
-   * @param {string} contractId
+   * @param {Buffer} contractId
    * @param {string} type
    * @param {Object} [options] options
    * @param {MongoDBTransaction} [dbTransaction]

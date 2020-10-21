@@ -4,6 +4,7 @@ const cbor = require('cbor');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const LevelDBTransaction = require('../../../lib/levelDb/LevelDBTransaction');
 
@@ -13,23 +14,20 @@ describe('IdentityLevelDBRepository', () => {
   let db;
   let repository;
   let identity;
-  let key;
   let dppMock;
 
   beforeEach(function beforeEach() {
-    db = level('./db/identity-test', { valueEncoding: 'binary' });
+    db = level('./db/identity-test', { keyEncoding: 'binary', valueEncoding: 'binary' });
 
     identity = getIdentityFixture();
 
     dppMock = createDPPMock(this.sinon);
     dppMock
       .identity
-      .createFromSerialized
+      .createFromBuffer
       .resolves(identity);
 
     repository = new IdentityLevelDBRepository(db, dppMock);
-
-    key = `${IdentityLevelDBRepository.KEY_PREFIX}:${identity.getId()}`;
   });
 
   afterEach(async () => {
@@ -43,13 +41,13 @@ describe('IdentityLevelDBRepository', () => {
 
       expect(repositoryInstance).to.equal(repository);
 
-      const storedIdentityBuffer = await db.get(key);
+      const storedIdentityBuffer = await db.get(identity.getId());
 
       expect(storedIdentityBuffer).to.be.instanceOf(Buffer);
 
       const storedIdentity = cbor.decode(storedIdentityBuffer);
 
-      expect(storedIdentity).to.deep.equal(identity.toJSON());
+      expect(storedIdentity).to.deep.equal(identity.toObject());
     });
 
     it('should store identity in transaction', async () => {
@@ -63,7 +61,7 @@ describe('IdentityLevelDBRepository', () => {
 
       // check we don't have data in db before commit
       try {
-        await db.get(key);
+        await db.get(identity.getId());
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
@@ -71,7 +69,7 @@ describe('IdentityLevelDBRepository', () => {
       }
 
       // check we can't fetch data without transaction
-      const notFoundIdentity = await repository.fetch(key);
+      const notFoundIdentity = await repository.fetch(identity.getId());
 
       expect(notFoundIdentity).to.be.null();
 
@@ -79,18 +77,18 @@ describe('IdentityLevelDBRepository', () => {
       const identityFromTransaction = await repository.fetch(identity.getId(), transaction);
 
       expect(identityFromTransaction).to.be.instanceOf(Identity);
-      expect(identityFromTransaction.toJSON()).to.deep.equal(identity.toJSON());
+      expect(identityFromTransaction.toObject()).to.deep.equal(identity.toObject());
 
       await transaction.commit();
 
       // check we have data in db after commit
-      const storedIdentityBuffer = await db.get(key);
+      const storedIdentityBuffer = await db.get(identity.getId());
 
       expect(storedIdentityBuffer).to.be.instanceOf(Buffer);
 
       const storedIdentity = cbor.decode(storedIdentityBuffer);
 
-      expect(storedIdentity).to.deep.equal(identity.toJSON());
+      expect(storedIdentity).to.deep.equal(identity.toObject());
     });
   });
 
@@ -98,17 +96,17 @@ describe('IdentityLevelDBRepository', () => {
     it('should return null if identity was not found', async () => {
       await repository.store(identity);
 
-      const storedIdentity = await repository.fetch('nonExistingId');
+      const storedIdentity = await repository.fetch(generateRandomIdentifier());
 
       expect(storedIdentity).to.be.null();
     });
 
     it('should return stored identity', async () => {
-      await db.put(key, identity.serialize());
+      await db.put(identity.getId(), identity.toBuffer());
 
       const storedIdentity = await repository.fetch(identity.getId());
 
-      expect(storedIdentity.toJSON()).to.deep.equal(identity.toJSON());
+      expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
     });
 
     it('should return stored identity with transaction', async () => {
@@ -119,11 +117,11 @@ describe('IdentityLevelDBRepository', () => {
       transaction.start();
       const storedIdentity = await repository.fetch(identity.getId(), transaction);
 
-      expect(storedIdentity.toJSON()).to.deep.equal(identity.toJSON());
+      expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
     });
 
     it('should return null if identity not found', async () => {
-      const storedIdentity = await repository.fetch(null);
+      const storedIdentity = await repository.fetch(generateRandomIdentifier());
 
       expect(storedIdentity).to.equal(null);
     });

@@ -1,3 +1,5 @@
+const cbor = require('cbor');
+
 const { startMongoDb } = require('@dashevo/dp-services-ctl');
 
 const {
@@ -62,49 +64,72 @@ describe('queryHandlerFactory', function main() {
     }
   });
 
-  describe('/identities/:id', () => {
+  describe('/identities', () => {
     it('should call identity handler and return an identity', async () => {
       const result = await queryHandler({
-        path: '/identities/1',
-        data: Buffer.alloc(0),
+        path: '/identities',
+        data: cbor.encode({
+          id: 1,
+        }),
       });
 
       expect(identityQueryHandlerMock).to.have.been.calledOnceWithExactly(
-        { id: '1' },
         {},
-        { path: '/identities/1', data: Buffer.alloc(0) },
+        { id: 1 },
+        {
+          path: '/identities',
+          data: cbor.encode({
+            id: 1,
+          }),
+        },
       );
       expect(result).to.deep.equal(identity);
     });
   });
 
-  describe('/dataContracts/:id', () => {
+  describe('/dataContracts', () => {
     it('should call data contract handler and return data contract', async () => {
       const result = await queryHandler({
-        path: '/dataContracts/1',
-        data: Buffer.alloc(0),
+        path: '/dataContracts',
+        data: cbor.encode({
+          id: 1,
+        }),
       });
 
       expect(dataContractQueryHandlerMock).to.have.been.calledOnceWithExactly(
-        { id: '1' },
         {},
-        { path: '/dataContracts/1', data: Buffer.alloc(0) },
+        { id: 1 },
+        {
+          path: '/dataContracts',
+          data: cbor.encode({
+            id: 1,
+          }),
+        },
       );
       expect(result).to.deep.equal(dataContract);
     });
   });
 
-  describe('/dataContracts/:contractId/documents/:type', () => {
+  describe('/dataContracts/documents', () => {
     it('should call documents handler and return documents', async () => {
       const result = await queryHandler({
-        path: '/dataContracts/1/documents/someType',
-        data: Buffer.alloc(0),
+        path: '/dataContracts/documents',
+        data: cbor.encode({
+          contractId: 1,
+          type: 'someType',
+        }),
       });
 
       expect(documentQueryHandlerMock).to.have.been.calledOnceWithExactly(
-        { contractId: '1', type: 'someType' },
         {},
-        { path: '/dataContracts/1/documents/someType', data: Buffer.alloc(0) },
+        { contractId: 1, type: 'someType' },
+        {
+          path: '/dataContracts/documents',
+          data: cbor.encode({
+            contractId: 1,
+            type: 'someType',
+          }),
+        },
       );
       expect(result).to.deep.equal(documents);
     });

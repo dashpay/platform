@@ -37,7 +37,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   beforeEach(async () => {
-    dataContractLevelDB = level('./db/blockchain-state-test', { valueEncoding: 'binary' });
+    dataContractLevelDB = level('./db/blockchain-state-test', { keyEncoding: 'binary', valueEncoding: 'binary' });
 
     const validateQuery = validateQueryFactory(
       findConflictingConditions,
@@ -116,9 +116,7 @@ describe('fetchDocumentsFactory', () => {
 
     const [actualDocument] = result;
 
-    const documentJSON = document.toJSON();
-
-    expect(actualDocument.toJSON()).to.deep.equal(documentJSON);
+    expect(actualDocument.toObject()).to.deep.equal(document.toObject());
   });
 
   it('should fetch Documents for specified contract id, document type and name', async () => {
@@ -137,9 +135,7 @@ describe('fetchDocumentsFactory', () => {
 
     const [actualDocument] = result;
 
-    const documentJSON = document.toJSON();
-
-    expect(actualDocument.toJSON()).to.deep.equal(documentJSON);
+    expect(actualDocument.toObject()).to.deep.equal(document.toObject());
   });
 
   it('should return empty array for specified contract ID, document type and name not exist', async () => {
@@ -167,8 +163,8 @@ describe('fetchDocumentsFactory', () => {
 
     const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
-    expect(result[0].toJSON()).to.deep.equal(
-      indexedDocument.toJSON(),
+    expect(result[0].toObject()).to.deep.equal(
+      indexedDocument.toObject(),
     );
   });
 
@@ -193,8 +189,8 @@ describe('fetchDocumentsFactory', () => {
 
     const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
-    expect(result[0].toJSON()).to.deep.equal(
-      indexedDocument.toJSON(),
+    expect(result[0].toObject()).to.deep.equal(
+      indexedDocument.toObject(),
     );
   });
 

@@ -1,11 +1,12 @@
 const cbor = require('cbor');
-const bs58 = require('bs58');
 
 const {
   abci: {
     ResponseQuery,
   },
 } = require('abci/types');
+
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory',
@@ -28,13 +29,14 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     );
 
     publicKeyHashes = [
-      '784ca12495d2e61f992db9e55d1f9599b0cf1328',
-      '784ca12495d2e61f992db9e55d1f9599b0cf1329',
-      '784ca12495d2e61f992db9e55d1f9599b0cf1330',
+      Buffer.from('784ca12495d2e61f992db9e55d1f9599b0cf1328', 'hex'),
+      Buffer.from('784ca12495d2e61f992db9e55d1f9599b0cf1329', 'hex'),
+      Buffer.from('784ca12495d2e61f992db9e55d1f9599b0cf1330', 'hex'),
     ];
+
     identityIds = [
-      'F55Ln4ibxcZB7K9bcwCHYifCvrtQcWRWkJejPgEsz2px',
-      'F55Ln4ibxcZB7K9bcwCHYifCvrtQcWRWkJejPgEsz3px',
+      generateRandomIdentifier(),
+      generateRandomIdentifier(),
     ];
 
     publicKeyIdentityIdRepositoryMock
@@ -47,29 +49,37 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
       .withArgs(publicKeyHashes[1])
       .resolves(identityIds[1]);
 
-    identityIdsByPublicKeyHashes = publicKeyHashes
-      .map((publicKeyHash, index) => {
-        if (identityIds[index]) {
-          return bs58.decode(identityIds[index]);
-        }
-
-        return Buffer.alloc(0);
-      });
+    identityIdsByPublicKeyHashes = [
+      identityIds[0],
+      identityIds[1],
+      Buffer.alloc(0),
+    ];
   });
 
   it('should return identity id map', async () => {
-    const result = await identityIdsByPublicKeyHashesQueryHandler({}, {
-      publicKeyHashes,
-    });
+    const params = {};
+    const data = { publicKeyHashes };
+
+    const result = await identityIdsByPublicKeyHashesQueryHandler(params, data);
 
     expect(publicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
       publicKeyHashes.length,
     );
 
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+      publicKeyHashes[0],
+    ]);
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+      publicKeyHashes[1],
+    ]);
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
+      publicKeyHashes[2],
+    ]);
+
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
-    expect(result.value).to.deep.equal(cbor.encode({
-      identityIds: identityIdsByPublicKeyHashes,
-    }));
+    expect(result.value).to.deep.equal(await cbor.encodeAsync(identityIdsByPublicKeyHashes));
   });
 });

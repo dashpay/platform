@@ -1,3 +1,5 @@
+const Identifier = require('@dashevo/dpp/lib/Identifier');
+
 const DocumentMongoDbRepository = require('./DocumentMongoDbRepository');
 const InvalidContractIdError = require('../query/errors/InvalidContractIdError');
 
@@ -20,11 +22,22 @@ function createDocumentMongoDbRepositoryFactory(
    * Create DocumentMongoDbRepository
    *
    * @typedef {Promise} createDocumentMongoDbRepository
-   * @param {string} dataContractId
+   * @param {Buffer|Identifier} dataContractId
    * @param {string} documentType
    * @returns {Promise<DocumentMongoDbRepository>}
    */
   async function createDocumentMongoDbRepository(dataContractId, documentType) {
+    try {
+      // eslint-disable-next-line no-param-reassign
+      dataContractId = new Identifier(dataContractId);
+    } catch (e) {
+      if (e instanceof TypeError) {
+        throw new InvalidContractIdError(dataContractId);
+      }
+
+      throw e;
+    }
+
     const documentsMongoDatabase = await getDocumentDatabase(dataContractId);
 
     // Here we have to retrieve current LevelDB transaction

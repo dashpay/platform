@@ -29,7 +29,7 @@ function unserializeStateTransitionFactory(createIsolatedDpp) {
     try {
       stateTransition = await isolatedDpp
         .stateTransition
-        .createFromSerialized(stateTransitionSerialized);
+        .createFromBuffer(stateTransitionSerialized);
     } catch (e) {
       if (e instanceof InvalidStateTransitionError) {
         throw new InvalidArgumentAbciError('State Transition is invalid', { errors: e.getErrors() });

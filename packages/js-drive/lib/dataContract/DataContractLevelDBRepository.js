@@ -22,8 +22,9 @@ class DataContractLevelDBRepository {
     const db = transaction ? transaction.db : this.db;
 
     await db.put(
-      this.addKeyPrefix(dataContract.getId()),
-      dataContract.serialize(),
+      dataContract.getId(),
+      dataContract.toBuffer(),
+      // transaction-level convert value to string without this flag
       { asBuffer: true },
     );
 
@@ -33,7 +34,7 @@ class DataContractLevelDBRepository {
   /**
    * Fetch Data Contract by ID from database
    *
-   * @param {string} id
+   * @param {Buffer|Identifier} id
    * @param {LevelDBTransaction} [transaction]
    * @return {Promise<null|DataContract>}
    */
@@ -41,11 +42,9 @@ class DataContractLevelDBRepository {
     const db = transaction ? transaction.db : this.db;
 
     try {
-      const encodedDataContract = await db.get(
-        this.addKeyPrefix(id),
-      );
+      const encodedDataContract = await db.get(id);
 
-      return this.dpp.dataContract.createFromSerialized(
+      return this.dpp.dataContract.createFromBuffer(
         encodedDataContract,
         { skipValidation: true },
       );
@@ -66,19 +65,6 @@ class DataContractLevelDBRepository {
   createTransaction() {
     return new LevelDbTransaction(this.db);
   }
-
-  /**
-   * Get DB key by identity id
-   *
-   * @private
-   * @param {string} id
-   * @return {string}
-   */
-  addKeyPrefix(id) {
-    return `${DataContractLevelDBRepository.KEY_PREFIX}:${id}`;
-  }
 }
-
-DataContractLevelDBRepository.KEY_PREFIX = 'dataContract';
 
 module.exports = DataContractLevelDBRepository;

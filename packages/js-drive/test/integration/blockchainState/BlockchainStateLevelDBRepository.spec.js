@@ -13,7 +13,7 @@ describe('BlockchainStateLevelDBRepository', () => {
   let lastBlockAppHash;
 
   beforeEach(() => {
-    db = level('./db/blockchain-state-test', { valueEncoding: 'binary' });
+    db = level('./db/blockchain-state-test', { keyEncoding: 'binary', valueEncoding: 'binary' });
 
     repository = new BlockchainStateLevelDBRepository(db);
 

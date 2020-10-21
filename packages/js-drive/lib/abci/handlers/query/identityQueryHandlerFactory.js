@@ -15,10 +15,11 @@ function identityQueryHandlerFactory(identityRepository) {
   /**
    * @typedef identityQueryHandler
    * @param {Object} params
-   * @param {string} params.id
+   * @param {Object} options
+   * @param {Buffer} options.id
    * @return {Promise<ResponseQuery>}
    */
-  async function identityQueryHandler({ id }) {
+  async function identityQueryHandler(params, { id }) {
     const identity = await identityRepository.fetch(id);
 
     if (!identity) {
@@ -26,7 +27,7 @@ function identityQueryHandlerFactory(identityRepository) {
     }
 
     return new ResponseQuery({
-      value: identity.serialize(),
+      value: identity.toBuffer(),
     });
   }
 

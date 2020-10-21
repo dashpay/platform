@@ -22,8 +22,9 @@ class IdentityLevelDBRepository {
     const db = transaction ? transaction.db : this.db;
 
     await db.put(
-      this.addKeyPrefix(identity.getId()),
-      identity.serialize(),
+      identity.getId(),
+      identity.toBuffer(),
+      // transaction-level convert value to string without this flag
       { asBuffer: true },
     );
 
@@ -33,7 +34,7 @@ class IdentityLevelDBRepository {
   /**
    * Fetch identity by id from database
    *
-   * @param {string} id
+   * @param {Buffer|Identifier} id
    * @param {LevelDBTransaction} [transaction]
    * @return {Promise<null|Identity>}
    */
@@ -41,11 +42,9 @@ class IdentityLevelDBRepository {
     const db = transaction ? transaction.db : this.db;
 
     try {
-      const encodedIdentity = await db.get(
-        this.addKeyPrefix(id),
-      );
+      const encodedIdentity = await db.get(id);
 
-      return this.dpp.identity.createFromSerialized(
+      return this.dpp.identity.createFromBuffer(
         encodedIdentity,
         { skipValidation: true },
       );
@@ -59,17 +58,6 @@ class IdentityLevelDBRepository {
   }
 
   /**
-   * Get DB key by identity id
-   *
-   * @private
-   * @param {string} id
-   * @return {string}
-   */
-  addKeyPrefix(id) {
-    return `${IdentityLevelDBRepository.KEY_PREFIX}:${id}`;
-  }
-
-  /**
    * Creates new transaction instance
    *
    * @return {LevelDBTransaction}
@@ -78,7 +66,5 @@ class IdentityLevelDBRepository {
     return new LevelDbTransaction(this.db);
   }
 }
-
-IdentityLevelDBRepository.KEY_PREFIX = 'identity';
 
 module.exports = IdentityLevelDBRepository;

@@ -1,3 +1,5 @@
+const Identifier = require('@dashevo/dpp/lib/Identifier');
+
 const LevelDbTransaction = require('../levelDb/LevelDBTransaction');
 
 class PublicKeyIdentityIdMapLevelDBRepository {
@@ -12,8 +14,8 @@ class PublicKeyIdentityIdMapLevelDBRepository {
   /**
    * Store public key to identity id map into database
    *
-   * @param {string} publicKeyHash
-   * @param {string} identityId
+   * @param {Buffer} publicKeyHash
+   * @param {Buffer|Identifier} identityId
    * @param {LevelDBTransaction} [transaction]
    *
    * @return {Promise<PublicKeyIdentityIdMapLevelDBRepository>}
@@ -22,8 +24,10 @@ class PublicKeyIdentityIdMapLevelDBRepository {
     const db = transaction ? transaction.db : this.db;
 
     await db.put(
-      this.addKeyPrefix(publicKeyHash),
+      publicKeyHash,
       identityId,
+      // transaction-level convert value to string without this flag
+      { asBuffer: true },
     );
 
     return this;
@@ -32,20 +36,18 @@ class PublicKeyIdentityIdMapLevelDBRepository {
   /**
    * Fetch identity id by public key hash from database
    *
-   * @param {string} publicKeyHash
+   * @param {Buffer} publicKeyHash
    * @param {LevelDBTransaction} [transaction]
    *
-   * @return {Promise<null|string>}
+   * @return {Promise<null|Identifier>}
    */
   async fetch(publicKeyHash, transaction = undefined) {
     const db = transaction ? transaction.db : this.db;
 
     try {
-      const identityId = await db.get(
-        this.addKeyPrefix(publicKeyHash),
-      );
+      const identityId = await db.get(publicKeyHash);
 
-      return identityId.toString();
+      return new Identifier(identityId);
     } catch (e) {
       if (e.type === 'NotFoundError') {
         return null;
@@ -53,17 +55,6 @@ class PublicKeyIdentityIdMapLevelDBRepository {
 
       throw e;
     }
-  }
-
-  /**
-   * Get DB key by public key hash
-   *
-   * @private
-   * @param {string} publicKeyHash
-   * @return {string}
-   */
-  addKeyPrefix(publicKeyHash) {
-    return `${PublicKeyIdentityIdMapLevelDBRepository.KEY_PREFIX}:${publicKeyHash}`;
   }
 
   /**
@@ -75,7 +66,5 @@ class PublicKeyIdentityIdMapLevelDBRepository {
     return new LevelDbTransaction(this.db);
   }
 }
-
-PublicKeyIdentityIdMapLevelDBRepository.KEY_PREFIX = 'publicKeyIdentityId';
 
 module.exports = PublicKeyIdentityIdMapLevelDBRepository;
