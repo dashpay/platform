@@ -114,37 +114,6 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch identity id by public key hash
-   *
-   * @param {string} publicKeyHash
-   *
-   * @returns {Promise<Buffer>}
-   */
-  async fetchPublicKeyIdentityId(publicKeyHash) {
-    return this.request(`/identities/by-first-public-key/${publicKeyHash}/id`);
-  }
-
-  /**
-   * Fetch serialized identity by public key hash
-   *
-   * @param {string} publicKeyHash
-   * @return {Promise<Buffer>}
-   */
-  async fetchIdentityByFirstPublicKey(publicKeyHash) {
-    return this.request(`/identities/by-first-public-key/${publicKeyHash}`);
-  }
-
-  /**
-   * Fetch identity id by public key hash
-   *
-   * @param {string} publicKeyHash
-   * @return {Promise<string>}
-   */
-  async fetchIdentityIdByFirstPublicKey(publicKeyHash) {
-    return this.request(`/identities/by-first-public-key/${publicKeyHash}/id`);
-  }
-
-  /**
    * Fetch serialized identities by it's public key hashes
    *
    * @param {Buffer[]} publicKeyHashes

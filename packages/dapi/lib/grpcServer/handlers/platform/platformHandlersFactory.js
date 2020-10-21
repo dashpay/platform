@@ -19,8 +19,6 @@ const {
     GetIdentityRequest,
     GetDataContractRequest,
     GetDocumentsRequest,
-    GetIdentityByFirstPublicKeyRequest,
-    GetIdentityIdByFirstPublicKeyRequest,
     GetIdentitiesByPublicKeyHashesRequest,
     GetIdentityIdsByPublicKeyHashesRequest,
     pbjs: {
@@ -32,10 +30,6 @@ const {
       GetDataContractResponse: PBJSGetDataContractResponse,
       GetDocumentsRequest: PBJSGetDocumentsRequest,
       GetDocumentsResponse: PBJSGetDocumentsResponse,
-      GetIdentityByFirstPublicKeyResponse: PBJSGetIdentityByFirstPublicKeyResponse,
-      GetIdentityByFirstPublicKeyRequest: PBJSGetIdentityByFirstPublicKeyRequest,
-      GetIdentityIdByFirstPublicKeyResponse: PBJSGetIdentityIdByFirstPublicKeyResponse,
-      GetIdentityIdByFirstPublicKeyRequest: PBJSGetIdentityIdByFirstPublicKeyRequest,
       GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
       GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
       GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
@@ -59,12 +53,6 @@ const getDocumentsHandlerFactory = require(
 );
 const getDataContractHandlerFactory = require(
   './getDataContractHandlerFactory',
-);
-const getIdentityByFirstPublicKeyHandlerFactory = require(
-  './getIdentityByFirstPublicKeyHandlerFactory',
-);
-const getIdentityIdByFirstPublicKeyHandlerFactory = require(
-  './getIdentityIdByFirstPublicKeyHandlerFactory',
 );
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   './getIdentitiesByPublicKeyHashesHandlerFactory',
@@ -151,38 +139,6 @@ function platformHandlersFactory(
     wrapInErrorHandler(getDataContractHandler),
   );
 
-  // getIdentityByFirstPublicKey
-  const getIdentityByFirstPublicKeyHandler = getIdentityByFirstPublicKeyHandlerFactory(
-    driveStateRepository, handleAbciResponseError,
-  );
-
-  const wrappedGetIdentityByFirstPublicKey = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetIdentityByFirstPublicKeyRequest,
-      PBJSGetIdentityByFirstPublicKeyRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetIdentityByFirstPublicKeyResponse,
-    ),
-    wrapInErrorHandler(getIdentityByFirstPublicKeyHandler),
-  );
-
-  // getIdentityIdByFirstPublicKey
-  const getIdentityIdByFirstPublicKeyHandler = getIdentityIdByFirstPublicKeyHandlerFactory(
-    driveStateRepository, handleAbciResponseError,
-  );
-
-  const wrappedGetIdentityIdByFirstPublicKey = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetIdentityIdByFirstPublicKeyRequest,
-      PBJSGetIdentityIdByFirstPublicKeyRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetIdentityIdByFirstPublicKeyResponse,
-    ),
-    wrapInErrorHandler(getIdentityIdByFirstPublicKeyHandler),
-  );
-
   // getIdentitiesByPublicKeyHashes
   const getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
     driveStateRepository, handleAbciResponseError,
@@ -220,8 +176,6 @@ function platformHandlersFactory(
     getIdentity: wrappedGetIdentity,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
-    getIdentityByFirstPublicKey: wrappedGetIdentityByFirstPublicKey,
-    getIdentityIdByFirstPublicKey: wrappedGetIdentityIdByFirstPublicKey,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     getIdentityIdsByPublicKeyHashes: wrappedGetIdentityIdsByPublicKeyHashes,
   };
