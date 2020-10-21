@@ -3,6 +3,7 @@ import DAPIClientTransport from "@dashevo/wallet-lib/src/transport/DAPIClientTra
 import { Platform } from './Platform';
 import { Network } from "@dashevo/dashcore-lib";
 import DAPIClient from "@dashevo/dapi-client";
+import { ClientApps, ClientAppsOptions } from "./ClientApps";
 
 /**
  * Interface Client Options
@@ -19,7 +20,7 @@ import DAPIClient from "@dashevo/dapi-client";
  * @param {number} [baseBanTime=60000]
  */
 export interface ClientOpts {
-    apps?: ClientApps,
+    apps?: ClientAppsOptions,
     wallet?: Wallet.IWalletOptions,
     walletAccountIndex?: number,
     dapiAddressProvider?: any,
@@ -29,16 +30,6 @@ export interface ClientOpts {
     timeout?: number,
     retries?: number,
     baseBanTime?: number,
-}
-
-/**
- * Interface for ClientApps
- */
-export interface ClientApps {
-    [name: string]: {
-        contractId: string,
-        contract?: any
-    }
 }
 
 /**
@@ -106,15 +97,14 @@ export class Client {
             this.walletAccountIndex = this.options.walletAccountIndex;
         }
 
-        this.apps = Object.assign({
+        this.apps = new ClientApps(Object.assign({
             dpns: {
                 contractId: '566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy'
             }
-        }, this.options.apps);
+        }, this.options.apps));
 
         this.platform = new Platform({
             client: this,
-            apps: this.getApps(),
         });
     }
 

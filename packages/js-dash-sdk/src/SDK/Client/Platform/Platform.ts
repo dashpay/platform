@@ -1,7 +1,7 @@
 // @ts-ignore
 import DashPlatformProtocol from "@dashevo/dpp";
 
-import Client, { ClientApps } from "../Client";
+import Client from "../Client";
 
 import broadcastDocument from "./methods/documents/broadcast";
 import createDocument from "./methods/documents/create";
@@ -28,7 +28,6 @@ import searchName from "./methods/names/search";
  */
 export interface PlatformOpts {
     client: Client,
-    apps: ClientApps
 }
 
 /**
@@ -91,7 +90,6 @@ export class Platform {
     public contracts: Records;
 
     client: Client;
-    apps: ClientApps;
 
     /**
      * Construct some instance of Platform
@@ -132,6 +130,5 @@ export class Platform {
         });
 
         this.client = options.client;
-        this.apps = options.apps
     }
 }

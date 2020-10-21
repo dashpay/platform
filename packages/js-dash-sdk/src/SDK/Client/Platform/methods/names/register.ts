@@ -1,4 +1,5 @@
 import {Platform} from "../../Platform";
+import Identifier from "@dashevo/dpp/lib/Identifier";
 
 const hash = require('@dashevo/dpp/lib/util/hash');
 const crypto = require('crypto');
@@ -18,14 +19,22 @@ const crypto = require('crypto');
 export async function register(this: Platform,
                                name: string,
                                records: {
-                                   dashUniqueIdentityId?: string,
-                                   dashAliasIdentityId?: string,
+                                   dashUniqueIdentityId?: Identifier|string,
+                                   dashAliasIdentityId?: Identifier|string,
                                },
                                identity: {
-                                   getId(): string;
+                                   getId(): Identifier;
                                    getPublicKeyById(number: number):any;
                                },
 ): Promise<any> {
+    if (records.dashUniqueIdentityId) {
+        records.dashUniqueIdentityId = Identifier.from(records.dashUniqueIdentityId);
+    }
+
+    if (records.dashAliasIdentityId) {
+        records.dashAliasIdentityId = Identifier.from(records.dashAliasIdentityId);
+    }
+
     const nameLabels = name.split('.');
 
     const normalizedParentDomainName = nameLabels
@@ -51,7 +60,7 @@ export async function register(this: Platform,
         ]),
     );
 
-    if (!this.apps.dpns.contractId) {
+    if (!this.client.getApps().has('dpns')) {
         throw new Error('DPNS is required to register a new name.');
     }
 

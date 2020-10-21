@@ -1,6 +1,9 @@
 import {Platform} from "../../Platform";
 
-declare type ContractIdentifier = string;
+// @ts-ignore
+import Identifier from "@dashevo/dpp/lib/Identifier";
+
+declare type ContractIdentifier = string | Identifier;
 
 /**
  * Get contracts from the platform
@@ -12,10 +15,12 @@ declare type ContractIdentifier = string;
 export async function get(this: Platform, identifier: ContractIdentifier): Promise<any> {
     let localContract;
 
-    for (let appName in this.apps) {
-        const app = this.apps[appName];
-        if (app.contractId === identifier) {
-            localContract = app;
+    const contractId : Identifier = Identifier.from(identifier);
+
+    for (const appName of this.client.getApps().getNames()) {
+        const appDefinition = this.client.getApps().get(appName);
+        if (appDefinition.contractId.equals(contractId)) {
+            localContract = appDefinition;
             break;
         }
     }
@@ -23,19 +28,29 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     if (localContract && localContract.contract) {
         return localContract.contract;
     } else {
-        const rawContract = await this.client.getDAPIClient().platform.getDataContract(identifier);
-        if(!rawContract){
+        // @ts-ignore
+        const rawContract = await this.client.getDAPIClient().platform.getDataContract(contractId);
+
+        if (!rawContract) {
             return null;
         }
 
-        const contract = await this.dpp.dataContract.createFromSerialized(rawContract);
-        const app = {contractId: identifier, contract};
+        const contract = await this.dpp.dataContract.createFromBuffer(rawContract);
 
-        // If we do not have even the identifier in this.apps, we add it with timestamp as key
-        if (localContract === undefined || !localContract.contract) {
-            this.apps[Date.now()] = app;
+        if (!localContract) {
+            // If we do not have even the identifier in this.apps, we add it with timestamp as key
+            this.client.getApps().set(
+                Date.now().toString(),
+                {
+                    contractId: contractId,
+                    contract
+                }
+            );
+        } else {
+            localContract.contract = contract;
         }
-        return app.contract;
+
+        return contract;
     }
 }
 

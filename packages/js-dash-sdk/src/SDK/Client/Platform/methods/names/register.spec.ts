@@ -1,11 +1,13 @@
 import { expect } from 'chai';
 import { ImportMock } from 'ts-mock-imports';
+import generateRandomIdentifier from "@dashevo/dpp/lib/test/utils/generateRandomIdentifier"
 
 import cryptoModule from 'crypto';
 
 ImportMock.mockFunction(cryptoModule, 'randomBytes', Buffer.alloc(32));
 
 import register from './register';
+import {ClientApps} from "../../../ClientApps";
 
 describe('Platform', () => {
     describe('Names', () => {
@@ -15,10 +17,14 @@ describe('Platform', () => {
 
             beforeEach(async function beforeEach() {
                 platformMock = {
-                    apps: {
-                      dpns: {
-                          contractId: 'someDPNSContractId',
-                      },
+                    client: {
+                        getApps() {
+                            return new ClientApps({
+                                dpns: {
+                                    contractId: generateRandomIdentifier(),
+                                }
+                            });
+                        }
                     },
                     documents: {
                         create: this.sinon.stub(),
@@ -33,7 +39,7 @@ describe('Platform', () => {
             });
 
             it('register top level domain', async () => {
-                const identityId = 'someIdentityId';
+                const identityId = generateRandomIdentifier();
                 identityMock.getId.returns(identityId);
 
                 await register.call(platformMock, 'Dash', {
@@ -55,7 +61,7 @@ describe('Platform', () => {
                         'normalizedParentDomainName': '',
                         'preorderSalt': Buffer.alloc(32),
                         'records': {
-                            'dashUniqueIdentityId': 'someIdentityId',
+                            'dashUniqueIdentityId': identityId,
                         },
                         'subdomainRules': {
                             'allowSubdomains': true,
@@ -65,7 +71,7 @@ describe('Platform', () => {
             });
 
             it('should register second level domain', async () => {
-                const identityId = 'someIdentityId';
+                const identityId = generateRandomIdentifier();
                 identityMock.getId.returns(identityId);
 
                 await register.call(platformMock, 'User.dash', {
@@ -87,7 +93,7 @@ describe('Platform', () => {
                         'normalizedParentDomainName': 'dash',
                         'preorderSalt': Buffer.alloc(32),
                         'records': {
-                            'dashAliasIdentityId': 'someIdentityId',
+                            'dashAliasIdentityId': identityId,
                         },
                         'subdomainRules': {
                             'allowSubdomains': false,
@@ -97,11 +103,11 @@ describe('Platform', () => {
             });
 
             it('should fail if DPNS app have no contract set up', async () => {
-                delete platformMock.apps.dpns.contractId;
+                delete platformMock.client.getApps().get('dpns').contractId;
 
                 try {
                     await register.call(platformMock, 'user.dash', {
-                        dashUniqueIdentityId: 'someIdentityId',
+                        dashUniqueIdentityId: generateRandomIdentifier(),
                     }, identityMock);
                 } catch (e) {
                     expect(e.message).to.equal('DPNS is required to register a new name.');

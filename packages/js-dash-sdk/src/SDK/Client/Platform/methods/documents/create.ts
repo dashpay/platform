@@ -15,16 +15,14 @@ declare interface createOpts {
 export async function create(this: Platform, typeLocator: string, identity: any, data: createOpts = {}): Promise<any> {
     const { dpp } = this;
 
-    const appNames = Object.keys(this.apps);
+    const appNames = this.client.getApps().getNames();
+
     //We can either provide of type `dashpay.profile` or if only one schema provided, of type `profile`.
     const [appName, fieldType] = (typeLocator.includes('.')) ? typeLocator.split('.') : [appNames[0], typeLocator];
 
+    const { contractId } = this.client.getApps().get(appName);
 
-    if(!this.apps[appName]){
-        throw new Error(`Cannot find contractId for ${appName}`);
-    }
-
-    const dataContract = await this.contracts.get(this.apps[appName].contractId);
+    const dataContract = await this.contracts.get(contractId);
 
     return dpp.document.create(
         dataContract,
