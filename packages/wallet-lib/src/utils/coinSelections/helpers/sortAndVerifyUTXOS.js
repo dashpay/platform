@@ -19,7 +19,6 @@ const sort = {
       return 0;
     });
 
-
     return el;
   },
 };

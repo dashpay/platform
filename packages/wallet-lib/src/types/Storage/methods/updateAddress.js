@@ -69,7 +69,6 @@ const updateAddress = function updateAddress(addressObj, walletId) {
     });
   }
 
-
   // Check if there is a balance but no utxo.
   addressesStore[type][path] = newObject;
   if (previousObject === undefined) {

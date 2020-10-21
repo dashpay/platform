@@ -19,7 +19,6 @@ const wallet = new Wallet({
   plugins: [WalletConsolidator, new ColdStorageWorker({ address: coldStorageAddress })],
 });
 
-
 wallet.getAccount({ index: 0 })
   .then((account) => {
     const showcasePlugin = async () => {

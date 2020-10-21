@@ -3,7 +3,6 @@ const { is } = require('../../../utils');
 const KeyChain = require('../../KeyChain/KeyChain');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-
 const normalizeHDPubKey = (key) => (is.string(key) ? Dashcore.HDPublicKey(key) : key);
 /**
  * Will set a wallet to work with a on readonly mode from a HDPublicKey

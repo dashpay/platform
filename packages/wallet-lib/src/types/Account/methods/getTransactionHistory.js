@@ -184,7 +184,6 @@ async function getTransactionHistory() {
       }
     });
 
-
     _.each(tx.vin, (vin) => {
       if (vin.addr) {
         const address = vin.addr;
@@ -225,7 +224,6 @@ async function getTransactionHistory() {
     } else if (nbOfOtherAccountVout > 0 || nbOfOtherAccountVin > 0) {
       // When the account is sender of an inbetween account movement
       type = 'moved_account';
-
 
       if (nbOfOtherAccountVout > 0) {
         _.each(meta.vout.otherAccount, (el) => {

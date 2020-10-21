@@ -47,7 +47,7 @@ before_script:
 script: npm run check-package && npm run lint && npm run test
 
 before_deploy:
-  # Add token for @dashevo private npm registry & deployement
+  # Add token for @dashevo private npm registry & deployment
   - echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
 
 deploy:

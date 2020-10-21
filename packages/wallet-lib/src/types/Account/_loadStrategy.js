@@ -18,5 +18,4 @@ const _loadStrategy = function _loadStrategy(arg) {
   throw new InvalidStrategy(arg);
 };
 
-
 module.exports = _loadStrategy;

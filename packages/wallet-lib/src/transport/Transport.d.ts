@@ -21,7 +21,7 @@ export declare interface Transport {
 
     getBlockHeaderByHeight(height): Promise<BlockHeader>
 
-    getIdentityIdByFirstPublicKey(publicKeyHash): Promise<string>
+    getIdentityIdsByPublicKeyHash(publicKeyHashes: Buffer[]): Promise<Buffer[]>
 
     getStatus(): Promise<object>
 

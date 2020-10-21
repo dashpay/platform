@@ -11,7 +11,6 @@ const importBlockHeader = function importBlockHeader(blockHeader, height) {
   const chainStore = store.chains[network];
   const { blockHeight: currentChainHeight } = store.chains[network];
 
-
   if (!chainStore.blockHeaders[blockHeader.hash]) {
     if (height) {
       if (height > currentChainHeight) store.chains[network].blockHeight = height;

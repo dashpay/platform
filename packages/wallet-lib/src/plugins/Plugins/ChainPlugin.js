@@ -1,5 +1,5 @@
 const logger = require('../../logger');
-const { StandardPlugin } = require('../');
+const { StandardPlugin } = require('..');
 const EVENTS = require('../../EVENTS');
 
 const defaultOpts = {

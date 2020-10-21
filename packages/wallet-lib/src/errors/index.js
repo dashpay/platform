@@ -1,4 +1,3 @@
-
 const CreateTransactionError = require('./CreateTransactionError');
 const CoinSelectionUnsufficientUTXOS = require('./CoinSelectionUnsufficientUTXOS');
 const InjectionErrorCannotInject = require('./InjectionErrorCannotInject');
@@ -30,7 +29,6 @@ const ValidTransportLayerRequired = require('./ValidTransportLayerRequired');
 const WalletLibError = require('./WalletLibError');
 
 const PluginInjectionError = require('./PluginInjectionError');
-
 
 module.exports = {
   BlockHeaderNotInStore,

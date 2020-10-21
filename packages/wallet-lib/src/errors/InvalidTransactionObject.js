@@ -3,7 +3,6 @@ const is = require('../utils/is');
 
 const WalletLibError = require('./WalletLibError');
 
-
 class InvalidTransactionObject extends WalletLibError {
   constructor(transactionObj) {
     const getErrorMessageOf = (transactionErrors) => {

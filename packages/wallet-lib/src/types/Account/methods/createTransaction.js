@@ -55,7 +55,6 @@ function createTransaction(opts = {}) {
     outputs = [{ address: opts.recipient, satoshis }];
   }
 
-
   const deductFee = _.has(opts, 'deductFee')
     ? opts.deductFee
     : true;
@@ -63,7 +62,6 @@ function createTransaction(opts = {}) {
   const strategy = _.has(opts, 'strategy')
     ? _loadStrategy(opts.strategy)
     : this.strategy;
-
 
   const utxosList = _.has(opts, 'utxos') ? parseUtxos(opts.utxos) : this.getUTXOS();
 
@@ -76,7 +74,6 @@ function createTransaction(opts = {}) {
   }
 
   const selectedUTXOs = selection.utxos;
-
 
   const selectedOutputs = selection.outputs;
   const {

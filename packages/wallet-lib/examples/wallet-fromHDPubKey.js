@@ -6,7 +6,6 @@ const wallet = new Wallet({
   network: 'testnet',
 });
 
-
 wallet.getAccount()
   .then(async (account) => {
     logger.info('Balance Confirmed', await account.getConfirmedBalance(false));

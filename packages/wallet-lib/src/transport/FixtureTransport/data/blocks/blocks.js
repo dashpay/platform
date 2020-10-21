@@ -21,7 +21,6 @@ const heights = {
   21638: '00000011eb4dfa5034e1dd16c46e1a14b74c403a62c6fb61abccf72edd42b9d3',
 };
 
-
 const hashes = Object.entries(heights).reduce((obj, [height, hash]) => {
   // eslint-disable-next-line no-param-reassign
   obj[hash] = height;

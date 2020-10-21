@@ -24,7 +24,6 @@ function ensureAccountAddressesToGapLimit(walletStore, walletType, accountIndex,
   // Ensure that all our above external paths are contiguous
   const missingIndexes = getMissingIndexes(externalAddressesPaths);
 
-
   // Gets missing addresses and adds them to the storage
   // Please note that getAddress adds new addresses to storage, which it probably shouldn't
   missingIndexes.forEach((index) => {

@@ -41,7 +41,6 @@ const searchAddress = function searchAddress(address, forceLoop = false) {
     search.walletId = walletId;
   }
 
-
   return search;
 };
 module.exports = searchAddress;

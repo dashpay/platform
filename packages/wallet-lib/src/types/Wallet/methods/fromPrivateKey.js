@@ -2,7 +2,6 @@ const { is } = require('../../../utils');
 const KeyChain = require('../../KeyChain/KeyChain');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-
 /**
  * Will set a wallet to work with a mnemonic (keychain, walletType & HDPrivateKey)
  * @param privateKey
