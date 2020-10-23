@@ -16,5 +16,5 @@ export default async function broadcast(this: Platform, dataContract: any, ident
 
     await broadcastStateTransition(this, dataContractCreateTransition, identity);
 
-    return dataContract;
+    return dataContractCreateTransition;
 }

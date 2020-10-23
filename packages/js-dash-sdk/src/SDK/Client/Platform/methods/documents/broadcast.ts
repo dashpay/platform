@@ -18,5 +18,5 @@ export default async function broadcast(this: Platform, documents: { create: Doc
 
     await broadcastStateTransition(this, documentsBatchTransition, identity);
 
-    return documents;
+    return documentsBatchTransition;
 }
