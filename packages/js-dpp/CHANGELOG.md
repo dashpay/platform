@@ -1,3 +1,40 @@
+# [0.16.0](https://github.com/dashevo/js-dpp/compare/v0.15.0...v0.16.0) (2020-10-26)
+
+
+### Features
+
+* use Buffers for binary data ([#238](https://github.com/dashevo/js-dpp/issues/238), [#240](https://github.com/dashevo/js-dpp/issues/240), [#241](https://github.com/dashevo/js-dpp/issues/241), [#246](https://github.com/dashevo/js-dpp/issues/246), [#247](https://github.com/dashevo/js-dpp/issues/247), [#261](https://github.com/dashevo/js-dpp/issues/261), [#262](https://github.com/dashevo/js-dpp/issues/262), [#263](https://github.com/dashevo/js-dpp/issues/263), [#266](https://github.com/dashevo/js-dpp/issues/266))
+* Identifier property type ([#252](https://github.com/dashevo/js-dpp/issues/252), [#265](https://github.com/dashevo/js-dpp/issues/265), [#267](https://github.com/dashevo/js-dpp/issues/267), [#268](https://github.com/dashevo/js-dpp/issues/268))
+* `byteArray` JSON Schema keyword instead of `contentEncoding` ([#245](https://github.com/dashevo/js-dpp/issues/245), [#248](https://github.com/dashevo/js-dpp/issues/248), [#251](https://github.com/dashevo/js-dpp/issues/251), [#254](https://github.com/dashevo/js-dpp/issues/254), [#260]((https://github.com/dashevo/js-dpp/issues/260)))
+* use 32 random bytes instead of blockchain address for entropy ([#250](https://github.com/dashevo/js-dpp/issues/250), [#259](https://github.com/dashevo/js-dpp/issues/259))
+* validate and store all identity keys instead of the first one ([#234](https://github.com/dashevo/js-dpp/issues/234), [#237], [#242](https://github.com/dashevo/js-dpp/issues/242))
+* validate document upon creation ([#255](https://github.com/dashevo/js-dpp/issues/255))
+* hash methods responds with Buffer ([#249](https://github.com/dashevo/js-dpp/issues/249))
+* introduce a BLS identity key type ([#239](https://github.com/dashevo/js-dpp/issues/239))
+* add revision property to identity ([#235](https://github.com/dashevo/js-dpp/issues/235))
+* `isEnabled` property removed from Identity Public Key [#236](https://github.com/dashevo/js-dpp/issues/236)
+
+
+### BREAKING CHANGES
+
+* Node.JS 10 and lower are not supported
+* data models use Buffers instead of strings for binary fields
+* `serialize` methods renamed to `toBuffer`
+* `createFromSerialized` methods renamed to `createFromBuffer`
+* `StateRepository` accept `Identifier` and `Buffer` instead of strings
+* identifiers like document, data contract and identity IDs are instances `Identifier` (compatible with `Buffer`)
+* `contentEncoding` keyword isn't supported anymore. Use `byteArray: true` with `type: array` to store binary data
+* Data Contract and Document entropy is now a random 32 bytes instead of blockchain address
+* identity and identity create transition can't contain duplicate public keys anymore
+* `DocumentFactory#create` throws an error if specified data is not valid
+* `hash` methods respond with `Buffer` instead of hex encoded string
+* ECDSA Public key (type `0`) must be a 33 long byte array.
+* Identity's `revision` is required
+* Identity Public Key's `isEnabled` is not accepted
+* Data created or serialized by previous is incompatible
+
+
+
 # [0.15.0](https://github.com/dashevo/js-dpp/compare/v0.14.0...v0.15.0) (2020-09-04)
 
 

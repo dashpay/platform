@@ -179,7 +179,7 @@ describe('createDomainDataTrigger', () => {
   it('should fail with invalid dashUniqueIdentityId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
-        dashUniqueIdentityId: Buffer.from('invalidHash'),
+        dashUniqueIdentityId: Buffer.alloc(32).fill(5),
       },
     });
 
@@ -203,7 +203,7 @@ describe('createDomainDataTrigger', () => {
   it('should fail with invalid dashAliasIdentityId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
-        dashAliasIdentityId: Buffer.from('invalidHash'),
+        dashAliasIdentityId: Buffer.alloc(32).fill(2),
       },
     });
 
@@ -248,7 +248,7 @@ describe('createDomainDataTrigger', () => {
 
   it('should fail with invalid full domain name length', async () => {
     childDocument = getChildDocumentFixture({
-      normalizedParentDomainName: Buffer.alloc(512).toString('hex'),
+      normalizedParentDomainName: 'a'.repeat(512),
     });
 
     [childDocumentTransition] = getDocumentTransitionFixture({
