@@ -137,6 +137,7 @@ async function createDIContainer(options) {
     coreJsonRpcPassword: asValue(options.CORE_JSON_RPC_PASSWORD),
     loggingLevel: asValue(options.LOGGING_LEVEL),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
+    maxIdentitiesPerRequest: asValue(25),
   });
 
   /**

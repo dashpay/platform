@@ -11,6 +11,9 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const identitiesByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory',
 );
+const InvalidArgumentAbciError = require(
+  '../../../../../lib/abci/errors/InvalidArgumentAbciError',
+);
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let identitiesByPublicKeyHashesQueryHandler;
@@ -19,6 +22,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let publicKeyHashes;
   let identities;
   let identitiesByPublicKeyHashes;
+  let maxIdentitiesPerRequest;
 
   beforeEach(function beforeEach() {
     publicKeyIdentityIdRepositoryMock = {
@@ -29,9 +33,12 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       fetch: this.sinon.stub(),
     };
 
+    maxIdentitiesPerRequest = 5;
+
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
       publicKeyIdentityIdRepositoryMock,
       identityRepositoryMock,
+      maxIdentitiesPerRequest,
     );
 
     publicKeyHashes = [
@@ -68,6 +75,29 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       identities[1].toBuffer(),
       Buffer.alloc(0),
     ];
+  });
+
+  it('should throw an error if maximum requested items exceeded', async () => {
+    const params = {};
+    const data = { publicKeyHashes };
+
+    maxIdentitiesPerRequest = 1;
+
+    identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
+      publicKeyIdentityIdRepositoryMock,
+      identityRepositoryMock,
+      maxIdentitiesPerRequest,
+    );
+
+    try {
+      await identitiesByPublicKeyHashesQueryHandler(params, data);
+      expect.fail('Error was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
+      expect(e.getData()).to.deep.equal({
+        maxIdentitiesPerRequest,
+      });
+    }
   });
 
   it('should return identity id map', async () => {

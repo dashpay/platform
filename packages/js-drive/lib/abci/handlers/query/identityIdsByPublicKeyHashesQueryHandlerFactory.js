@@ -6,12 +6,18 @@ const {
   },
 } = require('abci/types');
 
+const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
+
 /**
  *
  * @param {PublicKeyIdentityIdMapLevelDBRepository} publicKeyIdentityIdRepository
+ * @param {number} maxIdentitiesPerRequest
  * @return {identityIdsByPublicKeyHashesQueryHandler}
  */
-function identityIdsByPublicKeyHashesQueryHandlerFactory(publicKeyIdentityIdRepository) {
+function identityIdsByPublicKeyHashesQueryHandlerFactory(
+  publicKeyIdentityIdRepository,
+  maxIdentitiesPerRequest,
+) {
   /**
    * @typedef identityIdsByPublicKeyHashesQueryHandler
    * @param {Object} params
@@ -20,6 +26,14 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(publicKeyIdentityIdRepo
    * @return {Promise<ResponseQuery>}
    */
   async function identityIdsByPublicKeyHashesQueryHandler(params, { publicKeyHashes }) {
+    if (publicKeyHashes && publicKeyHashes.length > maxIdentitiesPerRequest) {
+      throw new InvalidArgumentAbciError(
+        `Maximum number of ${maxIdentitiesPerRequest} requested items exceeded.`, {
+          maxIdentitiesPerRequest,
+        },
+      );
+    }
+
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => {
         const identityId = await publicKeyIdentityIdRepository.fetch(publicKeyHash);

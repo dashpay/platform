@@ -11,6 +11,9 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory',
 );
+const InvalidArgumentAbciError = require(
+  '../../../../../lib/abci/errors/InvalidArgumentAbciError',
+);
 
 describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
   let identityIdsByPublicKeyHashesQueryHandler;
@@ -18,14 +21,18 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
   let publicKeyHashes;
   let identityIds;
   let identityIdsByPublicKeyHashes;
+  let maxIdentitiesPerRequest;
 
   beforeEach(function beforeEach() {
     publicKeyIdentityIdRepositoryMock = {
       fetch: this.sinon.stub(),
     };
 
+    maxIdentitiesPerRequest = 5;
+
     identityIdsByPublicKeyHashesQueryHandler = identityIdsByPublicKeyHashesQueryHandlerFactory(
       publicKeyIdentityIdRepositoryMock,
+      maxIdentitiesPerRequest,
     );
 
     publicKeyHashes = [
@@ -54,6 +61,28 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
       identityIds[1],
       Buffer.alloc(0),
     ];
+  });
+
+  it('should throw an error if maximum requested items exceeded', async () => {
+    const params = {};
+    const data = { publicKeyHashes };
+
+    maxIdentitiesPerRequest = 1;
+
+    identityIdsByPublicKeyHashesQueryHandler = identityIdsByPublicKeyHashesQueryHandlerFactory(
+      publicKeyIdentityIdRepositoryMock,
+      maxIdentitiesPerRequest,
+    );
+
+    try {
+      await identityIdsByPublicKeyHashesQueryHandler(params, data);
+      expect.fail('Error was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
+      expect(e.getData()).to.deep.equal({
+        maxIdentitiesPerRequest,
+      });
+    }
   });
 
   it('should return identity id map', async () => {
