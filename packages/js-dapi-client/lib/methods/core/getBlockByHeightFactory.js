@@ -7,7 +7,6 @@ const {
 
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
-
 /**
  * @param {GrpcTransport} grpcTransport
  * @returns {getBlockByHeight}

@@ -2,9 +2,7 @@ const {
   v0: {
     GetDataContractResponse,
     GetDocumentsResponse,
-    GetIdentityByFirstPublicKeyResponse,
     GetIdentityResponse,
-    GetIdentityIdByFirstPublicKeyResponse,
     BroadcastStateTransitionResponse,
   },
 } = require('@dashevo/dapi-grpc');
@@ -66,34 +64,12 @@ describe('PlatformMethodsFacade', () => {
     });
   });
 
-  describe('#getIdentityByFirstPublicKey', () => {
-    it('should get Identity by first public key', async () => {
-      const response = new GetIdentityByFirstPublicKeyResponse();
-      grpcTransportMock.request.resolves(response);
-
-      await platformMethods.getIdentityByFirstPublicKey('556c2910d46fda2b327ef9d9bda850cc84d30db0');
-
-      expect(grpcTransportMock.request).to.be.calledOnce();
-    });
-  });
-
   describe('#getIdentity', () => {
     it('should get Identity', async () => {
       const response = new GetIdentityResponse();
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentity('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M');
-
-      expect(grpcTransportMock.request).to.be.calledOnce();
-    });
-  });
-
-  describe('#getIdentityIdByFirstPublicKey', () => {
-    it('should get Identity ID by first public key', async () => {
-      const response = new GetIdentityIdByFirstPublicKeyResponse();
-      grpcTransportMock.request.resolves(response);
-
-      await platformMethods.getIdentityIdByFirstPublicKey('556c2910d46fda2b327ef9d9bda850cc84d30db0');
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

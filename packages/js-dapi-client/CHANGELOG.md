@@ -1,3 +1,24 @@
+# [0.16.0](https://github.com/dashevo/dapi-client/compare/v0.15.0...v0.16.0) (2020-10-27)
+
+
+### Features
+
+* `getIdentitiesByPublicKeyHashes` and `getIdentityIdsByPublicKeyHashes` methods ([#191](https://github.com/dashevo/dapi-client/issues/191), [#196](https://github.com/dashevo/dapi-client/issues/196), [#205](https://github.com/dashevo/dapi-client/issues/205))
+* `getDataContract`, `getDocuments`, `getIdentity` accept `Buffer` ([#201](https://github.com/dashevo/dapi-client/issues/201))
+
+
+### Documentation
+
+* fix URLs in README ([#193](https://github.com/dashevo/dapi-client/issues/193))
+
+
+### BREAKING CHANGES
+
+* `getIdentityByFirstPublicKey` and `getIdentityIdByFirstPublicKey` removed
+* `getDataContract`, `getDocuments`, `getIdentity` accept `Buffer` or `TypedArray`
+
+
+
 # [0.15.0](https://github.com/dashevo/dapi-client/compare/v0.14.0...v0.15.0) (2020-09-04)
 
 

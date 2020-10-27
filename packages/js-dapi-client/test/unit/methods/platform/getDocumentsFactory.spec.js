@@ -1,4 +1,5 @@
 const cbor = require('cbor');
+const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const {
   v0: {
@@ -16,14 +17,16 @@ describe('getDocumentsFactory', () => {
   let grpcTransportMock;
   let getDocuments;
   let options;
-  let contractId;
+  let contractIdBuffer;
+  let contractIdIdentifier;
   let type;
   let documentsFixture;
   let serializedDocuments;
 
   beforeEach(function beforeEach() {
     type = 'niceDocument';
-    contractId = '11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c';
+    contractIdBuffer = Buffer.from('11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c', 'hex');
+    contractIdIdentifier = Identifier.from(contractIdBuffer);
 
     options = {
       limit: 10,
@@ -49,11 +52,32 @@ describe('getDocumentsFactory', () => {
     getDocuments = getDocumentsFactory(grpcTransportMock);
   });
 
-  it('should return documents', async () => {
-    const result = await getDocuments(contractId, type, options);
+  it('should return documents when contract id is buffer', async () => {
+    const result = await getDocuments(contractIdBuffer, type, options);
 
     const request = new GetDocumentsRequest();
-    request.setDataContractId(contractId);
+    request.setDataContractId(contractIdBuffer);
+    request.setDocumentType(type);
+    request.setLimit(options.limit);
+    request.setWhere(cbor.encode(options.where));
+    request.setOrderBy(cbor.encode(options.orderBy));
+    request.setStartAfter(options.startAfter);
+    request.setStartAt(options.startAt);
+
+    expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
+      PlatformPromiseClient,
+      'getDocuments',
+      request,
+      options,
+    );
+    expect(result).to.deep.equal(serializedDocuments);
+  });
+
+  it('should return documents when contract id is identifier', async () => {
+    const result = await getDocuments(contractIdIdentifier, type, options);
+
+    const request = new GetDocumentsRequest();
+    request.setDataContractId(contractIdBuffer);
     request.setDocumentType(type);
     request.setLimit(options.limit);
     request.setWhere(cbor.encode(options.where));

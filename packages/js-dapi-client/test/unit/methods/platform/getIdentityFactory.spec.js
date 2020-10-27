@@ -24,7 +24,7 @@ describe('getIdentityFactory', () => {
     identityId = identityFixture.getId();
 
     response = new GetIdentityResponse();
-    response.setIdentity(identityFixture.serialize());
+    response.setIdentity(identityFixture.toBuffer());
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -41,7 +41,7 @@ describe('getIdentityFactory', () => {
     const result = await getIdentity(identityId, options);
 
     const request = new GetIdentityRequest();
-    request.setId(identityId);
+    request.setId(identityId.toBuffer());
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -49,7 +49,7 @@ describe('getIdentityFactory', () => {
       request,
       options,
     );
-    expect(result).to.deep.equal(identityFixture.serialize());
+    expect(result).to.deep.equal(identityFixture.toBuffer());
   });
 
   it('should return null if identity not found', async () => {
@@ -61,7 +61,7 @@ describe('getIdentityFactory', () => {
     const result = await getIdentity(identityId, options);
 
     const request = new GetIdentityRequest();
-    request.setId(identityId);
+    request.setId(identityId.toBuffer());
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -78,7 +78,7 @@ describe('getIdentityFactory', () => {
     grpcTransportMock.request.throws(error);
 
     const request = new GetIdentityRequest();
-    request.setId(identityId);
+    request.setId(identityId.toBuffer());
 
     try {
       await getIdentity(identityId, options);

@@ -16,12 +16,20 @@ function getIdentityFactory(grpcTransport) {
    * Fetch the identity by id
    *
    * @typedef {getIdentity}
-   * @param {string} id
+   * @param {Buffer} id
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<!Buffer|null>}
    */
   async function getIdentity(id, options = {}) {
     const getIdentityRequest = new GetIdentityRequest();
+    // need to convert objects inherited from Buffer to pure buffer as google protobuf
+    // doesn't support extended buffers
+    // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
+    if (Buffer.isBuffer(id)) {
+      // eslint-disable-next-line no-param-reassign
+      id = Buffer.from(id);
+    }
+
     getIdentityRequest.setId(id);
 
     let getIdentityResponse;

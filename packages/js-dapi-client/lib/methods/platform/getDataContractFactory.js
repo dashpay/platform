@@ -16,12 +16,20 @@ function getDataContractFactory(grpcTransport) {
    * Fetch Data Contract by id
    *
    * @typedef {getDataContract}
-   * @param {string} contractId
+   * @param {Buffer} contractId
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<Buffer>}
    */
   async function getDataContract(contractId, options = {}) {
     const getDataContractRequest = new GetDataContractRequest();
+
+    // need to convert objects inherited from Buffer to pure buffer as google protobuf
+    // doesn't support extended buffers
+    // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
+    if (Buffer.isBuffer(contractId)) {
+      // eslint-disable-next-line no-param-reassign
+      contractId = Buffer.from(contractId);
+    }
 
     getDataContractRequest.setId(contractId);
 
