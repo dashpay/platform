@@ -4,11 +4,12 @@ const {
   },
 } = require('abci/types');
 
+const crypto = require('crypto');
+
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const AbstractDocumentTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/documentTransition/AbstractDocumentTransition',
 );
-const hash = require('@dashevo/dpp/lib/util/hash');
 
 const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
 
@@ -43,9 +44,11 @@ function deliverTxHandlerFactory(
   async function deliverTxHandler({ tx: stateTransitionByteArray }) {
     const { height: blockHeight } = blockExecutionState.getHeader();
 
-    const stHash = hash(
-      Buffer.from(stateTransitionByteArray),
-    ).toString('hex');
+    const stHash = crypto
+      .createHash('sha256')
+      .update(stateTransitionByteArray)
+      .digest()
+      .toString('hex');
 
     logger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
