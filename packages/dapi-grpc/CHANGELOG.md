@@ -1,3 +1,24 @@
+# [0.16.0](https://github.com/dashevo/dapi-grpc/compare/v0.15.0...v0.16.0) (2020-10-26)
+
+
+### Bug Fixes
+
+* protobuf converts empty Buffer to undefined ([#94](https://github.com/dashevo/dapi-grpc/issues/94)) ([cbeacd8](https://github.com/dashevo/dapi-grpc/commit/cbeacd832f843fc955254c1cddfd3454969ee209))
+
+
+### Features
+
+* add `getIdentitiesByPublicKeyHashes` and `getIdentityIdsByPublicKeyHashes` to platform service ([#89](https://github.com/dashevo/dapi-grpc/issues/89), [#92](https://github.com/dashevo/dapi-grpc/issues/92))
+* use bytes for identifiers ([#91](https://github.com/dashevo/dapi-grpc/issues/91))
+
+
+### BREAKING CHANGES
+
+* `getIdentityIdByFirstPublicKey` and `getIdentityByFirstPublicKey` removed
+* `GetDataContractRequest`, `GetDocumentsRequest`, `GetIdentityRequest` now accepts bytes
+
+
+
 # [0.15.0](https://github.com/dashevo/dapi-grpc/compare/v0.14.0...v0.15.0) (2020-09-04)
 
 
