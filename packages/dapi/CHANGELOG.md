@@ -1,3 +1,18 @@
+# [0.16.0](https://github.com/dashevo/dapi/compare/v0.15.0...v0.16.0) (2020-10-27)
+
+
+### Features
+
+* `getIdentitiesByPublicKeyHashes` and `getIdentityIdsByPublicKeyHashes` endpoints ([#304](https://github.com/dashevo/dapi/issues/304), [#307](https://github.com/dashevo/dapi/issues/307))
+* debug mode to respond internal error with message and stack ([#302](https://github.com/dashevo/dapi/issues/302))
+* use Drive 0.16 endpoints ([#308](https://github.com/dashevo/dapi/issues/308), [#309](https://github.com/dashevo/dapi/issues/309))
+
+### BREAKING CHANGES
+
+* `getIdentityByFirstPublicKey` and `getIdentityIdByFirstPublicKey` removed
+
+
+
 # [0.15.0](https://github.com/dashevo/dapi/compare/v0.14.0...v0.15.0) (2020-09-04)
 
 
