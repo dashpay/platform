@@ -1,3 +1,12 @@
+## [7.16.1](https://github.com/dashevo/wallet-lib/compare/v7.16.0...v7.16.1) (2020-10-28)
+
+
+### Bug Fixes
+
+* buggy version of protobufjs is used ([#200](https://github.com/dashevo/wallet-lib/issues/200))
+
+
+
 # [7.16.0](https://github.com/dashevo/wallet-lib/compare/v7.15.1...v7.16.0) (2020-10-27)
 
 
