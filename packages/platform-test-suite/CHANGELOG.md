@@ -1,3 +1,17 @@
+# [0.16.0](https://github.com/dashevo/plaform-test-suite/compare/v0.15.0...v0.16.0) (2020-10-28)
+
+
+### Chore
+
+* update to SDK 0.16 ([#77](https://github.com/dashevo/plaform-test-suite/issues/77))
+
+
+### BREAKING CHANGES
+
+* Nodes with Dash Platform 0.15 are not supported
+
+
+
 # [0.15.0](https://github.com/dashevo/plaform-test-suite/compare/v0.14.0...v0.15.0) (2020-09-04)
 
 
