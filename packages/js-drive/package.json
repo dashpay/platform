@@ -64,8 +64,9 @@
     "sinon-chai": "^3.5.0"
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.18.13",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#v0.19-dev",
     "@dashevo/dashd-rpc": "^2.0.2",
+    "@dashevo/dashd-zmq": "^1.0.1",
     "@dashevo/dpp": "~0.16.0-dev.10",
     "abci": "^5.0.1",
     "ajv": "^6.10.0",

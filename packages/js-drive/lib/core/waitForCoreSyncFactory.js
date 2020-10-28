@@ -18,18 +18,6 @@ function waitForCoreSyncFactory(coreRpcClient) {
    * @returns {Promise<void>}
    */
   async function waitForCoreSync(progressCallback) {
-    const { result: blockchainInfo } = await coreRpcClient.getBlockchainInfo();
-
-    if (blockchainInfo.chain === 'regtest') {
-      // wait for core to connect to peers
-      await wait(5000);
-
-      const { result: peerInfo } = await coreRpcClient.getPeerInfo();
-      if (peerInfo.length === 0) {
-        return;
-      }
-    }
-
     let isBlockchainSynced = false;
     while (!isBlockchainSynced) {
       ({

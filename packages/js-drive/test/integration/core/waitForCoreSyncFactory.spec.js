@@ -62,26 +62,4 @@ describe('waitForCoreSyncFactory', function main() {
     expect(currentBlockHeight).to.equal(1000);
     expect(currentHeadersNumber).to.equal(1000);
   });
-
-  it('shouldn\'t wait if Dash Core in regtest mode without peers', async () => {
-    thirdDashCore = await startDashCore();
-
-    container = await createTestDIContainer(mongoDB, thirdDashCore);
-
-    waitForCoreSync = container.resolve('waitForCoreSync');
-
-    await waitForCoreSync(() => {});
-
-    const api = thirdDashCore.getApi();
-
-    const {
-      result: {
-        blocks: currentBlockHeight,
-        headers: currentHeadersNumber,
-      },
-    } = await api.getBlockchainInfo();
-
-    expect(currentBlockHeight).to.equal(0);
-    expect(currentHeadersNumber).to.equal(0);
-  });
 });

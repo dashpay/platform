@@ -14,6 +14,7 @@ const level = require('level-rocksdb');
 const LRUCache = require('lru-cache');
 
 const RpcClient = require('@dashevo/dashd-rpc/promise');
+const ZMQClient = require('@dashevo/dashd-zmq');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
@@ -23,6 +24,7 @@ const pino = require('pino');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
 
+const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 const IdentityLevelDBRepository = require('./identity/IdentityLevelDBRepository');
 const PublicKeyIdentityIdMapLevelDBRepository = require(
   './identity/PublicKeyIdentityIdMapLevelDBRepository',
@@ -67,6 +69,7 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
+const errorHandler = require('./errorHandler');
 
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
@@ -76,6 +79,9 @@ const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFacto
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
+const waitForCoreChainLockSyncFallback = require('./core/waitForCoreChainLockSyncFallbackFactory');
+const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
+const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegtestModeFactory');
 
 /**
  *
@@ -94,6 +100,8 @@ const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
  * @param {string} options.CORE_JSON_RPC_PASSWORD
+ * @param {string} options.CORE_ZMQ_HOST
+ * @param {string} options.CORE_ZMQ_PORT
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  * @param {string} options.LOGGING_LEVEL
  * @param {string} options.NODE_ENV
@@ -131,10 +139,13 @@ async function createDIContainer(options) {
     dataContractLevelDBFile: asValue(options.DATA_CONTRACT_LEVEL_DB_FILE),
     documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
     documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
+    chainLock: asValue(undefined),
     coreJsonRpcHost: asValue(options.CORE_JSON_RPC_HOST),
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
     coreJsonRpcUsername: asValue(options.CORE_JSON_RPC_USERNAME),
     coreJsonRpcPassword: asValue(options.CORE_JSON_RPC_PASSWORD),
+    coreZMQHost: asValue(options.CORE_ZMQ_HOST),
+    coreZMQPort: asValue(options.CORE_ZMQ_PORT),
     loggingLevel: asValue(options.LOGGING_LEVEL),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
@@ -150,6 +161,13 @@ async function createDIContainer(options) {
           .IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION === 'true',
       },
     }),
+  });
+
+  /**
+   * Register Core related
+   */
+  container.register({
+    latestCoreChainLock: asClass(LatestCoreChainLock).singleton(),
   });
 
   /**
@@ -171,6 +189,15 @@ async function createDIContainer(options) {
     )).singleton(),
 
     sanitizeUrl: asValue(sanitizeUrl),
+    coreZMQClient: asFunction((
+      coreZMQHost,
+      coreZMQPort,
+    ) => (
+      new ZMQClient({
+        protocol: 'tcp',
+        host: coreZMQHost,
+        port: coreZMQPort,
+      }))).singleton(),
 
     coreRpcClient: asFunction((
       coreJsonRpcHost,
@@ -395,9 +422,17 @@ async function createDIContainer(options) {
    * Register check functions
    */
   container.register({
+    detectStandaloneRegtestMode: asFunction(detectStandaloneRegtestModeFactory).singleton(),
+  });
+  container.register({
     waitForCoreSync: asFunction(waitForCoreSyncFactory).singleton(),
   });
-
+  container.register({
+    waitForCoreChainLockSyncFallback: asFunction(waitForCoreChainLockSyncFallback).singleton(),
+  });
+  container.register({
+    waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
+  });
   container.register({
     waitReplicaSetInitialize: asFunction(waitReplicaSetInitializeFactory).singleton(),
   });
@@ -442,6 +477,7 @@ async function createDIContainer(options) {
     queryHandler: asFunction(queryHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
+    errorHandler: asValue(errorHandler),
 
     abciHandlers: asFunction((
       infoHandler,
