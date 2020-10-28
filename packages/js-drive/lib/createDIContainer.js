@@ -17,6 +17,7 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
 const ZMQClient = require('@dashevo/dashd-zmq');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const findMyWay = require('find-my-way');
 
@@ -76,6 +77,7 @@ const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
 const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory');
 const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
+const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
@@ -103,12 +105,18 @@ const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegte
  * @param {string} options.CORE_ZMQ_HOST
  * @param {string} options.CORE_ZMQ_PORT
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
+ * @param {string} options.DPNS_CONTRACT_BLOCK_HEIGHT
+ * @param {string} options.DPNS_CONTRACT_ID
  * @param {string} options.LOGGING_LEVEL
  * @param {string} options.NODE_ENV
  *
  * @return {AwilixContainer}
  */
 async function createDIContainer(options) {
+  if (options.DPNS_CONTRACT_ID && !options.DPNS_CONTRACT_BLOCK_HEIGHT) {
+    throw new Error('DPNS_CONTRACT_BLOCK_HEIGHT must be set');
+  }
+
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
   });
@@ -146,6 +154,12 @@ async function createDIContainer(options) {
     coreJsonRpcPassword: asValue(options.CORE_JSON_RPC_PASSWORD),
     coreZMQHost: asValue(options.CORE_ZMQ_HOST),
     coreZMQPort: asValue(options.CORE_ZMQ_PORT),
+    dpnsContractBlockHeight: asValue(parseInt(options.DPNS_CONTRACT_BLOCK_HEIGHT, 10)),
+    dpnsContractId: asValue(
+      options.DPNS_CONTRACT_ID
+        ? Identifier.from(options.DPNS_CONTRACT_ID)
+        : undefined,
+    ),
     loggingLevel: asValue(options.LOGGING_LEVEL),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
@@ -473,6 +487,7 @@ async function createDIContainer(options) {
     checkTxHandler: asFunction(checkTxHandlerFactory).singleton(),
     beginBlockHandler: asFunction(beginBlockHandlerFactory).singleton(),
     deliverTxHandler: asFunction(deliverTxHandlerFactory).singleton(),
+    endBlockHandler: asFunction(endBlockHandlerFactory).singleton(),
     commitHandler: asFunction(commitHandlerFactory).singleton(),
     queryHandler: asFunction(queryHandlerFactory).singleton(),
 
@@ -484,6 +499,7 @@ async function createDIContainer(options) {
       checkTxHandler,
       beginBlockHandler,
       deliverTxHandler,
+      endBlockHandler,
       commitHandler,
       wrapInErrorHandler,
       queryHandler,
@@ -492,6 +508,7 @@ async function createDIContainer(options) {
       checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
       beginBlock: beginBlockHandler,
       deliverTx: wrapInErrorHandler(deliverTxHandler),
+      endBlock: wrapInErrorHandler(endBlockHandler, { respondWithInternalError: true }),
       commit: commitHandler,
       query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
     })).singleton(),

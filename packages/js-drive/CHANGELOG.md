@@ -1,3 +1,34 @@
+# [0.16.0](https://github.com/dashevo/js-drive/compare/v0.15.0...v0.16.0) (2020-10-28)
+
+
+### Bug Fixes
+
+* incorrect deliver state transition hash logging ([#396](https://github.com/dashevo/js-drive/issues/396))
+
+
+### Features
+
+* verify DPNS contract existence ([#397](https://github.com/dashevo/js-drive/issues/397))
+* add `LoggedStateRepositoryDecorator` ([#393](https://github.com/dashevo/js-drive/issues/393))
+* debug mode to respond internal error with message and stack ([#383](https://github.com/dashevo/js-drive/issues/383))
+* implement `fetchIdentityIdsByPublicKeys` method ([#385](https://github.com/dashevo/js-drive/issues/385))
+* implement `storeIdentityPublicKeyHashes` method ([#387](https://github.com/dashevo/js-drive/issues/387))
+* implement getting identities by multiple public keys hashes ([#388](https://github.com/dashevo/js-drive/issues/388), [#395](https://github.com/dashevo/js-drive/issues/395), [#386](https://github.com/dashevo/js-drive/issues/386))
+* update DPP to 0.16.0 ([#392](https://github.com/dashevo/js-drive/issues/392))
+
+
+### Refactoring
+
+* remove unnecessary InvalidDocumentTypeError handling ([#384](https://github.com/dashevo/js-drive/issues/384))
+
+
+### BREAKING CHANGES
+
+* If `DPNS_CONTRACT_ID` is set it requires `DPNS_CONTRACT_BLOCK_HEIGHT` to be set too.
+* See [DPP v0.16 breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.16.0)
+
+
+
 # [0.15.0](https://github.com/dashevo/js-drive/compare/v0.14.0...v0.15.0) (2020-09-04)
 
 
