@@ -1,3 +1,22 @@
+# [7.16.0](https://github.com/dashevo/wallet-lib/compare/v7.15.1...v7.16.0) (2020-10-27)
+
+
+### Bug Fixes
+
+* transaction sign and OP_RETURN + import ([#188](https://github.com/dashevo/wallet-lib/issues/188))
+
+
+### Chore
+
+* update to DAPI Client 0.16 ([#196](https://github.com/dashevo/wallet-lib/issues/196), [#197](https://github.com/dashevo/wallet-lib/issues/197))
+
+
+### BREAKING CHANGES
+
+* replaced `Transport#getIdentityIdByFirstPublicKey(string):` string with `Transport#getIdentityIdsByPublicKeyHashes(Buffer[]): Buffer[]`
+
+
+
 # [7.15.1](https://github.com/dashevo/wallet-lib/compare/v7.15.0...v7.15.1) (2020-09-11)
 
 
