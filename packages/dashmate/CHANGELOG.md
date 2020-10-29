@@ -1,3 +1,35 @@
+# [0.16.0](https://github.com/dashevo/mn-bootstrap/compare/v0.15.1...v0.16.0) (2020-10-29)
+
+
+### Bug Fixes
+
+* "No available addresses" in setup command on the platform init step ([#164](https://github.com/dashevo/mn-bootstrap/issues/164))
+
+
+### Features
+
+* make `NODE_ENV` and logging level configurable ([#172](https://github.com/dashevo/mn-bootstrap/issues/172))
+* obtain and pass DPNS contract block height ([#170](https://github.com/dashevo/mn-bootstrap/issues/170), [#173](https://github.com/dashevo/mn-bootstrap/issues/173))
+* update to Dash SDK 0.16 ([#160](https://github.com/dashevo/mn-bootstrap/issues/163), [#163](https://github.com/dashevo/mn-bootstrap/issues/163), [#163](https://github.com/dashevo/mn-bootstrap/issues/163), [#166](https://github.com/dashevo/mn-bootstrap/issues/166))
+* restart command ([#152](https://github.com/dashevo/mn-bootstrap/issues/152))
+* switch insight-api docker image to shumkov/insight-api:3.0.0 ([#157](https://github.com/dashevo/mn-bootstrap/issues/157))
+* update Dash Core to 0.16 ([#153](https://github.com/dashevo/mn-bootstrap/issues/153), [#155](https://github.com/dashevo/mn-bootstrap/issues/155))
+
+
+### Documentation
+
+* cannot mint dash on evonet ([#171](https://github.com/dashevo/mn-bootstrap/issues/171))
+
+
+### BREAKING CHANGES
+
+* `platform.dpns.contractId` config options is moved to `platform.dpns.contract.id`
+* data created with 0.15 version and less in not compatible. Please reset your node before upgrade
+* see [Drive breaking changes](https://github.com/dashevo/js-drive/releases/tag/v0.16.0)
+* see [DAPI breaking changes](https://github.com/dashevo/dapi/releases/tag/v0.16.0)
+
+
+
 ## [0.15.1](https://github.com/dashevo/mn-bootstrap/compare/v0.15.0...v0.15.1) (2020-09-08)
 
 

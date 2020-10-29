@@ -2,15 +2,20 @@ const { Listr } = require('listr2');
 
 const Dash = require('dash');
 
+const crypto = require('crypto');
+
 const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
+
+const NETWORKS = require('../../../networks');
 
 /**
  *
  * @return {initTask}
  */
 function initTaskFactory(
+  createTenderdashRpcClient,
 ) {
   /**
    * @typedef {initTask}
@@ -26,10 +31,10 @@ function initTaskFactory(
       throw new Error(`DPNS owner ID ('platform.dpns.ownerId') is already set in ${config.getName()} config`);
     }
 
-    const dpnsContractId = config.get('platform.dpns.contractId');
+    const dpnsContractId = config.get('platform.dpns.contract.id');
 
     if (dpnsContractId !== null) {
-      throw new Error(`DPNS owner ID ('platform.dpns.contractId') is already set in ${config.getName()} config`);
+      throw new Error(`DPNS owner ID ('platform.dpns.contract.id') is already set in ${config.getName()} config`);
     }
 
     return new Listr([
@@ -74,10 +79,10 @@ function initTaskFactory(
         task: async (ctx, task) => {
           ctx.identity = await ctx.client.platform.identities.register(5);
 
-          config.set('platform.dpns.ownerId', ctx.identity.getId());
+          config.set('platform.dpns.ownerId', ctx.identity.getId().toString());
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS identity: ${ctx.identity.getId()}`;
+          task.output = `DPNS identity: ${ctx.identity.getId().toString()}`;
         },
         options: { persistentOutput: true },
       },
@@ -88,25 +93,59 @@ function initTaskFactory(
             dpnsDocumentSchema, ctx.identity,
           );
 
-          await ctx.client.platform.contracts.broadcast(
+          ctx.dataContractStateTransition = await ctx.client.platform.contracts.broadcast(
             ctx.dataContract,
             ctx.identity,
           );
 
-          config.set('platform.dpns.contractId', ctx.dataContract.getId());
+          config.set('platform.dpns.contract.id', ctx.dataContract.getId().toString());
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS contract ID: ${ctx.dataContract.getId()}`;
+          task.output = `DPNS contract ID: ${ctx.dataContract.getId().toString()}`;
+        },
+        options: { persistentOutput: true },
+      },
+      {
+        title: 'Obtain DPNS contract commit block height',
+        task: async (ctx, task) => {
+          const stateTransitionHash = crypto.createHash('sha256')
+            .update(ctx.dataContractStateTransition.toBuffer())
+            .digest();
+
+          if (ctx.seed || config.get('network') !== NETWORKS.LOCAL) {
+            task.skip('Can\'t obtain DPNS contract commit block height from remote node.'
+              + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
+              + 'and set it to "platform.dpns.contract.id" config option');
+
+            return;
+          }
+
+          const tendermintRpcClient = createTenderdashRpcClient();
+
+          const params = { hash: stateTransitionHash.toString('base64') };
+
+          const response = await tendermintRpcClient.request('tx', params);
+
+          if (response.error) {
+            throw new Error(`Tendermint error: ${response.error.message}: ${response.error.data}`);
+          }
+
+          const { result: { height: contractBlockHeight } } = response;
+
+          config.set('platform.dpns.contract.blockHeight', contractBlockHeight);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `DPNS contract block height: ${contractBlockHeight}`;
         },
         options: { persistentOutput: true },
       },
       {
         title: 'Register top level domain "dash"',
         task: async (ctx) => {
-          // noinspection JSAccessibilityCheck
-          ctx.client.apps.dpns = {
+          ctx.client.getApps().set('dpns', {
             contractId: ctx.dataContract.getId(),
-          };
+            contract: ctx.dataContract,
+          });
 
           await ctx.client.platform.names.register('dash', {
             dashAliasIdentityId: ctx.identity.getId(),

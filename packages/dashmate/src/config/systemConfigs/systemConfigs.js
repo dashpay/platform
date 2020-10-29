@@ -6,12 +6,13 @@ const baseConfig = {
   description: 'base config for use as template',
   core: {
     docker: {
-      image: 'dashpay/dashd:0.15',
+      image: 'dashpay/dashd:0.16',
     },
     p2p: {
       port: 20001,
     },
     masternode: {
+      enable: true,
       operator: {
         privateKey: null,
       },
@@ -36,12 +37,12 @@ const baseConfig = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.15-dev',
+          image: 'dashpay/dapi:0.16',
         },
       },
       insight: {
         docker: {
-          image: 'dashpay/insight-api:latest',
+          image: 'dashpay/insight-api:3.0.1',
         },
       },
     },
@@ -53,7 +54,10 @@ const baseConfig = {
       },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.15-dev',
+          image: 'dashpay/drive:0.16',
+        },
+        log: {
+          level: 'info',
         },
       },
       tendermint: {
@@ -63,7 +67,10 @@ const baseConfig = {
       },
     },
     dpns: {
-      contractId: null,
+      contract: {
+        id: null,
+        blockHeight: null,
+      },
       ownerId: null,
     },
   },
@@ -72,6 +79,7 @@ const baseConfig = {
   compose: {
     file: 'docker-compose.yml:docker-compose.platform.yml',
   },
+  environment: 'production',
 };
 
 module.exports = {
@@ -80,16 +88,20 @@ module.exports = {
     description: 'standalone node for local development',
     externalIp: '127.0.0.1',
     network: NETWORKS.LOCAL,
+    environment: 'development',
   }),
   evonet: lodashMerge({}, baseConfig, {
     description: 'node with Evonet configuration',
+    network: NETWORKS.EVONET,
     platform: {
       dpns: {
-        contractId: 'FiBkhut4LFPMJqDWbZrxVeT6Mr6LsH3mTNTSSHJY2ape',
-        ownerId: '6UZ9jAodWiFxRg82HuA1Lf3mTh4fTGSiughxqkZX5kUA',
+        contract: {
+          id: '3VvS19qomuGSbEYWbTsRzeuRgawU3yK4fPMzLrbV62u8',
+          blockHeight: 35,
+        },
+        ownerId: 'Gxiu28Lzfj66aPBCxD7AgTbbauLf68jFLNibWGU39Fuh',
       },
     },
-    network: NETWORKS.EVONET,
   }),
   testnet: lodashMerge({}, baseConfig, {
     description: 'node with testnet configuration',

@@ -46,6 +46,9 @@ module.exports = {
         masternode: {
           type: 'object',
           properties: {
+            enable: {
+              type: 'boolean',
+            },
             operator: {
               type: 'object',
               properties: {
@@ -57,7 +60,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['operator'],
+          required: ['enable', 'operator'],
           additionalProperties: false,
         },
         miner: {
@@ -110,7 +113,23 @@ module.exports = {
               $ref: '#/definitions/docker',
             },
             abci: {
-              $ref: '#/definitions/docker',
+              properties: {
+                docker: {
+                  $ref: '#/definitions/docker/properties/docker',
+                },
+                log: {
+                  properties: {
+                    level: {
+                      type: 'string',
+                      enum: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['level'],
+                },
+              },
+              additionalProperties: false,
+              required: ['docker', 'log'],
             },
             tendermint: {
               $ref: '#/definitions/docker',
@@ -122,14 +141,26 @@ module.exports = {
         dpns: {
           type: 'object',
           properties: {
-            contractId: {
-              type: ['string', 'null'],
+            contract: {
+              properties: {
+                id: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+                blockHeight: {
+                  type: ['integer', 'null'],
+                  minimum: 1,
+                },
+              },
+              required: ['id', 'blockHeight'],
+              additionalProperties: false,
             },
             ownerId: {
               type: ['string', 'null'],
+              minLength: 1,
             },
           },
-          required: ['contractId', 'ownerId'],
+          required: ['contract', 'ownerId'],
           additionalProperties: false,
         },
       },
@@ -154,7 +185,11 @@ module.exports = {
       required: ['file'],
       additionalProperties: false,
     },
+    environment: {
+      type: 'string',
+      enum: ['development', 'production'],
+    },
   },
-  required: ['description', 'core', 'platform', 'externalIp', 'network', 'compose'],
+  required: ['description', 'core', 'platform', 'externalIp', 'network', 'compose', 'environment'],
   additionalProperties: false,
 };

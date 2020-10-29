@@ -14,8 +14,10 @@ Distribution package for Dash Masternode installation
   - [Configure node](#configure-node)
   - [Start node](#start-node)
   - [Stop node](#stop-node)
+  - [Restart node](#restard-node)
   - [Register masternode](#register-masternode)
   - [Reset data](#reset-data)
+  - [Full node](#full-node)
   - [Development](#development)
   - [Docker Compose](#docker-compose)
 - [Contributing](#contributing)
@@ -88,7 +90,6 @@ The `start` command is used to start a node with the default or specified config
 USAGE
   $ mn start
 OPTIONS
-  -f, --full-node                                  start as full node
   -u, --update                                     download updated services before start
   --config=config                                  configuration name to use
   --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
@@ -98,11 +99,6 @@ OPTIONS
 To start a masternode:
 ```bash
 $ mn start
-```
-
-To start a full node:
-```bash
-$ mn start -f
 ```
 
 ### Stop node
@@ -121,6 +117,26 @@ To stop a node:
 $ mn stop
 ```
 
+### Restart node
+
+The `restart` command is used to restart a node with the default or specified config.
+
+```
+USAGE
+  $ mn restart
+
+OPTIONS
+  -u, --update                                     download updated services before start
+  --config=config                                  configuration name to use
+  --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
+  --drive-image-build-path=drive-image-build-path  drive's docker image build path
+```
+
+To update services and restart a masternode:
+```bash
+$ mn restart -u
+```
+
 ### Register masternode
 
 The `register` command creates a collateral funding transaction and then uses it to register a masternode on the specified network. It does not configure or start a masternode on the host.
@@ -133,7 +149,7 @@ Before registering the masternode, you must have access to an address on the net
 dumpprivkey "address"
 ```
 
-If using a config specifying the `local` or `evonet` network, you can create and fund a new address using the `wallet` command as shown below.
+If using a config specifying the `local` network, you can create and fund a new address using the `wallet` command as shown below.
 
 ```
 USAGE
@@ -201,6 +217,14 @@ COMMANDS
 To show the host status:
 ```bash
 $ mn status:host
+```
+
+### Full node
+
+It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
+
+```bash
+mn config:set core.masternode.enable false
 ```
 
 ### Development

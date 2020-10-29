@@ -26,7 +26,10 @@ services:
       - CORE_JSON_RPC_PORT=20002
       - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017?replicaSet=driveDocumentIndices
       - DPNS_CONTRACT_ID=${PLATFORM_DPNS_CONTRACT_ID}
+      - DPNS_CONTRACT_BLOCK_HEIGHT=${PLATFORM_DPNS_CONTRACT_BLOCK_HEIGHT}
       - DPNS_TOP_LEVEL_IDENTITY=${PLATFORM_DPNS_OWNER_ID}
+      - NODE_ENV=${ENVIRONMENT:?err}
+      - LOGGING_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_LEVEL:?err}
     command: npm run abci
 
   drive_tendermint:
@@ -36,6 +39,7 @@ services:
       - drive_abci
     ports:
       - 26656:26656 # P2P
+      - 127.0.0.1:26657:26657 # RPC
     volumes:
       - ./configs/${NETWORK:?err}/drive/tendermint:/tendermint/config:ro
       - drive_tendermint_homedir:/tendermint
@@ -72,6 +76,7 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tendermint
       - TENDERMINT_RPC_PORT=26657
+      - NODE_ENV=${ENVIRONMENT:?err}
     command: npm run api
 
   dapi_tx_filter_stream:

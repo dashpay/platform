@@ -6,7 +6,7 @@ const BaseCommand = require('../oclif/command/BaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
-class StartCommand extends BaseCommand {
+class RestartCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -30,6 +30,10 @@ class StartCommand extends BaseCommand {
 
     const tasks = new Listr(
       [
+        {
+          title: 'Stop node',
+          task: async () => dockerCompose.stop(config.toEnvs()),
+        },
         {
           title: `Start ${isMasternode ? 'masternode' : 'full node'}`,
           task: () => startNodeTask(
@@ -59,16 +63,16 @@ class StartCommand extends BaseCommand {
   }
 }
 
-StartCommand.description = `Start masternode
+RestartCommand.description = `Restart masternode
 ...
-Start masternode with specific preset
+Restart masternode with specific preset
 `;
 
-StartCommand.flags = {
+RestartCommand.flags = {
   ...BaseCommand.flags,
   update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),
 };
 
-module.exports = StartCommand;
+module.exports = RestartCommand;
