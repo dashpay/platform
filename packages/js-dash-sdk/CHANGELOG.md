@@ -1,3 +1,20 @@
+# [3.16.0](https://github.com/dashevo/DashJS/compare/v3.15.2...v3.16.0) (2020-10-29)
+
+### Features
+
+* convert string identifiers in `where` conditions ([#145](https://github.com/dashevo/DashJS/issues/145))
+* make `broadcast` methods to return a state transition ([#146](https://github.com/dashevo/DashJS/issues/146))
+* introduce Identifier type for data contract, document and identity IDs ([#142](https://github.com/dashevo/DashJS/issues/142))
+
+
+### BREAKING CHANGES
+
+* `client.platform.contracts.broadcast` returns a `DataContractCreateTransition` instead of `DataContract`
+* `client.platform.documents.broadcast` returns a `DocuemntsBatchTransition` instead of `Documents[]`
+* `client.apps` is an instance of `ClientApps` class. Use `Client#getApps()` to get/update applications
+
+
+
 ## [3.15.2](https://github.com/dashevo/DashJS/compare/v3.15.1...v3.15.2) (2020-09-14)
 
 
