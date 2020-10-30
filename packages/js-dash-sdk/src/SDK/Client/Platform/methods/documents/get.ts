@@ -70,15 +70,18 @@ function convertIdentifierProperties(whereCondition: WhereCondition, binaryPrope
         ];
     }
 
+    let convertedPropertyValue = propertyValue;
+
     const property = binaryProperties[fullPropertyName];
 
-    if (property && property.contentMediaType === Identifier.MEDIA_TYPE) {
-        if (typeof propertyValue === 'string') {
-            return [propertyName, operator, Identifier.from(propertyValue)];
-        }
+    const isPropertyIdentifier = property && property.contentMediaType === Identifier.MEDIA_TYPE;
+    const isSystemIdentifier = ['$id', '$ownerId'].includes(propertyName);
+
+    if (isSystemIdentifier || (isPropertyIdentifier && typeof propertyValue === 'string')) {
+        convertedPropertyValue = Identifier.from(propertyValue);
     }
 
-    return [propertyName, operator, propertyValue];
+    return [propertyName, operator, convertedPropertyValue];
 }
 
 /**

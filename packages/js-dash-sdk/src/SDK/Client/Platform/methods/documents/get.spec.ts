@@ -58,6 +58,29 @@ describe('Client - Platform - Documents - .get()', () => {
     ]);
   });
 
+  it('should convert $id and $ownerId to identifiers inside where condition', async () => {
+    const id = generateRandomIdentifier();
+    const ownerId = generateRandomIdentifier();
+
+    await get.call(platform, 'app.withByteArrays', {
+      where: [
+        ['$id', '==', id.toString()],
+        ['$ownerId', '==', ownerId.toString()],
+      ],
+    });
+
+    expect(getDocumentsMock.getCall(0).args).to.have.deep.members([
+      appDefinition.contractId,
+      'withByteArrays',
+      {
+        where: [
+          ['$id', '==', id],
+          ['$ownerId', '==', ownerId],
+        ],
+      },
+    ]);
+  });
+
   it('should convert nested identifier properties inside where condition if `elementMatch` is used', async () => {
     const id = generateRandomIdentifier();
 
