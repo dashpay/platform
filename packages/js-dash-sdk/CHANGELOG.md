@@ -1,3 +1,12 @@
+## [3.16.1](https://github.com/dashevo/DashJS/compare/v3.16.0...v3.16.1) (2020-10-30)
+
+
+### Bug Fixes
+
+* `$id` and `$ownerId` are not converted to identifiers ([#148](https://github.com/dashevo/DashJS/issues/148))
+
+
+
 # [3.16.0](https://github.com/dashevo/DashJS/compare/v3.15.2...v3.16.0) (2020-10-29)
 
 ### Features
