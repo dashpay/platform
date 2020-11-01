@@ -1,3 +1,12 @@
+## [0.16.1](https://github.com/dashevo/js-drive/compare/v0.16.0...v0.16.1) (2020-10-29)
+
+
+### Bug Fixes
+
+* `header` is not present in `RequestEndBlock` ([#399](https://github.com/dashevo/js-drive/issues/399))
+
+
+
 # [0.16.0](https://github.com/dashevo/js-drive/compare/v0.15.0...v0.16.0) (2020-10-28)
 
 

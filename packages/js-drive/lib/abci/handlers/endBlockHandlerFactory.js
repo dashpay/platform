@@ -30,10 +30,10 @@ function endBlockHandlerFactory(
    * @param {abci.RequestBeginBlock} request
    * @return {Promise<abci.ResponseBeginBlock>}
    */
-  async function endBlockHandler({ header }) {
-    logger.info(`Block end #${header.height}`);
+  async function endBlockHandler({ height }) {
+    logger.info(`Block end #${height}`);
 
-    if (dpnsContractId && header.height === dpnsContractBlockHeight) {
+    if (dpnsContractId && height === dpnsContractBlockHeight) {
       const transaction = blockExecutionDBTransactions.getTransaction('dataContract');
 
       const contract = await dataContractRepository.fetch(dpnsContractId, transaction);

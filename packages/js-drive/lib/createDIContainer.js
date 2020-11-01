@@ -508,7 +508,7 @@ async function createDIContainer(options) {
       checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
       beginBlock: beginBlockHandler,
       deliverTx: wrapInErrorHandler(deliverTxHandler),
-      endBlock: wrapInErrorHandler(endBlockHandler, { respondWithInternalError: true }),
+      endBlock: endBlockHandler,
       commit: commitHandler,
       query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
     })).singleton(),
