@@ -41,6 +41,12 @@ const errorHandler = require('../lib/errorHandler');
     await waitForCoreChainLockSyncFallback();
   }
 
+  const waitForSMLSync = container.resolve('waitForSMLSync');
+
+  logger.info('Obtaining Simplified Masternode List...');
+
+  await waitForSMLSync();
+
   const server = createServer(
     container.resolve('abciHandlers'),
   );

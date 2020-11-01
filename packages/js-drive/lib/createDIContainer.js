@@ -81,9 +81,11 @@ const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory')
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
-const waitForCoreChainLockSyncFallback = require('./core/waitForCoreChainLockSyncFallbackFactory');
+const waitForCoreChainLockSyncFallbackFactory = require('./core/waitForCoreChainLockSyncFallbackFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegtestModeFactory');
+const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
+const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
 /**
  *
@@ -104,6 +106,7 @@ const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegte
  * @param {string} options.CORE_JSON_RPC_PASSWORD
  * @param {string} options.CORE_ZMQ_HOST
  * @param {string} options.CORE_ZMQ_PORT
+ * @param {string} options.NETWORK
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  * @param {string} options.DPNS_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.DPNS_CONTRACT_ID
@@ -160,9 +163,11 @@ async function createDIContainer(options) {
         ? Identifier.from(options.DPNS_CONTRACT_ID)
         : undefined,
     ),
+    network: asValue(options.NETWORK),
     loggingLevel: asValue(options.LOGGING_LEVEL),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
+    smlMaxListsLimit: asValue(16),
   });
 
   /**
@@ -182,6 +187,9 @@ async function createDIContainer(options) {
    */
   container.register({
     latestCoreChainLock: asClass(LatestCoreChainLock).singleton(),
+  });
+  container.register({
+    simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
   });
 
   /**
@@ -442,7 +450,11 @@ async function createDIContainer(options) {
     waitForCoreSync: asFunction(waitForCoreSyncFactory).singleton(),
   });
   container.register({
-    waitForCoreChainLockSyncFallback: asFunction(waitForCoreChainLockSyncFallback).singleton(),
+    waitForCoreChainLockSyncFallback:
+      asFunction(waitForCoreChainLockSyncFallbackFactory).singleton(),
+  });
+  container.register({
+    waitForSMLSync: asFunction(waitForSMLSyncFactory).singleton(),
   });
   container.register({
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),

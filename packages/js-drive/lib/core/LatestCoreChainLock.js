@@ -1,10 +1,13 @@
-class LatestCoreChainLock {
+const EventEmitter = require('events');
+
+class LatestCoreChainLock extends EventEmitter {
   /**
    *
    * @param {ChainLock} [chainLock]
-   * @param {LatestCoreChainLock}
    */
   constructor(chainLock) {
+    super();
+
     this.chainLock = chainLock;
   }
 
@@ -16,8 +19,23 @@ class LatestCoreChainLock {
    */
   update(chainLock) {
     this.chainLock = chainLock;
+
+    this.emit(LatestCoreChainLock.EVENTS.update, this.chainLock);
+
     return this;
   }
+
+  /**
+   *
+   * @return {ChainLock}
+   */
+  getChainLock() {
+    return this.chainLock;
+  }
 }
+
+LatestCoreChainLock.EVENTS = {
+  update: 'update',
+};
 
 module.exports = LatestCoreChainLock;
