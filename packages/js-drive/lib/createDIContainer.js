@@ -49,9 +49,9 @@ const MongoDBTransaction = require('./mongoDb/MongoDBTransaction');
 const connectToMongoDBFactory = require('./mongoDb/connectToMongoDBFactory');
 const waitReplicaSetInitializeFactory = require('./mongoDb/waitReplicaSetInitializeFactory');
 
-const BlockExecutionState = require('./blockchainState/blockExecution/BlockExecutionState');
+const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 const BlockchainStateLevelDBRepository = require('./blockchainState/BlockchainStateLevelDBRepository');
-const BlockExecutionDBTransactions = require('./blockchainState/blockExecution/BlockExecutionDBTransactions');
+const BlockExecutionDBTransactions = require('./blockExecution/BlockExecutionDBTransactions');
 
 const createIsolatedValidatorSnapshot = require('./dpp/isolation/createIsolatedValidatorSnapshot');
 const createIsolatedDppFactory = require('./dpp/isolation/createIsolatedDppFactory');
@@ -322,7 +322,7 @@ async function createDIContainer(options) {
   container.register({
     blockchainState: asValue(blockchainState),
     blockExecutionDBTransactions: asClass(BlockExecutionDBTransactions).singleton(),
-    blockExecutionState: asClass(BlockExecutionState).singleton(),
+    blockExecutionContext: asClass(BlockExecutionContext).singleton(),
   });
 
   /**
@@ -349,7 +349,7 @@ async function createDIContainer(options) {
       createDocumentRepository,
       coreRpcClient,
       dataContractCache,
-      blockExecutionState,
+      blockExecutionContext,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -358,7 +358,7 @@ async function createDIContainer(options) {
         fetchDocuments,
         createDocumentRepository,
         coreRpcClient,
-        blockExecutionState,
+        blockExecutionContext,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -376,7 +376,7 @@ async function createDIContainer(options) {
       coreRpcClient,
       blockExecutionDBTransactions,
       dataContractCache,
-      blockExecutionState,
+      blockExecutionContext,
       logger,
     ) => {
       const stateRepository = new DriveStateRepository(
@@ -386,7 +386,7 @@ async function createDIContainer(options) {
         fetchDocuments,
         createDocumentRepository,
         coreRpcClient,
-        blockExecutionState,
+        blockExecutionContext,
         blockExecutionDBTransactions,
       );
 

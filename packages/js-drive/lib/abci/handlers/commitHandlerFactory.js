@@ -8,7 +8,7 @@ const {
  * @param {BlockchainState} blockchainState
  * @param {BlockchainStateLevelDBRepository} blockchainStateRepository
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
- * @param {BlockExecutionState} blockExecutionState
+ * @param {BlockExecutionContext} blockExecutionContext
  * @param {DocumentDatabaseManager} documentDatabaseManager
  * @param {BaseLogger} logger
  *
@@ -18,7 +18,7 @@ function commitHandlerFactory(
   blockchainState,
   blockchainStateRepository,
   blockExecutionDBTransactions,
-  blockExecutionState,
+  blockExecutionContext,
   documentDatabaseManager,
   logger,
 ) {
@@ -30,7 +30,7 @@ function commitHandlerFactory(
    * @return {Promise<abci.ResponseCommit>}
    */
   async function commitHandler() {
-    const { height: blockHeight } = blockExecutionState.getHeader();
+    const { height: blockHeight } = blockExecutionContext.getHeader();
 
     logger.info(`Block commit #${blockHeight}`);
 
@@ -40,7 +40,7 @@ function commitHandlerFactory(
 
     try {
       // Create document databases for dataContracts created in the current block
-      for (const dataContract of blockExecutionState.getDataContracts()) {
+      for (const dataContract of blockExecutionContext.getDataContracts()) {
         await documentDatabaseManager.create(dataContract);
       }
 
@@ -51,21 +51,21 @@ function commitHandlerFactory(
       blockchainState.setLastBlockAppHash(appHash);
 
       // Store ST fees from the block to distribution pool
-      blockchainState.setCreditsDistributionPool(blockExecutionState.getAccumulativeFees());
+      blockchainState.setCreditsDistributionPool(blockExecutionContext.getAccumulativeFees());
 
       await blockchainStateRepository.store(blockchainState);
     } catch (e) {
       // Abort DB transactions
       await blockExecutionDBTransactions.abort();
 
-      for (const dataContract of blockExecutionState.getDataContracts()) {
+      for (const dataContract of blockExecutionContext.getDataContracts()) {
         await documentDatabaseManager.drop(dataContract);
       }
 
       throw e;
     } finally {
       // Reset block execution state
-      blockExecutionState.reset();
+      blockExecutionContext.reset();
     }
 
     return new ResponseCommit({

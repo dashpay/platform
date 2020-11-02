@@ -9,14 +9,14 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const commitHandlerFactory = require('../../../../lib/abci/handlers/commitHandlerFactory');
 
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionDBTransactionsMock');
-const BlockExecutionStateMock = require('../../../../lib/test/mock/BlockExecutionStateMock');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('commitHandlerFactory', () => {
   let commitHandler;
   let appHash;
   let blockchainStateRepositoryMock;
   let blockExecutionDBTransactionsMock;
-  let blockExecutionStateMock;
+  let blockExecutionContextMock;
   let documentsDatabaseManagerMock;
   let dataContract;
   let blockchainStateMock;
@@ -37,11 +37,11 @@ describe('commitHandlerFactory', () => {
     };
 
     blockExecutionDBTransactionsMock = new BlockExecutionDBTransactionsMock(this.sinon);
-    blockExecutionStateMock = new BlockExecutionStateMock(this.sinon);
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    blockExecutionStateMock.getDataContracts.returns([dataContract]);
-    blockExecutionStateMock.getAccumulativeFees.returns(accumulativeFees);
-    blockExecutionStateMock.getHeader.returns({
+    blockExecutionContextMock.getDataContracts.returns([dataContract]);
+    blockExecutionContextMock.getAccumulativeFees.returns(accumulativeFees);
+    blockExecutionContextMock.getHeader.returns({
       height: 42,
     });
 
@@ -59,7 +59,7 @@ describe('commitHandlerFactory', () => {
       blockchainStateMock,
       blockchainStateRepositoryMock,
       blockExecutionDBTransactionsMock,
-      blockExecutionStateMock,
+      blockExecutionContextMock,
       documentsDatabaseManagerMock,
       loggerMock,
     );
@@ -71,7 +71,7 @@ describe('commitHandlerFactory', () => {
     expect(response).to.be.an.instanceOf(ResponseCommit);
     expect(response.data).to.deep.equal(appHash);
 
-    expect(blockExecutionStateMock.getDataContracts).to.be.calledOnce();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
 
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWith(dataContract);
 
@@ -81,10 +81,10 @@ describe('commitHandlerFactory', () => {
 
     expect(blockchainStateMock.setCreditsDistributionPool).to.be.calledOnceWith(accumulativeFees);
 
-    expect(blockExecutionStateMock.getAccumulativeFees).to.be.calledOnce();
+    expect(blockExecutionContextMock.getAccumulativeFees).to.be.calledOnce();
 
     expect(blockchainStateRepositoryMock.store).to.be.calledOnceWith(blockchainStateMock);
-    expect(blockExecutionStateMock.reset).to.be.calledOnce();
+    expect(blockExecutionContextMock.reset).to.be.calledOnce();
   });
 
   it('should throw error and abort DB transactions if can\'t store blockchain state', async () => {
@@ -101,7 +101,7 @@ describe('commitHandlerFactory', () => {
 
       expect(blockExecutionDBTransactionsMock.abort).to.be.calledOnce();
       expect(documentsDatabaseManagerMock.drop).to.be.calledOnceWith(dataContract);
-      expect(blockExecutionStateMock.reset).to.be.calledOnce();
+      expect(blockExecutionContextMock.reset).to.be.calledOnce();
     }
   });
 });

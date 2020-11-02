@@ -12,7 +12,7 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const BlockExecutionStateMock = require('../../../../lib/test/mock/BlockExecutionStateMock');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const ValidationResult = require('../../../../lib/document/query/ValidationResult');
 
 const deliverTxHandlerFactory = require('../../../../lib/abci/handlers/deliverTxHandlerFactory');
@@ -32,7 +32,7 @@ describe('deliverTxHandlerFactory', () => {
   let dataContractCreateTransitionFixture;
   let dpp;
   let unserializeStateTransitionMock;
-  let blockExecutionStateMock;
+  let blockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     const dataContractFixture = getDataContractFixture();
@@ -73,8 +73,8 @@ describe('deliverTxHandlerFactory', () => {
 
     unserializeStateTransitionMock = this.sinon.stub();
 
-    blockExecutionStateMock = new BlockExecutionStateMock(this.sinon);
-    blockExecutionStateMock.getHeader.returns({
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextMock.getHeader.returns({
       height: 42,
     });
 
@@ -86,7 +86,7 @@ describe('deliverTxHandlerFactory', () => {
     deliverTxHandler = deliverTxHandlerFactory(
       unserializeStateTransitionMock,
       dppMock,
-      blockExecutionStateMock,
+      blockExecutionContextMock,
       loggerMock,
     );
   });
@@ -108,7 +108,7 @@ describe('deliverTxHandlerFactory', () => {
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
       documentsBatchTransitionFixture,
     );
-    expect(blockExecutionStateMock.addDataContract).to.not.be.called();
+    expect(blockExecutionContextMock.addDataContract).to.not.be.called();
 
     const stateTransitionFee = documentsBatchTransitionFixture.calculateFee();
 
@@ -120,7 +120,7 @@ describe('deliverTxHandlerFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWith(identity);
 
-    expect(blockExecutionStateMock.incrementAccumulativeFees).to.be.calledOnceWith(
+    expect(blockExecutionContextMock.incrementAccumulativeFees).to.be.calledOnceWith(
       stateTransitionFee,
     );
   });
@@ -142,11 +142,11 @@ describe('deliverTxHandlerFactory', () => {
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
       dataContractCreateTransitionFixture,
     );
-    expect(blockExecutionStateMock.addDataContract).to.be.calledOnceWith(
+    expect(blockExecutionContextMock.addDataContract).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.getDataContract(),
     );
 
-    expect(blockExecutionStateMock.incrementAccumulativeFees).to.be.calledOnceWith(
+    expect(blockExecutionContextMock.incrementAccumulativeFees).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.calculateFee(),
     );
   });
@@ -168,7 +168,7 @@ describe('deliverTxHandlerFactory', () => {
       expect(e.getMessage()).to.equal('Invalid state transition');
       expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
       expect(e.getData()).to.deep.equal({ errors: [error] });
-      expect(blockExecutionStateMock.incrementAccumulativeFees).to.not.be.called();
+      expect(blockExecutionContextMock.incrementAccumulativeFees).to.not.be.called();
     }
   });
 });

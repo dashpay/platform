@@ -9,8 +9,7 @@ const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
 /**
  * Begin block ABCI handler
  *
- * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
- * @param {DataContractLevelDBRepository} dataContractRepository
+ * @param {BlockExecutionContext} blockExecutionContext
  * @param {number|undefined} dpnsContractBlockHeight
  * @param {Identifier|undefined} dpnsContractId
  * @param {BaseLogger} logger
@@ -18,8 +17,7 @@ const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
  * @return {endBlockHandler}
  */
 function endBlockHandlerFactory(
-  blockExecutionDBTransactions,
-  dataContractRepository,
+  blockExecutionContext,
   dpnsContractBlockHeight,
   dpnsContractId,
   logger,
@@ -34,11 +32,7 @@ function endBlockHandlerFactory(
     logger.info(`Block end #${height}`);
 
     if (dpnsContractId && height === dpnsContractBlockHeight) {
-      const transaction = blockExecutionDBTransactions.getTransaction('dataContract');
-
-      const contract = await dataContractRepository.fetch(dpnsContractId, transaction);
-
-      if (contract === null) {
+      if (!blockExecutionContext.hasDataContract(dpnsContractId)) {
         throw new NoDPNSContractFoundError(dpnsContractId, dpnsContractBlockHeight);
       }
     }

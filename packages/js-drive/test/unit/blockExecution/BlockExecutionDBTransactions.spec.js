@@ -1,4 +1,4 @@
-const BlockExecutionDBTransactions = require('../../../../lib/blockchainState/blockExecution/BlockExecutionDBTransactions');
+const BlockExecutionDBTransactions = require('../../../lib/blockExecution/BlockExecutionDBTransactions');
 
 describe('BlockExecutionDBTransactions', () => {
   let blockExecutionDBTransactions;

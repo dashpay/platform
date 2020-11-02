@@ -10,7 +10,7 @@ const beginBlockHandlerFactory = require('../../../../lib/abci/handlers/beginBlo
 
 const BlockchainState = require('../../../../lib/blockchainState/BlockchainState');
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionDBTransactionsMock');
-const BlockExecutionStateMock = require('../../../../lib/test/mock/BlockExecutionStateMock');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('beginBlockHandlerFactory', () => {
   let protocolVersion;
@@ -19,7 +19,7 @@ describe('beginBlockHandlerFactory', () => {
   let blockchainState;
   let blockHeight;
   let blockExecutionDBTransactionsMock;
-  let blockExecutionStateMock;
+  let blockExecutionContextMock;
   let header;
 
   beforeEach(function beforeEach() {
@@ -29,7 +29,7 @@ describe('beginBlockHandlerFactory', () => {
 
     blockExecutionDBTransactionsMock = new BlockExecutionDBTransactionsMock(this.sinon);
 
-    blockExecutionStateMock = new BlockExecutionStateMock(this.sinon);
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     const loggerMock = {
       debug: this.sinon.stub(),
@@ -39,7 +39,7 @@ describe('beginBlockHandlerFactory', () => {
     beginBlockHandler = beginBlockHandlerFactory(
       blockchainState,
       blockExecutionDBTransactionsMock,
-      blockExecutionStateMock,
+      blockExecutionContextMock,
       protocolVersion,
       loggerMock,
     );
@@ -68,8 +68,8 @@ describe('beginBlockHandlerFactory', () => {
 
     expect(blockchainState.getLastBlockHeight()).to.equal(blockHeight);
     expect(blockExecutionDBTransactionsMock.start).to.be.calledOnce();
-    expect(blockExecutionStateMock.reset).to.be.calledOnce();
-    expect(blockExecutionStateMock.setHeader).to.be.calledOnceWithExactly(header);
+    expect(blockExecutionContextMock.reset).to.be.calledOnce();
+    expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
   });
 
   it('should reject not supported protocol version', async () => {

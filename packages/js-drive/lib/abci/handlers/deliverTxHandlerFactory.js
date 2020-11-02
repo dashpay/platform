@@ -22,7 +22,7 @@ const DOCUMENT_ACTION_DESCRIPTONS = {
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {BlockExecutionState} blockExecutionState
+ * @param {BlockExecutionContext} blockExecutionContext
  * @param {BaseLogger} logger
  *
  * @return {deliverTxHandler}
@@ -30,7 +30,7 @@ const DOCUMENT_ACTION_DESCRIPTONS = {
 function deliverTxHandlerFactory(
   transactionalUnserializeStateTransition,
   transactionalDpp,
-  blockExecutionState,
+  blockExecutionContext,
   logger,
 ) {
   /**
@@ -42,7 +42,7 @@ function deliverTxHandlerFactory(
    * @return {Promise<abci.ResponseDeliverTx>}
    */
   async function deliverTxHandler({ tx: stateTransitionByteArray }) {
-    const { height: blockHeight } = blockExecutionState.getHeader();
+    const { height: blockHeight } = blockExecutionContext.getHeader();
 
     const stHash = crypto
       .createHash('sha256')
@@ -83,7 +83,7 @@ function deliverTxHandlerFactory(
         const dataContract = stateTransition.getDataContract();
 
         // Save data contracts in order to create databases for documents on block commit
-        blockExecutionState.addDataContract(dataContract);
+        blockExecutionContext.addDataContract(dataContract);
 
         logger.info(`Data contract created with id: ${dataContract.getId()}`);
 
@@ -117,7 +117,7 @@ function deliverTxHandlerFactory(
 
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 
-    blockExecutionState.incrementAccumulativeFees(stateTransitionFee);
+    blockExecutionContext.incrementAccumulativeFees(stateTransitionFee);
 
     return new ResponseDeliverTx();
   }

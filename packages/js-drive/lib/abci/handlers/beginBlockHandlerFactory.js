@@ -11,7 +11,7 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
  *
  * @param {BlockchainState} blockchainState
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
- * @param {BlockExecutionState} blockExecutionState
+ * @param {BlockExecutionContext} blockExecutionContext
  * @param {Number} protocolVersion - Protocol version
  * @param {BaseLogger} logger
  *
@@ -20,7 +20,7 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
 function beginBlockHandlerFactory(
   blockchainState,
   blockExecutionDBTransactions,
-  blockExecutionState,
+  blockExecutionContext,
   protocolVersion,
   logger,
 ) {
@@ -33,9 +33,9 @@ function beginBlockHandlerFactory(
   async function beginBlockHandler({ header }) {
     logger.info(`Block begin #${header.height}`);
 
-    blockExecutionState.reset();
+    blockExecutionContext.reset();
 
-    blockExecutionState.setHeader(header);
+    blockExecutionContext.setHeader(header);
 
     blockchainState.setLastBlockHeight(header.height);
 
