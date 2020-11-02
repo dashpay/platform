@@ -1,22 +1,25 @@
-const level = require('level-rocksdb');
+const rimraf = require('rimraf');
+const merk = require('merk');
 const cbor = require('cbor');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const LevelDBTransaction = require('../../../lib/levelDb/LevelDBTransaction');
+const MerkDbTransaction = require('../../../lib/merkDb/MerkDbTransaction');
 
-const DataContractLevelDBRepository = require('../../../lib/dataContract/DataContractLevelDBRepository');
+const DataContractMerkDBRepository = require('../../../lib/dataContract/DataContractMerkDBRepository');
 
-describe('DataContractLevelDBRepository', () => {
+describe('DataContractMerkDBRepository', () => {
+  let dbPath;
   let db;
   let repository;
   let dataContract;
   let dppMock;
 
   beforeEach(function beforeEach() {
-    db = level('./db/data-contract-test', { keyEncoding: 'binary', valueEncoding: 'binary' });
+    dbPath = './db/identity-test';
+    db = merk(`${dbPath}/${Math.random()}`);
 
     dataContract = getDataContractFixture();
 
@@ -26,12 +29,11 @@ describe('DataContractLevelDBRepository', () => {
       .createFromBuffer
       .resolves(dataContract);
 
-    repository = new DataContractLevelDBRepository(db, dppMock);
+    repository = new DataContractMerkDBRepository(db, dppMock);
   });
 
-  afterEach(async () => {
-    await db.clear();
-    await db.close();
+  after(async () => {
+    rimraf.sync(dbPath);
   });
 
   describe('#store', () => {
@@ -40,7 +42,7 @@ describe('DataContractLevelDBRepository', () => {
 
       expect(repositoryInstance).to.equal(repository);
 
-      const storedDataContractBuffer = await db.get(dataContract.getId());
+      const storedDataContractBuffer = db.getSync(dataContract.getId());
 
       expect(storedDataContractBuffer).to.be.instanceOf(Buffer);
 
@@ -52,7 +54,7 @@ describe('DataContractLevelDBRepository', () => {
     it('should store data contract in transaction', async () => {
       const transaction = repository.createTransaction();
 
-      expect(transaction).to.be.instanceOf(LevelDBTransaction);
+      expect(transaction).to.be.instanceOf(MerkDbTransaction);
 
       transaction.start();
 
@@ -61,11 +63,11 @@ describe('DataContractLevelDBRepository', () => {
 
       // check we don't have data in db before commit
       try {
-        await db.get(dataContract.getId());
+        db.getSync(dataContract.getId());
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
-        expect(e.type).to.equal('NotFoundError');
+        expect(e.message.startsWith('key not found')).to.be.true();
       }
 
       // check we can't fetch data without transaction
@@ -82,7 +84,7 @@ describe('DataContractLevelDBRepository', () => {
       await transaction.commit();
 
       // check we have data in db after commit
-      const storedDataContractBuffer = await db.get(dataContract.getId());
+      const storedDataContractBuffer = db.getSync(dataContract.getId());
 
       expect(storedDataContractBuffer).to.be.instanceOf(Buffer);
 
@@ -102,7 +104,7 @@ describe('DataContractLevelDBRepository', () => {
     });
 
     it('should return stored data contract', async () => {
-      await db.put(dataContract.getId(), dataContract.toBuffer());
+      db.batch().put(dataContract.getId(), dataContract.toBuffer()).commitSync();
 
       const storedDataContract = await repository.fetch(dataContract.getId());
 

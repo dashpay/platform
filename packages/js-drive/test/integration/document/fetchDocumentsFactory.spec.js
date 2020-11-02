@@ -14,7 +14,7 @@ const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryErro
 
 const createDocumentMongoDbRepositoryFactory = require('../../../lib/document/mongoDbRepository/createDocumentMongoDbRepositoryFactory');
 const fetchDocumentsFactory = require('../../../lib/document/fetchDocumentsFactory');
-const DataContractLevelDBRepository = require('../../../lib/dataContract/DataContractLevelDBRepository');
+const DataContractMerkDBRepository = require('../../../lib/dataContract/DataContractMerkDBRepository');
 const getDocumentDatabaseFactory = require('../../../lib/document/mongoDbRepository/getDocumentDatabaseFactory');
 
 const findNotIndexedFields = require('../../../lib/document/query/findNotIndexedFields');
@@ -55,8 +55,8 @@ describe('fetchDocumentsFactory', () => {
       documentsMongoDBPrefix,
     );
 
-    dataContractRepository = new DataContractLevelDBRepository(
-      dataContractLevelDB,
+    dataContractRepository = new DataContractMerkDBRepository(
+      dataContractMerkDB,
       new DashPlatformProtocol(),
     );
 

@@ -33,7 +33,7 @@ const PublicKeyIdentityIdMapLevelDBRepository = require(
   './identity/PublicKeyIdentityIdMapLevelDBRepository',
 );
 
-const DataContractLevelDBRepository = require('./dataContract/DataContractLevelDBRepository');
+const DataContractMerkDBRepository = require('./dataContract/DataContractMerkDBRepository');
 
 const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrderByFields');
 const findNotIndexedFields = require('./document/query/findNotIndexedFields');
@@ -99,7 +99,7 @@ const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
  * @param {string} options.IDENTITY_MERK_DB_FILE
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
- * @param {string} options.DATA_CONTRACT_LEVEL_DB_FILE
+ * @param {string} options.DATA_CONTRACT_MERK_DB_FILE
  * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
  * @param {string} options.DOCUMENT_MONGODB_URL
  * @param {string} options.CORE_JSON_RPC_HOST
@@ -149,7 +149,7 @@ async function createDIContainer(options) {
     isolatedSTUnserializationTimeout: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS, 10),
     ),
-    dataContractLevelDBFile: asValue(options.DATA_CONTRACT_LEVEL_DB_FILE),
+    dataContractMerkDBFile: asValue(options.DATA_CONTRACT_MERK_DB_FILE),
     documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
     documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
     chainLock: asValue(undefined),
@@ -259,12 +259,12 @@ async function createDIContainer(options) {
    * Register Data Contract
    */
   container.register({
-    dataContractLevelDB: asFunction((dataContractLevelDBFile) => (
-      level(dataContractLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
+    dataContractMerkDB: asFunction((dataContractMerkDBFile) => (
+      merk(dataContractMerkDBFile)
+    ))// .disposer((merkDB) => merkDB.close())
       .singleton(),
 
-    dataContractRepository: asClass(DataContractLevelDBRepository).singleton(),
+    dataContractRepository: asClass(DataContractMerkDBRepository).singleton(),
     dataContractTransaction: asFunction((dataContractRepository) => (
       dataContractRepository.createTransaction()
     )).singleton(),
