@@ -1,4 +1,5 @@
-const level = require('level-rocksdb');
+const rimraf = require('rimraf');
+const merk = require('merk');
 const cbor = require('cbor');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
@@ -6,18 +7,20 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const LevelDBTransaction = require('../../../lib/levelDb/LevelDBTransaction');
+const MerkDbTransaction = require('../../../lib/merkDb/MerkDbTransaction');
 
-const IdentityLevelDBRepository = require('../../../lib/identity/IdentityLevelDBRepository');
+const IdentityMerkDBRepository = require('../../../lib/identity/IdentityMerkDBRepository');
 
-describe('IdentityLevelDBRepository', () => {
+describe('IdentityMerkDBRepository', () => {
+  let dbPath;
   let db;
   let repository;
   let identity;
   let dppMock;
 
   beforeEach(function beforeEach() {
-    db = level('./db/identity-test', { keyEncoding: 'binary', valueEncoding: 'binary' });
+    dbPath = './db/identity-test';
+    db = merk(`${dbPath}/${Math.random()}`);
 
     identity = getIdentityFixture();
 
@@ -27,12 +30,11 @@ describe('IdentityLevelDBRepository', () => {
       .createFromBuffer
       .resolves(identity);
 
-    repository = new IdentityLevelDBRepository(db, dppMock);
+    repository = new IdentityMerkDBRepository(db, dppMock);
   });
 
-  afterEach(async () => {
-    await db.clear();
-    await db.close();
+  after(async () => {
+    rimraf.sync(dbPath);
   });
 
   describe('#store', () => {
@@ -41,7 +43,7 @@ describe('IdentityLevelDBRepository', () => {
 
       expect(repositoryInstance).to.equal(repository);
 
-      const storedIdentityBuffer = await db.get(identity.getId());
+      const storedIdentityBuffer = db.getSync(identity.getId());
 
       expect(storedIdentityBuffer).to.be.instanceOf(Buffer);
 
@@ -53,7 +55,7 @@ describe('IdentityLevelDBRepository', () => {
     it('should store identity in transaction', async () => {
       const transaction = repository.createTransaction();
 
-      expect(transaction).to.be.instanceOf(LevelDBTransaction);
+      expect(transaction).to.be.instanceOf(MerkDbTransaction);
 
       transaction.start();
       // store data in transaction
@@ -61,11 +63,11 @@ describe('IdentityLevelDBRepository', () => {
 
       // check we don't have data in db before commit
       try {
-        await db.get(identity.getId());
+        db.getSync(identity.getId());
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
-        expect(e.type).to.equal('NotFoundError');
+        expect(e.message.startsWith('key not found')).to.be.true();
       }
 
       // check we can't fetch data without transaction
@@ -82,7 +84,7 @@ describe('IdentityLevelDBRepository', () => {
       await transaction.commit();
 
       // check we have data in db after commit
-      const storedIdentityBuffer = await db.get(identity.getId());
+      const storedIdentityBuffer = db.getSync(identity.getId());
 
       expect(storedIdentityBuffer).to.be.instanceOf(Buffer);
 
@@ -102,7 +104,7 @@ describe('IdentityLevelDBRepository', () => {
     });
 
     it('should return stored identity', async () => {
-      await db.put(identity.getId(), identity.toBuffer());
+      db.batch().put(identity.getId(), identity.toBuffer()).commitSync();
 
       const storedIdentity = await repository.fetch(identity.getId());
 

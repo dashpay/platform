@@ -11,6 +11,8 @@ const {
 // eslint-disable-next-line import/no-unresolved
 const level = require('level-rocksdb');
 
+const merk = require('merk');
+
 const LRUCache = require('lru-cache');
 
 const RpcClient = require('@dashevo/dashd-rpc/promise');
@@ -26,7 +28,7 @@ const pino = require('pino');
 const sanitizeUrl = require('./util/sanitizeUrl');
 
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
-const IdentityLevelDBRepository = require('./identity/IdentityLevelDBRepository');
+const IdentityMerkDBRepository = require('./identity/IdentityMerkDBRepository');
 const PublicKeyIdentityIdMapLevelDBRepository = require(
   './identity/PublicKeyIdentityIdMapLevelDBRepository',
 );
@@ -94,7 +96,7 @@ const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
  * @param {string} options.ABCI_PORT
  * @param {string} options.BLOCKCHAIN_STATE_LEVEL_DB_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
- * @param {string} options.IDENTITY_LEVEL_DB_FILE
+ * @param {string} options.IDENTITY_MERK_DB_FILE
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
  * @param {string} options.DATA_CONTRACT_LEVEL_DB_FILE
@@ -140,7 +142,7 @@ async function createDIContainer(options) {
     abciPort: asValue(options.ABCI_PORT),
     blockchainStateLevelDBFile: asValue(options.BLOCKCHAIN_STATE_LEVEL_DB_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
-    identityLevelDBFile: asValue(options.IDENTITY_LEVEL_DB_FILE),
+    identityMerkDBFile: asValue(options.IDENTITY_MERK_DB_FILE),
     isolatedSTUnserializationMemoryLimit: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT, 10),
     ),
@@ -240,12 +242,12 @@ async function createDIContainer(options) {
    * Register Identity
    */
   container.register({
-    identityLevelDB: asFunction((identityLevelDBFile) => (
-      level(identityLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
+    identityMerkDB: asFunction((identityMerkDBFile) => (
+      merk(identityMerkDBFile)
+    ))// .disposer((merkDB) => merkDB.close())
       .singleton(),
 
-    identityRepository: asClass(IdentityLevelDBRepository).singleton(),
+    identityRepository: asClass(IdentityMerkDBRepository).singleton(),
     identityTransaction: asFunction((identityRepository) => (
       identityRepository.createTransaction()
     )).singleton(),
