@@ -11,7 +11,7 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 /**
  *
  * @param {PublicKeyIdentityIdMapLevelDBRepository} publicKeyIdentityIdRepository
- * @param {IdentityLevelDBRepository} identityRepository
+ * @param {IdentityStoreRepository} identityRepository
  * @param {number} maxIdentitiesPerRequest
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */

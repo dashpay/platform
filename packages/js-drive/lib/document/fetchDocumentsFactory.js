@@ -5,7 +5,7 @@ const InvalidDocumentTypeError = require('./query/errors/InvalidDocumentTypeErro
 const InvalidContractIdError = require('./query/errors/InvalidContractIdError');
 /**
  * @param {createDocumentMongoDbRepository} createDocumentRepository
- * @param {DataContractLevelDBRepository} dataContractRepository
+ * @param {DataContractStoreRepository} dataContractRepository
  * @param {LRUCache} dataContractCache
  * @returns {fetchDocuments}
  */

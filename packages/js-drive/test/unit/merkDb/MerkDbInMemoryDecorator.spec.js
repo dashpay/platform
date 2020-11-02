@@ -122,8 +122,8 @@ describe('MerkDbInMemoryDecorator', () => {
     });
   });
 
-  describe('#commit', () => {
-    it('should commit transaction', () => {
+  describe('#persist', () => {
+    it('should persist in memory data to merk db', () => {
       const keyToAdd = Buffer.from([1, 2, 3]);
       const keyToRemove = Buffer.from([1, 2, 3]);
       const valueToAdd = Buffer.from([4, 2]);
@@ -131,7 +131,7 @@ describe('MerkDbInMemoryDecorator', () => {
       merkDbInMemoryDecorator.data.set(keyToAdd.toString('hex'), valueToAdd);
       merkDbInMemoryDecorator.deleted.add(keyToRemove.toString('hex'));
 
-      merkDbInMemoryDecorator.commit();
+      merkDbInMemoryDecorator.persist();
 
       expect(merkDbInMemoryDecorator.data.size).to.be.equal(0);
       expect(merkDbInMemoryDecorator.deleted.size).to.be.equal(0);
@@ -142,11 +142,11 @@ describe('MerkDbInMemoryDecorator', () => {
       expect(batchMock.commitSync).to.be.calledOnce();
     });
 
-    it('should skip commit if nothing to commit', async () => {
+    it('should skip persisting if nothing to persist', async () => {
       expect(merkDbInMemoryDecorator.data.size).to.be.equal(0);
       expect(merkDbInMemoryDecorator.deleted.size).to.be.equal(0);
 
-      merkDbInMemoryDecorator.commit();
+      merkDbInMemoryDecorator.persist();
 
       expect(merkDbInMemoryDecorator.data.size).to.be.equal(0);
       expect(merkDbInMemoryDecorator.deleted.size).to.be.equal(0);
@@ -158,15 +158,15 @@ describe('MerkDbInMemoryDecorator', () => {
     });
   });
 
-  describe('#rollback', () => {
-    it('should rollback transaction', () => {
+  describe('#reset', () => {
+    it('should reset in memory data', () => {
       const key = Buffer.from([1, 2, 3]);
       const value = Buffer.from([4, 2]);
 
       merkDbInMemoryDecorator.deleted.add(key.toString('hex'));
       merkDbInMemoryDecorator.data.set(key.toString('hex'), value);
 
-      merkDbInMemoryDecorator.rollback();
+      merkDbInMemoryDecorator.reset();
 
       expect(merkDbInMemoryDecorator.deleted.size).to.equal(0);
       expect(merkDbInMemoryDecorator.data.size).to.equal(0);

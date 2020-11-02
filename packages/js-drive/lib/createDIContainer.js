@@ -28,12 +28,16 @@ const pino = require('pino');
 const sanitizeUrl = require('./util/sanitizeUrl');
 
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
-const IdentityMerkDBRepository = require('./identity/IdentityMerkDBRepository');
+const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
+
+const MerkDbStore = require('./merkDb/MerkDbStore');
+
+const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 const PublicKeyIdentityIdMapLevelDBRepository = require(
   './identity/PublicKeyIdentityIdMapLevelDBRepository',
 );
 
-const DataContractMerkDBRepository = require('./dataContract/DataContractMerkDBRepository');
+const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 
 const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrderByFields');
 const findNotIndexedFields = require('./document/query/findNotIndexedFields');
@@ -87,7 +91,6 @@ const waitForCoreChainLockSyncFallbackFactory = require('./core/waitForCoreChain
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegtestModeFactory');
 const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
-const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
 /**
  *
@@ -96,10 +99,11 @@ const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
  * @param {string} options.ABCI_PORT
  * @param {string} options.BLOCKCHAIN_STATE_LEVEL_DB_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
- * @param {string} options.IDENTITY_MERK_DB_FILE
+ * @param {string} options.IDENTITIES_MERK_DB_FILE
+ * @param {string} options.IDENTITY_LEVEL_DB_FILE
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
- * @param {string} options.DATA_CONTRACT_MERK_DB_FILE
+ * @param {string} options.DATA_CONTRACTS_MERK_DB_FILE
  * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
  * @param {string} options.DOCUMENT_MONGODB_URL
  * @param {string} options.CORE_JSON_RPC_HOST
@@ -142,14 +146,15 @@ async function createDIContainer(options) {
     abciPort: asValue(options.ABCI_PORT),
     blockchainStateLevelDBFile: asValue(options.BLOCKCHAIN_STATE_LEVEL_DB_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
-    identityMerkDBFile: asValue(options.IDENTITY_MERK_DB_FILE),
+    identityLevelDBFile: asValue(options.IDENTITY_LEVEL_DB_FILE),
+    identitiesMerkDBFile: asValue(options.IDENTITIES_MERK_DB_FILE),
     isolatedSTUnserializationMemoryLimit: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT, 10),
     ),
     isolatedSTUnserializationTimeout: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS, 10),
     ),
-    dataContractMerkDBFile: asValue(options.DATA_CONTRACT_MERK_DB_FILE),
+    dataContractsMerkDBFile: asValue(options.DATA_CONTRACTS_MERK_DB_FILE),
     documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
     documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
     chainLock: asValue(undefined),
@@ -242,14 +247,20 @@ async function createDIContainer(options) {
    * Register Identity
    */
   container.register({
-    identityMerkDB: asFunction((identityMerkDBFile) => (
-      merk(identityMerkDBFile)
-    ))// .disposer((merkDB) => merkDB.close())
+    identityLevelDB: asFunction((identityLevelDBFile) => (
+      level(identityLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
+    )).disposer((levelDB) => levelDB.close())
       .singleton(),
 
-    identityRepository: asClass(IdentityMerkDBRepository).singleton(),
-    identityTransaction: asFunction((identityRepository) => (
-      identityRepository.createTransaction()
+    identitiesStore: asFunction((identitiesMerkDBFile) => {
+      const merkDb = merk(identitiesMerkDBFile);
+
+      return new MerkDbStore(merkDb);
+    }).singleton(),
+
+    identityRepository: asClass(IdentityStoreRepository).singleton(),
+    identitiesTransaction: asFunction((identitiesStore) => (
+      identitiesStore.createTransaction()
     )).singleton(),
 
     publicKeyIdentityIdRepository: asClass(PublicKeyIdentityIdMapLevelDBRepository).singleton(),
@@ -259,14 +270,15 @@ async function createDIContainer(options) {
    * Register Data Contract
    */
   container.register({
-    dataContractMerkDB: asFunction((dataContractMerkDBFile) => (
-      merk(dataContractMerkDBFile)
-    ))// .disposer((merkDB) => merkDB.close())
-      .singleton(),
+    dataContractsStore: asFunction((dataContractsMerkDBFile) => {
+      const merkDb = merk(dataContractsMerkDBFile);
 
-    dataContractRepository: asClass(DataContractMerkDBRepository).singleton(),
-    dataContractTransaction: asFunction((dataContractRepository) => (
-      dataContractRepository.createTransaction()
+      return new MerkDbStore(merkDb);
+    }).singleton(),
+
+    dataContractRepository: asClass(DataContractStoreRepository).singleton(),
+    dataContractsTransaction: asFunction((dataContractsStore) => (
+      dataContractsStore.createTransaction()
     )).singleton(),
 
     dataContractCache: asFunction((dataContractCacheSize) => (

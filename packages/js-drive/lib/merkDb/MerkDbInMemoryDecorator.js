@@ -1,6 +1,5 @@
 class MerkDbInMemoryDecorator {
   /**
-   *
    * @param {Merk} merkDB
    */
   constructor(merkDB) {
@@ -64,10 +63,11 @@ class MerkDbInMemoryDecorator {
   }
 
   /**
+   * Persist in memory data to MerkDb
    *
    * @return {MerkDbInMemoryDecorator}
    */
-  commit() {
+  persist() {
     if (!this.data.size && !this.deleted.size) {
       // nothing to commit
 
@@ -89,18 +89,18 @@ class MerkDbInMemoryDecorator {
     // commit
     batch.commitSync();
 
-    // remove data from transaction
-    this.data.clear();
-    this.deleted.clear();
+    // reset in memory memory
+    this.reset();
 
     return this;
   }
 
   /**
+   * Reset in memory data
    *
    * @return {MerkDbInMemoryDecorator}
    */
-  rollback() {
+  reset() {
     this.data.clear();
     this.deleted.clear();
 

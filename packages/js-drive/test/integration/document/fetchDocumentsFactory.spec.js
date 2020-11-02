@@ -1,6 +1,10 @@
-const level = require('level-rocksdb');
+const rimraf = require('rimraf');
+const merk = require('merk');
+
 const LRUCache = require('lru-cache');
+
 const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
+
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
@@ -14,12 +18,14 @@ const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryErro
 
 const createDocumentMongoDbRepositoryFactory = require('../../../lib/document/mongoDbRepository/createDocumentMongoDbRepositoryFactory');
 const fetchDocumentsFactory = require('../../../lib/document/fetchDocumentsFactory');
-const DataContractMerkDBRepository = require('../../../lib/dataContract/DataContractMerkDBRepository');
+const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
 const getDocumentDatabaseFactory = require('../../../lib/document/mongoDbRepository/getDocumentDatabaseFactory');
 
 const findNotIndexedFields = require('../../../lib/document/query/findNotIndexedFields');
 const findNotIndexedOrderByFields = require('../../../lib/document/query/findNotIndexedOrderByFields');
 const getIndexedFieldsFromDocumentSchema = require('../../../lib/document/query/getIndexedFieldsFromDocumentSchema');
+
+const MerkDbStore = require('../../../lib/merkDb/MerkDbStore');
 
 describe('fetchDocumentsFactory', () => {
   let createDocumentMongoDbRepository;
@@ -30,15 +36,17 @@ describe('fetchDocumentsFactory', () => {
   let document;
   let dataContractRepository;
   let dataContract;
-  let dataContractCache;
-  let dataContractLevelDB;
+  let dataContractsMerkDbPath;
 
   startMongoDb().then((mongoDb) => {
     mongoClient = mongoDb.getClient();
   });
 
   beforeEach(async () => {
-    dataContractLevelDB = level('./db/blockchain-state-test', { keyEncoding: 'binary', valueEncoding: 'binary' });
+    dataContractsMerkDbPath = './db/merkdb-test';
+
+    const dataContractsMerkDb = merk(`${dataContractsMerkDbPath}/${Math.random()}`);
+    const dataContractsStore = new MerkDbStore(dataContractsMerkDb);
 
     const validateQuery = validateQueryFactory(
       findConflictingConditions,
@@ -55,8 +63,8 @@ describe('fetchDocumentsFactory', () => {
       documentsMongoDBPrefix,
     );
 
-    dataContractRepository = new DataContractMerkDBRepository(
-      dataContractMerkDB,
+    dataContractRepository = new DataContractStoreRepository(
+      dataContractsStore,
       new DashPlatformProtocol(),
     );
 
@@ -92,7 +100,7 @@ describe('fetchDocumentsFactory', () => {
       blockExecutionDBTransactionsMock,
     );
 
-    dataContractCache = new LRUCache(500);
+    const dataContractCache = new LRUCache(500);
 
     fetchDocuments = fetchDocumentsFactory(
       createDocumentMongoDbRepository,
@@ -102,8 +110,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   afterEach(async () => {
-    await dataContractLevelDB.clear();
-    await dataContractLevelDB.close();
+    rimraf.sync(dataContractsMerkDbPath);
   });
 
   it('should fetch Documents for specified contract ID and document type', async () => {

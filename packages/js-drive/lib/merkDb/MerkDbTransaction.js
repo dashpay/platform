@@ -1,4 +1,4 @@
-const MerkDbTransactionDecorator = require('./MerkDbInMemoryDecorator');
+const MerkDbInMemoryDecorator = require('./MerkDbInMemoryDecorator');
 
 const MerkDBTransactionIsNotStartedError = require('./errors/MerkDBTransactionIsNotStartedError');
 const MerkDBTransactionIsAlreadyStartedError = require('./errors/MerkDBTransactionIsAlreadyStartedError');
@@ -23,7 +23,7 @@ class MerkDbTransaction {
       throw new MerkDBTransactionIsAlreadyStartedError();
     }
 
-    this.db = new MerkDbTransactionDecorator(this.merkDB);
+    this.db = new MerkDbInMemoryDecorator(this.merkDB);
 
     return this;
   }
@@ -38,7 +38,7 @@ class MerkDbTransaction {
       throw new MerkDBTransactionIsNotStartedError();
     }
 
-    this.db.commit();
+    this.db.persist();
 
     this.db = null;
 
@@ -55,7 +55,7 @@ class MerkDbTransaction {
       throw new MerkDBTransactionIsNotStartedError();
     }
 
-    this.db.rollback();
+    this.db.reset();
 
     this.db = null;
 

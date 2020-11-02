@@ -8,7 +8,7 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 
 /**
  *
- * @param {IdentityLevelDBRepository} identityRepository
+ * @param {IdentityStoreRepository} identityRepository
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(identityRepository) {

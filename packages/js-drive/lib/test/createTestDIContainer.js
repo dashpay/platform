@@ -19,7 +19,8 @@ async function createTestDIContainer(mongoDB, dashCore = undefined) {
     DOCUMENT_MONGODB_URL: documentMongoDBUrl,
     BLOCKCHAIN_STATE_LEVEL_DB_FILE: './db/blockchain-state-test',
     IDENTITY_LEVEL_DB_FILE: './db/identity-test',
-    DATA_CONTRACT_LEVEL_DB_FILE: './db/data-contract-test',
+    DATA_CONTRACTS_MERK_DB_FILE: './db/data-contracts-merkdb-test',
+    IDENTITIES_MERK_DB_FILE: './db/identities-merkdb-test',
     ...coreOptions,
   });
 }

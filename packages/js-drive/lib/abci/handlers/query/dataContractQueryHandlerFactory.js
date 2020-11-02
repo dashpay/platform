@@ -8,7 +8,7 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 
 /**
  *
- * @param {DataContractLevelDBRepository} dataContractRepository
+ * @param {DataContractStoreRepository} dataContractRepository
  * @return {dataContractQueryHandler}
  */
 function dataContractQueryHandlerFactory(dataContractRepository) {

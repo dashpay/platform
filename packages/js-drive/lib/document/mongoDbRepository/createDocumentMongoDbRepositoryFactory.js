@@ -8,7 +8,7 @@ const InvalidContractIdError = require('../query/errors/InvalidContractIdError')
  * @param {convertWhereToMongoDbQuery} convertWhereToMongoDbQuery
  * @param {validateQuery} validateQuery
  * @param {getDocumentDatabase} getDocumentDatabase
- * @param {DataContractLevelDBRepository} dataContractRepository
+ * @param {DataContractStoreRepository} dataContractRepository
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @returns {createDocumentMongoDbRepository}
  */

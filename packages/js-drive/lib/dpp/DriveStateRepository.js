@@ -1,8 +1,8 @@
 class DriveStateRepository {
   /**
-   * @param {IdentityLevelDBRepository} identityRepository
+   * @param {IdentityStoreRepository} identityRepository
    * @param {PublicKeyIdentityIdMapLevelDBRepository} publicKeyIdentityIdMapLevelDBRepository
-   * @param {DataContractLevelDBRepository} dataContractRepository
+   * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
    * @param {createDocumentMongoDbRepository} createDocumentRepository
    * @param {RpcClient} coreRpcClient

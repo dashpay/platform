@@ -1,15 +1,15 @@
 class BlockExecutionDBTransactions {
   /**
    *
-   * @param {LevelDBTransaction} identityTransaction
+   * @param {MerkDbTransaction} identitiesTransaction
    * @param {MongoDBTransaction} documentTransaction
-   * @param {LevelDBTransaction} dataContractTransaction
+   * @param {MerkDbTransaction} dataContractsTransaction
    */
-  constructor(identityTransaction, documentTransaction, dataContractTransaction) {
+  constructor(identitiesTransaction, documentTransaction, dataContractsTransaction) {
     this.transactions = {
-      identity: identityTransaction,
+      identity: identitiesTransaction,
       document: documentTransaction,
-      dataContract: dataContractTransaction,
+      dataContract: dataContractsTransaction,
     };
   }
 
