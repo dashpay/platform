@@ -8,7 +8,7 @@ const {
 
 const beginBlockHandlerFactory = require('../../../../lib/abci/handlers/beginBlockHandlerFactory');
 
-const BlockchainState = require('../../../../lib/blockchainState/BlockchainState');
+const ChainInfo = require('../../../../lib/chainInfo/ChainInfo');
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionDBTransactionsMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
@@ -16,14 +16,14 @@ describe('beginBlockHandlerFactory', () => {
   let protocolVersion;
   let beginBlockHandler;
   let request;
-  let blockchainState;
+  let chainInfo;
   let blockHeight;
   let blockExecutionDBTransactionsMock;
   let blockExecutionContextMock;
   let header;
 
   beforeEach(function beforeEach() {
-    blockchainState = new BlockchainState();
+    chainInfo = new ChainInfo();
 
     protocolVersion = Long.fromInt(0);
 
@@ -37,7 +37,7 @@ describe('beginBlockHandlerFactory', () => {
     };
 
     beginBlockHandler = beginBlockHandlerFactory(
-      blockchainState,
+      chainInfo,
       blockExecutionDBTransactionsMock,
       blockExecutionContextMock,
       protocolVersion,
@@ -66,7 +66,7 @@ describe('beginBlockHandlerFactory', () => {
 
     expect(response).to.be.an.instanceOf(ResponseBeginBlock);
 
-    expect(blockchainState.getLastBlockHeight()).to.equal(blockHeight);
+    expect(chainInfo.getLastBlockHeight()).to.equal(blockHeight);
     expect(blockExecutionDBTransactionsMock.start).to.be.calledOnce();
     expect(blockExecutionContextMock.reset).to.be.calledOnce();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);

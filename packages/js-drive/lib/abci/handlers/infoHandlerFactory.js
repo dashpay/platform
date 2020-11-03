@@ -7,11 +7,11 @@ const {
 const { version: driveVersion } = require('../../../package');
 
 /**
- * @param {BlockchainState} blockchainState
+ * @param {ChainInfo} chainInfo
  * @param {Number} protocolVersion
  * @return {infoHandler}
  */
-function infoHandlerFactory(blockchainState, protocolVersion) {
+function infoHandlerFactory(chainInfo, protocolVersion) {
   /**
    * Info ABCI handler
    *
@@ -23,8 +23,8 @@ function infoHandlerFactory(blockchainState, protocolVersion) {
     return new ResponseInfo({
       version: driveVersion,
       appVersion: protocolVersion,
-      lastBlockHeight: blockchainState.getLastBlockHeight(),
-      lastBlockAppHash: blockchainState.getLastBlockAppHash(),
+      lastBlockHeight: chainInfo.getLastBlockHeight(),
+      lastBlockAppHash: chainInfo.getLastBlockAppHash(),
     });
   }
 

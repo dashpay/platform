@@ -5,8 +5,8 @@ const {
 } = require('abci/types');
 
 /**
- * @param {BlockchainState} blockchainState
- * @param {BlockchainStateLevelDBRepository} blockchainStateRepository
+ * @param {ChainInfo} chainInfo
+ * @param {ChainInfoCommonStoreRepository} chainInfoRepository
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {DocumentDatabaseManager} documentDatabaseManager
@@ -15,8 +15,8 @@ const {
  * @return {commitHandler}
  */
 function commitHandlerFactory(
-  blockchainState,
-  blockchainStateRepository,
+  chainInfo,
+  chainInfoRepository,
   blockExecutionDBTransactions,
   blockExecutionContext,
   documentDatabaseManager,
@@ -48,12 +48,12 @@ function commitHandlerFactory(
       await blockExecutionDBTransactions.commit();
 
       // Update blockchain state
-      blockchainState.setLastBlockAppHash(appHash);
+      chainInfo.setLastBlockAppHash(appHash);
 
       // Store ST fees from the block to distribution pool
-      blockchainState.setCreditsDistributionPool(blockExecutionContext.getAccumulativeFees());
+      chainInfo.setCreditsDistributionPool(blockExecutionContext.getAccumulativeFees());
 
-      await blockchainStateRepository.store(blockchainState);
+      await chainInfoRepository.store(chainInfo);
     } catch (e) {
       // Abort DB transactions
       await blockExecutionDBTransactions.abort();

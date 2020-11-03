@@ -17,10 +17,10 @@ async function createTestDIContainer(mongoDB, dashCore = undefined) {
   return createDIContainer({
     ...process.env,
     DOCUMENT_MONGODB_URL: documentMongoDBUrl,
-    BLOCKCHAIN_STATE_LEVEL_DB_FILE: './db/blockchain-state-test',
+    COMMON_MERK_DB_FILE: `./db/common-merkdb-test/${Math.random()}`,
     IDENTITY_LEVEL_DB_FILE: './db/identity-test',
-    DATA_CONTRACTS_MERK_DB_FILE: './db/data-contracts-merkdb-test',
-    IDENTITIES_MERK_DB_FILE: './db/identities-merkdb-test',
+    DATA_CONTRACTS_MERK_DB_FILE: `./db/data-contracts-merkdb-test/${Math.random()}`,
+    IDENTITIES_MERK_DB_FILE: `./db/identities-merkdb-test/${Math.random()}`,
     ...coreOptions,
   });
 }

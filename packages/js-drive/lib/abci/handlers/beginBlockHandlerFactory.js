@@ -9,7 +9,7 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
 /**
  * Begin block ABCI handler
  *
- * @param {BlockchainState} blockchainState
+ * @param {ChainInfo} chainInfo
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {Number} protocolVersion - Protocol version
@@ -18,7 +18,7 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
  * @return {beginBlockHandler}
  */
 function beginBlockHandlerFactory(
-  blockchainState,
+  chainInfo,
   blockExecutionDBTransactions,
   blockExecutionContext,
   protocolVersion,
@@ -37,7 +37,7 @@ function beginBlockHandlerFactory(
 
     blockExecutionContext.setHeader(header);
 
-    blockchainState.setLastBlockHeight(header.height);
+    chainInfo.setLastBlockHeight(header.height);
 
     if (header.version.App.gt(protocolVersion)) {
       throw new NotSupportedProtocolVersionError(

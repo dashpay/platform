@@ -14,25 +14,25 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 describe('commitHandlerFactory', () => {
   let commitHandler;
   let appHash;
-  let blockchainStateRepositoryMock;
+  let chainInfoRepositoryMock;
   let blockExecutionDBTransactionsMock;
   let blockExecutionContextMock;
   let documentsDatabaseManagerMock;
   let dataContract;
-  let blockchainStateMock;
+  let chainInfoMock;
   let accumulativeFees;
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
 
-    blockchainStateMock = {
+    chainInfoMock = {
       setLastBlockAppHash: this.sinon.stub(),
       setCreditsDistributionPool: this.sinon.stub(),
     };
 
     dataContract = getDataContractFixture();
 
-    blockchainStateRepositoryMock = {
+    chainInfoRepositoryMock = {
       store: this.sinon.stub(),
     };
 
@@ -56,8 +56,8 @@ describe('commitHandlerFactory', () => {
     };
 
     commitHandler = commitHandlerFactory(
-      blockchainStateMock,
-      blockchainStateRepositoryMock,
+      chainInfoMock,
+      chainInfoRepositoryMock,
       blockExecutionDBTransactionsMock,
       blockExecutionContextMock,
       documentsDatabaseManagerMock,
@@ -65,7 +65,7 @@ describe('commitHandlerFactory', () => {
     );
   });
 
-  it('should commit db transactions, update blockchain state, create document dbs and return ResponseCommit', async () => {
+  it('should commit db transactions, update chain info, create document dbs and return ResponseCommit', async () => {
     const response = await commitHandler();
 
     expect(response).to.be.an.instanceOf(ResponseCommit);
@@ -77,20 +77,20 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionDBTransactionsMock.commit).to.be.calledOnce();
 
-    expect(blockchainStateMock.setLastBlockAppHash).to.be.calledOnceWith(appHash);
+    expect(chainInfoMock.setLastBlockAppHash).to.be.calledOnceWith(appHash);
 
-    expect(blockchainStateMock.setCreditsDistributionPool).to.be.calledOnceWith(accumulativeFees);
+    expect(chainInfoMock.setCreditsDistributionPool).to.be.calledOnceWith(accumulativeFees);
 
     expect(blockExecutionContextMock.getAccumulativeFees).to.be.calledOnce();
 
-    expect(blockchainStateRepositoryMock.store).to.be.calledOnceWith(blockchainStateMock);
+    expect(chainInfoRepositoryMock.store).to.be.calledOnceWith(chainInfoMock);
     expect(blockExecutionContextMock.reset).to.be.calledOnce();
   });
 
-  it('should throw error and abort DB transactions if can\'t store blockchain state', async () => {
+  it('should throw error and abort DB transactions if can\'t store chain info', async () => {
     const error = new Error('Some error');
 
-    blockchainStateRepositoryMock.store.throws(error);
+    chainInfoRepositoryMock.store.throws(error);
 
     try {
       await commitHandler();

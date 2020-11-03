@@ -87,7 +87,7 @@
     "lodash.set": "^4.3.2",
     "long": "^4.0.0",
     "lru-cache": "^5.1.1",
-    "merk": "Cofresi/node-merk#fix-linux",
+    "merk": "github:Cofresi/node-merk#fix-linux",
     "mongodb": "^3.5.5",
     "pino": "^6.4.0",
     "pino-pretty": "^4.0.3",

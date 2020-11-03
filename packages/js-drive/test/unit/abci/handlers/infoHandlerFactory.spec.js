@@ -8,7 +8,7 @@ const {
 
 const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFactory');
 
-const BlockchainState = require('../../../../lib/blockchainState/BlockchainState');
+const ChainInfo = require('../../../../lib/chainInfo/ChainInfo');
 
 const packageJson = require('../../../../package');
 
@@ -23,9 +23,9 @@ describe('infoHandlerFactory', () => {
     lastBlockAppHash = Buffer.alloc(0);
     protocolVersion = Long.fromInt(0);
 
-    const blockchainState = new BlockchainState(lastBlockHeight, lastBlockAppHash);
+    const chainInfo = new ChainInfo(lastBlockHeight, lastBlockAppHash);
 
-    infoHandler = infoHandlerFactory(blockchainState, protocolVersion);
+    infoHandler = infoHandlerFactory(chainInfo, protocolVersion);
   });
 
   it('should return ResponseInfo', async () => {

@@ -1,5 +1,3 @@
-const Long = require('long');
-
 const {
   createContainer: createAwilixContainer,
   InjectionMode,
@@ -8,17 +6,21 @@ const {
   asValue,
 } = require('awilix');
 
+const rimraf = require('rimraf');
+
+const Long = require('long');
+
 // eslint-disable-next-line import/no-unresolved
 const level = require('level-rocksdb');
 
 const merk = require('merk');
 
 const LRUCache = require('lru-cache');
-
 const RpcClient = require('@dashevo/dashd-rpc/promise');
-const ZMQClient = require('@dashevo/dashd-zmq');
 
+const ZMQClient = require('@dashevo/dashd-zmq');
 const DashPlatformProtocol = require('@dashevo/dpp');
+
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const findMyWay = require('find-my-way');
@@ -26,24 +28,23 @@ const findMyWay = require('find-my-way');
 const pino = require('pino');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
-
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
+
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
 const MerkDbStore = require('./merkDb/MerkDbStore');
-
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
+
 const PublicKeyIdentityIdMapLevelDBRepository = require(
   './identity/PublicKeyIdentityIdMapLevelDBRepository',
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-
 const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrderByFields');
 const findNotIndexedFields = require('./document/query/findNotIndexedFields');
 const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
-const findConflictingConditions = require('./document/query/findConflictingConditions');
 
+const findConflictingConditions = require('./document/query/findConflictingConditions');
 const getDocumentDatabaseFactory = require('./document/mongoDbRepository/getDocumentDatabaseFactory');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 const convertWhereToMongoDbQuery = require('./document/mongoDbRepository/convertWhereToMongoDbQuery');
@@ -53,39 +54,39 @@ const convertToMongoDbIndicesFunction = require('./document/mongoDbRepository/co
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const MongoDBTransaction = require('./mongoDb/MongoDBTransaction');
 const connectToMongoDBFactory = require('./mongoDb/connectToMongoDBFactory');
+
 const waitReplicaSetInitializeFactory = require('./mongoDb/waitReplicaSetInitializeFactory');
-
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
-const BlockchainStateLevelDBRepository = require('./blockchainState/BlockchainStateLevelDBRepository');
-const BlockExecutionDBTransactions = require('./blockExecution/BlockExecutionDBTransactions');
+const ChainInfoCommonStoreRepository = require('./chainInfo/ChainInfoCommonStoreRepository');
 
+const BlockExecutionDBTransactions = require('./blockExecution/BlockExecutionDBTransactions');
 const createIsolatedValidatorSnapshot = require('./dpp/isolation/createIsolatedValidatorSnapshot');
 const createIsolatedDppFactory = require('./dpp/isolation/createIsolatedDppFactory');
+
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
-
 const DriveStateRepository = require('./dpp/DriveStateRepository');
 const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
-const LoggedStateRepositoryDecorator = require('./dpp/LoggedStateRepositoryDecorator');
 
+const LoggedStateRepositoryDecorator = require('./dpp/LoggedStateRepositoryDecorator');
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
+
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
-
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
-const errorHandler = require('./errorHandler');
 
+const errorHandler = require('./errorHandler');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
 const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory');
 const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
 const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
-const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 
+const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFallbackFactory = require('./core/waitForCoreChainLockSyncFallbackFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
@@ -97,7 +98,7 @@ const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
- * @param {string} options.BLOCKCHAIN_STATE_LEVEL_DB_FILE
+ * @param {string} options.COMMON_MERK_DB_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
  * @param {string} options.IDENTITIES_MERK_DB_FILE
  * @param {string} options.IDENTITY_LEVEL_DB_FILE
@@ -144,7 +145,7 @@ async function createDIContainer(options) {
   container.register({
     abciHost: asValue(options.ABCI_HOST),
     abciPort: asValue(options.ABCI_PORT),
-    blockchainStateLevelDBFile: asValue(options.BLOCKCHAIN_STATE_LEVEL_DB_FILE),
+    commonMerkDBFile: asValue(options.COMMON_MERK_DB_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
     identityLevelDBFile: asValue(options.IDENTITY_LEVEL_DB_FILE),
     identitiesMerkDBFile: asValue(options.IDENTITIES_MERK_DB_FILE),
@@ -256,6 +257,14 @@ async function createDIContainer(options) {
       const merkDb = merk(identitiesMerkDBFile);
 
       return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        rimraf.sync(container.resolve('identitiesMerkDBFile'));
+      }
     }).singleton(),
 
     identityRepository: asClass(IdentityStoreRepository).singleton(),
@@ -274,6 +283,14 @@ async function createDIContainer(options) {
       const merkDb = merk(dataContractsMerkDBFile);
 
       return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        rimraf.sync(container.resolve('dataContractsMerkDBFile'));
+      }
     }).singleton(),
 
     dataContractRepository: asClass(DataContractStoreRepository).singleton(),
@@ -319,22 +336,37 @@ async function createDIContainer(options) {
   });
 
   /**
-   * Register blockchain state
+   * Register common store
    */
   container.register({
-    blockchainStateLevelDB: asFunction((blockchainStateLevelDBFile) => (
-      level(blockchainStateLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
-      .singleton(),
+    commonStore: asFunction((commonMerkDBFile) => {
+      const merkDb = merk(commonMerkDBFile);
 
-    blockchainStateRepository: asClass(BlockchainStateLevelDBRepository).singleton(),
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        rimraf.sync(container.resolve('commonMerkDBFile'));
+      }
+    }).singleton(),
+
+    chainInfoRepository: asClass(ChainInfoCommonStoreRepository).singleton(),
   });
 
-  const blockchainStateRepository = container.resolve('blockchainStateRepository');
-  const blockchainState = await blockchainStateRepository.fetch();
+  const chainInfoRepository = container.resolve('chainInfoRepository');
+  const chainInfo = await chainInfoRepository.fetch();
 
   container.register({
-    blockchainState: asValue(blockchainState),
+    chainInfo: asValue(chainInfo),
+  });
+
+  /**
+   * Register block execution context
+   */
+  container.register({
     blockExecutionDBTransactions: asClass(BlockExecutionDBTransactions).singleton(),
     blockExecutionContext: asClass(BlockExecutionContext).singleton(),
   });

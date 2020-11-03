@@ -1,6 +1,6 @@
 const Long = require('long');
 
-class BlockchainState {
+class ChainInfo {
   /**
    *
    * @param {Long} [lastBlockHeight]
@@ -30,7 +30,7 @@ class BlockchainState {
    * Set last block height
    *
    * @param {Long} blockHeight
-   * @return {BlockchainState}
+   * @return {ChainInfo}
    */
   setLastBlockHeight(blockHeight) {
     this.lastBlockHeight = blockHeight;
@@ -51,7 +51,7 @@ class BlockchainState {
    * Set last block app hash
    *
    * @param {Buffer} appHash
-   * @return {BlockchainState}
+   * @return {ChainInfo}
    */
   setLastBlockAppHash(appHash) {
     this.lastBlockAppHash = appHash;
@@ -63,7 +63,7 @@ class BlockchainState {
    * Set credits distribution pool
    *
    * @param {number} credits
-   * @return {BlockchainState}
+   * @return {ChainInfo}
    */
   setCreditsDistributionPool(credits) {
     this.creditsDistributionPool = credits;
@@ -98,4 +98,4 @@ class BlockchainState {
   }
 }
 
-module.exports = BlockchainState;
+module.exports = ChainInfo;
