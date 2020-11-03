@@ -51,7 +51,7 @@ class BlockExecutionDBTransactions {
   /**
    * Get transaction by name
    *
-   * @return {LevelDBTransaction|MongoDBTransaction}
+   * @return {MerkDbTransaction|MongoDBTransaction}
    */
   getTransaction(name) {
     return this.transactions[name];

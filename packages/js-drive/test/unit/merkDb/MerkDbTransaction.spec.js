@@ -20,13 +20,13 @@ describe('MerkDbTransaction', () => {
       expect(merkDBTransaction.db).to.be.instanceOf(MerkDbTransactionWrapper);
     });
 
-    it('should throw LevelDBTransactionIsAlreadyStartedError if transaction was started twice', async () => {
+    it('should throw MerkDBTransactionIsAlreadyStartedError if transaction was started twice', async () => {
       merkDBTransaction.start();
 
       try {
         merkDBTransaction.start();
 
-        expect.fail('Should throw an LevelDBTransactionIsAlreadyStartedError error');
+        expect.fail('Should throw an MerkDBTransactionIsAlreadyStartedError error');
       } catch (e) {
         expect(e).to.be.instanceOf(MerkDBTransactionIsAlreadyStartedError);
       }
@@ -47,11 +47,11 @@ describe('MerkDbTransaction', () => {
       expect(persist).to.be.calledOnce();
     });
 
-    it('should throw LevelDBTransactionIsNotStartedError if transaction is not started', async () => {
+    it('should throw MerkDBTransactionIsNotStartedError if transaction is not started', async () => {
       try {
         await merkDBTransaction.commit();
 
-        expect.fail('Should throw an LevelDBTransactionIsNotStartedError error');
+        expect.fail('Should throw an MerkDBTransactionIsNotStartedError error');
       } catch (e) {
         expect(e).to.be.instanceOf(MerkDBTransactionIsNotStartedError);
       }
@@ -72,11 +72,11 @@ describe('MerkDbTransaction', () => {
       expect(reset).to.be.calledOnce();
     });
 
-    it('should throw LevelDBTransactionIsAlreadyStartedError if transaction is not started', async () => {
+    it('should throw MerkDBTransactionIsNotStartedError if transaction is not started', async () => {
       try {
         await merkDBTransaction.abort();
 
-        expect.fail('should throw LevelDBTransactionIsAlreadyStartedError');
+        expect.fail('should throw MerkDBTransactionIsNotStartedError');
       } catch (e) {
         expect(e).to.be.an.instanceof(MerkDBTransactionIsNotStartedError);
       }

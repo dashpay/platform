@@ -41,7 +41,7 @@ function createDocumentMongoDbRepositoryFactory(
 
     const documentsMongoDatabase = await getDocumentDatabase(dataContractId);
 
-    // Here we have to retrieve current LevelDB transaction
+    // Here we have to retrieve current DB transaction
     // as we have to retrieve data contract to setup MongoDB collection
     // however this happening on block commit
     // and data contract is not visible outside of the transaction at that point

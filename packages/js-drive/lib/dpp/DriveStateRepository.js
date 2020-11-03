@@ -1,7 +1,7 @@
 class DriveStateRepository {
   /**
    * @param {IdentityStoreRepository} identityRepository
-   * @param {PublicKeyIdentityIdMapLevelDBRepository} publicKeyIdentityIdMapLevelDBRepository
+   * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
    * @param {createDocumentMongoDbRepository} createDocumentRepository
@@ -11,7 +11,7 @@ class DriveStateRepository {
    */
   constructor(
     identityRepository,
-    publicKeyIdentityIdMapLevelDBRepository,
+    publicKeyToIdentityIdRepository,
     dataContractRepository,
     fetchDocuments,
     createDocumentRepository,
@@ -20,7 +20,7 @@ class DriveStateRepository {
     blockExecutionDBTransactions = undefined,
   ) {
     this.identityRepository = identityRepository;
-    this.publicKeyIdentityIdMapLevelDBRepository = publicKeyIdentityIdMapLevelDBRepository;
+    this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
     this.createDocumentRepository = createDocumentRepository;
@@ -66,7 +66,7 @@ class DriveStateRepository {
     const transaction = this.getDBTransaction('identity');
 
     await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => this.publicKeyIdentityIdMapLevelDBRepository
+      publicKeyHashes.map(async (publicKeyHash) => this.publicKeyToIdentityIdRepository
         .store(
           publicKeyHash, identityId, transaction,
         )),
@@ -87,7 +87,7 @@ class DriveStateRepository {
     // noinspection UnnecessaryLocalVariableJS
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
-        this.publicKeyIdentityIdMapLevelDBRepository.fetch(
+        this.publicKeyToIdentityIdRepository.fetch(
           publicKeyHash, transaction,
         )
       )),
@@ -204,7 +204,7 @@ class DriveStateRepository {
   /**
    * @private
    * @param {string} name
-   * @return {LevelDBTransaction|MongoDBTransaction}
+   * @return {MerkDbTransaction|MongoDBTransaction}
    */
   getDBTransaction(name) {
     let transaction;

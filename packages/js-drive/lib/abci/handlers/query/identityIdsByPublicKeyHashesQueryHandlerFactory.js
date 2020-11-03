@@ -10,12 +10,12 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {PublicKeyIdentityIdMapLevelDBRepository} publicKeyIdentityIdRepository
+ * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
  * @param {number} maxIdentitiesPerRequest
  * @return {identityIdsByPublicKeyHashesQueryHandler}
  */
 function identityIdsByPublicKeyHashesQueryHandlerFactory(
-  publicKeyIdentityIdRepository,
+  publicKeyToIdentityIdRepository,
   maxIdentitiesPerRequest,
 ) {
   /**
@@ -36,7 +36,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
 
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => {
-        const identityId = await publicKeyIdentityIdRepository.fetch(publicKeyHash);
+        const identityId = await publicKeyToIdentityIdRepository.fetch(publicKeyHash);
 
         if (!identityId) {
           return Buffer.alloc(0);

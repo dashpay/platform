@@ -10,9 +10,6 @@ const rimraf = require('rimraf');
 
 const Long = require('long');
 
-// eslint-disable-next-line import/no-unresolved
-const level = require('level-rocksdb');
-
 const merk = require('merk');
 
 const LRUCache = require('lru-cache');
@@ -35,8 +32,8 @@ const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 const MerkDbStore = require('./merkDb/MerkDbStore');
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 
-const PublicKeyIdentityIdMapLevelDBRepository = require(
-  './identity/PublicKeyIdentityIdMapLevelDBRepository',
+const PublicKeyToIdentityIdStoreRepository = require(
+  './identity/PublicKeyToIdentityIdStoreRepository',
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
@@ -101,7 +98,7 @@ const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
  * @param {string} options.COMMON_MERK_DB_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
  * @param {string} options.IDENTITIES_MERK_DB_FILE
- * @param {string} options.IDENTITY_LEVEL_DB_FILE
+ * @param {string} options.PUBLIC_KEY_TO_IDENTITY_MERK_DB_FILE
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
  * @param {string} options.DATA_CONTRACTS_MERK_DB_FILE
@@ -147,7 +144,7 @@ async function createDIContainer(options) {
     abciPort: asValue(options.ABCI_PORT),
     commonMerkDBFile: asValue(options.COMMON_MERK_DB_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
-    identityLevelDBFile: asValue(options.IDENTITY_LEVEL_DB_FILE),
+    publicKeyToIdentityIdMerkDbFile: asValue(options.PUBLIC_KEY_TO_IDENTITY_MERK_DB_FILE),
     identitiesMerkDBFile: asValue(options.IDENTITIES_MERK_DB_FILE),
     isolatedSTUnserializationMemoryLimit: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT, 10),
@@ -248,10 +245,19 @@ async function createDIContainer(options) {
    * Register Identity
    */
   container.register({
-    identityLevelDB: asFunction((identityLevelDBFile) => (
-      level(identityLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
-      .singleton(),
+    publicKeyToIdentityIdStore: asFunction((publicKeyToIdentityIdMerkDbFile) => {
+      const merkDb = merk(publicKeyToIdentityIdMerkDbFile);
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        rimraf.sync(container.resolve('publicKeyToIdentityIdMerkDbFile'));
+      }
+    }).singleton(),
 
     identitiesStore: asFunction((identitiesMerkDBFile) => {
       const merkDb = merk(identitiesMerkDBFile);
@@ -272,7 +278,7 @@ async function createDIContainer(options) {
       identitiesStore.createTransaction()
     )).singleton(),
 
-    publicKeyIdentityIdRepository: asClass(PublicKeyIdentityIdMapLevelDBRepository).singleton(),
+    publicKeyToIdentityIdRepository: asClass(PublicKeyToIdentityIdStoreRepository).singleton(),
   });
 
   /**
@@ -389,7 +395,7 @@ async function createDIContainer(options) {
 
     stateRepository: asFunction((
       identityRepository,
-      publicKeyIdentityIdRepository,
+      publicKeyToIdentityIdRepository,
       dataContractRepository,
       fetchDocuments,
       createDocumentRepository,
@@ -399,7 +405,7 @@ async function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyIdentityIdRepository,
+        publicKeyToIdentityIdRepository,
         dataContractRepository,
         fetchDocuments,
         createDocumentRepository,
@@ -415,7 +421,7 @@ async function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
-      publicKeyIdentityIdRepository,
+      publicKeyToIdentityIdRepository,
       dataContractRepository,
       fetchDocuments,
       createDocumentRepository,
@@ -427,7 +433,7 @@ async function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyIdentityIdRepository,
+        publicKeyToIdentityIdRepository,
         dataContractRepository,
         fetchDocuments,
         createDocumentRepository,

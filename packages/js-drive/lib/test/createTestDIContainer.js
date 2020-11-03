@@ -18,9 +18,9 @@ async function createTestDIContainer(mongoDB, dashCore = undefined) {
     ...process.env,
     DOCUMENT_MONGODB_URL: documentMongoDBUrl,
     COMMON_MERK_DB_FILE: `./db/common-merkdb-test/${Math.random()}`,
-    IDENTITY_LEVEL_DB_FILE: './db/identity-test',
     DATA_CONTRACTS_MERK_DB_FILE: `./db/data-contracts-merkdb-test/${Math.random()}`,
     IDENTITIES_MERK_DB_FILE: `./db/identities-merkdb-test/${Math.random()}`,
+    PUBLIC_KEY_TO_IDENTITY_MERK_DB_FILE: `./db/public-key-to-identity-id-merkdb-test/${Math.random()}`,
     ...coreOptions,
   });
 }
