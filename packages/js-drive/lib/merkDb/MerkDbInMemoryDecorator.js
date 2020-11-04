@@ -14,11 +14,13 @@ class MerkDbInMemoryDecorator {
    * @return {null|Buffer}
    */
   getSync(key) {
-    if (this.deleted[key.toString('hex')]) {
+    const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
+
+    if (this.deleted.has(keyString)) {
       throw new Error('key not found');
     }
 
-    const value = this.data.get(key.toString('hex'));
+    const value = this.data.get(keyString);
     if (value !== undefined) {
       return value;
     }
@@ -34,9 +36,11 @@ class MerkDbInMemoryDecorator {
    * @return {MerkDbInMemoryDecorator}
    */
   put(key, value) {
-    this.deleted.delete(key.toString('hex'));
+    const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
 
-    this.data.set(key.toString('hex'), value);
+    this.deleted.delete(keyString);
+
+    this.data.set(keyString, value);
 
     return this;
   }
@@ -48,11 +52,13 @@ class MerkDbInMemoryDecorator {
    * @return {MerkDbInMemoryDecorator}
    */
   delete(key) {
+    const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
+
     try {
       this.db.getSync(key);
 
-      this.data.delete(key.toString('hex'));
-      this.deleted.add(key.toString('hex'));
+      this.data.delete(keyString);
+      this.deleted.add(keyString);
     } catch (e) {
       if (!e.message.startsWith('key not found')) {
         throw e;
@@ -68,7 +74,7 @@ class MerkDbInMemoryDecorator {
    * @return {MerkDbInMemoryDecorator}
    */
   persist() {
-    if (!this.data.size && !this.deleted.size) {
+    if (this.data.size === 0 && this.deleted.size === 0) {
       // nothing to commit
 
       return this;
@@ -77,13 +83,17 @@ class MerkDbInMemoryDecorator {
     let batch = this.db.batch();
 
     // store values
-    for (const [key, value] of this.data) {
-      batch = batch.put(Buffer.from(key, 'hex'), value);
+    for (const [keyString, value] of this.data) {
+      const keyBuffer = Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING);
+
+      batch = batch.put(keyBuffer, value);
     }
 
     // remove keys
-    for (const key of this.deleted) {
-      batch = batch.delete(Buffer.from(key, 'hex'));
+    for (const keyString of this.deleted) {
+      const keyBuffer = Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING);
+
+      batch = batch.delete(keyBuffer);
     }
 
     // commit
@@ -107,5 +117,7 @@ class MerkDbInMemoryDecorator {
     return this;
   }
 }
+
+MerkDbInMemoryDecorator.KEY_ENCODING = 'hex';
 
 module.exports = MerkDbInMemoryDecorator;

@@ -1,17 +1,17 @@
 class DocumentDatabaseManager {
   /**
-   * @param {createDocumentMongoDbRepository} createDocumentRepository
+   * @param {createDocumentMongoDbRepository} createDocumentMongoDbRepository
    * @param {convertToMongoDbIndices} convertToMongoDbIndices
-   * @param {getDocumentDatabase} getDocumentDatabase
+   * @param {getDocumentDatabase} getDocumentMongoDBDatabase
    */
   constructor(
-    createDocumentRepository,
+    createDocumentMongoDbRepository,
     convertToMongoDbIndices,
-    getDocumentDatabase,
+    getDocumentMongoDBDatabase,
   ) {
-    this.createDocumentRepository = createDocumentRepository;
+    this.createDocumentRepository = createDocumentMongoDbRepository;
     this.convertToMongoDbIndices = convertToMongoDbIndices;
-    this.getDocumentDatabase = getDocumentDatabase;
+    this.getDocumentDatabase = getDocumentMongoDBDatabase;
   }
 
   /**

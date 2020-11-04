@@ -18,7 +18,7 @@ class MerkDbTransaction {
    *
    * @return {MerkDbTransaction}
    */
-  start() {
+  async start() {
     if (this.db) {
       throw new MerkDBTransactionIsAlreadyStartedError();
     }
@@ -33,7 +33,7 @@ class MerkDbTransaction {
    *
    * @return {MerkDbTransaction}
    */
-  commit() {
+  async commit() {
     if (!this.db) {
       throw new MerkDBTransactionIsNotStartedError();
     }
@@ -50,7 +50,7 @@ class MerkDbTransaction {
    *
    * @return {MerkDbTransaction}
    */
-  abort() {
+  async abort() {
     if (!this.db) {
       throw new MerkDBTransactionIsNotStartedError();
     }

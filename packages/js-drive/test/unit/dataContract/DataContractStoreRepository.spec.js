@@ -21,11 +21,17 @@ describe('DataContractStoreRepository', () => {
       .createFromBuffer
       .resolves(dataContract);
 
+    const containerMock = {
+      resolve() {
+        return dppMock;
+      },
+    };
+
     storeMock = new StoreMock(this.sinon);
 
     transactionMock = {};
 
-    repository = new DataContractStoreRepository(storeMock, dppMock);
+    repository = new DataContractStoreRepository(storeMock, containerMock);
   });
 
   describe('#store', () => {

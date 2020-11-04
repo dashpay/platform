@@ -5,6 +5,7 @@ class StoreMock {
   constructor(sinon) {
     this.put = sinon.stub();
     this.get = sinon.stub();
+    this.delete = sinon.stub();
     this.createTransaction = sinon.stub();
   }
 }

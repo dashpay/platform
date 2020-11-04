@@ -1,16 +1,17 @@
+const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const InvalidDocumentTypeError = require('./query/errors/InvalidDocumentTypeError');
 const InvalidContractIdError = require('./query/errors/InvalidContractIdError');
 /**
- * @param {createDocumentMongoDbRepository} createDocumentRepository
+ * @param {DocumentIndexedStoreRepository} documentRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {LRUCache} dataContractCache
  * @returns {fetchDocuments}
  */
 function fetchDocumentsFactory(
-  createDocumentRepository,
+  documentRepository,
   dataContractRepository,
   dataContractCache,
 ) {
@@ -21,33 +22,32 @@ function fetchDocumentsFactory(
    * @param {Buffer|Identifier} contractId
    * @param {string} type
    * @param {Object} [options] options
-   * @param {MongoDBTransaction} [dbTransaction]
+   * @param {DocumentsDbTransaction} [dbTransaction]
    * @returns {Promise<Document[]>}
    */
   async function fetchDocuments(contractId, type, options, dbTransaction = undefined) {
-    let documentRepository;
+    let contractIdIdentifier;
     try {
-      documentRepository = await createDocumentRepository(contractId, type);
-    } catch (error) {
-      if (error instanceof InvalidContractIdError) {
+      contractIdIdentifier = new Identifier(contractId);
+    } catch (e) {
+      if (e instanceof IdentifierError) {
+        const error = new InvalidContractIdError(contractId);
+
         throw new InvalidQueryError([error]);
       }
 
-      throw error;
+      throw e;
     }
 
-    // eslint-disable-next-line no-param-reassign
-    contractId = new Identifier(contractId);
-
-    const contractIdString = contractId.toString();
+    const contractIdString = contractIdIdentifier.toString();
 
     let dataContract = dataContractCache.get(contractIdString);
 
     if (!dataContract) {
-      dataContract = await dataContractRepository.fetch(contractId);
+      dataContract = await dataContractRepository.fetch(contractIdIdentifier);
 
       if (!dataContract) {
-        const error = new InvalidContractIdError(contractId);
+        const error = new InvalidContractIdError(contractIdIdentifier);
 
         throw new InvalidQueryError([error]);
       }
@@ -61,11 +61,10 @@ function fetchDocumentsFactory(
       throw new InvalidQueryError([error]);
     }
 
-    const documentSchema = dataContract.getDocumentSchema(type);
-
-    return documentRepository.fetch(
+    return documentRepository.find(
+      contractIdIdentifier,
+      type,
       options,
-      documentSchema,
       dbTransaction,
     );
   }

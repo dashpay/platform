@@ -1,72 +1,33 @@
-const rimraf = require('rimraf');
-const merk = require('merk');
-
-const LRUCache = require('lru-cache');
-
 const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
-
-const DashPlatformProtocol = require('@dashevo/dpp');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const convertWhereToMongoDbQuery = require('../../../lib/document/mongoDbRepository/convertWhereToMongoDbQuery');
-const validateQueryFactory = require('../../../lib/document/query/validateQueryFactory');
-const findConflictingConditions = require('../../../lib/document/query/findConflictingConditions');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 
-const createDocumentMongoDbRepositoryFactory = require('../../../lib/document/mongoDbRepository/createDocumentMongoDbRepositoryFactory');
-const fetchDocumentsFactory = require('../../../lib/document/fetchDocumentsFactory');
-const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
-const getDocumentDatabaseFactory = require('../../../lib/document/mongoDbRepository/getDocumentDatabaseFactory');
-
-const findNotIndexedFields = require('../../../lib/document/query/findNotIndexedFields');
-const findNotIndexedOrderByFields = require('../../../lib/document/query/findNotIndexedOrderByFields');
-const getIndexedFieldsFromDocumentSchema = require('../../../lib/document/query/getIndexedFieldsFromDocumentSchema');
-
-const MerkDbStore = require('../../../lib/merkDb/MerkDbStore');
+const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
 describe('fetchDocumentsFactory', () => {
-  let createDocumentMongoDbRepository;
   let fetchDocuments;
-  let mongoClient;
   let documentType;
   let contractId;
   let document;
   let dataContractRepository;
+  let documentRepository;
   let dataContract;
-  let dataContractsMerkDbPath;
+  let container;
+  let mongoDb;
 
-  startMongoDb().then((mongoDb) => {
-    mongoClient = mongoDb.getClient();
+  startMongoDb().then((mongo) => {
+    mongoDb = mongo;
   });
 
   beforeEach(async () => {
-    dataContractsMerkDbPath = './db/merkdb-test';
+    container = await createTestDIContainer(mongoDb);
 
-    const dataContractsMerkDb = merk(`${dataContractsMerkDbPath}/${Math.random()}`);
-    const dataContractsStore = new MerkDbStore(dataContractsMerkDb);
-
-    const validateQuery = validateQueryFactory(
-      findConflictingConditions,
-      getIndexedFieldsFromDocumentSchema,
-      findNotIndexedFields,
-      findNotIndexedOrderByFields,
-    );
-
-    const documentsMongoDBPrefix = 'test';
-    const connectToDocumentMongoDB = async () => mongoClient;
-
-    const getDocumentDatabase = getDocumentDatabaseFactory(
-      connectToDocumentMongoDB,
-      documentsMongoDBPrefix,
-    );
-
-    dataContractRepository = new DataContractStoreRepository(
-      dataContractsStore,
-      new DashPlatformProtocol(),
-    );
+    dataContractRepository = container.resolve('dataContractRepository');
+    documentRepository = container.resolve('documentRepository');
 
     dataContract = getDataContractFixture();
 
@@ -86,35 +47,16 @@ describe('fetchDocumentsFactory', () => {
 
     await dataContractRepository.store(dataContract);
 
-    const blockExecutionDBTransactionsMock = {
-      getTransaction: () => ({
-        isStarted: () => false,
-      }),
-    };
-
-    createDocumentMongoDbRepository = createDocumentMongoDbRepositoryFactory(
-      convertWhereToMongoDbQuery,
-      validateQuery,
-      getDocumentDatabase,
-      dataContractRepository,
-      blockExecutionDBTransactionsMock,
-    );
-
-    const dataContractCache = new LRUCache(500);
-
-    fetchDocuments = fetchDocumentsFactory(
-      createDocumentMongoDbRepository,
-      dataContractRepository,
-      dataContractCache,
-    );
+    fetchDocuments = container.resolve('fetchDocuments');
   });
 
   afterEach(async () => {
-    rimraf.sync(dataContractsMerkDbPath);
+    if (container) {
+      await container.dispose();
+    }
   });
 
   it('should fetch Documents for specified contract ID and document type', async () => {
-    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const result = await fetchDocuments(contractId, documentType);
@@ -132,7 +74,6 @@ describe('fetchDocumentsFactory', () => {
 
     expect(result).to.deep.equal([]);
 
-    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const query = { where: [['name', '==', document.get('name')]] };
@@ -147,7 +88,6 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should return empty array for specified contract ID, document type and name not exist', async () => {
-    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const query = { where: [['name', '==', 'unknown']] };
@@ -160,7 +100,6 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch documents by an equal date', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    const documentRepository = await createDocumentMongoDbRepository(contractId, 'indexedDocument');
     await documentRepository.store(indexedDocument);
 
     const query = {
@@ -179,7 +118,6 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch documents by a date range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    const documentRepository = await createDocumentMongoDbRepository(contractId, 'indexedDocument');
     await documentRepository.store(indexedDocument);
 
     const startDate = new Date();
@@ -205,7 +143,6 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch empty array in case date is out of range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    const documentRepository = await createDocumentMongoDbRepository(contractId, 'indexedDocument');
     await documentRepository.store(indexedDocument);
 
     const startDate = new Date();
@@ -245,7 +182,6 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if contract ID does not exist', async () => {
-    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     contractId = generateRandomIdentifier();
@@ -266,8 +202,6 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if type does not exist', async () => {
-    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
-
     await documentRepository.store(document);
 
     documentType = 'Unknown';
@@ -288,7 +222,6 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if searching by non indexed fields', async () => {
-    const documentRepository = await createDocumentMongoDbRepository(contractId, documentType);
     await documentRepository.store(document);
 
     const query = { where: [['lastName', '==', 'unknown']] };

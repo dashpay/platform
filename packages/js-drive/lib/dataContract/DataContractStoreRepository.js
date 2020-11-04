@@ -2,11 +2,11 @@ class DataContractStoreRepository {
   /**
    *
    * @param {MerkDbStore} dataContractsStore
-   * @param {DashPlatformProtocol} noStateDpp
+   * @param {AwilixContainer} container
    */
-  constructor(dataContractsStore, noStateDpp) {
+  constructor(dataContractsStore, container) {
     this.storage = dataContractsStore;
-    this.dpp = noStateDpp;
+    this.container = container;
   }
 
   /**
@@ -40,7 +40,9 @@ class DataContractStoreRepository {
       return null;
     }
 
-    return this.dpp.dataContract.createFromBuffer(
+    const dpp = this.container.resolve(transaction ? 'transactionalDpp' : 'dpp');
+
+    return dpp.dataContract.createFromBuffer(
       encodedDataContract,
       { skipValidation: true },
     );

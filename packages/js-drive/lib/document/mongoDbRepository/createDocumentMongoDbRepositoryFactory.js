@@ -1,13 +1,10 @@
-const Identifier = require('@dashevo/dpp/lib/Identifier');
-const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
-
 const DocumentMongoDbRepository = require('./DocumentMongoDbRepository');
 const InvalidContractIdError = require('../query/errors/InvalidContractIdError');
 
 /**
  * @param {convertWhereToMongoDbQuery} convertWhereToMongoDbQuery
  * @param {validateQuery} validateQuery
- * @param {getDocumentDatabase} getDocumentDatabase
+ * @param {getDocumentDatabase} getDocumentMongoDBDatabase
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @returns {createDocumentMongoDbRepository}
@@ -15,7 +12,7 @@ const InvalidContractIdError = require('../query/errors/InvalidContractIdError')
 function createDocumentMongoDbRepositoryFactory(
   convertWhereToMongoDbQuery,
   validateQuery,
-  getDocumentDatabase,
+  getDocumentMongoDBDatabase,
   dataContractRepository,
   blockExecutionDBTransactions,
 ) {
@@ -23,23 +20,12 @@ function createDocumentMongoDbRepositoryFactory(
    * Create DocumentMongoDbRepository
    *
    * @typedef {Promise} createDocumentMongoDbRepository
-   * @param {Buffer|Identifier} dataContractId
+   * @param {Identifier} dataContractId
    * @param {string} documentType
    * @returns {Promise<DocumentMongoDbRepository>}
    */
   async function createDocumentMongoDbRepository(dataContractId, documentType) {
-    try {
-      // eslint-disable-next-line no-param-reassign
-      dataContractId = new Identifier(dataContractId);
-    } catch (e) {
-      if (e instanceof IdentifierError) {
-        throw new InvalidContractIdError(dataContractId);
-      }
-
-      throw e;
-    }
-
-    const documentsMongoDatabase = await getDocumentDatabase(dataContractId);
+    const documentsMongoDBDatabase = await getDocumentMongoDBDatabase(dataContractId);
 
     // Here we have to retrieve current DB transaction
     // as we have to retrieve data contract to setup MongoDB collection
@@ -57,7 +43,7 @@ function createDocumentMongoDbRepositoryFactory(
     }
 
     return new DocumentMongoDbRepository(
-      documentsMongoDatabase,
+      documentsMongoDBDatabase,
       convertWhereToMongoDbQuery,
       validateQuery,
       dataContract,

@@ -2,11 +2,11 @@ class IdentityStoreRepository {
   /**
    *
    * @param {MerkDbStore} identitiesStore
-   * @param {DashPlatformProtocol} noStateDpp
+   * @param {AwilixContainer} container
    */
-  constructor(identitiesStore, noStateDpp) {
+  constructor(identitiesStore, container) {
     this.storage = identitiesStore;
-    this.dpp = noStateDpp;
+    this.container = container;
   }
 
   /**
@@ -40,7 +40,9 @@ class IdentityStoreRepository {
       return null;
     }
 
-    return this.dpp.identity.createFromBuffer(
+    const dpp = this.container.resolve(transaction ? 'transactionalDpp' : 'dpp');
+
+    return dpp.identity.createFromBuffer(
       encodedIdentity,
       { skipValidation: true },
     );

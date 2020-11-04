@@ -51,12 +51,29 @@ class MerkDbStore {
   }
 
   /**
+   * Delete value by key
+   *
+   * @param {Buffer} key
+   * @param {MerkDbTransaction} [transaction]
+   */
+  delete(key, transaction = undefined) {
+    if (transaction) {
+      transaction.db.delete(key);
+    } else {
+      this.db
+        .batch()
+        .delete(key)
+        .commitSync();
+    }
+  }
+
+  /**
    * Get tree root hash
    *
    * @return {Buffer}
    */
   getRootHash() {
-    return this.db.rootHash();
+    return Buffer.from(this.db.rootHash());
   }
 
   /**

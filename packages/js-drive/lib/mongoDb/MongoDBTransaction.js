@@ -71,6 +71,15 @@ class MongoDBTransaction {
   }
 
   /**
+   * Determine if transaction is currently in progress
+   *
+   * @return {boolean}
+   */
+  isStarted() {
+    return this.isTransactionStarted;
+  }
+
+  /**
    * Run query to mongoDB with transaction
    *
    * @param {Function} transactionFunction

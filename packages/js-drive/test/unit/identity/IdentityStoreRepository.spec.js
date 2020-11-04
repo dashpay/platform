@@ -21,11 +21,17 @@ describe('IdentityStoreRepository', () => {
       .createFromBuffer
       .resolves(identity);
 
+    const containerMock = {
+      resolve() {
+        return dppMock;
+      },
+    };
+
     storeMock = new StoreMock(this.sinon);
 
     transactionMock = {};
 
-    repository = new IdentityStoreRepository(storeMock, dppMock);
+    repository = new IdentityStoreRepository(storeMock, containerMock);
   });
 
   describe('#store', () => {

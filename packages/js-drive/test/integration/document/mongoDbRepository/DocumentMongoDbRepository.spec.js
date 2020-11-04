@@ -2,24 +2,14 @@ const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const Document = require('@dashevo/dpp/lib/document/Document');
 const Identifier = require('@dashevo/dpp/lib/Identifier');
-
-const DocumentMongoDbRepository = require('../../../../lib/document/mongoDbRepository/DocumentMongoDbRepository');
-
-const convertWhereToMongoDbQuery = require('../../../../lib/document/mongoDbRepository/convertWhereToMongoDbQuery');
-const validateQueryFactory = require('../../../../lib/document/query/validateQueryFactory');
-const findConflictingConditions = require('../../../../lib/document/query/findConflictingConditions');
-const MongoDBTransaction = require('../../../../lib/mongoDb/MongoDBTransaction');
 
 const InvalidQueryError = require('../../../../lib/document/errors/InvalidQueryError');
 
-const findNotIndexedFields = require('../../../../lib/document/query/findNotIndexedFields');
-const findNotIndexedOrderByFields = require('../../../../lib/document/query/findNotIndexedOrderByFields');
-const getIndexedFieldsFromDocumentSchema = require('../../../../lib/document/query/getIndexedFieldsFromDocumentSchema');
+const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
 
-function convertToRaw(documents) {
-  return documents.map((d) => d.toObject());
+function getIds(documents) {
+  return documents.map((d) => d.getId());
 }
 
 async function createDocuments(documentRepository, documents) {
@@ -34,18 +24,20 @@ describe('DocumentMongoDbRepository', function main() {
   let documentRepository;
   let document;
   let documents;
-  let mongoDatabase;
-  let mongoClient;
-  let stateViewTransaction;
   let documentSchema;
   let dataContract;
+  let mongoDb;
+  let container;
+  let createDocumentMongoDbRepository;
+  let documentMongoDBTransaction;
 
-  startMongoDb().then((mongoDb) => {
-    mongoDatabase = mongoDb.getDb();
-    mongoClient = mongoDb.getClient();
+  startMongoDb().then((mongo) => {
+    mongoDb = mongo;
   });
 
   beforeEach(async () => {
+    container = await createTestDIContainer(mongoDb);
+
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture(dataContract).slice(0, 5);
 
@@ -131,24 +123,24 @@ describe('DocumentMongoDbRepository', function main() {
       },
     ]);
 
-    const validateQuery = validateQueryFactory(
-      findConflictingConditions,
-      getIndexedFieldsFromDocumentSchema,
-      findNotIndexedFields,
-      findNotIndexedOrderByFields,
-    );
+    createDocumentMongoDbRepository = container.resolve('createDocumentMongoDbRepository');
+    documentMongoDBTransaction = container.resolve('documentMongoDBTransaction');
+    const dataContractRepository = container.resolve('dataContractRepository');
+    const documentDatabaseManager = container.resolve('documentDatabaseManager');
 
-    documentRepository = new DocumentMongoDbRepository(
-      mongoDatabase,
-      convertWhereToMongoDbQuery,
-      validateQuery,
-      dataContract,
+    await dataContractRepository.store(dataContract);
+    await documentDatabaseManager.create(dataContract);
+
+    documentRepository = await createDocumentMongoDbRepository(
+      dataContract.getId(),
       document.getType(),
     );
+  });
 
-    const connectToDocumentMongoDB = async () => mongoClient;
-
-    stateViewTransaction = new MongoDBTransaction(connectToDocumentMongoDB);
+  afterEach(async () => {
+    if (container) {
+      await container.dispose();
+    }
   });
 
   describe('#store', () => {
@@ -157,66 +149,100 @@ describe('DocumentMongoDbRepository', function main() {
     });
 
     it('should store Document', async () => {
-      const result = await documentRepository.find(document.getId());
+      const findQuery = {
+        _id: {
+          $eq: document.getId(),
+        },
+      };
 
-      expect(result).to.be.an.instanceOf(Document);
-      expect(result.toObject()).to.deep.equal(document.toObject());
+      const findOptions = {
+        promoteBuffers: true,
+        projection: {
+          _id: 1,
+        },
+        limit: 100,
+      };
+
+      const result = await documentRepository
+        .mongoCollection
+        .find(findQuery, findOptions)
+        .toArray();
+
+      expect(result).to.have.lengthOf(1);
+      // eslint-disable-next-line no-underscore-dangle
+      const [documentId] = result.map((mongoDbDocument) => new Identifier(mongoDbDocument._id));
+
+      expect(documentId).to.deep.equal(document.getId());
     });
 
     it('should store Document in transaction', async () => {
       await documentRepository.delete(document.getId());
 
-      await stateViewTransaction.start();
+      await documentMongoDBTransaction.start();
 
-      await documentRepository.store(document, stateViewTransaction);
+      await documentRepository.store(document, documentMongoDBTransaction);
 
-      const transactionDocument = await documentRepository
-        .find(document.getId(), stateViewTransaction);
-      const notFoundDocument = await documentRepository.find(document.getId());
+      const transactionDocumentIds = await documentRepository
+        .find({
+          where: [['$id', '==', document.getId()]],
+        }, documentMongoDBTransaction);
+      const notFoundDocument = await documentRepository.find({
+        where: [['$id', '==', document.getId()]],
+      });
 
-      await stateViewTransaction.commit();
+      await documentMongoDBTransaction.commit();
 
-      const createdDocument = await documentRepository.find(document.getId());
+      const createdDocumentIds = await documentRepository.find({
+        where: [['$id', '==', document.getId()]],
+      });
 
-      expect(notFoundDocument).to.be.a('null');
-      expect(transactionDocument).to.be.an.instanceOf(Document);
-      expect(transactionDocument.toObject()).to.deep.equal(document.toObject());
-      expect(createdDocument).to.be.an.instanceOf(Document);
-      expect(createdDocument.toObject()).to.deep.equal(document.toObject());
+      expect(notFoundDocument).to.have.lengthOf(0);
+      expect(transactionDocumentIds).to.have.lengthOf(1);
+
+      const [transactionDocumentId] = transactionDocumentIds;
+
+      expect(transactionDocumentId).to.be.an.instanceOf(Identifier);
+      expect(transactionDocumentId).to.deep.equal(document.getId());
+
+      expect(createdDocumentIds).to.have.lengthOf(1);
+
+      const [createdDocumentId] = createdDocumentIds;
+      expect(createdDocumentId).to.deep.equal(document.getId());
     });
   });
 
-  describe('#fetch', () => {
+  describe('#find', () => {
     beforeEach(async () => {
       await createDocuments(documentRepository, documents);
     });
 
-    it('should fetch Documents', async () => {
-      const result = await documentRepository.fetch();
+    it('should find Document ids', async () => {
+      const documentIds = await documentRepository.find();
 
-      expect(result).to.be.an('array');
-      expect(result).to.have.lengthOf(documents.length);
+      expect(documentIds).to.be.an('array');
+      expect(documentIds).to.have.lengthOf(documents.length);
 
-      const actualRawDocuments = convertToRaw(result);
-      const expectedRawDocuments = convertToRaw(documents);
-
-      expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
+      expect(documentIds).to.have.deep.members(
+        documents.map((doc) => doc.getId()),
+      );
     });
 
-    it('should fetch Documents in transaction', async () => {
-      await stateViewTransaction.start();
+    it('should fetch Document ids in transaction', async () => {
+      await documentMongoDBTransaction.start();
 
-      const result = await documentRepository.fetch({}, {}, stateViewTransaction);
+      const result = await documentRepository.find(
+        {},
+        documentMongoDBTransaction,
+      );
 
-      await stateViewTransaction.commit();
+      await documentMongoDBTransaction.commit();
 
       expect(result).to.be.an('array');
       expect(result).to.have.lengthOf(documents.length);
 
-      const actualRawDocuments = convertToRaw(result);
-      const expectedRawDocuments = convertToRaw(documents);
+      const expectedIds = documents.map((doc) => doc.getId());
 
-      expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
+      expect(result).to.have.deep.members(expectedIds);
     });
 
     it('should throw InvalidQueryError if query is not valid', async () => {
@@ -224,7 +250,7 @@ describe('DocumentMongoDbRepository', function main() {
 
       let error;
       try {
-        await documentRepository.fetch(invalidQuery);
+        await documentRepository.find(invalidQuery);
       } catch (e) {
         error = e;
       }
@@ -234,89 +260,83 @@ describe('DocumentMongoDbRepository', function main() {
     });
 
     describe('where', () => {
-      it('should find Documents using "<" operator', async () => {
+      it('should find Document ids using "<" operator', async () => {
         const query = {
           where: [['order', '<', documents[1].get('order')]],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedDocumentId] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(documents[0].toObject());
+        expect(expectedDocumentId).to.deep.equal(documents[0].getId());
       });
 
-      it('should find Documents using "<=" operator', async () => {
+      it('should find Document ids using "<=" operator', async () => {
         const query = {
           where: [['order', '<=', documents[1].get('order')]],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawDocuments = convertToRaw(result);
+        const expectedIds = getIds(documents.slice(0, 2));
 
-        const expectedRawDocuments = convertToRaw(documents.slice(0, 2));
-
-        expect(actualRawDocuments).to.deep.members(expectedRawDocuments);
+        expect(result).to.deep.members(expectedIds);
       });
 
-      it('should find Documents using "==" operator', async () => {
+      it('should find Document ids using "==" operator', async () => {
         const query = {
           where: [['name', '==', document.get('name')]],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedId] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(document.toObject());
+        expect(expectedId).to.deep.equal(document.getId());
       });
 
-      it('should find Documents using ">" operator', async () => {
+      it('should find Document ids using ">" operator', async () => {
         const query = {
           where: [['order', '>', documents[1].get('order')]],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length - 2);
 
-        const actualRawDocuments = convertToRaw(result);
+        const expectedIds = getIds(documents.splice(2, documents.length));
 
-        const expectedRawDocuments = convertToRaw(documents.splice(2, documents.length));
-
-        expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
+        expect(result).to.have.deep.members(expectedIds);
       });
 
-      it('should find Documents using ">=" operator', async () => {
+      it('should find Document ids using ">=" operator', async () => {
         const query = {
           where: [['order', '>=', documents[1].get('order')]],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length - 1);
 
-        const actualRawDocuments = convertToRaw(result);
-
         documents.shift();
-        const expectedRawDocuments = convertToRaw(documents);
+        const expectedIds = getIds(documents);
 
-        expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
+        expect(result).to.have.deep.members(expectedIds);
       });
 
-      it('should find Documents using "in" operator', async () => {
+      it('should find Document ids using "in" operator', async () => {
         const query = {
           where: [
             ['$id', 'in', [
@@ -326,49 +346,47 @@ describe('DocumentMongoDbRepository', function main() {
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawDocuments = convertToRaw(result);
+        const expectedIds = getIds(documents.slice(0, 2));
 
-        const expectedRawDocuments = convertToRaw(documents.slice(0, 2));
-
-        expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
+        expect(result).to.have.deep.members(expectedIds);
       });
 
-      it('should find Documents using "length" operator', async () => {
+      it('should find Document ids using "length" operator', async () => {
         const query = {
           where: [['arrayWithObjects', 'length', 2]],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedDocumentId] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(documents[1].toObject());
+        expect(expectedDocumentId).to.deep.equal(documents[1].getId());
       });
 
-      it('should find Documents using "startsWith" operator', async () => {
+      it('should find Document ids using "startsWith" operator', async () => {
         const query = {
           where: [['lastName', 'startsWith', 'Swe']],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedDocumentId] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(documents[2].toObject());
+        expect(expectedDocumentId).to.deep.equal(documents[2].getId());
       });
 
-      it('should find Documents using "elementMatch" operator', async () => {
+      it('should find Document ids using "elementMatch" operator', async () => {
         const query = {
           where: [
             ['arrayWithObjects', 'elementMatch', [
@@ -377,50 +395,48 @@ describe('DocumentMongoDbRepository', function main() {
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedDocumentId] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(documents[1].toObject());
+        expect(expectedDocumentId).to.deep.equal(documents[1].getId());
       });
 
-      it('should find Documents using "contains" operator and array value', async () => {
+      it('should find Document ids using "contains" operator and array value', async () => {
         const query = {
           where: [
             ['arrayWithScalar', 'contains', [2, 3]],
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedDocumentId] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(documents[2].toObject());
+        expect(expectedDocumentId).to.deep.equal(documents[2].getId());
       });
 
-      it('should find Documents using "contains" operator and scalar value', async () => {
+      it('should find Document ids using "contains" operator and scalar value', async () => {
         const query = {
           where: [
             ['arrayWithScalar', 'contains', 2],
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(2);
 
-        const actualRawDocuments = convertToRaw(result);
+        const expectedIds = getIds(documents.slice(1, 3));
 
-        const expectedRawDocuments = convertToRaw(documents.slice(1, 3));
-
-        expect(actualRawDocuments).to.have.deep.members(expectedRawDocuments);
+        expect(result).to.have.deep.members(expectedIds);
       });
 
       it('should return empty array if where clause conditions do not match', async () => {
@@ -428,29 +444,29 @@ describe('DocumentMongoDbRepository', function main() {
           where: [['name', '==', 'Dash enthusiast']],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
-        expect(result).to.deep.equal([]);
+        expect(result).to.have.lengthOf(0);
       });
 
-      it('should find Documents by nested object fields', async () => {
+      it('should find Document ids by nested object fields', async () => {
         const query = {
           where: [
             ['arrayWithObjects.item', '==', 2],
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedDocumentIds] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(documents[1].toObject());
+        expect(expectedDocumentIds).to.deep.equal(documents[1].getId());
       });
 
-      it('should return Documents by several conditions', async () => {
+      it('should return Document ids by several conditions', async () => {
         const query = {
           where: [
             ['name', '==', 'Cutie'],
@@ -461,14 +477,14 @@ describe('DocumentMongoDbRepository', function main() {
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(1);
 
-        const [expectedDocument] = result;
+        const [expectedDocumentId] = result;
 
-        expect(expectedDocument.toObject()).to.deep.equal(documents[0].toObject());
+        expect(expectedDocumentId).to.deep.equal(documents[0].getId());
       });
     });
 
@@ -478,7 +494,7 @@ describe('DocumentMongoDbRepository', function main() {
           limit: 1,
         };
 
-        const result = await documentRepository.fetch(options, documentSchema);
+        const result = await documentRepository.find(options);
 
         expect(result).to.be.an('array');
         expect(result).to.have.lengthOf(1);
@@ -497,7 +513,7 @@ describe('DocumentMongoDbRepository', function main() {
           }),
         );
 
-        const result = await documentRepository.fetch();
+        const result = await documentRepository.find();
 
         expect(result).to.be.an('array');
         expect(result).to.have.lengthOf(100);
@@ -505,7 +521,7 @@ describe('DocumentMongoDbRepository', function main() {
     });
 
     describe('startAt', () => {
-      it('should return Documents from 2 document', async () => {
+      it('should return Document ids from 2 document', async () => {
         const query = {
           orderBy: [
             ['order', 'asc'],
@@ -513,19 +529,18 @@ describe('DocumentMongoDbRepository', function main() {
           startAt: 2,
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toObject());
-        const expectedRawDocuments = documents.splice(1).map((d) => d.toObject());
+        const expectedIds = getIds(documents.splice(1));
 
-        expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
+        expect(result).to.deep.equal(expectedIds);
       });
     });
 
     describe('startAfter', () => {
-      it('should return Documents after 1 document', async () => {
+      it('should return Document ids after 1 document', async () => {
         const options = {
           orderBy: [
             ['order', 'asc'],
@@ -533,53 +548,50 @@ describe('DocumentMongoDbRepository', function main() {
           startAfter: 1,
         };
 
-        const result = await documentRepository.fetch(options, documentSchema);
+        const result = await documentRepository.find(options);
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toObject());
-        const expectedRawDocuments = documents.splice(1).map((d) => d.toObject());
+        const expectedIds = getIds(documents.splice(1));
 
-        expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
+        expect(result).to.deep.equal(expectedIds);
       });
     });
 
     describe('orderBy', () => {
-      it('should sort Documents in descending order', async () => {
+      it('should sort Document ids in descending order', async () => {
         const query = {
           orderBy: [
             ['order', 'desc'],
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toObject());
-        const expectedRawDocuments = documents.reverse().map((d) => d.toObject());
+        const expectedIds = getIds(documents.reverse());
 
-        expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
+        expect(result).to.deep.equal(expectedIds);
       });
 
-      it('should sort Documents in ascending order', async () => {
+      it('should sort Document ids in ascending order', async () => {
         const query = {
           orderBy: [
             ['order', 'asc'],
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
 
-        const actualRawDocuments = result.map((d) => d.toObject());
-        const expectedRawDocuments = documents.map((d) => d.toObject());
+        const expectedIds = getIds(documents);
 
-        expect(actualRawDocuments).to.deep.equal(expectedRawDocuments);
+        expect(result).to.deep.equal(expectedIds);
       });
 
-      it('should sort Documents using two fields', async () => {
+      it('should sort Document ids using two fields', async () => {
         documents[0].set('primaryOrder', 1);
         documents[1].set('primaryOrder', 2);
         documents[2].set('primaryOrder', 2);
@@ -597,16 +609,16 @@ describe('DocumentMongoDbRepository', function main() {
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length);
 
-        expect(result[0].toObject()).to.deep.equal(documents[0].toObject());
-        expect(result[1].toObject()).to.deep.equal(documents[2].toObject());
-        expect(result[2].toObject()).to.deep.equal(documents[1].toObject());
-        expect(result[3].toObject()).to.deep.equal(documents[3].toObject());
-        expect(result[4].toObject()).to.deep.equal(documents[4].toObject());
+        expect(result[0]).to.deep.equal(documents[0].getId());
+        expect(result[1]).to.deep.equal(documents[2].getId());
+        expect(result[2]).to.deep.equal(documents[1].getId());
+        expect(result[3]).to.deep.equal(documents[3].getId());
+        expect(result[4]).to.deep.equal(documents[4].getId());
       });
 
       it('should sort Documents by $id', async () => {
@@ -629,16 +641,16 @@ describe('DocumentMongoDbRepository', function main() {
           ],
         };
 
-        const result = await documentRepository.fetch(query, documentSchema);
+        const result = await documentRepository.find(query);
 
         expect(result).to.be.an('array');
         expect(result).to.be.lengthOf(documents.length);
 
-        expect(result[0].toObject()).to.deep.equal(documents[4].toObject());
-        expect(result[1].toObject()).to.deep.equal(documents[3].toObject());
-        expect(result[2].toObject()).to.deep.equal(documents[2].toObject());
-        expect(result[3].toObject()).to.deep.equal(documents[1].toObject());
-        expect(result[4].toObject()).to.deep.equal(documents[0].toObject());
+        expect(result[0]).to.deep.equal(documents[4].getId());
+        expect(result[1]).to.deep.equal(documents[3].getId());
+        expect(result[2]).to.deep.equal(documents[2].getId());
+        expect(result[3]).to.deep.equal(documents[1].getId());
+        expect(result[4]).to.deep.equal(documents[0].getId());
       });
     });
   });
@@ -651,191 +663,88 @@ describe('DocumentMongoDbRepository', function main() {
     it('should delete Document', async () => {
       await documentRepository.delete(document.getId());
 
-      const result = await documentRepository.find(document.getId());
+      const result = await documentRepository.find({
+        where: [['$id', '==', document.getId()]],
+      });
 
-      expect(result).to.be.null();
+      expect(result).to.have.lengthOf(0);
     });
 
     it('should delete Document in transaction', async () => {
-      await stateViewTransaction.start();
+      await documentMongoDBTransaction.start();
 
-      await documentRepository.delete(document.getId(), stateViewTransaction);
+      await documentRepository.delete(
+        document.getId(),
+        documentMongoDBTransaction,
+      );
 
-      const removedDocument = await documentRepository
-        .find(document.getId(), stateViewTransaction);
+      const query = {
+        where: [['$id', '==', document.getId()]],
+      };
 
-      const notRemovedDocument = await documentRepository
-        .find(document.getId());
+      const removedDocumentId = await documentRepository
+        .find(query, documentMongoDBTransaction);
 
-      await stateViewTransaction.commit();
+      const notRemovedDocumentIds = await documentRepository
+        .find(query);
 
-      const completelyRemovedDocument = await documentRepository
-        .find(document.getId());
+      await documentMongoDBTransaction.commit();
 
-      expect(removedDocument).to.be.a('null');
-      expect(notRemovedDocument).to.be.an.instanceOf(Document);
-      expect(notRemovedDocument.toObject()).to.deep.equal(document.toObject());
-      expect(completelyRemovedDocument).to.be.a('null');
+      const completelyRemovedDocumentId = await documentRepository
+        .find(query);
+
+      expect(removedDocumentId).to.have.lengthOf(0);
+      expect(notRemovedDocumentIds).to.be.not.null();
+      expect(notRemovedDocumentIds[0]).to.deep.equal(document.getId());
+      expect(completelyRemovedDocumentId).to.have.lengthOf(0);
     });
 
     it('should restore document if transaction aborted', async () => {
-      await stateViewTransaction.start();
+      await documentMongoDBTransaction.start();
 
-      await documentRepository.delete(document.getId(), stateViewTransaction);
+      await documentRepository.delete(document.getId(), documentMongoDBTransaction);
 
-      const removedDocument = await documentRepository
-        .find(document.getId(), stateViewTransaction);
+      const query = {
+        where: [['$id', '==', document.getId()]],
+      };
 
-      const notRemovedDocument = await documentRepository
-        .find(document.getId());
+      const removedDocumentIds = await documentRepository
+        .find(query, documentMongoDBTransaction);
 
-      await stateViewTransaction.abort();
+      const notRemovedDocumentIds = await documentRepository
+        .find(query);
 
-      const restoredDocument = await documentRepository
-        .find(document.getId());
+      await documentMongoDBTransaction.abort();
 
-      expect(removedDocument).to.be.a('null');
-      expect(notRemovedDocument).to.be.an.instanceOf(Document);
-      expect(notRemovedDocument.toObject()).to.deep.equal(document.toObject());
-      expect(restoredDocument).to.be.an.instanceOf(Document);
-      expect(restoredDocument.toObject()).to.deep.equal(document.toObject());
-    });
-  });
+      const restoredDocumentIds = await documentRepository
+        .find(query);
 
-  describe('#find', () => {
-    beforeEach(async () => {
-      await createDocuments(documentRepository, documents);
-    });
-
-    it('should find Document by ID', async () => {
-      const result = await documentRepository.find(document.getId());
-
-      expect(result).to.be.an.instanceof(Document);
-      expect(result.toObject()).to.deep.equal(document.toObject());
-    });
-
-    it('should return null if Document was not found', async () => {
-      const unknownDocument = await documentRepository.find('unknown');
-
-      expect(unknownDocument).to.be.null();
-    });
-  });
-
-  describe('#createCollection', () => {
-    it('should create collection for Document', async () => {
-      const collectionsBefore = await mongoDatabase.collections();
-      await documentRepository.createCollection();
-      const collectionsAfter = await mongoDatabase.collections();
-
-      expect(collectionsBefore).to.have.lengthOf(0);
-      expect(collectionsAfter).to.have.lengthOf(1);
-      expect(collectionsAfter[0].collectionName).to.equal(documentRepository.getCollectionName());
-    });
-
-    it('should create indices for Document', async () => {
-      const indices = [{
-        key: {
-          name: 1,
-        },
-        unique: true,
-        name: 'index_name',
-      }];
-
-      await documentRepository.createCollection(indices);
-      const indexInformation = await mongoDatabase
-        .collection(documentRepository.getCollectionName())
-        .indexInformation({ full: true });
-
-      expect(indexInformation).to.deep.equal([{
-        v: 2,
-        key: { _id: 1 },
-        name: '_id_',
-        ns: 'test.documents_niceDocument',
-      }, {
-        v: 2,
-        unique: true,
-        key: {
-          name: 1,
-        },
-        partialFilterExpression: {
-          name: {
-            $exists: true,
-          },
-        },
-        name: 'index_name',
-        ns: 'test.documents_niceDocument',
-      }]);
-    });
-  });
-
-  describe('#createIndices', () => {
-    it('should create indices for Document', async () => {
-      const indices = [{
-        key: {
-          name: 1,
-          secondName: -1,
-        },
-        unique: true,
-        name: 'index_name',
-      }];
-
-      await documentRepository.createCollection();
-      let indexInformation = await mongoDatabase
-        .collection(documentRepository.getCollectionName())
-        .indexInformation({ full: true });
-
-      expect(indexInformation).to.deep.equal([{
-        v: 2,
-        key: { _id: 1 },
-        name: '_id_',
-        ns: 'test.documents_niceDocument',
-      }]);
-
-      await documentRepository.createIndices(indices);
-
-      indexInformation = await mongoDatabase
-        .collection(documentRepository.getCollectionName())
-        .indexInformation({ full: true });
-
-      expect(indexInformation).to.deep.equal([{
-        v: 2,
-        key: { _id: 1 },
-        name: '_id_',
-        ns: 'test.documents_niceDocument',
-      }, {
-        v: 2,
-        unique: true,
-        key: {
-          name: 1,
-          secondName: -1,
-        },
-        name: 'index_name',
-        ns: 'test.documents_niceDocument',
-        partialFilterExpression: {
-          name: {
-            $exists: true,
-          },
-          secondName: {
-            $exists: true,
-          },
-        },
-      }]);
+      expect(removedDocumentIds).to.have.lengthOf(0);
+      expect(notRemovedDocumentIds).to.be.not.null();
+      expect(notRemovedDocumentIds[0]).to.deep.equal(document.getId());
+      expect(restoredDocumentIds).to.be.not.null();
+      expect(restoredDocumentIds[0]).to.deep.equal(document.getId());
     });
   });
 
   describe('#removeCollection', () => {
+    let mongoDbDatabase;
+
     beforeEach(async () => {
       await createDocuments(documentRepository, documents);
+
+      const getDocumentMongoDBDatabase = container.resolve('getDocumentMongoDBDatabase');
+
+      mongoDbDatabase = await getDocumentMongoDBDatabase(dataContract.getId());
     });
 
     it('should remove collection for Document', async () => {
-      const collectionsBefore = await mongoDatabase.collections();
+      const collectionsBefore = await mongoDbDatabase.collections();
       const result = await documentRepository.removeCollection();
-      const collectionsAfter = await mongoDatabase.collections();
+      const collectionsAfter = await mongoDbDatabase.collections();
 
       expect(result).to.be.true();
-      expect(collectionsBefore).to.have.lengthOf(1);
-      expect(collectionsAfter).to.have.lengthOf(0);
+      expect(collectionsAfter).to.have.lengthOf(collectionsBefore.length - 1);
     });
   });
 });

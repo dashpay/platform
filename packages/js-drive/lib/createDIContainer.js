@@ -41,8 +41,11 @@ const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrde
 const findNotIndexedFields = require('./document/query/findNotIndexedFields');
 const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
 
+const DocumentDbTransaction = require('./document/DocumentsDbTransaction');
+const DocumentStoreRepository = require('./document/DocumentStoreRepository');
+const DocumentIndexedStoreRepository = require('./document/DocumentIndexedStoreRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
-const getDocumentDatabaseFactory = require('./document/mongoDbRepository/getDocumentDatabaseFactory');
+const getDocumentDatabaseFactory = require('./document/mongoDbRepository/getDocumentMongoDbDatabaseFactory');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 const convertWhereToMongoDbQuery = require('./document/mongoDbRepository/convertWhereToMongoDbQuery');
 const createDocumentMongoDbRepositoryFactory = require('./document/mongoDbRepository/createDocumentMongoDbRepositoryFactory');
@@ -102,6 +105,7 @@ const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
  * @param {string} options.DATA_CONTRACTS_MERK_DB_FILE
+ * @param {string} options.DOCUMENTS_MERK_DB_FILE
  * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
  * @param {string} options.DOCUMENT_MONGODB_URL
  * @param {string} options.CORE_JSON_RPC_HOST
@@ -129,6 +133,13 @@ async function createDIContainer(options) {
   });
 
   /**
+   * Register itself (usually to solve recursive dependencies)
+   */
+  container.register({
+    container: asValue(container),
+  });
+
+  /**
    * Register protocolVersion
    * Define highest supported protocol version
    */
@@ -153,6 +164,7 @@ async function createDIContainer(options) {
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS, 10),
     ),
     dataContractsMerkDBFile: asValue(options.DATA_CONTRACTS_MERK_DB_FILE),
+    documentsMerkDBFile: asValue(options.DOCUMENTS_MERK_DB_FILE),
     documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
     documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
     chainLock: asValue(undefined),
@@ -207,13 +219,6 @@ async function createDIContainer(options) {
         translateTime: true,
       },
     })),
-
-    noStateDpp: asFunction((dppOptions) => (
-      new DashPlatformProtocol({
-        ...dppOptions,
-        stateRepository: undefined,
-      })
-    )).singleton(),
 
     sanitizeUrl: asValue(sanitizeUrl),
     coreZMQClient: asFunction((
@@ -313,6 +318,24 @@ async function createDIContainer(options) {
    * Register Document
    */
   container.register({
+    documentsStore: asFunction((documentsMerkDBFile) => {
+      const merkDb = merk(documentsMerkDBFile);
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        rimraf.sync(container.resolve('documentsMerkDBFile'));
+      }
+    }).singleton(),
+
+    documentStoreRepository: asClass(DocumentStoreRepository).singleton(),
+
+    documentRepository: asClass(DocumentIndexedStoreRepository).singleton(),
+
     connectToDocumentMongoDB: asFunction((documentMongoDBUrl) => (
       connectToMongoDBFactory(documentMongoDBUrl)
     )).singleton(),
@@ -326,18 +349,14 @@ async function createDIContainer(options) {
 
     convertToMongoDbIndices: asValue(convertToMongoDbIndicesFunction),
 
-    getDocumentDatabase: asFunction(getDocumentDatabaseFactory).singleton(),
-    createDocumentRepository: asFunction(createDocumentMongoDbRepositoryFactory).singleton(),
-    documentDatabaseManager: asFunction((
-      createDocumentRepository,
-      convertToMongoDbIndices,
-      getDocumentDatabase,
-    ) => new DocumentDatabaseManager(
-      createDocumentRepository,
-      convertToMongoDbIndices,
-      getDocumentDatabase,
-    )),
-    documentTransaction: asClass(MongoDBTransaction).singleton(),
+    getDocumentMongoDBDatabase: asFunction(getDocumentDatabaseFactory).singleton(),
+    createDocumentMongoDbRepository: asFunction(createDocumentMongoDbRepositoryFactory).singleton(),
+    documentDatabaseManager: asClass(DocumentDatabaseManager),
+    documentMongoDBTransaction: asClass(MongoDBTransaction).singleton(),
+    documentsStoreTransaction: asFunction((documentsStore) => (
+      documentsStore.createTransaction()
+    )).singleton(),
+    documentsDbTransaction: asClass(DocumentDbTransaction).singleton(),
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
   });
 
@@ -398,7 +417,7 @@ async function createDIContainer(options) {
       publicKeyToIdentityIdRepository,
       dataContractRepository,
       fetchDocuments,
-      createDocumentRepository,
+      documentRepository,
       coreRpcClient,
       dataContractCache,
       blockExecutionContext,
@@ -408,7 +427,7 @@ async function createDIContainer(options) {
         publicKeyToIdentityIdRepository,
         dataContractRepository,
         fetchDocuments,
-        createDocumentRepository,
+        documentRepository,
         coreRpcClient,
         blockExecutionContext,
       );
@@ -424,7 +443,7 @@ async function createDIContainer(options) {
       publicKeyToIdentityIdRepository,
       dataContractRepository,
       fetchDocuments,
-      createDocumentRepository,
+      documentRepository,
       coreRpcClient,
       blockExecutionDBTransactions,
       dataContractCache,
@@ -436,7 +455,7 @@ async function createDIContainer(options) {
         publicKeyToIdentityIdRepository,
         dataContractRepository,
         fetchDocuments,
-        createDocumentRepository,
+        documentRepository,
         coreRpcClient,
         blockExecutionContext,
         blockExecutionDBTransactions,
@@ -483,6 +502,13 @@ async function createDIContainer(options) {
 
       return unserializeStateTransitionFactory(createIsolatedDpp);
     }).singleton(),
+
+    dpp: asFunction((stateRepository, dppOptions) => (
+      new DashPlatformProtocol({
+        ...dppOptions,
+        stateRepository,
+      })
+    )).singleton(),
 
     transactionalDpp: asFunction((transactionalStateRepository, dppOptions) => (
       new DashPlatformProtocol({

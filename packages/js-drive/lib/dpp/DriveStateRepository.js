@@ -4,7 +4,7 @@ class DriveStateRepository {
    * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
-   * @param {createDocumentMongoDbRepository} createDocumentRepository
+   * @param {DocumentIndexedStoreRepository} documentRepository
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {BlockExecutionDBTransactions} [blockExecutionDBTransactions]
@@ -14,7 +14,7 @@ class DriveStateRepository {
     publicKeyToIdentityIdRepository,
     dataContractRepository,
     fetchDocuments,
-    createDocumentRepository,
+    documentRepository,
     coreRpcClient,
     blockExecutionContext,
     blockExecutionDBTransactions = undefined,
@@ -23,7 +23,7 @@ class DriveStateRepository {
     this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
-    this.createDocumentRepository = createDocumentRepository;
+    this.documentRepository = documentRepository;
     this.coreRpcClient = coreRpcClient;
     this.blockExecutionDBTransactions = blockExecutionDBTransactions;
     this.blockExecutionContext = blockExecutionContext;
@@ -144,12 +144,7 @@ class DriveStateRepository {
   async storeDocument(document) {
     const transaction = this.getDBTransaction('document');
 
-    const repository = await this.createDocumentRepository(
-      document.getDataContractId(),
-      document.getType(),
-    );
-
-    await repository.store(document, transaction);
+    await this.documentRepository.store(document, transaction);
   }
 
   /**
@@ -163,12 +158,7 @@ class DriveStateRepository {
   async removeDocument(contractId, type, id) {
     const transaction = this.getDBTransaction('document');
 
-    const repository = await this.createDocumentRepository(
-      contractId,
-      type,
-    );
-
-    await repository.delete(id, transaction);
+    await this.documentRepository.delete(contractId, type, id, transaction);
   }
 
   /**
@@ -204,7 +194,7 @@ class DriveStateRepository {
   /**
    * @private
    * @param {string} name
-   * @return {MerkDbTransaction|MongoDBTransaction}
+   * @return {MerkDbTransaction|DocumentsDbTransaction}
    */
   getDBTransaction(name) {
     let transaction;

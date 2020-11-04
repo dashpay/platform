@@ -14,17 +14,17 @@ describe('MerkDbTransaction', () => {
   });
 
   describe('#start', () => {
-    it('should start transaction', () => {
-      merkDBTransaction.start();
+    it('should start transaction', async () => {
+      await merkDBTransaction.start();
 
       expect(merkDBTransaction.db).to.be.instanceOf(MerkDbTransactionWrapper);
     });
 
     it('should throw MerkDBTransactionIsAlreadyStartedError if transaction was started twice', async () => {
-      merkDBTransaction.start();
+      await merkDBTransaction.start();
 
       try {
-        merkDBTransaction.start();
+        await merkDBTransaction.start();
 
         expect.fail('Should throw an MerkDBTransactionIsAlreadyStartedError error');
       } catch (e) {

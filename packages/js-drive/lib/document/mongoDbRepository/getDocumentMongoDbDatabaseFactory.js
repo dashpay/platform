@@ -2,20 +2,20 @@
  *
  * @param {connectToMongoDB} connectToDocumentMongoDB
  * @param {string} documentMongoDBPrefix
- * @return {getDocumentDatabase}
+ * @return {getDocumentMongoDbDatabase}
  */
-function getDocumentDatabaseFactory(connectToDocumentMongoDB, documentMongoDBPrefix) {
+function getDocumentMongoDbDatabaseFactory(connectToDocumentMongoDB, documentMongoDBPrefix) {
   /**
-   * @typedef getDocumentDatabase
+   * @typedef getDocumentMongoDbDatabase
    * @param {Identifier} dataContractId
    * @return {Db}
    */
-  async function getDocumentDatabase(dataContractId) {
+  async function getDocumentMongoDbDatabase(dataContractId) {
     const documentMongoDBClient = await connectToDocumentMongoDB();
     return documentMongoDBClient.db(`${documentMongoDBPrefix}${dataContractId.toString()}`);
   }
 
-  return getDocumentDatabase;
+  return getDocumentMongoDbDatabase;
 }
 
-module.exports = getDocumentDatabaseFactory;
+module.exports = getDocumentMongoDbDatabaseFactory;

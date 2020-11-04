@@ -29,7 +29,7 @@ describe('MerkDbInMemoryDecorator', () => {
       const key = Buffer.from([1, 2, 3]);
       const value = Buffer.from([4, 2]);
 
-      merkDbInMemoryDecorator.data.set(key.toString('hex'), value);
+      merkDbInMemoryDecorator.data.set(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING), value);
 
       const result = merkDbInMemoryDecorator.getSync(key);
 
@@ -47,17 +47,21 @@ describe('MerkDbInMemoryDecorator', () => {
       expect(result).to.deep.equal(value);
     });
 
-    it('should return null if value was removed in transaction', () => {
+    it('should throw "key not found" if value was deleted in transaction', () => {
       const key = Buffer.from([1, 2, 3]);
       const value = null;
 
       merkDBMock.getSync.returns(value);
 
-      merkDbInMemoryDecorator.deleted.add(key.toString('hex'));
+      merkDbInMemoryDecorator.deleted.add(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING));
 
-      const result = merkDbInMemoryDecorator.getSync(key);
+      try {
+        merkDbInMemoryDecorator.getSync(key);
 
-      expect(result).to.deep.equal(value);
+        expect.fail('should throw "key not found" error');
+      } catch (e) {
+        expect(e.message).to.startsWith('key not found');
+      }
     });
   });
 
@@ -66,12 +70,14 @@ describe('MerkDbInMemoryDecorator', () => {
       const key = Buffer.from([1, 2, 3]);
       const value = Buffer.from([4, 2]);
 
-      merkDbInMemoryDecorator.deleted.add(key.toString('hex'));
+      const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
+
+      merkDbInMemoryDecorator.deleted.add(keyString);
 
       merkDbInMemoryDecorator.put(key, value);
 
-      expect(merkDbInMemoryDecorator.deleted.has(key.toString('hex'))).to.be.false();
-      expect(merkDbInMemoryDecorator.data.get(key.toString('hex'))).to.deep.equals(
+      expect(merkDbInMemoryDecorator.deleted.has(keyString)).to.be.false();
+      expect(merkDbInMemoryDecorator.data.get(keyString)).to.deep.equals(
         value,
       );
     });
@@ -82,12 +88,14 @@ describe('MerkDbInMemoryDecorator', () => {
       const key = Buffer.from([1, 2, 3]);
       const value = Buffer.from([4, 2]);
 
-      merkDbInMemoryDecorator.data.set(key.toString('hex'), value);
+      const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
+
+      merkDbInMemoryDecorator.data.set(keyString, value);
 
       merkDbInMemoryDecorator.delete(key);
 
-      expect(merkDbInMemoryDecorator.deleted.has(key.toString('hex'))).to.be.true();
-      expect(merkDbInMemoryDecorator.data.get(key.toString('hex'))).to.be.undefined();
+      expect(merkDbInMemoryDecorator.deleted.has(keyString)).to.be.true();
+      expect(merkDbInMemoryDecorator.data.get(keyString)).to.be.undefined();
       expect(merkDBMock.getSync).to.be.calledOnce();
     });
 
@@ -96,12 +104,14 @@ describe('MerkDbInMemoryDecorator', () => {
 
       const key = Buffer.from([1, 2, 3]);
 
+      const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
+
       merkDBMock.getSync.throws(error);
 
       merkDbInMemoryDecorator.delete(key);
 
-      expect(merkDbInMemoryDecorator.deleted.has(key.toString('hex'))).to.be.false();
-      expect(merkDbInMemoryDecorator.data.get(key.toString('hex'))).to.be.undefined();
+      expect(merkDbInMemoryDecorator.deleted.has(keyString)).to.be.false();
+      expect(merkDbInMemoryDecorator.data.get(keyString)).to.be.undefined();
       expect(merkDBMock.getSync).to.be.calledOnce();
     });
 
@@ -163,8 +173,8 @@ describe('MerkDbInMemoryDecorator', () => {
       const key = Buffer.from([1, 2, 3]);
       const value = Buffer.from([4, 2]);
 
-      merkDbInMemoryDecorator.deleted.add(key.toString('hex'));
-      merkDbInMemoryDecorator.data.set(key.toString('hex'), value);
+      merkDbInMemoryDecorator.deleted.add(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING));
+      merkDbInMemoryDecorator.data.set(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING), value);
 
       merkDbInMemoryDecorator.reset();
 

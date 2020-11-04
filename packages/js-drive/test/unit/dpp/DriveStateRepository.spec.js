@@ -1,6 +1,7 @@
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 
@@ -10,7 +11,7 @@ describe('DriveStateRepository', () => {
   let publicKeyIdentityIdRepositoryMock;
   let dataContractRepositoryMock;
   let fetchDocumentsMock;
-  let createDocumentRepositoryMock;
+  let documentsRepositoryMock;
   let coreRpcClientMock;
   let blockExecutionDBTransactionsMock;
   let id;
@@ -24,7 +25,7 @@ describe('DriveStateRepository', () => {
     identity = getIdentityFixture();
     documents = getDocumentsFixture();
     dataContract = getDataContractFixture();
-    id = 'id';
+    id = generateRandomIdentifier();
 
     coreRpcClientMock = {
       getRawTransaction: this.sinon.stub(),
@@ -51,7 +52,11 @@ describe('DriveStateRepository', () => {
 
     fetchDocumentsMock = this.sinon.stub();
 
-    createDocumentRepositoryMock = this.sinon.stub();
+    documentsRepositoryMock = {
+      store: this.sinon.stub(),
+      find: this.sinon.stub(),
+      delete: this.sinon.stub(),
+    };
 
     blockExecutionContextMock = {
       getHeader: this.sinon.stub(),
@@ -62,7 +67,7 @@ describe('DriveStateRepository', () => {
       publicKeyIdentityIdRepositoryMock,
       dataContractRepositoryMock,
       fetchDocumentsMock,
-      createDocumentRepositoryMock,
+      documentsRepositoryMock,
       coreRpcClientMock,
       blockExecutionContextMock,
       blockExecutionDBTransactionsMock,
@@ -195,54 +200,45 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchDocuments', () => {
     it('should fetch documents from repository', async () => {
-      const contractId = 'id';
       const type = 'documentType';
       const options = {};
 
       fetchDocumentsMock.resolves(documents);
 
-      const result = await stateRepository.fetchDocuments(contractId, type, options);
+      const result = await stateRepository.fetchDocuments(id, type, options);
 
       expect(result).to.equal(documents);
-      expect(fetchDocumentsMock).to.be.calledOnceWith(contractId, type, options, transactionMock);
+      expect(fetchDocumentsMock).to.be.calledOnceWith(id, type, options, transactionMock);
       expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('document');
     });
   });
 
   describe('#storeDocument', () => {
-    it('should store document in repository', async function it() {
-      const storeMock = this.sinon.stub();
-      createDocumentRepositoryMock.resolves({
-        store: storeMock,
-      });
-
+    it('should store document in repository', async () => {
       const [document] = documents;
       await stateRepository.storeDocument(document);
 
       expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('document');
-      expect(createDocumentRepositoryMock).to.be.calledOnceWith(
-        document.getDataContractId(),
-        document.getType(),
-      );
-      expect(storeMock).to.be.calledOnceWith(document, transactionMock);
+
+      expect(documentsRepositoryMock.store).to.be.calledOnceWith(document, transactionMock);
     });
   });
 
   describe('#removeDocument', () => {
-    it('should delete document from repository', async function it() {
-      const contractId = 'contractId';
+    it('should delete document from repository', async () => {
+      const contractId = generateRandomIdentifier();
       const type = 'documentType';
-
-      const deleteMock = this.sinon.stub();
-      createDocumentRepositoryMock.resolves({
-        delete: deleteMock,
-      });
 
       await stateRepository.removeDocument(contractId, type, id);
 
       expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('document');
-      expect(createDocumentRepositoryMock).to.be.calledOnceWith(contractId, type);
-      expect(deleteMock).to.be.calledOnceWith(id, transactionMock);
+
+      expect(documentsRepositoryMock.delete).to.be.calledOnceWith(
+        contractId,
+        type,
+        id,
+        transactionMock,
+      );
     });
   });
 

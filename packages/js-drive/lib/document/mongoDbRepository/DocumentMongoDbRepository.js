@@ -1,8 +1,11 @@
-const Document = require('@dashevo/dpp/lib/document/Document');
+const Identifier = require('@dashevo/dpp/lib/Identifier');
+
+const lodashPick = require('lodash.pick');
 
 const convertFieldName = require('./convertFieldName');
 
 const InvalidQueryError = require('../errors/InvalidQueryError');
+const getIndexedFieldsFromDocumentSchema = require('../query/getIndexedFieldsFromDocumentSchema');
 
 class DocumentMongoDbRepository {
   /**
@@ -62,41 +65,7 @@ class DocumentMongoDbRepository {
   }
 
   /**
-   * Find Document by ID
-   *
-   * @param {string} id
-   * @param {MongoDBTransaction} [transaction]
-   * @returns {Promise<Document>}
-   */
-  async find(id, transaction = undefined) {
-    const findQuery = { _id: id };
-    const findOptions = {
-      promoteBuffers: true, // Automatically convert Blob to Buffer
-    };
-
-    let result;
-    if (transaction) {
-      const transactionFunction = async (mongoClient, session) => (
-        mongoClient
-          .db(this.databaseName)
-          .collection(this.collectionName)
-          .findOne(findQuery, { ...findOptions, session })
-      );
-
-      result = await transaction.runWithTransaction(transactionFunction);
-    } else {
-      result = await this.mongoCollection.findOne(findQuery, findOptions);
-    }
-
-    if (!result) {
-      return null;
-    }
-
-    return this.createDppDocument(result);
-  }
-
-  /**
-   * Fetch Documents
+   * Find document IDs by query
    *
    * @param [query]
    * @param [query.where]
@@ -104,14 +73,14 @@ class DocumentMongoDbRepository {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
-   * @param {Object} [documentSchema]
    * @param {MongoDBTransaction} [transaction]
    *
-   * @returns {Promise<Document[]>}
+   * @returns {Promise<Identifier[]>}
    * @throws {InvalidQueryError}
    */
+  async find(query = {}, transaction = undefined) {
+    const documentSchema = this.dataContract.getDocumentSchema(this.documentType);
 
-  async fetch(query = {}, documentSchema = {}, transaction = undefined) {
     const result = this.validateQuery(query, documentSchema);
 
     if (!result.isValid()) {
@@ -121,6 +90,7 @@ class DocumentMongoDbRepository {
     let findQuery = {};
     let findOptions = {
       promoteBuffers: true, // Automatically convert Blob to Buffer
+      projection: { _id: 1 },
     };
 
     // Prepare find query
@@ -166,7 +136,8 @@ class DocumentMongoDbRepository {
       results = await this.mongoCollection.find(findQuery, findOptions).toArray();
     }
 
-    return results.map((document) => this.createDppDocument(document));
+    // eslint-disable-next-line no-underscore-dangle
+    return results.map((mongoDbDocument) => new Identifier(mongoDbDocument._id));
   }
 
   /**
@@ -245,16 +216,23 @@ class DocumentMongoDbRepository {
    *   revision: number,
    *   createdAt?: Date,
    *   updatedAt?: Date,
-   *   data: object
+   *   data: Object
    * }}
    */
   createMongoDBDocument(document) {
+    const documentSchema = this.dataContract.getDocumentSchema(document.getType());
+    const documentIndexedProperties = getIndexedFieldsFromDocumentSchema(documentSchema)
+      .map((properties) => properties.map((property) => Object.keys(property)[0])).flat();
+
+    const uniqueDocumentIndexedDataProperties = [...new Set(documentIndexedProperties)]
+      .filter((field) => !field.startsWith('$'));
+
     const result = {
       _id: document.getId(),
       ownerId: document.getOwnerId(),
       revision: document.getRevision(),
       protocolVersion: document.getProtocolVersion(),
-      data: document.getData(),
+      data: lodashPick(document.toObject(), uniqueDocumentIndexedDataProperties),
     };
 
     const createdAt = document.getCreatedAt();
@@ -268,47 +246,6 @@ class DocumentMongoDbRepository {
     }
 
     return result;
-  }
-
-  /**
-   * @private
-   * @param {{
-   * _id: Buffer,
-   * ownerId: Buffer,
-   * revision: number,
-   * createdAt?: Date,
-   * updatedAt?: Date,
-   * data: object}} mongoDBDocument
-   * @return {Document}
-   */
-  createDppDocument({
-    _id,
-    ownerId,
-    revision,
-    createdAt,
-    updatedAt,
-    protocolVersion,
-    data,
-  }) {
-    const rawDocument = {
-      $id: _id,
-      $type: this.documentType,
-      $dataContractId: this.dataContract.getId(),
-      $ownerId: ownerId,
-      $revision: revision,
-      $protocolVersion: protocolVersion,
-      ...data,
-    };
-
-    if (createdAt) {
-      rawDocument.$createdAt = createdAt.getTime();
-    }
-
-    if (updatedAt) {
-      rawDocument.$updatedAt = updatedAt.getTime();
-    }
-
-    return new Document(rawDocument, this.dataContract);
   }
 
   /**
