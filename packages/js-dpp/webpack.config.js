@@ -8,6 +8,9 @@ const commonJSConfig = {
     library: 'DashPlatformProtocol',
     libraryTarget: 'umd',
   },
+  node: {
+    fs: 'empty',
+  },
   module: {
     rules: [
       {
