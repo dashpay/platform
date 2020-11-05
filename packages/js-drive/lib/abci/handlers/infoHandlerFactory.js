@@ -9,9 +9,10 @@ const { version: driveVersion } = require('../../../package');
 /**
  * @param {ChainInfo} chainInfo
  * @param {Number} protocolVersion
+ * @param {RootTree} rootTree
  * @return {infoHandler}
  */
-function infoHandlerFactory(chainInfo, protocolVersion) {
+function infoHandlerFactory(chainInfo, protocolVersion, rootTree) {
   /**
    * Info ABCI handler
    *
@@ -24,7 +25,7 @@ function infoHandlerFactory(chainInfo, protocolVersion) {
       version: driveVersion,
       appVersion: protocolVersion,
       lastBlockHeight: chainInfo.getLastBlockHeight(),
-      lastBlockAppHash: chainInfo.getLastBlockAppHash(),
+      lastBlockAppHash: rootTree.getRootHash(),
     });
   }
 

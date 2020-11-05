@@ -43,12 +43,10 @@ class ChainInfoCommonStoreRepository {
 
     const {
       lastBlockHeight,
-      lastBlockAppHash,
     } = cbor.decode(chainInfoEncoded);
 
     return new ChainInfo(
       Long.fromString(lastBlockHeight),
-      lastBlockAppHash,
     );
   }
 }

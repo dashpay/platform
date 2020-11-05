@@ -30,17 +30,26 @@ const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
 const MerkDbStore = require('./merkDb/MerkDbStore');
-const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
+const RootTree = require('./rootTree/RootTree');
+const CommonStoreRootTreeLeaf = require('./rootTree/CommonStoreRootTreeLeaf');
 
+const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
+const IdentitiesStoreRootTreeLeaf = require('./identity/IdentitiesStoreRootTreeLeaf');
 const PublicKeyToIdentityIdStoreRepository = require(
   './identity/PublicKeyToIdentityIdStoreRepository',
 );
+const PublicKeyToIdentityIdStoreRootTreeLeaf = require(
+  './identity/PublicKeyToIdentityIdStoreRootTreeLeaf',
+);
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
+const DataContractsStoreRootTreeLeaf = require('./dataContract/DataContractsStoreRootTreeLeaf');
+
 const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrderByFields');
 const findNotIndexedFields = require('./document/query/findNotIndexedFields');
 const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
 
+const DocumentsStoreRootTreeLeaf = require('./document/DocumentsStoreRootTreeLeaf');
 const DocumentDbTransaction = require('./document/DocumentsDbTransaction');
 const DocumentStoreRepository = require('./document/DocumentStoreRepository');
 const DocumentIndexedStoreRepository = require('./document/DocumentIndexedStoreRepository');
@@ -98,14 +107,14 @@ const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
- * @param {string} options.COMMON_MERK_DB_FILE
+ * @param {string} options.COMMON_STORE_MERK_DB_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
- * @param {string} options.IDENTITIES_MERK_DB_FILE
- * @param {string} options.PUBLIC_KEY_TO_IDENTITY_MERK_DB_FILE
+ * @param {string} options.IDENTITIES_STORE_MERK_DB_FILE
+ * @param {string} options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
- * @param {string} options.DATA_CONTRACTS_MERK_DB_FILE
- * @param {string} options.DOCUMENTS_MERK_DB_FILE
+ * @param {string} options.DATA_CONTRACTS_STORE_MERK_DB_FILE
+ * @param {string} options.DOCUMENTS_STORE_MERK_DB_FILE
  * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
  * @param {string} options.DOCUMENT_MONGODB_URL
  * @param {string} options.CORE_JSON_RPC_HOST
@@ -153,18 +162,19 @@ async function createDIContainer(options) {
   container.register({
     abciHost: asValue(options.ABCI_HOST),
     abciPort: asValue(options.ABCI_PORT),
-    commonMerkDBFile: asValue(options.COMMON_MERK_DB_FILE),
+    commonStoreMerkDBFile: asValue(options.COMMON_STORE_MERK_DB_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
-    publicKeyToIdentityIdMerkDbFile: asValue(options.PUBLIC_KEY_TO_IDENTITY_MERK_DB_FILE),
-    identitiesMerkDBFile: asValue(options.IDENTITIES_MERK_DB_FILE),
+    publicKeyToIdentityIdStoreMerkDBFile:
+      asValue(options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE),
+    identitiesStoreMerkDBFile: asValue(options.IDENTITIES_STORE_MERK_DB_FILE),
     isolatedSTUnserializationMemoryLimit: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT, 10),
     ),
     isolatedSTUnserializationTimeout: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS, 10),
     ),
-    dataContractsMerkDBFile: asValue(options.DATA_CONTRACTS_MERK_DB_FILE),
-    documentsMerkDBFile: asValue(options.DOCUMENTS_MERK_DB_FILE),
+    dataContractsStoreMerkDBFile: asValue(options.DATA_CONTRACTS_STORE_MERK_DB_FILE),
+    documentsStoreMerkDBFile: asValue(options.DOCUMENTS_STORE_MERK_DB_FILE),
     documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
     documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
     chainLock: asValue(undefined),
@@ -204,8 +214,6 @@ async function createDIContainer(options) {
    */
   container.register({
     latestCoreChainLock: asClass(LatestCoreChainLock).singleton(),
-  });
-  container.register({
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
   });
 
@@ -250,8 +258,8 @@ async function createDIContainer(options) {
    * Register Identity
    */
   container.register({
-    publicKeyToIdentityIdStore: asFunction((publicKeyToIdentityIdMerkDbFile) => {
-      const merkDb = merk(publicKeyToIdentityIdMerkDbFile);
+    publicKeyToIdentityIdStore: asFunction((publicKeyToIdentityIdStoreMerkDBFile) => {
+      const merkDb = merk(publicKeyToIdentityIdStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
@@ -260,12 +268,14 @@ async function createDIContainer(options) {
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('publicKeyToIdentityIdMerkDbFile'));
+        rimraf.sync(container.resolve('publicKeyToIdentityIdStoreMerkDBFile'));
       }
     }).singleton(),
 
-    identitiesStore: asFunction((identitiesMerkDBFile) => {
-      const merkDb = merk(identitiesMerkDBFile);
+    publicKeyToIdentityIdStoreRootTreeLeaf: asClass(PublicKeyToIdentityIdStoreRootTreeLeaf),
+
+    identitiesStore: asFunction((identitiesStoreMerkDBFile) => {
+      const merkDb = merk(identitiesStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
@@ -274,9 +284,11 @@ async function createDIContainer(options) {
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('identitiesMerkDBFile'));
+        rimraf.sync(container.resolve('identitiesStoreMerkDBFile'));
       }
     }).singleton(),
+
+    identitiesStoreRootTreeLeaf: asClass(IdentitiesStoreRootTreeLeaf).singleton(),
 
     identityRepository: asClass(IdentityStoreRepository).singleton(),
     identitiesTransaction: asFunction((identitiesStore) => (
@@ -290,8 +302,8 @@ async function createDIContainer(options) {
    * Register Data Contract
    */
   container.register({
-    dataContractsStore: asFunction((dataContractsMerkDBFile) => {
-      const merkDb = merk(dataContractsMerkDBFile);
+    dataContractsStore: asFunction((dataContractsStoreMerkDBFile) => {
+      const merkDb = merk(dataContractsStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
@@ -300,9 +312,11 @@ async function createDIContainer(options) {
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('dataContractsMerkDBFile'));
+        rimraf.sync(container.resolve('dataContractsStoreMerkDBFile'));
       }
     }).singleton(),
+
+    dataContractsStoreRootTreeLeaf: asClass(DataContractsStoreRootTreeLeaf).singleton(),
 
     dataContractRepository: asClass(DataContractStoreRepository).singleton(),
     dataContractsTransaction: asFunction((dataContractsStore) => (
@@ -318,8 +332,8 @@ async function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    documentsStore: asFunction((documentsMerkDBFile) => {
-      const merkDb = merk(documentsMerkDBFile);
+    documentsStore: asFunction((documentsStoreMerkDBFile) => {
+      const merkDb = merk(documentsStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
@@ -328,11 +342,13 @@ async function createDIContainer(options) {
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('documentsMerkDBFile'));
+        rimraf.sync(container.resolve('documentsStoreMerkDBFile'));
       }
     }).singleton(),
 
     documentStoreRepository: asClass(DocumentStoreRepository).singleton(),
+
+    documentsStoreRootTreeLeaf: asClass(DocumentsStoreRootTreeLeaf).singleton(),
 
     documentRepository: asClass(DocumentIndexedStoreRepository).singleton(),
 
@@ -361,11 +377,11 @@ async function createDIContainer(options) {
   });
 
   /**
-   * Register common store
+   * Register chain info
    */
   container.register({
-    commonStore: asFunction((commonMerkDBFile) => {
-      const merkDb = merk(commonMerkDBFile);
+    commonStore: asFunction((commonStoreMerkDBFile) => {
+      const merkDb = merk(commonStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
@@ -374,9 +390,11 @@ async function createDIContainer(options) {
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('commonMerkDBFile'));
+        rimraf.sync(container.resolve('commonStoreMerkDBFile'));
       }
     }).singleton(),
+
+    commonStoreRootTreeLeaf: asClass(CommonStoreRootTreeLeaf).singleton(),
 
     chainInfoRepository: asClass(ChainInfoCommonStoreRepository).singleton(),
   });
@@ -394,6 +412,27 @@ async function createDIContainer(options) {
   container.register({
     blockExecutionDBTransactions: asClass(BlockExecutionDBTransactions).singleton(),
     blockExecutionContext: asClass(BlockExecutionContext).singleton(),
+  });
+
+  /**
+   * Register root tree
+   */
+  container.register({
+    rootTree: asFunction((
+      commonStoreRootTreeLeaf,
+      identitiesStoreRootTreeLeaf,
+      publicKeyToIdentityIdStoreRootTreeLeaf,
+      dataContractsStoreRootTreeLeaf,
+      documentsStoreRootTreeLeaf,
+    ) => (
+      new RootTree([
+        commonStoreRootTreeLeaf,
+        identitiesStoreRootTreeLeaf,
+        publicKeyToIdentityIdStoreRootTreeLeaf,
+        dataContractsStoreRootTreeLeaf,
+        documentsStoreRootTreeLeaf,
+      ])
+    )).singleton(),
   });
 
   /**

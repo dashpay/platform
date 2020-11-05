@@ -4,16 +4,13 @@ class ChainInfo {
   /**
    *
    * @param {Long} [lastBlockHeight]
-   * @param {Buffer} [lastBlockAppHash]
    * @param {number} [creditsDistributionPool]
    */
   constructor(
     lastBlockHeight = Long.fromInt(0),
-    lastBlockAppHash = Buffer.alloc(0),
     creditsDistributionPool = 0,
   ) {
     this.lastBlockHeight = lastBlockHeight;
-    this.lastBlockAppHash = lastBlockAppHash;
     this.creditsDistributionPool = creditsDistributionPool;
   }
 
@@ -34,27 +31,6 @@ class ChainInfo {
    */
   setLastBlockHeight(blockHeight) {
     this.lastBlockHeight = blockHeight;
-
-    return this;
-  }
-
-  /**
-   * Get last block app hash
-   *
-   * @return {Buffer}
-   */
-  getLastBlockAppHash() {
-    return this.lastBlockAppHash;
-  }
-
-  /**
-   * Set last block app hash
-   *
-   * @param {Buffer} appHash
-   * @return {ChainInfo}
-   */
-  setLastBlockAppHash(appHash) {
-    this.lastBlockAppHash = appHash;
 
     return this;
   }
@@ -85,14 +61,12 @@ class ChainInfo {
    *
    * @return {{
    *    lastBlockHeight: string,
-   *    lastBlockAppHash: Buffer,
    *    creditsDistributionPool: number,
    * }}
    */
   toJSON() {
     return {
       lastBlockHeight: this.getLastBlockHeight().toString(),
-      lastBlockAppHash: this.getLastBlockAppHash(),
       creditsDistributionPool: this.getCreditsDistributionPool(),
     };
   }

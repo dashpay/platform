@@ -9,7 +9,6 @@ describe('ChainInfoCommonStoreRepository', () => {
   let repository;
   let chainInfo;
   let lastBlockHeight;
-  let lastBlockAppHash;
 
   beforeEach(function beforeEach() {
     commonStoreMock = {
@@ -20,9 +19,8 @@ describe('ChainInfoCommonStoreRepository', () => {
     repository = new ChainInfoCommonStoreRepository(commonStoreMock);
 
     lastBlockHeight = Long.fromInt(42);
-    lastBlockAppHash = Buffer.from('something');
 
-    chainInfo = new ChainInfo(lastBlockHeight, lastBlockAppHash);
+    chainInfo = new ChainInfo(lastBlockHeight);
   });
 
   describe('#store', () => {
@@ -46,7 +44,6 @@ describe('ChainInfoCommonStoreRepository', () => {
       expect(result).to.be.instanceOf(ChainInfo);
       expect(result.getLastBlockHeight()).to.be.instanceOf(Long);
       expect(result.getLastBlockHeight().toInt()).to.equal(0);
-      expect(result.getLastBlockAppHash()).to.deep.equal(Buffer.alloc(0));
 
       expect(commonStoreMock.get).to.be.calledOnceWithExactly(
         ChainInfoCommonStoreRepository.COMMON_STORE_KEY_NAME,
@@ -63,7 +60,6 @@ describe('ChainInfoCommonStoreRepository', () => {
       expect(result).to.be.instanceOf(ChainInfo);
       expect(result.getLastBlockHeight()).to.be.instanceOf(Long);
       expect(result.getLastBlockHeight()).to.deep.equal(lastBlockHeight);
-      expect(result.getLastBlockAppHash()).to.deep.equal(lastBlockAppHash);
 
       expect(commonStoreMock.get).to.be.calledOnceWithExactly(
         ChainInfoCommonStoreRepository.COMMON_STORE_KEY_NAME,

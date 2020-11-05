@@ -17,11 +17,11 @@ async function createTestDIContainer(mongoDB, dashCore = undefined) {
   return createDIContainer({
     ...process.env,
     DOCUMENT_MONGODB_URL: documentMongoDBUrl,
-    COMMON_MERK_DB_FILE: `./db/common-merkdb-test/${Math.random()}`,
-    DATA_CONTRACTS_MERK_DB_FILE: `./db/data-contracts-merkdb-test/${Math.random()}`,
-    DOCUMENTS_MERK_DB_FILE: `./db/documents-merkdb-test/${Math.random()}`,
-    IDENTITIES_MERK_DB_FILE: `./db/identities-merkdb-test/${Math.random()}`,
-    PUBLIC_KEY_TO_IDENTITY_MERK_DB_FILE: `./db/public-key-to-identity-id-merkdb-test/${Math.random()}`,
+    COMMON_STORE_MERK_DB_FILE: `./db/common-merkdb-test/${Math.random()}`,
+    DATA_CONTRACTS_STORE_MERK_DB_FILE: `./db/data-contracts-merkdb-test/${Math.random()}`,
+    DOCUMENTS_STORE_MERK_DB_FILE: `./db/documents-merkdb-test/${Math.random()}`,
+    IDENTITIES_STORE_MERK_DB_FILE: `./db/identities-merkdb-test/${Math.random()}`,
+    PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE: `./db/public-key-to-identity-id-merkdb-test/${Math.random()}`,
     ...coreOptions,
   });
 }

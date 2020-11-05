@@ -10,6 +10,7 @@ const {
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {DocumentDatabaseManager} documentDatabaseManager
+ * @param {RootTree} rootTree
  * @param {BaseLogger} logger
  *
  * @return {commitHandler}
@@ -20,6 +21,7 @@ function commitHandlerFactory(
   blockExecutionDBTransactions,
   blockExecutionContext,
   documentDatabaseManager,
+  rootTree,
   logger,
 ) {
   /**
@@ -34,10 +36,6 @@ function commitHandlerFactory(
 
     logger.info(`Block commit #${blockHeight}`);
 
-    // We don't build state tree for now
-    // so appHash always empty
-    const appHash = Buffer.alloc(0);
-
     try {
       // Create document databases for dataContracts created in the current block
       for (const dataContract of blockExecutionContext.getDataContracts()) {
@@ -47,13 +45,12 @@ function commitHandlerFactory(
       // Commit DB transactions
       await blockExecutionDBTransactions.commit();
 
-      // Update blockchain state
-      chainInfo.setLastBlockAppHash(appHash);
-
       // Store ST fees from the block to distribution pool
       chainInfo.setCreditsDistributionPool(blockExecutionContext.getAccumulativeFees());
 
       await chainInfoRepository.store(chainInfo);
+
+      rootTree.rebuild();
     } catch (e) {
       // Abort DB transactions
       await blockExecutionDBTransactions.abort();
@@ -69,7 +66,7 @@ function commitHandlerFactory(
     }
 
     return new ResponseCommit({
-      data: appHash,
+      data: rootTree.getRootHash(),
     });
   }
 

@@ -8,6 +8,8 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 const commitHandlerFactory = require('../../../../lib/abci/handlers/commitHandlerFactory');
 
+const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
+
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionDBTransactionsMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
@@ -21,6 +23,7 @@ describe('commitHandlerFactory', () => {
   let dataContract;
   let chainInfoMock;
   let accumulativeFees;
+  let rootTreeMock;
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
@@ -50,6 +53,9 @@ describe('commitHandlerFactory', () => {
       drop: this.sinon.stub(),
     };
 
+    rootTreeMock = new RootTreeMock(this.sinon);
+    rootTreeMock.getRootHash.returns(appHash);
+
     const loggerMock = {
       debug: this.sinon.stub(),
       info: this.sinon.stub(),
@@ -61,6 +67,7 @@ describe('commitHandlerFactory', () => {
       blockExecutionDBTransactionsMock,
       blockExecutionContextMock,
       documentsDatabaseManagerMock,
+      rootTreeMock,
       loggerMock,
     );
   });
@@ -77,14 +84,17 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionDBTransactionsMock.commit).to.be.calledOnce();
 
-    expect(chainInfoMock.setLastBlockAppHash).to.be.calledOnceWith(appHash);
-
     expect(chainInfoMock.setCreditsDistributionPool).to.be.calledOnceWith(accumulativeFees);
 
     expect(blockExecutionContextMock.getAccumulativeFees).to.be.calledOnce();
 
     expect(chainInfoRepositoryMock.store).to.be.calledOnceWith(chainInfoMock);
+
+    expect(rootTreeMock.rebuild).to.be.calledOnce();
+
     expect(blockExecutionContextMock.reset).to.be.calledOnce();
+
+    expect(rootTreeMock.getRootHash).to.be.calledOnce();
   });
 
   it('should throw error and abort DB transactions if can\'t store chain info', async () => {
