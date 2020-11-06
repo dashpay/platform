@@ -16,7 +16,7 @@ class SimplifiedMasternodeList {
    */
   applyDiffs(smlDiffs) {
     if (!this.store) {
-      this.store = new SimplifiedMNListStore(smlDiffs, this.options);
+      this.store = new SimplifiedMNListStore([...smlDiffs], this.options);
     } else {
       smlDiffs.forEach((diff) => {
         this.store.addDiff(diff);
