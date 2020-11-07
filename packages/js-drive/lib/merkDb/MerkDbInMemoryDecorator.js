@@ -83,18 +83,33 @@ class MerkDbInMemoryDecorator {
     let batch = this.db.batch();
 
     // store values
-    for (const [keyString, value] of this.data) {
-      const keyBuffer = Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING);
+    // keys must be sorted and unique
+    // https://github.com/nomic-io/merk/blob/f6c4024c5bae3f0400d965aaf058e76aa94162b8/src/merk/mod.rs#L122
+    [...this.data.entries()]
+      .map(([keyString, value]) => {
+        const keyBuffer = Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING);
 
-      batch = batch.put(keyBuffer, value);
-    }
+        return [keyBuffer, value];
+      })
+      .sort((a, b) => {
+        const [keyBufferA] = a;
+        const [keyBufferB] = b;
+
+        return Buffer.compare(keyBufferA, keyBufferB);
+      })
+      .forEach(([keyBuffer, value]) => {
+        batch = batch.put(keyBuffer, value);
+      });
 
     // remove keys
-    for (const keyString of this.deleted) {
-      const keyBuffer = Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING);
-
-      batch = batch.delete(keyBuffer);
-    }
+    // keys must be sorted and unique
+    // https://github.com/nomic-io/merk/blob/f6c4024c5bae3f0400d965aaf058e76aa94162b8/src/merk/mod.rs#L122
+    [...this.deleted]
+      .map((keyString) => Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING))
+      .sort(Buffer.compare)
+      .forEach((keyBuffer) => {
+        batch = batch.delete(keyBuffer);
+      });
 
     // commit
     batch.commitSync();

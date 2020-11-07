@@ -134,12 +134,29 @@ describe('MerkDbInMemoryDecorator', () => {
 
   describe('#persist', () => {
     it('should persist in memory data to merk db', () => {
-      const keyToAdd = Buffer.from([1, 2, 3]);
-      const keyToRemove = Buffer.from([1, 2, 3]);
-      const valueToAdd = Buffer.from([4, 2]);
+      const keysToRemove = [
+        Buffer.from([3, 3, 3]),
+        Buffer.from([1, 1, 1]),
+        Buffer.from([2, 2, 2]),
+      ];
+      const keysToAdd = [
+        Buffer.from([6, 6, 6]),
+        Buffer.from([4, 4, 4]),
+        Buffer.from([5, 5, 5]),
+      ];
+      const valuesToAdd = [
+        Buffer.from([1, 1]),
+        Buffer.from([2, 2]),
+        Buffer.from([3, 3]),
+      ];
 
-      merkDbInMemoryDecorator.data.set(keyToAdd.toString('hex'), valueToAdd);
-      merkDbInMemoryDecorator.deleted.add(keyToRemove.toString('hex'));
+      keysToRemove.forEach((keyToRemove) => {
+        merkDbInMemoryDecorator.deleted.add(keyToRemove.toString('hex'));
+      });
+
+      merkDbInMemoryDecorator.data.set(keysToAdd[0].toString('hex'), valuesToAdd[0]);
+      merkDbInMemoryDecorator.data.set(keysToAdd[1].toString('hex'), valuesToAdd[1]);
+      merkDbInMemoryDecorator.data.set(keysToAdd[2].toString('hex'), valuesToAdd[2]);
 
       merkDbInMemoryDecorator.persist();
 
@@ -147,9 +164,17 @@ describe('MerkDbInMemoryDecorator', () => {
       expect(merkDbInMemoryDecorator.deleted.size).to.be.equal(0);
 
       expect(merkDBMock.batch).to.be.calledOnce();
-      expect(batchMock.put).to.be.calledOnce();
-      expect(batchMock.delete).to.be.calledOnce();
+      expect(batchMock.put).to.be.calledThrice();
+      expect(batchMock.delete).to.be.calledThrice();
       expect(batchMock.commitSync).to.be.calledOnce();
+
+      expect(batchMock.put.getCall(0).args).to.have.deep.members([keysToAdd[1], valuesToAdd[1]]);
+      expect(batchMock.put.getCall(1).args).to.have.deep.members([keysToAdd[2], valuesToAdd[2]]);
+      expect(batchMock.put.getCall(2).args).to.have.deep.members([keysToAdd[0], valuesToAdd[0]]);
+
+      expect(batchMock.delete.getCall(0).args).to.have.deep.members([keysToRemove[1]]);
+      expect(batchMock.delete.getCall(1).args).to.have.deep.members([keysToRemove[2]]);
+      expect(batchMock.delete.getCall(2).args).to.have.deep.members([keysToRemove[0]]);
     });
 
     it('should skip persisting if nothing to persist', async () => {
