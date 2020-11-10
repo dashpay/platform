@@ -6,11 +6,9 @@ const {
   asValue,
 } = require('awilix');
 
-const rimraf = require('rimraf');
-
 const Long = require('long');
 
-const merk = require('merk');
+const Merk = require('@dashevo/merk');
 
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
@@ -259,32 +257,34 @@ async function createDIContainer(options) {
    */
   container.register({
     publicKeyToIdentityIdStore: asFunction((publicKeyToIdentityIdStoreMerkDBFile) => {
-      const merkDb = merk(publicKeyToIdentityIdStoreMerkDBFile);
+      const merkDb = new Merk(publicKeyToIdentityIdStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
+      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('publicKeyToIdentityIdStoreMerkDBFile'));
+        merkDb.db.destroy();
       }
     }).singleton(),
 
     publicKeyToIdentityIdStoreRootTreeLeaf: asClass(PublicKeyToIdentityIdStoreRootTreeLeaf),
 
     identitiesStore: asFunction((identitiesStoreMerkDBFile) => {
-      const merkDb = merk(identitiesStoreMerkDBFile);
+      const merkDb = new Merk(identitiesStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
+      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('identitiesStoreMerkDBFile'));
+        merkDb.db.destroy();
       }
     }).singleton(),
 
@@ -303,16 +303,17 @@ async function createDIContainer(options) {
    */
   container.register({
     dataContractsStore: asFunction((dataContractsStoreMerkDBFile) => {
-      const merkDb = merk(dataContractsStoreMerkDBFile);
+      const merkDb = new Merk(dataContractsStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
+      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('dataContractsStoreMerkDBFile'));
+        merkDb.db.destroy();
       }
     }).singleton(),
 
@@ -333,16 +334,17 @@ async function createDIContainer(options) {
    */
   container.register({
     documentsStore: asFunction((documentsStoreMerkDBFile) => {
-      const merkDb = merk(documentsStoreMerkDBFile);
+      const merkDb = new Merk(documentsStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
+      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('documentsStoreMerkDBFile'));
+        merkDb.db.destroy();
       }
     }).singleton(),
 
@@ -381,16 +383,17 @@ async function createDIContainer(options) {
    */
   container.register({
     commonStore: asFunction((commonStoreMerkDBFile) => {
-      const merkDb = merk(commonStoreMerkDBFile);
+      const merkDb = new Merk(commonStoreMerkDBFile);
 
       return new MerkDbStore(merkDb);
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
+      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
-        rimraf.sync(container.resolve('commonStoreMerkDBFile'));
+        merkDb.db.destroy();
       }
     }).singleton(),
 

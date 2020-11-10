@@ -1,20 +1,17 @@
-const rimraf = require('rimraf');
-const merk = require('merk');
+const Merk = require('@dashevo/merk');
 
 const MerkDbStore = require('../../../lib/merkDb/MerkDbStore');
 
 const MerkDbTransaction = require('../../../lib/merkDb/MerkDbTransaction');
 
 describe('MerkDbStore', () => {
-  let dbPath;
   let merkDb;
   let store;
   let key;
   let value;
 
   beforeEach(() => {
-    dbPath = './db/merkdb-test';
-    merkDb = merk(`${dbPath}/${Math.random()}`);
+    merkDb = new Merk('./db/merkdb-test');
 
     store = new MerkDbStore(merkDb);
 
@@ -22,8 +19,9 @@ describe('MerkDbStore', () => {
     value = Buffer.alloc(32).fill(2);
   });
 
-  after(async () => {
-    rimraf.sync(dbPath);
+  afterEach(async () => {
+    merkDb.close();
+    merkDb.destroy();
   });
 
   describe('#put', () => {
