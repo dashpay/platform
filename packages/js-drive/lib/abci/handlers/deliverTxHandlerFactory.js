@@ -59,7 +59,7 @@ function deliverTxHandlerFactory(
       if (e instanceof InvalidArgumentAbciError) {
         logger.info('State transition structure is invalid');
         logger.debug({
-          errors: e.getErrors(),
+          error: e,
         });
       }
 

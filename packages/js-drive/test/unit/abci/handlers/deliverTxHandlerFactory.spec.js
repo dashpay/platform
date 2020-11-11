@@ -171,4 +171,23 @@ describe('deliverTxHandlerFactory', () => {
       expect(blockExecutionContextMock.incrementAccumulativeFees).to.not.be.called();
     }
   });
+
+  it('should throw InvalidArgumentAbciError if a state transition structure is not valid', async () => {
+    const errorMessage = 'Invalid structure';
+    const error = new InvalidArgumentAbciError(errorMessage);
+
+    unserializeStateTransitionMock.throws(error);
+
+    try {
+      await deliverTxHandler(documentRequest);
+
+      expect.fail('should throw InvalidArgumentAbciError error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidArgumentAbciError);
+      expect(e.getMessage()).to.equal(errorMessage);
+      expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
+      expect(blockExecutionContextMock.incrementAccumulativeFees).to.not.be.called();
+      expect(dppMock.stateTransition.validateData).to.not.be.called();
+    }
+  });
 });
