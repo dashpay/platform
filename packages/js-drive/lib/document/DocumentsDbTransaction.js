@@ -10,7 +10,7 @@ class DocumentsDbTransaction {
     this.storeTransaction = documentsStoreTransaction;
     this.mongoDbTransaction = documentMongoDBTransaction;
 
-    this.isStarted = false;
+    this.transactionIsStarted = false;
   }
 
   /**
@@ -37,14 +37,14 @@ class DocumentsDbTransaction {
    * @return {Promise<void>}
    */
   async start() {
-    if (this.isStarted) {
+    if (this.isStarted()) {
       throw new DocumentsDBTransactionIsAlreadyStartedError();
     }
 
     await this.storeTransaction.start();
     await this.mongoDbTransaction.start();
 
-    this.isStarted = true;
+    this.transactionIsStarted = true;
   }
 
   /**
@@ -53,12 +53,14 @@ class DocumentsDbTransaction {
    * @return {Promise<void>}
    */
   async commit() {
-    if (!this.isStarted) {
+    if (!this.isStarted()) {
       throw new DocumentsDBTransactionIsNotStartedError();
     }
 
     await this.mongoDbTransaction.commit();
     await this.storeTransaction.commit();
+
+    this.transactionIsStarted = false;
   }
 
   /**
@@ -67,10 +69,23 @@ class DocumentsDbTransaction {
    * @return {Promise<void>}
    */
   async abort() {
+    if (!this.isStarted()) {
+      throw new DocumentsDBTransactionIsNotStartedError();
+    }
+
     await this.mongoDbTransaction.abort();
     await this.storeTransaction.abort();
 
-    this.isStarted = false;
+    this.transactionIsStarted = false;
+  }
+
+  /**
+   * Determine if transaction is currently in progress
+   *
+   * @return {boolean}
+   */
+  isStarted() {
+    return this.transactionIsStarted;
   }
 }
 
