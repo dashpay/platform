@@ -1,9 +1,6 @@
 const LatestCoreChainLock = require('../../../lib/core/LatestCoreChainLock');
 
 describe('LatestCoreChainLock', () => {
-  beforeEach(() => {
-  });
-
   describe('#constructor', () => {
     it('should instantiate', () => {
       const latestCoreChainLock = new LatestCoreChainLock();

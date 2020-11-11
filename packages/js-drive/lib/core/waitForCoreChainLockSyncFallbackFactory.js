@@ -58,7 +58,7 @@ function waitForCoreChainLockSyncFallbackFactory(
 
       latestCoreChainLock.update(socketChainLock);
 
-      logger.debug(socketChainLock.toJSON(), 'Updated latestCoreChanLock');
+      logger.debug(socketChainLock.toJSON(), 'Updated latestCoreChainLock');
 
       if (resolveFirstBlockFromZMQPromise) {
         resolveFirstBlockFromZMQPromise();

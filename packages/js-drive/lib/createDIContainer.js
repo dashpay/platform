@@ -25,8 +25,6 @@ const pino = require('pino');
 const sanitizeUrl = require('./util/sanitizeUrl');
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 
-const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
-
 const MerkDbStore = require('./merkDb/MerkDbStore');
 const RootTree = require('./rootTree/RootTree');
 const CommonStoreRootTreeLeaf = require('./rootTree/CommonStoreRootTreeLeaf');
@@ -83,6 +81,8 @@ const documentQueryHandlerFactory = require('./abci/handlers/query/documentQuery
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
 
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
+const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
+
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 
 const errorHandler = require('./errorHandler');
@@ -99,6 +99,8 @@ const waitForCoreChainLockSyncFallbackFactory = require('./core/waitForCoreChain
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegtestModeFactory');
 const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
+const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
+const decodeChainLock = require('./core/decodeChainLock');
 
 /**
  *
@@ -175,7 +177,6 @@ async function createDIContainer(options) {
     documentsStoreMerkDBFile: asValue(options.DOCUMENTS_STORE_MERK_DB_FILE),
     documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
     documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
-    chainLock: asValue(undefined),
     coreJsonRpcHost: asValue(options.CORE_JSON_RPC_HOST),
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
     coreJsonRpcUsername: asValue(options.CORE_JSON_RPC_USERNAME),
@@ -211,8 +212,9 @@ async function createDIContainer(options) {
    * Register Core related
    */
   container.register({
-    latestCoreChainLock: asClass(LatestCoreChainLock).singleton(),
+    latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
+    decodeChainLock: asValue(decodeChainLock),
   });
 
   /**
@@ -594,6 +596,7 @@ async function createDIContainer(options) {
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
     identityIdsByPublicKeyHashesQueryHandler:
       asFunction(identityIdsByPublicKeyHashesQueryHandlerFactory).singleton(),
+    verifyChainLockQueryHandler: asFunction(verifyChainLockQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
       identityQueryHandler,
@@ -601,6 +604,7 @@ async function createDIContainer(options) {
       documentQueryHandler,
       identitiesByPublicKeyHashesQueryHandler,
       identityIdsByPublicKeyHashesQueryHandler,
+      verifyChainLockQueryHandler,
     ) => {
       const router = findMyWay({
         ignoreTrailingSlash: true,
@@ -611,6 +615,7 @@ async function createDIContainer(options) {
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
       router.on('GET', '/identities/by-public-key-hash/id', identityIdsByPublicKeyHashesQueryHandler);
+      router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler);
 
       return router;
     }).singleton(),

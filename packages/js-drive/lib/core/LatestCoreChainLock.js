@@ -5,7 +5,7 @@ class LatestCoreChainLock extends EventEmitter {
    *
    * @param {ChainLock} [chainLock]
    */
-  constructor(chainLock) {
+  constructor(chainLock = undefined) {
     super();
 
     this.chainLock = chainLock;
