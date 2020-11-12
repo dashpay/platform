@@ -17,7 +17,7 @@ services:
 addons:
   apt:
     packages:
-      - docker-ce
+      - docker.io
       - jq
 
 env:
