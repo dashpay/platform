@@ -21,6 +21,13 @@ class AbstractRootTreeLeaf {
   getHash() {
     throw new Error('Is not implemented');
   }
+
+  /**
+   * @abstract
+   */
+  getProof() {
+    throw new Error('Is not implemented');
+  }
 }
 
 module.exports = AbstractRootTreeLeaf;

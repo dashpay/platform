@@ -84,6 +84,16 @@ class MerkDbStore {
   createTransaction() {
     return new MerkDbTransaction(this.db);
   }
+
+  /**
+   * Get proof for array of keys
+   *
+   * @param {Array<Buffer>} keys
+   * @return {Buffer}
+   */
+  getProof(keys) {
+    return this.db.proveSync(keys);
+  }
 }
 
 module.exports = MerkDbStore;

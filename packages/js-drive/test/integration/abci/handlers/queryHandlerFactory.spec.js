@@ -26,6 +26,7 @@ describe('queryHandlerFactory', function main() {
   let dataContract;
   let documents;
   let identity;
+  let proof;
 
   before(async () => {
     mongoDB = await startMongoDb();
@@ -36,6 +37,8 @@ describe('queryHandlerFactory', function main() {
   });
 
   beforeEach(async function beforeEach() {
+    proof = Buffer.from('843176bc004504d6baf735cf0215e9d9a3fecf1d', 'hex');
+
     container = await createTestDIContainer(mongoDB);
 
     dataContract = getDataContractFixture();
@@ -43,7 +46,10 @@ describe('queryHandlerFactory', function main() {
     identity = getIdentityFixture();
 
     identityQueryHandlerMock = this.sinon.stub();
-    identityQueryHandlerMock.resolves(identity);
+    identityQueryHandlerMock.resolves({
+      value: identity,
+      proof,
+    });
 
     dataContractQueryHandlerMock = this.sinon.stub();
     dataContractQueryHandlerMock.resolves(dataContract);
@@ -65,12 +71,13 @@ describe('queryHandlerFactory', function main() {
   });
 
   describe('/identities', () => {
-    it('should call identity handler and return an identity', async () => {
+    it('should call identity handler and return an identity with proof', async () => {
       const result = await queryHandler({
         path: '/identities',
         data: cbor.encode({
           id: 1,
         }),
+        prove: 'true',
       });
 
       expect(identityQueryHandlerMock).to.have.been.calledOnceWithExactly(
@@ -81,9 +88,14 @@ describe('queryHandlerFactory', function main() {
           data: cbor.encode({
             id: 1,
           }),
+          prove: 'true',
         },
       );
-      expect(result).to.deep.equal(identity);
+
+      expect(result).to.deep.equal({
+        value: identity,
+        proof,
+      });
     });
   });
 

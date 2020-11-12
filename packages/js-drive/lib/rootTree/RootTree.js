@@ -1,6 +1,7 @@
 const { MerkleTree } = require('merkletreejs');
 
 const hashFunction = require('./hashFunction');
+const convertRootTreeProofToBuffer = require('./convertRootTreeProofToBuffer');
 
 const InvalidLeafIndexError = require('./errors/InvalidLeafIndexError');
 
@@ -27,18 +28,40 @@ class RootTree {
    * @return {Buffer}
    */
   getRootHash() {
-    return this.tree.getRoot();
+    const leafHashesAreEmpty = this.leafHashes.find(
+      (hash) => !hash.equals(Buffer.alloc(hash.length)),
+    ) === undefined;
+
+    return leafHashesAreEmpty ? Buffer.alloc(0) : this.tree.getRoot();
   }
 
   /**
    *
    * @param {AbstractRootTreeLeaf} leaf
-   * @return {Array.<{left:number, right:number, data: Buffer}>}
+   * @return {Buffer}
    */
   getProof(leaf) {
     const hash = this.leafHashes[leaf.getIndex()];
 
-    return this.tree.getProof(hash);
+    return convertRootTreeProofToBuffer(this.tree.getProof(hash));
+  }
+
+  /**
+   *
+   * @param {AbstractRootTreeLeaf} leaf
+   * @param {Array<Buffer>} leafKeys
+   * @return {Object} proof
+   * @return {Buffer} proof.rootTreeProof
+   * @return {Buffer} proof.storeTreeProof
+   */
+  getFullProof(leaf, leafKeys) {
+    const storeTreeProof = leaf.getProof(leafKeys);
+    const rootTreeProof = this.getProof(leaf);
+
+    return {
+      rootTreeProof,
+      storeTreeProof,
+    };
   }
 
   /**

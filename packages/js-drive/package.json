@@ -68,7 +68,7 @@
     "@dashevo/dashd-rpc": "^2.0.2",
     "@dashevo/dashd-zmq": "^1.0.1",
     "@dashevo/dpp": "~0.17.0-dev.2",
-    "@dashevo/merk": "github:dashevo/node-merk#musl-build",
+    "@dashevo/merk": "github:dashevo/node-merk",
     "abci": "^5.0.1",
     "ajv": "^6.10.0",
     "ajv-keywords": "^3.5.2",

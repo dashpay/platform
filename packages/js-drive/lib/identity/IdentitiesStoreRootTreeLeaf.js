@@ -18,6 +18,16 @@ class IdentitiesStoreRootTreeLeaf extends AbstractRootTreeLeaf {
   getHash() {
     return this.identitiesStore.getRootHash();
   }
+
+  /**
+   * Get proof for leaf keys
+   *
+   * @param {Array<Buffer>} leafKeys
+   * @return {Buffer}
+   */
+  getProof(leafKeys) {
+    return this.identitiesStore.getProof(leafKeys);
+  }
 }
 
 IdentitiesStoreRootTreeLeaf.INDEX = 1;

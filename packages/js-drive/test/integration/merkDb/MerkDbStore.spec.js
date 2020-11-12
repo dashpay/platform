@@ -177,4 +177,21 @@ describe('MerkDbStore', () => {
       expect(result).to.be.instanceOf(MerkDbTransaction);
     });
   });
+
+  describe('#getProof', () => {
+    beforeEach(() => {
+      merkDb.batch()
+        .put(key, value)
+        .put(Buffer.alloc(1), Buffer.alloc(1))
+        .commitSync();
+    });
+
+    it('should return a proof', async () => {
+      const result = store.getProof([key]);
+
+      expect(result).to.be.deep.equal(
+        Buffer.from('0119fa9955a06bc5cd46918709596e488ba2e8d96d032001010101010101010101010101010101010101010101010101010101010101012000020202020202020202020202020202020202020202020202020202020202020210', 'hex'),
+      );
+    });
+  });
 });
