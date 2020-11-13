@@ -23,14 +23,24 @@ describe('documentQueryHandlerFactory', () => {
   let params;
   let data;
   let options;
+  let rootTreeMock;
+  let documentsStoreRootTreeLeafMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
 
     fetchDocumentsMock = this.sinon.stub();
 
+    rootTreeMock = {
+      getFullProof: this.sinon.stub(),
+    };
+
+    documentsStoreRootTreeLeafMock = this.sinon.stub();
+
     documentQueryHandler = documentQueryHandlerFactory(
       fetchDocumentsMock,
+      rootTreeMock,
+      documentsStoreRootTreeLeafMock,
     );
 
     params = {};
@@ -55,17 +65,48 @@ describe('documentQueryHandlerFactory', () => {
   it('should return serialized documents', async () => {
     fetchDocumentsMock.resolves(documents);
 
-    const result = await documentQueryHandler(params, data);
+    const result = await documentQueryHandler(params, data, {});
 
     expect(fetchDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
-    const documentsResponse = cbor.encode(
-      documents.map((document) => document.toBuffer()),
-    );
+    const value = {
+      data: documents.map((document) => document.toBuffer()),
+    };
 
-    expect(result.value).to.deep.equal(documentsResponse);
+    expect(result.value).to.deep.equal(cbor.encode(value));
+    expect(rootTreeMock.getFullProof).to.be.not.called();
+  });
+
+  it('should return serialized documents with proof', async () => {
+    const proof = {
+      rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
+      storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
+    };
+
+    fetchDocumentsMock.resolves(documents);
+    rootTreeMock.getFullProof.returns(proof);
+
+    const result = await documentQueryHandler(params, data, { prove: 'true' });
+
+    expect(fetchDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    const value = {
+      data: documents.map((document) => document.toBuffer()),
+      proof,
+    };
+
+    const documentIds = documents.map((document) => document.getId());
+
+    expect(result.value).to.deep.equal(cbor.encode(value));
+    expect(rootTreeMock.getFullProof).to.be.calledOnce();
+    expect(rootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
+      documentsStoreRootTreeLeafMock,
+      documentIds,
+    ]);
   });
 
   it('should throw InvalidArgumentAbciError on invalid query', async () => {
@@ -75,7 +116,7 @@ describe('documentQueryHandlerFactory', () => {
     fetchDocumentsMock.throws(queryError);
 
     try {
-      await documentQueryHandler(params, data);
+      await documentQueryHandler(params, data, {});
 
       expect.fail('should throw InvalidArgumentAbciError');
     } catch (e) {
@@ -92,7 +133,7 @@ describe('documentQueryHandlerFactory', () => {
     fetchDocumentsMock.throws(error);
 
     try {
-      await documentQueryHandler(params, data);
+      await documentQueryHandler(params, data, {});
 
       expect.fail('should throw any error');
     } catch (e) {

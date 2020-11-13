@@ -12,9 +12,15 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 /**
  *
  * @param {fetchDocuments} fetchDocuments
+ * @param {RootTree} rootTree
+ * @param {DocumentsStoreRootTreeLeaf} documentsStoreRootTreeLeaf
  * @return {documentQueryHandler}
  */
-function documentQueryHandlerFactory(fetchDocuments) {
+function documentQueryHandlerFactory(
+  fetchDocuments,
+  rootTree,
+  documentsStoreRootTreeLeaf,
+) {
   /**
    * @typedef documentQueryHandler
    * @param {Object} params
@@ -26,6 +32,8 @@ function documentQueryHandlerFactory(fetchDocuments) {
    * @param {string} [data.limit]
    * @param {string} [data.startAfter]
    * @param {string} [data.startAt]
+   * @param {Object} request
+   * @param {boolean} [request.prove]
    * @return {Promise<ResponseQuery>}
    */
   async function documentQueryHandler(
@@ -39,6 +47,7 @@ function documentQueryHandlerFactory(fetchDocuments) {
       startAfter,
       startAt,
     },
+    request,
   ) {
     let documents;
 
@@ -61,9 +70,21 @@ function documentQueryHandlerFactory(fetchDocuments) {
       throw e;
     }
 
+    const includeProof = request.prove === 'true';
+
+    const value = {
+      data: documents.map((document) => document.toBuffer()),
+    };
+
+    if (includeProof) {
+      const documentIds = documents.map((document) => document.getId());
+
+      value.proof = rootTree.getFullProof(documentsStoreRootTreeLeaf, documentIds);
+    }
+
     return new ResponseQuery({
       value: await cbor.encodeAsync(
-        documents.map((document) => document.toBuffer()),
+        value,
       ),
     });
   }
