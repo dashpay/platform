@@ -22,6 +22,8 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
   let identityIds;
   let identityIdsByPublicKeyHashes;
   let maxIdentitiesPerRequest;
+  let rootTreeMock;
+  let publicKeyToIdentityIdStoreRootTreeLeafMock;
 
   beforeEach(function beforeEach() {
     publicKeyIdentityIdRepositoryMock = {
@@ -30,9 +32,17 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
     maxIdentitiesPerRequest = 5;
 
+    rootTreeMock = {
+      getFullProof: this.sinon.stub(),
+    };
+
+    publicKeyToIdentityIdStoreRootTreeLeafMock = this.sinon.stub();
+
     identityIdsByPublicKeyHashesQueryHandler = identityIdsByPublicKeyHashesQueryHandlerFactory(
       publicKeyIdentityIdRepositoryMock,
       maxIdentitiesPerRequest,
+      rootTreeMock,
+      publicKeyToIdentityIdStoreRootTreeLeafMock,
     );
 
     publicKeyHashes = [
@@ -72,10 +82,12 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     identityIdsByPublicKeyHashesQueryHandler = identityIdsByPublicKeyHashesQueryHandlerFactory(
       publicKeyIdentityIdRepositoryMock,
       maxIdentitiesPerRequest,
+      rootTreeMock,
+      publicKeyToIdentityIdStoreRootTreeLeafMock,
     );
 
     try {
-      await identityIdsByPublicKeyHashesQueryHandler(params, data);
+      await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
       expect.fail('Error was not thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
@@ -89,7 +101,7 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     const params = {};
     const data = { publicKeyHashes };
 
-    const result = await identityIdsByPublicKeyHashesQueryHandler(params, data);
+    const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
 
     expect(publicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
       publicKeyHashes.length,
@@ -107,8 +119,55 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
       publicKeyHashes[2],
     ]);
 
+    const value = await cbor.encodeAsync({
+      data: identityIdsByPublicKeyHashes,
+    });
+
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
-    expect(result.value).to.deep.equal(await cbor.encodeAsync(identityIdsByPublicKeyHashes));
+    expect(result.value).to.deep.equal(value);
+  });
+
+  it('should return identity id map with proof', async () => {
+    const params = {};
+    const data = { publicKeyHashes };
+    const proof = {
+      rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
+      storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
+    };
+
+    rootTreeMock.getFullProof.returns(proof);
+
+    const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, { prove: 'true' });
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
+      publicKeyHashes.length,
+    );
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+      publicKeyHashes[0],
+    ]);
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+      publicKeyHashes[1],
+    ]);
+
+    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
+      publicKeyHashes[2],
+    ]);
+
+    const value = await cbor.encodeAsync({
+      data: identityIdsByPublicKeyHashes,
+      proof,
+    });
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+    expect(result.value).to.deep.equal(value);
+    expect(rootTreeMock.getFullProof).to.be.calledOnce();
+    expect(rootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
+      publicKeyToIdentityIdStoreRootTreeLeafMock,
+      publicKeyHashes,
+    ]);
   });
 });

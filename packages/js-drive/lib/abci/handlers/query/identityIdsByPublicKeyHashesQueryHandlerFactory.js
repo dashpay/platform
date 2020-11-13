@@ -12,20 +12,26 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  *
  * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
  * @param {number} maxIdentitiesPerRequest
+ * @param {RootTree} rootTree
+ * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} publicKeyToIdentityIdStoreRootTreeLeaf
  * @return {identityIdsByPublicKeyHashesQueryHandler}
  */
 function identityIdsByPublicKeyHashesQueryHandlerFactory(
   publicKeyToIdentityIdRepository,
   maxIdentitiesPerRequest,
+  rootTree,
+  publicKeyToIdentityIdStoreRootTreeLeaf,
 ) {
   /**
    * @typedef identityIdsByPublicKeyHashesQueryHandler
    * @param {Object} params
    * @param {Object} data
    * @param {Buffer[]} data.publicKeyHashes
+   * @param {Object} request
+   * @param {boolean} [request.prove]
    * @return {Promise<ResponseQuery>}
    */
-  async function identityIdsByPublicKeyHashesQueryHandler(params, { publicKeyHashes }) {
+  async function identityIdsByPublicKeyHashesQueryHandler(params, { publicKeyHashes }, request) {
     if (publicKeyHashes && publicKeyHashes.length > maxIdentitiesPerRequest) {
       throw new InvalidArgumentAbciError(
         `Maximum number of ${maxIdentitiesPerRequest} requested items exceeded.`, {
@@ -33,6 +39,8 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
         },
       );
     }
+
+    const includeProof = request.prove === 'true';
 
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => {
@@ -46,8 +54,19 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
       }),
     );
 
+    const value = {
+      data: identityIds,
+    };
+
+    if (includeProof) {
+      value.proof = rootTree.getFullProof(
+        publicKeyToIdentityIdStoreRootTreeLeaf,
+        publicKeyHashes,
+      );
+    }
+
     return new ResponseQuery({
-      value: await cbor.encodeAsync(identityIds),
+      value: await cbor.encodeAsync(value),
     });
   }
 
