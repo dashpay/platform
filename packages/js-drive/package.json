@@ -89,6 +89,7 @@
     "lru-cache": "^5.1.1",
     "merkletreejs": "^0.2.10",
     "mongodb": "^3.5.5",
+    "node-graceful-shutdown": "^1.1.0",
     "pino": "^6.4.0",
     "pino-pretty": "^4.0.3",
     "rimraf": "^3.0.2",

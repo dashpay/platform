@@ -85,7 +85,7 @@ const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verify
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 
-const errorHandler = require('./errorHandler');
+const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
 const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory');
@@ -629,7 +629,7 @@ async function createDIContainer(options) {
     queryHandler: asFunction(queryHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
-    errorHandler: asValue(errorHandler),
+    errorHandler: asFunction(() => errorHandlerFactory(container)),
 
     abciHandlers: asFunction((
       infoHandler,

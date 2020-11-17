@@ -1,13 +1,24 @@
 require('dotenv-expand')(require('dotenv-safe').config());
 
 const createServer = require('abci');
+const { onShutdown } = require('node-graceful-shutdown');
 
 const createDIContainer = require('../lib/createDIContainer');
 
-const errorHandler = require('../lib/errorHandler');
+const errorHandlerFactory = require('../lib/errorHandlerFactory');
 
 (async function main() {
   const container = await createDIContainer(process.env);
+
+  const errorHandler = errorHandlerFactory(container);
+
+  process
+    .on('unhandledRejection', errorHandler)
+    .on('uncaughtException', errorHandler);
+
+  onShutdown('abci', async () => {
+    await container.dispose();
+  });
 
   const logger = container.resolve('logger');
 
@@ -58,7 +69,3 @@ const errorHandler = require('../lib/errorHandler');
 
   logger.info(`Drive ABCI is listening on port ${container.resolve('abciPort')}`);
 }());
-
-process
-  .on('unhandledRejection', errorHandler)
-  .on('uncaughtException', errorHandler);
