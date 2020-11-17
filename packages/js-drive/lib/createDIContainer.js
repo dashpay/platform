@@ -296,6 +296,9 @@ async function createDIContainer(options) {
     identitiesTransaction: asFunction((identitiesStore) => (
       identitiesStore.createTransaction()
     )).singleton(),
+    publicKeyToIdentityIdTransaction: asFunction((publicKeyToIdentityIdStore) => (
+      publicKeyToIdentityIdStore.createTransaction()
+    )).singleton(),
 
     publicKeyToIdentityIdRepository: asClass(PublicKeyToIdentityIdStoreRepository).singleton(),
   });

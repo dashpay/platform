@@ -4,12 +4,19 @@ class BlockExecutionDBTransactions {
    * @param {MerkDbTransaction} identitiesTransaction
    * @param {DocumentsDbTransaction} documentsDbTransaction
    * @param {MerkDbTransaction} dataContractsTransaction
+   * @param {MerkDbTransaction} publicKeyToIdentityIdTransaction
    */
-  constructor(identitiesTransaction, documentsDbTransaction, dataContractsTransaction) {
+  constructor(
+    identitiesTransaction,
+    documentsDbTransaction,
+    dataContractsTransaction,
+    publicKeyToIdentityIdTransaction,
+  ) {
     this.transactions = {
       identity: identitiesTransaction,
       document: documentsDbTransaction,
       dataContract: dataContractsTransaction,
+      publicKeyToIdentityId: publicKeyToIdentityIdTransaction,
     };
   }
 

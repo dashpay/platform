@@ -129,7 +129,7 @@ describe('DriveStateRepository', () => {
         ],
       );
 
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('identity');
+      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('publicKeyToIdentityId');
       expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledTwice();
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
         identity.getPublicKeyById(0).hash(),

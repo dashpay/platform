@@ -1,6 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
-const lodashPick = require('lodash.pick');
+const lodashSet = require('lodash.set');
+const lodashGet = require('lodash.get');
 
 const convertFieldName = require('./convertFieldName');
 
@@ -227,12 +228,24 @@ class DocumentMongoDbRepository {
     const uniqueDocumentIndexedDataProperties = [...new Set(documentIndexedProperties)]
       .filter((field) => !field.startsWith('$'));
 
+    const rawDocument = document.toObject();
+
+    const data = uniqueDocumentIndexedDataProperties.reduce((indexedProperties, propertyPath) => {
+      const propertyValue = lodashGet(rawDocument, propertyPath);
+
+      return propertyValue === undefined ? indexedProperties : lodashSet(
+        indexedProperties,
+        propertyPath,
+        lodashGet(rawDocument, propertyPath),
+      );
+    }, {});
+
     const result = {
       _id: document.getId(),
       ownerId: document.getOwnerId(),
       revision: document.getRevision(),
       protocolVersion: document.getProtocolVersion(),
-      data: lodashPick(document.toObject(), uniqueDocumentIndexedDataProperties),
+      data,
     };
 
     const createdAt = document.getCreatedAt();

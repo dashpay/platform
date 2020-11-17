@@ -83,7 +83,6 @@
     "isolated-vm": "github:antouhou/isolated-vm",
     "lodash.escaperegexp": "^4.1.2",
     "lodash.get": "^4.4.2",
-    "lodash.pick": "^4.4.0",
     "lodash.set": "^4.3.2",
     "long": "^4.0.0",
     "lru-cache": "^5.1.1",
