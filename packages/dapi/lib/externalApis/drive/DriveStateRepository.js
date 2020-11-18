@@ -45,7 +45,9 @@ class DriveStateRepository {
 
     if (response.code === undefined || response.code === 0) {
       // no errors found return the serialized response value
-      return Buffer.from(response.value, 'base64');
+      const value = cbor.decode(Buffer.from(response.value, 'base64'));
+
+      return value.data;
     }
 
     const { error: abciError } = JSON.parse(response.log);
@@ -85,7 +87,7 @@ class DriveStateRepository {
    * @return {Promise<Buffer[]>}
    */
   async fetchDocuments(contractId, type, options) {
-    const serializedDocumentsArray = await this.request(
+    return this.request(
       '/dataContracts/documents',
       {
         ...options,
@@ -93,8 +95,6 @@ class DriveStateRepository {
         type,
       },
     );
-
-    return cbor.decode(serializedDocumentsArray);
   }
 
   /**
@@ -121,14 +121,12 @@ class DriveStateRepository {
    * @return {Promise<Buffer[]>}
    */
   async fetchIdentitiesByPublicKeyHashes(publicKeyHashes) {
-    const serializedIdentitiesArray = await this.request(
+    return this.request(
       '/identities/by-public-key-hash',
       {
         publicKeyHashes,
       },
     );
-
-    return cbor.decode(serializedIdentitiesArray);
   }
 
   /**
@@ -139,14 +137,12 @@ class DriveStateRepository {
    * @return {Promise<Buffer[]>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
-    const serializedIdentityIdsArray = await this.request(
+    return this.request(
       '/identities/by-public-key-hash/id',
       {
         publicKeyHashes,
       },
     );
-
-    return cbor.decode(serializedIdentityIdsArray);
   }
 }
 

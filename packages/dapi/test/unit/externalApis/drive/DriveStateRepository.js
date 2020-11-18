@@ -84,7 +84,9 @@ describe('DriveStateRepository', () => {
       const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
 
       const contractId = 'someId';
-      const buffer = Buffer.from('someData');
+      const data = Buffer.from('someData');
+
+      const buffer = cbor.encode({ data });
 
       sinon.stub(drive.client, 'request')
         .resolves({
@@ -99,7 +101,7 @@ describe('DriveStateRepository', () => {
         path: '/dataContracts',
         data: cbor.encode({ id: contractId }).toString('hex'), // cbor encoded empty object
       });
-      expect(result).to.be.deep.equal(buffer);
+      expect(result).to.be.deep.equal(data);
     });
   });
 
@@ -112,7 +114,9 @@ describe('DriveStateRepository', () => {
       const options = {
         where: 'id === someId',
       };
-      const buffer = cbor.encode([]);
+
+      const data = [];
+      const buffer = cbor.encode({ data });
 
       sinon.stub(drive.client, 'request')
         .resolves({
@@ -127,7 +131,7 @@ describe('DriveStateRepository', () => {
         path: '/dataContracts/documents',
         data: cbor.encode({ ...options, contractId, type }).toString('hex'), // cbor encoded empty object
       });
-      expect(result).to.be.deep.equal([]);
+      expect(result).to.be.deep.equal(data);
     });
   });
 
@@ -136,7 +140,8 @@ describe('DriveStateRepository', () => {
       const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
 
       const identityId = 'someId';
-      const buffer = Buffer.from('someData');
+      const data = Buffer.from('someData');
+      const buffer = cbor.encode({ data });
 
       sinon.stub(drive.client, 'request')
         .resolves({
@@ -151,7 +156,7 @@ describe('DriveStateRepository', () => {
         path: '/identities',
         data: cbor.encode({ id: identityId }).toString('hex'), // cbor encoded empty object
       });
-      expect(result).to.be.deep.equal(buffer);
+      expect(result).to.be.deep.equal(data);
     });
   });
 
@@ -160,12 +165,13 @@ describe('DriveStateRepository', () => {
       const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
 
       const identity = getIdentityFixture();
+      const buffer = cbor.encode({ data: [identity] });
       const publicKeyHashes = [Buffer.alloc(1)];
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: cbor.encode([identity]) },
+            response: { code: 0, value: buffer },
           },
         });
 
@@ -185,11 +191,12 @@ describe('DriveStateRepository', () => {
 
       const identityId = generateRandomIdentifier();
       const publicKeyHashes = [Buffer.alloc(1)];
+      const buffer = cbor.encode({ data: [identityId] });
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: cbor.encode([identityId]) },
+            response: { code: 0, value: buffer },
           },
         });
 
