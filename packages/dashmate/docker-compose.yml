@@ -29,5 +29,5 @@ services:
       - NETWORK=${NETWORK?:err}
       - SENTINEL_ARGS=-b
 
-volumes: 
+volumes:
   core_data:

@@ -24,6 +24,8 @@ services:
       - CORE_JSON_RPC_PASSWORD=password
       - CORE_JSON_RPC_HOST=core
       - CORE_JSON_RPC_PORT=20002
+      - CORE_ZMQ_HOST=core
+      - CORE_ZMQ_PORT=29998
       - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017?replicaSet=driveDocumentIndices
       - DPNS_CONTRACT_ID=${PLATFORM_DPNS_CONTRACT_ID}
       - DPNS_CONTRACT_BLOCK_HEIGHT=${PLATFORM_DPNS_CONTRACT_BLOCK_HEIGHT}
