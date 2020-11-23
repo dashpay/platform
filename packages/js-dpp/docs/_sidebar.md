@@ -5,8 +5,10 @@
     - [dpp.identity](usage/identity.md)
     - [dpp.stateTransition](usage/stateTransition.md)
 - Primitives
-    - [DataContract](primitives/DataContract.md)
-    - [Document](primitives/Document.md)
-    - [Identity](primitives/Identity.md)
     - [AbstractStateTransition](primitives/AbstractStateTransition.md)
+    - [DataContract](primitives/DataContract.md)
+    - [DataTrigger](primitives/DataTrigger.md)
+    - [Document](primitives/Document.md)
+    - [Identifier](primitives/Identifier.md)
+    - [Identity](primitives/Identity.md)
 - [License](https://github.com/dashevo/js-dpp/blob/master/LICENSE)

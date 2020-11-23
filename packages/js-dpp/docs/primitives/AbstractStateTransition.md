@@ -27,7 +27,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer|null}
+**Returns**: {Buffer}
 
 ## .setSignature(signature)
 
@@ -87,10 +87,10 @@
 
 **Parameters**: 
 
-| parameters               | type                   | required           | Description                      |  
-|--------------------------|------------------------|--------------------| -------------------------------- |
-| **options**              | Object                 | no                 |                                  |
-| **options.skipSignature**| Boolean[=false]        | no                 |                                  |
+| parameters                           | type                   | required           | Description                      |  
+|--------------------------------------|------------------------|--------------------| -------------------------------- |
+| **options**                          | Object                 | no                 |                                  |
+| **options.skipSignature**            | Boolean[=false]        | no                 |                                  |
 | **options.skipIdentifiersConversion**| Boolean[=false]        | no                 |                                  |
 
 **Returns**: {RawStateTransition}
@@ -118,8 +118,8 @@
 
 ## .hash()
 
-**Description**: Returns hex string hash
+**Description**: Returns state transition hash
 
 **Parameters**: None.  
 
-**Returns**: {string}
+**Returns**: {Buffer}

@@ -45,7 +45,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Identifier}
 
 ## .getType()
 
@@ -61,7 +61,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Identifier}
 
 ## .getDataContract()
 
@@ -77,7 +77,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Identifier}
 
 ## .setRevision(revision)
 
@@ -117,7 +117,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Buffer}
 
 ## .setData(data)
 
@@ -235,8 +235,8 @@
 
 ## .hash()
 
-**Description**: Returns hex string with Document hash
+**Description**: Returns Document hash
 
 **Parameters**: None.  
 
-**Returns**: {string}
+**Returns**: {Buffer}

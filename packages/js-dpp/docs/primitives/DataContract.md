@@ -29,7 +29,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Identifier}
 
 ## .getOwnerId()
 
@@ -37,7 +37,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Identifier}
 
 ## .getJsonSchemaId()
 
@@ -156,7 +156,7 @@
 
 **Returns**: {Object<string, Object>} - definitions
 
-## .getEncodedProperties(type)
+## .getBinaryProperties(type)
 
 **Description**: Get properties with `contentEncoding` constraint
 
@@ -199,11 +199,11 @@
 
 ## .hash()
 
-**Description**: Returns hex string with Data Contract hash
+**Description**: Returns Data Contract hash
 
 **Parameters**: None.  
 
-**Returns**: {string}
+**Returns**: {Buffer}
 
 ## .setEntropy(entropy)
 
@@ -223,4 +223,4 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Buffer}

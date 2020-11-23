@@ -28,7 +28,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {Buffer}
+**Returns**: {Identifier}
 
 ## .setPublicKeys(publicKeys)
 
@@ -124,7 +124,7 @@
 
 **Parameters**: None.  
 
-**Returns**: {EncodedBuffer}
+**Returns**: {Buffer}
 
 ## .setRevision(revision)
 
@@ -172,8 +172,8 @@
 
 ## .hash()
 
-**Description**: Returns hex string with Identity hash
+**Description**: Returns Identity hash
 
 **Parameters**: None.  
 
-**Returns**: {string}
+**Returns**: {Buffer}

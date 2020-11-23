@@ -63,15 +63,15 @@ Returns : {ValidationResult}
 
 Returns : {IdentityCreateTransition}
 
-## dpp.identity.createIdentityTopUpTransition(identityId, lockedOutPointBuffer)
+## dpp.identity.createIdentityTopUpTransition(identityId, lockedOutPoint)
 
 **Description**: Create Identity Create Transition
 
 **Parameters**:
 
-| parameters                   | type            | required | Description                                             |  
-|------------------------------|-----------------|----------| --------------------------------------------------------|
-| **identityId**               | string          | yes      | identity id to top up                                   |
-| **lockedOutPointBuffer**     | Buffer          | yes      | outpoint of the top up output of the L1 transaction     |
+| parameters                   | type                     | required | Description                                             |  
+|------------------------------|--------------------------|----------| --------------------------------------------------------|
+| **identityId**               | Identifier/Buffer/String | yes      | identity id to top up                                   |
+| **lockedOutPoint**           | Buffer                   | yes      | outpoint of the top up output of the L1 transaction     |
 
 Returns : {IdentityTopUpTransition}
