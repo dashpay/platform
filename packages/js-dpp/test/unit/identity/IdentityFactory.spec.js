@@ -1,11 +1,6 @@
 const rewiremock = require('rewiremock/node');
-const crypto = require('crypto');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
-
-const Identifier = require('../../../lib/identifier/Identifier');
-
-const hash = require('../../../lib/util/hash');
 
 const Identity = require('../../../lib/identity/Identity');
 const IdentityCreateTransition = require('../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
@@ -20,6 +15,8 @@ const SerializedObjectParsingError = require('../../../lib/errors/SerializedObje
 const InvalidIdentityError = require(
   '../../../lib/identity/errors/InvalidIdentityError',
 );
+const getAssetLockFixture = require('../../../lib/test/fixtures/getAssetLockFixture');
+const InstantAssetLockProof = require('../../../lib/identity/stateTransitions/assetLock/proof/instant/InstantAssetLockProof');
 
 describe('IdentityFactory', () => {
   let factory;
@@ -27,10 +24,13 @@ describe('IdentityFactory', () => {
   let decodeMock;
   let IdentityFactory;
   let identity;
+  let assetLock;
 
   beforeEach(function beforeEach() {
     validateIdentityMock = this.sinonSandbox.stub();
     decodeMock = this.sinonSandbox.stub();
+
+    assetLock = getAssetLockFixture();
 
     IdentityFactory = rewiremock.proxy(
       '../../../lib/identity/IdentityFactory',
@@ -47,6 +47,9 @@ describe('IdentityFactory', () => {
     factory = new IdentityFactory(validateIdentityMock);
 
     identity = getIdentityFixture();
+    identity.id = assetLock.createIdentifier();
+    identity.setAssetLock(assetLock);
+    identity.setBalance(0);
   });
 
   describe('#constructor', () => {
@@ -56,15 +59,7 @@ describe('IdentityFactory', () => {
   });
 
   describe('#create', () => {
-    it('should create Identity from transaction out point and public keys', () => {
-      const lockedOutPoint = crypto.randomBytes(64);
-
-      identity.id = Identifier.from(
-        hash(lockedOutPoint),
-      );
-
-      identity.setBalance(0);
-
+    it('should create Identity from asset lock transaction, output index, proof and public keys', () => {
       const publicKeys = identity.getPublicKeys().map((identityPublicKey) => {
         const publicKeyData = Buffer.from(identityPublicKey.getData(), 'base64');
 
@@ -72,7 +67,9 @@ describe('IdentityFactory', () => {
       });
 
       const result = factory.create(
-        lockedOutPoint,
+        assetLock.getTransaction(),
+        assetLock.getOutputIndex(),
+        assetLock.getProof(),
         publicKeys,
       );
 
@@ -110,7 +107,7 @@ describe('IdentityFactory', () => {
       const result = factory.createFromObject(identity.toObject());
 
       expect(result).to.be.an.instanceOf(Identity);
-      expect(result).to.deep.equal(identity);
+      expect(result.toObject()).to.deep.equal(identity.toObject());
     });
   });
 
@@ -156,32 +153,40 @@ describe('IdentityFactory', () => {
     });
   });
 
+  describe('#createInstantAssetLockProof', () => {
+    it('should create instant asset lock proof from InstantLock', () => {
+      const instantLock = assetLock.getProof().getInstantLock();
+
+      const result = factory.createInstantAssetLockProof(instantLock);
+
+      expect(result).to.be.instanceOf(InstantAssetLockProof);
+      expect(result.getInstantLock()).to.deep.equal(instantLock);
+    });
+  });
+
   describe('#createIdentityCreateTransition', () => {
     it('should create IdentityCreateTransition from Identity model', () => {
-      const lockedOutPoint = crypto.randomBytes(64);
-
-      identity.setLockedOutPoint(lockedOutPoint);
-
       const stateTransition = factory.createIdentityCreateTransition(identity);
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
       expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
-      expect(stateTransition.getLockedOutPoint()).to.deep.equal(lockedOutPoint);
+      expect(stateTransition.getAssetLock().toObject()).to.deep.equal(assetLock.toObject());
     });
   });
 
   describe('#createIdentityTopUpTransition', () => {
     it('should create IdentityTopUpTransition from identity id and outpoint', () => {
-      const lockedOutPoint = crypto.randomBytes(64);
-
-      identity.setLockedOutPoint(lockedOutPoint);
-
       const stateTransition = factory
-        .createIdentityTopUpTransition(identity.getId(), lockedOutPoint);
+        .createIdentityTopUpTransition(
+          identity.getId(),
+          assetLock.getTransaction(),
+          assetLock.getOutputIndex(),
+          assetLock.getProof(),
+        );
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
       expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
-      expect(stateTransition.getLockedOutPoint()).to.deep.equal(lockedOutPoint);
+      expect(stateTransition.getAssetLock().toObject()).to.deep.equal(assetLock.toObject());
     });
   });
 });

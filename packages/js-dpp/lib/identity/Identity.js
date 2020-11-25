@@ -75,7 +75,7 @@ class Identity {
   /**
    * Get plain object representation
    *
-   * @return {Object}
+   * @return {RawIdentity}
    */
   toObject() {
     return {
@@ -89,7 +89,9 @@ class Identity {
   }
 
   /**
-   * @return {RawIdentity}
+   * Get JSON representation
+   *
+   * @return {JsonIdentity}
    */
   toJSON() {
     return {
@@ -161,13 +163,13 @@ class Identity {
   }
 
   /**
-   * Set locked out point
+   * Set asset lock
    *
-   * @param {Buffer} lockedOutPoint
+   * @param {AssetLock} assetLock
    * @return {Identity}
    */
-  setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = lockedOutPoint;
+  setAssetLock(assetLock) {
+    this.assetLock = assetLock;
 
     return this;
   }
@@ -175,10 +177,10 @@ class Identity {
   /**
    * Get locked out point
    *
-   * @return {Buffer}
+   * @return {AssetLock}
    */
-  getLockedOutPoint() {
-    return this.lockedOutPoint;
+  getAssetLock() {
+    return this.assetLock;
   }
 
   /**
@@ -208,6 +210,15 @@ class Identity {
  * @property {number} protocolVersion
  * @property {Buffer} id
  * @property {RawIdentityPublicKey[]} publicKeys
+ * @property {number} balance
+ * @property {number} revision
+ */
+
+/**
+ * @typedef {Object} JsonIdentity
+ * @property {number} protocolVersion
+ * @property {string} id
+ * @property {JsonIdentityPublicKey[]} publicKeys
  * @property {number} balance
  * @property {number} revision
  */

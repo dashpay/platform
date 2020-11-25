@@ -1,5 +1,3 @@
-const rewiremock = require('rewiremock/node');
-
 const stateTransitionTypes = require(
   '../../../../../lib/stateTransition/stateTransitionTypes',
 );
@@ -7,44 +5,21 @@ const stateTransitionTypes = require(
 const Identifier = require('../../../../../lib/identifier/Identifier');
 
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
+const AssetLock = require('../../../../../lib/identity/stateTransitions/assetLock/AssetLock');
 
 describe('IdentityTopUpTransition', () => {
   let rawStateTransition;
   let stateTransition;
-  let hashMock;
-  let signerMock;
-  let IdentityTopUpTransition;
-  let identityTopUpTransition;
 
-  beforeEach(function beforeEach() {
-    identityTopUpTransition = getIdentityTopUpTransitionFixture();
-    rawStateTransition = identityTopUpTransition.toObject();
-
-    hashMock = this.sinonSandbox.stub();
-    hashMock.returns(Buffer.alloc(32));
-
-    signerMock = {
-      signByPrivateKey: this.sinonSandbox.stub(),
-      verifySignatureByPublicKey: this.sinonSandbox.stub(),
-    };
-
-    IdentityTopUpTransition = rewiremock.proxy(
-      '../../../../../lib/identity/stateTransitions/identityTopUpTransition/IdentityTopUpTransition',
-      {
-        '../../../../../lib/util/hash': hashMock,
-        '../../../../../node_modules/@dashevo/dashcore-lib': {
-          Signer: signerMock,
-        },
-      },
-    );
-
-    stateTransition = new IdentityTopUpTransition(rawStateTransition);
+  beforeEach(() => {
+    stateTransition = getIdentityTopUpTransitionFixture();
+    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#constructor', () => {
     it('should create an instance with specified data from specified raw transition', () => {
-      expect(stateTransition.getLockedOutPoint()).to.be.deep.equal(
-        rawStateTransition.lockedOutPoint,
+      expect(stateTransition.getAssetLock().toObject()).to.be.deep.equal(
+        rawStateTransition.assetLock,
       );
       expect(stateTransition.getIdentityId()).to.be.deep.equal(
         rawStateTransition.identityId,
@@ -58,17 +33,24 @@ describe('IdentityTopUpTransition', () => {
     });
   });
 
-  describe('#setLockedOutPoint', () => {
-    it('should set locked OutPoint', () => {
-      stateTransition.setLockedOutPoint(Buffer.alloc(42, 3));
-      expect(stateTransition.lockedOutPoint).to.deep.equal(Buffer.alloc(42, 3));
+  describe('#setAssetLock', () => {
+    it('should set asset lock', () => {
+      const newAssetLock = new AssetLock({
+        transaction: rawStateTransition.assetLock.transaction,
+        outputIndex: 2,
+        proof: rawStateTransition.assetLock.proof,
+      });
+
+      stateTransition.setAssetLock(newAssetLock);
+
+      expect(stateTransition.assetLock).to.deep.equal(newAssetLock);
     });
   });
 
-  describe('#getLockedOutPoint', () => {
-    it('should return currently set locked OutPoint', () => {
-      expect(stateTransition.getLockedOutPoint()).to.deep.equal(
-        rawStateTransition.lockedOutPoint,
+  describe('#getAssetLock', () => {
+    it('should return currently set asset lock', () => {
+      expect(stateTransition.getAssetLock().toObject()).to.deep.equal(
+        rawStateTransition.assetLock,
       );
     });
   });
@@ -96,7 +78,7 @@ describe('IdentityTopUpTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
-        lockedOutPoint: rawStateTransition.lockedOutPoint,
+        assetLock: rawStateTransition.assetLock,
         identityId: rawStateTransition.identityId,
         signature: undefined,
       });
@@ -108,7 +90,7 @@ describe('IdentityTopUpTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
-        lockedOutPoint: rawStateTransition.lockedOutPoint,
+        assetLock: rawStateTransition.assetLock,
         identityId: rawStateTransition.identityId,
       });
     });
@@ -121,7 +103,7 @@ describe('IdentityTopUpTransition', () => {
       expect(jsonStateTransition).to.deep.equal({
         protocolVersion: 0,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
-        lockedOutPoint: rawStateTransition.lockedOutPoint.toString('base64'),
+        assetLock: stateTransition.getAssetLock().toJSON(),
         identityId: Identifier(rawStateTransition.identityId).toString(),
         signature: undefined,
       });

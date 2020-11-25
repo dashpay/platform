@@ -1,27 +1,26 @@
-const hash = require('../../../util/hash');
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const IdentityPublicKey = require('../../IdentityPublicKey');
-const Identifier = require('../../../identifier/Identifier');
+const AssetLock = require('../assetLock/AssetLock');
 
 class IdentityCreateTransition extends AbstractStateTransition {
   /**
-   * @param {RawIdentityCreateTransition} [rawIdentityCreateTransition]
+   * @param {RawIdentityCreateTransition} rawStateTransition
    */
-  constructor(rawIdentityCreateTransition = {}) {
-    super(rawIdentityCreateTransition);
+  constructor(rawStateTransition) {
+    super(rawStateTransition);
 
     this.publicKeys = [];
 
-    if (Object.prototype.hasOwnProperty.call(rawIdentityCreateTransition, 'publicKeys')) {
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'publicKeys')) {
       this.setPublicKeys(
-        rawIdentityCreateTransition.publicKeys
+        rawStateTransition.publicKeys
           .map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
       );
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawIdentityCreateTransition, 'lockedOutPoint')) {
-      this.setLockedOutPoint(rawIdentityCreateTransition.lockedOutPoint);
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'assetLock')) {
+      this.setAssetLock(new AssetLock(rawStateTransition.assetLock));
     }
   }
 
@@ -35,28 +34,24 @@ class IdentityCreateTransition extends AbstractStateTransition {
   }
 
   /**
-   * Sets an outPoint. OutPoint is a pointer to the output funding identity creation.
-   * Its hash also serves as an identity id.
-   * More about the OutPoint can be found in the identity documentation
+   * Set asset lock
    *
-   * @param {Buffer} lockedOutPoint
+   * @param {AssetLock} assetLock
    * @return {IdentityCreateTransition}
    */
-  setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = lockedOutPoint;
+  setAssetLock(assetLock) {
+    this.assetLock = assetLock;
 
-    this.identityId = new Identifier(
-      hash(this.lockedOutPoint),
-    );
+    this.identityId = assetLock.createIdentifier();
 
     return this;
   }
 
   /**
-   * @return {Buffer}
+   * @return {AssetLock}
    */
-  getLockedOutPoint() {
-    return this.lockedOutPoint;
+  getAssetLock() {
+    return this.assetLock;
   }
 
   /**
@@ -126,7 +121,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
 
     return {
       ...super.toObject(options),
-      lockedOutPoint: this.getLockedOutPoint(),
+      assetLock: this.getAssetLock().toObject(),
       publicKeys: this.getPublicKeys()
         .map((publicKey) => publicKey.toObject()),
     };
@@ -141,7 +136,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
   toJSON() {
     return {
       ...super.toJSON(),
-      lockedOutPoint: this.getLockedOutPoint().toString('base64'),
+      assetLock: this.getAssetLock().toJSON(),
       publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toJSON()),
     };
   }
@@ -149,13 +144,13 @@ class IdentityCreateTransition extends AbstractStateTransition {
 
 /**
  * @typedef {RawStateTransition & Object} RawIdentityCreateTransition
- * @property {Buffer} lockedOutPoint
+ * @property {RawAssetLock} assetLock
  * @property {RawIdentityPublicKey[]} publicKeys
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonIdentityCreateTransition
- * @property {Buffer} lockedOutPoint
+ * @property {JsonAssetLock} assetLock
  * @property {JsonIdentityPublicKey[]} publicKeys
  */
 

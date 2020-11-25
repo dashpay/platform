@@ -2,7 +2,7 @@ const generateRandomIdentifier = require('../../../../lib/test/utils/generateRan
 
 const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
 
-const validateIdentityExistenceFactory = require('../../../../lib/stateTransition/validation/validateIdentityExistenceFactory');
+const validateIdentityExistenceFactory = require('../../../../lib/identity/validation/validateIdentityExistenceFactory');
 
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 

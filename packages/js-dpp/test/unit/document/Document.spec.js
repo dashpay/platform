@@ -347,7 +347,7 @@ describe('Document', () => {
     });
 
     it('should set identifier as part of object', () => {
-      const buffer = Buffer.alloc(32).fill('a');
+      const buffer = Buffer.alloc(32, 'a');
       const path = 'dataObject.binaryObject';
       const value = { identifier: buffer };
 

@@ -21,9 +21,25 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
   let rawStateTransition;
   let stateTransition;
   let validatePublicKeysMock;
+  let validateAssetLockStructureMock;
+  let validateSignatureAgainstAssetLockPublicKeyMock;
+  let assetLockPublicKeyHash;
 
   beforeEach(function beforeEach() {
-    validatePublicKeysMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    validatePublicKeysMock = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
+
+    assetLockPublicKeyHash = Buffer.alloc(20, 1);
+
+    const assetLockValidationResult = new ValidationResult();
+
+    assetLockValidationResult.setData(assetLockPublicKeyHash);
+
+    validateAssetLockStructureMock = this.sinonSandbox.stub()
+      .resolves(assetLockValidationResult);
+
+    validateSignatureAgainstAssetLockPublicKeyMock = this.sinonSandbox.stub()
+      .resolves(new ValidationResult());
 
     const ajv = createAjv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
@@ -31,6 +47,8 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
     validateIdentityCreateTransitionStructure = validateIdentityCreateTransitionStructureFactory(
       jsonSchemaValidator,
       validatePublicKeysMock,
+      validateAssetLockStructureMock,
+      validateSignatureAgainstAssetLockPublicKeyMock,
     );
 
     stateTransition = getIdentityCreateTransitionFixture();
@@ -127,9 +145,9 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
     });
   });
 
-  describe('lockedOutPoint', () => {
+  describe('assetLock', () => {
     it('should be present', async () => {
-      delete rawStateTransition.lockedOutPoint;
+      delete rawStateTransition.assetLock;
 
       const result = await validateIdentityCreateTransitionStructure(
         rawStateTransition,
@@ -140,53 +158,45 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('');
-      expect(error.params.missingProperty).to.equal('lockedOutPoint');
+      expect(error.params.missingProperty).to.equal('assetLock');
       expect(error.keyword).to.equal('required');
     });
 
-    it('should be a byte array', async () => {
-      rawStateTransition.lockedOutPoint = new Array(36).fill('string');
+    it('should be an object', async () => {
+      rawStateTransition.assetLock = 1;
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
-      expectJsonSchemaError(result, 2);
+      expectJsonSchemaError(result, 1);
 
-      const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.lockedOutPoint[0]');
+      expect(error.dataPath).to.equal('.assetLock');
       expect(error.keyword).to.equal('type');
-
-      expect(byteArrayError.keyword).to.equal('byteArray');
     });
 
-    it('should not be less than 36 bytes', async () => {
-      rawStateTransition.lockedOutPoint = Buffer.alloc(35);
+    it('should be valid', async () => {
+      const assetLockError = new ConsensusError('test');
+      const assetLockResult = new ValidationResult([
+        assetLockError,
+      ]);
+
+
+      validateAssetLockStructureMock.returns(assetLockResult);
 
       const result = await validateIdentityCreateTransitionStructure(
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      expectValidationError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minItems');
-      expect(error.dataPath).to.equal('.lockedOutPoint');
-    });
+      expect(error).to.equal(assetLockError);
 
-    it('should not be more than 36 bytes', async () => {
-      rawStateTransition.lockedOutPoint = Buffer.alloc(37);
-
-      const result = await validateIdentityCreateTransitionStructure(
-        rawStateTransition,
+      expect(validateAssetLockStructureMock).to.be.calledOnceWithExactly(
+        rawStateTransition.assetLock,
       );
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.keyword).to.equal('maxItems');
-      expect(error.dataPath).to.equal('.lockedOutPoint');
     });
   });
 
@@ -273,6 +283,8 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error).to.equal(publicKeysError);
+
+      expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
     });
   });
 
@@ -331,10 +343,34 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       expect(error.dataPath).to.equal('.signature');
       expect(error.keyword).to.equal('maxItems');
     });
+
+    it('should be valid', async () => {
+      const signatureError = new ConsensusError('test');
+      const signatureResult = new ValidationResult([
+        signatureError,
+      ]);
+
+      validateSignatureAgainstAssetLockPublicKeyMock.returns(signatureResult);
+
+      const result = await validateIdentityCreateTransitionStructure(
+        rawStateTransition,
+      );
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(signatureError);
+
+      expect(validateSignatureAgainstAssetLockPublicKeyMock).to.be.calledOnceWithExactly(
+        rawStateTransition,
+        assetLockPublicKeyHash,
+      );
+    });
   });
 
-  it('should return valid result', () => {
-    const result = validateIdentityCreateTransitionStructure(rawStateTransition);
+  it('should return valid result', async () => {
+    const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
     expect(result.isValid()).to.be.true();
 

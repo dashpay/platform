@@ -179,7 +179,7 @@ describe('createDomainDataTrigger', () => {
   it('should fail with invalid dashUniqueIdentityId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
-        dashUniqueIdentityId: Buffer.alloc(32).fill(5),
+        dashUniqueIdentityId: Buffer.alloc(32, 5),
       },
     });
 
@@ -203,7 +203,7 @@ describe('createDomainDataTrigger', () => {
   it('should fail with invalid dashAliasIdentityId', async () => {
     childDocument = getChildDocumentFixture({
       records: {
-        dashAliasIdentityId: Buffer.alloc(32).fill(2),
+        dashAliasIdentityId: Buffer.alloc(32, 2),
       },
     });
 

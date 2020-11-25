@@ -11,11 +11,8 @@
       "type": "integer",
       "const": 2
     },
-    "lockedOutPoint": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 36,
-      "maxItems": 36
+    "assetLock": {
+      "type": "object"
     },
     "publicKeys": {
       "type": "array",
@@ -34,7 +31,7 @@
   "required": [
     "protocolVersion",
     "type",
-    "lockedOutPoint",
+    "assetLock",
     "publicKeys",
     "signature"
   ]

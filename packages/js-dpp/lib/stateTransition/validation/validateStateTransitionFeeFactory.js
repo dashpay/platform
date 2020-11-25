@@ -2,22 +2,20 @@ const ValidationResult = require('../../validation/ValidationResult');
 
 const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransitionTypeError');
 const BalanceIsNotEnoughError = require('../../errors/BalanceIsNotEnoughError');
-const ConsensusError = require('../../errors/ConsensusError');
 
 const stateTransitionTypes = require('../stateTransitionTypes');
 const { convertSatoshiToCredits } = require('../../identity/creditsConverter');
-const calculateStateTransitionFee = require('../calculateStateTransitionFee');
 
 /**
  * Validate state transition fee
  *
  * @param {StateRepository} stateRepository
- * @param {fetchConfirmedAssetLockTransactionOutput} fetchConfirmedAssetLockTransactionOutput
+ * @param {calculateStateTransitionFee} calculateStateTransitionFee
  * @return {validateStateTransitionFee}
  */
 function validateStateTransitionFeeFactory(
   stateRepository,
-  fetchConfirmedAssetLockTransactionOutput,
+  calculateStateTransitionFee,
 ) {
   /**
    * @typedef validateStateTransitionFee
@@ -34,22 +32,7 @@ function validateStateTransitionFeeFactory(
     switch (stateTransition.getType()) {
       case stateTransitionTypes.IDENTITY_TOP_UP:
       case stateTransitionTypes.IDENTITY_CREATE: {
-        let output;
-        try {
-          output = await fetchConfirmedAssetLockTransactionOutput(
-            stateTransition.getLockedOutPoint(),
-          );
-        } catch (e) {
-          if (e instanceof ConsensusError) {
-            result.addError(e);
-          } else {
-            throw e;
-          }
-        }
-
-        if (!result.isValid()) {
-          return result;
-        }
+        const output = stateTransition.getAssetLock().getOutput();
 
         balance = convertSatoshiToCredits(output.satoshis);
 

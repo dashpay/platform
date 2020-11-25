@@ -26,12 +26,19 @@ class IdentityFacade {
   /**
    * Create Identity
    *
-   * @param {Buffer} lockedOutPoint
-   * @param {PublicKey[]} [publicKeys]
+   * @param {Transaction} assetLockTransaction
+   * @param {number} outputIndex
+   * @param {InstantAssetLockProof} assetLockProof
+   * @param {PublicKey[]} publicKeys
    * @return {Identity}
    */
-  create(lockedOutPoint, publicKeys = []) {
-    return this.factory.create(lockedOutPoint, publicKeys);
+  create(assetLockTransaction, outputIndex, assetLockProof, publicKeys) {
+    return this.factory.create(
+      assetLockTransaction,
+      outputIndex,
+      assetLockProof,
+      publicKeys,
+    );
   }
 
   /**
@@ -76,6 +83,16 @@ class IdentityFacade {
   }
 
   /**
+   * Create Asset Lock with proofs
+   *
+   * @param {InstantLock} instantLock
+   * @returns {InstantAssetLockProof}
+   */
+  createInstantAssetLockProof(instantLock) {
+    return this.factory.createInstantAssetLockProof(instantLock);
+  }
+
+  /**
    * Create identity create transition
    *
    * @param {Identity} identity
@@ -88,12 +105,19 @@ class IdentityFacade {
   /**
    * Create identity top up transition
    *
-   * @param {string} identityId - identity id to top up
-   * @param {Buffer} lockedOutPointBuffer - outpoint of the top up output of the L1 transaction
+   * @param {Identifier|Buffer|string} identityId - identity to top up
+   * @param {Transaction} assetLockTransaction
+   * @param {number} outputIndex
+   * @param {InstantAssetLockProof} assetLockProof
    * @return {IdentityTopUpTransition}
    */
-  createIdentityTopUpTransition(identityId, lockedOutPointBuffer) {
-    return this.factory.createIdentityTopUpTransition(identityId, lockedOutPointBuffer);
+  createIdentityTopUpTransition(identityId, assetLockTransaction, outputIndex, assetLockProof) {
+    return this.factory.createIdentityTopUpTransition(
+      identityId,
+      assetLockTransaction,
+      outputIndex,
+      assetLockProof,
+    );
   }
 }
 

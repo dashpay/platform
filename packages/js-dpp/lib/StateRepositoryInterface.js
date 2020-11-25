@@ -116,6 +116,15 @@
  *
  * @async
  * @method
- * @name fetchLatestPlatformBlockHeader
+ * @name StateRepository#fetchLatestPlatformBlockHeader
  * @returns {Promise<abci.IHeader>}
+ */
+
+/**
+ * Fetch Simplified Masternode List Store
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchSMLStore
+ * @returns {Promise<SimplifiedMNListStore>}
  */

@@ -22,114 +22,223 @@ const { RATIO } = require('../../../../lib/identity/creditsConverter');
 describe('validateStateTransitionFeeFactory', () => {
   let stateRepositoryMock;
   let validateStateTransitionFee;
-
   let identity;
   let dataContract;
-  let documents;
-  let identityCreateST;
-  let identityTopUpST;
-  let getLockedTransactionOutputMock;
-  let output;
+  let calculateStateTransitionFeeMock;
 
   beforeEach(function beforeEach() {
-    identityCreateST = getIdentityCreateTransitionFixture();
-    identityTopUpST = getIdentityTopUpTransitionFixture();
-
-    const stSize = Buffer.byteLength(identityCreateST.toBuffer({ skipSignature: true }));
-
-    output = {
-      satoshis: Math.ceil(stSize / RATIO),
-    };
-
-    getLockedTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
     identity = getIdentityFixture();
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
+
+    calculateStateTransitionFeeMock = this.sinonSandbox.stub().returns(2);
+
     validateStateTransitionFee = validateStateTransitionFeeFactory(
       stateRepositoryMock,
-      getLockedTransactionOutputMock,
+      calculateStateTransitionFeeMock,
     );
+
     dataContract = getDataContractFixture();
-    documents = getDocumentsFixture(dataContract);
   });
 
-  it('should return invalid result if balance is not enough', async () => {
-    const dataContractCreateTransition = new DataContractCreateTransition({
-      dataContract: dataContract.toObject(),
-      entropy: dataContract.getEntropy(),
+  describe('DataContractCreateTransition', () => {
+    let dataContractCreateTransition;
+
+    beforeEach(() => {
+      dataContractCreateTransition = new DataContractCreateTransition({
+        dataContract: dataContract.toObject(),
+        entropy: dataContract.getEntropy(),
+      });
     });
 
-    const serializedData = dataContractCreateTransition.toBuffer({ skipSignature: true });
-    identity.balance = Buffer.byteLength(serializedData) - 1;
+    it('should return invalid result if balance is not enough', async () => {
+      identity.balance = 1;
 
-    const result = await validateStateTransitionFee(dataContractCreateTransition);
+      const result = await validateStateTransitionFee(dataContractCreateTransition);
 
-    expectValidationError(result, IdentityBalanceIsNotEnoughError);
+      expectValidationError(result, IdentityBalanceIsNotEnoughError);
 
-    const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-    expect(error.getBalance()).to.equal(identity.balance);
-  });
+      expect(error.getBalance()).to.equal(identity.balance);
 
-  it('should return valid result for DataContractCreateTransition', async () => {
-    const dataContractCreateTransition = new DataContractCreateTransition({
-      dataContract: dataContract.toObject(),
-      entropy: dataContract.getEntropy(),
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        dataContract.getOwnerId(),
+      );
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        dataContractCreateTransition,
+      );
     });
 
-    const serializedData = dataContractCreateTransition.toBuffer({ skipSignature: true });
-    identity.balance = Buffer.byteLength(serializedData);
+    it('should return valid result', async () => {
+      identity.balance = 2;
 
-    const result = await validateStateTransitionFee(dataContractCreateTransition);
+      const result = await validateStateTransitionFee(dataContractCreateTransition);
 
-    expect(result.isValid()).to.be.true();
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      dataContract.getOwnerId(),
-    );
-    expect(getLockedTransactionOutputMock).to.be.not.called();
+      expect(result.isValid()).to.be.true();
+
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        dataContract.getOwnerId(),
+      );
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        dataContractCreateTransition,
+      );
+    });
   });
 
-  it('should return valid result for DocumentsBatchTransition', async () => {
-    const documentTransitions = getDocumentTransitionsFixture({
-      create: documents,
+  describe('DocumentsBatchTransition', () => {
+    let documentsBatchTransition;
+
+    beforeEach(() => {
+      const documents = getDocumentsFixture(dataContract);
+
+      const documentTransitions = getDocumentTransitionsFixture({
+        create: documents,
+      });
+
+      documentsBatchTransition = new DocumentsBatchTransition({
+        ownerId: getDocumentsFixture.ownerId,
+        contractId: dataContract.getId(),
+        transitions: documentTransitions.map((t) => t.toObject()),
+      }, [dataContract]);
     });
 
-    const stateTransition = new DocumentsBatchTransition({
-      ownerId: getDocumentsFixture.ownerId,
-      contractId: dataContract.getId(),
-      transitions: documentTransitions.map((t) => t.toObject()),
-    }, [dataContract]);
-    identity.balance = Buffer.byteLength(stateTransition.toBuffer({ skipSignature: true }));
+    it('should return invalid result if balance is not enough', async () => {
+      identity.balance = 1;
 
-    const result = await validateStateTransitionFee(stateTransition);
+      const result = await validateStateTransitionFee(documentsBatchTransition);
 
-    expect(result.isValid()).to.be.true();
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      getDocumentsFixture.ownerId,
-    );
-    expect(getLockedTransactionOutputMock).to.be.not.called();
+      expectValidationError(result, IdentityBalanceIsNotEnoughError);
+
+      const [error] = result.getErrors();
+
+      expect(error.getBalance()).to.equal(identity.balance);
+
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        getDocumentsFixture.ownerId,
+      );
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        documentsBatchTransition,
+      );
+    });
+
+    it('should return valid result', async () => {
+      identity.balance = 3;
+
+      const result = await validateStateTransitionFee(documentsBatchTransition);
+
+      expect(result.isValid()).to.be.true();
+
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        getDocumentsFixture.ownerId,
+      );
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        documentsBatchTransition,
+      );
+    });
   });
 
-  it('should return valid result for IdentityCreateStateTransition', async () => {
-    const result = await validateStateTransitionFee(identityCreateST);
+  describe('IdentityCreateStateTransition', () => {
+    let identityCreateTransition;
+    let outputAmount;
 
-    expect(result.isValid()).to.be.true();
-    expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(
-      identityCreateST.getLockedOutPoint(),
-    );
-    expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
+    beforeEach(() => {
+      identityCreateTransition = getIdentityCreateTransitionFixture();
+
+      const { satoshis } = identityCreateTransition.getAssetLock().getOutput();
+
+      outputAmount = satoshis * RATIO;
+    });
+
+    it('should return invalid result if asset lock output amount is not enough', async () => {
+      calculateStateTransitionFeeMock.returns(outputAmount + 1);
+
+      const result = await validateStateTransitionFee(identityCreateTransition);
+
+      expectValidationError(result, IdentityBalanceIsNotEnoughError);
+
+      const [error] = result.getErrors();
+
+      expect(error.getBalance()).to.equal(outputAmount);
+
+      expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        identityCreateTransition,
+      );
+    });
+
+    it('should return valid result', async () => {
+      calculateStateTransitionFeeMock.returns(outputAmount);
+
+      const result = await validateStateTransitionFee(identityCreateTransition);
+
+      expect(result.isValid()).to.be.true();
+
+      expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        identityCreateTransition,
+      );
+    });
   });
 
-  it('should return valid result for IdentityTopUpTransition', async () => {
-    const result = await validateStateTransitionFee(identityTopUpST);
+  describe('IdentityTopUpTransition', () => {
+    let identityTopUpTransition;
+    let outputAmount;
 
-    expect(result.isValid()).to.be.true();
-    expect(getLockedTransactionOutputMock).to.be.calledOnceWithExactly(
-      identityTopUpST.getLockedOutPoint(),
-    );
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      identityTopUpST.getIdentityId(),
-    );
+    beforeEach(() => {
+      identityTopUpTransition = getIdentityTopUpTransitionFixture();
+
+      const { satoshis } = identityTopUpTransition.getAssetLock().getOutput();
+
+      outputAmount = satoshis * RATIO;
+    });
+
+    it('should return invalid result if sum of balance and asset lock output amount is not enough', async () => {
+      identity.balance = 1;
+
+      calculateStateTransitionFeeMock.returns(outputAmount + 2);
+
+      const result = await validateStateTransitionFee(identityTopUpTransition);
+
+      expectValidationError(result, IdentityBalanceIsNotEnoughError);
+
+      const [error] = result.getErrors();
+
+      expect(error.getBalance()).to.equal(outputAmount + identity.balance);
+
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        identityTopUpTransition.getIdentityId(),
+      );
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        identityTopUpTransition,
+      );
+    });
+
+    it('should return valid result', async () => {
+      identity.balance = 1;
+
+      calculateStateTransitionFeeMock.returns(outputAmount - 1);
+
+      const result = await validateStateTransitionFee(identityTopUpTransition);
+
+      expect(result.isValid()).to.be.true();
+
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        identityTopUpTransition.getIdentityId(),
+      );
+
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
+        identityTopUpTransition,
+      );
+    });
   });
 
   it('should throw InvalidStateTransitionTypeError on invalid State Transition', async function it() {
@@ -142,7 +251,6 @@ describe('validateStateTransitionFeeFactory', () => {
       toBuffer: this.sinonSandbox.stub().returns(Buffer.alloc(0)),
       toObject: this.sinonSandbox.stub().returns(rawStateTransitionMock),
     };
-    identity.balance = 0;
 
     try {
       await validateStateTransitionFee(stateTransitionMock);
@@ -151,9 +259,9 @@ describe('validateStateTransitionFeeFactory', () => {
     } catch (error) {
       expect(error).to.be.an.instanceOf(InvalidStateTransitionTypeError);
       expect(error.getRawStateTransition()).to.equal(rawStateTransitionMock);
-    }
 
-    expect(stateTransitionMock.getType).to.be.calledOnce();
-    expect(stateTransitionMock.toBuffer).to.be.calledOnce();
+      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(stateTransitionMock);
+      expect(stateRepositoryMock.fetchIdentity).to.not.be.called();
+    }
   });
 });

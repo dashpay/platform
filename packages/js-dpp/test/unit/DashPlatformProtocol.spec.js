@@ -9,18 +9,18 @@ describe('DashPlatformProtocol', () => {
   let dpp;
   let stateRepositoryMock;
   let jsonSchemaValidatorMock;
-  let skipAssetLockConfirmationValidation;
+  let skipAssetLockProofSignatureVerification;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     jsonSchemaValidatorMock = {};
-    skipAssetLockConfirmationValidation = true;
+    skipAssetLockProofSignatureVerification = true;
 
     dpp = new DashPlatformProtocol({
       stateRepository: stateRepositoryMock,
       jsonSchemaValidator: jsonSchemaValidatorMock,
       identities: {
-        skipAssetLockConfirmationValidation,
+        skipAssetLockProofSignatureVerification,
       },
     });
   });

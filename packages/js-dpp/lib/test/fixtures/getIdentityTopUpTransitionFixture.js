@@ -4,6 +4,8 @@ const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes
 
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
+const getAssetLockFixture = require('./getAssetLockFixture');
+
 /**
  *
  * @return {IdentityTopUpTransition}
@@ -12,7 +14,7 @@ module.exports = function getIdentityTopUpTransitionFixture() {
   const rawStateTransition = {
     protocolVersion: 0,
     type: stateTransitionTypes.IDENTITY_CREATE,
-    lockedOutPoint: Buffer.alloc(36).fill('x'),
+    assetLock: getAssetLockFixture().toObject(),
     identityId: generateRandomIdentifier(),
   };
 

@@ -2,11 +2,7 @@ const ConsensusError = require('./ConsensusError');
 
 class InvalidStateTransitionSignatureError extends ConsensusError {
   /**
-   * @param {
-   * DataContractCreateTransition|
-   * DocumentsBatchTransition|
-   * IdentityCreateTransition
-   * } stateTransition
+   * @param {AbstractStateTransition} stateTransition
    */
   constructor(stateTransition) {
     super(`Invalid State Transition signature ${stateTransition.getSignature()}`);
@@ -17,7 +13,7 @@ class InvalidStateTransitionSignatureError extends ConsensusError {
   /**
    * Get State Transition
    *
-   * @return {DataContractCreateTransition|DocumentsBatchTransition|IdentityCreateTransition}
+   * @return {AbstractStateTransition}
    */
   getRawStateTransition() {
     return this.stateTransition;

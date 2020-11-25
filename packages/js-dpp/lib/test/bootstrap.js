@@ -1,4 +1,3 @@
-const dotenv = require('dotenv');
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
@@ -8,8 +7,6 @@ const chaiAsPromised = require('chai-as-promised');
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
-
-dotenv.config();
 
 beforeEach(function beforeEach() {
   if (!this.sinonSandbox) {

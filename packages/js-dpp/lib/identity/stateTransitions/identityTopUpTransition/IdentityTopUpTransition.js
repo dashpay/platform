@@ -1,20 +1,21 @@
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const Identifier = require('../../../identifier/Identifier');
+const AssetLock = require('../assetLock/AssetLock');
 
 class IdentityTopUpTransition extends AbstractStateTransition {
   /**
-   * @param {RawIdentityTopUpTransition} [rawIdentityTopUpTransition]
+   * @param {RawIdentityTopUpTransition} rawStateTransition
    */
-  constructor(rawIdentityTopUpTransition = {}) {
-    super(rawIdentityTopUpTransition);
+  constructor(rawStateTransition) {
+    super(rawStateTransition);
 
-    if (Object.prototype.hasOwnProperty.call(rawIdentityTopUpTransition, 'lockedOutPoint')) {
-      this.setLockedOutPoint(rawIdentityTopUpTransition.lockedOutPoint);
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'identityId')) {
+      this.setIdentityId(rawStateTransition.identityId);
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawIdentityTopUpTransition, 'identityId')) {
-      this.setIdentityId(rawIdentityTopUpTransition.identityId);
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'assetLock')) {
+      this.setAssetLock(new AssetLock(rawStateTransition.assetLock));
     }
   }
 
@@ -28,23 +29,22 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   }
 
   /**
-   * Sets an outPoint. OutPoint is a pointer to the output funding the top up.
-   * More about the OutPoint can be found in the identity documentation
+   * Set Asset Lock
    *
-   * @param {Buffer} lockedOutPoint
+   * @param {AssetLock} assetLock
    * @return {IdentityTopUpTransition}
    */
-  setLockedOutPoint(lockedOutPoint) {
-    this.lockedOutPoint = lockedOutPoint;
+  setAssetLock(assetLock) {
+    this.assetLock = assetLock;
 
     return this;
   }
 
   /**
-   * @return {Buffer}
+   * @return {AssetLock}
    */
-  getLockedOutPoint() {
-    return this.lockedOutPoint;
+  getAssetLock() {
+    return this.assetLock;
   }
 
   /**
@@ -98,7 +98,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
     const rawStateTransition = {
       ...super.toObject(options),
       identityId: this.getIdentityId(),
-      lockedOutPoint: this.getLockedOutPoint(),
+      assetLock: this.getAssetLock().toObject(),
     };
 
     if (!options.skipIdentifiersConversion) {
@@ -117,20 +117,20 @@ class IdentityTopUpTransition extends AbstractStateTransition {
     return {
       ...super.toJSON(),
       identityId: this.getIdentityId().toString(),
-      lockedOutPoint: this.getLockedOutPoint().toString('base64'),
+      assetLock: this.getAssetLock().toJSON(),
     };
   }
 }
 
 /**
  * @typedef {RawStateTransition & Object} RawIdentityTopUpTransition
- * @property {Buffer} lockedOutPoint
+ * @property {RawAssetLock} assetLock
  * @property {Buffer} identityId
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonIdentityTopUpTransition
- * @property {string} lockedOutPoint
+ * @property {JsonAssetLock} assetLock
  * @property {string} identityId
  */
 

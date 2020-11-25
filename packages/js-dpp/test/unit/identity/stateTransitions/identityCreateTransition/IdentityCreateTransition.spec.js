@@ -1,5 +1,3 @@
-const rewiremock = require('rewiremock/node');
-
 const IdentityPublicKey = require('../../../../../lib/identity/IdentityPublicKey');
 
 const stateTransitionTypes = require(
@@ -7,59 +5,25 @@ const stateTransitionTypes = require(
 );
 
 const Identity = require('../../../../../lib/identity/Identity');
+const AssetLock = require('../../../../../lib/identity/stateTransitions/assetLock/AssetLock');
+
+const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 describe('IdentityCreateTransition', () => {
   let rawStateTransition;
   let stateTransition;
-  let hashMock;
-  let signerMock;
-  let IdentityCreateTransition;
 
-  beforeEach(function beforeEach() {
-    rawStateTransition = {
-      protocolVersion: Identity.PROTOCOL_VERSION,
-      lockedOutPoint: Buffer.alloc(36).fill('b'),
-      publicKeys: [
-        {
-          id: 0,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: 'someString',
-        },
-      ],
-    };
-
-    hashMock = this.sinonSandbox.stub();
-    hashMock.returns(Buffer.alloc(32));
-
-    signerMock = {
-      signByPrivateKey: this.sinonSandbox.stub(),
-      verifySignatureByPublicKey: this.sinonSandbox.stub(),
-    };
-
-    IdentityCreateTransition = rewiremock.proxy(
-      '../../../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition',
-      {
-        '../../../../../lib/util/hash': hashMock,
-        '../../../../../node_modules/@dashevo/dashcore-lib': {
-          Signer: signerMock,
-        },
-      },
-    );
-
-    stateTransition = new IdentityCreateTransition(rawStateTransition);
+  beforeEach(() => {
+    stateTransition = getIdentityCreateTransitionFixture();
+    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#constructor', () => {
-    it('should create an instance with default values if nothing specified', () => {
-      stateTransition = new IdentityCreateTransition();
-
-      expect(stateTransition.publicKeys).to.deep.equal([]);
-    });
-
-    it('should create an instance with specified data from specified raw transition', () => {
-      expect(stateTransition.lockedOutPoint).to.deep.equal(
-        rawStateTransition.lockedOutPoint,
+    it('should create an instance with specified data', () => {
+      expect(stateTransition.getAssetLock().toObject()).to.deep.equal(
+        rawStateTransition.assetLock,
       );
+
       expect(stateTransition.publicKeys).to.deep.equal([
         new IdentityPublicKey(rawStateTransition.publicKeys[0]),
       ]);
@@ -72,28 +36,40 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe('#setLockedOutPoint', () => {
-    it('should set locked OutPoint', () => {
-      stateTransition.setLockedOutPoint(Buffer.alloc(42, 3));
-      expect(stateTransition.lockedOutPoint).to.deep.equal(Buffer.alloc(42, 3));
+  describe('#setAssetLock', () => {
+    it('should set asset lock', () => {
+      const newAssetLock = new AssetLock({
+        transaction: rawStateTransition.assetLock.transaction,
+        outputIndex: 2,
+        proof: rawStateTransition.assetLock.proof,
+      });
+
+      stateTransition.setAssetLock(newAssetLock);
+
+      expect(stateTransition.assetLock).to.deep.equal(newAssetLock);
     });
 
     it('should set `identityId`', () => {
-      hashMock.reset();
-      hashMock.returns(Buffer.alloc(32));
+      expect(stateTransition.identityId).to.deep.equal(
+        stateTransition.getAssetLock().createIdentifier(),
+      );
 
-      stateTransition = new IdentityCreateTransition();
-      stateTransition.setLockedOutPoint(Buffer.alloc(0));
+      const newAssetLock = new AssetLock({
+        transaction: rawStateTransition.assetLock.transaction,
+        outputIndex: 2,
+        proof: rawStateTransition.assetLock.proof,
+      });
 
-      expect(hashMock).to.have.been.calledOnce();
-      expect(stateTransition.identityId.toString()).to.equal('11111111111111111111111111111111');
+      stateTransition.setAssetLock(newAssetLock);
+
+      expect(stateTransition.identityId).to.deep.equal(newAssetLock.createIdentifier());
     });
   });
 
-  describe('#getLockedOutPoint', () => {
+  describe('#getAssetLock', () => {
     it('should return currently set locked OutPoint', () => {
-      expect(stateTransition.getLockedOutPoint()).to.deep.equal(
-        rawStateTransition.lockedOutPoint,
+      expect(stateTransition.getAssetLock().toObject()).to.deep.equal(
+        rawStateTransition.assetLock,
       );
     });
   });
@@ -128,8 +104,8 @@ describe('IdentityCreateTransition', () => {
 
   describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId().toString()).to.equal(
-        '11111111111111111111111111111111',
+      expect(stateTransition.getIdentityId()).to.deep.equal(
+        stateTransition.getAssetLock().createIdentifier(),
       );
     });
   });
@@ -149,7 +125,7 @@ describe('IdentityCreateTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         protocolVersion: Identity.PROTOCOL_VERSION,
         type: stateTransitionTypes.IDENTITY_CREATE,
-        lockedOutPoint: rawStateTransition.lockedOutPoint,
+        assetLock: rawStateTransition.assetLock,
         publicKeys: rawStateTransition.publicKeys,
         signature: undefined,
       });
@@ -161,7 +137,7 @@ describe('IdentityCreateTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         protocolVersion: Identity.PROTOCOL_VERSION,
         type: stateTransitionTypes.IDENTITY_CREATE,
-        lockedOutPoint: rawStateTransition.lockedOutPoint,
+        assetLock: rawStateTransition.assetLock,
         publicKeys: rawStateTransition.publicKeys,
       });
     });
@@ -174,8 +150,8 @@ describe('IdentityCreateTransition', () => {
       expect(jsonStateTransition).to.deep.equal({
         protocolVersion: Identity.PROTOCOL_VERSION,
         type: stateTransitionTypes.IDENTITY_CREATE,
-        lockedOutPoint: rawStateTransition.lockedOutPoint.toString('base64'),
-        publicKeys: rawStateTransition.publicKeys,
+        assetLock: stateTransition.getAssetLock().toJSON(),
+        publicKeys: stateTransition.getPublicKeys().map((k) => k.toJSON()),
         signature: undefined,
       });
     });

@@ -13,30 +13,22 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
   let applyIdentityCreateTransition;
-  let fetchConfirmedAssetLockTransactionOutputMock;
-  let output;
   let stateRepositoryMock;
 
   beforeEach(function beforeEach() {
-    output = {
-      satoshis: 10000,
-    };
-
-    fetchConfirmedAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
-
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     stateTransition = getIdentityCreateTransitionFixture();
+
     applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
       stateRepositoryMock,
-      fetchConfirmedAssetLockTransactionOutputMock,
     );
   });
 
   it('should store identity created from state transition', async () => {
     await applyIdentityCreateTransition(stateTransition);
 
-    const balance = convertSatoshiToCredits(output.satoshis);
+    const balance = convertSatoshiToCredits(stateTransition.getAssetLock().getOutput().satoshis);
 
     const identity = new Identity({
       protocolVersion: Identity.PROTOCOL_VERSION,
@@ -46,9 +38,6 @@ describe('applyIdentityCreateTransitionFactory', () => {
       revision: 0,
     });
 
-    expect(fetchConfirmedAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
-      stateTransition.getLockedOutPoint(),
-    );
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
       identity,
     );

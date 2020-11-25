@@ -11,11 +11,8 @@
       "type": "integer",
       "const": 3
     },
-    "lockedOutPoint": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 36,
-      "maxItems": 36
+    "assetLock": {
+      "type": "object"
     },
     "identityId": {
       "type": "array",
@@ -35,7 +32,7 @@
   "required": [
     "protocolVersion",
     "type",
-    "lockedOutPoint",
+    "assetLock",
     "identityId",
     "signature"
   ]

@@ -6,7 +6,7 @@ class InvalidIdentityAssetLockTransactionOutputError extends ConsensusError {
    * @param {Object} output
    */
   constructor(message, output) {
-    super(`Invalid identity lock transaction output: ${message}`);
+    super(`Invalid asset lock transaction output: ${message}`);
 
     this.output = output;
   }

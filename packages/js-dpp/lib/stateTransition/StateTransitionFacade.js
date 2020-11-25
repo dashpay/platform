@@ -1,5 +1,5 @@
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
-const { Transaction } = require('@dashevo/dashcore-lib');
+const { Signer: { verifyHashSignature } } = require('@dashevo/dashcore-lib');
 
 const MissingOptionError = require('../errors/MissingOptionError');
 
@@ -19,13 +19,11 @@ const validateStateTransitionDataFactory = require('./validation/validateStateTr
 const validateDocumentsBatchTransitionStructureFactory = require('../document/stateTransition/validation/structure/validateDocumentsBatchTransitionStructureFactory');
 const validateIdentityCreateTransitionDataFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateTransitionDataFactory');
 const validateIdentityTopUpTransitionDataFactory = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionDataFactory');
-const validateAssetLockTransactionFactory = require('../identity/stateTransitions/identityCreateTransition/validateAssetLockTransactionFactory');
 const validateIdentityCreateTransitionStructureFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateTransitionStructureFactory');
 const validateIdentityTopUpTransitionStructureFactory = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionStructureFactory');
 const validateIdentityPublicKeysUniquenessFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityPublicKeysUniquenessFactory');
 const validateStateTransitionSignatureFactory = require('./validation/validateStateTransitionSignatureFactory');
 const validateStateTransitionFeeFactory = require('./validation/validateStateTransitionFeeFactory');
-const fetchConfirmedAssetLockTransactionOutputFactory = require('./fetchConfirmedAssetLockTransactionOutputFactory');
 
 const enrichDataContractWithBaseSchema = require('../dataContract/enrichDataContractWithBaseSchema');
 const findDuplicatesById = require('../document/stateTransition/validation/structure/findDuplicatesById');
@@ -37,7 +35,7 @@ const validateDocumentsUniquenessByIndicesFactory = require('../document/stateTr
 const validatePartialCompoundIndices = require('../document/stateTransition/validation/data/validatePartialCompoundIndices');
 const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/validation/data/executeDataTriggersFactory');
-const validateIdentityExistenceFactory = require('./validation/validateIdentityExistenceFactory');
+const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
 const validateDataContractMaxDepthFactory = require('../dataContract/stateTransition/validation/validateDataContractMaxDepthFactory');
 
@@ -58,14 +56,19 @@ const applyIdentityCreateTransitionFactory = require(
 const applyIdentityTopUpTransitionFactory = require(
   '../identity/stateTransitions/identityTopUpTransition/applyIdentityTopUpTransitionFactory',
 );
+const validateAssetLockStructureFactory = require('../identity/stateTransitions/assetLock/validateAssetLockStructureFactory');
+const validateSignatureAgainstAssetLockPublicKeyFactory = require('../identity/stateTransitions/validateSignatureAgainstAssetLockPublicKeyFactory');
+const AssetLock = require('../identity/stateTransitions/assetLock/AssetLock');
+const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransitions/assetLock/proof/instant/validateInstantAssetLockProofStructureFactory');
+const calculateStateTransitionFee = require('./calculateStateTransitionFee');
 
 class StateTransitionFacade {
   /**
    * @param {StateRepository} stateRepository
    * @param {JsonSchemaValidator} validator
-   * @param {boolean} [skipAssetLockConfirmationValidation=false]
+   * @param {boolean} skipAssetLockProofSignatureVerification
    */
-  constructor(stateRepository, validator, skipAssetLockConfirmationValidation = false) {
+  constructor(stateRepository, validator, skipAssetLockProofSignatureVerification) {
     this.stateRepository = stateRepository;
     this.validator = validator;
 
@@ -105,6 +108,28 @@ class StateTransitionFacade {
       )
     );
 
+    const validateInstantAssetLockProofStructure = validateInstantAssetLockProofStructureFactory(
+      validator,
+      stateRepository,
+      skipAssetLockProofSignatureVerification,
+    );
+
+    const proofValidationFunctionsByType = {
+      [AssetLock.PROOF_TYPE_INSTANT]: validateInstantAssetLockProofStructure,
+    };
+
+    const validateAssetLockStructure = validateAssetLockStructureFactory(
+      validator,
+      proofValidationFunctionsByType,
+    );
+
+    const validateSignatureAgainstAssetLockPublicKey = (
+      validateSignatureAgainstAssetLockPublicKeyFactory(
+        this.createStateTransition,
+        verifyHashSignature,
+      )
+    );
+
     const validatePublicKeys = validatePublicKeysFactory(
       validator,
     );
@@ -113,12 +138,17 @@ class StateTransitionFacade {
       validateIdentityCreateTransitionStructureFactory(
         validator,
         validatePublicKeys,
+        validateAssetLockStructure,
+        validateSignatureAgainstAssetLockPublicKey,
       )
     );
 
     const validateIdentityTopUpTransitionStructure = (
       validateIdentityTopUpTransitionStructureFactory(
         validator,
+        validateIdentityExistence,
+        validateAssetLockStructure,
+        validateSignatureAgainstAssetLockPublicKey,
       )
     );
 
@@ -140,31 +170,16 @@ class StateTransitionFacade {
       )
     );
 
-    // eslint-disable-next-line max-len
-    const fetchConfirmedAssetLockTransactionOutput = fetchConfirmedAssetLockTransactionOutputFactory(
-      stateRepository,
-      Transaction.parseOutPointBuffer,
-      skipAssetLockConfirmationValidation,
-    );
-
-    const validateAssetLockTransaction = validateAssetLockTransactionFactory(
-      fetchConfirmedAssetLockTransactionOutput,
-    );
-
     const validateIdentityPublicKeysUniqueness = validateIdentityPublicKeysUniquenessFactory(
       stateRepository,
     );
 
     const validateIdentityCreateTransitionData = validateIdentityCreateTransitionDataFactory(
       stateRepository,
-      validateAssetLockTransaction,
       validateIdentityPublicKeysUniqueness,
     );
 
-    const validateIdentityTopUpTransitionData = validateIdentityTopUpTransitionDataFactory(
-      validateAssetLockTransaction,
-      validateIdentityExistence,
-    );
+    const validateIdentityTopUpTransitionData = validateIdentityTopUpTransitionDataFactory();
 
     const fetchDocuments = fetchDocumentsFactory(
       stateRepository,
@@ -197,7 +212,7 @@ class StateTransitionFacade {
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
       stateRepository,
-      fetchConfirmedAssetLockTransactionOutput,
+      calculateStateTransitionFee,
     );
 
     this.factory = new StateTransitionFactory(
@@ -216,12 +231,10 @@ class StateTransitionFacade {
 
     const applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
       stateRepository,
-      fetchConfirmedAssetLockTransactionOutput,
     );
 
     const applyIdentityTopUpTransition = applyIdentityTopUpTransitionFactory(
       stateRepository,
-      fetchConfirmedAssetLockTransactionOutput,
     );
 
     this.applyStateTransition = applyStateTransitionFactory(

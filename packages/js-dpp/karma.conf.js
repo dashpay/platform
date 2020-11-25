@@ -24,6 +24,9 @@ module.exports = (config) => {
         new webpack.HotModuleReplacementPlugin(),
         new RewiremockPlugin(),
       ],
+      node: {
+        fs: 'empty',
+      },
     },
     reporters: ['mocha'],
     port: 9876,

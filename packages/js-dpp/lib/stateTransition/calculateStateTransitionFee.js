@@ -11,8 +11,8 @@ const PRICE_PER_BYTE = 1;
  */
 function calculateStateTransitionFee(stateTransition) {
   const serializedStateTransition = stateTransition.toBuffer({ skipSignature: true });
-  const byteSize = Buffer.byteLength(serializedStateTransition);
-  return byteSize * PRICE_PER_BYTE;
+  return serializedStateTransition.length * PRICE_PER_BYTE;
 }
 
 module.exports = calculateStateTransitionFee;
+module.exports.PRICE_PER_BYTE = PRICE_PER_BYTE;

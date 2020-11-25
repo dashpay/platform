@@ -16,7 +16,7 @@ class DashPlatformProtocol {
    * @param {Object} options
    * @param {StateRepository} [options.stateRepository]
    * @param {JsonSchemaValidator} [options.jsonSchemaValidator]
-   * @param {boolean} [options.identities.skipAssetLockConfirmationValidation=false]
+   * @param {boolean} [options.identities.skipAssetLockProofSignatureVerification=false]
    */
   constructor(options = {}) {
     this.stateRepository = options.stateRepository;
@@ -28,17 +28,17 @@ class DashPlatformProtocol {
       this.jsonSchemaValidator = new JsonSchemaValidator(ajv);
     }
 
-    const skipAssetLockConfirmationValidation = options.identities
-      ? options.identities.skipAssetLockConfirmationValidation : false;
+    const skipAssetLockProofSignatureVerification = options.identities
+      ? options.identities.skipAssetLockProofSignatureVerification : false;
 
-    this.initializeFacades(skipAssetLockConfirmationValidation);
+    this.initializeFacades(skipAssetLockProofSignatureVerification);
   }
 
   /**
    * @private
-   * @param {boolean} [skipAssetLockConfirmationValidation=false]
+   * @param {boolean} skipAssetLockProofSignatureVerification
    */
-  initializeFacades(skipAssetLockConfirmationValidation = false) {
+  initializeFacades(skipAssetLockProofSignatureVerification) {
     this.dataContract = new DataContractFacade(
       this.jsonSchemaValidator,
     );
@@ -51,7 +51,7 @@ class DashPlatformProtocol {
     this.stateTransition = new StateTransitionFacade(
       this.stateRepository,
       this.jsonSchemaValidator,
-      skipAssetLockConfirmationValidation,
+      skipAssetLockProofSignatureVerification,
     );
 
     this.identity = new IdentityFacade(

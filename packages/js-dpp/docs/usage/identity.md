@@ -4,10 +4,12 @@
 
 **Parameters**:
 
-| parameters                   | type            | required  | Description                                            |  
-|------------------------------|-----------------|-----------| -------------------------------------------------------|
-| **lockedOutPoint**           | Buffer          | yes       |                                                        |
-| **publicKeys**               | PublicKey[]     | no        |                                                        |
+| parameters                   | type                   | required  | Description                                      |  
+|------------------------------|------------------------|-----------| -------------------------------------------------|
+| **assetLockTransaction**     | Transaction            | yes       |                                                  |
+| **outputIndex**              | number                 | yes       |                                                  |
+| **assetLockProof**           | InstantAssetLockProof  | yes       |                                                  |
+| **publicKeys**               | PublicKey[]            | yes       |                                                  |
 
 Returns : {[Identity](/primitives/Identity)}
 
@@ -50,6 +52,18 @@ Returns : {[Identity](/primitives/Identity)}
 | **identity**                 | Identity/RawIdentity         | yes      |                                                         |
 
 Returns : {ValidationResult}
+
+## dpp.identity.createInstantAssetLockProof(instantLock)
+
+**Description**: Create a instant asset lock proof Identity.   
+
+**Parameters**:
+
+| parameters                   | type                   | required  | Description                                      |  
+|------------------------------|------------------------|-----------| -------------------------------------------------|
+| **instantLock**              | InstantLock            | yes       |                                                  |
+
+Returns : {InstantAssetLookProof}
 
 ## dpp.identity.createIdentityCreateTransition(identity)
 

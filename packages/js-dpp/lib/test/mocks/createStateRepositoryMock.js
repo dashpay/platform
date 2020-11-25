@@ -9,6 +9,7 @@
  *   fetchTransaction: *,
  *   fetchIdentity: *,
  *   storeIdentity: *,
+ *   fetchSMLStore: *,
  * }}
  */
 module.exports = function createStateRepositoryMock(sinonSandbox) {
@@ -24,5 +25,6 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     fetchLatestPlatformBlockHeader: sinonSandbox.stub(),
     storeIdentityPublicKeyHashes: sinonSandbox.stub(),
     fetchIdentityIdsByPublicKeyHashes: sinonSandbox.stub(),
+    fetchSMLStore: sinonSandbox.stub(),
   };
 };

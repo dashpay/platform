@@ -106,25 +106,25 @@
 
 **Returns**: {Identity}
 
-## .setLockedOutPoint(lockedOutPoint)
+## .setAssetLock(assetLock)
 
-**Description**: Set Identity locked out point
+**Description**: Set Identity asset lock
 
 **Parameters**:  
 
-| parameters         | type   | required           | Description                      |  
-|--------------------|--------|--------------------| -------------------------------- |
-| **lockedOutPoint** | Buffer | yes                |                                  |
+| parameters         | type      | required           | Description                      |  
+|--------------------|-----------|--------------------| -------------------------------- |
+| **assetLock**      | AssetLock | yes                |                                  |
 
 **Returns**: {Identity}
 
-## .getLockedOutPoint()
+## .getAssetLock()
 
-**Description**: Returns Identity locked out point 
+**Description**: Returns Identity asset lock 
 
 **Parameters**: None.  
 
-**Returns**: {Buffer}
+**Returns**: {AssetLock}
 
 ## .setRevision(revision)
 

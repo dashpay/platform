@@ -4,6 +4,8 @@ const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 
 const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes');
 
+const getAssetLockFixture = require('./getAssetLockFixture');
+
 /**
  *
  * @return {IdentityCreateTransition}
@@ -12,7 +14,7 @@ module.exports = function getIdentityCreateTransitionFixture() {
   const rawStateTransition = {
     protocolVersion: 0,
     type: stateTransitionTypes.IDENTITY_CREATE,
-    lockedOutPoint: Buffer.alloc(36),
+    assetLock: getAssetLockFixture().toObject(),
     publicKeys: [
       {
         id: 0,
