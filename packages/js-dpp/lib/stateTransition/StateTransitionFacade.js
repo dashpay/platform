@@ -121,6 +121,7 @@ class StateTransitionFacade {
     const validateAssetLockStructure = validateAssetLockStructureFactory(
       validator,
       proofValidationFunctionsByType,
+      stateRepository,
     );
 
     const validateSignatureAgainstAssetLockPublicKey = (

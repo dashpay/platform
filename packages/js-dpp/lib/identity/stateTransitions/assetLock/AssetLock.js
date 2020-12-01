@@ -43,6 +43,14 @@ class AssetLock {
   }
 
   /**
+   * Get transaction outPoint
+   * @return {Buffer}
+   */
+  getOutPoint() {
+    return this.transaction.getOutPointBuffer(this.getOutputIndex());
+  }
+
+  /**
    * Get proof
    *
    * @returns {InstantAssetLockProof}

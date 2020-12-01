@@ -21,6 +21,7 @@ function applyIdentityCreateTransitionFactory(
    */
   async function applyIdentityCreateTransition(stateTransition) {
     const output = stateTransition.getAssetLock().getOutput();
+    const outPoint = stateTransition.getAssetLock().getOutPoint();
 
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
 
@@ -42,6 +43,8 @@ function applyIdentityCreateTransitionFactory(
       identity.getId(),
       publicKeyHashes,
     );
+
+    await stateRepository.storeAssetLockTransactionOutPoint(outPoint);
   }
 
   return applyIdentityCreateTransition;

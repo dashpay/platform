@@ -20,11 +20,15 @@ const { expectValidationError, expectJsonSchemaError } = require(
 const ConsensusError = require('../../../../../lib/errors/ConsensusError');
 const ValidationResult = require('../../../../../lib/validation/ValidationResult');
 
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../../../lib/errors/IdentityAssetLockTransactionOutPointAlreadyExistsError');
+
 describe('validateAssetLockStructureFactory', () => {
   let validateAssetLockStructure;
   let assetLock;
   let rawAssetLock;
   let proofValidationFunctionMock;
+  let stateRepositoryMock;
 
   beforeEach(function beforeEach() {
     assetLock = getAssetLockFixture();
@@ -39,9 +43,13 @@ describe('validateAssetLockStructureFactory', () => {
       0: proofValidationFunctionMock,
     };
 
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.checkAssetLockTransactionOutPointExists.resolves(false);
+
     validateAssetLockStructure = validateAssetLockStructureFactory(
       jsonSchemaValidator,
       proofValidationFunctionsByType,
+      stateRepositoryMock,
     );
   });
 
@@ -247,6 +255,29 @@ describe('validateAssetLockStructureFactory', () => {
         expect(error.dataPath).to.equal('.proof.type');
         expect(error.keyword).to.equal('enum');
       });
+    });
+
+    it('should return invalid result if asset lock transaction outPoint exists', async () => {
+      proofValidationFunctionMock.resolves(
+        new ValidationResult(),
+      );
+
+      stateRepositoryMock.checkAssetLockTransactionOutPointExists.resolves(true);
+
+      const result = await validateAssetLockStructure(rawAssetLock);
+
+      expectValidationError(result);
+
+      const outPointBuffer = new Transaction(rawAssetLock.transaction)
+        .getOutPointBuffer(rawAssetLock.outputIndex);
+
+      expect(stateRepositoryMock.checkAssetLockTransactionOutPointExists)
+        .to.be.calledOnceWithExactly(outPointBuffer);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.be.an.instanceOf(IdentityAssetLockTransactionOutPointAlreadyExistsError);
+      expect(error.getOutPoint()).to.deep.equal(outPointBuffer);
     });
   });
 

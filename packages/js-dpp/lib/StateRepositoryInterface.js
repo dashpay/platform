@@ -128,3 +128,23 @@
  * @name StateRepository#fetchSMLStore
  * @returns {Promise<SimplifiedMNListStore>}
  */
+
+/**
+ * Check if AssetLock Transaction outPoint exists in spent list
+ *
+ * @async
+ * @method
+ * @name StateRepository#checkAssetLockTransactionOutPointExists
+ * @param {Buffer} outPointBuffer
+ * @returns {Promise<boolean>}
+ */
+
+/**
+ * Store AssetLock Transaction outPoint in spent list
+ *
+ * @async
+ * @method
+ * @name StateRepository#storeAssetLockTransactionOutPoint
+ * @param {Buffer} outPointBuffer
+ * @returns {Promise<void>}
+ */

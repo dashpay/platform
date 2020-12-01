@@ -43,5 +43,10 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
       identity,
     );
+
+    expect(stateRepositoryMock.storeAssetLockTransactionOutPoint).to.have.been
+      .calledOnceWithExactly(
+        stateTransition.getAssetLock().getOutPoint(),
+      );
   });
 });

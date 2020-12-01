@@ -6,15 +6,18 @@ const convertBuffersToArrays = require('../../../util/convertBuffersToArrays');
 const InvalidIdentityAssetLockTransactionError = require('../../../errors/InvalidIdentityAssetLockTransactionError');
 const IdentityAssetLockTransactionOutputNotFoundError = require('../../../errors/IdentityAssetLockTransactionOutputNotFoundError');
 const InvalidIdentityAssetLockTransactionOutputError = require('../../../errors/InvalidIdentityAssetLockTransactionOutputError');
+const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../errors/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {Object.<number, Function>} proofValidationFunctionsByType
+ * @param {StateRepository} stateRepository
  * @returns {validateAssetLockStructure}
  */
 function validateAssetLockStructureFactory(
   jsonSchemaValidator,
   proofValidationFunctionsByType,
+  stateRepository,
 ) {
   /**
    * @typedef {validateAssetLockStructure}
@@ -82,6 +85,21 @@ function validateAssetLockStructureFactory(
     result.merge(
       await proofValidationFunction(rawAssetLock, transaction),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    const outPointBuffer = transaction.getOutPointBuffer(rawAssetLock.outputIndex);
+    const outPointExists = await stateRepository.checkAssetLockTransactionOutPointExists(
+      outPointBuffer,
+    );
+
+    if (outPointExists) {
+      result.addError(
+        new IdentityAssetLockTransactionOutPointAlreadyExistsError(outPointBuffer),
+      );
+    }
 
     if (result.isValid()) {
       result.setData(publicKeyHash);
