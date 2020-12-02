@@ -6,14 +6,13 @@ services:
     restart: unless-stopped
     ports:
       - ${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
+      - 127.0.0.1:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
     volumes:
-      - ./configs/${NETWORK:?err}/core/dashd.conf:/dash/.dashcore/dash.conf
+      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/dashd.conf:/dash/.dashcore/dash.conf
       - core_data:/dash
     command:
       - dashd
-      - -port=${CORE_P2P_PORT:?err}
       - -masternodeblsprivkey=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
-      - -externalip=${EXTERNAL_IP}
 
   sentinel:
     image: dashpay/sentinel
@@ -22,10 +21,10 @@ services:
       - core
     environment:
       - DEBUG=false
-      - RPCUSER=dashrpc
-      - RPCPASSWORD=password
+      - RPCUSER=${CORE_RPC_USER:?err}
+      - RPCPASSWORD=${CORE_RPC_PASSWORD:?err}
       - RPCHOST=core
-      - RPCPORT=20002
+      - RPCPORT=${CORE_RPC_PORT:?err}
       - NETWORK=${NETWORK?:err}
       - SENTINEL_ARGS=-b
 

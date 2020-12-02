@@ -10,9 +10,9 @@
     "dashd": {
       "connect": [{
         "rpchost": "core",
-        "rpcport": 20002,
-        "rpcuser": "dashrpc",
-        "rpcpassword": "password",
+        "rpcport": {{=it.core.rpc.port}},
+        "rpcuser": "{{=it.core.rpc.user}}",
+        "rpcpassword": "{{=it.core.rpc.password}}",
         "zmqpubrawtx":"tcp://core:29998",
         "zmqpubhashblock": "tcp://core:29998"
       }]

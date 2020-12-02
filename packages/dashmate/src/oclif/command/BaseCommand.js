@@ -15,7 +15,7 @@ const ConfigFileNotFoundError = require('../../config/errors/ConfigFileNotFoundE
  */
 class BaseCommand extends Command {
   async init() {
-    this.container = await createDIContainer();
+    this.container = await createDIContainer(process.env);
 
     // Set up home dir
     /**
@@ -94,6 +94,9 @@ class BaseCommand extends Command {
       this.container.register({
         config: asValue(config),
       });
+
+      const renderServiceTemplates = this.container.resolve('renderServiceTemplates');
+      renderServiceTemplates(config, this.container.resolve('homeDirPath'));
     }
 
     const params = getFunctionParams(this.runWithDependencies, 2);

@@ -1,3 +1,12 @@
+## [0.16.1](https://github.com/dashevo/mn-bootstrap/compare/v0.16.0...v0.16.1) (2020-10-30)
+
+
+### Bug Fixes
+
+* add section to dashd testnet config ([#175](https://github.com/dashevo/mn-bootstrap/issues/175))
+
+
+
 # [0.16.0](https://github.com/dashevo/mn-bootstrap/compare/v0.15.1...v0.16.0) (2020-10-29)
 
 

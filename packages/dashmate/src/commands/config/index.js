@@ -16,7 +16,7 @@ class ConfigCommand extends BaseCommand {
   ) {
     const output = `${config.getName()} config:\n\n${inspect(
       config.getOptions(),
-      { colors: true, depth: null },
+      { colors: true, depth: null, maxArrayLength: 2 },
     )}`;
 
     // eslint-disable-next-line no-console

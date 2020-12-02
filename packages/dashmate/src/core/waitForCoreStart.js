@@ -8,7 +8,7 @@ const wait = require('../util/wait');
  * @return {Promise<void>}
  */
 async function waitForCoreStart(coreService) {
-  let retires = 0;
+  let retries = 0;
   let isReady = false;
   const maxRetries = 120; // ~2 minutes
 
@@ -21,9 +21,9 @@ async function waitForCoreStart(coreService) {
     } catch (e) {
       // just wait 1 second before next try
       await wait(1000);
-      ++retires;
+      ++retries;
     }
-  } while (!isReady && retires < maxRetries);
+  } while (!isReady && retries < maxRetries);
 
   if (!isReady) {
     throw new Error('Could not connect to Core RPC');

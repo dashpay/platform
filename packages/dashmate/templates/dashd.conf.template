@@ -1,0 +1,53 @@
+# general
+daemon=0  # leave this set to 0 for Docker
+logtimestamps=1
+maxconnections=256
+printtoconsole=1
+
+# JSONRPC
+server=1
+rpcuser={{=it.core.rpc.user}}
+rpcpassword={{=it.core.rpc.password}}
+
+rpcallowip=127.0.0.1
+rpcallowip=172.16.0.0/12
+rpcallowip=192.168.0.0/16
+
+rpcworkqueue=64
+rpcthreads=16
+
+# external network
+listen=1
+dnsseed=0
+allowprivatenet=0
+externalip={{=it.externalIp}}
+
+# optional indices (required for Insight)
+txindex=1
+addressindex=1
+timestampindex=1
+spentindex=1
+
+{{? it.network === 'testnet'}}testnet=1
+[test]{{??}}# ZeroMQ notifications (required for Insight)
+zmqpubrawtx=tcp://0.0.0.0:29998
+zmqpubrawtxlock=tcp://0.0.0.0:29998
+zmqpubhashblock=tcp://0.0.0.0:29998
+zmqpubrawchainlock=tcp://0.0.0.0:29998{{?}}
+{{? it.network === 'local'}}
+regtest=1
+[regtest]{{?? it.network === 'evonet'}}
+devnet={{=it.core.devnetName}}
+[devnet]
+{{~it.core.p2p.seeds :seed}}
+addnode={{=seed.host}}:{{=seed.port}}{{~}}
+
+sporkaddr={{=it.core.spork.address}}
+minimumdifficultyblocks=1000
+highsubsidyblocks=500
+highsubsidyfactor=10{{?}}
+
+# network
+port={{=it.core.p2p.port}}
+bind=0.0.0.0
+rpcport={{=it.core.rpc.port}}

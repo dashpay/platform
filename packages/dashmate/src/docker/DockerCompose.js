@@ -14,10 +14,12 @@ class DockerCompose {
   /**
    * @param {Docker} docker
    * @param {StartedContainers} startedContainers
+   * @param {string} homeDirPath
    */
-  constructor(docker, startedContainers) {
+  constructor(docker, startedContainers, homeDirPath) {
     this.docker = docker;
     this.startedContainers = startedContainers;
+    this.homeDirPath = homeDirPath;
   }
 
   /**
@@ -264,6 +266,7 @@ class DockerCompose {
     const env = {
       ...process.env,
       ...envs,
+      MN_HOME_DIR: this.homeDirPath
     };
 
     return {
