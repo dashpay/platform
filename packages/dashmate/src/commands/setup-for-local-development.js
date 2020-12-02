@@ -27,6 +27,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
       update: isUpdate,
       'drive-image-build-path': driveImageBuildPath,
       'dapi-image-build-path': dapiImageBuildPath,
+      verbose: isVerbose,
     },
     generateToAddressTask,
     registerMasternodeTask,
@@ -84,6 +85,7 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
         },
       ],
       {
+        renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
           clearOutput: false,
           collapse: false,
@@ -113,6 +115,7 @@ SetupForLocalDevelopmentCommand.flags = {
   update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),
+  verbose: flagTypes.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
 module.exports = SetupForLocalDevelopmentCommand;
