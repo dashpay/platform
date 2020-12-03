@@ -41,7 +41,7 @@ install:
 
 before_script:
   - print-bells
-  - source ./bin/start-local-node.sh $TRAVIS_BUILD_DIR/package.json --override-major-version=0 --dapi-branch=$DAPI_BRANCH --drive-branch=$DRIVE_BRANCH
+  - source ./bin/start-local-node.sh $TRAVIS_BUILD_DIR/package.json --override-major-version=0 --dapi-branch=$DAPI_BRANCH --drive-branch=$DRIVE_BRANCH --sdk-branch=${TRAVIS_PULL_REQUEST_BRANCH:-$TRAVIS_BRANCH}
   - cd $TRAVIS_BUILD_DIR
 
 script: >

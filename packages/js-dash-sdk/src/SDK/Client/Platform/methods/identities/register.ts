@@ -8,7 +8,10 @@ import createAssetLockTransaction from "../../createAssetLockTransaction";
  * @param {number} [fundingAmount=10000] - funding amount in duffs
  * @returns {Identity} identity - a register and funded identity
  */
-export default async function register(this: Platform, fundingAmount : number = 10000): Promise<any> {
+export default async function register(
+  this: Platform,
+  fundingAmount : number = 10000
+): Promise<any> {
     const { client, dpp } = this;
 
     const account = await client.getWalletAccount();
@@ -56,7 +59,14 @@ export default async function register(this: Platform, fundingAmount : number = 
     );
 
     // Wait some time for propagation
-    await wait(1000);
+    await wait(6000);
+
+    let fetchedIdentity;
+    do {
+        await wait(1000);
+
+        fetchedIdentity = await this.client.getDAPIClient().platform.getIdentity(identity.getId());
+    } while (!fetchedIdentity);
 
     return identity;
 }
