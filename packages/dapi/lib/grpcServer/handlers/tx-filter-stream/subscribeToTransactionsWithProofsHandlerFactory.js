@@ -56,6 +56,20 @@ async function sendMerkleBlockResponse(call, merkleBlock) {
 }
 
 /**
+ * Prepare the response and send transactions response
+ *
+ * @param {AcknowledgingWritable} call
+ * @param {InstantLock} instantLock
+ * @returns {Promise<void>}
+ */
+async function sendInstantLockResponse(call, instantLock) {
+  const response = new TransactionsWithProofsResponse();
+  response.setInstantSendLockMessages([instantLock.toBuffer()]);
+
+  await call.write(response);
+}
+
+/**
  *
  * @param {getHistoricalTransactionsIterator} getHistoricalTransactionsIterator
  * @param {subscribeToNewTransactions} subscribeToNewTransactions
@@ -182,6 +196,13 @@ function subscribeToTransactionsWithProofsHandlerFactory(
         ProcessMediator.EVENTS.MERKLE_BLOCK,
         async (merkleBlock) => {
           await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
+        },
+      );
+
+      mediator.on(
+        ProcessMediator.EVENTS.INSTANT_LOCK,
+        async (instantLock) => {
+          await sendInstantLockResponse(acknowledgingCall, instantLock);
         },
       );
 

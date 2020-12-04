@@ -43,6 +43,7 @@ const BloomFilterEmitterCollection = require('../lib/bloomFilter/emitter/BloomFi
 const testTransactionAgainstFilterCollectionFactory = require('../lib/transactionsFilter/testRawTransactionAgainstFilterCollectionFactory');
 const emitBlockEventToFilterCollectionFactory = require('../lib/transactionsFilter/emitBlockEventToFilterCollectionFactory');
 const testTransactionsAgainstFilter = require('../lib/transactionsFilter/testTransactionAgainstFilter');
+const emitInstantLockToFilterCollectionFactory = require('../lib/transactionsFilter/emitInstantLockToFilterCollectionFactory');
 const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServer/handlers/tx-filter-stream/subscribeToTransactionsWithProofsHandlerFactory');
 
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
@@ -62,7 +63,7 @@ async function main() {
   // Subscribe to events from Dash Core
   const dashCoreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
 
-  // // Bind logs on ZMQ connection events
+  // Bind logs on ZMQ connection events
   dashCoreZmqClient.on(ZmqClient.events.DISCONNECTED, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, log.warn);
@@ -82,6 +83,9 @@ async function main() {
   const testRawTransactionAgainstFilterCollection = testTransactionAgainstFilterCollectionFactory(
     bloomFilterEmitterCollection,
   );
+  const emitInstantLockToFilterCollection = emitInstantLockToFilterCollectionFactory(
+    bloomFilterEmitterCollection,
+  );
 
   // Send raw transactions via `subscribeToTransactionsWithProofs` stream if matched
   dashCoreZmqClient.on(
@@ -93,6 +97,15 @@ async function main() {
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawblock,
     emitBlockEventToFilterCollection,
+  );
+
+  // TODO: check if we can receive this event before 'rawtx', and if we can,
+  // we need to test tx in this message first before emitng lock to the bloom
+  // filter collection
+  // Send transaction instant locks via `subscribeToTransactionsWithProofs` stream
+  dashCoreZmqClient.on(
+    dashCoreZmqClient.topics.rawtxlocksig,
+    emitInstantLockToFilterCollection,
   );
 
   // Start GRPC server
@@ -138,7 +151,6 @@ async function main() {
   grpcServer.start();
 
   log.info(`GRPC server is listening on port ${config.txFilterStream.grpcServer.port}`);
-
 
   // Display message that everything is ok
   log.info(`DAPI TxFilterStream process is up and running in ${config.livenet ? 'livenet' : 'testnet'} mode`);

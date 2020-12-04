@@ -8,6 +8,7 @@ ProcessMediator.EVENTS = {
   MERKLE_BLOCK: 'merkleBlock',
   CLIENT_DISCONNECTED: 'clientDisconnected',
   HISTORICAL_BLOCK_SENT: 'historicalBlockSent',
+  INSTANT_LOCK: 'instantLock',
 };
 
 module.exports = ProcessMediator;

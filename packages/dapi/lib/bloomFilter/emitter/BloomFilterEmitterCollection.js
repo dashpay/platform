@@ -1,3 +1,7 @@
+/**
+ * @class BloomFilterEmitterCollection
+ * @property {BloomFilterEmitter} filters
+ */
 class BloomFilterEmitterCollection {
   constructor() {
     this.filters = new Set();

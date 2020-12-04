@@ -6,6 +6,7 @@ const constants = {
     rawblock: 'rawblock',
     rawtx: 'rawtx',
     rawtxlock: 'rawtxlock',
+    rawtxlocksig: 'rawtxlocksig',
   },
   DASHCORE_RPC_COMMANDS: {
     protx: {

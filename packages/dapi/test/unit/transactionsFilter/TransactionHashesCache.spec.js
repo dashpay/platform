@@ -83,6 +83,17 @@ describe('TransactionHashesCache', () => {
         },
       ]);
     });
+
+    it('should add transaction to instant send waiting list', () => {
+      const [firstTx] = transactions;
+
+      transactionHashesCache.addTransaction(firstTx);
+
+      expect(transactionHashesCache.blocksProcessed).to.be.equal(0);
+      expect(transactionHashesCache.transactionHashesMap).to.deep.equal({
+        [firstTx.hash]: 0,
+      });
+    });
   });
 
   describe('#addBlock', () => {
@@ -128,6 +139,29 @@ describe('TransactionHashesCache', () => {
       expect(transactionHashesCache.blocks).to.deep.equal(
         [blocks[1], blocks[2]],
       );
+    });
+
+    it('should increment blocks count on every transaction in the cache', () => {
+      const [firstTx, secondTx] = transactions;
+
+      transactionHashesCache.addTransaction(firstTx);
+
+      expect(transactionHashesCache.blocksProcessed).to.be.equal(0);
+      expect(transactionHashesCache.transactionHashesMap).to.deep.equal(
+        {
+          [firstTx.hash]: 0,
+        },
+      );
+
+      transactionHashesCache.addBlock(blocks[0]);
+      transactionHashesCache.addTransaction(secondTx);
+      transactionHashesCache.addBlock(blocks[1]);
+
+      expect(transactionHashesCache.blocksProcessed).to.be.equal(2);
+      expect(transactionHashesCache.transactionHashesMap).to.deep.equal({
+        [firstTx.hash]: 0,
+        [secondTx.hash]: 1,
+      });
     });
   });
 
@@ -206,6 +240,44 @@ describe('TransactionHashesCache', () => {
       ]);
 
       expect(transactionHashesCache.getUnretrievedMerkleBlocks()).to.deep.equal([]);
+    });
+  });
+
+  describe('#isInInstantLockCache', () => {
+    it('should return true if the transaction in the cache', () => {
+      const [firstTx] = transactions;
+
+      transactionHashesCache.addTransaction(firstTx);
+
+      expect(transactionHashesCache.isInInstantLockCache(firstTx.hash)).to.be.true();
+    });
+
+    it('should return false if transaction is not in cache', () => {
+      const [firstTx, secondTx] = transactions;
+
+      transactionHashesCache.addTransaction(firstTx);
+
+      expect(transactionHashesCache.isInInstantLockCache(secondTx.hash)).to.be.false();
+    });
+  });
+
+  describe('#removeTransactionHashFromInstantSendLockWaitingList', () => {
+    it('should remove transaction from a waiting list', () => {
+      const [firstTx, secondTx] = transactions;
+
+      transactionHashesCache.addTransaction(firstTx);
+      transactionHashesCache.addTransaction(secondTx);
+
+      expect(transactionHashesCache.transactionHashesMap).to.be.deep.equal({
+        [firstTx.hash]: 0,
+        [secondTx.hash]: 0,
+      });
+
+      transactionHashesCache.removeTransactionHashFromInstantSendLockWaitingList(firstTx.hash);
+
+      expect(transactionHashesCache.transactionHashesMap).to.be.deep.equal({
+        [secondTx.hash]: 0,
+      });
     });
   });
 });

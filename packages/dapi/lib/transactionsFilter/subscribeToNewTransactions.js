@@ -43,6 +43,17 @@ function subscribeToNewTransactions(
     transactionsAndBlocksCache.addBlock(block);
   });
 
+  filterEmitter.on('instantLock', (instantLock) => {
+    const isTransactionInWaitingList = transactionsAndBlocksCache
+      .isInInstantLockCache(instantLock.txid);
+
+    if (isTransactionInWaitingList) {
+      transactionsAndBlocksCache
+        .removeTransactionHashFromInstantSendLockWaitingList(instantLock.txid);
+      mediator.emit(ProcessMediator.EVENTS.INSTANT_LOCK, instantLock);
+    }
+  });
+
   // Receive an event when a historical block is sent to user,
   // so we can update our cache to an actual state,
   // removing transactions, blocks and merkle blocks from cache

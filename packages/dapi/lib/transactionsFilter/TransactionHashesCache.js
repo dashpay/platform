@@ -3,12 +3,28 @@ const {
   util: { buffer: BufferUtils },
 } = require('@dashevo/dashcore-lib');
 
+const BLOCKS_TO_STAY_IN_INSTANT_LOCK_CACHE = 10;
+
+// cache the lookup once, in module scope.
+const { hasOwnProperty } = Object.prototype;
+
 class TransactionHashesCache {
   constructor() {
     this.transactions = [];
     this.merkleBlocks = [];
+    // TODO: blocks cache can be quite large, as we create one cache instance per
+    // connected user. It also seems that we aren't using blocks cache for anything particular,
+    // so we can rework this class to not rely on the block cache
     this.blocks = [];
     this.cacheSize = 10;
+
+    // Instant lock cache
+    this.transactionHashesMap = Object.create(null);
+    this.blocksProcessed = 0;
+  }
+
+  isInInstantLockCache(transactionHash) {
+    return typeof this.transactionHashesMap[transactionHash] !== 'undefined';
   }
 
   /**
@@ -23,14 +39,16 @@ class TransactionHashesCache {
       .filter(({ transaction: tx }) => tx.hash === transaction.hash)
       .length > 0;
 
-    if (isAdded) {
-      return;
+    if (!isAdded) {
+      this.transactions.push({
+        transaction,
+        isRetrieved: false,
+      });
     }
 
-    this.transactions.push({
-      transaction,
-      isRetrieved: false,
-    });
+    if (!this.isInInstantLockCache(transaction.hash)) {
+      this.transactionHashesMap[transaction.hash] = this.blocksProcessed;
+    }
   }
 
   /**
@@ -41,6 +59,19 @@ class TransactionHashesCache {
    * @returns {void}
    */
   addBlock(block) {
+    // Process instant lock related functionality
+    this.blocksProcessed += 1;
+    const removeAfterHeight = this.blocksProcessed - BLOCKS_TO_STAY_IN_INSTANT_LOCK_CACHE;
+    for (const hash in this.transactionHashesMap) {
+      if (hasOwnProperty.call(this.transactionHashesMap, hash)) {
+        const isInCache = this.isInInstantLockCache(hash);
+        const needsToBeRemoved = isInCache && this.transactionHashesMap[hash] < removeAfterHeight;
+        if (needsToBeRemoved) {
+          this.removeTransactionHashFromInstantSendLockWaitingList(hash);
+        }
+      }
+    }
+
     const blockTransactionHashes = block.transactions.map(tx => tx.hash);
     const cacheTransactionHashes = this.transactions
       .map(({ transaction }) => transaction.hash);
@@ -94,6 +125,12 @@ class TransactionHashesCache {
       const firstBlock = this.blocks.shift();
 
       this.removeDataByBlock(firstBlock);
+    }
+  }
+
+  removeTransactionHashFromInstantSendLockWaitingList(transactionHash) {
+    if (this.isInInstantLockCache(transactionHash)) {
+      delete this.transactionHashesMap[transactionHash];
     }
   }
 
