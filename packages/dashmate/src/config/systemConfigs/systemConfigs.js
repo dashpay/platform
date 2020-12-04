@@ -38,7 +38,7 @@ const baseConfig = {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.14-latest',
+          image: 'envoyproxy/envoy:v1.16-latest',
         },
       },
       nginx: {
