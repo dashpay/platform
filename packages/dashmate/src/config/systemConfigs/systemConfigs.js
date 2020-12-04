@@ -51,6 +51,11 @@ const baseConfig = {
         docker: {
           image: 'nginx:latest',
         },
+        rateLimiter: {
+          enable: true,
+          rate: 120,
+          burst: 300,
+        },
       },
       api: {
         docker: {
@@ -112,6 +117,15 @@ module.exports = {
   base: baseConfig,
   local: lodashMerge({}, baseConfig, {
     description: 'standalone node for local development',
+    platform: {
+      dapi: {
+        nginx: {
+          rateLimiter: {
+            enable: false,
+          },
+        },
+      },
+    },
     externalIp: '127.0.0.1',
     environment: 'development',
     network: NETWORKS.LOCAL,

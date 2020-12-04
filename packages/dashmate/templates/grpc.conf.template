@@ -14,10 +14,10 @@ server {
     listen 50051 http2;
 
     access_log /dev/stdout grpc_json;
-
-    limit_req zone=protect_api burst=300 nodelay;
+    {{? it.platform.dapi.nginx.rateLimiter.enable}}
+    limit_req zone=protect_api burst={{=it.platform.dapi.nginx.rateLimiter.burst}} nodelay;
     limit_req_status 429;
-
+    {{?}}
     location = /org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs {
         grpc_pass grpc://dapi_tx_filter_stream:3006;
         grpc_buffer_size 128k;

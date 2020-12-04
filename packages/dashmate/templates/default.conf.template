@@ -1,11 +1,11 @@
-limit_req_zone $binary_remote_addr zone=protect_api:15m rate=120r/m;
+{{? it.platform.dapi.nginx.rateLimiter.enable}}limit_req_zone $binary_remote_addr zone=protect_api:15m rate={{=it.platform.dapi.nginx.rateLimiter.rate}}/m;
 
-server {
+{{?}}server {
     listen 80 default_server;
-
-    limit_req zone=protect_api burst=300 nodelay;
+    {{? it.platform.dapi.nginx.rateLimiter.enable}}
+    limit_req zone=protect_api burst={{=it.platform.dapi.nginx.rateLimiter.burst}} nodelay;
     limit_req_status 429;
-
+    {{?}}
     access_log /tmp/access_log.log;
     error_log /tmp/error.log debug;
 
