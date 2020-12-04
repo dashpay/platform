@@ -83,7 +83,7 @@ function validateAssetLockStructureFactory(
     const proofValidationFunction = proofValidationFunctionsByType[rawAssetLock.proof.type];
 
     result.merge(
-      await proofValidationFunction(rawAssetLock, transaction),
+      await proofValidationFunction(rawAssetLock.proof, transaction),
     );
 
     if (!result.isValid()) {

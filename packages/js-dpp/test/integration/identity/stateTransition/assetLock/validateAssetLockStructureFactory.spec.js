@@ -316,7 +316,7 @@ describe('validateAssetLockStructureFactory', () => {
 
     const { args } = proofValidationFunctionMock.getCall(0);
 
-    expect(args[0]).to.be.deep.equal(rawAssetLock);
+    expect(args[0]).to.be.deep.equal(rawAssetLock.proof);
     expect(args[1].toBuffer()).to.be.deep.equal(transaction.toBuffer());
   });
 });

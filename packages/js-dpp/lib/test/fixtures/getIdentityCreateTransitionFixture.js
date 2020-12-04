@@ -1,3 +1,4 @@
+const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 const IdentityCreateTransition = require('../../identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 
 const IdentityPublicKey = require('../../identity/IdentityPublicKey');
@@ -7,14 +8,15 @@ const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes
 const getAssetLockFixture = require('./getAssetLockFixture');
 
 /**
+ * @param {PrivateKey} oneTimePrivateKey
  *
  * @return {IdentityCreateTransition}
  */
-module.exports = function getIdentityCreateTransitionFixture() {
+module.exports = function getIdentityCreateTransitionFixture(oneTimePrivateKey = new PrivateKey()) {
   const rawStateTransition = {
     protocolVersion: 0,
     type: stateTransitionTypes.IDENTITY_CREATE,
-    assetLock: getAssetLockFixture().toObject(),
+    assetLock: getAssetLockFixture(oneTimePrivateKey).toObject(),
     publicKeys: [
       {
         id: 0,
