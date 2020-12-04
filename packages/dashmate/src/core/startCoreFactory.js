@@ -55,12 +55,12 @@ function startCoreFactory(
 
     const rpcClient = createRpcClient(
       {
-        port: config.get('core.rpc.port'), 
+        port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
-        pass: config.get('core.rpc.password')
-      }
+        pass: config.get('core.rpc.password'),
+      },
     );
-    
+
     const coreService = new CoreService(
       rpcClient,
       coreContainer,

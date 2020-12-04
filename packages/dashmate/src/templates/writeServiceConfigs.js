@@ -8,12 +8,14 @@ const fs = require('fs');
  * @returns {Promise<void>}
  */
 async function writeServiceConfigs(configFiles, homedirPath, configName) {
-  const configdirPath = homedirPath + '/' + configName + '/';
+  const configdirPath = `${homedirPath}/${configName}/`;
   try {
     fs.mkdirSync(configdirPath);
   } catch (e) {
+    // do nothing
   }
-  for (configFile in configFiles) {
+
+  for (const configFile of configFiles) {
     const filePath = configdirPath + configFile.replace('.template', '');
     fs.writeFileSync(filePath, configFiles[configFile], 'utf8');
   }
