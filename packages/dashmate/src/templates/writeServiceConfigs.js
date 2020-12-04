@@ -1,22 +1,27 @@
 const fs = require('fs');
+const path = require('path');
 
 /**
  * Write service config files
+ *
  * @param {Object} configFiles
- * @param {String} homedirPath
- * @param {String} configName
- * @returns {Promise<void>}
+ * @param {string} homedirPath
+ * @param {string} configName
+ *
+ * @return {Promise<void>}
  */
 async function writeServiceConfigs(configFiles, homedirPath, configName) {
-  const configdirPath = `${homedirPath}/${configName}/`;
+  const configPath = path.join(homedirPath, configName);
+
   try {
-    fs.mkdirSync(configdirPath);
+    fs.mkdirSync(configPath);
   } catch (e) {
     // do nothing
   }
 
-  for (const configFile of configFiles) {
-    const filePath = configdirPath + configFile.replace('.template', '');
+  for (const configFile of Object.keys(configFiles)) {
+    const filePath = path.join(configPath, configFile.replace('.template', ''));
+
     fs.writeFileSync(filePath, configFiles[configFile], 'utf8');
   }
 }

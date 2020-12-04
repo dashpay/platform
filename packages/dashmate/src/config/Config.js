@@ -26,6 +26,8 @@ class Config {
 
   /**
    * Get name
+   *
+   * @return {string}
    */
   getName() {
     return this.name;
@@ -36,6 +38,8 @@ class Config {
    *
    * @param {string} path
    * @param {boolean} [isRequired=false]
+   *
+   * @return {*}
    */
   get(path, isRequired = false) {
     const value = lodashGet(this.options, path);
@@ -53,6 +57,11 @@ class Config {
 
   /**
    * Set config option
+   *
+   * @param {string} path
+   * @param {*} value
+   *
+   * @return {Config}
    */
   set(path, value) {
     const clonedOptions = lodashCloneDeep(this.options);
@@ -84,7 +93,7 @@ class Config {
   /**
    * Get options
    *
-   * @returns {Object}
+   * @return {Object}
    */
   getOptions() {
     return this.options;
@@ -94,7 +103,8 @@ class Config {
    * Set options
    *
    * @param {Object} options
-   * @returns {Config}
+   *
+   * @return {Config}
    */
   setOptions(options) {
     const clonedOptions = lodashCloneDeep(options);
@@ -116,10 +126,14 @@ class Config {
     return this;
   }
 
+  /**
+   *
+   * @return {{CONFIG_NAME: string, COMPOSE_PROJECT_NAME: string}}
+   */
   toEnvs() {
     return {
       COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
-      CONFIG_NAME: `${this.getName()}`,
+      CONFIG_NAME: this.getName(),
       ...convertObjectToEnvs(this.getOptions()),
     };
   }
