@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "description": "Reference contract of the DashPay DPA on Dash Evolution",
   "scripts": {
-    "publish-contract": "node bin/publish-contract",
-    "test": "mocha --recursive tests/**/*.js"
+    "check-package": "npm run check-package:name && npm run check-package:version",
+    "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
+    "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
+    "lint": "eslint .",
+    "test": "npm run test:unit",
+    "test:unit": "mocha 'schema/*.spec.js'"
   },
   "repository": {
     "type": "git",
@@ -14,7 +18,7 @@
   "contributors": [
     {
       "name": "Alex Werner",
-      "email": "alex.werner@protonmail.com",
+      "email": "alex@dash.org",
       "url": "https://github.com/alex-werner"
     }
   ],
@@ -24,8 +28,15 @@
   },
   "homepage": "https://github.com/dashevo/dashpay-contract#readme",
   "devDependencies": {
-    "@dashevo/dpp": "^0.9.1",
+    "@dashevo/dapi-client": "^0.16.0",
+    "@dashevo/dpp": "^0.17.0-dev.2",
     "chai": "^4.2.0",
-    "mocha": "^6.2.2"
+    "dirty-chai": "^2.0.1",
+    "eslint": "^7.7.0",
+    "eslint-config-airbnb-base": "^14.2.0",
+    "eslint-plugin-import": "^2.22.0",
+    "mocha": "^8.1.1",
+    "sinon": "^9.0.3",
+    "sinon-chai": "^3.5.0"
   }
 }
