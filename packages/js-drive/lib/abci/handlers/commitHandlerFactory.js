@@ -6,7 +6,9 @@ const {
 
 /**
  * @param {ChainInfo} chainInfo
- * @param {ChainInfoCommonStoreRepository} chainInfoRepository
+ * @param {ChainInfoExternalStoreRepository} chainInfoRepository
+ * @param {CreditsDistributionPool} creditsDistributionPool
+ * @param {CreditsDistributionPoolCommonStoreRepository} creditsDistributionPoolRepository
  * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {DocumentDatabaseManager} documentDatabaseManager
@@ -18,6 +20,8 @@ const {
 function commitHandlerFactory(
   chainInfo,
   chainInfoRepository,
+  creditsDistributionPool,
+  creditsDistributionPoolRepository,
   blockExecutionDBTransactions,
   blockExecutionContext,
   documentDatabaseManager,
@@ -46,9 +50,12 @@ function commitHandlerFactory(
       await blockExecutionDBTransactions.commit();
 
       // Store ST fees from the block to distribution pool
-      chainInfo.setCreditsDistributionPool(blockExecutionContext.getAccumulativeFees());
+      creditsDistributionPool.setAmount(
+        blockExecutionContext.getAccumulativeFees(),
+      );
 
       await chainInfoRepository.store(chainInfo);
+      await creditsDistributionPoolRepository.store(creditsDistributionPool);
 
       rootTree.rebuild();
     } catch (e) {

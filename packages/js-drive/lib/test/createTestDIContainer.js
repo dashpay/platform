@@ -22,6 +22,7 @@ async function createTestDIContainer(mongoDB, dashCore = undefined) {
     DOCUMENTS_STORE_MERK_DB_FILE: './db/documents-merkdb-test',
     IDENTITIES_STORE_MERK_DB_FILE: './db/identities-merkdb-test',
     PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE: './db/public-key-to-identity-id-merkdb-test',
+    EXTERNAL_STORE_LEVEL_DB_FILE: './db/external-leveldb-test',
     ...coreOptions,
   });
 }

@@ -1,10 +1,10 @@
 const cbor = require('cbor');
 
 const Long = require('long');
-const ChainInfoCommonStoreRepository = require('../../../lib/chainInfo/ChainInfoCommonStoreRepository');
+const ChainInfoExternalStoreRepository = require('../../../lib/chainInfo/ChainInfoExternalStoreRepository');
 const ChainInfo = require('../../../lib/chainInfo/ChainInfo');
 
-describe('ChainInfoCommonStoreRepository', () => {
+describe('ChainInfoExternalStoreRepository', () => {
   let commonStoreMock;
   let repository;
   let chainInfo;
@@ -16,7 +16,7 @@ describe('ChainInfoCommonStoreRepository', () => {
       get: this.sinon.stub(),
     };
 
-    repository = new ChainInfoCommonStoreRepository(commonStoreMock);
+    repository = new ChainInfoExternalStoreRepository(commonStoreMock);
 
     lastBlockHeight = Long.fromInt(42);
 
@@ -29,7 +29,7 @@ describe('ChainInfoCommonStoreRepository', () => {
       expect(repositoryInstance).to.equal(repository);
 
       expect(commonStoreMock.put).to.be.calledOnceWithExactly(
-        ChainInfoCommonStoreRepository.COMMON_STORE_KEY_NAME,
+        ChainInfoExternalStoreRepository.EXTERNAL_STORE_KEY_NAME,
         cbor.encodeCanonical(chainInfo.toJSON()),
       );
     });
@@ -46,7 +46,7 @@ describe('ChainInfoCommonStoreRepository', () => {
       expect(result.getLastBlockHeight().toInt()).to.equal(0);
 
       expect(commonStoreMock.get).to.be.calledOnceWithExactly(
-        ChainInfoCommonStoreRepository.COMMON_STORE_KEY_NAME,
+        ChainInfoExternalStoreRepository.EXTERNAL_STORE_KEY_NAME,
       );
     });
 
@@ -62,7 +62,7 @@ describe('ChainInfoCommonStoreRepository', () => {
       expect(result.getLastBlockHeight()).to.deep.equal(lastBlockHeight);
 
       expect(commonStoreMock.get).to.be.calledOnceWithExactly(
-        ChainInfoCommonStoreRepository.COMMON_STORE_KEY_NAME,
+        ChainInfoExternalStoreRepository.EXTERNAL_STORE_KEY_NAME,
       );
     });
   });

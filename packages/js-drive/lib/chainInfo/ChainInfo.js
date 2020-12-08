@@ -4,14 +4,11 @@ class ChainInfo {
   /**
    *
    * @param {Long} [lastBlockHeight]
-   * @param {number} [creditsDistributionPool]
    */
   constructor(
     lastBlockHeight = Long.fromInt(0),
-    creditsDistributionPool = 0,
   ) {
     this.lastBlockHeight = lastBlockHeight;
-    this.creditsDistributionPool = creditsDistributionPool;
   }
 
   /**
@@ -36,38 +33,15 @@ class ChainInfo {
   }
 
   /**
-   * Set credits distribution pool
-   *
-   * @param {number} credits
-   * @return {ChainInfo}
-   */
-  setCreditsDistributionPool(credits) {
-    this.creditsDistributionPool = credits;
-
-    return this;
-  }
-
-  /**
-   * Get credits distribution pool
-   *
-   * @return {number}
-   */
-  getCreditsDistributionPool() {
-    return this.creditsDistributionPool;
-  }
-
-  /**
    * Get plain JS object
    *
    * @return {{
    *    lastBlockHeight: string,
-   *    creditsDistributionPool: number,
    * }}
    */
   toJSON() {
     return {
       lastBlockHeight: this.getLastBlockHeight().toString(),
-      creditsDistributionPool: this.getCreditsDistributionPool(),
     };
   }
 }

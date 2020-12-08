@@ -8,6 +8,9 @@ const {
 
 const Long = require('long');
 
+// eslint-disable-next-line import/no-unresolved
+const level = require('level-rocksdb');
+
 const Merk = require('@dashevo/merk');
 
 const LRUCache = require('lru-cache');
@@ -62,7 +65,9 @@ const connectToMongoDBFactory = require('./mongoDb/connectToMongoDBFactory');
 
 const waitReplicaSetInitializeFactory = require('./mongoDb/waitReplicaSetInitializeFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
-const ChainInfoCommonStoreRepository = require('./chainInfo/ChainInfoCommonStoreRepository');
+const ChainInfoExternalStoreRepository = require('./chainInfo/ChainInfoExternalStoreRepository');
+
+const CreditsDistributionPoolCommonStoreRepository = require('./creditsDistributionPool/CreditsDistributionPoolCommonStoreRepository');
 
 const BlockExecutionDBTransactions = require('./blockExecution/BlockExecutionDBTransactions');
 const createIsolatedValidatorSnapshot = require('./dpp/isolation/createIsolatedValidatorSnapshot');
@@ -115,6 +120,7 @@ const decodeChainLock = require('./core/decodeChainLock');
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
  * @param {string} options.DATA_CONTRACTS_STORE_MERK_DB_FILE
  * @param {string} options.DOCUMENTS_STORE_MERK_DB_FILE
+ * @param {string} options.EXTERNAL_STORE_LEVEL_DB_FILE
  * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
  * @param {string} options.DOCUMENT_MONGODB_URL
  * @param {string} options.CORE_JSON_RPC_HOST
@@ -167,6 +173,7 @@ async function createDIContainer(options) {
     publicKeyToIdentityIdStoreMerkDBFile:
       asValue(options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE),
     identitiesStoreMerkDBFile: asValue(options.IDENTITIES_STORE_MERK_DB_FILE),
+    externalStoreLevelDBFile: asValue(options.EXTERNAL_STORE_LEVEL_DB_FILE),
     isolatedSTUnserializationMemoryLimit: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT, 10),
     ),
@@ -384,6 +391,25 @@ async function createDIContainer(options) {
   });
 
   /**
+   * Register external store
+   * */
+  container.register({
+    externalLevelDB: asFunction((externalStoreLevelDBFile) => (
+      level(externalStoreLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
+    )).disposer((levelDB) => levelDB.close())
+      .singleton(),
+
+    chainInfoRepository: asClass(ChainInfoExternalStoreRepository).singleton(),
+  });
+
+  const chainInfoRepository = container.resolve('chainInfoRepository');
+  const chainInfo = await chainInfoRepository.fetch();
+
+  container.register({
+    chainInfo: asValue(chainInfo),
+  });
+
+  /**
    * Register chain info
    */
   container.register({
@@ -404,14 +430,15 @@ async function createDIContainer(options) {
 
     commonStoreRootTreeLeaf: asClass(CommonStoreRootTreeLeaf).singleton(),
 
-    chainInfoRepository: asClass(ChainInfoCommonStoreRepository).singleton(),
+    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolCommonStoreRepository)
+      .singleton(),
   });
 
-  const chainInfoRepository = container.resolve('chainInfoRepository');
-  const chainInfo = await chainInfoRepository.fetch();
+  const creditsDistributionPoolRepository = container.resolve('creditsDistributionPoolRepository');
+  const creditsDistributionPool = await creditsDistributionPoolRepository.fetch();
 
   container.register({
-    chainInfo: asValue(chainInfo),
+    creditsDistributionPool: asValue(creditsDistributionPool),
   });
 
   /**
