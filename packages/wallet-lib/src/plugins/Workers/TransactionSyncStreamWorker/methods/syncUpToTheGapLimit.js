@@ -44,6 +44,12 @@ module.exports = async function syncUpToTheGapLimit({
   return new Promise((resolve, reject) => {
     stream
       .on('data', async (response) => {
+        /* First check if any instant locks appeared */
+        const instantLocksReceived = this.constructor.getInstantSendLocksFromResponse(response);
+        instantLocksReceived.forEach((isLock) => {
+          this.importInstantLock(isLock);
+        });
+
         /* Incoming transactions handling */
         const transactionsFromResponse = this.constructor
           .getTransactionListFromStreamResponse(response);

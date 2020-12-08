@@ -5,9 +5,10 @@ class TxStreamDataResponseMock {
      * @param {Buffer} [options.rawMerkleBlock]
      * @param {Buffer[]} [options.rawTransactions]
      */
-  constructor({ rawMerkleBlock, rawTransactions }) {
+  constructor({ rawMerkleBlock, rawTransactions, instantSendLockMessages }) {
     this.rawMerkleBlock = rawMerkleBlock;
     this.rawTransactions = rawTransactions;
+    this.instantSendLockMessages = instantSendLockMessages;
   }
 
   /**
@@ -25,6 +26,15 @@ class TxStreamDataResponseMock {
     return {
       getTransactionsList() {
         return rawTransactions || [];
+      },
+    };
+  }
+
+  getInstantSendLockMessages() {
+    const { instantSendLockMessages } = this;
+    return {
+      getMessagesList() {
+        return instantSendLockMessages || [];
       },
     };
   }

@@ -11,7 +11,7 @@ import {
     Plugins, RawTransaction, StatusInfo, TransactionsMap, WalletObj
 } from "../types";
 import { KeyChain } from "../KeyChain/KeyChain";
-import { HDPrivateKey } from "@dashevo/dashcore-lib";
+import { HDPrivateKey, InstantLock } from "@dashevo/dashcore-lib";
 import { Wallet } from "../../index";
 import { Transport } from "../../transport/Transport";
 import { BlockHeader } from "@dashevo/dashcore-lib/typings/block/BlockHeader";
@@ -71,6 +71,7 @@ export declare class Account {
     hasPlugins([Plugin]): {found:Boolean, results:[{name: string}]};
     injectPlugin(unsafePlugin: Plugins, allowSensitiveOperation?: boolean, awaitOnInjection?: boolean): Promise<any>;
     sign(object: Transaction, privateKeys: [PrivateKey], sigType?: number): Transaction;
+    waitForInstantLock(string: transactionHash): Promise<InstantLock>;
 }
 
 export declare interface RecipientOptions {

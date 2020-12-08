@@ -151,6 +151,10 @@ class Account extends EventEmitter {
     this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
   }
 
+  static getInstantLockTopicName(transactionHash) {
+    return `${EVENTS.INSTANT_LOCK}:${transactionHash}`;
+  }
+
   // It's actually Account that mutates wallet.accounts to add itself.
   // We might want to get rid of that as it can be really confusing.
   // It would gives that responsability to createAccount to create
@@ -174,6 +178,47 @@ class Account extends EventEmitter {
       if (this.state.isReady) return resolve(true);
       this.on(EVENTS.READY, () => resolve(true));
     }));
+  }
+
+  /**
+   * Imports instant lock to an account and emits message
+   * @param {InstantLock} instantLock
+   */
+  importInstantLock(instantLock) {
+    this.storage.importInstantLock(instantLock);
+    this.emit(Account.getInstantLockTopicName(instantLock.txid), instantLock);
+  }
+
+  /**
+   * @param {string} transactionHash
+   * @param {function} callback
+   */
+  subscribeToTransactionInstantLock(transactionHash, callback) {
+    this.once(Account.getInstantLockTopicName(transactionHash), callback);
+  }
+
+  /**
+   * Waits for instant lock for a transaction or throws after a timeout
+   * @param {string} transactionHash - instant lock to wait for
+   * @param {number} timeout - in milliseconds before throwing an error if the lock didn't arrive
+   * @return {Promise<InstantLock>}
+   */
+  waitForInstantLock(transactionHash, timeout = 60000) {
+    return Promise.race([
+      new Promise((resolve) => {
+        const instantLock = this.storage.getInstantLock(transactionHash);
+        if (instantLock != null) {
+          resolve(instantLock);
+          return;
+        }
+        this.subscribeToTransactionInstantLock(transactionHash, resolve);
+      }),
+      new Promise((resolve, reject) => {
+        setTimeout(() => {
+          reject(new Error(`InstantLock waiting period for transaction ${transactionHash} timed out`));
+        }, timeout);
+      }),
+    ]);
   }
 }
 

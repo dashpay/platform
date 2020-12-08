@@ -11,6 +11,7 @@ const saveState = async function saveState() {
       await this.adapter.setItem('transactions', { ...self.store.transactions });
       await this.adapter.setItem('wallets', { ...self.store.wallets });
       await this.adapter.setItem('chains', { ...self.store.chains });
+      await this.adapter.setItem('instantLocks', { ...self.store.instantLocks });
       this.lastSave = +new Date();
       this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
       return true;
