@@ -50,6 +50,7 @@
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.19.5",
     "@dashevo/dashd-rpc": "~2.0.2",
+    "@dashevo/dashpay-contract": "^1.0.0",
     "@dashevo/dpns-contract": "~0.3.0-dev.6",
     "@dashevo/wallet-lib": "~7.17.0-dev.1",
     "@oclif/command": "^1.5.19",
