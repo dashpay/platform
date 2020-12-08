@@ -62,6 +62,7 @@ function initTaskFactory(
             wallet: {
               mnemonic: null,
             },
+            passFakeAssetLockProofForTests: true
           });
 
           const amount = 40000;
