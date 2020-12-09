@@ -10,17 +10,17 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
+ * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
  * @param {number} maxIdentitiesPerRequest
- * @param {RootTree} rootTree
- * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} publicKeyToIdentityIdStoreRootTreeLeaf
+ * @param {RootTree} previousRootTree
+ * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} previousPublicKeyToIdentityIdStoreRootTreeLeaf
  * @return {identityIdsByPublicKeyHashesQueryHandler}
  */
 function identityIdsByPublicKeyHashesQueryHandlerFactory(
-  publicKeyToIdentityIdRepository,
+  previousPublicKeyToIdentityIdRepository,
   maxIdentitiesPerRequest,
-  rootTree,
-  publicKeyToIdentityIdStoreRootTreeLeaf,
+  previousRootTree,
+  previousPublicKeyToIdentityIdStoreRootTreeLeaf,
 ) {
   /**
    * @typedef identityIdsByPublicKeyHashesQueryHandler
@@ -44,7 +44,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
 
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => {
-        const identityId = await publicKeyToIdentityIdRepository.fetch(publicKeyHash);
+        const identityId = await previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash);
 
         if (!identityId) {
           return Buffer.alloc(0);
@@ -59,8 +59,8 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
     };
 
     if (includeProof) {
-      value.proof = rootTree.getFullProof(
-        publicKeyToIdentityIdStoreRootTreeLeaf,
+      value.proof = previousRootTree.getFullProof(
+        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
         publicKeyHashes,
       );
     }

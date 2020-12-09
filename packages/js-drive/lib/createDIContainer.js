@@ -49,7 +49,6 @@ const findNotIndexedFields = require('./document/query/findNotIndexedFields');
 const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
 
 const DocumentsStoreRootTreeLeaf = require('./document/DocumentsStoreRootTreeLeaf');
-const DocumentDbTransaction = require('./document/DocumentsDbTransaction');
 const DocumentStoreRepository = require('./document/DocumentStoreRepository');
 const DocumentIndexedStoreRepository = require('./document/DocumentIndexedStoreRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
@@ -60,16 +59,16 @@ const createDocumentMongoDbRepositoryFactory = require('./document/mongoDbReposi
 const DocumentDatabaseManager = require('./document/mongoDbRepository/DocumentDatabaseManager');
 const convertToMongoDbIndicesFunction = require('./document/mongoDbRepository/convertToMongoDbIndices');
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
-const MongoDBTransaction = require('./mongoDb/MongoDBTransaction');
 const connectToMongoDBFactory = require('./mongoDb/connectToMongoDBFactory');
 
 const waitReplicaSetInitializeFactory = require('./mongoDb/waitReplicaSetInitializeFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
-const ChainInfoExternalStoreRepository = require('./chainInfo/ChainInfoExternalStoreRepository');
-
 const CreditsDistributionPoolCommonStoreRepository = require('./creditsDistributionPool/CreditsDistributionPoolCommonStoreRepository');
 
-const BlockExecutionDBTransactions = require('./blockExecution/BlockExecutionDBTransactions');
+const ChainInfoExternalStoreRepository = require('./chainInfo/ChainInfoExternalStoreRepository');
+
+const BlockExecutionStoreTransactions = require('./blockExecution/BlockExecutionStoreTransactions');
+const PreviousBlockExecutionStoreTransactionsRepository = require('./blockExecution/PreviousBlockExecutionStoreTransactionsRepository');
 const createIsolatedValidatorSnapshot = require('./dpp/isolation/createIsolatedValidatorSnapshot');
 const createIsolatedDppFactory = require('./dpp/isolation/createIsolatedDppFactory');
 
@@ -106,29 +105,43 @@ const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegte
 const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 const decodeChainLock = require('./core/decodeChainLock');
+const populateMongoDbTransactionFromObjectFactory = require('./document/populateMongoDbTransactionFromObjectFactory');
 
+const FileDb = require('./fileDb/FileDb');
+const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
+const SpentAssetLockTransactionsStoreRootTreeLeaf = require('./identity/SpentAssetLockTransactionsStoreRootTreeLeaf');
+const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneToPreviousStoreTransactionsFactory');
 /**
  *
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
  * @param {string} options.COMMON_STORE_MERK_DB_FILE
+ * @param {string} options.PREVIOUS_COMMON_STORE_MERK_DB_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
  * @param {string} options.IDENTITIES_STORE_MERK_DB_FILE
+ * @param {string} options.PREVIOUS_IDENTITIES_STORE_MERK_DB_FILE
  * @param {string} options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE
+ * @param {string} options.PREVIOUS_PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
  * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
  * @param {string} options.DATA_CONTRACTS_STORE_MERK_DB_FILE
+ * @param {string} options.PREVIOUS_DATA_CONTRACTS_STORE_MERK_DB_FILE
  * @param {string} options.DOCUMENTS_STORE_MERK_DB_FILE
+ * @param {string} options.PREVIOUS_DOCUMENTS_STORE_MERK_DB_FILE
  * @param {string} options.EXTERNAL_STORE_LEVEL_DB_FILE
+ * @param {string} options.PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE
  * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
  * @param {string} options.DOCUMENT_MONGODB_URL
+ * @param {string} options.ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE
+ * @param {string} options.PREVIOUS_ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE
  * @param {string} options.CORE_JSON_RPC_HOST
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
  * @param {string} options.CORE_JSON_RPC_PASSWORD
  * @param {string} options.CORE_ZMQ_HOST
  * @param {string} options.CORE_ZMQ_PORT
+ * @param {string} options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE
  * @param {string} options.NETWORK
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  * @param {string} options.DPNS_CONTRACT_BLOCK_HEIGHT
@@ -169,11 +182,16 @@ async function createDIContainer(options) {
     abciHost: asValue(options.ABCI_HOST),
     abciPort: asValue(options.ABCI_PORT),
     commonStoreMerkDBFile: asValue(options.COMMON_STORE_MERK_DB_FILE),
+    previousCommonStoreMerkDBFile: asValue(options.PREVIOUS_COMMON_STORE_MERK_DB_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
     publicKeyToIdentityIdStoreMerkDBFile:
       asValue(options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE),
+    previousPublicKeyToIdentityIdStoreMerkDBFile:
+      asValue(options.PREVIOUS_PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE),
     identitiesStoreMerkDBFile: asValue(options.IDENTITIES_STORE_MERK_DB_FILE),
+    previousIdentitiesStoreMerkDBFile: asValue(options.PREVIOUS_IDENTITIES_STORE_MERK_DB_FILE),
     externalStoreLevelDBFile: asValue(options.EXTERNAL_STORE_LEVEL_DB_FILE),
+    previousExternalStoreLevelDBFile: asValue(options.PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE),
     isolatedSTUnserializationMemoryLimit: asValue(
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT, 10),
     ),
@@ -181,15 +199,26 @@ async function createDIContainer(options) {
       parseInt(options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS, 10),
     ),
     dataContractsStoreMerkDBFile: asValue(options.DATA_CONTRACTS_STORE_MERK_DB_FILE),
+    previousDataContractsStoreMerkDBFile:
+      asValue(options.PREVIOUS_DATA_CONTRACTS_STORE_MERK_DB_FILE),
     documentsStoreMerkDBFile: asValue(options.DOCUMENTS_STORE_MERK_DB_FILE),
+    previousDocumentsStoreMerkDBFile: asValue(options.PREVIOUS_DOCUMENTS_STORE_MERK_DB_FILE),
     documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
+    previousDocumentMongoDBPrefix: asValue(options.PREVIOUS_DOCUMENT_MONGODB_DB_PREFIX),
     documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
+    spentAssetLockTransactionsStoreMerkDBFile:
+      asValue(options.ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE),
+    previousSpentAssetLockTransactionsStoreMerkDBFile:
+      asValue(options.PREVIOUS_ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE),
     coreJsonRpcHost: asValue(options.CORE_JSON_RPC_HOST),
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
     coreJsonRpcUsername: asValue(options.CORE_JSON_RPC_USERNAME),
     coreJsonRpcPassword: asValue(options.CORE_JSON_RPC_PASSWORD),
     coreZMQHost: asValue(options.CORE_ZMQ_HOST),
     coreZMQPort: asValue(options.CORE_ZMQ_PORT),
+    previousBlockExecutionTransactionFile: asValue(
+      options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE,
+    ),
     dpnsContractBlockHeight: asValue(parseInt(options.DPNS_CONTRACT_BLOCK_HEIGHT, 10)),
     dpnsContractId: asValue(
       options.DPNS_CONTRACT_ID
@@ -280,7 +309,27 @@ async function createDIContainer(options) {
       }
     }).singleton(),
 
+    previousPublicKeyToIdentityIdStore: asFunction((
+      previousPublicKeyToIdentityIdStoreMerkDBFile,
+    ) => {
+      const merkDb = new Merk(previousPublicKeyToIdentityIdStoreMerkDBFile);
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+      merkDb.db.close();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        merkDb.db.destroy();
+      }
+    }).singleton(),
+
     publicKeyToIdentityIdStoreRootTreeLeaf: asClass(PublicKeyToIdentityIdStoreRootTreeLeaf),
+    previousPublicKeyToIdentityIdStoreRootTreeLeaf: asFunction((
+      previousPublicKeyToIdentityIdStore,
+    ) => (new PublicKeyToIdentityIdStoreRootTreeLeaf(previousPublicKeyToIdentityIdStore))),
 
     identitiesStore: asFunction((identitiesStoreMerkDBFile) => {
       const merkDb = new Merk(identitiesStoreMerkDBFile);
@@ -297,17 +346,93 @@ async function createDIContainer(options) {
       }
     }).singleton(),
 
+    previousIdentitiesStore: asFunction((previousIdentitiesStoreMerkDBFile) => {
+      const merkDb = new Merk(previousIdentitiesStoreMerkDBFile);
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+      merkDb.db.close();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        merkDb.db.destroy();
+      }
+    }).singleton(),
+
     identitiesStoreRootTreeLeaf: asClass(IdentitiesStoreRootTreeLeaf).singleton(),
+    previousIdentitiesStoreRootTreeLeaf: asFunction((
+      previousIdentitiesStore,
+    ) => (new IdentitiesStoreRootTreeLeaf(previousIdentitiesStore))).singleton(),
 
     identityRepository: asClass(IdentityStoreRepository).singleton(),
-    identitiesTransaction: asFunction((identitiesStore) => (
-      identitiesStore.createTransaction()
-    )).singleton(),
-    publicKeyToIdentityIdTransaction: asFunction((publicKeyToIdentityIdStore) => (
-      publicKeyToIdentityIdStore.createTransaction()
-    )).singleton(),
+    previousIdentityRepository: asFunction((
+      previousIdentitiesStore,
+    ) => (new IdentityStoreRepository(previousIdentitiesStore, container))).singleton(),
 
     publicKeyToIdentityIdRepository: asClass(PublicKeyToIdentityIdStoreRepository).singleton(),
+    previousPublicKeyToIdentityIdRepository: asFunction((
+      previousPublicKeyToIdentityIdStore,
+    ) => (
+      new PublicKeyToIdentityIdStoreRepository(previousPublicKeyToIdentityIdStore)
+    )).singleton(),
+  });
+
+  /**
+   * Register asset lock transactions
+   */
+  container.register({
+    spentAssetLockTransactionsStore: asFunction((
+      spentAssetLockTransactionsStoreMerkDBFile,
+    ) => {
+      const merkDb = new Merk(
+        spentAssetLockTransactionsStoreMerkDBFile,
+      );
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+      merkDb.db.close();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        merkDb.db.destroy();
+      }
+    }).singleton(),
+    previousSpentAssetLockTransactionsStore: asFunction((
+      previousSpentAssetLockTransactionsStoreMerkDBFile,
+    ) => {
+      const merkDb = new Merk(
+        previousSpentAssetLockTransactionsStoreMerkDBFile,
+      );
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+      merkDb.db.close();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        merkDb.db.destroy();
+      }
+    }).singleton(),
+    spentAssetLockTransactionsRepository: asClass(SpentAssetLockTransactionsRepository).singleton(),
+    previousSpentAssetLockTransactionsRepository: asFunction((
+      previousSpentAssetLockTransactionsStore,
+    ) => (
+      new SpentAssetLockTransactionsRepository(previousSpentAssetLockTransactionsStore)
+    )).singleton(),
+    spentAssetLockTransactionsStoreRootTreeLeaf: asClass(
+      SpentAssetLockTransactionsStoreRootTreeLeaf,
+    ).singleton(),
+    previousSpentAssetLockTransactionsStoreRootTreeLeaf: asFunction((
+      previousSpentAssetLockTransactionsStore,
+    ) => (new SpentAssetLockTransactionsStoreRootTreeLeaf(
+      previousSpentAssetLockTransactionsStore,
+    ))).singleton(),
   });
 
   /**
@@ -329,14 +454,36 @@ async function createDIContainer(options) {
       }
     }).singleton(),
 
+    previousDataContractsStore: asFunction((previousDataContractsStoreMerkDBFile) => {
+      const merkDb = new Merk(previousDataContractsStoreMerkDBFile);
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+      merkDb.db.close();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        merkDb.db.destroy();
+      }
+    }).singleton(),
+
     dataContractsStoreRootTreeLeaf: asClass(DataContractsStoreRootTreeLeaf).singleton(),
+    previousDataContractsStoreRootTreeLeaf: asFunction((
+      previousDataContractsStore,
+    ) => (new DataContractsStoreRootTreeLeaf(previousDataContractsStore))).singleton(),
 
     dataContractRepository: asClass(DataContractStoreRepository).singleton(),
-    dataContractsTransaction: asFunction((dataContractsStore) => (
-      dataContractsStore.createTransaction()
-    )).singleton(),
+    previousDataContractRepository: asFunction((
+      previousDataContractsStore,
+    ) => (new DataContractStoreRepository(previousDataContractsStore, container))).singleton(),
 
     dataContractCache: asFunction((dataContractCacheSize) => (
+      new LRUCache(dataContractCacheSize)
+    )).singleton(),
+
+    previousDataContractCache: asFunction((dataContractCacheSize) => (
       new LRUCache(dataContractCacheSize)
     )).singleton(),
   });
@@ -360,11 +507,41 @@ async function createDIContainer(options) {
       }
     }).singleton(),
 
+    previousDocumentsStore: asFunction((previousDocumentsStoreMerkDBFile) => {
+      const merkDb = new Merk(previousDocumentsStoreMerkDBFile);
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+      merkDb.db.close();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        merkDb.db.destroy();
+      }
+    }).singleton(),
+
     documentStoreRepository: asClass(DocumentStoreRepository).singleton(),
+    previousDocumentStoreRepository: asFunction((
+      previousDocumentsStore,
+    ) => (new DocumentStoreRepository(previousDocumentsStore, container))).singleton(),
 
     documentsStoreRootTreeLeaf: asClass(DocumentsStoreRootTreeLeaf).singleton(),
+    previousDocumentsStoreRootTreeLeaf: asFunction((
+      previousDocumentsStore,
+    ) => (new DocumentsStoreRootTreeLeaf(previousDocumentsStore))).singleton(),
 
     documentRepository: asClass(DocumentIndexedStoreRepository).singleton(),
+    previousDocumentRepository: asFunction((
+      previousDocumentStoreRepository,
+      createPreviousDocumentMongoDbRepository,
+    ) => (
+      new DocumentIndexedStoreRepository(
+        previousDocumentStoreRepository,
+        createPreviousDocumentMongoDbRepository,
+      )
+    )).singleton(),
 
     connectToDocumentMongoDB: asFunction((documentMongoDBUrl) => (
       connectToMongoDBFactory(documentMongoDBUrl)
@@ -380,18 +557,70 @@ async function createDIContainer(options) {
     convertToMongoDbIndices: asValue(convertToMongoDbIndicesFunction),
 
     getDocumentMongoDBDatabase: asFunction(getDocumentDatabaseFactory).singleton(),
-    createDocumentMongoDbRepository: asFunction(createDocumentMongoDbRepositoryFactory).singleton(),
-    documentDatabaseManager: asClass(DocumentDatabaseManager),
-    documentMongoDBTransaction: asClass(MongoDBTransaction).singleton(),
-    documentsStoreTransaction: asFunction((documentsStore) => (
-      documentsStore.createTransaction()
+    getPreviousDocumentMongoDBDatabase: asFunction((
+      connectToDocumentMongoDB,
+      previousDocumentMongoDBPrefix,
+    ) => (
+      getDocumentDatabaseFactory(
+        connectToDocumentMongoDB,
+        previousDocumentMongoDBPrefix,
+      )
     )).singleton(),
-    documentsDbTransaction: asClass(DocumentDbTransaction).singleton(),
+    createDocumentMongoDbRepository: asFunction(createDocumentMongoDbRepositoryFactory).singleton(),
+    createPreviousDocumentMongoDbRepository: asFunction((
+      validateQuery,
+      getPreviousDocumentMongoDBDatabase,
+      dataContractRepository,
+    ) => (
+      createDocumentMongoDbRepositoryFactory(
+        convertWhereToMongoDbQuery,
+        validateQuery,
+        getPreviousDocumentMongoDBDatabase,
+        dataContractRepository,
+        container,
+        { isPrevious: true },
+      )
+    )).singleton(),
+    documentDatabaseManager: asClass(DocumentDatabaseManager),
+    previousDocumentDatabaseManager: asFunction((
+      createPreviousDocumentMongoDbRepository,
+      convertToMongoDbIndices,
+      getPreviousDocumentMongoDBDatabase,
+    ) => (
+      new DocumentDatabaseManager(
+        createPreviousDocumentMongoDbRepository,
+        convertToMongoDbIndices,
+        getPreviousDocumentMongoDBDatabase,
+      )
+    )),
+
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
+
+    fetchPreviousDocuments: asFunction((
+      previousDocumentRepository,
+      previousDataContractRepository,
+      previousDataContractCache,
+    ) => (
+      fetchDocumentsFactory(
+        previousDocumentRepository,
+        previousDataContractRepository,
+        previousDataContractCache,
+      )
+    )).singleton(),
+
+    populateMongoDbTransactionFromObject: asFunction((
+      createPreviousDocumentMongoDbRepository,
+      dpp,
+    ) => (
+      populateMongoDbTransactionFromObjectFactory(
+        createPreviousDocumentMongoDbRepository,
+        dpp,
+      )
+    )),
   });
 
   /**
-   * Register external store
+   * Register chain info
    * */
   container.register({
     externalLevelDB: asFunction((externalStoreLevelDBFile) => (
@@ -399,7 +628,15 @@ async function createDIContainer(options) {
     )).disposer((levelDB) => levelDB.close())
       .singleton(),
 
+    previousExternalLevelDB: asFunction((previousExternalStoreLevelDBFile) => (
+      level(previousExternalStoreLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
+    )).disposer((levelDB) => levelDB.close())
+      .singleton(),
+
     chainInfoRepository: asClass(ChainInfoExternalStoreRepository).singleton(),
+    previousChainInfoRepository: asFunction((
+      previousExternalLevelDB,
+    ) => (new ChainInfoExternalStoreRepository(previousExternalLevelDB))).singleton(),
   });
 
   const chainInfoRepository = container.resolve('chainInfoRepository');
@@ -410,7 +647,7 @@ async function createDIContainer(options) {
   });
 
   /**
-   * Register chain info
+   * Register credits distribution pool
    */
   container.register({
     commonStore: asFunction((commonStoreMerkDBFile) => {
@@ -428,10 +665,32 @@ async function createDIContainer(options) {
       }
     }).singleton(),
 
+    previousCommonStore: asFunction((previousCommonStoreMerkDBFile) => {
+      const merkDb = new Merk(previousCommonStoreMerkDBFile);
+
+      return new MerkDbStore(merkDb);
+    }).disposer((merkDb) => {
+      // Flush data on disk
+      merkDb.db.flushSync();
+      merkDb.db.close();
+
+      // Drop test database
+      if (process.env.NODE_ENV === 'test') {
+        merkDb.db.destroy();
+      }
+    }).singleton(),
+
     commonStoreRootTreeLeaf: asClass(CommonStoreRootTreeLeaf).singleton(),
+    previousCommonStoreRootTreeLeaf: asFunction((
+      previousCommonStore,
+    ) => (new CommonStoreRootTreeLeaf(previousCommonStore))).singleton(),
 
     creditsDistributionPoolRepository: asClass(CreditsDistributionPoolCommonStoreRepository)
       .singleton(),
+
+    previousCreditsDistributionPoolRepository: asFunction((
+      previousCommonStore,
+    ) => (new CreditsDistributionPoolCommonStoreRepository(previousCommonStore))).singleton(),
   });
 
   const creditsDistributionPoolRepository = container.resolve('creditsDistributionPoolRepository');
@@ -445,8 +704,17 @@ async function createDIContainer(options) {
    * Register block execution context
    */
   container.register({
-    blockExecutionDBTransactions: asClass(BlockExecutionDBTransactions).singleton(),
+    blockExecutionStoreTransactions: asClass(BlockExecutionStoreTransactions).singleton(),
+    previousBlockExecutionStoreTransactionsRepository: asClass(
+      PreviousBlockExecutionStoreTransactionsRepository,
+    ).singleton(),
+    previousBlockExecutionTransactionDB: asFunction((previousBlockExecutionTransactionFile) => (
+      new FileDb(previousBlockExecutionTransactionFile)
+    )).singleton(),
     blockExecutionContext: asClass(BlockExecutionContext).singleton(),
+    cloneToPreviousStoreTransactions: asFunction(
+      cloneToPreviousStoreTransactionsFactory,
+    ).singleton(),
   });
 
   /**
@@ -459,6 +727,7 @@ async function createDIContainer(options) {
       publicKeyToIdentityIdStoreRootTreeLeaf,
       dataContractsStoreRootTreeLeaf,
       documentsStoreRootTreeLeaf,
+      spentAssetLockTransactionsStoreRootTreeLeaf,
     ) => (
       new RootTree([
         commonStoreRootTreeLeaf,
@@ -466,6 +735,24 @@ async function createDIContainer(options) {
         publicKeyToIdentityIdStoreRootTreeLeaf,
         dataContractsStoreRootTreeLeaf,
         documentsStoreRootTreeLeaf,
+        spentAssetLockTransactionsStoreRootTreeLeaf,
+      ])
+    )).singleton(),
+    previousRootTree: asFunction((
+      previousCommonStoreRootTreeLeaf,
+      previousIdentitiesStoreRootTreeLeaf,
+      previousPublicKeyToIdentityIdStoreRootTreeLeaf,
+      previousDataContractsStoreRootTreeLeaf,
+      previousDocumentsStoreRootTreeLeaf,
+      previousSpentAssetLockTransactionsStoreRootTreeLeaf,
+    ) => (
+      new RootTree([
+        previousCommonStoreRootTreeLeaf,
+        previousIdentitiesStoreRootTreeLeaf,
+        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
+        previousDataContractsStoreRootTreeLeaf,
+        previousDocumentsStoreRootTreeLeaf,
+        previousSpentAssetLockTransactionsStoreRootTreeLeaf,
       ])
     )).singleton(),
   });
@@ -492,6 +779,7 @@ async function createDIContainer(options) {
       dataContractRepository,
       fetchDocuments,
       documentRepository,
+      spentAssetLockTransactionsRepository,
       coreRpcClient,
       dataContractCache,
       blockExecutionContext,
@@ -502,6 +790,7 @@ async function createDIContainer(options) {
         dataContractRepository,
         fetchDocuments,
         documentRepository,
+        spentAssetLockTransactionsRepository,
         coreRpcClient,
         blockExecutionContext,
       );
@@ -518,8 +807,9 @@ async function createDIContainer(options) {
       dataContractRepository,
       fetchDocuments,
       documentRepository,
+      spentAssetLockTransactionsRepository,
       coreRpcClient,
-      blockExecutionDBTransactions,
+      blockExecutionStoreTransactions,
       dataContractCache,
       blockExecutionContext,
       logger,
@@ -530,9 +820,10 @@ async function createDIContainer(options) {
         dataContractRepository,
         fetchDocuments,
         documentRepository,
+        spentAssetLockTransactionsRepository,
         coreRpcClient,
         blockExecutionContext,
-        blockExecutionDBTransactions,
+        blockExecutionStoreTransactions,
       );
 
       const cachedRepository = new CachedStateRepositoryDecorator(

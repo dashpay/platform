@@ -10,7 +10,7 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
  * Begin block ABCI handler
  *
  * @param {ChainInfo} chainInfo
- * @param {BlockExecutionDBTransactions} blockExecutionDBTransactions
+ * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {Number} protocolVersion - Protocol version
  * @param {BaseLogger} logger
@@ -19,7 +19,7 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
  */
 function beginBlockHandlerFactory(
   chainInfo,
-  blockExecutionDBTransactions,
+  blockExecutionStoreTransactions,
   blockExecutionContext,
   protocolVersion,
   logger,
@@ -46,7 +46,7 @@ function beginBlockHandlerFactory(
       );
     }
 
-    await blockExecutionDBTransactions.start();
+    await blockExecutionStoreTransactions.start();
 
     return new ResponseBeginBlock();
   }

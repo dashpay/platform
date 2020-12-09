@@ -22,10 +22,10 @@ function fetchDocumentsFactory(
    * @param {Buffer|Identifier} contractId
    * @param {string} type
    * @param {Object} [options] options
-   * @param {DocumentsDbTransaction} [dbTransaction]
+   * @param {DocumentsIndexedTransaction} [storeTransaction]
    * @returns {Promise<Document[]>}
    */
-  async function fetchDocuments(contractId, type, options, dbTransaction = undefined) {
+  async function fetchDocuments(contractId, type, options, storeTransaction = undefined) {
     let contractIdIdentifier;
     try {
       contractIdIdentifier = new Identifier(contractId);
@@ -65,7 +65,7 @@ function fetchDocumentsFactory(
       contractIdIdentifier,
       type,
       options,
-      dbTransaction,
+      storeTransaction,
     );
   }
 

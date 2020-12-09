@@ -70,6 +70,51 @@ class MerkDbTransaction {
   isStarted() {
     return this.db !== null;
   }
+
+  /**
+   * Return transaction as plain object
+   *
+   * @return {RawStoreTransaction}
+   */
+  toObject() {
+    if (!this.db) {
+      throw new MerkDBTransactionIsNotStartedError();
+    }
+
+    const updates = {};
+    for (const [key, value] of this.db.data) {
+      updates[key] = value;
+    }
+
+    const deletes = {};
+    for (const [key, value] of this.db.deleted) {
+      deletes[key] = value;
+    }
+
+    return {
+      updates,
+      deletes,
+    };
+  }
+
+  /**
+   * Populate update and delete operations from transaction object
+   *
+   * @param {RawStoreTransaction} transactionObject
+   *
+   * @return {void}
+   */
+  async populateFromObject(transactionObject) {
+    if (!this.isStarted()) {
+      throw new MerkDBTransactionIsNotStartedError();
+    }
+
+    Object.entries(transactionObject.updates)
+      .forEach(([key, value]) => this.db.data.set(key, value));
+
+    Object.entries(transactionObject.deletes)
+      .forEach(([key, value]) => this.db.deleted.set(key, value));
+  }
 }
 
 module.exports = MerkDbTransaction;

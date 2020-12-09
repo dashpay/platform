@@ -18,11 +18,17 @@ async function createTestDIContainer(mongoDB, dashCore = undefined) {
     ...process.env,
     DOCUMENT_MONGODB_URL: documentMongoDBUrl,
     COMMON_STORE_MERK_DB_FILE: './db/common-merkdb-test',
+    PREVIOUS_COMMON_STORE_MERK_DB_FILE: './db/common-merkdb-previous-test',
     DATA_CONTRACTS_STORE_MERK_DB_FILE: './db/data-contracts-merkdb-test',
+    PREVIOUS_DATA_CONTRACTS_STORE_MERK_DB_FILE: './db/data-contracts-merkdb-previous-test',
     DOCUMENTS_STORE_MERK_DB_FILE: './db/documents-merkdb-test',
+    PREVIOUS_DOCUMENTS_STORE_MERK_DB_FILE: './db/documents-merkdb-previous-test',
     IDENTITIES_STORE_MERK_DB_FILE: './db/identities-merkdb-test',
+    PREVIOUS_IDENTITIES_STORE_MERK_DB_FILE: './db/identities-merkdb-previous-test',
     PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE: './db/public-key-to-identity-id-merkdb-test',
+    PREVIOUS_PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE: './db/public-key-to-identity-id-merkdb-previous-test',
     EXTERNAL_STORE_LEVEL_DB_FILE: './db/external-leveldb-test',
+    PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE: './db/external-leveldb-previous-test',
     ...coreOptions,
   });
 }

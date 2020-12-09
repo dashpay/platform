@@ -13,7 +13,7 @@ class DocumentIndexedStoreRepository {
    * Store document
    *
    * @param {Document} document
-   * @param {DocumentsDbTransaction} [transaction]
+   * @param {DocumentsIndexedTransaction} [transaction]
    * @return {Promise<void>}
    */
   async store(document, transaction = undefined) {
@@ -39,7 +39,7 @@ class DocumentIndexedStoreRepository {
    * Fetch document by ID
    *
    * @param {Identifier} id
-   * @param {DocumentsDbTransaction} [transaction]
+   * @param {DocumentsIndexedTransaction} [transaction]
    * @return {Promise<Document|null>}
    */
   async fetch(id, transaction = undefined) {
@@ -59,7 +59,7 @@ class DocumentIndexedStoreRepository {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
-   * @param {DocumentsDbTransaction} [transaction]
+   * @param {DocumentsIndexedTransaction} [transaction]
    * @return {Promise<Document[]>}
    */
   async find(dataContractId, documentType, query = {}, transaction = undefined) {
@@ -78,9 +78,11 @@ class DocumentIndexedStoreRepository {
 
     const documentIds = await indicesRepository.find(query, mongoDbTransaction);
 
-    return Promise.all(documentIds.map((id) => (
+    const documents = await Promise.all(documentIds.map((id) => (
       this.documentStoreRepository.fetch(id, storeTransaction)
     )));
+
+    return documents.filter((document) => document !== null);
   }
 
   /**
@@ -89,7 +91,7 @@ class DocumentIndexedStoreRepository {
    * @param {Identifier} dataContractId
    * @param {string} documentType
    * @param {Identifier} documentId
-   * @param {DocumentsDbTransaction} [transaction]
+   * @param {DocumentsIndexedTransaction} [transaction]
    * @return {Promise<Document[]>}
    */
   async delete(dataContractId, documentType, documentId, transaction) {

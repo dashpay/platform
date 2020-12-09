@@ -10,19 +10,19 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
- * @param {IdentityStoreRepository} identityRepository
+ * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
+ * @param {IdentityStoreRepository} previousIdentityRepository
  * @param {number} maxIdentitiesPerRequest
- * @param {RootTree} rootTree
- * @param {IdentitiesStoreRootTreeLeaf} identitiesStoreRootTreeLeaf
+ * @param {RootTree} previousRootTree
+ * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
-  publicKeyToIdentityIdRepository,
-  identityRepository,
+  previousPublicKeyToIdentityIdRepository,
+  previousIdentityRepository,
   maxIdentitiesPerRequest,
-  rootTree,
-  identitiesStoreRootTreeLeaf,
+  previousRootTree,
+  previousIdentitiesStoreRootTreeLeaf,
 ) {
   /**
    * @typedef identitiesByPublicKeyHashesQueryHandler
@@ -46,7 +46,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
 
     const identities = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => {
-        const identityId = await publicKeyToIdentityIdRepository.fetch(publicKeyHash);
+        const identityId = await previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash);
 
         if (!identityId) {
           return Buffer.alloc(0);
@@ -54,7 +54,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
 
         identityIds.push(identityId);
 
-        const identity = await identityRepository.fetch(identityId);
+        const identity = await previousIdentityRepository.fetch(identityId);
 
         return identity.toBuffer();
       }),
@@ -67,7 +67,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
     const includeProof = request.prove === 'true';
 
     if (includeProof) {
-      value.proof = rootTree.getFullProof(identitiesStoreRootTreeLeaf, identityIds);
+      value.proof = previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, identityIds);
     }
 
     return new ResponseQuery({

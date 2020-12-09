@@ -1,4 +1,4 @@
-const { startMongoDb } = require('@dashevo/dp-services-ctl');
+const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
@@ -12,6 +12,7 @@ const findConflictingConditions = require('../../../../lib/document/query/findCo
 const getIndexedFieldsFromDocumentSchema = require('../../../../lib/document/query/getIndexedFieldsFromDocumentSchema');
 const findNotIndexedFields = require('../../../../lib/document/query/findNotIndexedFields');
 const findNotIndexedOrderByFields = require('../../../../lib/document/query/findNotIndexedOrderByFields');
+const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
 
 describe('DocumentDatabaseManager', function main() {
   this.timeout(25000);
@@ -21,10 +22,10 @@ describe('DocumentDatabaseManager', function main() {
   let dataContract;
   let mongoDB;
   let connectToDocumentMongoDB;
-  let blockExecutionDBTransactionsMock;
+  let container;
 
-  before(async () => {
-    mongoDB = await startMongoDb();
+  startMongoDb().then((mongo) => {
+    mongoDB = mongo;
   });
 
   beforeEach(async () => {
@@ -51,23 +52,23 @@ describe('DocumentDatabaseManager', function main() {
       fetch: () => dataContract,
     };
 
-    blockExecutionDBTransactionsMock = {
-      getTransaction: () => ({
-        isStarted: () => false,
-      }),
-    };
+    container = await createTestDIContainer(mongoDB);
 
     createDocumentRepository = createDocumentMongoDbRepositoryFactory(
       convertWhereToMongoDbQuery,
       validateQuery,
       getDocumentDatabase,
       dataContractRepositoryMock,
-      blockExecutionDBTransactionsMock,
+      container,
     );
   });
 
   afterEach(async () => {
     await mongoDB.clean();
+
+    if (container) {
+      await container.dispose();
+    }
   });
 
   after(async () => {

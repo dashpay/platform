@@ -17,32 +17,32 @@ const InvalidArgumentAbciError = require(
 
 describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
   let identityIdsByPublicKeyHashesQueryHandler;
-  let publicKeyIdentityIdRepositoryMock;
+  let previousPublicKeyIdentityIdRepositoryMock;
   let publicKeyHashes;
   let identityIds;
   let identityIdsByPublicKeyHashes;
   let maxIdentitiesPerRequest;
-  let rootTreeMock;
-  let publicKeyToIdentityIdStoreRootTreeLeafMock;
+  let previousRootTreeMock;
+  let previousPublicKeyToIdentityIdStoreRootTreeLeafMock;
 
   beforeEach(function beforeEach() {
-    publicKeyIdentityIdRepositoryMock = {
+    previousPublicKeyIdentityIdRepositoryMock = {
       fetch: this.sinon.stub(),
     };
 
     maxIdentitiesPerRequest = 5;
 
-    rootTreeMock = {
+    previousRootTreeMock = {
       getFullProof: this.sinon.stub(),
     };
 
-    publicKeyToIdentityIdStoreRootTreeLeafMock = this.sinon.stub();
+    previousPublicKeyToIdentityIdStoreRootTreeLeafMock = this.sinon.stub();
 
     identityIdsByPublicKeyHashesQueryHandler = identityIdsByPublicKeyHashesQueryHandlerFactory(
-      publicKeyIdentityIdRepositoryMock,
+      previousPublicKeyIdentityIdRepositoryMock,
       maxIdentitiesPerRequest,
-      rootTreeMock,
-      publicKeyToIdentityIdStoreRootTreeLeafMock,
+      previousRootTreeMock,
+      previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
     );
 
     publicKeyHashes = [
@@ -56,12 +56,12 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
       generateRandomIdentifier(),
     ];
 
-    publicKeyIdentityIdRepositoryMock
+    previousPublicKeyIdentityIdRepositoryMock
       .fetch
       .withArgs(publicKeyHashes[0])
       .resolves(identityIds[0]);
 
-    publicKeyIdentityIdRepositoryMock
+    previousPublicKeyIdentityIdRepositoryMock
       .fetch
       .withArgs(publicKeyHashes[1])
       .resolves(identityIds[1]);
@@ -80,10 +80,10 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     maxIdentitiesPerRequest = 1;
 
     identityIdsByPublicKeyHashesQueryHandler = identityIdsByPublicKeyHashesQueryHandlerFactory(
-      publicKeyIdentityIdRepositoryMock,
+      previousPublicKeyIdentityIdRepositoryMock,
       maxIdentitiesPerRequest,
-      rootTreeMock,
-      publicKeyToIdentityIdStoreRootTreeLeafMock,
+      previousRootTreeMock,
+      previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
     );
 
     try {
@@ -103,19 +103,19 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
       publicKeyHashes.length,
     );
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
       publicKeyHashes[0],
     ]);
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
       publicKeyHashes[1],
     ]);
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
       publicKeyHashes[2],
     ]);
 
@@ -136,23 +136,23 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
       storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
     };
 
-    rootTreeMock.getFullProof.returns(proof);
+    previousRootTreeMock.getFullProof.returns(proof);
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, { prove: 'true' });
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
       publicKeyHashes.length,
     );
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
       publicKeyHashes[0],
     ]);
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
       publicKeyHashes[1],
     ]);
 
-    expect(publicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
       publicKeyHashes[2],
     ]);
 
@@ -164,9 +164,9 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(value);
-    expect(rootTreeMock.getFullProof).to.be.calledOnce();
-    expect(rootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
-      publicKeyToIdentityIdStoreRootTreeLeafMock,
+    expect(previousRootTreeMock.getFullProof).to.be.calledOnce();
+    expect(previousRootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
+      previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
       publicKeyHashes,
     ]);
   });

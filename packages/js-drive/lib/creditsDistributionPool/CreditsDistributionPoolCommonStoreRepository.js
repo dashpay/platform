@@ -11,28 +11,32 @@ class CreditsDistributionPoolCommonStoreRepository {
   }
 
   /**
-   * Store chain info
+   * Store Credits Distribution Pool
    *
    * @param {CreditsDistributionPool} creditsDistributionPool
+   * @param {MerkDbTransaction} transaction
    * @return {this}
    */
-  async store(creditsDistributionPool) {
+  async store(creditsDistributionPool, transaction = undefined) {
     await this.storage.put(
       CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME,
       cbor.encodeCanonical(creditsDistributionPool.toJSON()),
+      transaction,
     );
 
     return this;
   }
 
   /**
-   * Fetch chain info
+   * Fetch Credits Distribution Pool
    *
+   * @param {MerkDbTransaction} transaction
    * @return {CreditsDistributionPool}
    */
-  async fetch() {
+  async fetch(transaction = undefined) {
     const creditsDistributionPoolEncoded = await this.storage.get(
       CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME,
+      transaction,
     );
 
     if (!creditsDistributionPoolEncoded) {

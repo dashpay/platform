@@ -10,15 +10,15 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 
 /**
  *
- * @param {DataContractStoreRepository} dataContractRepository
- * @param {RootTree} rootTree
- * @param {DataContractsStoreRootTreeLeaf} dataContractsStoreRootTreeLeaf
+ * @param {DataContractStoreRepository} previousDataContractRepository
+ * @param {RootTree} previousRootTree
+ * @param {DataContractsStoreRootTreeLeaf} previousDataContractsStoreRootTreeLeaf
  * @return {dataContractQueryHandler}
  */
 function dataContractQueryHandlerFactory(
-  dataContractRepository,
-  rootTree,
-  dataContractsStoreRootTreeLeaf,
+  previousDataContractRepository,
+  previousRootTree,
+  previousDataContractsStoreRootTreeLeaf,
 ) {
   /**
    * @typedef dataContractQueryHandler
@@ -30,7 +30,7 @@ function dataContractQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function dataContractQueryHandler(params, { id }, request) {
-    const dataContract = await dataContractRepository.fetch(id);
+    const dataContract = await previousDataContractRepository.fetch(id);
 
     if (!dataContract) {
       throw new NotFoundAbciError('Data Contract not found');
@@ -43,7 +43,7 @@ function dataContractQueryHandlerFactory(
     };
 
     if (includeProof) {
-      value.proof = rootTree.getFullProof(dataContractsStoreRootTreeLeaf, [id]);
+      value.proof = previousRootTree.getFullProof(previousDataContractsStoreRootTreeLeaf, [id]);
     }
 
     return new ResponseQuery({

@@ -4,7 +4,7 @@
  * @method abort
  * @method getTransaction
  */
-class BlockExecutionDBTransactionsMock {
+class BlockExecutionStoreTransactionsMock {
   /**
    * @param {SinonSandbox} sinon
    */
@@ -13,7 +13,8 @@ class BlockExecutionDBTransactionsMock {
     this.commit = sinon.stub();
     this.abort = sinon.stub();
     this.getTransaction = sinon.stub();
+    this.clone = sinon.stub();
   }
 }
 
-module.exports = BlockExecutionDBTransactionsMock;
+module.exports = BlockExecutionStoreTransactionsMock;

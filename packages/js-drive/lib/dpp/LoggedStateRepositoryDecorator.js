@@ -129,6 +129,56 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
+   * Store spent asset lock transaction
+   *
+   * @param {Buffer} outPointBuffer
+   *
+   * @return {Promise<void>}
+   */
+  async storeAssetLockTransactionOutPoint(outPointBuffer) {
+    let response;
+
+    try {
+      response = await this.stateRepository.storeAssetLockTransactionOutPoint(outPointBuffer);
+    } finally {
+      this.log(
+        'storeAssetLockTransactionOutPoint',
+        {
+          outPointBuffer: outPointBuffer.toString('base64'),
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Check if spent asset lock transaction is stored
+   *
+   * @param {Buffer} outPointBuffer
+   *
+   * @return {Promise<boolean>}
+   */
+  async checkAssetLockTransactionOutPointExists(outPointBuffer) {
+    let response;
+
+    try {
+      response = await this.stateRepository.checkAssetLockTransactionOutPointExists(outPointBuffer);
+    } finally {
+      this.log(
+        'checkAssetLockTransactionOutPointExists',
+        {
+          outPointBuffer: outPointBuffer.toString('base64'),
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id

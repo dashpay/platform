@@ -4,7 +4,7 @@ class MerkDbInMemoryDecorator {
    */
   constructor(merkDB) {
     this.db = merkDB;
-    this.deleted = new Set();
+    this.deleted = new Map();
     this.data = new Map();
   }
 
@@ -55,10 +55,10 @@ class MerkDbInMemoryDecorator {
     const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
 
     try {
-      this.db.getSync(key);
+      const serializedDocument = this.db.getSync(key);
 
       this.data.delete(keyString);
-      this.deleted.add(keyString);
+      this.deleted.set(keyString, serializedDocument);
     } catch (e) {
       if (!e.message.startsWith('key not found')) {
         throw e;
@@ -104,8 +104,8 @@ class MerkDbInMemoryDecorator {
     // remove keys
     // keys must be sorted and unique
     // https://github.com/nomic-io/merk/blob/f6c4024c5bae3f0400d965aaf058e76aa94162b8/src/merk/mod.rs#L122
-    [...this.deleted]
-      .map((keyString) => Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING))
+    [...this.deleted.entries()]
+      .map(([keyString]) => Buffer.from(keyString, MerkDbInMemoryDecorator.KEY_ENCODING))
       .sort(Buffer.compare)
       .forEach((keyBuffer) => {
         batch = batch.delete(keyBuffer);

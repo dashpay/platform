@@ -5,9 +5,10 @@ class DriveStateRepository {
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
    * @param {DocumentIndexedStoreRepository} documentRepository
+   * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
-   * @param {BlockExecutionDBTransactions} [blockExecutionDBTransactions]
+   * @param {BlockExecutionStoreTransactions} [blockExecutionStoreTransactions]
    */
   constructor(
     identityRepository,
@@ -15,17 +16,19 @@ class DriveStateRepository {
     dataContractRepository,
     fetchDocuments,
     documentRepository,
+    spentAssetLockTransactionsRepository,
     coreRpcClient,
     blockExecutionContext,
-    blockExecutionDBTransactions = undefined,
+    blockExecutionStoreTransactions = undefined,
   ) {
     this.identityRepository = identityRepository;
     this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
     this.documentRepository = documentRepository;
+    this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionDBTransactions = blockExecutionDBTransactions;
+    this.blockExecutionStoreTransactions = blockExecutionStoreTransactions;
     this.blockExecutionContext = blockExecutionContext;
   }
 
@@ -37,7 +40,7 @@ class DriveStateRepository {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id) {
-    const transaction = this.getDBTransaction('identity');
+    const transaction = this.getDBTransaction('identities');
 
     return this.identityRepository.fetch(id, transaction);
   }
@@ -49,7 +52,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeIdentity(identity) {
-    const transaction = this.getDBTransaction('identity');
+    const transaction = this.getDBTransaction('identities');
 
     await this.identityRepository.store(identity, transaction);
   }
@@ -71,6 +74,40 @@ class DriveStateRepository {
           publicKeyHash, identityId, transaction,
         )),
     );
+  }
+
+  /**
+   * Store spent asset lock transaction
+   *
+   * @param {Buffer} outPointBuffer
+   *
+   * @return {Promise<void>}
+   */
+  async storeAssetLockTransactionOutPoint(outPointBuffer) {
+    const transaction = this.getDBTransaction('assetLockTransactions');
+
+    this.spentAssetLockTransactionsRepository.store(
+      outPointBuffer,
+      transaction,
+    );
+  }
+
+  /**
+   * Check if spent asset lock transaction is stored
+   *
+   * @param {Buffer} outPointBuffer
+   *
+   * @return {Promise<boolean>}
+   */
+  async checkAssetLockTransactionOutPointExists(outPointBuffer) {
+    const transaction = this.getDBTransaction('assetLockTransactions');
+
+    const result = this.spentAssetLockTransactionsRepository.fetch(
+      outPointBuffer,
+      transaction,
+    );
+
+    return result !== null;
   }
 
   /**
@@ -116,7 +153,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeDataContract(dataContract) {
-    const transaction = this.getDBTransaction('dataContract');
+    const transaction = this.getDBTransaction('dataContracts');
 
     await this.dataContractRepository.store(dataContract, transaction);
   }
@@ -130,7 +167,7 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}) {
-    const transaction = this.getDBTransaction('document');
+    const transaction = this.getDBTransaction('documents');
 
     return this.fetchDocumentsFunction(contractId, type, options, transaction);
   }
@@ -142,7 +179,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeDocument(document) {
-    const transaction = this.getDBTransaction('document');
+    const transaction = this.getDBTransaction('documents');
 
     await this.documentRepository.store(document, transaction);
   }
@@ -156,7 +193,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(contractId, type, id) {
-    const transaction = this.getDBTransaction('document');
+    const transaction = this.getDBTransaction('documents');
 
     await this.documentRepository.delete(contractId, type, id, transaction);
   }
@@ -194,13 +231,13 @@ class DriveStateRepository {
   /**
    * @private
    * @param {string} name
-   * @return {MerkDbTransaction|DocumentsDbTransaction}
+   * @return {MerkDbTransaction|DocumentsIndexedTransaction}
    */
   getDBTransaction(name) {
     let transaction;
 
-    if (this.blockExecutionDBTransactions) {
-      transaction = this.blockExecutionDBTransactions.getTransaction(name);
+    if (this.blockExecutionStoreTransactions) {
+      transaction = this.blockExecutionStoreTransactions.getTransaction(name);
     }
 
     return transaction;

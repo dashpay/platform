@@ -57,6 +57,28 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Store spent asset lock transaction
+   *
+   * @param {Buffer} outPointBuffer
+   *
+   * @return {Promise<void>}
+   */
+  async storeAssetLockTransactionOutPoint(outPointBuffer) {
+    return this.stateRepository.storeAssetLockTransactionOutPoint(outPointBuffer);
+  }
+
+  /**
+   * Check if spent asset lock transaction is stored
+   *
+   * @param {Buffer} outPointBuffer
+   *
+   * @return {Promise<boolean>}
+   */
+  async checkAssetLockTransactionOutPointExists(outPointBuffer) {
+    return this.stateRepository.checkAssetLockTransactionOutPointExists(outPointBuffer);
+  }
+
+  /**
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id

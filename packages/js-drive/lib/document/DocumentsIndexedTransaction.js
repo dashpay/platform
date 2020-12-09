@@ -1,12 +1,15 @@
 const DocumentsDBTransactionIsAlreadyStartedError = require('./errors/DocumentsDBTransactionIsAlreadyStartedError');
 const DocumentsDBTransactionIsNotStartedError = require('./errors/DocumentsDBTransactionIsNotStartedError');
 
-class DocumentsDbTransaction {
+class DocumentsIndexedTransaction {
   /**
    * @param {MerkDbTransaction} documentsStoreTransaction
    * @param {MongoDBTransaction} documentMongoDBTransaction
    */
-  constructor(documentsStoreTransaction, documentMongoDBTransaction) {
+  constructor(
+    documentsStoreTransaction,
+    documentMongoDBTransaction,
+  ) {
     this.storeTransaction = documentsStoreTransaction;
     this.mongoDbTransaction = documentMongoDBTransaction;
 
@@ -87,6 +90,30 @@ class DocumentsDbTransaction {
   isStarted() {
     return this.transactionIsStarted;
   }
+
+  /**
+   * Ouput transaction to plain object format
+   *
+   * @return {RawStoreTransaction}
+   */
+  toObject() {
+    return this.storeTransaction.toObject();
+  }
+
+  /**
+   * Populate update and delete operations from transaction object
+   *
+   * @param {RawStoreTransaction} transactionObject
+   *
+   * @return {void}
+   */
+  async populateFromObject(transactionObject) {
+    if (!this.isStarted()) {
+      throw new DocumentsDBTransactionIsNotStartedError();
+    }
+
+    await this.storeTransaction.populateFromObject(transactionObject);
+  }
 }
 
-module.exports = DocumentsDbTransaction;
+module.exports = DocumentsIndexedTransaction;

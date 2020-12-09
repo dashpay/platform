@@ -18,29 +18,29 @@ const AbciError = require('../../../../../lib/abci/errors/AbciError');
 
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
-  let fetchDocumentsMock;
+  let fetchPreviousDocumentsMock;
   let documents;
   let params;
   let data;
   let options;
-  let rootTreeMock;
-  let documentsStoreRootTreeLeafMock;
+  let previousRootTreeMock;
+  let previousDocumentsStoreRootTreeLeafMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
 
-    fetchDocumentsMock = this.sinon.stub();
+    fetchPreviousDocumentsMock = this.sinon.stub();
 
-    rootTreeMock = {
+    previousRootTreeMock = {
       getFullProof: this.sinon.stub(),
     };
 
-    documentsStoreRootTreeLeafMock = this.sinon.stub();
+    previousDocumentsStoreRootTreeLeafMock = this.sinon.stub();
 
     documentQueryHandler = documentQueryHandlerFactory(
-      fetchDocumentsMock,
-      rootTreeMock,
-      documentsStoreRootTreeLeafMock,
+      fetchPreviousDocumentsMock,
+      previousRootTreeMock,
+      previousDocumentsStoreRootTreeLeafMock,
     );
 
     params = {};
@@ -63,11 +63,11 @@ describe('documentQueryHandlerFactory', () => {
   });
 
   it('should return serialized documents', async () => {
-    fetchDocumentsMock.resolves(documents);
+    fetchPreviousDocumentsMock.resolves(documents);
 
     const result = await documentQueryHandler(params, data, {});
 
-    expect(fetchDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+    expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
@@ -76,7 +76,7 @@ describe('documentQueryHandlerFactory', () => {
     };
 
     expect(result.value).to.deep.equal(cbor.encode(value));
-    expect(rootTreeMock.getFullProof).to.be.not.called();
+    expect(previousRootTreeMock.getFullProof).to.be.not.called();
   });
 
   it('should return serialized documents with proof', async () => {
@@ -85,12 +85,12 @@ describe('documentQueryHandlerFactory', () => {
       storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
     };
 
-    fetchDocumentsMock.resolves(documents);
-    rootTreeMock.getFullProof.returns(proof);
+    fetchPreviousDocumentsMock.resolves(documents);
+    previousRootTreeMock.getFullProof.returns(proof);
 
     const result = await documentQueryHandler(params, data, { prove: 'true' });
 
-    expect(fetchDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+    expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
@@ -102,9 +102,9 @@ describe('documentQueryHandlerFactory', () => {
     const documentIds = documents.map((document) => document.getId());
 
     expect(result.value).to.deep.equal(cbor.encode(value));
-    expect(rootTreeMock.getFullProof).to.be.calledOnce();
-    expect(rootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
-      documentsStoreRootTreeLeafMock,
+    expect(previousRootTreeMock.getFullProof).to.be.calledOnce();
+    expect(previousRootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
+      previousDocumentsStoreRootTreeLeafMock,
       documentIds,
     ]);
   });
@@ -113,7 +113,7 @@ describe('documentQueryHandlerFactory', () => {
     const error = new ValidationError('Some error');
     const queryError = new InvalidQueryError([error]);
 
-    fetchDocumentsMock.throws(queryError);
+    fetchPreviousDocumentsMock.throws(queryError);
 
     try {
       await documentQueryHandler(params, data, {});
@@ -123,14 +123,14 @@ describe('documentQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
       expect(e.getData()).to.deep.equal({ errors: [error] });
-      expect(fetchDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     }
   });
 
   it('should throw error if fetchDocuments throws unknown error', async () => {
     const error = new Error('Some error');
 
-    fetchDocumentsMock.throws(error);
+    fetchPreviousDocumentsMock.throws(error);
 
     try {
       await documentQueryHandler(params, data, {});
@@ -138,7 +138,7 @@ describe('documentQueryHandlerFactory', () => {
       expect.fail('should throw any error');
     } catch (e) {
       expect(e).to.deep.equal(error);
-      expect(fetchDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     }
   });
 });

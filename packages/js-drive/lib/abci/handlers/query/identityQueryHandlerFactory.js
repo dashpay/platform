@@ -10,15 +10,15 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 
 /**
  *
- * @param {IdentityStoreRepository} identityRepository
- * @param {RootTree} rootTree
- * @param {IdentitiesStoreRootTreeLeaf} identitiesStoreRootTreeLeaf
+ * @param {IdentityStoreRepository} previousIdentityRepository
+ * @param {RootTree} previousRootTree
+ * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
-  identityRepository,
-  rootTree,
-  identitiesStoreRootTreeLeaf,
+  previousIdentityRepository,
+  previousRootTree,
+  previousIdentitiesStoreRootTreeLeaf,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -32,7 +32,7 @@ function identityQueryHandlerFactory(
   async function identityQueryHandler(params, { id }, request) {
     const includeProof = request.prove === 'true';
 
-    const identity = await identityRepository.fetch(id);
+    const identity = await previousIdentityRepository.fetch(id);
 
     if (!identity) {
       throw new NotFoundAbciError('Identity not found');
@@ -45,7 +45,7 @@ function identityQueryHandlerFactory(
     };
 
     if (includeProof) {
-      value.proof = rootTree.getFullProof(identitiesStoreRootTreeLeaf, [id]);
+      value.proof = previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, [id]);
     }
 
     return new ResponseQuery({

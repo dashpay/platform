@@ -53,7 +53,7 @@ describe('MerkDbInMemoryDecorator', () => {
 
       merkDBMock.getSync.returns(value);
 
-      merkDbInMemoryDecorator.deleted.add(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING));
+      merkDbInMemoryDecorator.deleted.set(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING), key);
 
       try {
         merkDbInMemoryDecorator.getSync(key);
@@ -72,7 +72,7 @@ describe('MerkDbInMemoryDecorator', () => {
 
       const keyString = key.toString(MerkDbInMemoryDecorator.KEY_ENCODING);
 
-      merkDbInMemoryDecorator.deleted.add(keyString);
+      merkDbInMemoryDecorator.deleted.set(keyString, key);
 
       merkDbInMemoryDecorator.put(key, value);
 
@@ -151,7 +151,7 @@ describe('MerkDbInMemoryDecorator', () => {
       ];
 
       keysToRemove.forEach((keyToRemove) => {
-        merkDbInMemoryDecorator.deleted.add(keyToRemove.toString('hex'));
+        merkDbInMemoryDecorator.deleted.set(keyToRemove.toString('hex'), keyToRemove);
       });
 
       merkDbInMemoryDecorator.data.set(keysToAdd[0].toString('hex'), valuesToAdd[0]);
@@ -198,7 +198,7 @@ describe('MerkDbInMemoryDecorator', () => {
       const key = Buffer.from([1, 2, 3]);
       const value = Buffer.from([4, 2]);
 
-      merkDbInMemoryDecorator.deleted.add(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING));
+      merkDbInMemoryDecorator.deleted.set(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING), key);
       merkDbInMemoryDecorator.data.set(key.toString(MerkDbInMemoryDecorator.KEY_ENCODING), value);
 
       merkDbInMemoryDecorator.reset();

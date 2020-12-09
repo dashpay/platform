@@ -11,15 +11,15 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {fetchDocuments} fetchDocuments
- * @param {RootTree} rootTree
- * @param {DocumentsStoreRootTreeLeaf} documentsStoreRootTreeLeaf
+ * @param {fetchDocuments} fetchPreviousDocuments
+ * @param {RootTree} previousRootTree
+ * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
-  fetchDocuments,
-  rootTree,
-  documentsStoreRootTreeLeaf,
+  fetchPreviousDocuments,
+  previousRootTree,
+  previousDocumentsStoreRootTreeLeaf,
 ) {
   /**
    * @typedef documentQueryHandler
@@ -52,7 +52,7 @@ function documentQueryHandlerFactory(
     let documents;
 
     try {
-      documents = await fetchDocuments(contractId, type, {
+      documents = await fetchPreviousDocuments(contractId, type, {
         where,
         orderBy,
         limit,
@@ -79,7 +79,7 @@ function documentQueryHandlerFactory(
     if (includeProof) {
       const documentIds = documents.map((document) => document.getId());
 
-      value.proof = rootTree.getFullProof(documentsStoreRootTreeLeaf, documentIds);
+      value.proof = previousRootTree.getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds);
     }
 
     return new ResponseQuery({

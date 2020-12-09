@@ -14,28 +14,28 @@ const AbciError = require('../../../../../lib/abci/errors/AbciError');
 
 describe('identityQueryHandlerFactory', () => {
   let identityQueryHandler;
-  let identityRepositoryMock;
+  let previousIdentityRepositoryMock;
   let identity;
   let params;
   let data;
-  let rootTreeMock;
-  let identitiesStoreRootTreeLeafMock;
+  let previousRootTreeMock;
+  let previousIdentitiesStoreRootTreeLeafMock;
 
   beforeEach(function beforeEach() {
-    identityRepositoryMock = {
+    previousIdentityRepositoryMock = {
       fetch: this.sinon.stub(),
     };
 
-    rootTreeMock = {
+    previousRootTreeMock = {
       getFullProof: this.sinon.stub(),
     };
 
-    identitiesStoreRootTreeLeafMock = this.sinon.stub();
+    previousIdentitiesStoreRootTreeLeafMock = this.sinon.stub();
 
     identityQueryHandler = identityQueryHandlerFactory(
-      identityRepositoryMock,
-      rootTreeMock,
-      identitiesStoreRootTreeLeafMock,
+      previousIdentityRepositoryMock,
+      previousRootTreeMock,
+      previousIdentitiesStoreRootTreeLeafMock,
     );
 
     identity = getIdentityFixture();
@@ -47,11 +47,11 @@ describe('identityQueryHandlerFactory', () => {
   });
 
   it('should return serialized identity', async () => {
-    identityRepositoryMock.fetch.resolves(identity);
+    previousIdentityRepositoryMock.fetch.resolves(identity);
 
     const result = await identityQueryHandler(params, data, {});
 
-    expect(identityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+    expect(previousIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(cbor.encode({
@@ -68,7 +68,7 @@ describe('identityQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(NotFoundAbciError);
       expect(e.getCode()).to.equal(AbciError.CODES.NOT_FOUND);
       expect(e.message).to.equal('Identity not found');
-      expect(identityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+      expect(previousIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     }
   });
 
@@ -78,11 +78,11 @@ describe('identityQueryHandlerFactory', () => {
       storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
     };
 
-    identityRepositoryMock.fetch.resolves(identity);
-    rootTreeMock.getFullProof.returns(proof);
+    previousIdentityRepositoryMock.fetch.resolves(identity);
+    previousRootTreeMock.getFullProof.returns(proof);
 
     const result = await identityQueryHandler(params, data, { prove: 'true' });
-    expect(identityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+    expect(previousIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
@@ -92,8 +92,8 @@ describe('identityQueryHandlerFactory', () => {
     };
 
     expect(result.value).to.deep.equal(cbor.encode(value));
-    expect(rootTreeMock.getFullProof).to.be.calledOnceWith(
-      identitiesStoreRootTreeLeafMock,
+    expect(previousRootTreeMock.getFullProof).to.be.calledOnceWith(
+      previousIdentitiesStoreRootTreeLeafMock,
       [identity.getId()],
     );
   });

@@ -14,30 +14,30 @@ const AbciError = require('../../../../../lib/abci/errors/AbciError');
 
 describe('dataContractQueryHandlerFactory', () => {
   let dataContractQueryHandler;
-  let dataContractRepositoryMock;
+  let previousDataContractRepositoryMock;
   let dataContract;
   let params;
   let data;
-  let rootTreeMock;
-  let dataContractsStoreRootTreeLeafMock;
+  let previousRootTreeMock;
+  let previousDataContractsStoreRootTreeLeafMock;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
 
-    dataContractRepositoryMock = {
+    previousDataContractRepositoryMock = {
       fetch: this.sinon.stub(),
     };
 
-    rootTreeMock = {
+    previousRootTreeMock = {
       getFullProof: this.sinon.stub(),
     };
 
-    dataContractsStoreRootTreeLeafMock = this.sinon.stub();
+    previousDataContractsStoreRootTreeLeafMock = this.sinon.stub();
 
     dataContractQueryHandler = dataContractQueryHandlerFactory(
-      dataContractRepositoryMock,
-      rootTreeMock,
-      dataContractsStoreRootTreeLeafMock,
+      previousDataContractRepositoryMock,
+      previousRootTreeMock,
+      previousDataContractsStoreRootTreeLeafMock,
     );
 
     params = { };
@@ -47,7 +47,7 @@ describe('dataContractQueryHandlerFactory', () => {
   });
 
   it('should return serialized data contract', async () => {
-    dataContractRepositoryMock.fetch.resolves(dataContract);
+    previousDataContractRepositoryMock.fetch.resolves(dataContract);
 
     const result = await dataContractQueryHandler(params, data, {});
 
@@ -55,11 +55,11 @@ describe('dataContractQueryHandlerFactory', () => {
       data: dataContract.toBuffer(),
     };
 
-    expect(dataContractRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+    expect(previousDataContractRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(cbor.encode(value));
-    expect(rootTreeMock.getFullProof).not.to.be.called();
+    expect(previousRootTreeMock.getFullProof).not.to.be.called();
   });
 
   it('should return serialized data contract with proof', async () => {
@@ -68,8 +68,8 @@ describe('dataContractQueryHandlerFactory', () => {
       storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
     };
 
-    dataContractRepositoryMock.fetch.resolves(dataContract);
-    rootTreeMock.getFullProof.returns(proof);
+    previousDataContractRepositoryMock.fetch.resolves(dataContract);
+    previousRootTreeMock.getFullProof.returns(proof);
 
     const result = await dataContractQueryHandler(params, data, { prove: 'true' });
 
@@ -78,13 +78,13 @@ describe('dataContractQueryHandlerFactory', () => {
       proof,
     };
 
-    expect(dataContractRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+    expect(previousDataContractRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(cbor.encode(value));
-    expect(rootTreeMock.getFullProof).to.be.calledOnce();
-    expect(rootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
-      dataContractsStoreRootTreeLeafMock,
+    expect(previousRootTreeMock.getFullProof).to.be.calledOnce();
+    expect(previousRootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
+      previousDataContractsStoreRootTreeLeafMock,
       [dataContract.getId()],
     ]);
   });
@@ -98,7 +98,7 @@ describe('dataContractQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(NotFoundAbciError);
       expect(e.getCode()).to.equal(AbciError.CODES.NOT_FOUND);
       expect(e.message).to.equal('Data Contract not found');
-      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+      expect(previousDataContractRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     }
   });
 });

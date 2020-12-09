@@ -9,7 +9,7 @@ const {
 const beginBlockHandlerFactory = require('../../../../lib/abci/handlers/beginBlockHandlerFactory');
 
 const ChainInfo = require('../../../../lib/chainInfo/ChainInfo');
-const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionDBTransactionsMock');
+const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('beginBlockHandlerFactory', () => {

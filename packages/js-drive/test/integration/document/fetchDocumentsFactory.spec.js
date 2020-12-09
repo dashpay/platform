@@ -45,6 +45,11 @@ describe('fetchDocumentsFactory', () => {
       },
     ];
 
+    const blockExecutionStoreTransactions = container.resolve('blockExecutionStoreTransactions');
+    const dataContractsTransaction = blockExecutionStoreTransactions.getTransaction('dataContracts');
+
+    await dataContractsTransaction.start();
+
     await dataContractRepository.store(dataContract);
 
     fetchDocuments = container.resolve('fetchDocuments');
