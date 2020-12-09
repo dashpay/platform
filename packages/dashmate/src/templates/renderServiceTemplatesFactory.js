@@ -16,12 +16,14 @@ function renderServiceTemplatesFactory(writeServiceConfigs) {
    * @return {Promise<void>}
    */
   async function renderServiceTemplates(config, homeDirPath) {
-    const files = fs.readdirSync(path.join(__dirname, 'templates'));
+    const dir = path.join(__dirname, '..', '..', 'templates');
+
+    const files = fs.readdirSync(dir);
 
     dots.templateSettings.strip = false;
     const configFiles = {};
     for (const file of files) {
-      const fileContents = fs.readFileSync(path.join(__dirname, 'templates', file), 'utf-8');
+      const fileContents = fs.readFileSync(path.join(dir, file), 'utf-8');
       const fileTemplate = dots.template(fileContents);
       if (
         file === 'genesis.json.template'
