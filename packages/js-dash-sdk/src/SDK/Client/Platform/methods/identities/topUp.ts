@@ -3,6 +3,7 @@ import Identifier from "@dashevo/dpp/lib/Identifier";
 import {Platform} from "../../Platform";
 
 import { wait } from "../../../../../utils/wait";
+import { createFakeInstantLock } from "../../../../../utils/createFakeIntantLock";
 import createAssetLockTransaction from "../../createAssetLockTransaction";
 
 /**
@@ -14,7 +15,7 @@ import createAssetLockTransaction from "../../createAssetLockTransaction";
  * @returns {boolean}
  */
 export async function topUp(this: Platform, identityId: Identifier | string, amount: number): Promise<any> {
-    const { client, dpp } = this;
+    const { client, dpp, passFakeAssetLockProofForTests } = this;
 
     identityId = Identifier.from(identityId);
 
@@ -22,7 +23,8 @@ export async function topUp(this: Platform, identityId: Identifier | string, amo
 
     const {
         transaction: assetLockTransaction,
-        privateKey: assetLockPrivateKey
+        privateKey: assetLockPrivateKey,
+        outputIndex: assetLockOutputIndex
     } = await createAssetLockTransaction(this, amount);
 
     // Broadcast Asset Lock transaction
@@ -32,11 +34,20 @@ export async function topUp(this: Platform, identityId: Identifier | string, amo
     await wait(1000);
 
     // Create ST
-
-    const outPointBuffer = assetLockTransaction.getOutPointBuffer(0);
-
+    // Get IS lock to proof that transaction won't be double spent
+    let instantLock;
+    // Create poof that the transaction won't be double spend
+    if (passFakeAssetLockProofForTests) {
+        instantLock = createFakeInstantLock(assetLockTransaction.hash);
+    } else {
+        instantLock = await account.waitForInstantLock(assetLockTransaction.hash);
+    }
     // @ts-ignore
-    const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(identityId, outPointBuffer);
+    const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
+    // @ts-ignore
+    const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
+        identityId, assetLockTransaction, assetLockOutputIndex, assetLockProof
+    );
 
     identityTopUpTransition.signByPrivateKey(assetLockPrivateKey);
 

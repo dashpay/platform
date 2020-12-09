@@ -1,5 +1,6 @@
 import { Platform } from "../../Platform";
 import { wait } from "../../../../../utils/wait";
+import { createFakeInstantLock } from "../../../../../utils/createFakeIntantLock";
 import createAssetLockTransaction from "../../createAssetLockTransaction";
 
 /**
@@ -12,13 +13,14 @@ export default async function register(
   this: Platform,
   fundingAmount : number = 10000
 ): Promise<any> {
-    const { client, dpp } = this;
+    const { client, dpp, passFakeAssetLockProofForTests } = this;
 
     const account = await client.getWalletAccount();
 
     const {
         transaction: assetLockTransaction,
-        privateKey: assetLockPrivateKey
+        privateKey: assetLockPrivateKey,
+        outputIndex: assetLockOutputIndex
     } = await createAssetLockTransaction(this, fundingAmount);
 
     // Broadcast Asset Lock transaction
@@ -27,16 +29,27 @@ export default async function register(
     // Wait some time for propagation
     await wait(1000);
 
-    // Create Identity
-    const assetLockOutPoint = assetLockTransaction.getOutPointBuffer(0);
-
     const identityIndex = await account.getUnusedIdentityIndex();
 
     // @ts-ignore
     const { privateKey: identityPrivateKey } = account.getIdentityHDKeyByIndex(identityIndex, 0);
     const identityPublicKey = identityPrivateKey.toPublicKey();
 
-    const identity = dpp.identity.create(assetLockOutPoint, [identityPublicKey]);
+    let instantLock;
+    // Create poof that the transaction won't be double spend
+    if (passFakeAssetLockProofForTests) {
+        instantLock = createFakeInstantLock(assetLockTransaction.hash);
+    } else {
+        instantLock = await account.waitForInstantLock(assetLockTransaction.hash);
+    }
+    // @ts-ignore
+    const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
+
+    // Create Identity
+    // @ts-ignore
+    const identity = dpp.identity.create(
+        assetLockTransaction, assetLockOutputIndex, assetLockProof, [identityPublicKey]
+    );
 
     // Create ST
     const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);

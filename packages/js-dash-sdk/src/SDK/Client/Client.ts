@@ -30,6 +30,7 @@ export interface ClientOpts {
     timeout?: number,
     retries?: number,
     baseBanTime?: number,
+    passFakeAssetLockProofForTests?: boolean,
 }
 
 /**
@@ -105,6 +106,7 @@ export class Client {
 
         this.platform = new Platform({
             client: this,
+            passFakeAssetLockProofForTests: options.passFakeAssetLockProofForTests,
         });
     }
 

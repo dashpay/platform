@@ -2,6 +2,9 @@ import { PrivateKey, Transaction } from "@dashevo/dashcore-lib";
 import { utils } from "@dashevo/wallet-lib";
 import { Platform } from "./Platform";
 
+// We're creating a new transaction every time and the index is always 0
+const ASSET_LOCK_OUTPUT_INDEX = 0;
+
 /**
  * Creates a funding transaction for the platform identity and returns one-time key to sign the state transition
  * @param {Platform} platform
@@ -9,7 +12,7 @@ import { Platform } from "./Platform";
  * @return {{transaction: Transaction, privateKey: PrivateKey}} - transaction and one time private key
  * that can be used to sign registration/top-up state transition
  */
-export default async function createAssetLockTransaction(platform : Platform, fundingAmount): Promise<{ transaction: Transaction, privateKey: PrivateKey }> {
+export default async function createAssetLockTransaction(platform : Platform, fundingAmount): Promise<{ transaction: Transaction, privateKey: PrivateKey, outputIndex: number }> {
     const account = await platform.client.getWalletAccount();
 
     // @ts-ignore
@@ -53,6 +56,7 @@ export default async function createAssetLockTransaction(platform : Platform, fu
 
     return {
         transaction,
-        privateKey: assetLockOneTimePrivateKey
+        privateKey: assetLockOneTimePrivateKey,
+        outputIndex: ASSET_LOCK_OUTPUT_INDEX,
     };
 }

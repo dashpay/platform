@@ -28,6 +28,7 @@ import searchName from "./methods/names/search";
  */
 export interface PlatformOpts {
     client: Client,
+    passFakeAssetLockProofForTests?: boolean,
 }
 
 /**
@@ -70,6 +71,7 @@ interface Identities {
  */
 export class Platform {
     dpp: DashPlatformProtocol;
+    passFakeAssetLockProofForTests: boolean;
 
     public documents: Records;
     /**
@@ -121,14 +123,22 @@ export class Platform {
 
         const stateRepository = {
             fetchIdentity: getIdentity.bind(this),
-            fetchDataContract: getContract.bind(this)
+            fetchDataContract: getContract.bind(this),
+            // This check still exists on the client side, however there's no need to
+            // perform the check as in this client we always use a new transaction
+            // register/top up identity
+            checkAssetLockTransactionOutPointExists() { return false; },
         };
 
         this.dpp = new DashPlatformProtocol({
-            ...options,
+            identities: {
+                skipAssetLockProofSignatureVerification: true,
+            },
             stateRepository,
+            ...options,
         });
 
+        this.passFakeAssetLockProofForTests = Boolean(options.passFakeAssetLockProofForTests);
         this.client = options.client;
     }
 }
