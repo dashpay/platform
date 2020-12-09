@@ -53,7 +53,7 @@ describe('createIsolatedDpp', () => {
       identityPublicKey,
     ];
 
-    identityCreateTransition = getIdentityCreateTransitionFixture();
+    identityCreateTransition = getIdentityCreateTransitionFixture(privateKey);
 
     const documentTransitions = getDocumentTransitionsFixture({
       create: documents,
@@ -89,6 +89,11 @@ describe('createIsolatedDpp', () => {
       isolatedValidatorSnapshot,
       { memoryLimit: 10, timeout: 300 },
       stateRepositoryMock,
+      {
+        identities: {
+          skipAssetLockProofSignatureVerification: true,
+        },
+      },
     );
   });
 

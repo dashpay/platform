@@ -209,7 +209,7 @@ async function createDIContainer(options) {
   container.register({
     dppOptions: asValue({
       identities: {
-        skipAssetLockConfirmationValidation: options
+        skipAssetLockProofSignatureVerification: options
           .IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION === 'true',
       },
     }),
