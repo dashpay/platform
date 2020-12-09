@@ -36,6 +36,7 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
   const client = new Dash.Client({
     ...clientOpts,
     wallet: walletOptions,
+    passFakeAssetLockProofForTests: true,
   });
 
   const amount = 40000;

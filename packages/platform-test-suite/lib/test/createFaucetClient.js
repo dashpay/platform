@@ -26,6 +26,7 @@ function createFaucetClient() {
     wallet: {
       privateKey: process.env.FAUCET_PRIVATE_KEY,
     },
+    passFakeAssetLockProofForTests: true,
   });
 
   return faucetClient;
