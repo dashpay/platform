@@ -1,5 +1,6 @@
 const fs = require('fs');
 const dots = require('dot');
+const path = require('path');
 
 /**
  * @return {renderServiceTemplates}
@@ -15,12 +16,12 @@ function renderServiceTemplatesFactory(writeServiceConfigs) {
    * @return {Promise<void>}
    */
   async function renderServiceTemplates(config, homeDirPath) {
-    const files = fs.readdirSync('./templates');
+    const files = fs.readdirSync(path.join(__dirname, 'templates'));
 
     dots.templateSettings.strip = false;
     const configFiles = {};
     for (const file of files) {
-      const fileContents = fs.readFileSync(`./templates/${file}`, 'utf-8');
+      const fileContents = fs.readFileSync(path.join(__dirname, 'templates', file), 'utf-8');
       const fileTemplate = dots.template(fileContents);
       if (
         file === 'genesis.json.template'
