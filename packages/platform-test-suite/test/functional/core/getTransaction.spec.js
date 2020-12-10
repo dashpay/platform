@@ -4,6 +4,7 @@ const {
 } = require('@dashevo/dashcore-lib');
 
 const createFaucetClient = require('../../../lib/test/createFaucetClient');
+const wait = require('../../../lib/wait');
 
 describe('Core', () => {
   describe('getTransaction', () => {
@@ -15,6 +16,8 @@ describe('Core', () => {
 
     it('should respond with a transaction by it\'s ID', async () => {
       const faucetWalletAccount = await faucetClient.getWalletAccount();
+
+      await wait(5000);
 
       const transaction = faucetWalletAccount.createTransaction({
         recipient: new PrivateKey().toAddress(process.env.NETWORK),
