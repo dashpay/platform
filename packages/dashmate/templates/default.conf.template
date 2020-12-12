@@ -1,4 +1,4 @@
-{{? it.platform.dapi.nginx.rateLimiter.enable}}limit_req_zone $binary_remote_addr zone=protect_api:15m rate={{=it.platform.dapi.nginx.rateLimiter.rate}}/m;
+{{? it.platform.dapi.nginx.rateLimiter.enable}}limit_req_zone $binary_remote_addr zone=protect_api:15m rate={{=it.platform.dapi.nginx.rateLimiter.rate}}r/m;
 
 {{?}}server {
     listen 80 default_server;
