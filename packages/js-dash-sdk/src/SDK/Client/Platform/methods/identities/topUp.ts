@@ -3,8 +3,9 @@ import Identifier from "@dashevo/dpp/lib/Identifier";
 import {Platform} from "../../Platform";
 
 import { wait } from "../../../../../utils/wait";
-import { createFakeInstantLock } from "../../../../../utils/createFakeIntantLock";
 import createAssetLockTransaction from "../../createAssetLockTransaction";
+import createAssetLockProof from "./internal/createAssetLockProof";
+import createIdentityTopUpTransition from "./internal/createIdnetityTopUpTransition";
 
 /**
  * Register identities to the platform
@@ -15,7 +16,7 @@ import createAssetLockTransaction from "../../createAssetLockTransaction";
  * @returns {boolean}
  */
 export async function topUp(this: Platform, identityId: Identifier | string, amount: number): Promise<any> {
-    const { client, dpp, passFakeAssetLockProofForTests } = this;
+    const { client } = this;
 
     identityId = Identifier.from(identityId);
 
@@ -29,36 +30,13 @@ export async function topUp(this: Platform, identityId: Identifier | string, amo
 
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
+    // Create a proof for the asset lock transaction
+    const assetLockProof = await createAssetLockProof(this, assetLockTransaction);
 
-    // Wait some time for propagation
-    await wait(1000);
-
-    // Create ST
-    // Get IS lock to proof that transaction won't be double spent
-    let instantLock;
-    // Create poof that the transaction won't be double spend
-    if (passFakeAssetLockProofForTests) {
-        instantLock = createFakeInstantLock(assetLockTransaction.hash);
-    } else {
-        instantLock = await account.waitForInstantLock(assetLockTransaction.hash);
-    }
     // @ts-ignore
-    const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
-    // @ts-ignore
-    const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
-        identityId, assetLockTransaction, assetLockOutputIndex, assetLockProof
-    );
-
-    identityTopUpTransition.signByPrivateKey(assetLockPrivateKey);
-
-    const result = await dpp.stateTransition.validateStructure(identityTopUpTransition);
-
-    if (!result.isValid()) {
-        throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
-    }
+    const identityTopUpTransition = await createIdentityTopUpTransition(this, assetLockTransaction, assetLockOutputIndex, assetLockProof, assetLockPrivateKey, identityId);
 
     // Broadcast ST
-
     await client.getDAPIClient().platform.broadcastStateTransition(identityTopUpTransition.toBuffer());
 
     // Wait some time for propagation

@@ -4,6 +4,7 @@ import 'mocha';
 import { Transaction } from "@dashevo/dashcore-lib";
 import { createFakeInstantLock } from "../../utils/createFakeIntantLock";
 import Identity from '@dashevo/dpp/lib/identity/Identity';
+import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
 import { createDapiClientMock } from "../../test/mocks/createDapiClientMock";
 
 // @ts-ignore
@@ -141,19 +142,20 @@ describe('Dash - Client', function suite() {
       let identityFromDAPI;
       dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
         interceptedIdentityStateTransition = await clientWithMockTransport.platform.dpp.stateTransition.createFromBuffer(stBuffer);
-        identityFromDAPI = new Identity({
-          protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
-          id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
-          publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject()),
-          balance: 100,
-          revision: 0,
-        });
-        dapiClientMock.platform.getIdentity.resolves(identityFromDAPI);
+
+        if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
+          let identityFromDAPI = new Identity({
+            protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
+            id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
+            publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject()),
+            balance: interceptedIdentityStateTransition.getAssetLock().getOutput().satoshis,
+            revision: 0,
+          });
+          dapiClientMock.platform.getIdentity.withArgs(identityFromDAPI.getId()).resolves(identityFromDAPI.toBuffer());
+        }
       });
 
-      const [identity] = await Promise.all([
-        clientWithMockTransport.platform.identities.register(),
-      ]);
+      const identity = await clientWithMockTransport.platform.identities.register();
 
       expect(identity).to.be.not.null;
 
@@ -166,6 +168,65 @@ describe('Dash - Client', function suite() {
       const importedIdentityIds = account.getIdentityIds();
       expect(importedIdentityIds.length).to.be.equal(1);
       expect(importedIdentityIds[0]).to.be.equal(interceptedIdentityStateTransition.getIdentityId().toString());
+    });
+  });
+
+  describe('#platform.identities.topUp', async () => {
+    it('should top up an identity', async () => {
+      // Set up transport to emit instant lock when it receives transaction
+      let isLock;
+      let transaction;
+      transportMock.sendTransaction.callsFake((txString) => {
+        transaction = new Transaction(txString);
+
+        isLock = createFakeInstantLock(transaction.hash);
+        txStreamMock.emit(
+            TxStreamMock.EVENTS.data,
+            new TxStreamDataResponseMock(
+                { instantSendLockMessages: [isLock.toBuffer()] }
+            )
+        );
+
+        // Emit the same transaction back to the client so it will know about the change transaction
+        txStreamMock.emit(
+            TxStreamMock.EVENTS.data,
+            new TxStreamDataResponseMock(
+                { rawTransactions: [transaction.toBuffer()] }
+            )
+        );
+      });
+
+      // Set up DAPI mock to return identity
+      let interceptedIdentityStateTransition;
+
+      dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
+        interceptedIdentityStateTransition = await clientWithMockTransport.platform.dpp.stateTransition.createFromBuffer(stBuffer);
+
+        if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
+          let identityFromDAPI = new Identity({
+            protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
+            id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
+            publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject()),
+            balance: interceptedIdentityStateTransition.getAssetLock().getOutput().satoshis,
+            revision: 0,
+          });
+          dapiClientMock.platform.getIdentity.withArgs(identityFromDAPI.getId()).resolves(identityFromDAPI.toBuffer());
+        }
+      });
+
+      // Registering an identity we're going to top up
+      const identity = await clientWithMockTransport.platform.identities.register();
+      // Topping up the identity
+      await clientWithMockTransport.platform.identities.topUp(identity.getId(), 10000);
+
+      expect(identity).to.be.not.null;
+
+      expect(interceptedIdentityStateTransition.getType()).to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
+      const interceptedAssetLock = interceptedIdentityStateTransition.getAssetLock();
+
+      // Check intercepted st
+      expect(interceptedAssetLock.getProof().getInstantLock()).to.be.deep.equal(isLock);
+      expect(interceptedAssetLock.getTransaction().hash).to.be.equal(transaction.hash);
     });
   });
 });
