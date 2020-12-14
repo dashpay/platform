@@ -143,7 +143,6 @@ class DataContract {
     return { $ref: `${this.getJsonSchemaId()}#/documents/${type}` };
   }
 
-
   /**
    * @param {Object<string, Object>} definitions
    * @return {DataContract}

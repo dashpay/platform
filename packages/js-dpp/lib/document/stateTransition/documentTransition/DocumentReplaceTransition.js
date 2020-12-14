@@ -45,7 +45,6 @@ class DocumentReplaceTransition extends AbstractDataDocumentTransition {
     return this.updatedAt;
   }
 
-
   /**
    * Get plain object representation
    *

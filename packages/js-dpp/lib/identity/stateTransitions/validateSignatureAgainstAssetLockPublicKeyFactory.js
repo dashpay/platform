@@ -23,7 +23,6 @@ function validateSignatureAgainstAssetLockPublicKeyFactory(
     const stateTransition = await createStateTransition(rawStateTransition);
     const stateTransitionHash = stateTransition.hash({ skipSignature: true });
 
-
     let signatureIsVerified;
 
     try {

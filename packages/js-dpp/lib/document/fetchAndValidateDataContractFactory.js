@@ -5,7 +5,6 @@ const createAndValidateIdentifier = require('../identifier/createAndValidateIden
 
 const ValidationResult = require('../validation/ValidationResult');
 
-
 /**
  * @param {StateRepository} stateRepository
  * @return {fetchAndValidateDataContract}

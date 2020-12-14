@@ -4,7 +4,6 @@ const {
   Signer: { sign, verifySignature },
 } = require('@dashevo/dashcore-lib');
 
-
 const StateTransitionIsNotSignedError = require(
   './errors/StateTransitionIsNotSignedError',
 );

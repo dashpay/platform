@@ -59,7 +59,6 @@ class AbstractDataDocumentTransition extends AbstractDocumentTransition {
     return this.data;
   }
 
-
   /**
    * Get plain object representation
    *

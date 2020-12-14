@@ -182,7 +182,6 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
         assetLockError,
       ]);
 
-
       validateAssetLockStructureMock.returns(assetLockResult);
 
       const result = await validateIdentityTopUpTransitionStructure(
