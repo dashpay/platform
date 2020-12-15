@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/mn-bootstrap",
-  "version": "0.17.0-dev.11",
+  "version": "0.17.0-dev.12",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
@@ -48,7 +48,7 @@
   },
   "homepage": "https://github.com/dashevo/mn-bootstrap#readme",
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.8",
+    "@dashevo/dashcore-lib": "~0.19.12",
     "@dashevo/dashd-rpc": "~2.0.2",
     "@dashevo/dashpay-contract": "^1.0.0",
     "@dashevo/dpns-contract": "~0.3.0-dev.6",
