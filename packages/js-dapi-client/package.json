@@ -27,14 +27,14 @@
   ],
   "dependencies": {
     "@dashevo/dapi-grpc": "~0.16.0",
-    "@dashevo/dashcore-lib": "~0.19.11",
+    "@dashevo/dashcore-lib": "~0.19.12",
     "axios": "^0.19.2",
     "cbor": "^5.0.1",
     "lodash.sample": "^4.2.1"
   },
   "devDependencies": {
     "@babel/core": "^7.10.2",
-    "@dashevo/dpp": "~0.17.0-dev.5",
+    "@dashevo/dpp": "~0.17.0-dev.6",
     "babel-loader": "^8.0.6",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
