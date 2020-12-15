@@ -64,7 +64,7 @@ const baseConfig = {
       },
       insight: {
         docker: {
-          image: 'dashpay/insight-api:3.0.1',
+          image: 'dashpay/insight-api:3.1.0',
         },
       },
     },
