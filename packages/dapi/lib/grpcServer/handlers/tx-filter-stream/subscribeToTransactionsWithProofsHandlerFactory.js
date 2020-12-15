@@ -103,7 +103,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
-    const count = request.getCount();
+    let count = request.getCount();
 
     // Create a new bloom filter emitter when client connects
     let filter;
@@ -136,9 +136,13 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       const bestBlockHeight = await coreAPI.getBestBlockHeight();
 
       if (block.height + count > bestBlockHeight + 1) {
-        throw new InvalidArgumentGrpcError(
-          'count is too big, could not fetch more than blockchain length',
-        );
+        // This code should throw an error 'count is too big',
+        // however at the time of writing height chain sync isn't yet implemented,
+        // so the client library doesn't know the exact height and
+        // mat pass count number larger than expected.
+        // This line should be converted to throwing an error once
+        // the header stream is implemented
+        count = bestBlockHeight - block.height;
       }
     }
 
