@@ -62,7 +62,7 @@ function initTaskFactory(
             wallet: {
               mnemonic: null,
             },
-            passFakeAssetLockProofForTests: true
+            passFakeAssetLockProofForTests: true,
           });
 
           const amount = 40000;
@@ -122,11 +122,11 @@ function initTaskFactory(
             return;
           }
 
-          const tendermintRpcClient = createTenderdashRpcClient();
+          const tenderdashRpcClient = createTenderdashRpcClient();
 
           const params = { hash: stateTransitionHash.toString('base64') };
 
-          const response = await tendermintRpcClient.request('tx', params);
+          const response = await tenderdashRpcClient.request('tx', params);
 
           if (response.error) {
             throw new Error(`Tendermint error: ${response.error.message}: ${response.error.data}`);

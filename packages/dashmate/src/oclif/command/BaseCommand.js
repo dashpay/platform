@@ -95,8 +95,34 @@ class BaseCommand extends Command {
         config: asValue(config),
       });
 
+      // Initialize Tenderdash
+      const isGenesisEmpty = Object.keys(config.get('platform.drive.tenderdash.genesis')).length === 0;
+      const isValidatorKeyEmpty = Object.keys(config.get('platform.drive.tenderdash.validatorKey')).length === 0;
+      const isNodeKeyEmpty = Object.keys(config.get('platform.drive.tenderdash.nodeKey')).length === 0;
+
+      if (config.getName() !== 'base' && (isGenesisEmpty || isValidatorKeyEmpty || isNodeKeyEmpty)) {
+        const initializeTenderdashNode = this.container.resolve('initializeTenderdashNode');
+
+        const [validatorKey, nodeKey, genesis] = await initializeTenderdashNode(config);
+
+        if (isValidatorKeyEmpty) {
+          config.set('platform.drive.tenderdash.validatorKey', validatorKey);
+        }
+
+        if (isNodeKeyEmpty) {
+          config.set('platform.drive.tenderdash.nodeKey', nodeKey);
+        }
+
+        if (isGenesisEmpty) {
+          config.set('platform.drive.tenderdash.genesis', genesis);
+        }
+      }
+
       const renderServiceTemplates = this.container.resolve('renderServiceTemplates');
-      renderServiceTemplates(config, this.container.resolve('homeDirPath'));
+      const writeServiceConfigs = this.container.resolve('writeServiceConfigs');
+
+      const configFiles = renderServiceTemplates(config);
+      writeServiceConfigs(config.getName(), configFiles);
     }
 
     const params = getFunctionParams(this.runWithDependencies, 2);

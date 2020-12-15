@@ -7,12 +7,6 @@
 # Env file
 .env
 
-# Tendermint creates `data` dir in configs for some reason
-configs/*/drive/tendermint/data
-
-# CLI Config
-data/config.json
-
 # NodeJs dependencies
 node_modules
 

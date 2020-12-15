@@ -18,6 +18,8 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
    * @param {initTask} initTask
    * @param {startNodeTask} startNodeTask
    * @param {DockerCompose} dockerCompose
+   * @param {renderServiceTemplates} renderServiceTemplates
+   * @param {writeServiceConfigs} writeServiceConfigs
    * @param {Config} config
    * @return {Promise<void>}
    */
@@ -34,6 +36,8 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
     initTask,
     startNodeTask,
     dockerCompose,
+    renderServiceTemplates,
+    writeServiceConfigs,
     config,
   ) {
     if (config.get('network') !== NETWORKS.LOCAL) {
@@ -54,6 +58,15 @@ class SetupForLocalDevelopmentCommand extends BaseCommand {
             {
               title: 'Register masternode',
               task: () => registerMasternodeTask(config),
+            },
+            {
+              title: 'Set initial core chain locked height',
+              task: async () => {
+                config.set('platform.drive.tenderdash.genesis.initial_core_chain_locked_height', 1000);
+
+                const configFiles = renderServiceTemplates(config);
+                writeServiceConfigs(config.getName(), configFiles);
+              },
             },
             {
               title: 'Start masternode',

@@ -28,7 +28,7 @@ class ServicesStatusCommand extends BaseCommand {
       Object.assign(serviceHumanNames, {
         drive_mongodb: 'Drive MongoDB',
         drive_abci: 'Drive ABCI',
-        drive_tendermint: 'Drive Tendermint',
+        drive_tenderdash: 'Drive Tenderdash',
         dapi_insight: 'DAPI Insight',
         dapi_api: 'DAPI API',
         dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',

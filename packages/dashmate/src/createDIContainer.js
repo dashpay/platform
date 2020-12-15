@@ -18,11 +18,12 @@ const resetSystemConfigFactory = require('./config/systemConfigs/resetSystemConf
 const systemConfigs = require('./config/systemConfigs/systemConfigs');
 
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
-const writeServiceConfigs = require('./templates/writeServiceConfigs');
+const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
 
 const DockerCompose = require('./docker/DockerCompose');
 const StartedContainers = require('./docker/StartedContainers');
 const stopAllContainersFactory = require('./docker/stopAllContainersFactory');
+const dockerPullFactory = require('./docker/dockerPullFactory');
 
 const startCoreFactory = require('./core/startCoreFactory');
 const createRpcClient = require('./core/createRpcClient');
@@ -44,7 +45,9 @@ const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAdd
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
 const initTaskFactory = require('./listr/tasks/platform/initTaskFactory');
 const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
+
 const createTenderdashRpcClient = require('./tenderdash/createTenderdashRpcClient');
+const initializeTenderdashNodeFactory = require('./tenderdash/initializeTenderdashNodeFactory');
 
 async function createDIContainer(options) {
   const container = createAwilixContainer({
@@ -72,7 +75,7 @@ async function createDIContainer(options) {
    */
   container.register({
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory),
-    writeServiceConfigs: asValue(writeServiceConfigs),
+    writeServiceConfigs: asFunction(writeServiceConfigsFactory),
   });
 
   /**
@@ -87,6 +90,7 @@ async function createDIContainer(options) {
       new StartedContainers()
     )).singleton(),
     stopAllContainers: asFunction(stopAllContainersFactory).singleton(),
+    dockerPull: asFunction(dockerPullFactory).singleton(),
   });
 
   /**
@@ -120,6 +124,7 @@ async function createDIContainer(options) {
    */
   container.register({
     createTenderdashRpcClient: asValue(createTenderdashRpcClient),
+    initializeTenderdashNode: asFunction(initializeTenderdashNodeFactory),
   });
 
   /**

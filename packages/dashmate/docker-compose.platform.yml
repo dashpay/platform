@@ -18,7 +18,7 @@ services:
       - drive_mongodb
       - core
     volumes:
-      - drive_abci_leveldb:/usr/src/app/db
+      - drive_abci_data:/usr/src/app/db
     environment:
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
@@ -32,21 +32,20 @@ services:
       - DPNS_TOP_LEVEL_IDENTITY=${PLATFORM_DPNS_OWNER_ID}
       - NODE_ENV=${ENVIRONMENT:?err}
       - LOGGING_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_LEVEL:?err}
+      - INITIAL_CORE_CHAINLOCKED_HEIGHT=${PLATFORM_DRIVE_TENDERDASH_GENESIS_INITIAL_CORE_CHAIN_LOCKED_HEIGHT:-1}
     command: npm run abci
 
-  drive_tendermint:
-    image: ${PLATFORM_DRIVE_TENDERMINT_DOCKER_IMAGE:?err}
+  drive_tenderdash:
+    image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
     restart: unless-stopped
     depends_on:
       - drive_abci
     ports:
-      - ${PLATFORM_DRIVE_TENDERMINT_P2P_PORT:?err}:26656 # P2P
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERMINT_RPC_PORT:?err}:26657 # RPC
+      - ${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:26656 # P2P
+      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:26657 # RPC
     volumes:
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/genesis.json:/tendermint/config/genesis.json
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/config.toml:/tendermint/config/config.toml
-      - drive_tendermint_homedir:/tendermint
-    entrypoint: sh -c "/usr/bin/tendermint init && /usr/bin/tendermint node"
+      - drive_tenderdash:/tenderdash
+      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/tenderdash:/tenderdash/config:ro
 
   dapi_insight:
     image: ${PLATFORM_DAPI_INSIGHT_DOCKER_IMAGE:?err}
@@ -60,7 +59,7 @@ services:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     restart: unless-stopped
     depends_on:
-      - drive_tendermint
+      - drive_tenderdash
       - dapi_insight
       - core
     environment:
@@ -77,7 +76,7 @@ services:
       - DASHCORE_P2P_PORT=${CORE_P2P_PORT:?err}
       - DASHCORE_P2P_NETWORK=devnet
       - NETWORK=devnet
-      - TENDERMINT_RPC_HOST=drive_tendermint
+      - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
       - NODE_ENV=${ENVIRONMENT:?err}
     command: npm run api
@@ -101,7 +100,7 @@ services:
       - DASHCORE_P2P_PORT=${CORE_P2P_PORT:?err}
       - DASHCORE_P2P_NETWORK=devnet
       - NETWORK=devnet
-      - TENDERMINT_RPC_HOST=drive_tendermint
+      - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
     command: npm run tx-filter-stream
 
@@ -130,6 +129,6 @@ services:
       - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
 
 volumes:
-  drive_abci_leveldb:
+  drive_abci_data:
   drive_mongodb_data:
-  drive_tendermint_homedir:
+  drive_tenderdash:
