@@ -8,7 +8,6 @@ const ZMQClient = require('@dashevo/dashd-zmq');
  * @param {RpcClient} coreRpcClient
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {BaseLogger} logger
- * @param {function} errorHandler,
  *
  * @returns {waitForCoreChainLockSyncFallback}
  */
@@ -17,7 +16,6 @@ function waitForCoreChainLockSyncFallbackFactory(
   coreRpcClient,
   latestCoreChainLock,
   logger,
-  errorHandler,
 ) {
   /**
    * @typedef waitForCoreChainLockSyncFallback
@@ -26,18 +24,6 @@ function waitForCoreChainLockSyncFallbackFactory(
    */
   async function waitForCoreChainLockSyncFallback() {
     const signature = Buffer.alloc(32).toString('hex');
-
-    await coreZMQClient.connect();
-
-    // By default will try to reconnect so we just log when this happen
-    coreZMQClient.on('disconnect', logger.trace);
-
-    // When socket monitoring ends
-    coreZMQClient.on('end', (caughtError) => {
-      const error = new Error(`Lost connection with Core: ${caughtError.message}`);
-
-      errorHandler(error);
-    });
 
     coreZMQClient.subscribe(ZMQClient.TOPICS.hashblock);
 

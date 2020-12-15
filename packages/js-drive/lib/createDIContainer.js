@@ -102,7 +102,8 @@ const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFallbackFactory = require('./core/waitForCoreChainLockSyncFallbackFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegtestModeFactory');
-const waitForSMLSyncFactory = require('./core/waitForSMLSyncFactory');
+const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMasternodeListFactory');
+const waitForChainlockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 const decodeChainLock = require('./core/decodeChainLock');
 const populateMongoDbTransactionFromObjectFactory = require('./document/populateMongoDbTransactionFromObjectFactory');
@@ -141,11 +142,13 @@ const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneT
  * @param {string} options.CORE_JSON_RPC_PASSWORD
  * @param {string} options.CORE_ZMQ_HOST
  * @param {string} options.CORE_ZMQ_PORT
+ * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
  * @param {string} options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE
  * @param {string} options.NETWORK
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  * @param {string} options.DPNS_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.DPNS_CONTRACT_ID
+ * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.LOGGING_LEVEL
  * @param {string} options.NODE_ENV
  *
@@ -216,6 +219,9 @@ async function createDIContainer(options) {
     coreJsonRpcPassword: asValue(options.CORE_JSON_RPC_PASSWORD),
     coreZMQHost: asValue(options.CORE_ZMQ_HOST),
     coreZMQPort: asValue(options.CORE_ZMQ_PORT),
+    coreZMQConnectionRetries: asValue(
+      parseInt(options.CORE_ZMQ_CONNECTION_RETRIES, 10),
+    ),
     previousBlockExecutionTransactionFile: asValue(
       options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE,
     ),
@@ -897,7 +903,10 @@ async function createDIContainer(options) {
       asFunction(waitForCoreChainLockSyncFallbackFactory).singleton(),
   });
   container.register({
-    waitForSMLSync: asFunction(waitForSMLSyncFactory).singleton(),
+    updateSimplifiedMasternodeList: asFunction(updateSimplifiedMasternodeListFactory).singleton(),
+  });
+  container.register({
+    waitForChainlockedHeight: asFunction(waitForChainlockedHeightFactory).singleton(),
   });
   container.register({
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),

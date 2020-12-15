@@ -1,8 +1,10 @@
 const {
-  abci: {
-    ResponseEndBlock,
+  tendermint: {
+    abci: {
+      ResponseEndBlock,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
 

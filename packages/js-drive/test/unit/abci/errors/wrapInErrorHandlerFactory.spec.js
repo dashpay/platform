@@ -75,7 +75,7 @@ describe('wrapInErrorHandlerFactory', () => {
           message: 'Internal error',
         },
       }),
-      tags: [],
+      events: [],
     });
   });
 
@@ -99,7 +99,7 @@ describe('wrapInErrorHandlerFactory', () => {
           data: error.getData(),
         },
       }),
-      tags: [],
+      events: [],
     });
   });
 
@@ -119,7 +119,7 @@ describe('wrapInErrorHandlerFactory', () => {
           data: error.getData(),
         },
       }),
-      tags: [],
+      events: [],
     });
   });
 
@@ -168,7 +168,7 @@ describe('wrapInErrorHandlerFactory', () => {
           },
         },
       }),
-      tags: [],
+      events: [],
     });
   });
 });

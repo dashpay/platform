@@ -21,6 +21,7 @@ class LatestCoreChainLock extends EventEmitter {
     this.chainLock = chainLock;
 
     this.emit(LatestCoreChainLock.EVENTS.update, this.chainLock);
+    this.emit(`${LatestCoreChainLock.EVENTS.update}:${this.chainLock.height}`, this.chainLock);
 
     return this;
   }

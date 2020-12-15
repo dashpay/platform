@@ -11,7 +11,6 @@ const ensureBlock = require('./ensureBlock');
  * @param {RpcClient} coreRpcClient
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {BaseLogger} logger
- * @param {function} errorHandler,
  *
  * @returns {waitForCoreSync}
  */
@@ -20,7 +19,6 @@ function waitForCoreChainLockSyncFactory(
   coreRpcClient,
   latestCoreChainLock,
   logger,
-  errorHandler,
 ) {
   /**
    * Wait and ensure that core chain lock stays synced.
@@ -31,22 +29,6 @@ function waitForCoreChainLockSyncFactory(
    * @returns {Promise<void>}
    */
   async function waitForCoreChainLockSync() {
-    await coreZMQClient.connect();
-
-    // By default will try to reconnect so we just log when this happen
-    coreZMQClient.on('disconnect', logger.trace);
-
-    // When socket monitoring ends
-    coreZMQClient.on('end', (caughtError) => {
-      const error = new Error(`Lost connection with Core: ${caughtError.message}`);
-
-      errorHandler(error);
-    });
-
-    // listens to ChainLock zmq zmqpubrawchainlocksig event and updates the latestCoreChainLock.
-    // If we lost connection with Core (heartbeats with retry policy) we need to exit with fatal
-    // In case of regtest fallback we need to listen for new blocks using hashblock zmq event
-
     coreZMQClient.subscribe(ZMQClient.TOPICS.rawchainlock);
 
     logger.trace('Subscribe to rawchainlock ZMQ room');
@@ -74,7 +56,7 @@ function waitForCoreChainLockSyncFactory(
     // Because a ChainLock may happen before its block, we also subscribe to rawblock
     coreZMQClient.subscribe(ZMQClient.TOPICS.hashblock);
 
-    logger.trace('Subscribe to hashblock ZMQ room');
+    logger.trace('Subscribe to hashblock ZMQ topic');
 
     // We need to retrieve latest ChainLock from our fully synced Core instance
     let rpcBestChainLockResponse;

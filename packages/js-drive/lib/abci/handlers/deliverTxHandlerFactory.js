@@ -1,8 +1,10 @@
 const {
-  abci: {
-    ResponseDeliverTx,
+  tendermint: {
+    abci: {
+      ResponseDeliverTx,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const crypto = require('crypto');
 

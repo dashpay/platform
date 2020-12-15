@@ -1,8 +1,10 @@
 const {
-  abci: {
-    ResponseQuery,
+  tendermint: {
+    abci: {
+      ResponseQuery,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const cbor = require('cbor');
 

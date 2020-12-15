@@ -1,8 +1,10 @@
 const {
-  abci: {
-    ResponseQuery,
+  tendermint: {
+    abci: {
+      ResponseQuery,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const verifyChainLockQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/verifyChainLockQueryHandlerFactory');
 

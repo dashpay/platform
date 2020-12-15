@@ -1,16 +1,18 @@
 require('dotenv-expand')(require('dotenv-safe').config());
 
-const createServer = require('abci');
+const createServer = require('@dashevo/abci');
 const { onShutdown } = require('node-graceful-shutdown');
 
 const createDIContainer = require('../lib/createDIContainer');
 
-const errorHandlerFactory = require('../lib/errorHandlerFactory');
-
 (async function main() {
   const container = await createDIContainer(process.env);
+  const logger = container.resolve('logger');
+  const errorHandler = container.resolve('errorHandler');
 
-  const errorHandler = errorHandlerFactory(container);
+  /**
+   * Ensure graceful shutdown
+   */
 
   process
     .on('unhandledRejection', errorHandler)
@@ -20,7 +22,9 @@ const errorHandlerFactory = require('../lib/errorHandlerFactory');
     await container.dispose();
   });
 
-  const logger = container.resolve('logger');
+  /**
+   * Make sure MongoDB is running
+   */
 
   logger.info('Connecting to MongoDB');
   const waitReplicaSetInitialize = container.resolve('waitReplicaSetInitialize');
@@ -31,9 +35,13 @@ const errorHandlerFactory = require('../lib/errorHandlerFactory');
   });
 
   logger.info('Connecting to Core');
-  const detectStandaloneRegtestMode = container.resolve('detectStandaloneRegtestMode');
 
+  const detectStandaloneRegtestMode = container.resolve('detectStandaloneRegtestMode');
   const isStandaloneRegtestMode = await detectStandaloneRegtestMode();
+
+  /**
+   * Make sure Core is synced
+   */
 
   if (!isStandaloneRegtestMode) {
     const waitForCoreSync = container.resolve('waitForCoreSync');
@@ -42,7 +50,40 @@ const errorHandlerFactory = require('../lib/errorHandlerFactory');
         `waiting for Core to finish sync ${currentBlockHeight}/${currentHeaderNumber}...`,
       );
     });
+  }
 
+  /**
+   * Connect to Core ZMQ socket
+   */
+
+  const coreZMQClient = container.resolve('coreZMQClient');
+  const coreZMQConnectionRetries = container.resolve('coreZMQConnectionRetries');
+
+  coreZMQClient.on('connect', () => {
+    logger.trace('Connected to Core ZMQ socket');
+  });
+
+  coreZMQClient.on('disconnect', () => {
+    logger.trace('Disconnected from Core ZMQ socket');
+  });
+
+  coreZMQClient.on('connect:max_retry_exceeded', async () => {
+    const error = new Error('Can\'t connect to Core ZMQ');
+
+    await errorHandler(error);
+  });
+
+  try {
+    await coreZMQClient.connect({
+      maxRetries: coreZMQConnectionRetries,
+    });
+  } catch (e) {
+    const error = new Error(`Can't connect to Core ZMQ socket: ${e.message}`);
+
+    await errorHandler(error);
+  }
+
+  if (!isStandaloneRegtestMode) {
     logger.info('Obtaining the latest Core ChainLock...');
     const waitForCoreChainLockSync = container.resolve('waitForCoreChainLockSync');
     await waitForCoreChainLockSync();
@@ -52,11 +93,9 @@ const errorHandlerFactory = require('../lib/errorHandlerFactory');
     await waitForCoreChainLockSyncFallback();
   }
 
-  const waitForSMLSync = container.resolve('waitForSMLSync');
-
-  logger.info('Obtaining Simplified Masternode List...');
-
-  await waitForSMLSync();
+  logger.info('Waining for initial Core ChainLocked height...');
+  const waitForChainlockedHeight = container.resolve('waitForChainlockedHeight');
+  await waitForChainlockedHeight(process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT);
 
   const server = createServer(
     container.resolve('abciHandlers'),

@@ -1,10 +1,12 @@
 const Long = require('long');
 
 const {
-  abci: {
-    ResponseInfo,
+  tendermint: {
+    abci: {
+      ResponseInfo,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFactory');
 

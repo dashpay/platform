@@ -3,7 +3,7 @@ const SimplifiedMNListStore = require('@dashevo/dashcore-lib/lib/deterministicmn
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
-describe('waitForSMLSyncFactory', function main() {
+describe('updateSimplifiedMasternodeListFactory', function main() {
   this.timeout(90000);
 
   let mongoDB;
@@ -40,12 +40,9 @@ describe('waitForSMLSyncFactory', function main() {
 
     await dashCore.getApi().generateToAddress(1000, randomAddress);
 
-    const waitForCoreChainLockSyncFallback = container.resolve('waitForCoreChainLockSyncFallback');
-    await waitForCoreChainLockSyncFallback();
+    const updateSimplifiedMasternodeList = container.resolve('updateSimplifiedMasternodeList');
 
-    const waitForSMLSync = container.resolve('waitForSMLSync');
-
-    await waitForSMLSync();
+    await updateSimplifiedMasternodeList(1000);
 
     expect(simplifiedMasternodeList.getStore())
       .to.be.an.instanceOf(SimplifiedMNListStore);

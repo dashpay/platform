@@ -1,8 +1,10 @@
 const {
-  abci: {
-    ResponseCheckTx,
+  tendermint: {
+    abci: {
+      ResponseCheckTx,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 /**
  * @param {unserializeStateTransition} unserializeStateTransition

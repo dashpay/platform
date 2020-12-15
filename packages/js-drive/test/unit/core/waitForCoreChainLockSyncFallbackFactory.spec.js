@@ -8,7 +8,6 @@ describe('waitForCoreChainLockSyncFallbackFactory', () => {
   let coreRpcClientMock;
   let coreZMQClientMock;
   let latestCoreChainLock;
-  let errorHandlerMock;
   let blockHash;
   let signature;
   let chainLock;
@@ -61,10 +60,7 @@ describe('waitForCoreChainLockSyncFallbackFactory', () => {
       }),
     };
     coreZMQClientMock = new EventEmitter();
-    coreZMQClientMock.connect = this.sinon.stub();
     coreZMQClientMock.subscribe = this.sinon.stub();
-
-    errorHandlerMock = this.sinon.stub();
 
     const loggerMock = {
       debug: this.sinon.stub(),
@@ -78,7 +74,6 @@ describe('waitForCoreChainLockSyncFallbackFactory', () => {
       coreRpcClientMock,
       latestCoreChainLock,
       loggerMock,
-      errorHandlerMock,
     );
   });
 
@@ -91,7 +86,6 @@ describe('waitForCoreChainLockSyncFallbackFactory', () => {
 
     expect(coreZMQClientMock.subscribe).to.be.calledOnce();
     expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.hashblock);
-    expect(coreZMQClientMock.connect).to.be.calledOnce();
     expect(coreRpcClientMock.getBestBlockHash).to.be.calledOnce();
     expect(coreRpcClientMock.getBlock).to.be.calledOnceWithExactly(blockHash);
   });
@@ -107,45 +101,10 @@ describe('waitForCoreChainLockSyncFallbackFactory', () => {
 
         expect(coreZMQClientMock.subscribe).to.be.calledOnce();
         expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.hashblock);
-        expect(coreZMQClientMock.connect).to.be.calledOnce();
         expect(coreRpcClientMock.getBestBlockHash).to.be.calledOnce();
         expect(coreRpcClientMock.getBlock).to.be.calledTwice();
         done();
       });
-
-    setImmediate(() => {
-      coreZMQClientMock.emit(ZMQClient.TOPICS.hashblock, blockHash);
-    });
-  });
-
-  it('should call errorHandler on end event', (done) => {
-    height = 0;
-    block.height = 0;
-    chainLock.height = 0;
-
-    const err = new Error();
-    err.code = -32603;
-    err.message = 'Block not found';
-
-    waitForCoreChainLockSyncFallback()
-      .then(() => {
-        expect(latestCoreChainLock.chainLock.toJSON()).to.deep.equal(chainLock);
-
-        expect(coreZMQClientMock.subscribe).to.be.calledOnce();
-        expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.hashblock);
-        expect(coreZMQClientMock.connect).to.be.calledOnce();
-        expect(coreRpcClientMock.getBestBlockHash).to.be.calledOnce();
-        expect(coreRpcClientMock.getBlock).to.be.calledTwice();
-
-        const error = new Error(`Lost connection with Core: ${err.message}`);
-
-        expect(errorHandlerMock.getCall(0).args[0].message).to.equal(error.message);
-        done();
-      });
-
-    setImmediate(() => {
-      coreZMQClientMock.emit('end', err);
-    });
 
     setImmediate(() => {
       coreZMQClientMock.emit(ZMQClient.TOPICS.hashblock, blockHash);

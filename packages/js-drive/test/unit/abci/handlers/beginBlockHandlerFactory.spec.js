@@ -1,10 +1,12 @@
 const Long = require('long');
 
 const {
-  abci: {
-    ResponseBeginBlock,
+  tendermint: {
+    abci: {
+      ResponseBeginBlock,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const beginBlockHandlerFactory = require('../../../../lib/abci/handlers/beginBlockHandlerFactory');
 
@@ -18,9 +20,12 @@ describe('beginBlockHandlerFactory', () => {
   let request;
   let chainInfo;
   let blockHeight;
+  let coreHeight;
   let blockExecutionDBTransactionsMock;
   let blockExecutionContextMock;
   let header;
+  let updateSimplifiedMasternodeListMock;
+  let waitForChainlockedHeightMock;
 
   beforeEach(function beforeEach() {
     chainInfo = new ChainInfo();
@@ -36,24 +41,31 @@ describe('beginBlockHandlerFactory', () => {
       info: this.sinon.stub(),
     };
 
+    updateSimplifiedMasternodeListMock = this.sinon.stub();
+    waitForChainlockedHeightMock = this.sinon.stub();
+
     beginBlockHandler = beginBlockHandlerFactory(
       chainInfo,
       blockExecutionDBTransactionsMock,
       blockExecutionContextMock,
       protocolVersion,
+      updateSimplifiedMasternodeListMock,
+      waitForChainlockedHeightMock,
       loggerMock,
     );
 
     blockHeight = 2;
+    blockHeight = 1;
 
     header = {
       version: {
-        App: protocolVersion,
+        app: protocolVersion,
       },
       height: blockHeight,
       time: {
         seconds: Math.ceil(new Date().getTime() / 1000),
       },
+      coreHeight,
     };
 
     request = {
@@ -70,10 +82,12 @@ describe('beginBlockHandlerFactory', () => {
     expect(blockExecutionDBTransactionsMock.start).to.be.calledOnce();
     expect(blockExecutionContextMock.reset).to.be.calledOnce();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
+    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(coreHeight);
+    expect(waitForChainlockedHeightMock).to.be.calledOnceWithExactly(coreHeight);
   });
 
   it('should reject not supported protocol version', async () => {
-    request.header.version.App = Long.fromInt(42);
+    request.header.version.app = Long.fromInt(42);
 
     try {
       await beginBlockHandler(request);

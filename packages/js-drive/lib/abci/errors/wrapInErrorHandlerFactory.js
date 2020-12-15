@@ -1,8 +1,11 @@
 const {
-  common: {
-    KVPair,
+  tendermint: {
+    abci: {
+      Event,
+      EventAttribute,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const AbciError = require('./AbciError');
 const InternalAbciError = require('./InternalAbciError');
@@ -65,8 +68,17 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
           }
         }
 
-        const kvPairTags = Object.entries(error.getTags())
-          .map(([key, value]) => new KVPair({ key, value }));
+        const events = [];
+
+        const attributes = Object.entries(error.getTags())
+          .map(([key, value]) => new EventAttribute({ key, value, index: true }));
+
+        if (attributes.length > 0) {
+          events.push(new Event({
+            type: 'error',
+            attributes,
+          }));
+        }
 
         return {
           code: error.getCode(),
@@ -76,7 +88,7 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
               data: error.getData(),
             },
           }),
-          tags: kvPairTags,
+          events,
         };
       }
     }

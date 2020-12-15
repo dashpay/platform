@@ -1,8 +1,11 @@
 const {
-  abci: {
-    ResponseCommit,
+  tendermint: {
+    abci: {
+      ResponseCommit,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
+
 const Long = require('long');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');

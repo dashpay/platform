@@ -1,10 +1,12 @@
 const cbor = require('cbor');
 
 const {
-  abci: {
-    ResponseQuery,
+  tendermint: {
+    abci: {
+      ResponseQuery,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 

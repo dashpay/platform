@@ -1,8 +1,10 @@
 const {
-  abci: {
-    ResponseInfo,
+  tendermint: {
+    abci: {
+      ResponseInfo,
+    },
   },
-} = require('abci/types');
+} = require('@dashevo/abci/types');
 
 const { version: driveVersion } = require('../../../package');
 
