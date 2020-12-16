@@ -2,6 +2,9 @@ const DashPlatformProtocol = require('@dashevo/dpp');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntantLock');
+const { default: createAssetLockProof } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createAssetLockProof');
+const { default: createIdentityCreateTransition } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createIdentityCreateTransition');
+const { default: createIdentityTopUpTransition } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createIdnetityTopUpTransition');
 const { default: createAssetLockTransaction } = require('dash/build/src/SDK/Client/Platform/createAssetLockTransaction');
 
 const waitForBlocks = require('../../../lib/waitForBlocks');
@@ -33,6 +36,14 @@ describe('Platform', () => {
       }
     });
 
+    it('should create an identity', async () => {
+      identity = await client.platform.identities.register(3);
+
+      expect(identity).to.exist();
+
+      await waitForBalanceToChange(walletAccount);
+    });
+
     it.skip('should fail to create an identity if instantLock is not valid', async () => {
       const {
         transaction,
@@ -42,24 +53,14 @@ describe('Platform', () => {
         client,
       }, 1);
 
-      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
-      await waitForBlocks(client.getDAPIClient(), 1);
-
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
       const assetLockProof = await dpp.identity.createInstantAssetLockProof(invalidInstantLock);
 
-      const invalidIdentity = dpp.identity.create(
-        transaction,
-        outputIndex,
-        assetLockProof,
-        [walletPublicKey],
+      const {
+        identityCreateTransition: invalidIdentityCreateTransition,
+      } = await createIdentityCreateTransition(
+        client.platform, transaction, outputIndex, assetLockProof, privateKey,
       );
-
-      const invalidIdentityCreateTransition = dpp.identity.createIdentityCreateTransition(
-        invalidIdentity,
-      );
-
-      invalidIdentityCreateTransition.signByPrivateKey(privateKey);
 
       try {
         await client.getDAPIClient().platform.broadcastStateTransition(
@@ -72,15 +73,55 @@ describe('Platform', () => {
       }
     });
 
-    it('should create an identity', async () => {
-      identity = await client.platform.identities.register(3);
+    it('should fail to create an identity with already used asset lock output', async () => {
+      const {
+        transaction,
+        privateKey,
+        outputIndex,
+      } = await createAssetLockTransaction({ client }, 1);
 
-      expect(identity).to.exist();
+      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+      await waitForBlocks(client.getDAPIClient(), 1);
 
-      await waitForBalanceToChange(walletAccount);
+      const assetLockProof = await createAssetLockProof(client.platform, transaction);
+
+      // Creating normal transition
+      const {
+        identity: identityOne,
+        identityCreateTransition: identityCreateTransitionOne,
+        identityIndex: identityOneIndex,
+      } = await createIdentityCreateTransition(
+        client.platform, transaction, outputIndex, assetLockProof, privateKey,
+      );
+
+      await client.getDAPIClient().platform.broadcastStateTransition(
+        identityCreateTransitionOne.toBuffer(),
+      );
+
+      walletAccount.storage.insertIdentityIdAtIndex(
+        walletAccount.walletId,
+        identityOne.getId().toString(),
+        identityOneIndex,
+      );
+
+      // Creating transition that tries to spend the same transaction
+      const {
+        identityCreateTransition: identityCreateDoubleSpendTransition,
+      } = await createIdentityCreateTransition(
+        client.platform, transaction, outputIndex, assetLockProof, privateKey,
+      );
+
+      try {
+        await client.getDAPIClient().platform.broadcastStateTransition(
+          identityCreateDoubleSpendTransition.toBuffer(),
+        );
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        const [error] = JSON.parse(e.metadata.get('errors'));
+        expect(error.name).to.equal('IdentityAssetLockTransactionOutPointAlreadyExistsError');
+      }
     });
-
-    it('should fail to create an identity with already used asset lock output');
 
     it('should fail to create an identity with already used public key', async () => {
       const {
@@ -277,6 +318,43 @@ describe('Platform', () => {
         await client.platform.documents.broadcast({
           create: [document],
         }, identity);
+      });
+
+      it('should fail to top up an identity with already used asset lock output', async () => {
+        const {
+          transaction,
+          privateKey,
+          outputIndex,
+        } = await createAssetLockTransaction({ client }, 1);
+
+        await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+        await waitForBlocks(client.getDAPIClient(), 1);
+
+        const assetLockProof = await createAssetLockProof(client.platform, transaction);
+
+        // Creating normal transition
+        const identityTopUpTransitionOne = await createIdentityTopUpTransition(
+          client.platform, transaction, outputIndex, assetLockProof, privateKey, identity.getId(),
+        );
+        // Creating ST that tries to spend the same output
+        const conflictingTopUpStateTransition = await createIdentityTopUpTransition(
+          client.platform, transaction, outputIndex, assetLockProof, privateKey, identity.getId(),
+        );
+
+        await client.getDAPIClient().platform.broadcastStateTransition(
+          identityTopUpTransitionOne.toBuffer(),
+        );
+
+        try {
+          await client.getDAPIClient().platform.broadcastStateTransition(
+            conflictingTopUpStateTransition.toBuffer(),
+          );
+
+          expect.fail('Error was not thrown');
+        } catch (e) {
+          const [error] = JSON.parse(e.metadata.get('errors'));
+          expect(error.name).to.equal('IdentityAssetLockTransactionOutPointAlreadyExistsError');
+        }
       });
     });
   });
