@@ -43,6 +43,60 @@ static GPBFileDescriptor *PlatformRoot_FileDescriptor(void) {
   return descriptor;
 }
 
+#pragma mark - Proof
+
+@implementation Proof
+
+@dynamic rootTreeProof;
+@dynamic storeTreeProof;
+
+typedef struct Proof__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *rootTreeProof;
+  NSData *storeTreeProof;
+} Proof__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "rootTreeProof",
+        .dataTypeSpecific.className = NULL,
+        .number = Proof_FieldNumber_RootTreeProof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(Proof__storage_, rootTreeProof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "storeTreeProof",
+        .dataTypeSpecific.className = NULL,
+        .number = Proof_FieldNumber_StoreTreeProof,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(Proof__storage_, storeTreeProof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[Proof class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(Proof__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - BroadcastStateTransitionRequest
 
 @implementation BroadcastStateTransitionRequest
@@ -121,6 +175,7 @@ typedef struct BroadcastStateTransitionResponse__storage_ {
 @implementation GetIdentityRequest
 
 @dynamic id_p;
+@dynamic prove;
 
 typedef struct GetIdentityRequest__storage_ {
   uint32_t _has_storage_[1];
@@ -141,6 +196,15 @@ typedef struct GetIdentityRequest__storage_ {
         .offset = (uint32_t)offsetof(GetIdentityRequest__storage_, id_p),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.className = NULL,
+        .number = GetIdentityRequest_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -164,10 +228,12 @@ typedef struct GetIdentityRequest__storage_ {
 @implementation GetIdentityResponse
 
 @dynamic identity;
+@dynamic hasProof, proof;
 
 typedef struct GetIdentityResponse__storage_ {
   uint32_t _has_storage_[1];
   NSData *identity;
+  Proof *proof;
 } GetIdentityResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -184,6 +250,15 @@ typedef struct GetIdentityResponse__storage_ {
         .offset = (uint32_t)offsetof(GetIdentityResponse__storage_, identity),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.className = GPBStringifySymbol(Proof),
+        .number = GetIdentityResponse_FieldNumber_Proof,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetIdentityResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -207,6 +282,7 @@ typedef struct GetIdentityResponse__storage_ {
 @implementation GetDataContractRequest
 
 @dynamic id_p;
+@dynamic prove;
 
 typedef struct GetDataContractRequest__storage_ {
   uint32_t _has_storage_[1];
@@ -227,6 +303,15 @@ typedef struct GetDataContractRequest__storage_ {
         .offset = (uint32_t)offsetof(GetDataContractRequest__storage_, id_p),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.className = NULL,
+        .number = GetDataContractRequest_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -250,10 +335,12 @@ typedef struct GetDataContractRequest__storage_ {
 @implementation GetDataContractResponse
 
 @dynamic dataContract;
+@dynamic hasProof, proof;
 
 typedef struct GetDataContractResponse__storage_ {
   uint32_t _has_storage_[1];
   NSData *dataContract;
+  Proof *proof;
 } GetDataContractResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -270,6 +357,15 @@ typedef struct GetDataContractResponse__storage_ {
         .offset = (uint32_t)offsetof(GetDataContractResponse__storage_, dataContract),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.className = GPBStringifySymbol(Proof),
+        .number = GetDataContractResponse_FieldNumber_Proof,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDataContractResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -300,6 +396,7 @@ typedef struct GetDataContractResponse__storage_ {
 @dynamic limit;
 @dynamic startAfter;
 @dynamic startAt;
+@dynamic prove;
 
 typedef struct GetDocumentsRequest__storage_ {
   uint32_t _has_storage_[2];
@@ -381,6 +478,15 @@ typedef struct GetDocumentsRequest__storage_ {
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
       },
+      {
+        .name = "prove",
+        .dataTypeSpecific.className = NULL,
+        .number = GetDocumentsRequest_FieldNumber_Prove,
+        .hasIndex = 5,
+        .offset = 6,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest class]
@@ -414,10 +520,12 @@ void GetDocumentsRequest_ClearStartOneOfCase(GetDocumentsRequest *message) {
 @implementation GetDocumentsResponse
 
 @dynamic documentsArray, documentsArray_Count;
+@dynamic hasProof, proof;
 
 typedef struct GetDocumentsResponse__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *documentsArray;
+  Proof *proof;
 } GetDocumentsResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -434,6 +542,15 @@ typedef struct GetDocumentsResponse__storage_ {
         .offset = (uint32_t)offsetof(GetDocumentsResponse__storage_, documentsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.className = GPBStringifySymbol(Proof),
+        .number = GetDocumentsResponse_FieldNumber_Proof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -457,6 +574,7 @@ typedef struct GetDocumentsResponse__storage_ {
 @implementation GetIdentitiesByPublicKeyHashesRequest
 
 @dynamic publicKeyHashesArray, publicKeyHashesArray_Count;
+@dynamic prove;
 
 typedef struct GetIdentitiesByPublicKeyHashesRequest__storage_ {
   uint32_t _has_storage_[1];
@@ -477,6 +595,15 @@ typedef struct GetIdentitiesByPublicKeyHashesRequest__storage_ {
         .offset = (uint32_t)offsetof(GetIdentitiesByPublicKeyHashesRequest__storage_, publicKeyHashesArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.className = NULL,
+        .number = GetIdentitiesByPublicKeyHashesRequest_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -500,10 +627,12 @@ typedef struct GetIdentitiesByPublicKeyHashesRequest__storage_ {
 @implementation GetIdentitiesByPublicKeyHashesResponse
 
 @dynamic identitiesArray, identitiesArray_Count;
+@dynamic hasProof, proof;
 
 typedef struct GetIdentitiesByPublicKeyHashesResponse__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *identitiesArray;
+  Proof *proof;
 } GetIdentitiesByPublicKeyHashesResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -520,6 +649,15 @@ typedef struct GetIdentitiesByPublicKeyHashesResponse__storage_ {
         .offset = (uint32_t)offsetof(GetIdentitiesByPublicKeyHashesResponse__storage_, identitiesArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.className = GPBStringifySymbol(Proof),
+        .number = GetIdentitiesByPublicKeyHashesResponse_FieldNumber_Proof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesByPublicKeyHashesResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -543,6 +681,7 @@ typedef struct GetIdentitiesByPublicKeyHashesResponse__storage_ {
 @implementation GetIdentityIdsByPublicKeyHashesRequest
 
 @dynamic publicKeyHashesArray, publicKeyHashesArray_Count;
+@dynamic prove;
 
 typedef struct GetIdentityIdsByPublicKeyHashesRequest__storage_ {
   uint32_t _has_storage_[1];
@@ -563,6 +702,15 @@ typedef struct GetIdentityIdsByPublicKeyHashesRequest__storage_ {
         .offset = (uint32_t)offsetof(GetIdentityIdsByPublicKeyHashesRequest__storage_, publicKeyHashesArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.className = NULL,
+        .number = GetIdentityIdsByPublicKeyHashesRequest_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -586,10 +734,12 @@ typedef struct GetIdentityIdsByPublicKeyHashesRequest__storage_ {
 @implementation GetIdentityIdsByPublicKeyHashesResponse
 
 @dynamic identityIdsArray, identityIdsArray_Count;
+@dynamic hasProof, proof;
 
 typedef struct GetIdentityIdsByPublicKeyHashesResponse__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *identityIdsArray;
+  Proof *proof;
 } GetIdentityIdsByPublicKeyHashesResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -606,6 +756,15 @@ typedef struct GetIdentityIdsByPublicKeyHashesResponse__storage_ {
         .offset = (uint32_t)offsetof(GetIdentityIdsByPublicKeyHashesResponse__storage_, identityIdsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.className = GPBStringifySymbol(Proof),
+        .number = GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_Proof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentityIdsByPublicKeyHashesResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =

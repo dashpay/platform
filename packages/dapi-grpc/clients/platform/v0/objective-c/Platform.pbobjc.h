@@ -27,6 +27,8 @@
 
 CF_EXTERN_C_BEGIN
 
+@class Proof;
+
 NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - PlatformRoot
@@ -42,6 +44,21 @@ NS_ASSUME_NONNULL_BEGIN
  * this file and all files that it depends on.
  **/
 @interface PlatformRoot : GPBRootObject
+@end
+
+#pragma mark - Proof
+
+typedef GPB_ENUM(Proof_FieldNumber) {
+  Proof_FieldNumber_RootTreeProof = 1,
+  Proof_FieldNumber_StoreTreeProof = 2,
+};
+
+@interface Proof : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *rootTreeProof;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *storeTreeProof;
+
 @end
 
 #pragma mark - BroadcastStateTransitionRequest
@@ -66,11 +83,14 @@ typedef GPB_ENUM(BroadcastStateTransitionRequest_FieldNumber) {
 
 typedef GPB_ENUM(GetIdentityRequest_FieldNumber) {
   GetIdentityRequest_FieldNumber_Id_p = 1,
+  GetIdentityRequest_FieldNumber_Prove = 2,
 };
 
 @interface GetIdentityRequest : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+@property(nonatomic, readwrite) BOOL prove;
 
 @end
 
@@ -78,11 +98,16 @@ typedef GPB_ENUM(GetIdentityRequest_FieldNumber) {
 
 typedef GPB_ENUM(GetIdentityResponse_FieldNumber) {
   GetIdentityResponse_FieldNumber_Identity = 1,
+  GetIdentityResponse_FieldNumber_Proof = 2,
 };
 
 @interface GetIdentityResponse : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
 
 @end
 
@@ -90,11 +115,14 @@ typedef GPB_ENUM(GetIdentityResponse_FieldNumber) {
 
 typedef GPB_ENUM(GetDataContractRequest_FieldNumber) {
   GetDataContractRequest_FieldNumber_Id_p = 1,
+  GetDataContractRequest_FieldNumber_Prove = 2,
 };
 
 @interface GetDataContractRequest : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+@property(nonatomic, readwrite) BOOL prove;
 
 @end
 
@@ -102,11 +130,16 @@ typedef GPB_ENUM(GetDataContractRequest_FieldNumber) {
 
 typedef GPB_ENUM(GetDataContractResponse_FieldNumber) {
   GetDataContractResponse_FieldNumber_DataContract = 1,
+  GetDataContractResponse_FieldNumber_Proof = 2,
 };
 
 @interface GetDataContractResponse : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *dataContract;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
 
 @end
 
@@ -120,6 +153,7 @@ typedef GPB_ENUM(GetDocumentsRequest_FieldNumber) {
   GetDocumentsRequest_FieldNumber_Limit = 5,
   GetDocumentsRequest_FieldNumber_StartAfter = 6,
   GetDocumentsRequest_FieldNumber_StartAt = 7,
+  GetDocumentsRequest_FieldNumber_Prove = 8,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_Start_OneOfCase) {
@@ -146,6 +180,8 @@ typedef GPB_ENUM(GetDocumentsRequest_Start_OneOfCase) {
 
 @property(nonatomic, readwrite) uint32_t startAt;
 
+@property(nonatomic, readwrite) BOOL prove;
+
 @end
 
 /**
@@ -157,6 +193,7 @@ void GetDocumentsRequest_ClearStartOneOfCase(GetDocumentsRequest *message);
 
 typedef GPB_ENUM(GetDocumentsResponse_FieldNumber) {
   GetDocumentsResponse_FieldNumber_DocumentsArray = 1,
+  GetDocumentsResponse_FieldNumber_Proof = 2,
 };
 
 @interface GetDocumentsResponse : GPBMessage
@@ -165,12 +202,17 @@ typedef GPB_ENUM(GetDocumentsResponse_FieldNumber) {
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
 
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
 @end
 
 #pragma mark - GetIdentitiesByPublicKeyHashesRequest
 
 typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesRequest_FieldNumber) {
   GetIdentitiesByPublicKeyHashesRequest_FieldNumber_PublicKeyHashesArray = 1,
+  GetIdentitiesByPublicKeyHashesRequest_FieldNumber_Prove = 2,
 };
 
 @interface GetIdentitiesByPublicKeyHashesRequest : GPBMessage
@@ -179,12 +221,15 @@ typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesRequest_FieldNumber) {
 /** The number of items in @c publicKeyHashesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger publicKeyHashesArray_Count;
 
+@property(nonatomic, readwrite) BOOL prove;
+
 @end
 
 #pragma mark - GetIdentitiesByPublicKeyHashesResponse
 
 typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesResponse_FieldNumber) {
   GetIdentitiesByPublicKeyHashesResponse_FieldNumber_IdentitiesArray = 1,
+  GetIdentitiesByPublicKeyHashesResponse_FieldNumber_Proof = 2,
 };
 
 @interface GetIdentitiesByPublicKeyHashesResponse : GPBMessage
@@ -193,12 +238,17 @@ typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesResponse_FieldNumber) {
 /** The number of items in @c identitiesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger identitiesArray_Count;
 
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
 @end
 
 #pragma mark - GetIdentityIdsByPublicKeyHashesRequest
 
 typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesRequest_FieldNumber) {
   GetIdentityIdsByPublicKeyHashesRequest_FieldNumber_PublicKeyHashesArray = 1,
+  GetIdentityIdsByPublicKeyHashesRequest_FieldNumber_Prove = 2,
 };
 
 @interface GetIdentityIdsByPublicKeyHashesRequest : GPBMessage
@@ -207,12 +257,15 @@ typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesRequest_FieldNumber) {
 /** The number of items in @c publicKeyHashesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger publicKeyHashesArray_Count;
 
+@property(nonatomic, readwrite) BOOL prove;
+
 @end
 
 #pragma mark - GetIdentityIdsByPublicKeyHashesResponse
 
 typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesResponse_FieldNumber) {
   GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_IdentityIdsArray = 1,
+  GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_Proof = 2,
 };
 
 @interface GetIdentityIdsByPublicKeyHashesResponse : GPBMessage
@@ -220,6 +273,10 @@ typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesResponse_FieldNumber) {
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identityIdsArray;
 /** The number of items in @c identityIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger identityIdsArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
 
 @end
 

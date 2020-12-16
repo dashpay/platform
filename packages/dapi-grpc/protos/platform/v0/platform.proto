@@ -11,6 +11,11 @@ service Platform {
   rpc getIdentityIdsByPublicKeyHashes (GetIdentityIdsByPublicKeyHashesRequest) returns (GetIdentityIdsByPublicKeyHashesResponse);
 }
 
+message Proof {
+  bytes root_tree_proof = 1;
+  bytes store_tree_proof = 2;
+}
+
 message BroadcastStateTransitionRequest {
   bytes state_transition = 1;
 }
@@ -21,18 +26,22 @@ message BroadcastStateTransitionResponse {
 
 message GetIdentityRequest {
   bytes id = 1;
+  bool prove = 2;
 }
 
 message GetIdentityResponse {
   bytes identity = 1;
+  Proof proof = 2;
 }
 
-message GetDataContractRequest {
+ message GetDataContractRequest {
   bytes id = 1;
+  bool prove = 2;
 }
 
 message GetDataContractResponse {
   bytes data_contract = 1;
+  Proof proof = 2;
 }
 
 message GetDocumentsRequest {
@@ -48,24 +57,31 @@ message GetDocumentsRequest {
     uint32 start_after = 6;
     uint32 start_at = 7;
   }
+
+  bool prove = 8;
 }
 
 message GetDocumentsResponse {
   repeated bytes documents = 1;
+  Proof proof = 2;
 }
 
 message GetIdentitiesByPublicKeyHashesRequest {
   repeated bytes public_key_hashes = 1;
+  bool prove = 2;
 }
 
 message GetIdentitiesByPublicKeyHashesResponse {
   repeated bytes identities = 1;
+  Proof proof = 2;
 }
 
 message GetIdentityIdsByPublicKeyHashesRequest {
   repeated bytes public_key_hashes = 1;
+  bool prove = 2;
 }
 
 message GetIdentityIdsByPublicKeyHashesResponse {
   repeated bytes identity_ids = 1;
+  Proof proof = 2;
 }
