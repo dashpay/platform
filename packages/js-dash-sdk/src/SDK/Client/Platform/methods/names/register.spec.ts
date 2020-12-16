@@ -4,12 +4,19 @@ import generateRandomIdentifier from "@dashevo/dpp/lib/test/utils/generateRandom
 
 import cryptoModule from 'crypto';
 
-ImportMock.mockFunction(cryptoModule, 'randomBytes', Buffer.alloc(32));
-
 import register from './register';
 import {ClientApps} from "../../../ClientApps";
 
 describe('Platform', () => {
+    let randomBytesMock;
+
+    before(() => {
+        randomBytesMock = ImportMock.mockFunction(cryptoModule, 'randomBytes', Buffer.alloc(32));
+    });
+    after(() => {
+        randomBytesMock.restore();
+    });
+
     describe('Names', () => {
         describe('#register', () => {
             let platformMock;
