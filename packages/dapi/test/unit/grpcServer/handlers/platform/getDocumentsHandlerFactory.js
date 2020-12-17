@@ -11,6 +11,7 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
+    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -41,6 +42,7 @@ describe('getDocumentsHandlerFactory', () => {
   let startAt;
   let handleAbciResponseErrorMock;
   let documentsSerialized;
+  let proofFixture;
 
   beforeEach(function beforeEach() {
     dataContractId = generateRandomIdentifier();
@@ -59,6 +61,7 @@ describe('getDocumentsHandlerFactory', () => {
       getLimit: this.sinon.stub().returns(limit),
       getStartAfter: this.sinon.stub().returns(startAfter),
       getStartAt: this.sinon.stub().returns(startAt),
+      getProve: this.sinon.stub().returns(false),
     };
 
     call = new GrpcCallMock(this.sinon, request);
@@ -68,9 +71,18 @@ describe('getDocumentsHandlerFactory', () => {
     documentsFixture = [document];
 
     documentsSerialized = documentsFixture.map(documentItem => documentItem.toBuffer());
+    proofFixture = {
+      rootTreeProof: Buffer.alloc(1, 1),
+      storeTreeProof: Buffer.alloc(1, 2),
+    };
+
+    const response = {
+      data: documentsSerialized,
+      proof: proofFixture,
+    };
 
     driveStateRepositoryMock = {
-      fetchDocuments: this.sinon.stub().resolves(documentsSerialized),
+      fetchDocuments: this.sinon.stub().resolves(response),
     };
 
     handleAbciResponseErrorMock = this.sinon.stub();
@@ -100,10 +112,47 @@ describe('getDocumentsHandlerFactory', () => {
         startAfter,
         startAt: undefined,
       },
+      false,
     );
 
     expect(documentsBinary[0]).to.deep.equal(documentsSerialized[0]);
     expect(handleAbciResponseErrorMock).to.be.not.called();
+
+    const proof = result.getProof();
+
+    expect(proof).to.be.undefined();
+  });
+
+  it('should return proof', async () => {
+    request.getProve.returns(true);
+
+    const result = await getDocumentsHandler(call);
+
+    expect(result).to.be.an.instanceOf(GetDocumentsResponse);
+
+    expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
+      dataContractId,
+      documentType,
+      {
+        where,
+        orderBy,
+        limit,
+        startAfter,
+        startAt: undefined,
+      },
+      true,
+    );
+
+    expect(handleAbciResponseErrorMock).to.be.not.called();
+
+    const proof = result.getProof();
+
+    expect(proof).to.be.an.instanceOf(Proof);
+    const rootTreeProof = proof.getRootTreeProof();
+    const storeTreeProof = proof.getStoreTreeProof();
+
+    expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
+    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
   });
 
   it('should throw InvalidArgumentGrpcError if dataContractId is not specified', async () => {

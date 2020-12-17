@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
+    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -37,11 +38,13 @@ function getIdentitiesByPublicKeyHashesHandlerFactory(
       throw new InvalidArgumentGrpcError('No public key hashes were provided');
     }
 
+    const prove = request.getProve();
+
     let identities;
+    let proofObject;
     try {
-      identities = await driveStateRepository.fetchIdentitiesByPublicKeyHashes(
-        publicKeyHashes,
-      );
+      ({ data: identities, proof: proofObject } = await driveStateRepository
+        .fetchIdentitiesByPublicKeyHashes(publicKeyHashes, prove));
     } catch (e) {
       if (e instanceof AbciResponseError) {
         handleAbciResponseError(e);
@@ -54,6 +57,14 @@ function getIdentitiesByPublicKeyHashesHandlerFactory(
     response.setIdentitiesList(
       identities,
     );
+
+    if (prove === true) {
+      const proof = new Proof();
+      proof.setRootTreeProof(proofObject.rootTreeProof);
+      proof.setStoreTreeProof(proofObject.storeTreeProof);
+
+      response.setProof(proof);
+    }
 
     return response;
   }

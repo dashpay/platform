@@ -85,8 +85,9 @@ describe('DriveStateRepository', () => {
 
       const contractId = 'someId';
       const data = Buffer.from('someData');
+      const proof = Buffer.from('proof');
 
-      const buffer = cbor.encode({ data });
+      const buffer = cbor.encode({ data, proof });
 
       sinon.stub(drive.client, 'request')
         .resolves({
@@ -95,13 +96,17 @@ describe('DriveStateRepository', () => {
           },
         });
 
-      const result = await drive.fetchDataContract(contractId);
+      const result = await drive.fetchDataContract(contractId, true);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/dataContracts',
         data: cbor.encode({ id: contractId }).toString('hex'), // cbor encoded empty object
+        prove: 'true',
       });
-      expect(result).to.be.deep.equal(data);
+      expect(result).to.be.deep.equal({
+        data,
+        proof,
+      });
     });
   });
 
@@ -116,7 +121,8 @@ describe('DriveStateRepository', () => {
       };
 
       const data = [];
-      const buffer = cbor.encode({ data });
+      const proof = Buffer.from('proof');
+      const buffer = cbor.encode({ data, proof });
 
       sinon.stub(drive.client, 'request')
         .resolves({
@@ -125,13 +131,17 @@ describe('DriveStateRepository', () => {
           },
         });
 
-      const result = await drive.fetchDocuments(contractId, type, options);
+      const result = await drive.fetchDocuments(contractId, type, options, true);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/dataContracts/documents',
         data: cbor.encode({ ...options, contractId, type }).toString('hex'), // cbor encoded empty object
+        prove: 'true',
       });
-      expect(result).to.be.deep.equal(data);
+      expect(result).to.be.deep.equal({
+        data,
+        proof,
+      });
     });
   });
 
@@ -150,13 +160,13 @@ describe('DriveStateRepository', () => {
           },
         });
 
-      const result = await drive.fetchIdentity(identityId);
+      const result = await drive.fetchIdentity(identityId, false);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities',
         data: cbor.encode({ id: identityId }).toString('hex'), // cbor encoded empty object
       });
-      expect(result).to.be.deep.equal(data);
+      expect(result).to.be.deep.equal({ data });
     });
   });
 
@@ -165,7 +175,9 @@ describe('DriveStateRepository', () => {
       const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
 
       const identity = getIdentityFixture();
-      const buffer = cbor.encode({ data: [identity] });
+      const proof = Buffer.from('proof');
+
+      const buffer = cbor.encode({ data: [identity], proof });
       const publicKeyHashes = [Buffer.alloc(1)];
 
       sinon.stub(drive.client, 'request')
@@ -175,13 +187,17 @@ describe('DriveStateRepository', () => {
           },
         });
 
-      const result = await drive.fetchIdentitiesByPublicKeyHashes(publicKeyHashes);
+      const result = await drive.fetchIdentitiesByPublicKeyHashes(publicKeyHashes, true);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities/by-public-key-hash',
         data: cbor.encode({ publicKeyHashes }).toString('hex'),
+        prove: 'true',
       });
-      expect(result).to.be.deep.equal([identity]);
+      expect(result).to.be.deep.equal({
+        data: [identity],
+        proof,
+      });
     });
   });
 
@@ -191,7 +207,8 @@ describe('DriveStateRepository', () => {
 
       const identityId = generateRandomIdentifier();
       const publicKeyHashes = [Buffer.alloc(1)];
-      const buffer = cbor.encode({ data: [identityId] });
+      const proof = Buffer.from('proof');
+      const buffer = cbor.encode({ data: [identityId], proof });
 
       sinon.stub(drive.client, 'request')
         .resolves({
@@ -200,13 +217,17 @@ describe('DriveStateRepository', () => {
           },
         });
 
-      const result = await drive.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
+      const result = await drive.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, true);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities/by-public-key-hash/id',
         data: cbor.encode({ publicKeyHashes }).toString('hex'),
+        prove: 'true',
       });
-      expect(result).to.be.deep.equal([identityId]);
+      expect(result).to.be.deep.equal({
+        data: [identityId],
+        proof,
+      });
     });
   });
 });

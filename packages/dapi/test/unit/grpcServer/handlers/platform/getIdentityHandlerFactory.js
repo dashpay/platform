@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetIdentityResponse,
+    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -30,19 +31,31 @@ describe('getIdentityHandlerFactory', () => {
   let handleAbciResponseErrorMock;
   let getIdentityHandler;
   let identity;
+  let proofFixture;
 
   beforeEach(function beforeEach() {
     id = generateRandomIdentifier();
     call = new GrpcCallMock(this.sinon, {
       getId: this.sinon.stub().returns(id),
+      getProve: this.sinon.stub().returns(false),
     });
 
     identity = getIdentityFixture();
 
+    proofFixture = {
+      rootTreeProof: Buffer.alloc(1, 1),
+      storeTreeProof: Buffer.alloc(1, 2),
+    };
+
     handleAbciResponseErrorMock = this.sinon.stub();
 
+    const response = {
+      data: identity.toBuffer(),
+      proof: proofFixture,
+    };
+
     driveStateRepositoryMock = {
-      fetchIdentity: this.sinon.stub().resolves(identity.toBuffer()),
+      fetchIdentity: this.sinon.stub().resolves(response),
     };
 
     getIdentityHandler = getIdentityHandlerFactory(
@@ -56,8 +69,30 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
     expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id, false);
     expect(handleAbciResponseErrorMock).to.not.be.called();
+
+    const proof = result.getProof();
+    expect(proof).to.be.undefined();
+  });
+
+  it('should return proof', async () => {
+    call.request.getProve.returns(true);
+
+    const result = await getIdentityHandler(call);
+
+    expect(result).to.be.an.instanceOf(GetIdentityResponse);
+
+    const proof = result.getProof();
+
+    expect(proof).to.be.an.instanceOf(Proof);
+    const rootTreeProof = proof.getRootTreeProof();
+    const storeTreeProof = proof.getStoreTreeProof();
+
+    expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
+    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
+
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id, true);
   });
 
   it('should throw an InvalidArgumentGrpcError if id is not specified', async () => {

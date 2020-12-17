@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
+    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -29,6 +30,7 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
   let getIdentityIdsByPublicKeyHashesHandler;
   let identity;
   let publicKeyHash;
+  let proofFixture;
 
   beforeEach(function beforeEach() {
     publicKeyHash = '556c2910d46fda2b327ef9d9bda850cc84d30db0';
@@ -37,16 +39,27 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
       getPublicKeyHashesList: this.sinon.stub().returns(
         [publicKeyHash],
       ),
+      getProve: this.sinon.stub().returns(false),
     });
 
     identity = getIdentityFixture();
 
     handleAbciResponseErrorMock = this.sinon.stub();
 
-    driveStateRepositoryMock = {
-      fetchIdentityIdsByPublicKeyHashes: this.sinon.stub().resolves([
+    proofFixture = {
+      rootTreeProof: Buffer.alloc(1, 1),
+      storeTreeProof: Buffer.alloc(1, 2),
+    };
+
+    const response = {
+      data: [
         identity.getId(),
-      ]),
+      ],
+      proof: proofFixture,
+    };
+
+    driveStateRepositoryMock = {
+      fetchIdentityIdsByPublicKeyHashes: this.sinon.stub().resolves(response),
     };
 
     getIdentityIdsByPublicKeyHashesHandler = getIdentityIdsByPublicKeyHashesHandlerFactory(
@@ -65,9 +78,31 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
     );
 
     expect(driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes)
-      .to.be.calledOnceWith([publicKeyHash]);
+      .to.be.calledOnceWith([publicKeyHash], false);
 
     expect(handleAbciResponseErrorMock).to.not.be.called();
+
+    const proof = result.getProof();
+    expect(proof).to.be.undefined();
+  });
+
+  it('should return proof', async () => {
+    call.request.getProve.returns(true);
+
+    const result = await getIdentityIdsByPublicKeyHashesHandler(call);
+
+    expect(result).to.be.an.instanceOf(GetIdentityIdsByPublicKeyHashesResponse);
+    expect(driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes)
+      .to.be.calledOnceWith([publicKeyHash], true);
+
+    const proof = result.getProof();
+
+    expect(proof).to.be.an.instanceOf(Proof);
+    const rootTreeProof = proof.getRootTreeProof();
+    const storeTreeProof = proof.getStoreTreeProof();
+
+    expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
+    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
   });
 
   it('should throw an InvalidArgumentGrpcError if no hashes were submitted', async () => {

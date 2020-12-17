@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetDataContractResponse,
+    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -32,19 +33,30 @@ describe('getDataContractHandlerFactory', () => {
   let id;
   let dataContractFixture;
   let handleAbciResponseErrorMock;
+  let proofFixture;
 
   beforeEach(function beforeEach() {
     id = generateRandomIdentifier();
     request = {
       getId: this.sinon.stub().returns(id),
+      getProve: this.sinon.stub().returns(true),
     };
 
     call = new GrpcCallMock(this.sinon, request);
 
     dataContractFixture = getDataContractFixture();
+    proofFixture = {
+      rootTreeProof: Buffer.alloc(1, 1),
+      storeTreeProof: Buffer.alloc(1, 2),
+    };
+
+    const response = {
+      data: dataContractFixture.toBuffer(),
+      proof: proofFixture,
+    };
 
     driveStateRepositoryMock = {
-      fetchDataContract: this.sinon.stub().resolves(dataContractFixture.toBuffer()),
+      fetchDataContract: this.sinon.stub().resolves(response),
     };
 
     handleAbciResponseErrorMock = this.sinon.stub();
@@ -67,7 +79,29 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(contractBinary).to.deep.equal(dataContractFixture.toBuffer());
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
+    const proof = result.getProof();
+
+    expect(proof).to.be.an.instanceOf(Proof);
+    const rootTreeProof = proof.getRootTreeProof();
+    const storeTreeProof = proof.getStoreTreeProof();
+
+    expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
+    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
+
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id, true);
+  });
+
+  it('should not include proof', async () => {
+    request.getProve.returns(false);
+
+    const result = await getDataContractHandler(call);
+
+    expect(result).to.be.an.instanceOf(GetDataContractResponse);
+    const proof = result.getProof();
+
+    expect(proof).to.be.undefined();
+
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id, false);
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {

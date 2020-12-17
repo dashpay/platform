@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetDataContractResponse,
+    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -26,19 +27,22 @@ function getDataContractHandlerFactory(driveStateRepository, handleAbciResponseE
    *
    * @param {Object} call
    *
-   * @returns {Promise<GetDocumentsResponse>}
+   * @returns {Promise<GetDataContractResponse>}
    */
   async function getDataContractHandler(call) {
     const { request } = call;
     const id = request.getId();
+    const prove = request.getProve();
 
     if (id === null) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
     let dataContractBuffer;
+    let proofObject;
     try {
-      dataContractBuffer = await driveStateRepository.fetchDataContract(id);
+      ({ data: dataContractBuffer, proof: proofObject } = await driveStateRepository
+        .fetchDataContract(id, prove));
     } catch (e) {
       if (e instanceof AbciResponseError) {
         handleAbciResponseError(e);
@@ -49,6 +53,14 @@ function getDataContractHandlerFactory(driveStateRepository, handleAbciResponseE
     const response = new GetDataContractResponse();
 
     response.setDataContract(dataContractBuffer);
+
+    if (prove === true) {
+      const proof = new Proof();
+      proof.setRootTreeProof(proofObject.rootTreeProof);
+      proof.setStoreTreeProof(proofObject.storeTreeProof);
+
+      response.setProof(proof);
+    }
 
     return response;
   }

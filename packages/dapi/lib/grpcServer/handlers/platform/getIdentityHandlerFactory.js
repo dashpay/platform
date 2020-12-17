@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetIdentityResponse,
+    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -37,9 +38,14 @@ function getIdentityHandlerFactory(driveStateRepository, handleAbciResponseError
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
+    const prove = request.getProve();
+
     let identityBuffer;
+    let proofObject;
+
     try {
-      identityBuffer = await driveStateRepository.fetchIdentity(id);
+      ({ data: identityBuffer, proof: proofObject } = await driveStateRepository
+        .fetchIdentity(id, prove));
     } catch (e) {
       if (e instanceof AbciResponseError) {
         handleAbciResponseError(e);
@@ -50,6 +56,14 @@ function getIdentityHandlerFactory(driveStateRepository, handleAbciResponseError
     const response = new GetIdentityResponse();
 
     response.setIdentity(identityBuffer);
+
+    if (prove === true) {
+      const proof = new Proof();
+      proof.setRootTreeProof(proofObject.rootTreeProof);
+      proof.setStoreTreeProof(proofObject.storeTreeProof);
+
+      response.setProof(proof);
+    }
 
     return response;
   }
