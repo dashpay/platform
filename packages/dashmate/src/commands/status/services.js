@@ -38,13 +38,13 @@ class ServicesStatusCommand extends BaseCommand {
     }
 
     const tableRows = [
-      ['Service', 'Container ID', 'Version', 'Status'],
+      ['Service', 'Container ID', 'Image', 'Status'],
     ];
 
     for (const [serviceName, serviceDescription] of Object.entries(serviceHumanNames)) {
       let containerId;
       let status;
-      let version;
+      let image;
 
       try {
         ({
@@ -53,9 +53,7 @@ class ServicesStatusCommand extends BaseCommand {
             Status: status,
           },
           Config: {
-            Labels: {
-              'org.dash.version': version,
-            },
+            Image: image,
           },
         } = await dockerCompose.inspectService(config.toEnvs(), serviceName));
       } catch (e) {
@@ -66,13 +64,13 @@ class ServicesStatusCommand extends BaseCommand {
 
       let statusText;
       if (status) {
-        statusText = chalk.keyword(status === 'running' ? 'green' : 'red')(status);
+        statusText = (status === 'running' ? chalk.green : chalk.red)(status);
       }
 
       tableRows.push([
         serviceDescription,
         containerId ? containerId.slice(0, 12) : undefined,
-        version,
+        image,
         statusText,
       ]);
     }
