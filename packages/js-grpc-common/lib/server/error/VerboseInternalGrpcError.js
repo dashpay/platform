@@ -7,7 +7,11 @@ class VerboseInternalGrpcError extends InternalGrpcError {
    */
   constructor(error) {
     const originalError = error.getError();
-    const [, errorPath] = originalError.stack.toString().split(/\r\n|\n/);
+    let [, errorPath] = originalError.stack.toString().split(/\r\n|\n/);
+
+    if (!errorPath) {
+      errorPath = originalError.stack;
+    }
 
     const message = `${originalError.message} ${errorPath.trim()}`;
 
