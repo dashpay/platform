@@ -42,7 +42,7 @@ function initializeTenderdashNodeFactory(dockerCompose, docker, dockerPull) {
 
     // Initialize Tenderdash
 
-    const tenderdashImage = config.get('platform.drive.tenderdash.docker.image');
+    const tenderdashImage = config.get('platform.drive.tenderdash.docker.image', true);
 
     await dockerPull(tenderdashImage);
 
@@ -74,7 +74,13 @@ function initializeTenderdashNodeFactory(dockerCompose, docker, dockerPull) {
     );
 
     if (result.StatusCode !== 0) {
-      throw new Error(result.Error || writableStream.toString());
+      let message = writableStream.toString();
+
+      if (result.StatusCode === 1 && message === '') {
+        message = 'already initialized. Please reset node data';
+      }
+
+      throw new Error(`Can't initialize tenderdash: ${message}`);
     }
 
     return JSON.parse(writableStream.toString());
