@@ -17,7 +17,7 @@ class InitCommand extends BaseCommand {
    */
   async runWithDependencies(
     {
-      seed,
+      'dapi-address': dapiAddress,
       'funding-private-key': fundingPrivateKeyString,
     },
     {
@@ -45,7 +45,7 @@ class InitCommand extends BaseCommand {
     try {
       await tasks.run({
         fundingPrivateKeyString,
-        seed,
+        dapiAddress,
         driveImageBuildPath,
         dapiImageBuildPath,
       });
@@ -66,9 +66,9 @@ InitCommand.args = [{
   description: 'private key with dash for funding account',
 },
 {
-  name: 'seed',
+  name: 'dapi-address',
   required: false,
-  description: 'DAPI seed to connect',
+  description: 'DAPI address to send init transitions to',
 }];
 
 InitCommand.flags = {

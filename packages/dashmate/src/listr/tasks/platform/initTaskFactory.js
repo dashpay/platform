@@ -46,8 +46,8 @@ function initTaskFactory(
             network: config.get('network'),
           };
 
-          if (ctx.seed) {
-            clientOpts.seeds = [ctx.seed];
+          if (ctx.dapiAddress) {
+            clientOpts.dapiAddresses = [ctx.dapiAddress];
           }
 
           const faucetClient = new Dash.Client({
@@ -114,7 +114,7 @@ function initTaskFactory(
             .update(ctx.dataContractStateTransition.toBuffer())
             .digest();
 
-          if (ctx.seed || config.get('network') !== NETWORKS.LOCAL) {
+          if (ctx.dapiAddress || config.get('network') !== NETWORKS.LOCAL) {
             task.skip('Can\'t obtain DPNS contract commit block height from remote node.'
               + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
               + 'and set it to "platform.dpns.contract.id" config option');
