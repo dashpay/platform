@@ -103,6 +103,7 @@ const baseConfig = {
 
         },
       },
+      skipAssetLockConfirmationValidation: false,
     },
     dpns: {
       contract: {
@@ -131,6 +132,9 @@ module.exports = {
             enable: false,
           },
         },
+      },
+      drive: {
+        skipAssetLockConfirmationValidation: true,
       },
     },
     externalIp: '127.0.0.1',

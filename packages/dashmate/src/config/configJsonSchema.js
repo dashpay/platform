@@ -288,8 +288,11 @@ module.exports = {
               required: ['docker', 'p2p', 'rpc', 'validatorKey', 'nodeKey', 'genesis'],
               additionalProperties: false,
             },
+            skipAssetLockConfirmationValidation: {
+              type: 'boolean',
+            },
           },
-          required: ['mongodb', 'abci', 'tenderdash'],
+          required: ['mongodb', 'abci', 'tenderdash', 'skipAssetLockConfirmationValidation'],
           additionalProperties: false,
         },
         dpns: {
