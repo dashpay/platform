@@ -33,6 +33,15 @@ class SimplifiedMasternodeList {
   getStore() {
     return this.store;
   }
+
+  /**
+   * Reset the SML store
+   *
+   * @return {void}
+   */
+  reset() {
+    this.store = undefined;
+  }
 }
 
 module.exports = SimplifiedMasternodeList;

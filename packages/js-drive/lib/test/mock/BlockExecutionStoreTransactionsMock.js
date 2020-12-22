@@ -14,6 +14,7 @@ class BlockExecutionStoreTransactionsMock {
     this.abort = sinon.stub();
     this.getTransaction = sinon.stub();
     this.clone = sinon.stub();
+    this.isStarted = sinon.stub();
   }
 }
 

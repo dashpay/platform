@@ -25,7 +25,7 @@ describe('beginBlockHandlerFactory', () => {
   let blockExecutionContextMock;
   let header;
   let updateSimplifiedMasternodeListMock;
-  let waitForChainlockedHeightMock;
+  let waitForChainLockedHeightMock;
 
   beforeEach(function beforeEach() {
     chainInfo = new ChainInfo();
@@ -42,7 +42,7 @@ describe('beginBlockHandlerFactory', () => {
     };
 
     updateSimplifiedMasternodeListMock = this.sinon.stub();
-    waitForChainlockedHeightMock = this.sinon.stub();
+    waitForChainLockedHeightMock = this.sinon.stub();
 
     beginBlockHandler = beginBlockHandlerFactory(
       chainInfo,
@@ -50,7 +50,7 @@ describe('beginBlockHandlerFactory', () => {
       blockExecutionContextMock,
       protocolVersion,
       updateSimplifiedMasternodeListMock,
-      waitForChainlockedHeightMock,
+      waitForChainLockedHeightMock,
       loggerMock,
     );
 
@@ -83,7 +83,8 @@ describe('beginBlockHandlerFactory', () => {
     expect(blockExecutionContextMock.reset).to.be.calledOnce();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(coreHeight);
-    expect(waitForChainlockedHeightMock).to.be.calledOnceWithExactly(coreHeight);
+    expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreHeight);
+    expect(blockExecutionDBTransactionsMock.abort).to.be.not.called();
   });
 
   it('should reject not supported protocol version', async () => {
@@ -98,5 +99,21 @@ describe('beginBlockHandlerFactory', () => {
       expect(err.message).to.equal('Block protocol version 42 not supported. Expected to be less or equal to 0.');
       expect(err.name).to.equal('NotSupportedProtocolVersionError');
     }
+  });
+
+  it('should abort already started transactions', async () => {
+    blockExecutionDBTransactionsMock.isStarted.returns(true);
+
+    const response = await beginBlockHandler(request);
+
+    expect(response).to.be.an.instanceOf(ResponseBeginBlock);
+
+    expect(chainInfo.getLastBlockHeight()).to.equal(blockHeight);
+    expect(blockExecutionDBTransactionsMock.start).to.be.calledOnce();
+    expect(blockExecutionContextMock.reset).to.be.calledOnce();
+    expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
+    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(coreHeight);
+    expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreHeight);
+    expect(blockExecutionDBTransactionsMock.abort).to.be.calledOnce();
   });
 });

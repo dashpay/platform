@@ -70,7 +70,7 @@
     "@dashevo/dashd-zmq": "^1.2.0",
     "@dashevo/dpp": "~0.17.0-dev.4",
     "@dashevo/merk": "github:dashevo/node-merk",
-    "@dashevo/abci": "^0.17.0-dev.1",
+    "@dashevo/abci": "^0.17.0-dev.3",
     "ajv": "^6.10.0",
     "ajv-keywords": "^3.5.2",
     "awilix": "^4.2.5",

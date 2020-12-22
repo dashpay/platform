@@ -94,12 +94,17 @@ const createDIContainer = require('../lib/createDIContainer');
   }
 
   logger.info('Waining for initial Core ChainLocked height...');
-  const waitForChainlockedHeight = container.resolve('waitForChainlockedHeight');
-  await waitForChainlockedHeight(process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT);
+  const waitForChainLockedHeight = container.resolve('waitForChainLockedHeight');
+  const initialCoreChainLockedHeight = container.resolve('initialCoreChainLockedHeight');
+  await waitForChainLockedHeight(initialCoreChainLockedHeight);
 
   const server = createServer(
     container.resolve('abciHandlers'),
   );
+
+  server.on('error', async (e) => {
+    await errorHandler(e);
+  });
 
   server.listen(
     container.resolve('abciPort'),

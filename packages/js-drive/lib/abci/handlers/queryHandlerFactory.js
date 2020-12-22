@@ -5,9 +5,10 @@ const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
 /**
  * @param {Object} queryHandlerRouter
  * @param {Function} sanitizeUrl
+ * @param {BaseLogger} logger
  * @return {queryHandler}
  */
-function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
+function queryHandlerFactory(queryHandlerRouter, sanitizeUrl, logger) {
   /**
    * Query ABCI handler
    *
@@ -29,10 +30,15 @@ function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
 
     let encodedData = {};
 
+    const decodeData = route.store && route.store.rawData === true;
+
     if (data.length > 0) {
       try {
-        encodedData = cbor.decode(Buffer.from(data));
+        encodedData = decodeData ? Buffer.from(data) : cbor.decode(Buffer.from(data));
       } catch (e) {
+        logger.debug('Can\'t decode data');
+        logger.debug(e);
+
         throw new InvalidArgumentAbciError(invalidDataMessage);
       }
 

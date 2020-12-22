@@ -54,10 +54,12 @@ class ChainInfoExternalStoreRepository {
 
       const {
         lastBlockHeight,
+        lastCoreChainLockedHeight,
       } = cbor.decode(chainInfoEncoded);
 
       return new ChainInfo(
         Long.fromString(lastBlockHeight),
+        lastCoreChainLockedHeight,
       );
     } catch (e) {
       if (e.type === 'NotFoundError') {

@@ -15,6 +15,11 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
+// Workaround for dotenv-safe
+if (process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT === undefined) {
+  process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT = 1;
+}
+
 const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });

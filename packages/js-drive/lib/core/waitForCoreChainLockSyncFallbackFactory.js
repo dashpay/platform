@@ -23,7 +23,7 @@ function waitForCoreChainLockSyncFallbackFactory(
    * @return {Promise<void>}
    */
   async function waitForCoreChainLockSyncFallback() {
-    const signature = Buffer.alloc(32).toString('hex');
+    const signature = Buffer.alloc(96).toString('hex');
 
     coreZMQClient.subscribe(ZMQClient.TOPICS.hashblock);
 
@@ -44,7 +44,7 @@ function waitForCoreChainLockSyncFallbackFactory(
 
       latestCoreChainLock.update(socketChainLock);
 
-      logger.debug(socketChainLock.toJSON(), 'Updated latestCoreChainLock');
+      logger.debug(socketChainLock.toJSON(), `Updated fake latestCoreChainLock for height ${block.height}`);
 
       if (resolveFirstBlockFromZMQPromise) {
         resolveFirstBlockFromZMQPromise();

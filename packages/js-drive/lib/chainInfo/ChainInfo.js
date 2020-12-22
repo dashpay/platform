@@ -4,11 +4,14 @@ class ChainInfo {
   /**
    *
    * @param {Long} [lastBlockHeight]
+   * @param {number} [lastCoreChainLockedHeight]
    */
   constructor(
     lastBlockHeight = Long.fromInt(0),
+    lastCoreChainLockedHeight = 0,
   ) {
     this.lastBlockHeight = lastBlockHeight;
+    this.lastCoreChainLockedHeight = lastCoreChainLockedHeight;
   }
 
   /**
@@ -33,15 +36,38 @@ class ChainInfo {
   }
 
   /**
+   * Get last core chain locked height
+   *
+   * @return {number}
+   */
+  getLastCoreChainLockedHeight() {
+    return this.lastCoreChainLockedHeight;
+  }
+
+  /**
+   * Set last core chain locked height
+   *
+   * @param {number} height
+   * @return {ChainInfo}
+   */
+  setLastCoreChainLockedHeight(height) {
+    this.lastCoreChainLockedHeight = height;
+
+    return this;
+  }
+
+  /**
    * Get plain JS object
    *
    * @return {{
    *    lastBlockHeight: string,
+   *    lastCoreChainLockedHeight: number,
    * }}
    */
   toJSON() {
     return {
       lastBlockHeight: this.getLastBlockHeight().toString(),
+      lastCoreChainLockedHeight: this.getLastCoreChainLockedHeight(),
     };
   }
 }

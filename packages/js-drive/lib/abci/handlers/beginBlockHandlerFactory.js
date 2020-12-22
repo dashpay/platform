@@ -16,7 +16,7 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {Number} protocolVersion - Protocol version
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
- * @param {waitForChainlockedHeight} waitForChainlockedHeight
+ * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {BaseLogger} logger
  *
  * @return {beginBlockHandler}
@@ -27,7 +27,7 @@ function beginBlockHandlerFactory(
   blockExecutionContext,
   protocolVersion,
   updateSimplifiedMasternodeList,
-  waitForChainlockedHeight,
+  waitForChainLockedHeight,
   logger,
 ) {
   /**
@@ -37,25 +37,40 @@ function beginBlockHandlerFactory(
    * @return {Promise<abci.ResponseBeginBlock>}
    */
   async function beginBlockHandler({ header }) {
-    logger.info(`Block begin #${header.height}`);
+    const {
+      coreChainLockedHeight,
+      height,
+      version,
+    } = header;
 
-    const { coreChainLockedHeight } = header;
+    logger.info(`Block begin #${height}`);
 
-    await waitForChainlockedHeight(coreChainLockedHeight);
+    await waitForChainLockedHeight(coreChainLockedHeight);
 
     await updateSimplifiedMasternodeList(coreChainLockedHeight);
 
+    // in case previous block execution failed in process
+    // and not commited. We need to make sure
+    // previous context is reset.
     blockExecutionContext.reset();
 
     blockExecutionContext.setHeader(header);
 
-    chainInfo.setLastBlockHeight(header.height);
+    chainInfo.setLastBlockHeight(height);
+    chainInfo.setLastCoreChainLockedHeight(coreChainLockedHeight);
 
-    if (header.version.app.gt(protocolVersion)) {
+    if (version.app.gt(protocolVersion)) {
       throw new NotSupportedProtocolVersionError(
-        header.version.app,
+        version.app,
         protocolVersion,
       );
+    }
+
+    if (blockExecutionStoreTransactions.isStarted()) {
+      // in case previous block execution failed in process
+      // and not commited. We need to make sure
+      // previous transactions are aborted.
+      await blockExecutionStoreTransactions.abort();
     }
 
     await blockExecutionStoreTransactions.start();

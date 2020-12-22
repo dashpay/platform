@@ -16,7 +16,7 @@ describe('waitForCoreChainLockSyncFallbackFactory', () => {
 
   beforeEach(function beforeEach() {
     height = 1;
-    signature = Buffer.alloc(32).toString('hex');
+    signature = Buffer.alloc(96).toString('hex');
     blockHash = '0000000007e0a65b763c0a4fb2274ff757abdbd19c9efe9de189f5828c70a5f4';
 
     chainLock = {

@@ -1,10 +1,10 @@
 const EventEmitter = require('events');
-const waitForChainlockedHeightFactory = require('../../../lib/core/waitForChainLockedHeightFactory');
+const waitForChainLockedHeightFactory = require('../../../lib/core/waitForChainLockedHeightFactory');
 const MissingChainlockError = require('../../../lib/core/errors/MissingChainLockError');
 const LatestCoreChainLock = require('../../../lib/core/LatestCoreChainLock');
 
 describe('waitForChainLockedHeightFactory', () => {
-  let waitForChainlockedHeight;
+  let waitForChainLockedHeight;
   let latestCoreChainLockMock;
   let chainLock;
   let coreHeight;
@@ -20,7 +20,7 @@ describe('waitForChainLockedHeightFactory', () => {
     latestCoreChainLockMock = new EventEmitter();
     latestCoreChainLockMock.getChainLock = this.sinon.stub().returns(chainLock);
 
-    waitForChainlockedHeight = waitForChainlockedHeightFactory(
+    waitForChainLockedHeight = waitForChainLockedHeightFactory(
       latestCoreChainLockMock,
     );
   });
@@ -29,7 +29,7 @@ describe('waitForChainLockedHeightFactory', () => {
     latestCoreChainLockMock.getChainLock.returns(null);
 
     try {
-      await waitForChainlockedHeight(coreHeight);
+      await waitForChainLockedHeight(coreHeight);
 
       expect.fail();
     } catch (e) {
@@ -40,13 +40,13 @@ describe('waitForChainLockedHeightFactory', () => {
   it('should resolve promise if existing chainlock on the same height or higher', async () => {
     latestCoreChainLockMock.getChainLock.returns(chainLock);
 
-    await waitForChainlockedHeight(coreHeight);
+    await waitForChainLockedHeight(coreHeight);
   });
 
   it('should resolve when chainLock height to be equal or higher', (done) => {
     coreHeight = chainLock.height + 1;
 
-    waitForChainlockedHeight(coreHeight)
+    waitForChainLockedHeight(coreHeight)
       .then(() => {
         expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnce();
 

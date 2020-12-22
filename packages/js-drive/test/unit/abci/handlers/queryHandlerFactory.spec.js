@@ -11,11 +11,17 @@ describe('queryHandlerFactory', () => {
   let sanitizeUrlMock;
   let request;
   let routeMock;
+  let loggerMock;
 
   beforeEach(function beforeEach() {
     request = {
       path: '/identity',
       data: cbor.encode(Buffer.from('data')),
+    };
+
+    loggerMock = {
+      trace: this.sinon.stub(),
+      debug: this.sinon.stub(),
     };
 
     sanitizeUrlMock = this.sinon.stub();
@@ -32,6 +38,7 @@ describe('queryHandlerFactory', () => {
     queryHandler = queryHandlerFactory(
       queryHandlerRouterMock,
       sanitizeUrlMock,
+      loggerMock,
     );
   });
 

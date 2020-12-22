@@ -49,6 +49,7 @@ describe('updateSimplifiedMasternodeListFactory', () => {
 
     simplifiedMasternodeListMock = {
       applyDiffs: this.sinon.stub(),
+      reset: this.sinon.stub(),
     };
 
     smlMaxListsLimit = 2;
@@ -162,9 +163,9 @@ describe('updateSimplifiedMasternodeListFactory', () => {
 
   it('should not update more than 16 diffs', async () => {
     await updateSimplifiedMasternodeList(coreHeight); // 3
-    await updateSimplifiedMasternodeList(coreHeight + 10); // 2
+    await updateSimplifiedMasternodeList(coreHeight + 10); // 3
 
-    const proTxCallCount = 3 + 2;
+    const proTxCallCount = 3 + 3;
 
     expect(coreRpcClientMock.protx.callCount).to.equal(proTxCallCount);
   });

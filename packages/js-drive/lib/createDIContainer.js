@@ -93,6 +93,7 @@ const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
 const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory');
+const initChainHandlerFactory = require('./abci/handlers/initChainHandlerFactory');
 const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
 const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
@@ -103,7 +104,7 @@ const waitForCoreChainLockSyncFallbackFactory = require('./core/waitForCoreChain
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegtestModeFactory');
 const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMasternodeListFactory');
-const waitForChainlockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
+const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 const decodeChainLock = require('./core/decodeChainLock');
 const populateMongoDbTransactionFromObjectFactory = require('./document/populateMongoDbTransactionFromObjectFactory');
@@ -112,6 +113,7 @@ const FileDb = require('./fileDb/FileDb');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const SpentAssetLockTransactionsStoreRootTreeLeaf = require('./identity/SpentAssetLockTransactionsStoreRootTreeLeaf');
 const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneToPreviousStoreTransactionsFactory');
+
 /**
  *
  * @param {Object} options
@@ -236,6 +238,9 @@ async function createDIContainer(options) {
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
     smlMaxListsLimit: asValue(16),
+    initialCoreChainLockedHeight: asValue(
+      parseInt(options.INITIAL_CORE_CHAINLOCKED_HEIGHT, 10),
+    ),
   });
 
   /**
@@ -646,6 +651,7 @@ async function createDIContainer(options) {
   });
 
   const chainInfoRepository = container.resolve('chainInfoRepository');
+
   const chainInfo = await chainInfoRepository.fetch();
 
   container.register({
@@ -906,7 +912,7 @@ async function createDIContainer(options) {
     updateSimplifiedMasternodeList: asFunction(updateSimplifiedMasternodeListFactory).singleton(),
   });
   container.register({
-    waitForChainlockedHeight: asFunction(waitForChainlockedHeightFactory).singleton(),
+    waitForChainLockedHeight: asFunction(waitForChainLockedHeightFactory).singleton(),
   });
   container.register({
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
@@ -945,7 +951,7 @@ async function createDIContainer(options) {
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
       router.on('GET', '/identities/by-public-key-hash/id', identityIdsByPublicKeyHashesQueryHandler);
-      router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler);
+      router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler, { rawData: true });
 
       return router;
     }).singleton(),
@@ -954,6 +960,7 @@ async function createDIContainer(options) {
     checkTxHandler: asFunction(checkTxHandlerFactory).singleton(),
     beginBlockHandler: asFunction(beginBlockHandlerFactory).singleton(),
     deliverTxHandler: asFunction(deliverTxHandlerFactory).singleton(),
+    initChainHandler: asFunction(initChainHandlerFactory).singleton(),
     endBlockHandler: asFunction(endBlockHandlerFactory).singleton(),
     commitHandler: asFunction(commitHandlerFactory).singleton(),
     queryHandler: asFunction(queryHandlerFactory).singleton(),
@@ -966,6 +973,7 @@ async function createDIContainer(options) {
       checkTxHandler,
       beginBlockHandler,
       deliverTxHandler,
+      initChainHandler,
       endBlockHandler,
       commitHandler,
       wrapInErrorHandler,
@@ -975,6 +983,7 @@ async function createDIContainer(options) {
       checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
       beginBlock: beginBlockHandler,
       deliverTx: wrapInErrorHandler(deliverTxHandler),
+      initChain: initChainHandler,
       endBlock: endBlockHandler,
       commit: commitHandler,
       query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),

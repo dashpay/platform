@@ -56,6 +56,13 @@ function updateSimplifiedMasternodeListFactory(
       throw new NotEnoughBlocksForValidSMLError(coreHeight);
     }
 
+    // When we got more than 16 blocks of difference between last requested height
+    // and core height, we take only last 16 of them.
+    if (coreHeight - latestRequestedHeight > smlMaxListsLimit) {
+      latestRequestedHeight = 1;
+      simplifiedMasternodeList.reset();
+    }
+
     if (latestRequestedHeight === 1) {
       // Initialize SML with 16 diffs to have enough quorum information
       // to be able to verify signatures
@@ -76,11 +83,6 @@ function updateSimplifiedMasternodeListFactory(
       logger.debug(`SML is initialized for heights ${startHeight} to ${coreHeight}`);
     } else if (latestRequestedHeight < coreHeight) {
       // Update SML
-
-      // We need only last 16 blocks for signature verification
-      if (coreHeight - latestRequestedHeight > smlMaxListsLimit) {
-        latestRequestedHeight = coreHeight - smlMaxListsLimit;
-      }
 
       const smlDiffs = await fetchDiffsPerBlock(latestRequestedHeight, coreHeight);
 
