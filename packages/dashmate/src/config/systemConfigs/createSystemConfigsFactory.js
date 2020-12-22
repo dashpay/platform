@@ -2,6 +2,8 @@ const Config = require('../Config');
 
 const ConfigCollection = require('../ConfigCollection');
 
+const packageJson = require('../../../package.json');
+
 /**
  * @param {Object} systemConfigs
  * @return {createSystemConfigs}
@@ -16,7 +18,7 @@ function createSystemConfigsFactory(systemConfigs) {
       new Config(name, options)
     ));
 
-    return new ConfigCollection(configs, 'base');
+    return new ConfigCollection(configs, 'base', packageJson.version);
   }
 
   return createSystemConfigs;

@@ -15,6 +15,7 @@ const ensureHomeDirFactory = require('./config/configFile/ensureHomeDirFactory')
 const ConfigJsonFileRepository = require('./config/configFile/ConfigJsonFileRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
 const resetSystemConfigFactory = require('./config/systemConfigs/resetSystemConfigFactory');
+const migrateConfigOptions = require('./config/migrateConfigOptions');
 const systemConfigs = require('./config/systemConfigs/systemConfigs');
 
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
@@ -67,6 +68,7 @@ async function createDIContainer(options) {
     systemConfigs: asValue(systemConfigs),
     createSystemConfigs: asFunction(createSystemConfigsFactory),
     resetSystemConfig: asFunction(resetSystemConfigFactory),
+    migrateConfigOptions: asValue(migrateConfigOptions),
     // `configCollection` and `config` are registering on command init
   });
 

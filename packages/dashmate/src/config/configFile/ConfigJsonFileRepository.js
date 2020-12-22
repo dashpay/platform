@@ -10,12 +10,15 @@ const configFileJsonSchema = require('./configFileJsonSchema');
 const ConfigFileNotFoundError = require('../errors/ConfigFileNotFoundError');
 const InvalidConfigFileFormatError = require('../errors/InvalidConfigFileFormatError');
 
+const packageJson = require('../../../package.json');
+
 class ConfigJsonFileRepository {
   /**
    * @param configFilePath
    */
-  constructor(configFilePath) {
+  constructor(configFilePath, migrateConfigOptions) {
     this.configFilePath = configFilePath;
+    this.migrateConfigOptions = migrateConfigOptions;
     this.ajv = new Ajv();
   }
 
@@ -49,12 +52,21 @@ class ConfigJsonFileRepository {
     let configs;
     try {
       configs = Object.entries(configFileData.configs)
-        .map(([name, options]) => new Config(name, options));
+        .map(([name, options]) => {
+          const migratedOptions = this.migrateConfigOptions(
+            name,
+            options,
+            configFileData.configFormatVersion,
+            packageJson.version,
+          );
+
+          return new Config(name, migratedOptions);
+        });
     } catch (e) {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
-    return new ConfigCollection(configs, configFileData.defaultConfigName);
+    return new ConfigCollection(configs, configFileData.defaultConfigName, packageJson.version);
   }
 
   /**
@@ -66,6 +78,7 @@ class ConfigJsonFileRepository {
   async write(configCollection) {
     const configFileData = {
       defaultConfigName: configCollection.getDefaultConfigName(),
+      configFormatVersion: configCollection.getConfigFormatVersion(),
     };
 
     configFileData.configs = configCollection.getAllConfigs().reduce((configsMap, config) => {

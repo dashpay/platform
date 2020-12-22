@@ -8,7 +8,7 @@ class ConfigCollection {
    * @param {Config[]} [configs]
    * @param {string|null} [currentConfigName=null]
    */
-  constructor(configs = [], currentConfigName = null) {
+  constructor(configs = [], currentConfigName = null, currentConfigFormatVersion) {
     this.configsMap = configs.reduce((configsMap, config) => {
       // eslint-disable-next-line no-param-reassign
       configsMap[config.getName()] = config;
@@ -17,6 +17,7 @@ class ConfigCollection {
     }, {});
 
     this.setDefaultConfigName(currentConfigName);
+    this.setConfigFormatVersion(currentConfigFormatVersion);
   }
 
   /**
@@ -51,6 +52,27 @@ class ConfigCollection {
    */
   getDefaultConfigName() {
     return this.defaultConfigName;
+  }
+
+  /**
+   * Set current config format version
+   *
+   * @param {string} version
+   * @returns {ConfigCollection}
+   */
+  setConfigFormatVersion(version) {
+    this.configFormatVersion = version;
+
+    return this;
+  }
+
+  /**
+   * Get current config format version if set
+   *
+   * @returns {string|null}
+   */
+  getConfigFormatVersion() {
+    return this.configFormatVersion;
   }
 
   /**
