@@ -10,7 +10,7 @@ const ZMQClient = require('@dashevo/dashd-zmq');
 async function ensureBlock(zmqClient, rpcClient, hash) {
   const eventPromise = new Promise((resolve) => {
     const onHashBlock = (response) => {
-      if (hash === response) {
+      if (hash.toString('hex') === response.toString('hex')) {
         zmqClient.removeListener(ZMQClient.TOPICS.hashblock, onHashBlock);
 
         resolve(response);
@@ -21,7 +21,7 @@ async function ensureBlock(zmqClient, rpcClient, hash) {
   });
 
   try {
-    await rpcClient.getBlock(hash);
+    await rpcClient.getBlock(hash.toString('hex'));
   } catch (e) {
     // Block not found
     if (e.code === -5) {
