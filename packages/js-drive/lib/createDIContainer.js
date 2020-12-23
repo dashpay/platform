@@ -150,6 +150,8 @@ const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneT
  * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  * @param {string} options.DPNS_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.DPNS_CONTRACT_ID
+ * @param {string} options.DASHPAY_CONTRACT_ID
+ * @param {string} options.DASHPAY_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.LOGGING_LEVEL
  * @param {string} options.NODE_ENV
@@ -159,6 +161,10 @@ const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneT
 async function createDIContainer(options) {
   if (options.DPNS_CONTRACT_ID && !options.DPNS_CONTRACT_BLOCK_HEIGHT) {
     throw new Error('DPNS_CONTRACT_BLOCK_HEIGHT must be set');
+  }
+
+  if (options.DASHPAY_CONTRACT_ID && !options.DASHPAY_CONTRACT_BLOCK_HEIGHT) {
+    throw new Error('DASHPAY_CONTRACT_BLOCK_HEIGHT must be set');
   }
 
   const container = createAwilixContainer({
@@ -233,6 +239,12 @@ async function createDIContainer(options) {
         ? Identifier.from(options.DPNS_CONTRACT_ID)
         : undefined,
     ),
+    dashpayContractId: asValue(
+      options.DASHPAY_CONTRACT_ID
+        ? Identifier.from(options.DASHPAY_CONTRACT_ID)
+        : undefined,
+    ),
+    dashpayContractBlockHeight: asValue(parseInt(options.DASHPAY_CONTRACT_BLOCK_HEIGHT, 10)),
     network: asValue(options.NETWORK),
     loggingLevel: asValue(options.LOGGING_LEVEL),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),

@@ -16,6 +16,7 @@ const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHa
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 const NoDPNSContractFoundError = require('../../../../lib/abci/handlers/errors/NoDPNSContractFoundError');
+const NoDashpayContractFoundError = require('../../../../lib/abci/handlers/errors/NoDashpayContractFoundError');
 
 describe('endBlockHandlerFactory', () => {
   let endBlockHandler;
@@ -24,6 +25,8 @@ describe('endBlockHandlerFactory', () => {
   let blockExecutionContextMock;
   let dpnsContractId;
   let dpnsContractBlockHeight;
+  let dashpayContractId;
+  let dashpayContractBlockHeight;
   let latestCoreChainLockMock;
   let loggerMock;
   let chainLockMock;
@@ -57,10 +60,15 @@ describe('endBlockHandlerFactory', () => {
     dpnsContractId = generateRandomIdentifier();
     dpnsContractBlockHeight = 2;
 
+    dashpayContractId = generateRandomIdentifier();
+    dashpayContractBlockHeight = 2;
+
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
       dpnsContractBlockHeight,
       dpnsContractId,
+      dashpayContractBlockHeight,
+      dashpayContractId,
       latestCoreChainLockMock,
       loggerMock,
     );
@@ -73,6 +81,8 @@ describe('endBlockHandlerFactory', () => {
   it('should simply return a response if DPNS contract was not set', async () => {
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
+      undefined,
+      undefined,
       undefined,
       undefined,
       latestCoreChainLockMock,
@@ -88,6 +98,16 @@ describe('endBlockHandlerFactory', () => {
   });
 
   it('should return a response if DPNS contract is present at specified height', async () => {
+    endBlockHandler = endBlockHandlerFactory(
+      blockExecutionContextMock,
+      dpnsContractBlockHeight,
+      dpnsContractId,
+      undefined,
+      undefined,
+      latestCoreChainLockMock,
+      loggerMock,
+    );
+
     const response = await endBlockHandler(requestMock);
 
     expect(response).to.be.an.instanceOf(ResponseEndBlock);
@@ -100,6 +120,16 @@ describe('endBlockHandlerFactory', () => {
   });
 
   it('should throw and error if DPNS contract is not present at specified height', async () => {
+    endBlockHandler = endBlockHandlerFactory(
+      blockExecutionContextMock,
+      dpnsContractBlockHeight,
+      dpnsContractId,
+      undefined,
+      undefined,
+      latestCoreChainLockMock,
+      loggerMock,
+    );
+
     blockExecutionContextMock.hasDataContract.returns(false);
 
     try {
@@ -133,5 +163,76 @@ describe('endBlockHandlerFactory', () => {
     });
 
     expect(response.nextCoreChainLockUpdate).to.deep.equal(expectedCoreChainLock);
+  });
+
+  it('should simply return a response if Dashpay contract was not set', async () => {
+    endBlockHandler = endBlockHandlerFactory(
+      blockExecutionContextMock,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      latestCoreChainLockMock,
+      loggerMock,
+    );
+
+    const response = await endBlockHandler(requestMock);
+
+    expect(response).to.be.an.instanceOf(ResponseEndBlock);
+    expect(response.toJSON()).to.be.empty();
+
+    expect(blockExecutionContextMock.hasDataContract).to.not.have.been.called();
+  });
+
+  it('should return a response if Dashpay contract is present at specified height', async () => {
+    endBlockHandler = endBlockHandlerFactory(
+      blockExecutionContextMock,
+      undefined,
+      undefined,
+      dashpayContractBlockHeight,
+      dashpayContractId,
+      latestCoreChainLockMock,
+      loggerMock,
+    );
+
+    const response = await endBlockHandler(requestMock);
+
+    expect(response).to.be.an.instanceOf(ResponseEndBlock);
+
+    expect(response.toJSON()).to.be.empty();
+
+    expect(blockExecutionContextMock.hasDataContract).to.have.been.calledOnceWithExactly(
+      dashpayContractId,
+    );
+  });
+
+  it('should throw and error if Dashpay contract is not present at specified height', async () => {
+    endBlockHandler = endBlockHandlerFactory(
+      blockExecutionContextMock,
+      undefined,
+      undefined,
+      dashpayContractBlockHeight,
+      dashpayContractId,
+      latestCoreChainLockMock,
+      loggerMock,
+    );
+
+    blockExecutionContextMock.hasDataContract.returns(false);
+
+    try {
+      await endBlockHandler(requestMock);
+
+      expect.fail('Error was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(NoDashpayContractFoundError);
+      expect(e.getContractId()).to.equal(dashpayContractId);
+      expect(e.getHeight()).to.equal(dashpayContractBlockHeight);
+
+      expect(blockExecutionContextMock.hasDataContract).to.have.been.calledOnceWithExactly(
+        dashpayContractId,
+      );
+
+      expect(latestCoreChainLockMock.getChainLock).to.have.not.been.called();
+    }
   });
 });

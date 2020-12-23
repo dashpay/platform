@@ -10,6 +10,7 @@ const {
 } = require('@dashevo/abci/types');
 
 const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
+const NoDashpayContractFoundError = require('./errors/NoDashpayContractFoundError');
 
 /**
  * Begin block ABCI handler
@@ -17,6 +18,8 @@ const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {number|undefined} dpnsContractBlockHeight
  * @param {Identifier|undefined} dpnsContractId
+ * @param {number|undefined} dashpayContractBlockHeight
+ * @param {Identifier|undefined} dashpayContractId
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {BaseLogger} logger
  *
@@ -26,6 +29,8 @@ function endBlockHandlerFactory(
   blockExecutionContext,
   dpnsContractBlockHeight,
   dpnsContractId,
+  dashpayContractBlockHeight,
+  dashpayContractId,
   latestCoreChainLock,
   logger,
 ) {
@@ -42,6 +47,12 @@ function endBlockHandlerFactory(
     if (dpnsContractId && height === dpnsContractBlockHeight) {
       if (!blockExecutionContext.hasDataContract(dpnsContractId)) {
         throw new NoDPNSContractFoundError(dpnsContractId, dpnsContractBlockHeight);
+      }
+    }
+
+    if (dashpayContractId && height === dashpayContractBlockHeight) {
+      if (!blockExecutionContext.hasDataContract(dashpayContractId)) {
+        throw new NoDashpayContractFoundError(dashpayContractId, dashpayContractBlockHeight);
       }
     }
 
