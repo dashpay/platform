@@ -1,4 +1,4 @@
-const ZMQClient = require('@dashevo/dashd-zmq');
+const ZMQClient = require('./ZmqClient');
 
 /**
  *

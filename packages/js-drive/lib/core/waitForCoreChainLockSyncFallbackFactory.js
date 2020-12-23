@@ -1,6 +1,6 @@
 const { ChainLock } = require('@dashevo/dashcore-lib');
 
-const ZMQClient = require('@dashevo/dashd-zmq');
+const ZMQClient = require('./ZmqClient');
 
 /**
  *
@@ -35,7 +35,7 @@ function waitForCoreChainLockSyncFallbackFactory(
     });
 
     coreZMQClient.on(ZMQClient.TOPICS.hashblock, async (blockHash) => {
-      const { result: block } = await coreRpcClient.getBlock(blockHash);
+      const { result: block } = await coreRpcClient.getBlock(blockHash.toString('hex'));
       const socketChainLock = new ChainLock({
         height: block.height,
         blockHash,

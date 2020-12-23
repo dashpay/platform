@@ -1,6 +1,6 @@
 const { ChainLock } = require('@dashevo/dashcore-lib');
 
-const ZMQClient = require('@dashevo/dashd-zmq');
+const ZMQClient = require('./ZmqClient');
 
 const ensureBlock = require('./ensureBlock');
 

@@ -31,7 +31,7 @@
     "abci": "node scripts/abci",
     "lint": "eslint .",
     "test": "npm run test:coverage",
-    "test:coverage": "nyc --check-coverage --stmts=95 --branch=86 --funcs=93 --lines=95 mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
+    "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=93 mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'",
     "check-package": "npm run check-package:name && npm run check-package:version",
@@ -96,6 +96,7 @@
     "pino-pretty": "^4.0.3",
     "rimraf": "^3.0.2",
     "setimmediate": "^1.0.5",
-    "through2": "^3.0.1"
+    "through2": "^3.0.1",
+    "zeromq": "~5.2.0"
   }
 }

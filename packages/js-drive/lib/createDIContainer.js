@@ -16,7 +16,6 @@ const Merk = require('@dashevo/merk');
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
-const ZMQClient = require('@dashevo/dashd-zmq');
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
@@ -24,6 +23,8 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const findMyWay = require('find-my-way');
 
 const pino = require('pino');
+
+const ZMQClient = require('./core/ZmqClient');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
@@ -291,11 +292,10 @@ async function createDIContainer(options) {
     coreZMQClient: asFunction((
       coreZMQHost,
       coreZMQPort,
+      coreZMQConnectionRetries,
     ) => (
-      new ZMQClient({
-        protocol: 'tcp',
-        host: coreZMQHost,
-        port: coreZMQPort,
+      new ZMQClient(coreZMQHost, coreZMQPort, {
+        maxRetryCount: coreZMQConnectionRetries,
       }))).singleton(),
 
     coreRpcClient: asFunction((
