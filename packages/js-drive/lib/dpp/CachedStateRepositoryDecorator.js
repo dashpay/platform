@@ -164,6 +164,15 @@ class CachedStateRepositoryDecorator {
   async fetchLatestPlatformBlockHeader() {
     return this.stateRepository.fetchLatestPlatformBlockHeader();
   }
+
+  /**
+   * Fetch Simplified Masternode List Store
+   *
+   * @return {Promise<SimplifiedMNListStore>}
+   */
+  async fetchSMLStore() {
+    return this.stateRepository.fetchSMLStore();
+  }
 }
 
 module.exports = CachedStateRepositoryDecorator;

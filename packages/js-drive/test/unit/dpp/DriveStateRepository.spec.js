@@ -21,6 +21,7 @@ describe('DriveStateRepository', () => {
   let dataContract;
   let transactionMock;
   let blockExecutionContextMock;
+  let simplifiedMasternodeListMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -69,6 +70,10 @@ describe('DriveStateRepository', () => {
       getHeader: this.sinon.stub(),
     };
 
+    simplifiedMasternodeListMock = {
+      getStore: this.sinon.stub(),
+    };
+
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
       publicKeyIdentityIdRepositoryMock,
@@ -78,6 +83,7 @@ describe('DriveStateRepository', () => {
       spentAssetLockTransactionsRepositoryMock,
       coreRpcClientMock,
       blockExecutionContextMock,
+      simplifiedMasternodeListMock,
       blockExecutionDBTransactionsMock,
     );
 
@@ -307,6 +313,18 @@ describe('DriveStateRepository', () => {
 
       expect(result).to.deep.equal(header);
       expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchSMLStore', () => {
+    it('should fetch SML store', async () => {
+      const smlStore = {};
+
+      simplifiedMasternodeListMock.getStore.resolves(smlStore);
+
+      const result = await stateRepository.fetchSMLStore();
+
+      expect(result).to.equal(smlStore);
     });
   });
 });

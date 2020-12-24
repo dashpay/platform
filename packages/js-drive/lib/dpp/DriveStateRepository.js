@@ -8,6 +8,7 @@ class DriveStateRepository {
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
+   * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {BlockExecutionStoreTransactions} [blockExecutionStoreTransactions]
    */
   constructor(
@@ -19,6 +20,7 @@ class DriveStateRepository {
     spentAssetLockTransactionsRepository,
     coreRpcClient,
     blockExecutionContext,
+    simplifiedMasternodeList,
     blockExecutionStoreTransactions = undefined,
   ) {
     this.identityRepository = identityRepository;
@@ -30,6 +32,7 @@ class DriveStateRepository {
     this.coreRpcClient = coreRpcClient;
     this.blockExecutionStoreTransactions = blockExecutionStoreTransactions;
     this.blockExecutionContext = blockExecutionContext;
+    this.simplifiedMasternodeList = simplifiedMasternodeList;
   }
 
   /**
@@ -226,6 +229,15 @@ class DriveStateRepository {
    */
   async fetchLatestPlatformBlockHeader() {
     return this.blockExecutionContext.getHeader();
+  }
+
+  /**
+   * Fetch Simplified Masternode List Store
+   *
+   * @return {Promise<SimplifiedMNListStore>}
+   */
+  async fetchSMLStore() {
+    return this.simplifiedMasternodeList.getStore();
   }
 
   /**

@@ -807,6 +807,7 @@ async function createDIContainer(options) {
       coreRpcClient,
       dataContractCache,
       blockExecutionContext,
+      simplifiedMasternodeList,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -817,6 +818,7 @@ async function createDIContainer(options) {
         spentAssetLockTransactionsRepository,
         coreRpcClient,
         blockExecutionContext,
+        simplifiedMasternodeList,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -837,6 +839,7 @@ async function createDIContainer(options) {
       dataContractCache,
       blockExecutionContext,
       logger,
+      simplifiedMasternodeList,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -847,6 +850,7 @@ async function createDIContainer(options) {
         spentAssetLockTransactionsRepository,
         coreRpcClient,
         blockExecutionContext,
+        simplifiedMasternodeList,
         blockExecutionStoreTransactions,
       );
 
