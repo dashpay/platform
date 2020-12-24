@@ -15,6 +15,7 @@ const {
   v0: {
     TransactionsWithProofsResponse,
     RawTransactions,
+    InstantSendLockMessages,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -63,8 +64,11 @@ async function sendMerkleBlockResponse(call, merkleBlock) {
  * @returns {Promise<void>}
  */
 async function sendInstantLockResponse(call, instantLock) {
+  const instantSendLockMessages = new InstantSendLockMessages();
+  instantSendLockMessages.setMessagesList([instantLock.toBuffer()]);
+
   const response = new TransactionsWithProofsResponse();
-  response.setInstantSendLockMessages([instantLock.toBuffer()]);
+  response.setInstantSendLockMessages(instantSendLockMessages);
 
   await call.write(response);
 }
