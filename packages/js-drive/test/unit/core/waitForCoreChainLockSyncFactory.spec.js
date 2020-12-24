@@ -9,13 +9,16 @@ describe('waitForCoreChainLockSyncFactory', () => {
   let coreZMQClientMock;
   let latestCoreChainLock;
   let chainLock;
+  let rawChainLockSigMessage;
 
   beforeEach(function beforeEach() {
     chainLock = {
-      height: 84202,
-      blockHash: '0000000007e0a65b763c0a4fb2274ff757abdbd19c9efe9de189f5828c70a5f4',
-      signature: '0a43f1c3e5b3e8dbd670bca8d437dc25572f72d8e1e9be673e9ebbb606570307c3e5f5d073f7beb209dd7e0b8f96c751060ab3a7fb69a71d5ccab697b8cfa5a91038a6fecf76b7a827d75d17f01496302942aa5e2c7f4a48246efc8d3941bf6c',
+      blockHash: '0000003df90e1cec3fea6bd17508f653cea093c536199e9d50a05bd69ee23b5d',
+      height: 3887,
+      signature: '1770e35c281ebfcf14b8a62071f76146eb0a5ede6fb43543a9c0ccddf3cf87fcdd0a96eea867595bb980dcea13e6283f16744631df895404434c7840f9b3d9c1069790a0459a0d35b7ae353519f5d437ded547f8d65f6c4916e988c842488e7a',
     };
+
+    rawChainLockSigMessage = Buffer.from('00000020fd0ab0fc0fb0cbecb62cf7555aee6a8ce18564a9bbed8b22585d9f8563000000ee131c25019aaee0f1bdde2a5d6eb99ec0b4497e68776f18916951e8ddb6b922dd3be45f62f6011ed18800000103000500010000000000000000000000000000000000000000000000000000000000000000ffffffff05024c0f010bffffffff0200c817a8040000001976a91416b93a3b9168a20605cc3cda62f6135a3baa531a88ac00ac23fc060000001976a91416b93a3b9168a20605cc3cda62f6135a3baa531a88ac000000004602004c0f00003d8e273bf286d48ccba5a87b5adf332ed070a15e4e2d81eeb9ff685373be5656961e0b73ea855fdac9cc530782a7f0a22d25d1eaab4b2068efa647e9da0915d02f0f00005d3be29ed65ba0509d9e1936c593a0ce53f60875d16bea3fec1c0ef93d0000001770e35c281ebfcf14b8a62071f76146eb0a5ede6fb43543a9c0ccddf3cf87fcdd0a96eea867595bb980dcea13e6283f16744631df895404434c7840f9b3d9c1069790a0459a0d35b7ae353519f5d437ded547f8d65f6c4916e988c842488e7a', 'hex');
 
     latestCoreChainLock = new LatestCoreChainLock();
     coreRpcClientMock = {
@@ -52,7 +55,7 @@ describe('waitForCoreChainLockSyncFactory', () => {
     expect(latestCoreChainLock.chainLock.toJSON()).to.deep.equal(chainLock);
 
     expect(coreZMQClientMock.subscribe).to.be.calledTwice();
-    expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.rawchainlock);
+    expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.rawchainlocksig);
     expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.hashblock);
     expect(coreRpcClientMock.getBestChainLock).to.be.calledOnce();
   });
@@ -71,22 +74,17 @@ describe('waitForCoreChainLockSyncFactory', () => {
         expect(latestCoreChainLock.chainLock.toJSON()).to.deep.equal(chainLock);
 
         expect(coreZMQClientMock.subscribe).to.be.calledTwice();
-        expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.rawchainlock);
+        expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.rawchainlocksig);
         expect(coreZMQClientMock.subscribe).to.be.calledWith(ZMQClient.TOPICS.hashblock);
         expect(coreRpcClientMock.getBestChainLock).to.be.calledOnce();
         done();
       });
 
     setImmediate(() => {
-      coreZMQClientMock.emit(ZMQClient.TOPICS.rawchainlock, {
-        height: 84202,
-        blockHash: '0000000007e0a65b763c0a4fb2274ff757abdbd19c9efe9de189f5828c70a5f4',
-        signature: '0a43f1c3e5b3e8dbd670bca8d437dc25572f72d8e1e9be673e9ebbb606570307c3e5f5d073f7beb209dd7e0b8f96c751060ab3a7fb69a71d5ccab697b8cfa5a91038a6fecf76b7a827d75d17f01496302942aa5e2c7f4a48246efc8d3941bf6c',
-      });
-    });
-
-    setImmediate(() => {
-      coreZMQClientMock.emit(ZMQClient.TOPICS.hashblock, '0000000007e0a65b763c0a4fb2274ff757abdbd19c9efe9de189f5828c70a5f4');
+      coreZMQClientMock.emit(
+        ZMQClient.TOPICS.rawchainlocksig,
+        rawChainLockSigMessage,
+      );
     });
   });
 });

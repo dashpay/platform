@@ -1,5 +1,6 @@
 const { ChainLock } = require('@dashevo/dashcore-lib');
 
+const ChainLockSigMessage = require('@dashevo/dashcore-lib/lib/zmqMessages/ChainLockSigMessage');
 const ZMQClient = require('./ZmqClient');
 
 const ensureBlock = require('./ensureBlock');
@@ -29,7 +30,7 @@ function waitForCoreChainLockSyncFactory(
    * @returns {Promise<void>}
    */
   async function waitForCoreChainLockSync() {
-    coreZMQClient.subscribe(ZMQClient.TOPICS.rawchainlock);
+    coreZMQClient.subscribe(ZMQClient.TOPICS.rawchainlocksig);
 
     logger.trace('Subscribe to rawchainlock ZMQ room');
 
@@ -38,10 +39,8 @@ function waitForCoreChainLockSyncFactory(
       resolveFirstChainLockFromZMQPromise = resolve;
     });
 
-    coreZMQClient.on(ZMQClient.TOPICS.rawchainlock, async (rawChainLockMessage) => {
-      const socketChainLock = new ChainLock(rawChainLockMessage);
-
-      await ensureBlock(coreZMQClient, coreRpcClient, socketChainLock.blockHash);
+    coreZMQClient.on(ZMQClient.TOPICS.rawchainlocksig, async (rawChainLockMessage) => {
+      const { chainLock: socketChainLock } = new ChainLockSigMessage(rawChainLockMessage);
 
       latestCoreChainLock.update(socketChainLock);
 

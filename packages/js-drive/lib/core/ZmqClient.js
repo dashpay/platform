@@ -10,6 +10,7 @@ const ZMQ_TOPICS = {
   rawtxlock: 'rawtxlock',
   rawtxlocksig: 'rawtxlocksig',
   rawchainlock: 'rawchainlock',
+  rawchainlocksig: 'rawchainlocksig',
 };
 
 const defaultOptions = { topics: ZMQ_TOPICS, maxRetryCount: 20 };
