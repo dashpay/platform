@@ -340,6 +340,23 @@ class LoggedStateRepositoryDecorator {
 
     return response;
   }
+
+  /**
+   * Fetch Simplified Masternode List Store
+   *
+   * @return {Promise<SimplifiedMNListStore>}
+   */
+  async fetchSMLStore() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchSMLStore();
+    } finally {
+      this.log('fetchSMLStore', { }, response);
+    }
+
+    return response;
+  }
 }
 
 module.exports = LoggedStateRepositoryDecorator;
