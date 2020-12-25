@@ -172,13 +172,49 @@ function initTaskFactory(
             dashpayDocumentSchema, ctx.identity,
           );
 
-          await ctx.client.platform.contracts.broadcast(
+          ctx.dashpayStateTransition = await ctx.client.platform.contracts.broadcast(
             ctx.dataContract,
             ctx.identity,
           );
 
+          config.set('platform.dashpay.contract.id', ctx.dataContract.getId().toString());
+
           // eslint-disable-next-line no-param-reassign
           task.output = `Dashpay contract ID: ${ctx.dataContract.getId()}`;
+        },
+        options: { persistentOutput: true },
+      },
+      {
+        title: 'Obtain Dashpay contract commit block height',
+        task: async (ctx, task) => {
+          const stateTransitionHash = crypto.createHash('sha256')
+            .update(ctx.dashpayStateTransition.toBuffer())
+            .digest();
+
+          if (ctx.dapiAddress || config.get('network') !== NETWORKS.LOCAL) {
+            task.skip('Can\'t obtain Dashpay contract commit block height from remote node.'
+              + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
+              + 'and set it to "platform.dashpay.contract.id" config option');
+
+            return;
+          }
+
+          const tenderdashRpcClient = createTenderdashRpcClient();
+
+          const params = { hash: stateTransitionHash.toString('base64') };
+
+          const response = await tenderdashRpcClient.request('tx', params);
+
+          if (response.error) {
+            throw new Error(`Tendermint error: ${response.error.message}: ${response.error.data}`);
+          }
+
+          const { result: { height: contractBlockHeight } } = response;
+
+          config.set('platform.dashpay.contract.blockHeight', contractBlockHeight);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Dashpay contract block height: ${contractBlockHeight}`;
         },
         options: { persistentOutput: true },
       },
