@@ -291,6 +291,9 @@ module.exports = {
             skipAssetLockConfirmationValidation: {
               type: 'boolean',
             },
+            passFakeAssetLockProofForTests: {
+              type: 'boolean',
+            },
           },
           required: ['mongodb', 'abci', 'tenderdash', 'skipAssetLockConfirmationValidation'],
           additionalProperties: false,

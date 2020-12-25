@@ -104,6 +104,7 @@ const baseConfig = {
         },
       },
       skipAssetLockConfirmationValidation: false,
+      passFakeAssetLockProofForTests: false,
     },
     dpns: {
       contract: {
@@ -135,6 +136,7 @@ module.exports = {
       },
       drive: {
         skipAssetLockConfirmationValidation: true,
+        passFakeAssetLockProofForTests: true,
       },
     },
     externalIp: '127.0.0.1',
