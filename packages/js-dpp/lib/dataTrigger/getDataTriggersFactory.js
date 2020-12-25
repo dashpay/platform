@@ -4,8 +4,9 @@ const AbstractDocumentTransition = require('../document/stateTransition/document
 
 const DataTrigger = require('./DataTrigger');
 
+const rejectDataTrigger = require('./rejectDataTrigger');
 const createDomainDataTrigger = require('./dpnsTriggers/createDomainDataTrigger');
-const rejectDataTrigger = require('./dpnsTriggers/rejectDataTrigger');
+const createContactRequestDataTrigger = require('./dashpayDataTriggers/createContactRequestDataTrigger');
 
 /**
  * Get respective data triggers (factory)
@@ -21,6 +22,11 @@ function getDataTriggersFactory() {
   let dpnsTopLevelIdentityId = Buffer.alloc(0);
   if (process.env.DPNS_TOP_LEVEL_IDENTITY) {
     dpnsTopLevelIdentityId = Identifier.from(process.env.DPNS_TOP_LEVEL_IDENTITY);
+  }
+
+  let dashPayDataContractId = Buffer.alloc(0);
+  if (process.env.DASHPAY_CONTRACT_ID) {
+    dashPayDataContractId = Identifier.from(process.env.DASHPAY_CONTRACT_ID);
   }
 
   const dataTriggers = [
@@ -58,6 +64,24 @@ function getDataTriggersFactory() {
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
       dpnsTopLevelIdentityId,
+    ),
+    new DataTrigger(
+      dashPayDataContractId,
+      'contactRequest',
+      AbstractDocumentTransition.ACTIONS.CREATE,
+      createContactRequestDataTrigger,
+    ),
+    new DataTrigger(
+      dashPayDataContractId,
+      'contactRequest',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      dashPayDataContractId,
+      'contactRequest',
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
     ),
   ];
 

@@ -1,5 +1,5 @@
-const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
-const DataTriggerConditionError = require('../../errors/DataTriggerConditionError');
+const DataTriggerExecutionResult = require('./DataTriggerExecutionResult');
+const DataTriggerConditionError = require('../errors/DataTriggerConditionError');
 
 /**
  * Data trigger for domain deletion process

@@ -7,7 +7,7 @@ const getDpnsDocumentFixture = require('../../../lib/test/fixtures/getDpnsDocume
 const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
 
 const createDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
-const rejectDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/rejectDataTrigger');
+const rejectDataTrigger = require('../../../lib/dataTrigger/rejectDataTrigger');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
