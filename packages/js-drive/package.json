@@ -65,10 +65,10 @@
     "sinon-chai": "^3.5.0"
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.16",
+    "@dashevo/dashcore-lib": "~0.19.18",
     "@dashevo/dashd-rpc": "^2.0.2",
     "@dashevo/dashd-zmq": "^1.2.0",
-    "@dashevo/dpp": "~0.17.0-dev.8",
+    "@dashevo/dpp": "~0.17.0-dev.9",
     "@dashevo/merk": "github:dashevo/node-merk",
     "@dashevo/abci": "^0.17.0-dev.3",
     "ajv": "^6.10.0",
