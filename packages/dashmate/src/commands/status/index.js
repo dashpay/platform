@@ -84,7 +84,7 @@ class StatusCommand extends BaseCommand {
     let platformBlockHeight;
     let platformCatchingUp;
     // Collecting platform data fails if Tenderdash is waiting for core to sync
-    if (config.options.network !== 'testnet' && coreIsSynced === true) {
+    if (config.options.network !== 'mainnet' && coreIsSynced === true) {
       const platformStatusRes = await fetch(`http://localhost:${config.options.platform.drive.tendermint.rpc.port}/status`);
       ({
         result: {
@@ -126,7 +126,7 @@ class StatusCommand extends BaseCommand {
     }
 
     let platformStatus;
-    if (config.options.network !== 'testnet') {
+    if (config.options.network !== 'mainnet') {
       try {
         ({
           State: {
@@ -162,7 +162,7 @@ class StatusCommand extends BaseCommand {
       coreStatus = chalk.red(coreStatus);
     }
 
-    if (config.options.network !== 'testnet') {
+    if (config.options.network !== 'mainnet') {
       if (platformStatus === 'running') {
         platformStatus = chalk.green(platformStatus);
       } else if (platformStatus.startsWith('syncing')) {
@@ -185,7 +185,7 @@ class StatusCommand extends BaseCommand {
     if (config.options.core.masternode.enable === true) {
       rows.push(['Masternode Status', (masternodeStatus)]);
     }
-    if (config.options.network !== 'testnet') {
+    if (config.options.network !== 'mainnet') {
       if (coreIsSynced === true) {
         rows.push(['Platform Version', platformVersion]);
       }

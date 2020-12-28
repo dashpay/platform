@@ -4,9 +4,10 @@ const dots = require('dot');
 const glob = require('glob');
 
 /**
+ * @param {string} homeDirPath
  * @return {renderServiceTemplates}
  */
-function renderServiceTemplatesFactory() {
+function renderServiceTemplatesFactory(homeDirPath) {
   /**
    * Render templates for services
    *
@@ -20,7 +21,20 @@ function renderServiceTemplatesFactory() {
 
     const templatesPath = path.join(__dirname, '..', '..', 'templates');
 
-    const templatePaths = glob.sync(`${templatesPath}/**/*.template`);
+    // Don't create blank tenderdash config objects for tenderdash init
+    const skipEmpty = {
+      genesis: 'genesis',
+      node_key: 'nodeKey',
+      priv_validator_key: 'validatorKey',
+    };
+
+    const emptyConfigsMask = Object.keys(skipEmpty).filter((key) => {
+      const option = config.get(`platform.drive.tenderdash.${skipEmpty[key]}`);
+
+      return Object.values(option).length === 0;
+    }).join('|');
+
+    const templatePaths = glob.sync(`${templatesPath}/**/!(${emptyConfigsMask}).*.template`);
 
     const configFiles = {};
     for (const templatePath of templatePaths) {

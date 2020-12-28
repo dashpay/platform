@@ -23,9 +23,9 @@ class CoreStatusCommand extends BaseCommand {
     createRpcClient,
     config,
   ) {
-    if (config.options.network === 'testnet') {
+    if (config.options.network === 'mainnet') {
       // eslint-disable-next-line no-console
-      console.log('Platform is not supported on testnet yet!');
+      console.log('Platform is not supported on mainnet yet!');
       this.exit();
     }
 

@@ -67,8 +67,8 @@ function startNodeTaskFactory(dockerCompose) {
           const envs = config.toEnvs();
 
           if (driveImageBuildPath || dapiImageBuildPath) {
-            if (config.get('network') === NETWORKS.TESTNET) {
-              throw new Error('You can\'t use drive-image-build-path and dapi-image-build-path options with testnet network');
+            if (config.get('network') === NETWORKS.MAINNET) {
+              throw new Error('You can\'t use drive-image-build-path and dapi-image-build-path options with mainnet network');
             }
 
             if (driveImageBuildPath) {

@@ -21,8 +21,13 @@ function writeServiceConfigsFactory(homeDirPath) {
 
       const absoluteConfigDir = path.dirname(absoluteConfigPath);
 
+      // Drop all files from configs directory
+      fs.rmdirSync(absoluteConfigDir, { recursive: true });
+
+      // Recreate it
       fs.mkdirSync(absoluteConfigDir, { recursive: true });
 
+      // Write specified config files
       fs.writeFileSync(absoluteConfigPath, configFiles[configPath], 'utf8');
     }
   }

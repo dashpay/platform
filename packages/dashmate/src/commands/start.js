@@ -27,11 +27,12 @@ class StartCommand extends BaseCommand {
     config,
   ) {
     const isMasternode = config.get('core.masternode.enable');
+    const network = config.get('network');
 
     const tasks = new Listr(
       [
         {
-          title: `Start ${isMasternode ? 'masternode' : 'full node'}`,
+          title: `Start ${network} ${isMasternode ? 'masternode' : 'full node'}`,
           task: () => startNodeTask(
             config,
             {
