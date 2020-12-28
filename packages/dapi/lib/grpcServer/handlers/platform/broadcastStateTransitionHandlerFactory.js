@@ -2,6 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      FailedPreconditionGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -41,6 +42,10 @@ function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseErr
     const { result, error: jsonRpcError } = await rpcClient.request('broadcast_tx_commit', { tx });
 
     if (jsonRpcError) {
+      if (jsonRpcError.data === 'error on broadcastTxCommit: tx already exists in cache') {
+        throw new FailedPreconditionGrpcError(jsonRpcError.data, jsonRpcError);
+      }
+
       const error = new Error();
       Object.assign(error, jsonRpcError);
 
