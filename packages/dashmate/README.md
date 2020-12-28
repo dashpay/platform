@@ -11,6 +11,7 @@ Distribution package for Dash Masternode installation
 - [Install](#install)
 - [Usage](#usage)
   - [Command line interface](#cli)
+  - [Setup node](#setup-node)
   - [Configure node](#configure-node)
   - [Start node](#start-node)
   - [Stop node](#stop-node)
@@ -49,6 +50,32 @@ The package contains a CLI, Docker Compose and configuration files.
 ### CLI
 
 The CLI can be used to perform routine tasks. Invoke the CLI with `mn` if linked during installation, or with `node bin/mn` if not linked. To list available commands, either run `mn` with no parameters or execute `mn help`. To list the help on any command just execute the command, followed by the `--help` option
+
+### Setup node
+
+The `setup` command is used to quickly configure common node configurations. Arguments may be provided as options, otherwise they will be queried interactively with sensible values suggested.
+
+```
+USAGE
+  $ mn setup [PRESET] [NODE-TYPE]
+
+ARGUMENTS
+  PRESET     (testnet|evonet|local) Node configuration preset
+  NODE-TYPE  (masternode|fullnode) Node type
+
+OPTIONS
+  -i, --external-ip=external-ip                            external ip
+  -k, --operator-bls-private-key=operator-bls-private-key  operator bls private key
+  -u, --update                                             download updated services before start
+  -v, --verbose                                            use verbose mode for output
+  --dapi-image-build-path=dapi-image-build-path            dapi's docker image build path
+  --drive-image-build-path=drive-image-build-path          drive's docker image build path
+```
+
+To setup a testnet masternode:
+```bash
+$ mn setup testnet masternode
+```
 
 ### Configure node
 
@@ -229,7 +256,7 @@ mn config:set core.masternode.enable false
 
 ### Development
 
-When developing on a standalone node (a config specifying the `local` network), `setup-for-local-development` can be used to generate some dash, register a masternode and populate the node with the data required for local development.
+When developing on a standalone node (a config specifying the `local` network), `setup local` can be used to generate some dash, register a masternode and populate the node with the data required for local development.
 
 To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command. A Docker image will be built from the provided path and then used by mn-bootstrap.
 
