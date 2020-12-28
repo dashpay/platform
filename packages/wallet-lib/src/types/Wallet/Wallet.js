@@ -9,7 +9,7 @@ const {
 const defaultOptions = {
   debug: false,
   offlineMode: false,
-  network: 'evonet',
+  network: 'testnet',
   plugins: [],
   passphrase: null,
   injectDefaultPlugins: true,
