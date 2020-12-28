@@ -16,19 +16,19 @@ function writeServiceConfigsFactory(homeDirPath) {
    * @return {void}
    */
   function writeServiceConfigs(configName, configFiles) {
-    for (const configPath of Object.keys(configFiles)) {
-      const absoluteConfigPath = path.join(homeDirPath, configName, configPath);
+    // Drop all files from configs directory
+    const configDir = path.join(homeDirPath, configName);
+    fs.rmdirSync(configDir, { recursive: true });
 
-      const absoluteConfigDir = path.dirname(absoluteConfigPath);
-
-      // Drop all files from configs directory
-      fs.rmdirSync(absoluteConfigDir, { recursive: true });
+    for (const filePath of Object.keys(configFiles)) {
+      const absoluteFilePath = path.join(configDir, filePath);
+      const absoluteFileDir = path.dirname(absoluteFilePath);
 
       // Recreate it
-      fs.mkdirSync(absoluteConfigDir, { recursive: true });
+      fs.mkdirSync(absoluteFileDir, { recursive: true });
 
       // Write specified config files
-      fs.writeFileSync(absoluteConfigPath, configFiles[configPath], 'utf8');
+      fs.writeFileSync(absoluteFilePath, configFiles[filePath], 'utf8');
     }
   }
 
