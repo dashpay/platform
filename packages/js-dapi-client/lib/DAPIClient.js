@@ -13,9 +13,9 @@ class DAPIClient {
    */
   constructor(options = {}) {
     this.options = {
-      network: 'evonet',
+      network: 'testnet',
       timeout: 10000,
-      retries: 3,
+      retries: 5,
       ...options,
     };
 
@@ -44,7 +44,7 @@ class DAPIClient {
  * @property {DAPIAddressProvider} [dapiAddressProvider]
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddresses]
  * @property {string[]|RawDAPIAddress[]} [seeds]
- * @property {string|Network} [network=evonet]
+ * @property {string|Network} [network=testnet]
  * @property {number} [timeout=2000]
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]
