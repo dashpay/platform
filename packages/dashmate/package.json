@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dashman",
-  "version": "0.17.0-dev.18",
+  "version": "0.17.0-dev.19",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
