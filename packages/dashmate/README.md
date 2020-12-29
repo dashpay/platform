@@ -1,7 +1,7 @@
-# MN Bootstrap
+# Dashman
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/mn-bootstrap)](https://github.com/dashevo/mn-bootstrap/releases)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/mn-bootstrap)](https://github.com/dashevo/mn-bootstrap/releases/latest)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/dashman)](https://github.com/dashevo/dashman/releases)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/dashman)](https://github.com/dashevo/dashman/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
 Distribution package for Dash Masternode installation
@@ -37,8 +37,8 @@ For Linux installations you may optionally wish to follow the [post-installation
 ### Distribution package
 
 ```bash
-$ git clone -b master https://github.com/dashevo/mn-bootstrap.git
-$ cd mn-bootstrap
+$ git clone -b master https://github.com/dashevo/dashman.git
+$ cd dashman
 $ npm install # optional: install CLI dependencies
 $ sudo npm link # optional: link CLI for system-wide execution
 ```
@@ -49,7 +49,7 @@ The package contains a CLI, Docker Compose and configuration files.
 
 ### CLI
 
-The CLI can be used to perform routine tasks. Invoke the CLI with `mn` if linked during installation, or with `node bin/mn` if not linked. To list available commands, either run `mn` with no parameters or execute `mn help`. To list the help on any command just execute the command, followed by the `--help` option
+The CLI can be used to perform routine tasks. Invoke the CLI with `dashman` if linked during installation, or with `node bin/dashman` if not linked. To list available commands, either run `dashman` with no parameters or execute `dashman help`. To list the help on any command just execute the command, followed by the `--help` option
 
 ### Setup node
 
@@ -57,7 +57,7 @@ The `setup` command is used to quickly configure common node configurations. Arg
 
 ```
 USAGE
-  $ mn setup [PRESET] [NODE-TYPE]
+  $ dashman setup [PRESET] [NODE-TYPE]
 
 ARGUMENTS
   PRESET     (testnet|evonet|local) Node configuration preset
@@ -74,7 +74,7 @@ OPTIONS
 
 To setup a testnet masternode:
 ```bash
-$ mn setup testnet masternode
+$ dashman setup testnet masternode
 ```
 
 ### Configure node
@@ -86,11 +86,11 @@ The `config` command is used to manage your node configuration before starting t
  - evonet - node with Evonet configuration
  - testnet - node with testnet configuration
 
-You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `mn config:create CONFIG [FROM]` command. You must set a default config with `mn config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
+You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `dashman config:create CONFIG [FROM]` command. You must set a default config with `dashman config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
 
 ```
 USAGE
-  $ mn config
+  $ dashman config
 
 OPTIONS
   --config=config  configuration name to use
@@ -115,7 +115,7 @@ The `start` command is used to start a node with the default or specified config
 
 ```
 USAGE
-  $ mn start
+  $ dashman start
 OPTIONS
   -u, --update                                     download updated services before start
   --config=config                                  configuration name to use
@@ -125,7 +125,7 @@ OPTIONS
 
 To start a masternode:
 ```bash
-$ mn start
+$ dashman start
 ```
 
 ### Stop node
@@ -134,14 +134,14 @@ The `stop` command is used to stop a running node.
 
 ```
 USAGE
-  $ mn stop
+  $ dashman stop
 OPTIONS
   --config=config  configuration name to use
 ```
 
 To stop a node:
 ```bash
-$ mn stop
+$ dashman stop
 ```
 
 ### Restart node
@@ -150,7 +150,7 @@ The `restart` command is used to restart a node with the default or specified co
 
 ```
 USAGE
-  $ mn restart
+  $ dashman restart
 
 OPTIONS
   -u, --update                                     download updated services before start
@@ -161,7 +161,7 @@ OPTIONS
 
 To update services and restart a masternode:
 ```bash
-$ mn restart -u
+$ dashman restart -u
 ```
 
 ### Register masternode
@@ -180,7 +180,7 @@ If using a config specifying the `local` network, you can create and fund a new 
 
 ```
 USAGE
-  $ mn wallet:mint AMOUNT
+  $ dashman wallet:mint AMOUNT
 ARGUMENTS
   AMOUNT  amount of dash to be generated to address
 OPTIONS
@@ -190,7 +190,7 @@ OPTIONS
 
 To generate 1001 Dash to a new address:
 ```bash
-mn wallet:mint 1001
+dashman wallet:mint 1001
 ```
 
 #### Masternode registration
@@ -199,7 +199,7 @@ Run the `register` command as described below. The command will first verify suf
 
 ```
 USAGE
-  $ mn register FUNDING-PRIVATE-KEY
+  $ dashman register FUNDING-PRIVATE-KEY
 ARGUMENTS
   FUNDING-PRIVATE-KEY  private key with more than 1000 dash for funding collateral
 OPTIONS
@@ -208,7 +208,7 @@ OPTIONS
 
 To register a masternode:
 ```bash
-$ mn register cVdEfkXLHqftgXzRYZW4EdwtcnJ8Mktw9L4vcEcqbVDs3e2qdzCf
+$ dashman register cVdEfkXLHqftgXzRYZW4EdwtcnJ8Mktw9L4vcEcqbVDs3e2qdzCf
 ```
 
 ### Reset data
@@ -217,14 +217,14 @@ The `reset` command removes all data corresponding to the specified config and a
 
 ```
 USAGE
-  $ mn reset
+  $ dashman reset
 OPTIONS
   --config=config  configuration name to use
 ```
 
 To reset a node:
 ```bash
-$ mn reset
+$ dashman reset
 ```
 
 ### Show status
@@ -233,7 +233,7 @@ The `status` command outputs status information relating to either the host, mas
 
 ```
 USAGE
-  $ mn status:COMMAND
+  $ dashman status:COMMAND
 
 COMMANDS
   status:host        Show host status details
@@ -243,7 +243,7 @@ COMMANDS
 
 To show the host status:
 ```bash
-$ mn status:host
+$ dashman status:host
 ```
 
 ### Full node
@@ -251,21 +251,21 @@ $ mn status:host
 It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
 
 ```bash
-mn config:set core.masternode.enable false
+dashman config:set core.masternode.enable false
 ```
 
 ### Development
 
 When developing on a standalone node (a config specifying the `local` network), `setup local` can be used to generate some dash, register a masternode and populate the node with the data required for local development.
 
-To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command. A Docker image will be built from the provided path and then used by mn-bootstrap.
+To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command. A Docker image will be built from the provided path and then used by dashman.
 
 ### Docker Compose
 
 If you want to use Docker Compose directly, you will need to pass a configuration as a dotenv file. You can output a config to a dotenv file for Docker Compose as follows:
 
 ```bash
-$ mn config:envs --output-file .env
+$ dashman config:envs --output-file .env
 ```
 
 Docker Compose will attempt to read a file named `.env` by default. You can optionally specify a dotenv file with a different filename for Docker Compose by adding `--env-file` option to the `docker-compose` command as follows:
@@ -276,7 +276,7 @@ $ docker-compose --env-file=<filename>
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/mn-bootstrap/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/dashman/issues/new) or submit PRs.
 
 ## License
 

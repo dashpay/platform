@@ -48,7 +48,7 @@ services:
       - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:26657 # RPC
     volumes:
       - drive_tenderdash:/tenderdash
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/tenderdash:/tenderdash/config:ro
+      - ${DASHMAN_HOME_DIR:?err}/${CONFIG_NAME:?err}/tenderdash:/tenderdash/config:ro
 
   dapi_insight:
     image: ${PLATFORM_DAPI_INSIGHT_DOCKER_IMAGE:?err}
@@ -56,7 +56,7 @@ services:
     depends_on:
       - core
     volumes:
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/dashcore-node.json:/insight/dashcore-node.json
+      - ${DASHMAN_HOME_DIR:?err}/${CONFIG_NAME:?err}/dashcore-node.json:/insight/dashcore-node.json
 
   dapi_api:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -114,7 +114,7 @@ services:
       - dapi_api
       - dapi_tx_filter_stream
     volumes:
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/grpc.yaml:/etc/envoy/envoy.yaml
+      - ${DASHMAN_HOME_DIR:?err}/${CONFIG_NAME:?err}/grpc.yaml:/etc/envoy/envoy.yaml
 
   dapi_nginx:
     image: ${PLATFORM_DAPI_NGINX_DOCKER_IMAGE:?err}
@@ -127,9 +127,9 @@ services:
       - ${PLATFORM_DAPI_NGINX_HTTP_PORT:?err}:80 # JSON RPC and gRPC Web
       - ${PLATFORM_DAPI_NGINX_GRPC_PORT:?err}:50051 # gRPC Native
     volumes:
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/default.conf:/etc/nginx/conf.d/default.conf
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/grpc.conf:/etc/nginx/conf.d/grpc.conf
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
+      - ${DASHMAN_HOME_DIR:?err}/${CONFIG_NAME:?err}/default.conf:/etc/nginx/conf.d/default.conf
+      - ${DASHMAN_HOME_DIR:?err}/${CONFIG_NAME:?err}/grpc.conf:/etc/nginx/conf.d/grpc.conf
+      - ${DASHMAN_HOME_DIR:?err}/${CONFIG_NAME:?err}/errors.grpc_conf:/etc/nginx/conf.d/errors.grpc_conf
 
 volumes:
   drive_abci_data:

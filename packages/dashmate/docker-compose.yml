@@ -8,7 +8,7 @@ services:
       - ${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
       - 127.0.0.1:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
     volumes:
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/dashd.conf:/dash/.dashcore/dash.conf
+      - ${DASHMAN_HOME_DIR:?err}/${CONFIG_NAME:?err}/dashd.conf:/dash/.dashcore/dash.conf
       - core_data:/dash
     command:
       - dashd

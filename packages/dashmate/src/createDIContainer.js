@@ -58,7 +58,7 @@ async function createDIContainer(options) {
   /**
    * Config
    */
-  const homeDirPath = options.MN_HOME_DIR ? options.MN_HOME_DIR : path.resolve(os.homedir(), '.mn');
+  const homeDirPath = options.DASHMAN_HOME_DIR ? options.DASHMAN_HOME_DIR : path.resolve(os.homedir(), '.dashman');
 
   container.register({
     homeDirPath: asValue(homeDirPath),
