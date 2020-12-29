@@ -1,3 +1,23 @@
+# [0.17.0](https://github.com/dashevo/dapi-client/compare/v0.16.0...v0.17.0) (2020-12-29)
+
+
+### Features
+
+* introduce testnet network ([#214](https://github.com/dashevo/dapi-client/issues/214))
+* update `dpp` and `dashcore-lib` ([#207](https://github.com/dashevo/dapi-client/issues/207), [#210](https://github.com/dashevo/dapi-client/issues/210), [#211](https://github.com/dashevo/dapi-client/issues/211), [#212](https://github.com/dashevo/dapi-client/issues/212))
+
+
+### Bug Fixes
+
+* SML unhandled error on blockchain reorg ([#215](https://github.com/dashevo/dapi-client/issues/215))
+
+
+### BREAKING CHANGES
+
+* DAPI client is now connecting to a testnet by default
+
+
+
 # [0.16.0](https://github.com/dashevo/dapi-client/compare/v0.15.0...v0.16.0) (2020-10-27)
 
 
