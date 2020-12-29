@@ -1,3 +1,28 @@
+# [0.17.0](https://github.com/dashevo/js-dpp/compare/v0.16.0...v0.17.0) (2020-12-29)
+
+
+### Features
+
+* dashpay data triggers ([#285](https://github.com/dashevo/js-dpp/issues/285))
+* update dashcore-lib ([#271](https://github.com/dashevo/js-dpp/issues/271), [#283](https://github.com/dashevo/js-dpp/issues/283), [#287](https://github.com/dashevo/js-dpp/issues/287))
+* fund identity with Asset Lock Proofs ([#276](https://github.com/dashevo/js-dpp/issues/276), [#277](https://github.com/dashevo/js-dpp/issues/277), [#280](https://github.com/dashevo/js-dpp/issues/280))
+* limit publicKeys items to 32 ([#278](https://github.com/dashevo/js-dpp/issues/278))
+
+
+### Bug Fixes
+
+* fs not found error on deploy ([#273](https://github.com/dashevo/js-dpp/issues/273))
+
+
+### BREAKING CHANGES
+
+* Identity Create and Topup Transitions expect Asset Lock object instead of asset lock outpoint
+* `identity.create` and `identity.createIdentityTopUpTransition` expect asset lock transaction, output, and proof instead of outpoint
+* renamed `skipAssetLockConfirmationValidation` DPP option to `skipAssetLockProofSignatureVerification`
+* identity allows only 32 public keys
+
+
+
 # [0.16.0](https://github.com/dashevo/js-dpp/compare/v0.15.0...v0.16.0) (2020-10-26)
 
 
