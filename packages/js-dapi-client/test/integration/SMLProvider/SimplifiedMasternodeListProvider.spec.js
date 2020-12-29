@@ -124,5 +124,38 @@ describe('SimplifiedMasternodeListProvider', () => {
         },
       ]);
     });
+
+    it('should reset simplifiedMNList and update masternode list from scratch', async function it() {
+      this.timeout(3000);
+
+      jsonTransportMock.request.withArgs('getBestBlockHash').onCall(1).resolves(
+        mnListDiffsFixture[0].blockHash,
+      );
+
+      jsonTransportMock.request.withArgs('getMnListDiff').onCall(1).resolves(
+        mnListDiffsFixture[0],
+      );
+
+      jsonTransportMock.request.withArgs('getBestBlockHash').onCall(2).resolves(
+        mnListDiffsFixture[0].blockHash,
+      );
+
+      jsonTransportMock.request.withArgs('getMnListDiff').onCall(2).resolves(
+        mnListDiffsFixture[0],
+      );
+
+      expect(smlProvider.lastUpdateDate).to.equal(0);
+      expect(smlProvider.baseBlockHash).to.equal(SimplifiedMasternodeListProvider.NULL_HASH);
+
+      await smlProvider.getSimplifiedMNList();
+      await wait(200);
+
+      const sml = await smlProvider.getSimplifiedMNList();
+
+      expect(sml).to.be.an.instanceOf(SimplifiedMNList);
+      expect(sml.mnList).to.have.lengthOf(mnListDiffsFixture[0].mnList.length);
+
+      expect(jsonTransportMock.request).to.be.callCount(6);
+    });
   });
 });

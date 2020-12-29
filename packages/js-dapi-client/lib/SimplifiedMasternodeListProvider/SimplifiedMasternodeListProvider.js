@@ -55,7 +55,19 @@ class SimplifiedMasternodeListProvider {
   async updateMasternodeList() {
     const diff = await this.getSimplifiedMNListDiff();
 
-    this.simplifiedMNList.applyDiff(diff);
+    try {
+      this.simplifiedMNList.applyDiff(diff);
+    } catch (e) {
+      if (e.message === 'Cannot apply diff: previous blockHash needs to equal the new diff\'s baseBlockHash') {
+        this.reset();
+
+        await this.updateMasternodeList();
+
+        return;
+      }
+
+      throw e;
+    }
 
     this.baseBlockHash = diff.blockHash;
 
@@ -78,6 +90,19 @@ class SimplifiedMasternodeListProvider {
     );
 
     return new SimplifiedMNListDiff(rawSimplifiedMNListDiff, this.options.network);
+  }
+
+  /**
+   * Reset simplifiedMNList
+   *
+   * @private
+   */
+  reset() {
+    this.simplifiedMNList = new SimplifiedMNList(undefined, this.options.network);
+
+    this.lastUpdateDate = 0;
+
+    this.baseBlockHash = SimplifiedMasternodeListProvider.NULL_HASH;
   }
 }
 
