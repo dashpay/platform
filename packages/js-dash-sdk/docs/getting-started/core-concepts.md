@@ -26,6 +26,6 @@ The Dash Platform Application Chain, provides to developers the ability to creat
 That application requires a set of rules and conditions describe in a portable document in the form of a JSON names : Application Schema.
 
 When registered, those app schema are called contracts and contains a contractId (namespace : `client.contracts`).  
-By default, this library supports DPNS (to attach a name to an identity), under the namespace `client.names` for evonet.  
+By default, this library supports DPNS (to attach a name to an identity), under the namespace `client.names` for testnet.  
 
 You can read more on [how to use DPNS on a local evonet](/examples/use-local-evonet.md) or [how to use multiple apps](/getting-started/multiple-apps.md)

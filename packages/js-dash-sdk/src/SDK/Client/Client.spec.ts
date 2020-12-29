@@ -80,7 +80,7 @@ describe('Dash - Client', function suite() {
   it('should be instantiable', function () {
     const client = new Client();
     expect(client).to.exist;
-    expect(client.network).to.be.equal('evonet');
+    expect(client.network).to.be.equal('testnet');
     expect(client.getDAPIClient().constructor.name).to.be.equal('DAPIClient');
   });
   it('should not initiate wallet lib without mnemonic', function () {
@@ -106,11 +106,11 @@ describe('Dash - Client', function suite() {
   it('should throw an error if client and wallet have different networks', async () => {
     try {
       new Client({
-        network: 'evonet',
+        network: 'testnet',
         wallet: {
           mnemonic,
           offlineMode: true,
-          network: 'testnet',
+          network: 'evonet',
         },
       });
 

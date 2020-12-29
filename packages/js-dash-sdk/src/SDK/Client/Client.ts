@@ -38,7 +38,7 @@ export interface ClientOpts {
  * and the Dash Platform (layer 2).
  */
 export class Client {
-    public network: string = 'evonet';
+    public network: string = 'testnet';
     public wallet: Wallet | undefined;
     public account: Account | undefined;
     public platform: Platform | undefined;
@@ -58,7 +58,7 @@ export class Client {
             ...options
         }
 
-        this.network = this.options.network ? this.options.network.toString() : 'evonet';
+        this.network = this.options.network ? this.options.network.toString() : 'testnet';
 
         // Initialize DAPI Client
         const dapiClientOptions = {
