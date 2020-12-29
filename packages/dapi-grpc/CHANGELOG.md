@@ -1,9 +1,18 @@
+# [0.17.0](https://github.com/dashevo/dapi-grpc/compare/v0.16.0...v0.17.0) (2020-12-29)
+
+
+### Features
+
+* add proofs to platform responses ([#96](https://github.com/dashevo/dapi-grpc/issues/96))
+
+
+
 # [0.16.0](https://github.com/dashevo/dapi-grpc/compare/v0.15.0...v0.16.0) (2020-10-26)
 
 
 ### Bug Fixes
 
-* protobuf converts empty Buffer to undefined ([#94](https://github.com/dashevo/dapi-grpc/issues/94)) ([cbeacd8](https://github.com/dashevo/dapi-grpc/commit/cbeacd832f843fc955254c1cddfd3454969ee209))
+* protobuf converts empty Buffer to undefined ([#94](https://github.com/dashevo/dapi-grpc/issues/94))
 
 
 ### Features
