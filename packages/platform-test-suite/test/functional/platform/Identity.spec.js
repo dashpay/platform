@@ -44,7 +44,11 @@ describe('Platform', () => {
       await waitForBalanceToChange(walletAccount);
     });
 
-    it.skip('should fail to create an identity if instantLock is not valid', async () => {
+    it('should fail to create an identity if instantLock is not valid', async function it() {
+      if (process.env.NETWORK === 'regtest') {
+        this.skip('instant lock quorum is not active');
+      }
+
       const {
         transaction,
         privateKey,
@@ -133,8 +137,7 @@ describe('Platform', () => {
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
       await waitForBlocks(client.getDAPIClient(), 1);
 
-      const instantLock = createFakeInstantLock(transaction.hash);
-      const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
+      const assetLockProof = await createAssetLockProof(client.platform, transaction);
 
       const duplicateIdentity = dpp.identity.create(
         transaction,
