@@ -1,3 +1,20 @@
+# [0.17.0](https://github.com/dashevo/plaform-test-suite/compare/v0.16.0...v0.17.0) (2020-12-30)
+
+
+### Features
+
+* make test works without fallback ([#91](https://github.com/dashevo/plaform-test-suite/issues/91))
+* update `dashcore-lib`, `dpp`, `wallet-lib`, `dashjs` ([#81](https://github.com/dashevo/plaform-test-suite/issues/81), [#83](https://github.com/dashevo/plaform-test-suite/issues/83), [#88](https://github.com/dashevo/plaform-test-suite/issues/88))
+* identity funding double-spend tests ([#86](https://github.com/dashevo/plaform-test-suite/issues/86))
+
+
+### Bug Fixes
+
+* fake asset lock must be passed only for regtest ([#90](https://github.com/dashevo/plaform-test-suite/issues/90))
+* invalid assertions in `Identity` functional test ([#84](https://github.com/dashevo/plaform-test-suite/issues/84))
+
+
+
 # [0.16.0](https://github.com/dashevo/plaform-test-suite/compare/v0.15.0...v0.16.0) (2020-10-28)
 
 
