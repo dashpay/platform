@@ -83,20 +83,25 @@ class StatusCommand extends BaseCommand {
     let platformVersion;
     let platformBlockHeight;
     let platformCatchingUp;
+    let platformStatus;
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (config.options.network !== 'mainnet' && coreIsSynced === true) {
-      const platformStatusRes = await fetch(`http://localhost:${config.options.platform.drive.tendermint.rpc.port}/status`);
-      ({
-        result: {
-          node_info: {
-            version: platformVersion,
+      try {
+        const platformStatusRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
+        ({
+          result: {
+            node_info: {
+              version: platformVersion,
+            },
+            sync_info: {
+              latest_block_height: platformBlockHeight,
+              catching_up: platformCatchingUp,
+            },
           },
-          sync_info: {
-            latest_block_height: platformBlockHeight,
-            catching_up: platformCatchingUp,
-          },
-        },
-      } = await platformStatusRes.json());
+        } = await platformStatusRes.json());
+      } catch (e) {
+        platformStatus = 'error';
+      }
     }
 
     const explorerBlockHeightRes = await fetch('https://rpc.cloudwheels.net:26657/status');
@@ -125,14 +130,13 @@ class StatusCommand extends BaseCommand {
       coreStatus = `syncing ${(coreVerificationProgress * 100).toFixed(2)}%`;
     }
 
-    let platformStatus;
     if (config.options.network !== 'mainnet') {
       try {
         ({
           State: {
             Status: platformStatus,
           },
-        } = await dockerCompose.inspectService(config.toEnvs(), 'drive_tendermint'));
+        } = await dockerCompose.inspectService(config.toEnvs(), 'drive_tenderdash'));
       } catch (e) {
         if (e instanceof ContainerIsNotPresentError) {
           platformStatus = 'not started';

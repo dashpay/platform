@@ -11,6 +11,8 @@ const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
 const wait = require('../util/wait');
 
+const packageJson = require('../../package.json');
+
 const PRESET_TESETNET = 'testnet';
 const PRESET_LOCAL = 'local';
 const PRESET_EVONET = 'evonet';
@@ -76,6 +78,9 @@ class SetupCommand extends BaseCommand {
 
     const amount = 10000;
 
+    // eslint-disable-next-line no-console
+    console.log(`dashman ${packageJson.version}\n`);
+
     const tasks = new Listr([
       {
         title: 'Set configuration preset',
@@ -97,7 +102,6 @@ class SetupCommand extends BaseCommand {
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Selected ${config.getName()} as default config\n`;
-
         },
         options: { persistentOutput: true },
       },

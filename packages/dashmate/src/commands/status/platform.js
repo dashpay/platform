@@ -61,7 +61,7 @@ class CoreStatusCommand extends BaseCommand {
     }
 
     // Collect platform data
-    const tendermintStatusRes = await fetch(`http://localhost:${config.options.platform.drive.tendermint.rpc.port}/status`);
+    const tenderdashStatusRes = await fetch(`http://localhost:${config.options.platform.drive.tenderdash.rpc.port}/status`);
     const {
       result: {
         node_info: {
@@ -74,14 +74,14 @@ class CoreStatusCommand extends BaseCommand {
           latest_block_height: platformLatestBlockHeight,
         },
       },
-    } = await tendermintStatusRes.json();
+    } = await tenderdashStatusRes.json();
 
-    const tendermintNetInfoRes = await fetch(`http://localhost:${config.options.platform.drive.tendermint.rpc.port}/net_info`);
+    const tenderdashNetInfoRes = await fetch(`http://localhost:${config.options.platform.drive.tenderdash.rpc.port}/net_info`);
     const {
       result: {
         n_peers: platformPeers,
       },
-    } = await tendermintNetInfoRes.json();
+    } = await tenderdashNetInfoRes.json();
 
     let explorerLatestBlockHeight;
     if (explorerURLs[config.options.network]) {
@@ -100,7 +100,7 @@ class CoreStatusCommand extends BaseCommand {
     let httpPortState = await httpPortStateRes.text();
     const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.nginx.grpc.port}/`);
     let gRpcPortState = await gRpcPortStateRes.text();
-    const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.drive.tendermint.p2p.port}/`);
+    const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.drive.tenderdash.p2p.port}/`);
     let p2pPortState = await p2pPortStateRes.text();
 
     // Determine status
@@ -110,7 +110,7 @@ class CoreStatusCommand extends BaseCommand {
         State: {
           Status: status,
         },
-      } = await dockerCompose.inspectService(config.toEnvs(), 'drive_tendermint'));
+      } = await dockerCompose.inspectService(config.toEnvs(), 'drive_tenderdash'));
     } catch (e) {
       if (e instanceof ContainerIsNotPresentError) {
         status = 'not started';
@@ -170,9 +170,9 @@ class CoreStatusCommand extends BaseCommand {
     rows.push(['HTTP port', `${config.options.platform.dapi.nginx.http.port} ${httpPortState}`]);
     rows.push(['gRPC service', `${config.options.externalIp}:${config.options.platform.dapi.nginx.grpc.port}`]);
     rows.push(['gRPC port', `${config.options.platform.dapi.nginx.grpc.port} ${gRpcPortState}`]);
-    rows.push(['P2P service', `${config.options.externalIp}:${config.options.platform.drive.tendermint.p2p.port}`]);
-    rows.push(['P2P port', `${config.options.platform.drive.tendermint.p2p.port} ${p2pPortState}`]);
-    rows.push(['RPC service', `127.0.0.1:${config.options.platform.drive.tendermint.rpc.port}`]);
+    rows.push(['P2P service', `${config.options.externalIp}:${config.options.platform.drive.tenderdash.p2p.port}`]);
+    rows.push(['P2P port', `${config.options.platform.drive.tenderdash.p2p.port} ${p2pPortState}`]);
+    rows.push(['RPC service', `127.0.0.1:${config.options.platform.drive.tenderdash.rpc.port}`]);
     const output = table(rows, { singleLine: true });
 
     // eslint-disable-next-line no-console

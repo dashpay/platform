@@ -130,7 +130,7 @@ function initTaskFactory(
           const response = await tenderdashRpcClient.request('tx', params);
 
           if (response.error) {
-            throw new Error(`Tendermint error: ${response.error.message}: ${response.error.data}`);
+            throw new Error(`Tenderdash error: ${response.error.message}: ${response.error.data}`);
           }
 
           const { result: { height: contractBlockHeight } } = response;
@@ -206,7 +206,7 @@ function initTaskFactory(
           const response = await tenderdashRpcClient.request('tx', params);
 
           if (response.error) {
-            throw new Error(`Tendermint error: ${response.error.message}: ${response.error.data}`);
+            throw new Error(`Tenderdash error: ${response.error.message}: ${response.error.data}`);
           }
 
           const { result: { height: contractBlockHeight } } = response;

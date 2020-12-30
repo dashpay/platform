@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const rimraf = require('rimraf');
 
 /**
  * @param {string} homeDirPath
@@ -18,7 +19,7 @@ function writeServiceConfigsFactory(homeDirPath) {
   function writeServiceConfigs(configName, configFiles) {
     // Drop all files from configs directory
     const configDir = path.join(homeDirPath, configName);
-    fs.rmdirSync(configDir, { recursive: true });
+    rimraf.sync(configDir);
 
     for (const filePath of Object.keys(configFiles)) {
       const absoluteFilePath = path.join(configDir, filePath);

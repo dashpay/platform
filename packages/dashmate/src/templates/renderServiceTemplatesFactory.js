@@ -4,10 +4,9 @@ const dots = require('dot');
 const glob = require('glob');
 
 /**
- * @param {string} homeDirPath
  * @return {renderServiceTemplates}
  */
-function renderServiceTemplatesFactory(homeDirPath) {
+function renderServiceTemplatesFactory() {
   /**
    * Render templates for services
    *
