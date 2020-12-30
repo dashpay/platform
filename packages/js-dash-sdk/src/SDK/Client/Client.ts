@@ -100,7 +100,7 @@ export class Client {
 
         this.apps = new ClientApps(Object.assign({
             dpns: {
-                contractId: '3VvS19qomuGSbEYWbTsRzeuRgawU3yK4fPMzLrbV62u8'
+                contractId: '36ez8VqoDbR8NkdXwFaf9Tp8ukBdQxN8eYs8JNMnUyKz'
             }
         }, this.options.apps));
 
