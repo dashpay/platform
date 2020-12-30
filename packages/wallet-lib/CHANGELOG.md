@@ -1,3 +1,12 @@
+## [7.17.2](https://github.com/dashevo/wallet-lib/compare/v7.17.1...v7.17.2) (2020-12-30)
+
+
+### Bug Fixes
+
+* broadcastStateTransition is timing out on testnet ([#214](https://github.com/dashevo/wallet-lib/issues/214))
+
+
+
 ## [7.17.1](https://github.com/dashevo/wallet-lib/compare/v7.17.0...v7.17.1) (2020-12-30)
 
 
