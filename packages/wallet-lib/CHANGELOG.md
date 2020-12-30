@@ -1,3 +1,12 @@
+## [7.17.1](https://github.com/dashevo/wallet-lib/compare/v7.17.0...v7.17.1) (2020-12-30)
+
+
+### Bug Fixes
+
+* merkleRootQuorums from the diff doesn’t match calculated quorum root after diff is applied ([#212](https://github.com/dashevo/wallet-lib/issues/212))
+
+
+
 # [7.17.0](https://github.com/dashevo/wallet-lib/compare/v7.16.1...v7.17.0) (2020-12-29)
 
 
