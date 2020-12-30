@@ -79,7 +79,7 @@ class SetupCommand extends BaseCommand {
     const amount = 10000;
 
     // eslint-disable-next-line no-console
-    console.log(`dashman ${packageJson.version}\n`);
+    console.log(`mn-bootstrap ${packageJson.version}\n`);
 
     const tasks = new Listr([
       {

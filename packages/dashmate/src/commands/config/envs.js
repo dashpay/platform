@@ -27,7 +27,7 @@ class ConfigEnvsCommand extends BaseCommand {
       envOutput += `${key}=${value}\n`;
     }
 
-    envOutput += `DASHMAN_HOME_DIR=${homeDirPath}\n`;
+    envOutput += `MN_HOME_DIR=${homeDirPath}\n`;
 
     if (outputFile !== null) {
       const outputFilePath = path.resolve(process.cwd(), outputFile);

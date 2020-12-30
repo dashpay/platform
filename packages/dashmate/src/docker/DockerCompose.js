@@ -266,7 +266,7 @@ class DockerCompose {
     const env = {
       ...process.env,
       ...envs,
-      DASHMAN_HOME_DIR: this.homeDirPath,
+      MN_HOME_DIR: this.homeDirPath,
     };
 
     return {

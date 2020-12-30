@@ -1,6 +1,8 @@
 {
-  "name": "@dashevo/dashman",
+  "name": "@dashevo/mn-bootstrap",
   "version": "0.17.0-dev.19",
+  "name": "@dashevo/mn-bootstrap",
+  "version": "0.17.0-dev.18",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
@@ -12,10 +14,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/dashman.git"
+    "url": "git+https://github.com/dashevo/mn-bootstrap.git"
   },
   "bin": {
-    "dashman": "bin/dashman"
+    "mn": "bin/mn"
   },
   "contributors": [
     {
@@ -44,9 +46,9 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dashevo/dashman/issues"
+    "url": "https://github.com/dashevo/mn-bootstrap/issues"
   },
-  "homepage": "https://github.com/dashevo/dashman#readme",
+  "homepage": "https://github.com/dashevo/mn-bootstrap#readme",
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.19.19",
     "@dashevo/dashd-rpc": "~2.0.2",
@@ -99,7 +101,7 @@
   ],
   "oclif": {
     "commands": "./src/commands",
-    "bin": "dashman",
+    "bin": "mn",
     "plugins": [
       "@oclif/plugin-help"
     ],
