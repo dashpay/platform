@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "7.17.0-dev.5",
+  "version": "7.17.0",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
@@ -40,9 +40,9 @@
   },
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "~0.17.0-dev.5",
-    "@dashevo/dashcore-lib": "~0.19.17",
-    "@dashevo/dpp": "~0.17.0-dev.8",
+    "@dashevo/dapi-client": "~0.17.0",
+    "@dashevo/dashcore-lib": "~0.19.18",
+    "@dashevo/dpp": "~0.17.0",
     "@dashevo/grpc-common": "~0.3.1",
     "cbor": "^5.0.2",
     "crypto-js": "^4.0.0",

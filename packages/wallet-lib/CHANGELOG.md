@@ -1,3 +1,19 @@
+# [7.17.0](https://github.com/dashevo/wallet-lib/compare/v7.16.1...v7.17.0) (2020-12-29)
+
+
+### Features
+
+* connect to testnet by default ([#210](https://github.com/dashevo/wallet-lib/issues/210))
+* update `dpp`, `dapi-client`, `dashcore-lib` ([#202](https://github.com/dashevo/wallet-lib/issues/202))
+* handle instant locks ([#206](https://github.com/dashevo/wallet-lib/issues/206))
+
+
+### BREAKING CHANGES
+
+* wallet is now connecting to a testnet by default
+
+
+
 ## [7.16.1](https://github.com/dashevo/wallet-lib/compare/v7.16.0...v7.16.1) (2020-10-28)
 
 
@@ -113,20 +129,20 @@
 
 # [7.13.3](https://github.com/dashevo/wallet-lib/compare/v7.13.2...v7.13.3) (2020-06-16)
 
-- **Fixes:**  
+- **Fixes:**
     * fix!: createTransaction should be checking for 'recipient' instead of 'address' in 'txOpts.recipients' ([#152](https://github.com/dashevo/wallet-lib/pull/152))
     * fix: transaction hash not present on address ([#151](https://github.com/dashevo/wallet-lib/pull/151))
 
-- **Breaking changes:**   
-    * Previously, the documentation stated a usage on `createTransaction()` with multiples recipients as such: `recipients:[{recipient,satoshis}]`.   
-    However, the code where still referring and expecting recipients `recipients:[{address,satoshis}]`.  
-    This version fixes that inconsistency. 
-     
+- **Breaking changes:**
+    * Previously, the documentation stated a usage on `createTransaction()` with multiples recipients as such: `recipients:[{recipient,satoshis}]`.
+    However, the code where still referring and expecting recipients `recipients:[{address,satoshis}]`.
+    This version fixes that inconsistency.
+
 # [7.13.2](https://github.com/dashevo/wallet-lib/compare/v7.13.1...v7.13.2) (2020-06-15)
 
 - **Features:**
     * feature: Worker will now have ability to return a value on onStart and onExecute ([#149](https://github.com/dashevo/wallet-lib/pull/149))
-    
+
 - **Fixes:**
     * fix: comportement on new address with existing transaction in store ([#147](https://github.com/dashevo/wallet-lib/pull/147))
     * fix: SyncUp plugin not awaiting long enough ([#149](https://github.com/dashevo/wallet-lib/pull/149))
@@ -146,29 +162,29 @@
     * `debug` option temporary disabled
 
 # [7.1.4](https://github.com/dashevo/wallet-lib/compare/v7.1.3...v7.1.4) (2020-06-11)
-    
+
 - **Builds, Tests:**
     - test: create a new wallet in functional tests (#140)
     - build: simplify distributive and Travis CI builds (#139)
 
 # [7.1.3](https://github.com/dashevo/wallet-lib/compare/v7.1.2...v7.1.3) (2020-06-10)
-    
+
 - **Chore:**
     - chore: Update dashcore-lib version (#138)
 
 # [7.1.2](https://github.com/dashevo/wallet-lib/compare/v7.1.1...v7.1.2) (2020-06-10)
-    
+
 - **Feat:**
     - feat: TransactionOrderer (#136)
 
 # [7.1.1](https://github.com/dashevo/wallet-lib/compare/v7.1.0...v7.1.1) (2020-06-03)
-    
+
 - **Fixes:**
     - fix: broadcastTransaction not throwing an error when a transaction wasn't broadcasted (#133)
     - fix: internal UTXO on Output format and getUTXO returning UnspentOutput + refactor initial sync up (#135)
 
 # [7.1.0](https://github.com/dashevo/wallet-lib/compare/v7.0.0...v7.1.0) (2020-06-03)
-    
+
 - **Fixes:**
     - fix: unavailable previous transactions history (#131)
     - fix: transporter.resolve to extend passed options (#130)
@@ -177,30 +193,30 @@
 
 - **Impr:**
     - impr!: removed eventemitter2 (#128)
-    
+
 - **Fixes:**
     - fix!: handling errors on account init (#127)
-    
+
 - **Chore, Docs & Tests:**
     - tests: replace browser.js to wallet.js in karma.conf (#126)
-    
+
 # [6.1.2](https://github.com/dashevo/wallet-lib/compare/v6.1.1...v6.1.2) (2020-05-22)
 
 - **Fixes:**
     - fix: update evonet seeds (#120)
-    
+
 - **Chore, Docs & Tests:**
     - tests: added karma and functional browser test (#121)
     - style: removed logger.error & improved error message (#118)
-    
+
 # [6.1.1](https://github.com/dashevo/wallet-lib/compare/v6.1.0...v6.1.1) (2020-05-22)
 
 - **Fixes:**
     - fix: update evonet seeds (#120)
-    
+
 # [6.1.0](https://github.com/dashevo/wallet-lib/compare/v6.0.0...v6.1.0) (2020-04-23)
 
-- **Features:** 
+- **Features:**
     - Feat(Transporter): added .getBestBlock / .getBestBlockHeader (#110 )
 
 - **Fixes:**
@@ -240,7 +256,7 @@
     - format of utxo internally has changed (returns a proper Dashcore UTXO object) (#102)
 
 - **Feat**:
-  - Wallet: 
+  - Wallet:
     - Sweep paper wallet (#83)
     - Allow to generate a new privateKey (4e120f6)
   - Account:
@@ -251,26 +267,26 @@
     - added Storage.importBlockHeader (#102)
     - added Storage.getBlockHeader (#102)
     - added Storage.searchBlockHeader (#102)
-  - Transporter: 
+  - Transporter:
     - Transporter arg can take devnetName when type is DAPI (connects to palinka instead of evonet). (#102)
     - subscribeToAddressesTransaction() (#102)
     - subscribeToBlocks() (#102)
     - subscribeToBlockHeaders() - temporary for BloomFilters (#102)
-  - Workers: 
+  - Workers:
     - Workers support onStart() method. (#102)
   - Plugins:
     - Plugins support onStart() method and send a PLUGIN/pluginName/STARTED event. (#102)
-- **Impr**: 
+- **Impr**:
   - moved from('event') to EventEmitter2 + wildcard support (5241ce1, 4db66d6, d20df76)
 - **Fix**:
-  - KeyChain: 
+  - KeyChain:
     - .getKeyForPath when SINGLE_ADDRESS mode is now returned as PrivateKey (#102)
   - Account:
     - sequential account index + transporter missing method reporting #103
 - **Perf**:
   - removed localforage from default adapter. #104
-- **Test**: 
-  - Sweep wallet test + integration (ebbd0f8, 
+- **Test**:
+  - Sweep wallet test + integration (ebbd0f8,
 6bd24a3)
   - FakeDevnet class (db46b05)
 
@@ -279,5 +295,5 @@
 - **Feat**:
   - Account:
     - getIdentityHDKey (#99)
-- **Fix**: 
+- **Fix**:
     - typos (#98)
