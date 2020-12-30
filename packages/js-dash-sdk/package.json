@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "3.17.0-dev.6",
+  "version": "3.17.0-dev.7",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "build/src/index.js",
   "unpkg": "dist/dash.min.js",
@@ -31,10 +31,10 @@
   },
   "homepage": "https://github.com/dashevo/DashJS#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "~0.17.0-dev.5",
-    "@dashevo/dashcore-lib": "~0.19.18",
-    "@dashevo/dpp": "~0.17.0-dev.9",
-    "@dashevo/wallet-lib": "~7.17.0-dev.5",
+    "@dashevo/dapi-client": "~0.17.1",
+    "@dashevo/dashcore-lib": "~0.19.19",
+    "@dashevo/dpp": "~0.17.0",
+    "@dashevo/wallet-lib": "~7.17.1",
     "bs58": "^4.0.1"
   },
   "devDependencies": {
