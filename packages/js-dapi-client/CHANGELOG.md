@@ -1,3 +1,12 @@
+## [0.17.1](https://github.com/dashevo/dapi-client/compare/v0.17.0...v0.17.1) (2020-12-30)
+
+
+### Bug Fixes
+
+* merkleRootQuorums from the diff doesn’t match calculated quorum root after diff is applied ([#217](https://github.com/dashevo/dapi-client/issues/217))
+
+
+
 # [0.17.0](https://github.com/dashevo/dapi-client/compare/v0.16.0...v0.17.0) (2020-12-29)
 
 
