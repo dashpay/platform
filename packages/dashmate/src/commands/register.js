@@ -1,7 +1,5 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
-
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const BaseCommand = require('../oclif/command/BaseCommand');
@@ -75,7 +73,6 @@ RegisterCommand.args = [{
 
 RegisterCommand.flags = {
   ...BaseCommand.flags,
-  verbose: flagTypes.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
 module.exports = RegisterCommand;

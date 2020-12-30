@@ -309,7 +309,6 @@ SetupCommand.flags = {
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),
   verbose: flagTypes.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
-
 };
 
 module.exports = SetupCommand;

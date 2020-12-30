@@ -14,7 +14,9 @@ class ResetCommand extends BaseCommand {
    */
   async runWithDependencies(
     args,
-    flags,
+    {
+      verbose: isVerbose,
+    },
     dockerCompose,
     config,
   ) {
@@ -32,6 +34,7 @@ class ResetCommand extends BaseCommand {
       },
     ],
     {
+      renderer: isVerbose ? 'verbose' : 'default',
       rendererOptions: {
         clearOutput: false,
         collapse: false,

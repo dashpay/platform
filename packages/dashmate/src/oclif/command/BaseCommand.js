@@ -134,6 +134,11 @@ BaseCommand.flags = {
     description: 'configuration name to use',
     default: null,
   }),
+  verbose: flagTypes.boolean({
+    char: 'v',
+    description: 'use verbose mode for output',
+    default: false,
+  }),
 };
 
 module.exports = BaseCommand;

@@ -21,6 +21,7 @@ class RestartCommand extends BaseCommand {
       update: isUpdate,
       'drive-image-build-path': driveImageBuildPath,
       'dapi-image-build-path': dapiImageBuildPath,
+      verbose: isVerbose,
     },
     dockerCompose,
     startNodeTask,
@@ -47,6 +48,7 @@ class RestartCommand extends BaseCommand {
         },
       ],
       {
+        renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
           clearOutput: false,
           collapse: false,

@@ -21,6 +21,7 @@ class MintCommand extends BaseCommand {
     },
     {
       address,
+      verbose: isVerbose,
     },
     generateToAddressTask,
     config,
@@ -38,6 +39,7 @@ class MintCommand extends BaseCommand {
       },
     ],
     {
+      renderer: isVerbose ? 'verbose' : 'default',
       rendererOptions: {
         clearOutput: false,
         collapse: false,
