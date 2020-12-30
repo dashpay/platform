@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const chalk = require('chalk');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
 const BaseCommand = require('../../oclif/command/BaseCommand');
 const CoreService = require('../../core/CoreService');
@@ -37,6 +38,10 @@ class StatusCommand extends BaseCommand {
       ),
       dockerCompose.docker.getContainer('core'),
     );
+
+    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
+      throw new ServiceIsNotRunningError(config.options.network, 'core');
+    }
 
     // Collect core data
     const {
@@ -84,10 +89,24 @@ class StatusCommand extends BaseCommand {
     let platformBlockHeight;
     let platformCatchingUp;
     let platformStatus;
-    // Collecting platform data fails if Tenderdash is waiting for core to sync
-    if (config.options.network !== 'mainnet' && coreIsSynced === true) {
-      try {
+
+    if (config.options.network !== 'mainnet') {
+      if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
+        try {
+          ({
+            State: {
+              Status: platformStatus,
+            },
+          } = await dockerCompose.inspectService(config.toEnvs(), 'drive_tenderdash'));
+        } catch (e) {
+          if (e instanceof ContainerIsNotPresentError) {
+            platformStatus = 'not started';
+          }
+        }
+      } else if (coreIsSynced === true) {
+        // Collecting platform data fails if Tenderdash is waiting for core to sync
         const platformStatusRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
+
         ({
           result: {
             node_info: {
@@ -99,8 +118,6 @@ class StatusCommand extends BaseCommand {
             },
           },
         } = await platformStatusRes.json());
-      } catch (e) {
-        platformStatus = 'error';
       }
     }
 
@@ -189,8 +206,11 @@ class StatusCommand extends BaseCommand {
     if (config.options.core.masternode.enable === true) {
       rows.push(['Masternode Status', (masternodeStatus)]);
     }
+
     if (config.options.network !== 'mainnet') {
-      if (coreIsSynced === true) {
+      if (coreIsSynced === true
+        && platformStatus !== chalk.red('not started')
+        && platformStatus !== chalk.red('restarting')) {
         rows.push(['Platform Version', platformVersion]);
       }
       rows.push(['Platform Status', platformStatus]);

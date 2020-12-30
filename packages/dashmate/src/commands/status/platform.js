@@ -6,6 +6,7 @@ const BaseCommand = require('../../oclif/command/BaseCommand');
 const CoreService = require('../../core/CoreService');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
 class CoreStatusCommand extends BaseCommand {
   /**
@@ -45,6 +46,10 @@ class CoreStatusCommand extends BaseCommand {
     const explorerURLs = {
       evonet: 'https://rpc.cloudwheels.net:26657/status',
     };
+
+    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
+      throw new ServiceIsNotRunningError(config.options.network, 'drive_tenderdash');
+    }
 
     // Collect core data
     const {
