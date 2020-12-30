@@ -1,4 +1,4 @@
-# [3.17.0](https://github.com/dashevo/DashJS/compare/v3.16.1...v3.17.0) (2020-12-30)
+# [3.17.0](https://github.com/dashevo/DashJS/compare/v3.16.2...v3.17.0) (2020-12-30)
 
 
 ### Features
@@ -17,6 +17,15 @@
 ### BREAKING CHANGES
 
 * requires a version of DAPI with instant locks implemented, i.e. 0.17 or higher
+
+
+
+## [3.16.2](https://github.com/dashevo/DashJS/compare/v3.16.1...v3.16.2) (2020-11-17)
+
+
+### Bug Fixes
+
+* cannot read property 'getBinaryProperties' of undefined ([#158](https://github.com/dashevo/DashJS/issues/158))
 
 
 

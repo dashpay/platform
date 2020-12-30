@@ -13,45 +13,37 @@ declare type ContractIdentifier = string | Identifier;
  * @returns contracts
  */
 export async function get(this: Platform, identifier: ContractIdentifier): Promise<any> {
-    let localContract;
-
     const contractId : Identifier = Identifier.from(identifier);
+
+    // Try to get contract from the cache
+    for (const appName of this.client.getApps().getNames()) {
+        const appDefinition = this.client.getApps().get(appName);
+        if (appDefinition.contractId.equals(contractId) && appDefinition.contract) {
+            return appDefinition.contract;
+        }
+    }
+
+    // Fetch contract otherwise
+
+    // @ts-ignore
+    const rawContract = await this.client.getDAPIClient().platform.getDataContract(contractId);
+
+    if (!rawContract) {
+        return null;
+    }
+
+    const contract = await this.dpp.dataContract.createFromBuffer(rawContract);
+
+    // Store contract to the cache
 
     for (const appName of this.client.getApps().getNames()) {
         const appDefinition = this.client.getApps().get(appName);
         if (appDefinition.contractId.equals(contractId)) {
-            localContract = appDefinition;
-            break;
+            appDefinition.contract = contract;
         }
     }
 
-    if (localContract && localContract.contract) {
-        return localContract.contract;
-    } else {
-        // @ts-ignore
-        const rawContract = await this.client.getDAPIClient().platform.getDataContract(contractId);
-
-        if (!rawContract) {
-            return null;
-        }
-
-        const contract = await this.dpp.dataContract.createFromBuffer(rawContract);
-
-        if (!localContract) {
-            // If we do not have even the identifier in this.apps, we add it with timestamp as key
-            this.client.getApps().set(
-                Date.now().toString(),
-                {
-                    contractId: contractId,
-                    contract
-                }
-            );
-        } else {
-            localContract.contract = contract;
-        }
-
-        return contract;
-    }
+    return contract;
 }
 
 export default get;

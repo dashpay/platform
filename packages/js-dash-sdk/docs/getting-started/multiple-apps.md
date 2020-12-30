@@ -1,9 +1,9 @@
 # Working with multiple apps
 
-When working with other registered contracts, you will need to know their `contractId` and reference it on the SDK constructor.
+When working with other registered contracts, you will need to know their `contractId` and reference it in the SDK constructor.
 
-Assuming a contract DashPay and having a following `contractId: "77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3"`. 
-You can then pass it as an options.
+Assuming a contract DashPay has the following `contractId: "77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3"`. 
+You can then pass it as an option.
 
 ```js
 const client = new Dash.Client({
@@ -15,9 +15,9 @@ const client = new Dash.Client({
 });
 ```
 
-This allow the methods `client.platform.documents.fetch` to provide you field selection. 
-Therefore, if the dashpay contract have a `profile` field that you wish to access, DashJS will allow you to do dot-syntax access :
+This allow the method `client.platform.documents.get` to provide you field selection. 
+Therefore, if the contract has a `profile` field that you wish to access, the SDK will allow you to use dot-syntax for access :
 
 ```js
-const bobProfile = await client.platform.documents.fetch('dashpay.profile', {name:'bob'})
+const bobProfile = await client.platform.documents.get('dashpay.profile', { name: 'bob' });
 ``` 
