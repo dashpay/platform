@@ -1,3 +1,51 @@
+# [0.17.0](https://github.com/dashevo/js-drive/compare/v0.16.1...v0.17.0) (2020-12-30)
+
+
+### Features
+
+* introduce `DriveStateRepository#fetchSMLStore` ([#444](https://github.com/dashevo/js-drive/issues/444), [#445](https://github.com/dashevo/js-drive/issues/445))
+* update `dashcore-lib` ([#411](https://github.com/dashevo/js-drive/issues/411), [#442](https://github.com/dashevo/js-drive/issues/442), [#443](https://github.com/dashevo/js-drive/issues/443))
+* add old zmq client from DAPI ([#439](https://github.com/dashevo/js-drive/issues/439))
+* dashpay contract support ([#441](https://github.com/dashevo/js-drive/issues/441))
+* change merk to @dashevo/merk
+* gracefull shutdown on SIGINT, SIGTERM, SIGQUIT and unhandled errors ([#427](https://github.com/dashevo/js-drive/issues/427))
+* handle core chain locked height ([#428](https://github.com/dashevo/js-drive/issues/428))
+* implement verify chainlock query handler ([#402](https://github.com/dashevo/js-drive/issues/402))
+* intermediate merk tree for the current block ([#429](https://github.com/dashevo/js-drive/issues/429))
+* pass latestCoreChainLock on block end ([#434](https://github.com/dashevo/js-drive/issues/434))
+* provide proofs for getIdentitiesByPublicKeyHashes endpoint ([#422](https://github.com/dashevo/js-drive/issues/422))
+* provide proofs for getIdentitiyIdsByPublicKeyHashes endpoint ([#419](https://github.com/dashevo/js-drive/issues/419))
+* provide proofs in ABCI query and DAPI getIdentity ([#415](https://github.com/dashevo/js-drive/issues/415))
+* set IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION to false ([#437](https://github.com/dashevo/js-drive/issues/437))
+* sort keys for MerkDB ([#413](https://github.com/dashevo/js-drive/issues/413))
+* store ChainInfo in MerkDb ([#404](https://github.com/dashevo/js-drive/issues/404))
+* store Data Contracts in merk tree ([#405](https://github.com/dashevo/js-drive/issues/405))
+* store documents in MerkDb ([#410](https://github.com/dashevo/js-drive/issues/410))
+* store height in externalStorage instead of merkDB ([#433](https://github.com/dashevo/js-drive/issues/433))
+* store identities in merk tree ([#400](https://github.com/dashevo/js-drive/issues/400))
+* store Public Key to Identity ID in MerkDb ([#409](https://github.com/dashevo/js-drive/issues/409))
+* update `dpp` to include asset lock verification logic ([#432](https://github.com/dashevo/js-drive/issues/432))
+* introduce merkle forest ([#401](https://github.com/dashevo/js-drive/issues/401))
+* move block execution context out of blockchain state ([#403](https://github.com/dashevo/js-drive/issues/403))
+* add abstraction for MerkDb ([#407](https://github.com/dashevo/js-drive/issues/407))
+
+
+### Bug Fixes
+
+* hash was used as a Buffer where it should be hex string ([#440](https://github.com/dashevo/js-drive/issues/440))
+* documents DB transaction is already started error ([#417](https://github.com/dashevo/js-drive/issues/417))
+* e.getErrors is not a function error ([#418](https://github.com/dashevo/js-drive/issues/418))
+* missing nested indexed fields and transaction ([#426](https://github.com/dashevo/js-drive/issues/426))
+
+
+### BREAKING CHANGES
+
+* AppHash is not equal to nils anymore.
+* data created with 0.16 and lower versions of Drive is not compatible anymore
+* ABCI query responses are changed
+
+
+
 ## [0.16.1](https://github.com/dashevo/js-drive/compare/v0.16.0...v0.16.1) (2020-10-29)
 
 
