@@ -1,3 +1,38 @@
+# [0.17.0](https://github.com/dashevo/dapi/compare/v0.16.2...v0.17.0) (2020-12-30)
+
+
+### Features
+
+* provide state tree proofs ([#323](https://github.com/dashevo/dapi/issues/323))
+* add instant send locks to the transaction stream ([#318](https://github.com/dashevo/dapi/issues/318), [#327](https://github.com/dashevo/dapi/issues/327))
+* use new drive response format ([#316](https://github.com/dashevo/dapi/issues/316))
+* update dashcore-lib to 0.19.5 ([#312](https://github.com/dashevo/dapi/issues/312))
+
+
+### Bug Fixes
+
+* internal error if state transaction was broadcasted twice ([#328](https://github.com/dashevo/dapi/issues/328))
+
+
+
+## [0.16.2](https://github.com/dashevo/dapi/compare/v0.16.1...v0.16.2) (2020-12-21)
+
+
+### Bug Fixes
+
+* crash in dapi-tx-filter-stream "can't read property trim() of undefined"
+
+
+
+## [0.16.1](https://github.com/dashevo/dapi/compare/v0.16.0...v0.16.1) (2020-11-16)
+
+
+### Bug Fixes
+
+* `count too big` being thrown in `subscribeToTransactionsWithProofsHandler` ([#315](https://github.com/dashevo/dapi/issues/315))
+
+
+
 # [0.16.0](https://github.com/dashevo/dapi/compare/v0.15.0...v0.16.0) (2020-10-27)
 
 
