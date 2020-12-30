@@ -63,9 +63,9 @@ class RestartCommand extends BaseCommand {
   }
 }
 
-RestartCommand.description = `Restart masternode
+RestartCommand.description = `Restart node
 ...
-Restart masternode with specific preset
+Restart node
 `;
 
 RestartCommand.flags = {

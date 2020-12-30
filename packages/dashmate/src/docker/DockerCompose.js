@@ -152,7 +152,7 @@ class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     if (!(await this.isServiceRunning(envs, serviceName))) {
-      throw new ServiceIsNotRunningError(envs, serviceName);
+      throw new ServiceIsNotRunningError(envs.CONFIG_NAME, serviceName);
     }
 
     let commandOutput;
