@@ -8,6 +8,8 @@ const StateTransitionIsNotSignedError = require(
   './errors/StateTransitionIsNotSignedError',
 );
 
+const stateTransitionTypes = require('./stateTransitionTypes');
+
 const hash = require('../util/hash');
 const { encode } = require('../util/serializer');
 
@@ -44,6 +46,8 @@ class AbstractStateTransition {
 
   /**
    * @abstract
+   *
+   * @return {number}
    */
   getType() {
     throw new Error('Not implemented');
@@ -186,6 +190,43 @@ class AbstractStateTransition {
   calculateFee() {
     return calculateStateTransitionFee(this);
   }
+
+  /**
+   * Returns ids of entities affected by the state transition
+   * @abstract
+   *
+   * @return {Identifier[]}
+   */
+  getModifiedDataIds() {
+    throw new Error('Not implemented');
+  }
+
+  /**
+   * Returns true if this state transition affects documents: create, update and delete transitions
+   *
+   * @return {boolean}
+   */
+  isDocumentStateTransition() {
+    return AbstractStateTransition.documentTransitionTypes.includes(this.getType());
+  }
+
+  /**
+   * Returns true if this state transition affects data contracts
+   *
+   * @return {boolean}
+   */
+  isDataContractStateTransition() {
+    return AbstractStateTransition.dataContractTransitionTypes.includes(this.getType());
+  }
+
+  /**
+   * Returns true if this state transition affects identities: create, update or top up.
+   *
+   * @return {boolean}
+   */
+  isIdentityStateTransition() {
+    return AbstractStateTransition.identityTransitionTypes.includes(this.getType());
+  }
 }
 
 /**
@@ -201,5 +242,16 @@ class AbstractStateTransition {
  * @property {number} type
  * @property {string} [signature]
  */
+
+AbstractStateTransition.documentTransitionTypes = [
+  stateTransitionTypes.DOCUMENTS_BATCH,
+];
+AbstractStateTransition.identityTransitionTypes = [
+  stateTransitionTypes.IDENTITY_CREATE,
+  stateTransitionTypes.IDENTITY_TOP_UP,
+];
+AbstractStateTransition.dataContractTransitionTypes = [
+  stateTransitionTypes.DATA_CONTRACT_CREATE,
+];
 
 module.exports = AbstractStateTransition;

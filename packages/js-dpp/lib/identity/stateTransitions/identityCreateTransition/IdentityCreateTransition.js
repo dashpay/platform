@@ -140,6 +140,15 @@ class IdentityCreateTransition extends AbstractStateTransition {
       publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toJSON()),
     };
   }
+
+  /**
+   * Returns ids of created identities
+   *
+   * @return {Identifier[]}
+   */
+  getModifiedDataIds() {
+    return [this.getIdentityId()];
+  }
 }
 
 /**

@@ -118,4 +118,32 @@ describe('DocumentsBatchTransition', () => {
       expect(result).to.deep.equal(getDocumentsFixture.ownerId);
     });
   });
+
+  describe('#getModifiedDataIds', () => {
+    it('should return ids of affected documents', () => {
+      const expectedIds = documents.map((doc) => doc.getId());
+      const result = stateTransition.getModifiedDataIds();
+
+      expect(result.length).to.be.equal(10);
+      expect(result).to.be.deep.equal(expectedIds);
+    });
+  });
+
+  describe('#isDataContractStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isDataContractStateTransition()).to.be.false();
+    });
+  });
+
+  describe('#isDocumentStateTransition', () => {
+    it('should return true', () => {
+      expect(stateTransition.isDocumentStateTransition()).to.be.true();
+    });
+  });
+
+  describe('#isIdentityStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isIdentityStateTransition()).to.be.false();
+    });
+  });
 });

@@ -115,6 +115,15 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
 
     return jsonStateTransition;
   }
+
+  /**
+   * Returns ids of all affected documents
+   *
+   * @return {Identifier[]}
+   */
+  getModifiedDataIds() {
+    return this.getTransitions().map((documentTransition) => documentTransition.getId());
+  }
 }
 
 /**

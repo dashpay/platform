@@ -101,6 +101,15 @@ class DataContractCreateTransition extends AbstractStateTransitionIdentitySigned
   getOwnerId() {
     return this.getDataContract().getOwnerId();
   }
+
+  /**
+   * Returns id of the created contract
+   *
+   * @return {Identifier[]}
+   */
+  getModifiedDataIds() {
+    return [this.getDataContract().getId()];
+  }
 }
 
 /**

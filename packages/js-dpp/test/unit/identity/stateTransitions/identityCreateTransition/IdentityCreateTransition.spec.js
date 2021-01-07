@@ -5,7 +5,9 @@ const stateTransitionTypes = require(
 );
 
 const Identity = require('../../../../../lib/identity/Identity');
+const IdentityCreateTransition = require('../../../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 const AssetLock = require('../../../../../lib/identity/stateTransitions/assetLock/AssetLock');
+const Identifier = require('../../../../../lib/identifier/Identifier');
 
 const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 
@@ -154,6 +156,38 @@ describe('IdentityCreateTransition', () => {
         publicKeys: stateTransition.getPublicKeys().map((k) => k.toJSON()),
         signature: undefined,
       });
+    });
+  });
+
+  describe('#getModifiedDataIds', () => {
+    it('should return ids of created identities', () => {
+      const result = stateTransition.getModifiedDataIds();
+
+      expect(result.length).to.be.equal(1);
+      const identityId = result[0];
+
+      expect(identityId).to.be.an.instanceOf(Identifier);
+      expect(identityId).to.be.deep.equal(
+        new IdentityCreateTransition(rawStateTransition).getIdentityId(),
+      );
+    });
+  });
+
+  describe('#isDataContractStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isDataContractStateTransition()).to.be.false();
+    });
+  });
+
+  describe('#isDocumentStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isDocumentStateTransition()).to.be.false();
+    });
+  });
+
+  describe('#isIdentityStateTransition', () => {
+    it('should return true', () => {
+      expect(stateTransition.isIdentityStateTransition()).to.be.true();
     });
   });
 });

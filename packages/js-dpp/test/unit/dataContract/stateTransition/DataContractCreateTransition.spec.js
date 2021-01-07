@@ -3,6 +3,7 @@ const rewiremock = require('rewiremock/node');
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
 
+const Identifier = require('../../../../lib/identifier/Identifier');
 const DataContract = require('../../../../lib/dataContract/DataContract');
 
 describe('DataContractCreateTransition', () => {
@@ -106,6 +107,36 @@ describe('DataContractCreateTransition', () => {
       const result = stateTransition.getOwnerId();
 
       expect(result).to.equal(stateTransition.getDataContract().getOwnerId());
+    });
+  });
+
+  describe('#getModifiedDataIds', () => {
+    it('should return ids of affected data contracts', () => {
+      const result = stateTransition.getModifiedDataIds();
+
+      expect(result.length).to.be.equal(1);
+      const contractId = result[0];
+
+      expect(contractId).to.be.an.instanceOf(Identifier);
+      expect(contractId).to.be.deep.equal(dataContract.getId());
+    });
+  });
+
+  describe('#isDataContractStateTransition', () => {
+    it('should return true', () => {
+      expect(stateTransition.isDataContractStateTransition()).to.be.true();
+    });
+  });
+
+  describe('#isDocumentStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isDocumentStateTransition()).to.be.false();
+    });
+  });
+
+  describe('#isIdentityStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isIdentityStateTransition()).to.be.false();
     });
   });
 });

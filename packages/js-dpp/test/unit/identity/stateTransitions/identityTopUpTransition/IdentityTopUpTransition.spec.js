@@ -109,4 +109,34 @@ describe('IdentityTopUpTransition', () => {
       });
     });
   });
+
+  describe('#getModifiedDataIds', () => {
+    it('should return ids of topped up identity', () => {
+      const result = stateTransition.getModifiedDataIds();
+
+      expect(result.length).to.be.equal(1);
+      const identityId = result[0];
+
+      expect(identityId).to.be.an.instanceOf(Identifier);
+      expect(identityId).to.be.deep.equal(rawStateTransition.identityId);
+    });
+  });
+
+  describe('#isDataContractStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isDataContractStateTransition()).to.be.false();
+    });
+  });
+
+  describe('#isDocumentStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isDocumentStateTransition()).to.be.false();
+    });
+  });
+
+  describe('#isIdentityStateTransition', () => {
+    it('should return true', () => {
+      expect(stateTransition.isIdentityStateTransition()).to.be.true();
+    });
+  });
 });

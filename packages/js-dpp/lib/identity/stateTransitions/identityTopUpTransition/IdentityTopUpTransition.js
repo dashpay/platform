@@ -120,6 +120,15 @@ class IdentityTopUpTransition extends AbstractStateTransition {
       assetLock: this.getAssetLock().toJSON(),
     };
   }
+
+  /**
+   * Returns ids of topped up identities
+   *
+   * @return {Identifier[]}
+   */
+  getModifiedDataIds() {
+    return [this.getIdentityId()];
+  }
 }
 
 /**
