@@ -28,4 +28,4 @@ if [[ $PACKAGE_TAG =~ dev ]]; then
 fi
 
 # Now that checks have been passed, publish the module
-npm publish --tag $NPM_TAG
+npm publish --access public --tag $NPM_TAG

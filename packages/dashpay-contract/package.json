@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dashpay-contract",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Reference contract of the DashPay DPA on Dash Evolution",
   "scripts": {
     "check-package": "npm run check-package:name && npm run check-package:version",
@@ -8,7 +8,7 @@
     "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
     "lint": "eslint .",
     "test": "npm run test:unit",
-    "test:unit": "mocha 'schema/*.spec.js'"
+    "test:unit": "mocha 'test/unit/*.spec.js'"
   },
   "repository": {
     "type": "git",
@@ -28,8 +28,7 @@
   },
   "homepage": "https://github.com/dashevo/dashpay-contract#readme",
   "devDependencies": {
-    "@dashevo/dapi-client": "^0.16.0",
-    "@dashevo/dpp": "^0.17.0-dev.2",
+    "@dashevo/dpp": "^0.17.0",
     "chai": "^4.2.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.7.0",
