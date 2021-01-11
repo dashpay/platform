@@ -84,6 +84,7 @@ const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContr
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
+const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
 const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
@@ -944,6 +945,7 @@ async function createDIContainer(options) {
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
     dataContractQueryHandler: asFunction(dataContractQueryHandlerFactory).singleton(),
     documentQueryHandler: asFunction(documentQueryHandlerFactory).singleton(),
+    getProofsQueryHandler: asFunction(getProofsQueryHandlerFactory).singleton(),
     identitiesByPublicKeyHashesQueryHandler:
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
     identityIdsByPublicKeyHashesQueryHandler:
@@ -957,6 +959,7 @@ async function createDIContainer(options) {
       identitiesByPublicKeyHashesQueryHandler,
       identityIdsByPublicKeyHashesQueryHandler,
       verifyChainLockQueryHandler,
+      getProofsQueryHandler,
     ) => {
       const router = findMyWay({
         ignoreTrailingSlash: true,
@@ -965,6 +968,7 @@ async function createDIContainer(options) {
       router.on('GET', '/identities', identityQueryHandler);
       router.on('GET', '/dataContracts', dataContractQueryHandler);
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
+      router.on('GET', '/proofs', getProofsQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
       router.on('GET', '/identities/by-public-key-hash/id', identityIdsByPublicKeyHashesQueryHandler);
       router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler, { rawData: true });
