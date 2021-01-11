@@ -1,3 +1,40 @@
+# [0.17.0](https://github.com/dashevo/mn-bootstrap/compare/v0.16.1...v0.17.0) (2021-01-11)
+
+
+### Features
+
+* add verbose mode to commands ([#187](https://github.com/dashevo/mn-bootstrap/issues/187), [#230](https://github.com/dashevo/mn-bootstrap/issues/230))
+* update dependencies [#177](https://github.com/dashevo/mn-bootstrap/issues/177), [#188](https://github.com/dashevo/mn-bootstrap/issues/188), [#211](https://github.com/dashevo/mn-bootstrap/issues/211), ([#231](https://github.com/dashevo/mn-bootstrap/issues/231))
+* introduce setup command ([#200](https://github.com/dashevo/mn-bootstrap/issues/200), [#214](https://github.com/dashevo/mn-bootstrap/issues/214), [#219](https://github.com/dashevo/mn-bootstrap/issues/219))
+* configure `passFakeAssetLockProofForTests` ([#222](https://github.com/dashevo/mn-bootstrap/issues/222))
+* expose `rawchainlocksig` and `zmqpubrawtxlocksig` from Core ([#221](https://github.com/dashevo/mn-bootstrap/issues/221))
+* pass dashpay contract id and block height to drive ([#220](https://github.com/dashevo/mn-bootstrap/issues/220))
+* add `skipAssetLockConfirmationValidation` option for drive ([#216](https://github.com/dashevo/mn-bootstrap/issues/216))
+* config migration ([#199](https://github.com/dashevo/mn-bootstrap/issues/199))
+* more status command output ([#124](https://github.com/dashevo/mn-bootstrap/issues/124), [#229](https://github.com/dashevo/mn-bootstrap/issues/229))
+* update Insight API ([#206](https://github.com/dashevo/mn-bootstrap/issues/206), [#207](https://github.com/dashevo/mn-bootstrap/issues/207))
+* register dashpay contract ([#125](https://github.com/dashevo/mn-bootstrap/issues/125))
+* implement rate limiter in config ([#183](https://github.com/dashevo/mn-bootstrap/issues/183))
+* update envoy for multi-arch support ([#179](https://github.com/dashevo/mn-bootstrap/issues/179))
+* add network parameters to configs ([#150](https://github.com/dashevo/mn-bootstrap/issues/150))
+* add ZMQ envs for Drive ([#180](https://github.com/dashevo/mn-bootstrap/issues/180))
+* update testnet config ([#232](https://github.com/dashevo/mn-bootstrap/issues/232))
+
+
+### Bug Fixes
+
+* pass correct params to error message ([#228](https://github.com/dashevo/mn-bootstrap/issues/228))
+* rmdir and tenderdash errors ([#227](https://github.com/dashevo/mn-bootstrap/issues/227))
+* configs are removed during writing ([#224](https://github.com/dashevo/mn-bootstrap/issues/224))
+* platform init doesn't work with many faulty nodes ([#217](https://github.com/dashevo/mn-bootstrap/issues/217))
+* syntax error in nginx config ([#205](https://github.com/dashevo/mn-bootstrap/issues/205))
+* templates dir not found in travis ([#201](https://github.com/dashevo/mn-bootstrap/issues/201), [#203](https://github.com/dashevo/mn-bootstrap/issues/203))
+* a bunch of small fixes ([#194](https://github.com/dashevo/mn-bootstrap/issues/194))
+* lint errors and dash core config ([#192](https://github.com/dashevo/mn-bootstrap/issues/192))
+* add section to dashd testnet config ([#175](https://github.com/dashevo/mn-bootstrap/issues/175))
+
+
+
 ## [0.16.1](https://github.com/dashevo/mn-bootstrap/compare/v0.16.0...v0.16.1) (2020-10-30)
 
 
