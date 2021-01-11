@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpns-contract",
-  "version": "0.3.0-dev.6",
+  "version": "0.3.0",
   "description": "A contract and helper scripts for DPNS DApp",
   "scripts": {
     "check-package": "npm run check-package:name && npm run check-package:version",
@@ -34,18 +34,14 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dapi-client": "~0.16.0-dev.1",
-    "@dashevo/dashcore-lib": "~0.18.12",
-    "@dashevo/dpp": "~0.16.0-dev.6",
+    "@dashevo/dpp": "~0.17.0",
     "chai": "^4.2.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^6.7.2",
     "eslint-config-airbnb-base": "^14.0.0",
     "eslint-plugin-import": "^2.19.1",
     "mocha": "^8.1.1",
-    "multihashes": "^0.4.15",
     "sinon": "^8.0.1",
-    "sinon-chai": "^3.4.0",
-    "yargs": "^15.3.1"
+    "sinon-chai": "^3.4.0"
   }
 }
