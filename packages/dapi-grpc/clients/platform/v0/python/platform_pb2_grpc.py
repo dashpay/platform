@@ -44,6 +44,11 @@ class PlatformStub(object):
         request_serializer=platform__pb2.GetIdentityIdsByPublicKeyHashesRequest.SerializeToString,
         response_deserializer=platform__pb2.GetIdentityIdsByPublicKeyHashesResponse.FromString,
         )
+    self.waitForStateTransitionResult = channel.unary_unary(
+        '/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult',
+        request_serializer=platform__pb2.WaitForStateTransitionResultRequest.SerializeToString,
+        response_deserializer=platform__pb2.WaitForStateTransitionResultResponse.FromString,
+        )
 
 
 class PlatformServicer(object):
@@ -92,6 +97,13 @@ class PlatformServicer(object):
     context.set_details('Method not implemented!')
     raise NotImplementedError('Method not implemented!')
 
+  def waitForStateTransitionResult(self, request, context):
+    # missing associated documentation comment in .proto file
+    pass
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
   rpc_method_handlers = {
@@ -124,6 +136,11 @@ def add_PlatformServicer_to_server(servicer, server):
           servicer.getIdentityIdsByPublicKeyHashes,
           request_deserializer=platform__pb2.GetIdentityIdsByPublicKeyHashesRequest.FromString,
           response_serializer=platform__pb2.GetIdentityIdsByPublicKeyHashesResponse.SerializeToString,
+      ),
+      'waitForStateTransitionResult': grpc.unary_unary_rpc_method_handler(
+          servicer.waitForStateTransitionResult,
+          request_deserializer=platform__pb2.WaitForStateTransitionResultRequest.FromString,
+          response_serializer=platform__pb2.WaitForStateTransitionResultResponse.SerializeToString,
       ),
   }
   generic_handler = grpc.method_handlers_generic_handler(

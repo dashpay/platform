@@ -35,6 +35,8 @@ const {
             GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
             GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
             GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
+            WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
+            WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
           },
         },
       },
@@ -49,6 +51,7 @@ const {
   GetDocumentsResponse: ProtocGetDocumentsResponse,
   GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
   GetIdentityIdsByPublicKeyHashesResponse: ProtocGetIdentityIdsByPublicKeyHashesResponse,
+  WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -89,6 +92,10 @@ class PlatformPromiseClient {
 
     this.client.getIdentityIdsByPublicKeyHashes = promisify(
       this.client.getIdentityIdsByPublicKeyHashes.bind(this.client),
+    );
+
+    this.client.waitForStateTransitionResult = promisify(
+      this.client.waitForStateTransitionResult.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -278,6 +285,39 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityIdsByPublicKeyHashesRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!WaitForStateTransitionResultRequest} waitForStateTransitionResultRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!WaitForStateTransitionResultResponse>}
+   */
+  waitForStateTransitionResult(
+    waitForStateTransitionResultRequest, metadata = {}, options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.waitForStateTransitionResult(
+      waitForStateTransitionResultRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocWaitForStateTransitionResultResponse,
+              PBJSWaitForStateTransitionResultResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSWaitForStateTransitionResultRequest,
             ),
           ),
         ],

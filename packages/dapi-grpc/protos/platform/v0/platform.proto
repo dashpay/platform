@@ -9,11 +9,17 @@ service Platform {
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
   rpc getIdentityIdsByPublicKeyHashes (GetIdentityIdsByPublicKeyHashesRequest) returns (GetIdentityIdsByPublicKeyHashesResponse);
+  rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
 }
 
 message Proof {
   bytes root_tree_proof = 1;
   bytes store_tree_proof = 2;
+}
+
+message StateTransitionBroadcastError {
+  uint32 code = 1;
+  string log = 2;
 }
 
 message BroadcastStateTransitionRequest {
@@ -84,4 +90,18 @@ message GetIdentityIdsByPublicKeyHashesRequest {
 message GetIdentityIdsByPublicKeyHashesResponse {
   repeated bytes identity_ids = 1;
   Proof proof = 2;
+}
+
+message WaitForStateTransitionResultRequest {
+  bytes state_transition_hash = 1;
+  bool prove = 2;
+}
+
+message WaitForStateTransitionResultResponse {
+  bytes state_transition_hash = 1;
+
+  oneof responses {
+    StateTransitionBroadcastError error = 2;
+    Proof proof = 3;
+  }
 }

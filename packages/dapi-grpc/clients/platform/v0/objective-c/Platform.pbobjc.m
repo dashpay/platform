@@ -97,6 +97,60 @@ typedef struct Proof__storage_ {
 
 @end
 
+#pragma mark - StateTransitionBroadcastError
+
+@implementation StateTransitionBroadcastError
+
+@dynamic code;
+@dynamic log;
+
+typedef struct StateTransitionBroadcastError__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t code;
+  NSString *log;
+} StateTransitionBroadcastError__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "code",
+        .dataTypeSpecific.className = NULL,
+        .number = StateTransitionBroadcastError_FieldNumber_Code,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(StateTransitionBroadcastError__storage_, code),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "log",
+        .dataTypeSpecific.className = NULL,
+        .number = StateTransitionBroadcastError_FieldNumber_Log,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(StateTransitionBroadcastError__storage_, log),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[StateTransitionBroadcastError class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(StateTransitionBroadcastError__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - BroadcastStateTransitionRequest
 
 @implementation BroadcastStateTransitionRequest
@@ -783,6 +837,136 @@ typedef struct GetIdentityIdsByPublicKeyHashesResponse__storage_ {
 
 @end
 
+#pragma mark - WaitForStateTransitionResultRequest
+
+@implementation WaitForStateTransitionResultRequest
+
+@dynamic stateTransitionHash;
+@dynamic prove;
+
+typedef struct WaitForStateTransitionResultRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *stateTransitionHash;
+} WaitForStateTransitionResultRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "stateTransitionHash",
+        .dataTypeSpecific.className = NULL,
+        .number = WaitForStateTransitionResultRequest_FieldNumber_StateTransitionHash,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultRequest__storage_, stateTransitionHash),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.className = NULL,
+        .number = WaitForStateTransitionResultRequest_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[WaitForStateTransitionResultRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(WaitForStateTransitionResultRequest__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - WaitForStateTransitionResultResponse
+
+@implementation WaitForStateTransitionResultResponse
+
+@dynamic responsesOneOfCase;
+@dynamic stateTransitionHash;
+@dynamic error;
+@dynamic proof;
+
+typedef struct WaitForStateTransitionResultResponse__storage_ {
+  uint32_t _has_storage_[2];
+  NSData *stateTransitionHash;
+  StateTransitionBroadcastError *error;
+  Proof *proof;
+} WaitForStateTransitionResultResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "stateTransitionHash",
+        .dataTypeSpecific.className = NULL,
+        .number = WaitForStateTransitionResultResponse_FieldNumber_StateTransitionHash,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse__storage_, stateTransitionHash),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "error",
+        .dataTypeSpecific.className = GPBStringifySymbol(StateTransitionBroadcastError),
+        .number = WaitForStateTransitionResultResponse_FieldNumber_Error,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse__storage_, error),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.className = GPBStringifySymbol(Proof),
+        .number = WaitForStateTransitionResultResponse_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[WaitForStateTransitionResultResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(WaitForStateTransitionResultResponse__storage_)
+                                         flags:GPBDescriptorInitializationFlag_None];
+    static const char *oneofs[] = {
+      "responses",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    NSAssert(descriptor == nil, @"Startup recursed!");
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void WaitForStateTransitionResultResponse_ClearResponsesOneOfCase(WaitForStateTransitionResultResponse *message) {
+  GPBDescriptor *descriptor = [message descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBMaybeClearOneof(message, oneof, -1, 0);
+}
 
 #pragma clang diagnostic pop
 
