@@ -5,7 +5,9 @@ const getDataContractFixture = require(
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Platform', () => {
-  describe('Data Contract', () => {
+  describe('Data Contract', function main() {
+    this.timeout(700000);
+
     let client;
     let dataContractFixture;
     let identity;

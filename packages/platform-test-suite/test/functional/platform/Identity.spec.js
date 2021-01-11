@@ -13,7 +13,9 @@ const waitForBalanceToChange = require('../../../lib/test/waitForBalanceToChange
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Platform', () => {
-  describe('Identity', () => {
+  describe('Identity', function main() {
+    this.timeout(700000);
+
     let dpp;
     let client;
     let identity;
@@ -73,7 +75,7 @@ describe('Platform', () => {
         expect.fail('Error was not thrown');
       } catch (e) {
         const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('IdentityAssetLockTransactionNotFoundError');
+        expect(error.name).to.equal('InvalidIdentityAssetLockProofSignatureError');
       }
     });
 
