@@ -27,6 +27,7 @@ class SetupCommand extends BaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
+   * @param {Docker} docker
    * @param {generateBlsKeys} generateBlsKeys
    * @param {ConfigCollection} configCollection
    * @param {initializeTenderdashNode} initializeTenderdashNode
@@ -53,6 +54,7 @@ class SetupCommand extends BaseCommand {
       verbose: isVerbose,
     },
     dockerCompose,
+    docker,
     generateBlsKeys,
     configCollection,
     initializeTenderdashNode,
@@ -201,7 +203,11 @@ class SetupCommand extends BaseCommand {
           const isNodeKeyEmpty = Object.keys(config.get('platform.drive.tenderdash.nodeKey')).length === 0;
           const isGenesisEmpty = Object.keys(config.get('platform.drive.tenderdash.genesis')).length === 0;
 
-          if (isValidatorKeyEmpty || isNodeKeyEmpty || isNodeKeyEmpty) {
+          const { Volumes: existingVolumes } = await docker.listVolumes();
+          const { COMPOSE_PROJECT_NAME: composeProjectName } = config.toEnvs();
+          const isDataVolumeMissing = !existingVolumes.find((v) => v.Name === `${composeProjectName}_drive_tenderdash`);
+
+          if (isValidatorKeyEmpty || isNodeKeyEmpty || isNodeKeyEmpty || isDataVolumeMissing) {
             const [validatorKey, nodeKey, genesis] = await initializeTenderdashNode(config);
 
             if (isValidatorKeyEmpty) {

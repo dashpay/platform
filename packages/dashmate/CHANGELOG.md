@@ -1,3 +1,12 @@
+## [0.17.1](https://github.com/dashevo/mn-bootstrap/compare/v0.17.0...v0.17.1) (2021-01-12)
+
+
+### Bug Fixes
+
+* validator state not found after reset ([#238](https://github.com/dashevo/mn-bootstrap/issues/238))
+
+
+
 # [0.17.0](https://github.com/dashevo/mn-bootstrap/compare/v0.16.1...v0.17.0) (2021-01-11)
 
 
