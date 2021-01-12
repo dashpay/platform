@@ -55,23 +55,48 @@ class CoreStatusCommand extends BaseCommand {
     const { result: networkInfo } = await coreService.getRpcClient().getNetworkInfo();
     const { result: mnsyncStatus } = await coreService.getRpcClient().mnsync('status');
     const { result: peerInfo } = await coreService.getRpcClient().getPeerInfo();
-    const latestVersionRes = await fetch('https://api.github.com/repos/dashpay/dash/releases/latest');
-    let {
-      tag_name: latestVersion,
-    } = await latestVersionRes.json();
-    latestVersion = latestVersion.substring(1);
-    const corePortStateRes = await fetch(`https://mnowatch.org/${config.options.core.p2p.port}/`);
-    let corePortState = await corePortStateRes.text();
+
+    let latestVersion;
+    try {
+      const latestVersionRes = await fetch('https://api.github.com/repos/dashpay/dash/releases/latest');
+      latestVersion = (await latestVersionRes.json()).tag_name.substring(1);
+    } catch (e) {
+      if (e.name === 'FetchError') {
+        latestVersion = '0';
+      } else {
+        throw e;
+      }
+    }
+
+    let corePortState;
+    try {
+      const corePortStateRes = await fetch(`https://mnowatch.org/${config.options.core.p2p.port}/`);
+      corePortState = await corePortStateRes.text();
+    } catch (e) {
+      if (e.name === 'FetchError') {
+        corePortState = 'ERROR';
+      } else {
+        throw e;
+      }
+    }
+
     let coreVersion = networkInfo.subversion.replace(/\/|\(.*?\)|Dash Core:/g, '');
-    let explorerBlockHeightRes;
     let explorerBlockHeight;
     if (insightURLs[config.options.network]) {
-      explorerBlockHeightRes = await fetch(`${insightURLs[config.options.network]}/status`);
-      ({
-        info: {
-          blocks: explorerBlockHeight,
-        },
-      } = await explorerBlockHeightRes.json());
+      try {
+        const explorerBlockHeightRes = await fetch(`${insightURLs[config.options.network]}/status`);
+        ({
+          info: {
+            blocks: explorerBlockHeight,
+          },
+        } = await explorerBlockHeightRes.json());
+      } catch (e) {
+        if (e.name === 'FetchError') {
+          explorerBlockHeight = 0;
+        } else {
+          throw e;
+        }
+      }
     }
     const sentinelVersion = (await dockerCompose.execCommand(
       config.toEnvs(),

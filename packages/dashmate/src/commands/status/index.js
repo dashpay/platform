@@ -105,30 +105,54 @@ class StatusCommand extends BaseCommand {
         }
       } else if (coreIsSynced === true) {
         // Collecting platform data fails if Tenderdash is waiting for core to sync
-        const platformStatusRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
-
-        ({
-          result: {
-            node_info: {
-              version: platformVersion,
+        try {
+          const platformStatusRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
+          ({
+            result: {
+              node_info: {
+                version: platformVersion,
+              },
+              sync_info: {
+                latest_block_height: platformBlockHeight,
+                catching_up: platformCatchingUp,
+              },
             },
-            sync_info: {
-              latest_block_height: platformBlockHeight,
-              catching_up: platformCatchingUp,
-            },
-          },
-        } = await platformStatusRes.json());
+          } = await platformStatusRes.json());
+        } catch (e) {
+          if (e.name === 'FetchError') {
+            platformVersion = 'unknown';
+            platformBlockHeight = 0;
+            platformCatchingUp = false;
+          } else {
+            throw e;
+          }
+        }
       }
     }
 
-    const explorerBlockHeightRes = await fetch('https://rpc.cloudwheels.net:26657/status');
-    const {
-      result: {
-        sync_info: {
-          latest_block_height: explorerBlockHeight,
+    const platformExplorerURLs = {
+      evonet: 'https://rpc.cloudwheels.net:26657',
+      testnet: '',
+      mainnet: '',
+    };
+
+    let explorerBlockHeight;
+    try {
+      const explorerBlockHeightRes = await fetch(`${platformExplorerURLs[config.options.network]}/status`);
+      ({
+        result: {
+          sync_info: {
+            latest_block_height: explorerBlockHeight,
+          },
         },
-      },
-    } = await explorerBlockHeightRes.json();
+      } = await explorerBlockHeightRes.json());
+    } catch (e) {
+      if (e.name === 'FetchError') {
+        explorerBlockHeight = 0;
+      } else {
+        throw e;
+      }
+    }
 
     // Determine status
     let coreStatus;

@@ -90,23 +90,44 @@ class CoreStatusCommand extends BaseCommand {
 
     let explorerLatestBlockHeight;
     if (explorerURLs[config.options.network]) {
-      const explorerBlockHeightRes = await fetch(explorerURLs[config.options.network]);
-      ({
-        result: {
-          sync_info: {
-            latest_block_height: explorerLatestBlockHeight,
+      try {
+        const explorerBlockHeightRes = await fetch(explorerURLs[config.options.network]);
+        ({
+          result: {
+            sync_info: {
+              latest_block_height: explorerLatestBlockHeight,
+            },
           },
-        },
-      } = await explorerBlockHeightRes.json());
+        } = await explorerBlockHeightRes.json());
+      } catch (e) {
+        if (e.name === 'FetchError') {
+          explorerLatestBlockHeight = 0;
+        } else {
+          throw e;
+        }
+      }
     }
 
     // Check ports
-    const httpPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.nginx.http.port}/`);
-    let httpPortState = await httpPortStateRes.text();
-    const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.nginx.grpc.port}/`);
-    let gRpcPortState = await gRpcPortStateRes.text();
-    const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.drive.tenderdash.p2p.port}/`);
-    let p2pPortState = await p2pPortStateRes.text();
+    let httpPortState;
+    let gRpcPortState;
+    let p2pPortState;
+    try {
+      const httpPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.nginx.http.port}/`);
+      httpPortState = await httpPortStateRes.text();
+      const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.nginx.grpc.port}/`);
+      gRpcPortState = await gRpcPortStateRes.text();
+      const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.drive.tenderdash.p2p.port}/`);
+      p2pPortState = await p2pPortStateRes.text();
+    } catch (e) {
+      if (e.name === 'FetchError') {
+        httpPortState = 'ERROR';
+        gRpcPortState = 'ERROR';
+        p2pPortState = 'ERROR';
+      } else {
+        throw e;
+      }
+    }
 
     // Determine status
     let status;
