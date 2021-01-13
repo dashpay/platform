@@ -19,7 +19,8 @@ message Proof {
 
 message StateTransitionBroadcastError {
   uint32 code = 1;
-  string log = 2;
+  string message = 2;
+  bytes data = 3;
 }
 
 message BroadcastStateTransitionRequest {
@@ -98,10 +99,8 @@ message WaitForStateTransitionResultRequest {
 }
 
 message WaitForStateTransitionResultResponse {
-  bytes state_transition_hash = 1;
-
   oneof responses {
-    StateTransitionBroadcastError error = 2;
-    Proof proof = 3;
+    StateTransitionBroadcastError error = 1;
+    Proof proof = 2;
   }
 }

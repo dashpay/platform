@@ -66,14 +66,17 @@ typedef GPB_ENUM(Proof_FieldNumber) {
 
 typedef GPB_ENUM(StateTransitionBroadcastError_FieldNumber) {
   StateTransitionBroadcastError_FieldNumber_Code = 1,
-  StateTransitionBroadcastError_FieldNumber_Log = 2,
+  StateTransitionBroadcastError_FieldNumber_Message = 2,
+  StateTransitionBroadcastError_FieldNumber_Data_p = 3,
 };
 
 @interface StateTransitionBroadcastError : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t code;
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *log;
+@property(nonatomic, readwrite, copy, null_resettable) NSString *message;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *data_p;
 
 @end
 
@@ -314,20 +317,17 @@ typedef GPB_ENUM(WaitForStateTransitionResultRequest_FieldNumber) {
 #pragma mark - WaitForStateTransitionResultResponse
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_FieldNumber) {
-  WaitForStateTransitionResultResponse_FieldNumber_StateTransitionHash = 1,
-  WaitForStateTransitionResultResponse_FieldNumber_Error = 2,
-  WaitForStateTransitionResultResponse_FieldNumber_Proof = 3,
+  WaitForStateTransitionResultResponse_FieldNumber_Error = 1,
+  WaitForStateTransitionResultResponse_FieldNumber_Proof = 2,
 };
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_Responses_OneOfCase) {
   WaitForStateTransitionResultResponse_Responses_OneOfCase_GPBUnsetOneOfCase = 0,
-  WaitForStateTransitionResultResponse_Responses_OneOfCase_Error = 2,
-  WaitForStateTransitionResultResponse_Responses_OneOfCase_Proof = 3,
+  WaitForStateTransitionResultResponse_Responses_OneOfCase_Error = 1,
+  WaitForStateTransitionResultResponse_Responses_OneOfCase_Proof = 2,
 };
 
 @interface WaitForStateTransitionResultResponse : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransitionHash;
 
 @property(nonatomic, readonly) WaitForStateTransitionResultResponse_Responses_OneOfCase responsesOneOfCase;
 

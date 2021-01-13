@@ -102,12 +102,14 @@ typedef struct Proof__storage_ {
 @implementation StateTransitionBroadcastError
 
 @dynamic code;
-@dynamic log;
+@dynamic message;
+@dynamic data_p;
 
 typedef struct StateTransitionBroadcastError__storage_ {
   uint32_t _has_storage_[1];
   uint32_t code;
-  NSString *log;
+  NSString *message;
+  NSData *data_p;
 } StateTransitionBroadcastError__storage_;
 
 // This method is threadsafe because it is initially called
@@ -126,13 +128,22 @@ typedef struct StateTransitionBroadcastError__storage_ {
         .dataType = GPBDataTypeUInt32,
       },
       {
-        .name = "log",
+        .name = "message",
         .dataTypeSpecific.className = NULL,
-        .number = StateTransitionBroadcastError_FieldNumber_Log,
+        .number = StateTransitionBroadcastError_FieldNumber_Message,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(StateTransitionBroadcastError__storage_, log),
+        .offset = (uint32_t)offsetof(StateTransitionBroadcastError__storage_, message),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "data_p",
+        .dataTypeSpecific.className = NULL,
+        .number = StateTransitionBroadcastError_FieldNumber_Data_p,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(StateTransitionBroadcastError__storage_, data_p),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -895,13 +906,11 @@ typedef struct WaitForStateTransitionResultRequest__storage_ {
 @implementation WaitForStateTransitionResultResponse
 
 @dynamic responsesOneOfCase;
-@dynamic stateTransitionHash;
 @dynamic error;
 @dynamic proof;
 
 typedef struct WaitForStateTransitionResultResponse__storage_ {
   uint32_t _has_storage_[2];
-  NSData *stateTransitionHash;
   StateTransitionBroadcastError *error;
   Proof *proof;
 } WaitForStateTransitionResultResponse__storage_;
@@ -912,15 +921,6 @@ typedef struct WaitForStateTransitionResultResponse__storage_ {
   static GPBDescriptor *descriptor = nil;
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "stateTransitionHash",
-        .dataTypeSpecific.className = NULL,
-        .number = WaitForStateTransitionResultResponse_FieldNumber_StateTransitionHash,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse__storage_, stateTransitionHash),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeBytes,
-      },
       {
         .name = "error",
         .dataTypeSpecific.className = GPBStringifySymbol(StateTransitionBroadcastError),
