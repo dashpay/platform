@@ -19,14 +19,6 @@ function broadcastStateTransitionFactory(grpcTransport) {
    * @returns {Promise<!BroadcastStateTransitionResponse>}
    */
   async function broadcastStateTransition(stateTransition, options = {}) {
-    // eslint-disable-next-line no-param-reassign
-    options = {
-      // Override global timeout option
-      // and timeout for this method by default
-      timeout: undefined,
-      ...options,
-    };
-
     const broadcastStateTransitionRequest = new BroadcastStateTransitionRequest();
     broadcastStateTransitionRequest.setStateTransition(stateTransition);
 
