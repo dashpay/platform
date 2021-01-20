@@ -12,7 +12,8 @@ const TransactionSyncStreamWorker = require('../../../../src/plugins/Workers/Tra
 
 const TxStreamDataResponseMock = require('../../../../src/test/mocks/TxStreamDataResponseMock');
 const TxStreamMock = require('../../../../src/test/mocks/TxStreamMock');
-const TransportMock = require('../../../../src/test/mocks/TransportMock');
+
+const createAndAttachTransportMocksToWallet = require('../../../../src/test/mocks/createAndAttachTransportMocksToWallet')
 
 const { Wallet } = require('../../../../src');
 
@@ -41,9 +42,6 @@ describe('TransactionSyncStreamWorker', function suite() {
     testHDKey = "xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ";
     merkleBlockMock = new MerkleBlock(Buffer.from([0,0,0,32,61,11,102,108,38,155,164,49,91,246,141,178,126,155,13,118,248,83,250,15,206,21,102,65,104,183,243,167,235,167,60,113,140,110,120,87,208,191,240,19,212,100,228,121,192,125,143,44,226,9,95,98,51,25,139,172,175,27,205,201,158,85,37,8,72,52,36,95,255,255,127,32,2,0,0,0,1,0,0,0,1,140,110,120,87,208,191,240,19,212,100,228,121,192,125,143,44,226,9,95,98,51,25,139,172,175,27,205,201,158,85,37,8,1,1]));
 
-    txStreamMock = new TxStreamMock();
-    transportMock = new TransportMock(this.sinonSandbox, txStreamMock);
-
     testHDKey = new HDPrivateKey(testHDKey).toString();
 
     // Override default value of executeOnStart to prevent worker from starting
@@ -56,7 +54,8 @@ describe('TransactionSyncStreamWorker', function suite() {
       allowSensitiveOperations: true,
       HDPrivateKey: new HDPrivateKey(testHDKey),
     });
-    wallet.transport = transportMock;
+
+    ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
 
     account = await wallet.getAccount();
 
@@ -471,8 +470,6 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       txStreamMock.emit(TxStreamMock.EVENTS.error, new Error('Some random error'));
 
-      await wait(10);
-
       await worker.onStop();
 
       await expect(worker.incomingSyncPromise).to.be.rejectedWith('Some random error');
@@ -633,5 +630,24 @@ describe('TransactionSyncStreamWorker', function suite() {
     // Check that wait method throws if timeout has passed
     await expect(account.waitForInstantLock(transactions[2].hash, 1000)).to.eventually
         .be.rejectedWith('InstantLock waiting period for transaction 256d5b3bf6d8869f5cc882ae070af9b648fa0f512bfa2b6f07b35d55e160a16c timed out');
+  });
+
+  it('should start from the height specified in `skipSynchronizationBeforeHeight` options', async function () {
+    const bestBlockHeight = 42;
+
+    wallet = new Wallet({
+      HDPrivateKey: new HDPrivateKey(testHDKey),
+      unsafeOptions: {
+        skipSynchronizationBeforeHeight: 20,
+      },
+    });
+
+    await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox);
+
+    account = await wallet.getAccount();
+
+    account.transport.getBestBlockHeight.resolves(bestBlockHeight);
+
+    expect(account.transport.subscribeToTransactionsWithProofs.getCall(0).args[1]).to.be.deep.equal({ fromBlockHeight: 20, count: bestBlockHeight - 20 });
   });
 });

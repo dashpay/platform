@@ -120,6 +120,19 @@ class TransactionSyncStreamWorker extends Worker {
   }
 
   async onStart() {
+    // Using sync options here to avoid
+    // situation when plugin is injected directly
+    // instead of usual injection process
+    const {
+      skipSynchronizationBeforeHeight,
+    } = (this.storage.store.syncOptions || {});
+
+    if (skipSynchronizationBeforeHeight) {
+      this.setLastSyncedBlockHeight(
+        skipSynchronizationBeforeHeight,
+      );
+    }
+
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
   }

@@ -14,6 +14,7 @@ const defaultOptions = {
   passphrase: null,
   injectDefaultPlugins: true,
   allowSensitiveOperations: false,
+  unsafeOptions: {},
 };
 
 const fromMnemonic = require('./methods/fromMnemonic');
@@ -58,6 +59,7 @@ class Wallet {
     this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
+    this.unsafeOptions = _.has(opts, 'unsafeOptions') ? opts.unsafeOptions : defaultOptions.unsafeOptions;
 
     // Validate network
     const networkName = _.has(opts, 'network') ? opts.network.toString() : defaultOptions.network;
@@ -99,6 +101,16 @@ class Wallet {
     });
 
     this.store = this.storage.store;
+
+    if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
+      // As it is pretty complicated to pass any of wallet options
+      // to a specific plugin, using `store` as an options mediator
+      // is easier.
+      this.store.syncOptions = {
+        skipSynchronizationBeforeHeight: this.unsafeOptions.skipSynchronizationBeforeHeight,
+      };
+    }
+
     const plugins = opts.plugins || defaultOptions.plugins;
     this.plugins = {};
     // eslint-disable-next-line no-return-assign
