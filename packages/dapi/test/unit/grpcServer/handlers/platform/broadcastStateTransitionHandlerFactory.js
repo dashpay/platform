@@ -30,7 +30,6 @@ describe('broadcastStateTransitionHandlerFactory', () => {
   let stateTransitionFixture;
   let log;
   let code;
-  let handleAbciResponseErrorMock;
 
   beforeEach(async function beforeEach() {
     const dpp = new DashPlatformProtocol();
@@ -70,11 +69,8 @@ describe('broadcastStateTransitionHandlerFactory', () => {
       request: this.sinon.stub().resolves(response),
     };
 
-    handleAbciResponseErrorMock = this.sinon.stub();
-
     broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
       rpcClientMock,
-      handleAbciResponseErrorMock,
     );
   });
 
@@ -93,7 +89,6 @@ describe('broadcastStateTransitionHandlerFactory', () => {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('State Transition is not specified');
       expect(rpcClientMock.request).to.not.be.called();
-      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 
@@ -103,45 +98,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     const tx = stateTransitionFixture.toBuffer().toString('base64');
 
     expect(result).to.be.an.instanceOf(BroadcastStateTransitionResponse);
-    expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_commit', { tx });
-    expect(handleAbciResponseErrorMock).to.not.be.called();
-  });
-
-  it('should throw error if checkTx.code !== 0', async () => {
-    const error = new InvalidArgumentGrpcError('Some error');
-    code = 2;
-
-    response.result.check_tx.code = code;
-
-    handleAbciResponseErrorMock.throws(error);
-
-    rpcClientMock.request.resolves(response);
-
-    try {
-      await broadcastStateTransitionHandler(call);
-
-      expect.fail('InternalGrpcError was not thrown');
-    } catch (e) {
-      expect(e).to.be.equal(error);
-    }
-  });
-  it('should throw error if deliverTx.code !== 0', async () => {
-    const error = new InvalidArgumentGrpcError('Some error');
-    code = 2;
-
-    response.result.deliver_tx.code = code;
-
-    handleAbciResponseErrorMock.throws(error);
-
-    rpcClientMock.request.resolves(response);
-
-    try {
-      await broadcastStateTransitionHandler(call);
-
-      expect.fail('InternalGrpcError was not thrown');
-    } catch (e) {
-      expect(e).to.be.equal(error);
-    }
+    expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_async', { tx });
   });
 
   it('should throw an error if transaction broadcast returns error', async () => {
@@ -162,7 +119,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     const error = {
       code: -32603,
       message: 'Internal error',
-      data: 'error on broadcastTxCommit: tx already exists in cache',
+      data: 'tx already exists in cache',
     };
 
     response.error = error;

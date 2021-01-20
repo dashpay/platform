@@ -13,15 +13,12 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const AbciResponseError = require('../../../errors/AbciResponseError');
-
 /**
  * @param {jaysonClient} rpcClient
- * @param {handleAbciResponseError} handleAbciResponseError
  *
  * @returns {broadcastStateTransitionHandler}
  */
-function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseError) {
+function broadcastStateTransitionHandlerFactory(rpcClient) {
   /**
    * @typedef broadcastStateTransitionHandler
    *
@@ -39,10 +36,10 @@ function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseErr
 
     const tx = Buffer.from(stByteArray).toString('base64');
 
-    const { result, error: jsonRpcError } = await rpcClient.request('broadcast_tx_commit', { tx });
+    const { error: jsonRpcError } = await rpcClient.request('broadcast_tx_async', { tx });
 
     if (jsonRpcError) {
-      if (jsonRpcError.data === 'error on broadcastTxCommit: tx already exists in cache') {
+      if (jsonRpcError.data === 'tx already exists in cache') {
         throw new FailedPreconditionGrpcError(jsonRpcError.data, jsonRpcError);
       }
 
@@ -50,24 +47,6 @@ function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseErr
       Object.assign(error, jsonRpcError);
 
       throw error;
-    }
-
-    const { check_tx: checkTx, deliver_tx: deliverTx } = result;
-
-    if (checkTx.code !== undefined && checkTx.code !== 0) {
-      const { error: abciError } = JSON.parse(checkTx.log);
-
-      handleAbciResponseError(
-        new AbciResponseError(checkTx.code, abciError),
-      );
-    }
-
-    if (deliverTx.code !== undefined && deliverTx.code !== 0) {
-      const { error: abciError } = JSON.parse(deliverTx.log);
-
-      handleAbciResponseError(
-        new AbciResponseError(deliverTx.code, abciError),
-      );
     }
 
     return new BroadcastStateTransitionResponse();
