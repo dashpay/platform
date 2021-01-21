@@ -1,5 +1,4 @@
 const { startMongoDb } = require('@dashevo/dp-services-ctl');
-const { asValue } = require('awilix');
 
 const createTestDIContainer = require('../../lib/test/createTestDIContainer');
 
@@ -42,17 +41,6 @@ describe('createDIContainer', function describeContainer() {
       expect(abciHandlers).to.have.property('deliverTx');
       expect(abciHandlers).to.have.property('commit');
       expect(abciHandlers).to.have.property('query');
-    });
-
-    it('should resolve logger streams', () => {
-      container.register({
-        logPrettyFilePath: asValue('/tmp/somePath'),
-        logJsonFilePath: asValue('/tmp/someOtherPath'),
-      });
-
-      const streams = container.resolve('loggerStreams');
-
-      expect(streams.length).to.equal(3);
     });
   });
 });

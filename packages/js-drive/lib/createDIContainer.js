@@ -155,8 +155,10 @@ const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorW
  * @param {string} options.DASHPAY_CONTRACT_ID
  * @param {string} options.DASHPAY_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
- * @param {string} options.LOGGING_LEVEL
+ * @param {string} options.LOG_STDOUT_LEVEL
+ * @param {string} options.LOG_PRETTY_FILE_LEVEL
  * @param {string} options.LOG_PRETTY_FILE_PATH
+ * @param {string} options.LOG_JSON_FILE_LEVEL
  * @param {string} options.LOG_JSON_FILE_PATH
  * @param {string} options.NODE_ENV
  *
@@ -244,8 +246,10 @@ async function createDIContainer(options) {
     ),
     dashpayContractBlockHeight: asValue(parseInt(options.DASHPAY_CONTRACT_BLOCK_HEIGHT, 10)),
     network: asValue(options.NETWORK),
-    logLevel: asValue(options.LOGGING_LEVEL),
+    logStdoutLevel: asValue(options.LOG_STDOUT_LEVEL),
+    logPrettyFileLevel: asValue(options.LOG_PRETTY_FILE_LEVEL),
     logPrettyFilePath: asValue(options.LOG_PRETTY_FILE_PATH),
+    logJsonFileLevel: asValue(options.LOG_JSON_FILE_LEVEL),
     logJsonFilePath: asValue(options.LOG_JSON_FILE_PATH),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
@@ -284,40 +288,40 @@ async function createDIContainer(options) {
       translateTime: true,
     }),
 
-    loggerStreams: asFunction((logPrettyFilePath, logJsonFilePath, loggerPrettyfierOptions) => {
+    loggerStreams: asFunction((
+      logStdoutLevel,
+      logPrettyFileLevel,
+      logPrettyFilePath,
+      logJsonFileLevel,
+      logJsonFilePath,
+      loggerPrettyfierOptions,
+    ) => {
       const streams = [
         {
+          level: logStdoutLevel,
           stream: pinoMultistream.prettyStream({
             prettyPrint: loggerPrettyfierOptions,
           }),
         },
+        {
+          level: logPrettyFileLevel,
+          stream: pinoMultistream.prettyStream({
+            prettyPrint: loggerPrettyfierOptions,
+            dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
+          }),
+        },
+        {
+          level: logJsonFileLevel,
+          stream: fs.createWriteStream(logJsonFilePath, { flags: 'a' }),
+        },
       ];
-
-      if (logPrettyFilePath) {
-        streams.push(
-          {
-            stream: pinoMultistream.prettyStream({
-              prettyPrint: loggerPrettyfierOptions,
-              dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
-            }),
-          },
-        );
-      }
-
-      if (logJsonFilePath) {
-        streams.push(
-          {
-            stream: fs.createWriteStream(logJsonFilePath, { flags: 'a' }),
-          },
-        );
-      }
 
       return streams;
     }),
 
-    logger: asFunction((logLevel, loggerStreams) => pino({
-      level: logLevel,
-    }, pinoMultistream.multistream(loggerStreams))).singleton(),
+    logger: asFunction(
+      (loggerStreams) => pino({}, pinoMultistream.multistream(loggerStreams)),
+    ).singleton(),
 
     noopLogger: asFunction(() => (
       Object.keys(pino.levels.values).reduce((logger, functionName) => ({
