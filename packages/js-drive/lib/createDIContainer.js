@@ -6,6 +6,8 @@ const {
   asValue,
 } = require('awilix');
 
+const fs = require('fs');
+
 const Long = require('long');
 
 // eslint-disable-next-line import/no-unresolved
@@ -23,6 +25,7 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const findMyWay = require('find-my-way');
 
 const pino = require('pino');
+const pinoMultistream = require('pino-multi-stream');
 
 const ZMQClient = require('./core/ZmqClient');
 
@@ -70,8 +73,6 @@ const ChainInfoExternalStoreRepository = require('./chainInfo/ChainInfoExternalS
 
 const BlockExecutionStoreTransactions = require('./blockExecution/BlockExecutionStoreTransactions');
 const PreviousBlockExecutionStoreTransactionsRepository = require('./blockExecution/PreviousBlockExecutionStoreTransactionsRepository');
-const createIsolatedValidatorSnapshot = require('./dpp/isolation/createIsolatedValidatorSnapshot');
-const createIsolatedDppFactory = require('./dpp/isolation/createIsolatedDppFactory');
 
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
@@ -115,6 +116,7 @@ const FileDb = require('./fileDb/FileDb');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const SpentAssetLockTransactionsStoreRootTreeLeaf = require('./identity/SpentAssetLockTransactionsStoreRootTreeLeaf');
 const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneToPreviousStoreTransactionsFactory');
+const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
 
 /**
  *
@@ -128,8 +130,6 @@ const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneT
  * @param {string} options.PREVIOUS_IDENTITIES_STORE_MERK_DB_FILE
  * @param {string} options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE
  * @param {string} options.PREVIOUS_PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE
- * @param {string} options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT
- * @param {string} options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS
  * @param {string} options.DATA_CONTRACTS_STORE_MERK_DB_FILE
  * @param {string} options.PREVIOUS_DATA_CONTRACTS_STORE_MERK_DB_FILE
  * @param {string} options.DOCUMENTS_STORE_MERK_DB_FILE
@@ -156,6 +156,8 @@ const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneT
  * @param {string} options.DASHPAY_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.LOGGING_LEVEL
+ * @param {string} options.LOG_PRETTY_FILE_PATH
+ * @param {string} options.LOG_JSON_FILE_PATH
  * @param {string} options.NODE_ENV
  *
  * @return {AwilixContainer}
@@ -205,12 +207,6 @@ async function createDIContainer(options) {
     previousIdentitiesStoreMerkDBFile: asValue(options.PREVIOUS_IDENTITIES_STORE_MERK_DB_FILE),
     externalStoreLevelDBFile: asValue(options.EXTERNAL_STORE_LEVEL_DB_FILE),
     previousExternalStoreLevelDBFile: asValue(options.PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE),
-    isolatedSTUnserializationMemoryLimit: asValue(
-      parseInt(options.ISOLATED_ST_UNSERIALIZATION_MEMORY_LIMIT, 10),
-    ),
-    isolatedSTUnserializationTimeout: asValue(
-      parseInt(options.ISOLATED_ST_UNSERIALIZATION_TIMEOUT_MILLIS, 10),
-    ),
     dataContractsStoreMerkDBFile: asValue(options.DATA_CONTRACTS_STORE_MERK_DB_FILE),
     previousDataContractsStoreMerkDBFile:
       asValue(options.PREVIOUS_DATA_CONTRACTS_STORE_MERK_DB_FILE),
@@ -248,7 +244,9 @@ async function createDIContainer(options) {
     ),
     dashpayContractBlockHeight: asValue(parseInt(options.DASHPAY_CONTRACT_BLOCK_HEIGHT, 10)),
     network: asValue(options.NETWORK),
-    loggingLevel: asValue(options.LOGGING_LEVEL),
+    logLevel: asValue(options.LOGGING_LEVEL),
+    logPrettyFilePath: asValue(options.LOG_PRETTY_FILE_PATH),
+    logJsonFilePath: asValue(options.LOG_JSON_FILE_PATH),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
     smlMaxListsLimit: asValue(16),
@@ -282,12 +280,51 @@ async function createDIContainer(options) {
    * Register common services
    */
   container.register({
-    logger: asFunction((loggingLevel) => pino({
-      level: loggingLevel,
-      prettyPrint: {
-        translateTime: true,
-      },
-    })),
+    loggerPrettyfierOptions: asValue({
+      translateTime: true,
+    }),
+
+    loggerStreams: asFunction((logPrettyFilePath, logJsonFilePath, loggerPrettyfierOptions) => {
+      const streams = [
+        {
+          stream: pinoMultistream.prettyStream({
+            prettyPrint: loggerPrettyfierOptions,
+          }),
+        },
+      ];
+
+      if (logPrettyFilePath) {
+        streams.push(
+          {
+            stream: pinoMultistream.prettyStream({
+              prettyPrint: loggerPrettyfierOptions,
+              dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
+            }),
+          },
+        );
+      }
+
+      if (logJsonFilePath) {
+        streams.push(
+          {
+            stream: fs.createWriteStream(logJsonFilePath, { flags: 'a' }),
+          },
+        );
+      }
+
+      return streams;
+    }),
+
+    logger: asFunction((logLevel, loggerStreams) => pino({
+      level: logLevel,
+    }, pinoMultistream.multistream(loggerStreams))).singleton(),
+
+    noopLogger: asFunction(() => (
+      Object.keys(pino.levels.values).reduce((logger, functionName) => ({
+        ...logger,
+        [functionName]: () => {},
+      }), {})
+    )).singleton(),
 
     sanitizeUrl: asValue(sanitizeUrl),
     coreZMQClient: asFunction((
@@ -297,7 +334,8 @@ async function createDIContainer(options) {
     ) => (
       new ZMQClient(coreZMQHost, coreZMQPort, {
         maxRetryCount: coreZMQConnectionRetries,
-      }))).singleton(),
+      })
+    )).singleton(),
 
     coreRpcClient: asFunction((
       coreJsonRpcHost,
@@ -311,17 +349,18 @@ async function createDIContainer(options) {
         port: coreJsonRpcPort,
         user: coreJsonRpcUsername,
         pass: coreJsonRpcPassword,
-      }))).singleton(),
+      })
+    )).singleton(),
   });
 
   /**
    * Register Identity
    */
   container.register({
-    publicKeyToIdentityIdStore: asFunction((publicKeyToIdentityIdStoreMerkDBFile) => {
+    publicKeyToIdentityIdStore: asFunction((publicKeyToIdentityIdStoreMerkDBFile, logger) => {
       const merkDb = new Merk(publicKeyToIdentityIdStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb);
+      return new MerkDbStore(merkDb, logger, 'publicKeyToIdentityId');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -350,15 +389,17 @@ async function createDIContainer(options) {
       }
     }).singleton(),
 
-    publicKeyToIdentityIdStoreRootTreeLeaf: asClass(PublicKeyToIdentityIdStoreRootTreeLeaf),
+    publicKeyToIdentityIdStoreRootTreeLeaf: asClass(PublicKeyToIdentityIdStoreRootTreeLeaf)
+      .singleton(),
+
     previousPublicKeyToIdentityIdStoreRootTreeLeaf: asFunction((
       previousPublicKeyToIdentityIdStore,
     ) => (new PublicKeyToIdentityIdStoreRootTreeLeaf(previousPublicKeyToIdentityIdStore))),
 
-    identitiesStore: asFunction((identitiesStoreMerkDBFile) => {
+    identitiesStore: asFunction((identitiesStoreMerkDBFile, logger) => {
       const merkDb = new Merk(identitiesStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb);
+      return new MerkDbStore(merkDb, logger, 'identities');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -409,12 +450,13 @@ async function createDIContainer(options) {
   container.register({
     spentAssetLockTransactionsStore: asFunction((
       spentAssetLockTransactionsStoreMerkDBFile,
+      logger,
     ) => {
       const merkDb = new Merk(
         spentAssetLockTransactionsStoreMerkDBFile,
       );
 
-      return new MerkDbStore(merkDb);
+      return new MerkDbStore(merkDb, logger, 'spentAssetLockTransactions');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -425,6 +467,7 @@ async function createDIContainer(options) {
         merkDb.db.destroy();
       }
     }).singleton(),
+
     previousSpentAssetLockTransactionsStore: asFunction((
       previousSpentAssetLockTransactionsStoreMerkDBFile,
     ) => {
@@ -443,15 +486,19 @@ async function createDIContainer(options) {
         merkDb.db.destroy();
       }
     }).singleton(),
+
     spentAssetLockTransactionsRepository: asClass(SpentAssetLockTransactionsRepository).singleton(),
+
     previousSpentAssetLockTransactionsRepository: asFunction((
       previousSpentAssetLockTransactionsStore,
     ) => (
       new SpentAssetLockTransactionsRepository(previousSpentAssetLockTransactionsStore)
     )).singleton(),
+
     spentAssetLockTransactionsStoreRootTreeLeaf: asClass(
       SpentAssetLockTransactionsStoreRootTreeLeaf,
     ).singleton(),
+
     previousSpentAssetLockTransactionsStoreRootTreeLeaf: asFunction((
       previousSpentAssetLockTransactionsStore,
     ) => (new SpentAssetLockTransactionsStoreRootTreeLeaf(
@@ -463,10 +510,10 @@ async function createDIContainer(options) {
    * Register Data Contract
    */
   container.register({
-    dataContractsStore: asFunction((dataContractsStoreMerkDBFile) => {
+    dataContractsStore: asFunction((dataContractsStoreMerkDBFile, logger) => {
       const merkDb = new Merk(dataContractsStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb);
+      return new MerkDbStore(merkDb, logger, 'dataContracts');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -494,11 +541,13 @@ async function createDIContainer(options) {
     }).singleton(),
 
     dataContractsStoreRootTreeLeaf: asClass(DataContractsStoreRootTreeLeaf).singleton(),
+
     previousDataContractsStoreRootTreeLeaf: asFunction((
       previousDataContractsStore,
     ) => (new DataContractsStoreRootTreeLeaf(previousDataContractsStore))).singleton(),
 
     dataContractRepository: asClass(DataContractStoreRepository).singleton(),
+
     previousDataContractRepository: asFunction((
       previousDataContractsStore,
     ) => (new DataContractStoreRepository(previousDataContractsStore, container))).singleton(),
@@ -516,10 +565,10 @@ async function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    documentsStore: asFunction((documentsStoreMerkDBFile) => {
+    documentsStore: asFunction((documentsStoreMerkDBFile, logger) => {
       const merkDb = new Merk(documentsStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb);
+      return new MerkDbStore(merkDb, logger, 'documents');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -557,6 +606,7 @@ async function createDIContainer(options) {
     ) => (new DocumentsStoreRootTreeLeaf(previousDocumentsStore))).singleton(),
 
     documentRepository: asClass(DocumentIndexedStoreRepository).singleton(),
+
     previousDocumentRepository: asFunction((
       previousDocumentStoreRepository,
       createPreviousDocumentMongoDbRepository,
@@ -581,6 +631,7 @@ async function createDIContainer(options) {
     convertToMongoDbIndices: asValue(convertToMongoDbIndicesFunction),
 
     getDocumentMongoDBDatabase: asFunction(getDocumentDatabaseFactory).singleton(),
+
     getPreviousDocumentMongoDBDatabase: asFunction((
       connectToDocumentMongoDB,
       previousDocumentMongoDBPrefix,
@@ -590,7 +641,9 @@ async function createDIContainer(options) {
         previousDocumentMongoDBPrefix,
       )
     )).singleton(),
+
     createDocumentMongoDbRepository: asFunction(createDocumentMongoDbRepositoryFactory).singleton(),
+
     createPreviousDocumentMongoDbRepository: asFunction((
       validateQuery,
       getPreviousDocumentMongoDBDatabase,
@@ -605,7 +658,9 @@ async function createDIContainer(options) {
         { isPrevious: true },
       )
     )).singleton(),
-    documentDatabaseManager: asClass(DocumentDatabaseManager),
+
+    documentDatabaseManager: asClass(DocumentDatabaseManager).singleton(),
+
     previousDocumentDatabaseManager: asFunction((
       createPreviousDocumentMongoDbRepository,
       convertToMongoDbIndices,
@@ -616,7 +671,7 @@ async function createDIContainer(options) {
         convertToMongoDbIndices,
         getPreviousDocumentMongoDBDatabase,
       )
-    )),
+    )).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
 
@@ -640,7 +695,7 @@ async function createDIContainer(options) {
         createPreviousDocumentMongoDbRepository,
         dpp,
       )
-    )),
+    )).singleton(),
   });
 
   /**
@@ -658,6 +713,7 @@ async function createDIContainer(options) {
       .singleton(),
 
     chainInfoRepository: asClass(ChainInfoExternalStoreRepository).singleton(),
+
     previousChainInfoRepository: asFunction((
       previousExternalLevelDB,
     ) => (new ChainInfoExternalStoreRepository(previousExternalLevelDB))).singleton(),
@@ -675,10 +731,10 @@ async function createDIContainer(options) {
    * Register credits distribution pool
    */
   container.register({
-    commonStore: asFunction((commonStoreMerkDBFile) => {
+    commonStore: asFunction((commonStoreMerkDBFile, logger) => {
       const merkDb = new Merk(commonStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb);
+      return new MerkDbStore(merkDb, logger, 'common');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -730,13 +786,17 @@ async function createDIContainer(options) {
    */
   container.register({
     blockExecutionStoreTransactions: asClass(BlockExecutionStoreTransactions).singleton(),
+
     previousBlockExecutionStoreTransactionsRepository: asClass(
       PreviousBlockExecutionStoreTransactionsRepository,
     ).singleton(),
+
     previousBlockExecutionTransactionDB: asFunction((previousBlockExecutionTransactionFile) => (
       new FileDb(previousBlockExecutionTransactionFile)
     )).singleton(),
+
     blockExecutionContext: asClass(BlockExecutionContext).singleton(),
+
     cloneToPreviousStoreTransactions: asFunction(
       cloneToPreviousStoreTransactionsFactory,
     ).singleton(),
@@ -763,6 +823,7 @@ async function createDIContainer(options) {
         spentAssetLockTransactionsStoreRootTreeLeaf,
       ])
     )).singleton(),
+
     previousRootTree: asFunction((
       previousCommonStoreRootTreeLeaf,
       previousIdentitiesStoreRootTreeLeaf,
@@ -785,19 +846,7 @@ async function createDIContainer(options) {
   /**
    * Register DPP
    */
-  const isolatedSnapshot = await createIsolatedValidatorSnapshot();
-
   container.register({
-    isolatedSTUnserializationOptions: asFunction((
-      isolatedSTUnserializationMemoryLimit,
-      isolatedSTUnserializationTimeout,
-    ) => ({
-      memoryLimit: isolatedSTUnserializationMemoryLimit,
-      timeout: isolatedSTUnserializationTimeout,
-    })).singleton(),
-
-    isolatedJsonSchemaValidatorSnapshot: asValue(isolatedSnapshot),
-
     stateRepository: asFunction((
       identityRepository,
       publicKeyToIdentityIdRepository,
@@ -839,7 +888,6 @@ async function createDIContainer(options) {
       blockExecutionStoreTransactions,
       dataContractCache,
       blockExecutionContext,
-      logger,
       simplifiedMasternodeList,
     ) => {
       const stateRepository = new DriveStateRepository(
@@ -861,41 +909,19 @@ async function createDIContainer(options) {
 
       return new LoggedStateRepositoryDecorator(
         cachedRepository,
-        logger,
+        blockExecutionContext,
       );
     }).singleton(),
 
     unserializeStateTransition: asFunction((
-      isolatedJsonSchemaValidatorSnapshot,
-      isolatedSTUnserializationOptions,
-      stateRepository,
-      dppOptions,
-    ) => {
-      const createIsolatedDpp = createIsolatedDppFactory(
-        isolatedJsonSchemaValidatorSnapshot,
-        isolatedSTUnserializationOptions,
-        stateRepository,
-        dppOptions,
-      );
-
-      return unserializeStateTransitionFactory(createIsolatedDpp);
-    }).singleton(),
+      dpp,
+      noopLogger,
+    ) => unserializeStateTransitionFactory(dpp, noopLogger)).singleton(),
 
     transactionalUnserializeStateTransition: asFunction((
-      isolatedJsonSchemaValidatorSnapshot,
-      isolatedSTUnserializationOptions,
-      transactionalStateRepository,
-      dppOptions,
-    ) => {
-      const createIsolatedDpp = createIsolatedDppFactory(
-        isolatedJsonSchemaValidatorSnapshot,
-        isolatedSTUnserializationOptions,
-        transactionalStateRepository,
-        dppOptions,
-      );
-
-      return unserializeStateTransitionFactory(createIsolatedDpp);
-    }).singleton(),
+      transactionalDpp,
+      noopLogger,
+    ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
 
     dpp: asFunction((stateRepository, dppOptions) => (
       new DashPlatformProtocol({
@@ -913,28 +939,22 @@ async function createDIContainer(options) {
   });
 
   /**
-   * Register check functions
+   * Register Core stuff
    */
   container.register({
     detectStandaloneRegtestMode: asFunction(detectStandaloneRegtestModeFactory).singleton(),
-  });
-  container.register({
+
     waitForCoreSync: asFunction(waitForCoreSyncFactory).singleton(),
-  });
-  container.register({
+
     waitForCoreChainLockSyncFallback:
       asFunction(waitForCoreChainLockSyncFallbackFactory).singleton(),
-  });
-  container.register({
+
     updateSimplifiedMasternodeList: asFunction(updateSimplifiedMasternodeListFactory).singleton(),
-  });
-  container.register({
+
     waitForChainLockedHeight: asFunction(waitForChainLockedHeightFactory).singleton(),
-  });
-  container.register({
+
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
-  });
-  container.register({
+
     waitReplicaSetInitialize: asFunction(waitReplicaSetInitializeFactory).singleton(),
   });
 
@@ -986,7 +1006,8 @@ async function createDIContainer(options) {
     queryHandler: asFunction(queryHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
-    errorHandler: asFunction(() => errorHandlerFactory(container)),
+    enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
+    errorHandler: asFunction((logger) => errorHandlerFactory(logger, container)).singleton(),
 
     abciHandlers: asFunction((
       infoHandler,
@@ -997,15 +1018,16 @@ async function createDIContainer(options) {
       endBlockHandler,
       commitHandler,
       wrapInErrorHandler,
+      enrichErrorWithConsensusError,
       queryHandler,
     ) => ({
       info: infoHandler,
       checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
-      beginBlock: beginBlockHandler,
-      deliverTx: wrapInErrorHandler(deliverTxHandler),
+      beginBlock: enrichErrorWithConsensusError(beginBlockHandler),
+      deliverTx: wrapInErrorHandler(enrichErrorWithConsensusError(deliverTxHandler)),
       initChain: initChainHandler,
-      endBlock: endBlockHandler,
-      commit: commitHandler,
+      endBlock: enrichErrorWithConsensusError(endBlockHandler),
+      commit: enrichErrorWithConsensusError(commitHandler),
       query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
     })).singleton(),
   });

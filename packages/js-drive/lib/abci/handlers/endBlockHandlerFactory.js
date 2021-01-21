@@ -37,12 +37,21 @@ function endBlockHandlerFactory(
   /**
    * @typedef endBlockHandler
    *
-   * @param {abci.RequestBeginBlock} request
+   * @param {abci.RequestEndBlock} request
    *
    * @return {Promise<abci.ResponseBeginBlock>}
    */
-  async function endBlockHandler({ height }) {
-    logger.info(`Block end #${height}`);
+  async function endBlockHandler(request) {
+    const { height } = request;
+
+    const consensusLogger = logger.child({
+      height: height.toString(),
+      abciMethod: 'endBlock',
+    });
+
+    consensusLogger.debug('EndBlock ABCI method requested');
+
+    blockExecutionContext.setConsensusLogger(consensusLogger);
 
     if (dpnsContractId && height === dpnsContractBlockHeight) {
       if (!blockExecutionContext.hasDataContract(dpnsContractId)) {
@@ -59,19 +68,37 @@ function endBlockHandlerFactory(
     const header = blockExecutionContext.getHeader();
     const coreChainLock = latestCoreChainLock.getChainLock();
 
-    if (coreChainLock && coreChainLock.height > header.coreChainLockedHeight) {
-      logger.trace(`Provide next chain lock for height ${coreChainLock.height}`);
+    let response = {};
 
-      return new ResponseEndBlock({
+    if (coreChainLock && coreChainLock.height > header.coreChainLockedHeight) {
+      consensusLogger.trace(
+        {
+          nextCoreChainLockHeight: coreChainLock.height,
+        },
+        `Provide next chain lock for Core height ${coreChainLock.height}`,
+      );
+
+      response = {
         nextCoreChainLockUpdate: new CoreChainLock({
           coreBlockHeight: coreChainLock.height,
           coreBlockHash: coreChainLock.blockHash,
           signature: coreChainLock.signature,
         }),
-      });
+      };
     }
 
-    return new ResponseEndBlock();
+    const validTxCount = blockExecutionContext.getValidTxCount();
+    const invalidTxCount = blockExecutionContext.getInvalidTxCount();
+
+    consensusLogger.info(
+      {
+        validTxCount,
+        invalidTxCount,
+      },
+      `Block end #${height} (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
+    );
+
+    return new ResponseEndBlock(response);
   }
 
   return endBlockHandler;

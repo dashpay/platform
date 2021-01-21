@@ -3,6 +3,9 @@ class BlockExecutionContext {
     this.dataContracts = [];
     this.accumulativeFees = 0;
     this.header = null;
+    this.validTxs = 0;
+    this.invalidTxs = 0;
+    this.consensusLogger = null;
   }
 
   /**
@@ -75,12 +78,77 @@ class BlockExecutionContext {
   }
 
   /**
+   * Increment number of valid txs processed
+   *
+   * @return {BlockExecutionContext}
+   */
+  incrementValidTxCount() {
+    this.validTxs += 1;
+
+    return this;
+  }
+
+  /**
+   * Increment number of invalid txs processed
+   *
+   * @return {BlockExecutionContext}
+   */
+  incrementInvalidTxCount() {
+    this.invalidTxs += 1;
+
+    return this;
+  }
+
+  /**
+   * Get number of valid txs processed
+   *
+   * @return {number}
+   */
+  getValidTxCount() {
+    return this.validTxs;
+  }
+
+  /**
+   * Get number of invalid txs processed
+   *
+   * @return {number}
+   */
+  getInvalidTxCount() {
+    return this.invalidTxs;
+  }
+
+  /**
+   * Set consensus logger
+   *
+   * @param {BaseLogger} logger
+   */
+  setConsensusLogger(logger) {
+    this.consensusLogger = logger;
+  }
+
+  /**
+   * Get consensus logger
+   *
+   * @return {BaseLogger}
+   */
+  getConsensusLogger() {
+    if (!this.consensusLogger) {
+      throw new Error('Consensus logger has not been set');
+    }
+
+    return this.consensusLogger;
+  }
+
+  /**
    * Reset state
    */
   reset() {
     this.dataContracts = [];
     this.accumulativeFees = 0;
     this.header = null;
+    this.validTxs = 0;
+    this.invalidTxs = 0;
+    this.consensusLogger = null;
   }
 }
 

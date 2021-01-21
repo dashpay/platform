@@ -36,21 +36,18 @@ describe('convertToMongoDbIndices', () => {
         'data.firstName': -1,
       },
       unique: true,
-      name: 'ownerId_data.firstName',
     }, {
       key: {
         ownerId: 1,
         'data.lastName': -1,
       },
       unique: false,
-      name: 'ownerId_data.lastName',
     }, {
       key: {
         _id: 1,
         'data.lastName': -1,
       },
       unique: false,
-      name: '_id_data.lastName',
     }]);
   });
 });

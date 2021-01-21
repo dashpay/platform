@@ -11,6 +11,7 @@ const verifyChainLockQueryHandlerFactory = require('../../../../../lib/abci/hand
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 const AbciError = require('../../../../../lib/abci/errors/AbciError');
+const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
 describe('verifyChainLockQueryHandlerFactory', () => {
   let simplifiedMasternodeListMock;
@@ -38,9 +39,7 @@ describe('verifyChainLockQueryHandlerFactory', () => {
       toJSON: this.sinon.stub(),
     };
 
-    loggerMock = {
-      debug: this.sinon.stub(),
-    };
+    loggerMock = new LoggerMock(this.sinon);
 
     decodeChainLockMock = this.sinon.stub().returns(chainLockMock);
     detectStandaloneRegtestModeMock = this.sinon.stub().returns(false);

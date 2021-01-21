@@ -5,21 +5,25 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const LoggedStateRepositoryDecorator = require('../../../lib/dpp/LoggedStateRepositoryDecorator');
+const LoggerMock = require('../../../lib/test/mock/LoggerMock');
+const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('LoggedStateRepositoryDecorator', () => {
   let loggedStateRepositoryDecorator;
   let stateRepositoryMock;
   let loggerMock;
+  let blockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
-    loggerMock = {
-      trace: this.sinon.stub(),
-    };
+    loggerMock = new LoggerMock(this.sinon);
+
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextMock.getConsensusLogger.returns(loggerMock);
 
     loggedStateRepositoryDecorator = new LoggedStateRepositoryDecorator(
       stateRepositoryMock,
-      loggerMock,
+      blockExecutionContextMock,
     );
   });
 
@@ -38,7 +42,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.fetchIdentity(id);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchIdentity',
+        stateRepositoryMethod: 'fetchIdentity',
         parameters: { id },
         response,
       }, 'StateRepository#fetchIdentity');
@@ -58,7 +62,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchIdentity',
+        stateRepositoryMethod: 'fetchIdentity',
         parameters: { id },
         response: undefined,
       }, 'StateRepository#fetchIdentity');
@@ -80,7 +84,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.storeIdentity(identity);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeIdentity',
+        stateRepositoryMethod: 'storeIdentity',
         parameters: { identity },
         response,
       }, 'StateRepository#storeIdentity');
@@ -100,7 +104,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeIdentity',
+        stateRepositoryMethod: 'storeIdentity',
         parameters: { identity },
         response: undefined,
       }, 'StateRepository#storeIdentity');
@@ -125,7 +129,7 @@ describe('LoggedStateRepositoryDecorator', () => {
         .storeIdentityPublicKeyHashes(identityId, publicKeyHashes);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeIdentityPublicKeyHashes',
+        stateRepositoryMethod: 'storeIdentityPublicKeyHashes',
         parameters: {
           identityId,
           publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
@@ -149,7 +153,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeIdentityPublicKeyHashes',
+        stateRepositoryMethod: 'storeIdentityPublicKeyHashes',
         parameters: {
           identityId,
           publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
@@ -174,7 +178,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchIdentityIdsByPublicKeyHashes',
+        stateRepositoryMethod: 'fetchIdentityIdsByPublicKeyHashes',
         parameters: {
           publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
         },
@@ -196,7 +200,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchIdentityIdsByPublicKeyHashes',
+        stateRepositoryMethod: 'fetchIdentityIdsByPublicKeyHashes',
         parameters: {
           publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
         },
@@ -220,7 +224,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.fetchDataContract(id);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchDataContract',
+        stateRepositoryMethod: 'fetchDataContract',
         parameters: { id },
         response,
       }, 'StateRepository#fetchDataContract');
@@ -240,7 +244,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchDataContract',
+        stateRepositoryMethod: 'fetchDataContract',
         parameters: { id },
         response: undefined,
       }, 'StateRepository#fetchDataContract');
@@ -262,7 +266,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.storeDataContract(dataContract);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeDataContract',
+        stateRepositoryMethod: 'storeDataContract',
         parameters: { dataContract },
         response,
       }, 'StateRepository#storeDataContract');
@@ -282,7 +286,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeDataContract',
+        stateRepositoryMethod: 'storeDataContract',
         parameters: { dataContract },
         response: undefined,
       }, 'StateRepository#storeDataContract');
@@ -310,7 +314,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.fetchDocuments(contractId, type, options);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchDocuments',
+        stateRepositoryMethod: 'fetchDocuments',
         parameters: { contractId, type, options },
         response,
       }, 'StateRepository#fetchDocuments');
@@ -330,7 +334,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchDocuments',
+        stateRepositoryMethod: 'fetchDocuments',
         parameters: { contractId, type, options },
         response: undefined,
       }, 'StateRepository#fetchDocuments');
@@ -352,7 +356,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.storeDocument(document);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeDocument',
+        stateRepositoryMethod: 'storeDocument',
         parameters: { document },
         response,
       }, 'StateRepository#storeDocument');
@@ -372,7 +376,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'storeDocument',
+        stateRepositoryMethod: 'storeDocument',
         parameters: { document },
         response: undefined,
       }, 'StateRepository#storeDocument');
@@ -398,7 +402,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.removeDocument(contractId, type, id);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'removeDocument',
+        stateRepositoryMethod: 'removeDocument',
         parameters: { contractId, type, id },
         response,
       }, 'StateRepository#removeDocument');
@@ -418,7 +422,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'removeDocument',
+        stateRepositoryMethod: 'removeDocument',
         parameters: { contractId, type, id },
         response: undefined,
       }, 'StateRepository#removeDocument');
@@ -440,7 +444,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.fetchTransaction(id);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchTransaction',
+        stateRepositoryMethod: 'fetchTransaction',
         parameters: { id },
         response,
       }, 'StateRepository#fetchTransaction');
@@ -460,7 +464,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchTransaction',
+        stateRepositoryMethod: 'fetchTransaction',
         parameters: { id },
         response: undefined,
       }, 'StateRepository#fetchTransaction');
@@ -476,7 +480,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       await loggedStateRepositoryDecorator.fetchLatestPlatformBlockHeader();
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchLatestPlatformBlockHeader',
+        stateRepositoryMethod: 'fetchLatestPlatformBlockHeader',
         parameters: { },
         response,
       }, 'StateRepository#fetchLatestPlatformBlockHeader');
@@ -496,7 +500,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       }
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        method: 'fetchLatestPlatformBlockHeader',
+        stateRepositoryMethod: 'fetchLatestPlatformBlockHeader',
         parameters: { },
         response: undefined,
       }, 'StateRepository#fetchLatestPlatformBlockHeader');

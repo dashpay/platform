@@ -2,6 +2,7 @@ const wrapInErrorHandlerFactory = require('../../../../lib/abci/errors/wrapInErr
 
 const InternalAbciError = require('../../../../lib/abci/errors/InternalAbciError');
 const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('wrapInErrorHandlerFactory', () => {
   let loggerMock;
@@ -15,9 +16,7 @@ describe('wrapInErrorHandlerFactory', () => {
       tx: Buffer.alloc(0),
     };
 
-    loggerMock = {
-      error: this.sinon.stub(),
-    };
+    loggerMock = new LoggerMock(this.sinon);
 
     wrapInErrorHandler = wrapInErrorHandlerFactory(loggerMock, true);
     methodMock = this.sinon.stub();

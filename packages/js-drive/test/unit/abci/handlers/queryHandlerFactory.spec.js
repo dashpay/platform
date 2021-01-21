@@ -4,6 +4,7 @@ const queryHandlerFactory = require('../../../../lib/abci/handlers/queryHandlerF
 
 const AbciError = require('../../../../lib/abci/errors/AbciError');
 const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('queryHandlerFactory', () => {
   let queryHandler;
@@ -19,10 +20,7 @@ describe('queryHandlerFactory', () => {
       data: cbor.encode(Buffer.from('data')),
     };
 
-    loggerMock = {
-      trace: this.sinon.stub(),
-      debug: this.sinon.stub(),
-    };
+    loggerMock = new LoggerMock(this.sinon);
 
     sanitizeUrlMock = this.sinon.stub();
 

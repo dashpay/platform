@@ -52,8 +52,6 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
 
         // Log only internal ABCI errors
         if (error instanceof InternalAbciError) {
-          logger.error(error.getError());
-
           // in consensus ABCI handlers (blockBegin, deliverTx, blockEnd, commit)
           // we should propagate the error upwards
           // to halt the Drive
@@ -61,6 +59,14 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
           // we need to respond with internal errors
           if (!options.respondWithInternalError) {
             throw error.getError();
+          }
+
+          const originalError = error.getError();
+
+          if (originalError.consensusLogger) {
+            originalError.consensusLogger.error(originalError);
+          } else {
+            logger.error(originalError);
           }
 
           if (!isProductionEnvironment) {

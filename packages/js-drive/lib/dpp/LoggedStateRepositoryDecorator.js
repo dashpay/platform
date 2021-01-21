@@ -1,14 +1,14 @@
 class LoggedStateRepositoryDecorator {
   /**
    * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
-   * @param {BaseLogger} logger
+   * @param {BlockExecutionContext} logger
    */
   constructor(
     stateRepository,
-    logger,
+    blockExecutionContext,
   ) {
     this.stateRepository = stateRepository;
-    this.logger = logger;
+    this.blockExecutionContext = blockExecutionContext;
   }
 
   /**
@@ -18,8 +18,10 @@ class LoggedStateRepositoryDecorator {
    * @param {object} response - response of the state repository call
    */
   log(method, parameters, response) {
-    this.logger.trace({
-      method,
+    const logger = this.blockExecutionContext.getConsensusLogger();
+
+    logger.trace({
+      stateRepositoryMethod: method,
       parameters,
       response,
     }, `StateRepository#${method}`);

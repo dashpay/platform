@@ -50,20 +50,29 @@ function deliverTxHandlerFactory(
       .createHash('sha256')
       .update(stateTransitionByteArray)
       .digest()
-      .toString('hex');
+      .toString('hex')
+      .toUpperCase();
 
-    logger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
+    const consensusLogger = logger.child({
+      height: blockHeight.toString(),
+      txId: stHash,
+      abciMethod: 'deliverTx',
+    });
+
+    blockExecutionContext.setConsensusLogger(consensusLogger);
+
+    consensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
     let stateTransition;
     try {
-      stateTransition = await transactionalUnserializeStateTransition(stateTransitionByteArray);
+      stateTransition = await transactionalUnserializeStateTransition(
+        stateTransitionByteArray,
+        {
+          logger: consensusLogger,
+        },
+      );
     } catch (e) {
-      if (e instanceof InvalidArgumentAbciError) {
-        logger.info('State transition structure is invalid');
-        logger.debug({
-          error: e,
-        });
-      }
+      blockExecutionContext.incrementInvalidTxCount();
 
       throw e;
     }
@@ -71,41 +80,20 @@ function deliverTxHandlerFactory(
     const result = await transactionalDpp.stateTransition.validateData(stateTransition);
 
     if (!result.isValid()) {
-      logger.info('State transition data is invalid');
-      logger.debug({
+      consensusLogger.info('State transition data is invalid');
+      consensusLogger.debug({
         errors: result.getErrors(),
       });
+
+      blockExecutionContext.incrementInvalidTxCount();
+
       throw new InvalidArgumentAbciError('Invalid state transition', { errors: result.getErrors() });
     }
 
+    // Apply state transition to the state
     await transactionalDpp.stateTransition.apply(stateTransition);
 
-    switch (stateTransition.getType()) {
-      case stateTransitionTypes.DATA_CONTRACT_CREATE: {
-        const dataContract = stateTransition.getDataContract();
-
-        // Save data contracts in order to create databases for documents on block commit
-        blockExecutionContext.addDataContract(dataContract);
-
-        logger.info(`Data contract created with id: ${dataContract.getId()}`);
-
-        break;
-      }
-      case stateTransitionTypes.IDENTITY_CREATE: {
-        const identityId = stateTransition.getIdentityId();
-        logger.info(`Identity created with id: ${identityId}`);
-        break;
-      }
-      case stateTransitionTypes.DOCUMENTS_BATCH: {
-        stateTransition.getTransitions().forEach((transition) => {
-          const description = DOCUMENT_ACTION_DESCRIPTONS[transition.getAction()];
-          logger.info(`Document ${description} with id: ${transition.getId()}`);
-        });
-        break;
-      }
-      default:
-        break;
-    }
+    blockExecutionContext.incrementValidTxCount();
 
     // Reduce an identity balance and accumulate fees for all STs in the block
     // in order to store them in credits distribution pool
@@ -120,6 +108,65 @@ function deliverTxHandlerFactory(
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 
     blockExecutionContext.incrementAccumulativeFees(stateTransitionFee);
+
+    // Logging
+    switch (stateTransition.getType()) {
+      case stateTransitionTypes.DATA_CONTRACT_CREATE: {
+        const dataContract = stateTransition.getDataContract();
+
+        // Save data contracts in order to create databases for documents on block commit
+        blockExecutionContext.addDataContract(dataContract);
+
+        consensusLogger.info(
+          {
+            dataContractId: dataContract.getId().toString(),
+          },
+          `Data contract created with id: ${dataContract.getId()}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_CREATE: {
+        const identityId = stateTransition.getIdentityId();
+
+        consensusLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Identity created with id: ${identityId}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_TOP_UP: {
+        const identityId = stateTransition.getIdentityId();
+
+        consensusLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Identity topped up with id: ${identityId}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.DOCUMENTS_BATCH: {
+        stateTransition.getTransitions().forEach((transition) => {
+          const description = DOCUMENT_ACTION_DESCRIPTONS[transition.getAction()];
+
+          consensusLogger.info(
+            {
+              documentId: transition.getId().toString(),
+            },
+            `Document ${description} with id: ${transition.getId()}`,
+          );
+        });
+
+        break;
+      }
+      default:
+        break;
+    }
 
     return new ResponseDeliverTx();
   }

@@ -2,60 +2,72 @@ const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/er
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/BalanceIsNotEnoughError');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const MemoryLimitExceededError = require('../../errors/MemoryLimitExceededError');
-const ExecutionTimedOutError = require('../../errors/ExecutionTimedOutError');
 const InsufficientFundsError = require('../../errors/InsufficientFundsError');
 
 /**
- * @param {createIsolatedDpp} createIsolatedDpp
+ * @param {DashPlatformProtocol} dpp
+ * @param {Object} noopLogger
  * @return {unserializeStateTransition}
  */
-function unserializeStateTransitionFactory(createIsolatedDpp) {
+function unserializeStateTransitionFactory(dpp, noopLogger) {
   /**
    * @typedef unserializeStateTransition
    * @param {Uint8Array} stateTransitionByteArray
+   * @param {Object} [options]
+   * @param {BaseLogger} [options.logger]
    * @return {DocumentsBatchTransition|DataContractCreateTransition|IdentityCreateTransition}
    */
-  async function unserializeStateTransition(stateTransitionByteArray) {
+  async function unserializeStateTransition(stateTransitionByteArray, options = {}) {
+    // either use a logger passed or use noop logger
+    const logger = (options.logger || noopLogger);
+
     if (!stateTransitionByteArray) {
-      throw new InvalidArgumentAbciError('State Transition is not specified');
+      const error = new InvalidArgumentAbciError('State Transition is not specified');
+
+      logger.info('State transition is not specified');
+      logger.debug(error);
+
+      throw error;
     }
 
     const stateTransitionSerialized = Buffer.from(stateTransitionByteArray);
 
-    const isolatedDpp = await createIsolatedDpp();
-
     let stateTransition;
     try {
-      stateTransition = await isolatedDpp
+      stateTransition = await dpp
         .stateTransition
         .createFromBuffer(stateTransitionSerialized);
     } catch (e) {
       if (e instanceof InvalidStateTransitionError) {
-        throw new InvalidArgumentAbciError('State Transition is invalid', { errors: e.getErrors() });
-      }
+        const error = new InvalidArgumentAbciError('State Transition is invalid', { errors: e.getErrors() });
 
-      if (e.message === 'Script execution timed out.') {
-        throw new ExecutionTimedOutError();
-      }
+        logger.info('State transition structure is invalid');
+        logger.debug(error);
 
-      if (e.message === 'Isolate was disposed during execution due to memory limit') {
-        throw new MemoryLimitExceededError();
+        throw error;
       }
 
       throw e;
-    } finally {
-      isolatedDpp.dispose();
     }
 
-    const result = await isolatedDpp.stateTransition.validateFee(stateTransition);
+    const result = await dpp.stateTransition.validateFee(stateTransition);
 
     if (!result.isValid()) {
       const errors = result.getErrors();
       if (errors.length === 1 && errors[0] instanceof BalanceIsNotEnoughError) {
-        throw new InsufficientFundsError(errors[0].getBalance());
+        const error = new InsufficientFundsError(errors[0].getBalance());
+
+        logger.info('Insufficient funds to process state transition');
+        logger.debug(error);
+
+        throw error;
       } else {
-        throw new InvalidArgumentAbciError('State Transition is invalid', { errors: result.getErrors() });
+        const error = new InvalidArgumentAbciError('State Transition is invalid', { errors: result.getErrors() });
+
+        logger.info('State transition structure is invalid');
+        logger.debug(error);
+
+        throw error;
       }
     }
 

@@ -18,6 +18,12 @@ class BlockExecutionContextMock {
     this.reset = sinon.stub();
     this.setHeader = sinon.stub();
     this.getHeader = sinon.stub();
+    this.getValidTxCount = sinon.stub();
+    this.getInvalidTxCount = sinon.stub();
+    this.incrementValidTxCount = sinon.stub();
+    this.incrementInvalidTxCount = sinon.stub();
+    this.setConsensusLogger = sinon.stub();
+    this.getConsensusLogger = sinon.stub();
   }
 }
 

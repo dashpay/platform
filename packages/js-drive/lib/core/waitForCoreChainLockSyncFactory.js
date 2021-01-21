@@ -32,19 +32,31 @@ function waitForCoreChainLockSyncFactory(
   async function waitForCoreChainLockSync() {
     coreZMQClient.subscribe(ZMQClient.TOPICS.rawchainlocksig);
 
-    logger.trace('Subscribe to rawchainlock ZMQ room');
-
     let resolveFirstChainLockFromZMQPromise;
     const firstChainLockFromZMQPromise = new Promise((resolve) => {
       resolveFirstChainLockFromZMQPromise = resolve;
     });
 
     coreZMQClient.on(ZMQClient.TOPICS.rawchainlocksig, async (rawChainLockMessage) => {
-      const { chainLock: socketChainLock } = new ChainLockSigMessage(rawChainLockMessage);
+      let chainLock;
 
-      latestCoreChainLock.update(socketChainLock);
+      try {
+        ({ chainLock } = new ChainLockSigMessage(rawChainLockMessage));
+      } catch (e) {
+        logger.error(e, 'Error on creating ChainLockSigMessage');
+        logger.debug({
+          rawChainLockMessage: rawChainLockMessage.toString('hex'),
+        });
 
-      logger.debug(socketChainLock.toJSON(), `Updated latestCoreChanLock for height ${socketChainLock.height}`);
+        return;
+      }
+
+      latestCoreChainLock.update(chainLock);
+
+      logger.trace(
+        chainLock.toJSON(),
+        `Updated latestCoreChanLock for core height ${chainLock.height}`,
+      );
 
       if (resolveFirstChainLockFromZMQPromise) {
         resolveFirstChainLockFromZMQPromise();
@@ -55,8 +67,6 @@ function waitForCoreChainLockSyncFactory(
     // Because a ChainLock may happen before its block, we also subscribe to rawblock
     coreZMQClient.subscribe(ZMQClient.TOPICS.hashblock);
 
-    logger.trace('Subscribe to hashblock ZMQ topic');
-
     // We need to retrieve latest ChainLock from our fully synced Core instance
     let rpcBestChainLockResponse;
     try {
@@ -64,7 +74,7 @@ function waitForCoreChainLockSyncFactory(
     } catch (e) {
       // Unable to find any ChainLock
       if (e.code === -32603) {
-        logger.debug('There is no ChainLocks currently. Waiting for a first one...');
+        logger.debug('There is no chain locks currently. Waiting for a first one...');
 
         // We need to wait for a new ChainLock from ZMQ socket
         await firstChainLockFromZMQPromise;

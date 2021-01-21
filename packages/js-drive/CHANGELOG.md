@@ -1,3 +1,47 @@
+## [0.17.4](https://github.com/dashevo/js-drive/compare/v0.17.3...v0.17.4) (2021-01-20)
+
+
+### Bug Fixes
+
+* logger with context is not used in some cases ([#458](https://github.com/dashevo/js-drive/issues/458))
+* tx counters and logger were not reset ([#460](https://github.com/dashevo/js-drive/issues/460))
+
+
+### Features
+
+* log to human-readable and json files ([#459](https://github.com/dashevo/js-drive/issues/459))
+
+
+
+## [0.17.3](https://github.com/dashevo/js-drive/compare/v0.17.2...v0.17.3) (2021-01-20)
+
+
+### Features
+
+* better logging ([#456](https://github.com/dashevo/js-drive/issues/456))
+
+
+
+## [0.17.2](https://github.com/dashevo/js-drive/compare/v0.17.1...v0.17.2) (2021-01-19)
+
+
+### Bug Fixes
+
+* could not resolve 'previousBlockExecutionStoreTransactions' ([5a9dbff](https://github.com/dashevo/js-drive/commit/5a9dbffb05cfb85e6e394ed79538d979eb4a73a7))
+* ST isolation leads to non-deterministic results ([#455](https://github.com/dashevo/js-drive/issues/455))
+* handle rawChainLockMessage parsing errors ([#454](https://github.com/dashevo/js-drive/issues/454))
+
+
+
+## [0.17.1](https://github.com/dashevo/js-drive/compare/v0.17.0...v0.17.1) (2021-01-12)
+
+
+### Bug Fixes
+
+* duplicate MongoDB index name ([#453](https://github.com/dashevo/js-drive/issues/453))
+
+
+
 # [0.17.0](https://github.com/dashevo/js-drive/compare/v0.16.1...v0.17.0) (2020-12-30)
 
 

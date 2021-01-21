@@ -22,6 +22,7 @@ const deliverTxHandlerFactory = require('../../../../lib/abci/handlers/deliverTx
 const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
 const AbciError = require('../../../../lib/abci/errors/AbciError');
 const ValidationError = require('../../../../lib/document/query/errors/ValidationError');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('deliverTxHandlerFactory', () => {
   let deliverTxHandler;
@@ -80,10 +81,7 @@ describe('deliverTxHandlerFactory', () => {
       height: 42,
     });
 
-    const loggerMock = {
-      debug: this.sinon.stub(),
-      info: this.sinon.stub(),
-    };
+    const loggerMock = new LoggerMock(this.sinon);
 
     deliverTxHandler = deliverTxHandlerFactory(
       unserializeStateTransitionMock,

@@ -17,6 +17,7 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 
 const NoDPNSContractFoundError = require('../../../../lib/abci/handlers/errors/NoDPNSContractFoundError');
 const NoDashpayContractFoundError = require('../../../../lib/abci/handlers/errors/NoDashpayContractFoundError');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('endBlockHandlerFactory', () => {
   let endBlockHandler;
@@ -51,11 +52,7 @@ describe('endBlockHandlerFactory', () => {
       getChainLock: this.sinon.stub().returns(chainLockMock),
     };
 
-    loggerMock = {
-      debug: this.sinon.stub(),
-      info: this.sinon.stub(),
-      trace: this.sinon.stub(),
-    };
+    loggerMock = new LoggerMock(this.sinon);
 
     dpnsContractId = generateRandomIdentifier();
     dpnsContractBlockHeight = 2;

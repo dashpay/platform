@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const ZMQClient = require('@dashevo/dashd-zmq');
 const LatestCoreChainLock = require('../../../lib/core/LatestCoreChainLock');
 const waitForCoreChainLockSyncFactory = require('../../../lib/core/waitForCoreChainLockSyncFactory');
+const LoggerMock = require('../../../lib/test/mock/LoggerMock');
 
 describe('waitForCoreChainLockSyncFactory', () => {
   let waitForCoreChainLockHandler;
@@ -32,12 +33,7 @@ describe('waitForCoreChainLockSyncFactory', () => {
     coreZMQClientMock = new EventEmitter();
     coreZMQClientMock.subscribe = this.sinon.stub();
 
-    const loggerMock = {
-      debug: this.sinon.stub(),
-      info: this.sinon.stub(),
-      trace: this.sinon.stub(),
-      error: this.sinon.stub(),
-    };
+    const loggerMock = new LoggerMock(this.sinon);
 
     waitForCoreChainLockHandler = waitForCoreChainLockSyncFactory(
       coreZMQClientMock,

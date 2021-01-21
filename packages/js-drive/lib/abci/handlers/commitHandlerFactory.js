@@ -59,7 +59,14 @@ function commitHandlerFactory(
   async function commitHandler() {
     const { height: blockHeight } = blockExecutionContext.getHeader();
 
-    logger.info(`Block commit #${blockHeight}`);
+    const consensusLogger = logger.child({
+      height: blockHeight.toString(),
+      abciMethod: 'commit',
+    });
+
+    blockExecutionContext.setConsensusLogger(consensusLogger);
+
+    consensusLogger.debug('Commit ABCI method requested');
 
     // If the current block is higher than 1 we need to obtain previous block data
     let previousBlockExecutionStoreTransactions;
@@ -77,6 +84,10 @@ function commitHandlerFactory(
         if (!previousBlockExecutionStoreTransactions) {
           throw new NoPreviousBlockExecutionStoreTransactionsFoundError();
         }
+
+        container.register({
+          previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
+        });
       }
     }
 
@@ -121,9 +132,6 @@ function commitHandlerFactory(
       }
 
       throw e;
-    } finally {
-      // Reset block execution state
-      blockExecutionContext.reset();
     }
 
     // rebuild root tree with committed data from the current block
@@ -179,13 +187,22 @@ function commitHandlerFactory(
       chainInfo.setLastBlockHeight(Long.fromInt(0));
       await chainInfoRepository.store(chainInfo);
 
-      logger.error(e);
+      consensusLogger.error(e);
 
       throw new DataCorruptedError();
     }
 
+    const appHash = rootTree.getRootHash();
+
+    consensusLogger.info(
+      {
+        appHash: appHash.toString('hex').toUpperCase(),
+      },
+      `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
+    );
+
     return new ResponseCommit({
-      data: rootTree.getRootHash(),
+      data: appHash,
     });
   }
 

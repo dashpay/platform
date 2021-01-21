@@ -3,9 +3,13 @@ const MerkDbTransaction = require('./MerkDbTransaction');
 class MerkDbStore {
   /**
    * @param {Merk} db
+   * @param {BaseLogger} [logger]
+   * @param {string} [name]
    */
-  constructor(db) {
+  constructor(db, logger = undefined, name = undefined) {
     this.db = db;
+    this.logger = logger;
+    this.name = name;
   }
 
   /**
@@ -17,6 +21,15 @@ class MerkDbStore {
    * @return {MerkDbStore}
    */
   put(key, value, transaction = undefined) {
+    if (this.logger) {
+      this.logger.trace({
+        storeName: this.name,
+        key: key.toString('hex'),
+        value: value.toString('hex'),
+        transaction: Boolean(transaction),
+      }, `Update ${key.toString('hex')} in ${this.name} store`);
+    }
+
     if (transaction) {
       transaction.db.put(key, value);
     } else {

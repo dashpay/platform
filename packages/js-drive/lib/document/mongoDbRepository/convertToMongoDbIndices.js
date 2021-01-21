@@ -21,7 +21,6 @@ function convertToMongoDbIndices(indices) {
     return {
       key,
       unique: !!index.unique,
-      name: Object.keys(key).join('_'),
     };
   });
 }

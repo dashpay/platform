@@ -13,6 +13,7 @@ const beginBlockHandlerFactory = require('../../../../lib/abci/handlers/beginBlo
 const ChainInfo = require('../../../../lib/chainInfo/ChainInfo');
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('beginBlockHandlerFactory', () => {
   let protocolVersion;
@@ -26,6 +27,7 @@ describe('beginBlockHandlerFactory', () => {
   let header;
   let updateSimplifiedMasternodeListMock;
   let waitForChainLockedHeightMock;
+  let loggerMock;
 
   beforeEach(function beforeEach() {
     chainInfo = new ChainInfo();
@@ -36,10 +38,7 @@ describe('beginBlockHandlerFactory', () => {
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    const loggerMock = {
-      debug: this.sinon.stub(),
-      info: this.sinon.stub(),
-    };
+    loggerMock = new LoggerMock(this.sinon);
 
     updateSimplifiedMasternodeListMock = this.sinon.stub();
     waitForChainLockedHeightMock = this.sinon.stub();
@@ -82,7 +81,9 @@ describe('beginBlockHandlerFactory', () => {
     expect(blockExecutionDBTransactionsMock.start).to.be.calledOnce();
     expect(blockExecutionContextMock.reset).to.be.calledOnce();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
-    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(coreHeight);
+    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
+      coreHeight, { logger: loggerMock },
+    );
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreHeight);
     expect(blockExecutionDBTransactionsMock.abort).to.be.not.called();
   });
@@ -112,7 +113,9 @@ describe('beginBlockHandlerFactory', () => {
     expect(blockExecutionDBTransactionsMock.start).to.be.calledOnce();
     expect(blockExecutionContextMock.reset).to.be.calledOnce();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
-    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(coreHeight);
+    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
+      coreHeight, { logger: loggerMock },
+    );
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreHeight);
     expect(blockExecutionDBTransactionsMock.abort).to.be.calledOnce();
   });

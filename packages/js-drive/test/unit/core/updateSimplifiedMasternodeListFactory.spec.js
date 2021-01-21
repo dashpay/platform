@@ -2,6 +2,7 @@ const SimplifiedMNListDiff = require('@dashevo/dashcore-lib/lib/deterministicmnl
 const { expect } = require('chai');
 const updateSimplifiedMasternodeListFactory = require('../../../lib/core/updateSimplifiedMasternodeListFactory');
 const NotEnoughBlocksForValidSMLError = require('../../../lib/core/errors/NotEnoughBlocksForValidSMLError');
+const LoggerMock = require('../../../lib/test/mock/LoggerMock');
 
 describe('updateSimplifiedMasternodeListFactory', () => {
   let updateSimplifiedMasternodeList;
@@ -54,12 +55,7 @@ describe('updateSimplifiedMasternodeListFactory', () => {
 
     smlMaxListsLimit = 2;
 
-    const loggerMock = {
-      debug: this.sinon.stub(),
-      info: this.sinon.stub(),
-      trace: this.sinon.stub(),
-      error: this.sinon.stub(),
-    };
+    const loggerMock = new LoggerMock(this.sinon);
 
     updateSimplifiedMasternodeList = updateSimplifiedMasternodeListFactory(
       coreRpcClientMock,

@@ -36,25 +36,37 @@ function beginBlockHandlerFactory(
    * @param {abci.RequestBeginBlock} request
    * @return {Promise<abci.ResponseBeginBlock>}
    */
-  async function beginBlockHandler({ header }) {
+  async function beginBlockHandler(request) {
+    const { header } = request;
+
     const {
       coreChainLockedHeight,
       height,
       version,
     } = header;
 
-    logger.info(`Block begin #${height}`);
+    const consensusLogger = logger.child({
+      height: height.toString(),
+      abciMethod: 'beginBlock',
+    });
 
-    await waitForChainLockedHeight(coreChainLockedHeight);
-
-    await updateSimplifiedMasternodeList(coreChainLockedHeight);
+    consensusLogger.debug('BeginBlock ABCI method requested');
+    consensusLogger.trace({ request });
 
     // in case previous block execution failed in process
     // and not commited. We need to make sure
     // previous context is reset.
     blockExecutionContext.reset();
 
+    blockExecutionContext.setConsensusLogger(consensusLogger);
+
     blockExecutionContext.setHeader(header);
+
+    await waitForChainLockedHeight(coreChainLockedHeight);
+
+    await updateSimplifiedMasternodeList(coreChainLockedHeight, {
+      logger: consensusLogger,
+    });
 
     chainInfo.setLastBlockHeight(height);
     chainInfo.setLastCoreChainLockedHeight(coreChainLockedHeight);
@@ -74,6 +86,8 @@ function beginBlockHandlerFactory(
     }
 
     await blockExecutionStoreTransactions.start();
+
+    consensusLogger.info(`Block begin #${height}`);
 
     return new ResponseBeginBlock();
   }

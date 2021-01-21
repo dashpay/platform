@@ -32,6 +32,9 @@ describe('DocumentIndexedStoreRepository', () => {
     documentDatabaseManager = container.resolve('documentDatabaseManager');
 
     const blockExecutionStoreTransactions = container.resolve('blockExecutionStoreTransactions');
+    const logger = container.resolve('logger');
+    const blockExecutionContext = container.resolve('blockExecutionContext');
+    blockExecutionContext.setConsensusLogger(logger);
 
     documentsDbTransaction = blockExecutionStoreTransactions.getTransaction('documents');
     const dataContractsTransaction = blockExecutionStoreTransactions.getTransaction('dataContracts');
