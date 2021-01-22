@@ -60,7 +60,7 @@
     "awilix": "^4.2.6",
     "bls-signatures": "^0.1.9",
     "chalk": "^4.0.0",
-    "dash": "~3.17.0-dev.7",
+    "dash": "github:dashevo/js-dash-sdk#feat-wait-for-st-result",
     "docker-compose": "^0.23.3",
     "dockerode": "^3.2.0",
     "dot": "^1.1.3",
