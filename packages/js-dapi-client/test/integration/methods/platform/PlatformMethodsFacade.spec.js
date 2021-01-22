@@ -4,6 +4,7 @@ const {
     GetDocumentsResponse,
     GetIdentityResponse,
     BroadcastStateTransitionResponse,
+    WaitForStateTransitionResultResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -70,6 +71,20 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentity('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M');
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#waitForStateTransitionResult', () => {
+    it('should wait for state transition', async () => {
+      const response = new WaitForStateTransitionResultResponse();
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.waitForStateTransitionResult(
+        Buffer.from('6f49655a2906852a38e473dd47574fb70b8b7c4e5cee9ea8e7da3f07b970c421', 'hex'),
+        false,
+      );
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

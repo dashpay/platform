@@ -4,6 +4,7 @@ const getDocumentsFactory = require('./getDocumentsFactory');
 const getIdentityFactory = require('./getIdentityFactory');
 const getIdentityIdsByPublicKeyHashesFactory = require('./getIdentityIdsByPublicKeyHashesFactory');
 const getIdentitiesByPublicKeyHashesFactory = require('./getIdentitiesByPublicKeyHashesFactory');
+const waitForStateTransitionResultFactory = require('./waitForStateTransitionResultFactory');
 
 class PlatformMethodsFacade {
   /**
@@ -16,6 +17,7 @@ class PlatformMethodsFacade {
     this.getIdentity = getIdentityFactory(grpcTransport);
     this.getIdentityIdsByPublicKeyHashes = getIdentityIdsByPublicKeyHashesFactory(grpcTransport);
     this.getIdentitiesByPublicKeyHashes = getIdentitiesByPublicKeyHashesFactory(grpcTransport);
+    this.waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransport);
   }
 }
 
