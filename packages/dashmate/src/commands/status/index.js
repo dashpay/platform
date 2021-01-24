@@ -137,21 +137,25 @@ class StatusCommand extends BaseCommand {
     };
 
     let explorerBlockHeight;
-    try {
-      const explorerBlockHeightRes = await fetch(`${platformExplorerURLs[config.options.network]}/status`);
-      ({
-        result: {
-          sync_info: {
-            latest_block_height: explorerBlockHeight,
+    if (platformExplorerURLs[config.options.network] !== '') {
+      try {
+        const explorerBlockHeightRes = await fetch(`${platformExplorerURLs[config.options.network]}/status`);
+        ({
+          result: {
+            sync_info: {
+              latest_block_height: explorerBlockHeight,
+            },
           },
-        },
-      } = await explorerBlockHeightRes.json());
-    } catch (e) {
-      if (e.name === 'FetchError') {
-        explorerBlockHeight = 0;
-      } else {
-        throw e;
+        } = await explorerBlockHeightRes.json());
+      } catch (e) {
+        if (e.name === 'FetchError') {
+          explorerBlockHeight = 0;
+        } else {
+          throw e;
+        }
       }
+    } else {
+      explorerBlockHeight = 0;
     }
 
     // Determine status
