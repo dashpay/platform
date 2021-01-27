@@ -295,32 +295,30 @@ async function createDIContainer(options) {
       logJsonFileLevel,
       logJsonFilePath,
       loggerPrettyfierOptions,
-    ) => {
-      const streams = [
-        {
-          level: logStdoutLevel,
-          stream: pinoMultistream.prettyStream({
-            prettyPrint: loggerPrettyfierOptions,
-          }),
-        },
-        {
-          level: logPrettyFileLevel,
-          stream: pinoMultistream.prettyStream({
-            prettyPrint: loggerPrettyfierOptions,
-            dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
-          }),
-        },
-        {
-          level: logJsonFileLevel,
-          stream: fs.createWriteStream(logJsonFilePath, { flags: 'a' }),
-        },
-      ];
-
-      return streams;
-    }),
+    ) => [
+      {
+        level: logStdoutLevel,
+        stream: pinoMultistream.prettyStream({
+          prettyPrint: loggerPrettyfierOptions,
+        }),
+      },
+      {
+        level: logPrettyFileLevel,
+        stream: pinoMultistream.prettyStream({
+          prettyPrint: loggerPrettyfierOptions,
+          dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
+        }),
+      },
+      {
+        level: logJsonFileLevel,
+        stream: fs.createWriteStream(logJsonFilePath, { flags: 'a' }),
+      },
+    ]),
 
     logger: asFunction(
-      (loggerStreams) => pino({}, pinoMultistream.multistream(loggerStreams)),
+      (loggerStreams) => pino({
+        level: 'trace',
+      }, pinoMultistream.multistream(loggerStreams)),
     ).singleton(),
 
     noopLogger: asFunction(() => (
