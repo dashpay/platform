@@ -1,3 +1,21 @@
+## [0.17.3](https://github.com/dashevo/mn-bootstrap/compare/v0.17.2...v0.17.3) (2021-01-19)
+
+
+### Bug Fixes
+
+* DashPay contract is not set for testnet ([#247](https://github.com/dashevo/mn-bootstrap/issues/247))
+
+
+
+## [0.17.2](https://github.com/dashevo/mn-bootstrap/compare/v0.17.1...v0.17.2) (2021-01-13)
+
+
+### Features
+
+* add seed nodes for testnet ([#239](https://github.com/dashevo/mn-bootstrap/issues/239))
+
+
+
 ## [0.17.1](https://github.com/dashevo/mn-bootstrap/compare/v0.17.0...v0.17.1) (2021-01-12)
 
 

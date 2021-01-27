@@ -181,7 +181,7 @@ laddr = "tcp://0.0.0.0:26656"
 external_address = "{{? it.externalIp}}{{=it.externalIp}}:{{=it.platform.drive.tenderdash.p2p.port}}{{?}}"
 
 # Comma separated list of seed nodes to connect to
-seeds = ""
+seeds = "{{~it.platform.drive.tenderdash.p2p.seeds :seed:index}}{{? index }},{{?}}{{=seed.id}}@{{=seed.host}}:{{=seed.port}}{{~}}"
 
 # Comma separated list of nodes to keep persistent connections to
 persistent_peers = "{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:index}}{{? index }},{{?}}{{=peer.id}}@{{=peer.host}}:{{=peer.port}}{{~}}"

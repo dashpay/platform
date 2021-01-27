@@ -24,6 +24,24 @@ module.exports = {
       type: 'integer',
       minimum: 0,
     },
+    tenderdashNodeAddress: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          minLength: 1,
+        },
+        host: {
+          type: 'string',
+          minLength: 1,
+        },
+        port: {
+          $ref: '#/definitions/port',
+        },
+      },
+      required: ['id', 'host', 'port'],
+      additionalProperties: false,
+    },
   },
   properties: {
     description: {
@@ -243,26 +261,17 @@ module.exports = {
                     persistentPeers: {
                       type: 'array',
                       items: {
-                        type: 'object',
-                        properties: {
-                          id: {
-                            type: 'string',
-                            minLength: 1,
-                          },
-                          host: {
-                            type: 'string',
-                            minLength: 1,
-                          },
-                          port: {
-                            $ref: '#/definitions/port',
-                          },
-                        },
-                        required: ['id', 'host', 'port'],
-                        additionalProperties: false,
+                        $ref: '#/definitions/tenderdashNodeAddress',
+                      },
+                    },
+                    seeds: {
+                      type: 'array',
+                      items: {
+                        $ref: '#/definitions/tenderdashNodeAddress',
                       },
                     },
                   },
-                  required: ['port', 'persistentPeers'],
+                  required: ['port', 'persistentPeers', 'seeds'],
                   additionalProperties: false,
                 },
                 rpc: {

@@ -89,6 +89,7 @@ const baseConfig = {
         p2p: {
           port: 26656,
           persistentPeers: [],
+          seeds: [],
         },
         rpc: {
           port: 26657,
@@ -938,258 +939,24 @@ module.exports = {
         },
         ownerId: 'G7sYtiobAP2eq79uYR9Pd6u2b6mapf4q6Pq2Q3BHiBK8',
       },
+      dashpay: {
+        contract: {
+          id: 'matk8g1YRpzZskecRfpG5GCAgRmWCGJfjUemrsLkFDg',
+          blockHeight: 42,
+        },
+      },
       drive: {
         tenderdash: {
           p2p: {
-            persistentPeers: [
+            seeds: [
               {
-                id: '083177d4e7f4dd7dea925a1c117d9312acf3d2b3',
-                host: '52.11.85.154',
+                id: '4bc75fcb13e37ad6473383ea92408a451ed1b6d1',
+                host: '54.189.200.56',
                 port: 26656,
               },
               {
-                id: '4936e6f4a4ce388bf7d2fe08178a1d8796fbea15',
-                host: '52.38.248.133',
-                port: 26656,
-              },
-              {
-                id: '61258fc8ece3501c1d73d2ad13fb7fc3fc578df1',
-                host: '34.212.231.240',
-                port: 26656,
-              },
-              {
-                id: '2cdf737f728b0ee756004c379f1b07deb7efc976',
-                host: '54.185.249.226',
-                port: 26656,
-              },
-              {
-                id: '6f1c501e5ab29a1fdda6e5959976041c1ab0d2aa',
-                host: '34.215.57.86',
-                port: 26656,
-              },
-              {
-                id: '8c4fdca118b61e5ae12e4de1b02d5f00ca87e2c7',
-                host: '54.190.73.116',
-                port: 26656,
-              },
-              {
-                id: '74077adc1a938a6795bd57599033f102b7a85bf0',
-                host: '34.214.2.219',
-                port: 26656,
-              },
-              {
-                id: '874b08a2baaed87688a5fbb6dd079372e9b31d16',
-                host: '54.212.84.164',
-                port: 26656,
-              },
-              {
-                id: '738f7d1d9fb3a0b555f544a857576df3f208f4ec',
-                host: '35.164.96.124',
-                port: 26656,
-              },
-              {
-                id: 'dbbf5f0bb4822a6213b5fdc1e59b479c543d61e5',
-                host: '34.219.81.129',
-                port: 26656,
-              },
-              {
-                id: '2e0bfa9928a2be8067114fb07bcaa7247f38fbe8',
-                host: '34.221.42.205',
-                port: 26656,
-              },
-              {
-                id: 'd69ecb04b8f5253b8b598410c6f568e22a241113',
-                host: '34.208.88.128',
-                port: 26656,
-              },
-              {
-                id: '78d56d27c3aef4b0e985b1af8177ec6f130c9d55',
-                host: '54.189.162.193',
-                port: 26656,
-              },
-              {
-                id: '599efb064d83116f52dbad2a924f2718a53525e7',
-                host: '34.220.124.90',
-                port: 26656,
-              },
-              {
-                id: '93928e0e8f39509f41ba6f82d3422b3c8adfb440',
-                host: '54.201.242.241',
-                port: 26656,
-              },
-              {
-                id: 'f1f6aa031eab00bea00017600ca7d5c86ddef305',
-                host: '54.68.10.46',
-                port: 26656,
-              },
-              {
-                id: '08641aaba16452966cf275009b1f81c0100f73cd',
-                host: '34.210.81.39',
-                port: 26656,
-              },
-              {
-                id: '1c2db77db34f3d79b7b84895e70cf84fe2aa153a',
-                host: '18.237.47.243',
-                port: 26656,
-              },
-              {
-                id: '4454635fb002954b0d27261f99c059e2538c4bdb',
-                host: '54.187.229.6',
-                port: 26656,
-              },
-              {
-                id: '791399f8c54198fb7f06f548ddb6abbf6fc33a69',
-                host: '34.214.102.160',
-                port: 26656,
-              },
-              {
-                id: '2b6d3b6645548383ab03275b91d19da78492b913',
-                host: '34.219.93.145',
-                port: 26656,
-              },
-              {
-                id: '604905f828428497983ea5679884ca01766ecda5',
-                host: '35.165.37.186',
-                port: 26656,
-              },
-              {
-                id: '0a22c58b45f35ba4f02ed67cb2e93c7aa8abab9b',
-                host: '54.202.157.120',
-                port: 26656,
-              },
-              {
-                id: 'fe69d216e1aa2b8ef4dbeb170d21051940f5a04e',
-                host: '34.215.144.176',
-                port: 26656,
-              },
-              {
-                id: 'a33d701c43ce996098a42d1b9fea225c8f324322',
-                host: '52.13.119.69',
-                port: 26656,
-              },
-              {
-                id: 'edc06da75dbae1c7905856394f3883515b10321c',
-                host: '34.220.12.188',
-                port: 26656,
-              },
-              {
-                id: 'cf4e3450c4e4c4286ebfb809c55706018feec933',
-                host: '18.237.5.33',
-                port: 26656,
-              },
-              {
-                id: 'aca8e2b1b6069acde60c5de79c293d8aba258f80',
-                host: '54.191.32.70',
-                port: 26656,
-              },
-              {
-                id: 'aa00e8b380d1f0e3b46e0ace2e80c49856897516',
-                host: '54.213.219.155',
-                port: 26656,
-              },
-              {
-                id: '5fc86aae12512c69b36c4a5c612ad69b6fcb23d7',
-                host: '35.167.25.157',
-                port: 26656,
-              },
-              {
-                id: 'b51a541d63edea99d077c441757bebeb22fa9261',
-                host: '54.213.89.75',
-                port: 26656,
-              },
-              {
-                id: 'ecaf7271938a3b8efbdb6bc81252e2c42a6570f0',
-                host: '52.32.232.156',
-                port: 26656,
-              },
-              {
-                id: '9d6291f557433f21ed20b5a2ec5f7fc8bf276a47',
-                host: '34.212.226.44',
-                port: 26656,
-              },
-              {
-                id: '2d5b6c6ce4323916f4f7d04e083c60ed0eea5780',
-                host: '35.160.140.37',
-                port: 26656,
-              },
-              {
-                id: 'f6721a9f4968ecf0617172c31e93511c71da3c78',
-                host: '52.11.133.244',
-                port: 26656,
-              },
-              {
-                id: '5c67a79c3b0ae3a84d78957c5464e5a43ece2a50',
-                host: '54.201.189.185',
-                port: 26656,
-              },
-              {
-                id: '186a6370ee79e4fcc5e212dde1ef3f44116d3335',
-                host: '34.216.200.22',
-                port: 26656,
-              },
-              {
-                id: 'eb611c99d91cc7c01eb2447879bcda747f533ba6',
-                host: '34.220.144.226',
-                port: 26656,
-              },
-              {
-                id: '3f8044db1e624b837246a530c94e5f7908ef44ca',
-                host: '34.216.195.19',
-                port: 26656,
-              },
-              {
-                id: '71bf8f7fc2547732426560d9608bc98ff548206e',
-                host: '54.185.1.69',
-                port: 26656,
-              },
-              {
-                id: '211eb0d62eeb899a3fd1075f7bd4c5077153cba2',
-                host: '35.166.29.155',
-                port: 26656,
-              },
-              {
-                id: 'c23c5da6ff8f2a95c2e25e64bde421b6a05dc1fc',
-                host: '18.237.147.160',
-                port: 26656,
-              },
-              {
-                id: 'a747ff41e78b89fc46999d5b8cf8874059cb74f7',
-                host: '34.220.228.214',
-                port: 26656,
-              },
-              {
-                id: '76fc3cf8d9e8ce937afa0734535b2cfcda1eb3c3',
-                host: '54.212.75.8',
-                port: 26656,
-              },
-              {
-                id: '94364e1b8336aaab5b0adbfc813fb3747ffe9894',
-                host: '35.163.152.74',
-                port: 26656,
-              },
-              {
-                id: '39045ca8ef8b560387b0612e02cd591c3d72e9e9',
-                host: '18.236.78.191',
-                port: 26656,
-              },
-              {
-                id: '7be31054b6b3687c27e9c618912b4bcb114201ef',
-                host: '54.148.106.179',
-                port: 26656,
-              },
-              {
-                id: '6bdaf339bf7ec90869162934a7145dde93d077c3',
-                host: '34.211.46.222',
-                port: 26656,
-              },
-              {
-                id: 'e63596025fbe6b0f98088de2b438a72a43722c29',
-                host: '35.160.13.25',
-                port: 26656,
-              },
-              {
-                id: '325cb600bc296039affda97830ce3496f43bbe28',
-                host: '34.220.17.107',
+                id: '173fcd535bccde1ed20ca8fb1519858dd5cef618',
+                host: '52.43.162.96',
                 port: 26656,
               },
             ],

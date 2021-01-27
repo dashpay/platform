@@ -1,28 +1,27 @@
-const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 
 const systemConfigs = require('./systemConfigs/systemConfigs');
+const NETWORKS = require('../networks');
 
 module.exports = {
-  '0.17.0-dev.12': (name, options) => {
-    // Rename tendermint to tenderdash
-    lodashSet(options, 'platform.drive.tenderdash', options.platform.drive.tendermint);
-    // eslint-disable-next-line no-param-reassign
-    delete options.platform.drive.tendermint;
+  '0.17.2': (name, options) => {
+    if (options.network !== NETWORKS.TESTNET) {
+      return options;
+    }
 
-    // Copy new configs from system defaults
-    const sourceConfigName = name in systemConfigs ? name : 'base';
-    const paths = [
-      'platform.dapi.nginx.rateLimiter.enable',
-      'platform.dapi.nginx.rateLimiter.burst',
-      'platform.dapi.nginx.rateLimiter.rate',
-      'platform.drive.tenderdash.validatorKey',
-      'platform.drive.tenderdash.nodeKey',
-    ];
+    // Set seed nodes for testnet tenderdash
+    lodashSet(options, 'platform.drive.tenderdash.p2p.seeds', systemConfigs.testnet.platform.drive.tenderdash.p2p.seeds);
+    lodashSet(options, 'platform.drive.tenderdash.p2p.persistentPeers', []);
 
-    paths.forEach((path) => {
-      lodashSet(options, path, lodashGet(systemConfigs[sourceConfigName], path));
-    });
+    return options;
+  },
+  '0.17.3': (name, options) => {
+    if (options.network !== NETWORKS.TESTNET) {
+      return options;
+    }
+
+    // Set DashPay contract ID and block height for testnet
+    lodashSet(options, 'platform.dashpay', systemConfigs.testnet.platform.dashpay);
 
     return options;
   },
