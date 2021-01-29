@@ -19,6 +19,8 @@ import registerName from "./methods/names/register";
 import resolveName from "./methods/names/resolve";
 import resolveNameByRecord from "./methods/names/resolveByRecord";
 import searchName from "./methods/names/search";
+import broadcastStateTransition from "./broadcastStateTransition";
+import { IPlatformStateProof } from "./IPlatformStateProof";
 
 /**
  * Interface for PlatformOpts
@@ -90,6 +92,14 @@ export class Platform {
      * @param {Function} register - register contracts on the platform
      */
     public contracts: Records;
+
+    /**
+     * Broadcasts state transition
+     * @param {Object} stateTransition
+     */
+    public broadcastStateTransition(stateTransition: any): Promise<IPlatformStateProof|void> {
+        return broadcastStateTransition(this, stateTransition);
+    };
 
     client: Client;
 

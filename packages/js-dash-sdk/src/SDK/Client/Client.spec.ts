@@ -3,94 +3,79 @@ import { Client } from "./index";
 import 'mocha';
 import { Transaction } from "@dashevo/dashcore-lib";
 import { createFakeInstantLock } from "../../utils/createFakeIntantLock";
-import Identity from '@dashevo/dpp/lib/identity/Identity';
 import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import { createDapiClientMock } from "../../test/mocks/createDapiClientMock";
+import { StateTransitionBroadcastError } from '../../errors/StateTransitionBroadcastError';
 
 // @ts-ignore
-const TxStreamMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamMock');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 // @ts-ignore
-const TransportMock = require('@dashevo/wallet-lib/src/test/mocks/TransportMock');
-// @ts-ignore
-const TxStreamDataResponseMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamDataResponseMock');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const mnemonic = 'agree country attract master mimic ball load beauty join gentle turtle hover';
+import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount';
+import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount';
+import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient';
+
 describe('Dash - Client', function suite() {
   this.timeout(30000);
 
+  let testMnemonic;
   let txStreamMock;
   let transportMock;
   let testHDKey;
-  let clientWithMockTransport;
+  let client;
   let account;
   let walletTransaction;
   let dapiClientMock;
+  let identityFixture;
+  let documentsFixture;
+  let dataContractFixture;
 
   beforeEach(async function beforeEach() {
-    txStreamMock = new TxStreamMock();
-    transportMock = new TransportMock(this.sinon, txStreamMock);
+    testMnemonic = 'agree country attract master mimic ball load beauty join gentle turtle hover';
     testHDKey = "xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ";
 
-    transportMock.getIdentityIdsByPublicKeyHash.returns([null]);
-
-    dapiClientMock = createDapiClientMock(this.sinon);
-
-    clientWithMockTransport = new Client({
+    client = new Client({
       wallet: {
         HDPrivateKey: testHDKey,
       }
     });
-    // Mock wallet transport for transactions
-    clientWithMockTransport.wallet.transport = transportMock;
-    // Mock dapi client for platform endpoints
-    clientWithMockTransport.dapiClient = dapiClientMock;
 
-    // setInterval(() => {
-    //   txStreamMock.emit(TxStreamMock.EVENTS.end);
-    // }, 100);
+    ({ txStreamMock, transportMock, dapiClientMock } = await createAndAttachTransportMocksToClient(client, this.sinon));
 
-    [account] = await Promise.all([
-      clientWithMockTransport.wallet.getAccount(),
-      new Promise(resolve => {
-        setTimeout(() => {
-          txStreamMock.emit(TxStreamMock.EVENTS.end);
-          resolve();
-        }, 100)
-      })
-    ]);
-    // account = await clientWithMockTransport.wallet.getAccount();
+    account = await client.getWalletAccount();
 
     // add fake tx to the wallet so it will be able to create transactions
-    walletTransaction = new Transaction(undefined)
-        .from([{
-          amount: 150000,
-          script: '76a914f9996443a7d5e2694560f8715e5e8fe602133c6088ac',
-          outputIndex: 0,
-          txid: new Transaction(undefined).hash,
-        }])
-        .to(account.getAddress(10).address, 100000);
+    walletTransaction = createTransactionInAccount(account);
+    // create an identity in the account so we can sign state transitions
+    identityFixture = createIdentityFixtureInAccount(account);
+    dataContractFixture = getDataContractFixture();
+    documentsFixture = getDocumentsFixture(dataContractFixture);
 
-    await account.importTransactions([walletTransaction.serialize(true)]);
+    dapiClientMock.platform.getIdentity.resolves(identityFixture.toBuffer());
+    dapiClientMock.platform.getDataContract.resolves(dataContractFixture.toBuffer());
   });
 
   it('should provide expected class', function () {
     expect(Client.name).to.be.equal('Client');
     expect(Client.constructor.name).to.be.equal('Function');
   });
+
   it('should be instantiable', function () {
     const client = new Client();
     expect(client).to.exist;
     expect(client.network).to.be.equal('testnet');
     expect(client.getDAPIClient().constructor.name).to.be.equal('DAPIClient');
   });
+
   it('should not initiate wallet lib without mnemonic', function () {
     const client = new Client();
     expect(client.wallet).to.be.equal(undefined);
   });
+
   it('should initiate wallet-lib with a mnemonic', async ()=>{
     const client = new Client({
       wallet: {
-        mnemonic,
+        mnemonic: testMnemonic,
         offlineMode: true,
       }
     });
@@ -103,12 +88,13 @@ describe('Dash - Client', function suite() {
     const account = await client.getWalletAccount();
     await account.disconnect();
   });
+
   it('should throw an error if client and wallet have different networks', async () => {
     try {
       new Client({
         network: 'testnet',
         wallet: {
-          mnemonic,
+          mnemonic: testMnemonic,
           offlineMode: true,
           network: 'evonet',
         },
@@ -122,111 +108,201 @@ describe('Dash - Client', function suite() {
 
   describe('#platform.identities.register', async () => {
     it('should register an identity', async () => {
-      // Set up transport to emit instant lock when it receives transaction
-      let isLock;
-      let transaction;
-      transportMock.sendTransaction.callsFake((txString) => {
-        transaction = new Transaction(txString);
+      const accountIdentitiesCountBeforeTest = account.getIdentityIds().length;
 
-        isLock = createFakeInstantLock(transaction.hash);
-        txStreamMock.emit(
-            TxStreamMock.EVENTS.data,
-            new TxStreamDataResponseMock(
-                { instantSendLockMessages: [isLock.toBuffer()] }
-            )
-        );
-      });
-
-      // Set up DAPI mock to return identity
-      let interceptedIdentityStateTransition;
-      let identityFromDAPI;
-      dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
-        interceptedIdentityStateTransition = await clientWithMockTransport.platform.dpp.stateTransition.createFromBuffer(stBuffer);
-
-        if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
-          let identityFromDAPI = new Identity({
-            protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
-            id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
-            publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject()),
-            balance: interceptedIdentityStateTransition.getAssetLock().getOutput().satoshis,
-            revision: 0,
-          });
-          dapiClientMock.platform.getIdentity.withArgs(identityFromDAPI.getId()).resolves(identityFromDAPI.toBuffer());
-        }
-      });
-
-      const identity = await clientWithMockTransport.platform.identities.register();
+      const identity = await client.platform.identities.register();
 
       expect(identity).to.be.not.null;
 
+      const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
+      const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLock = interceptedIdentityStateTransition.getAssetLock();
+
+      const transaction = new Transaction(transportMock.sendTransaction.getCall(0).args[0]);
+      const isLock = createFakeInstantLock(transaction.hash);
 
       // Check intercepted st
       expect(interceptedAssetLock.getProof().getInstantLock()).to.be.deep.equal(isLock);
       expect(interceptedAssetLock.getTransaction().hash).to.be.equal(transaction.hash);
 
       const importedIdentityIds = account.getIdentityIds();
-      expect(importedIdentityIds.length).to.be.equal(1);
+      // Check that we've imported identities properly
+      expect(importedIdentityIds.length).to.be.equal(accountIdentitiesCountBeforeTest + 1);
       expect(importedIdentityIds[0]).to.be.equal(interceptedIdentityStateTransition.getIdentityId().toString());
+    });
+
+    it('should throw TransitionBroadcastError when transport resolves error', async () => {
+      const accountIdentitiesCountBeforeTest = account.getIdentityIds().length;
+
+      const errorResponse = {
+        error: {
+          code: 2,
+          message: "Error happened",
+          data: {},
+        }
+      };
+
+      dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
+
+      let error;
+      try {
+        await client.platform.identities.register();
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(error.getCode()).to.be.equal(errorResponse.error.code);
+      expect(error.getMessage()).to.be.equal(errorResponse.error.message);
+      expect(error.getData()).to.be.equal(errorResponse.error.data);
+
+      const importedIdentityIds = account.getIdentityIds();
+      // Check that no identities were imported
+      expect(importedIdentityIds.length).to.be.equal(accountIdentitiesCountBeforeTest);
     });
   });
 
   describe('#platform.identities.topUp', async () => {
     it('should top up an identity', async () => {
-      // Set up transport to emit instant lock when it receives transaction
-      let isLock;
-      let transaction;
-      transportMock.sendTransaction.callsFake((txString) => {
-        transaction = new Transaction(txString);
-
-        isLock = createFakeInstantLock(transaction.hash);
-        txStreamMock.emit(
-            TxStreamMock.EVENTS.data,
-            new TxStreamDataResponseMock(
-                { instantSendLockMessages: [isLock.toBuffer()] }
-            )
-        );
-
-        // Emit the same transaction back to the client so it will know about the change transaction
-        txStreamMock.emit(
-            TxStreamMock.EVENTS.data,
-            new TxStreamDataResponseMock(
-                { rawTransactions: [transaction.toBuffer()] }
-            )
-        );
-      });
-
-      // Set up DAPI mock to return identity
-      let interceptedIdentityStateTransition;
-
-      dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
-        interceptedIdentityStateTransition = await clientWithMockTransport.platform.dpp.stateTransition.createFromBuffer(stBuffer);
-
-        if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
-          let identityFromDAPI = new Identity({
-            protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
-            id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
-            publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject()),
-            balance: interceptedIdentityStateTransition.getAssetLock().getOutput().satoshis,
-            revision: 0,
-          });
-          dapiClientMock.platform.getIdentity.withArgs(identityFromDAPI.getId()).resolves(identityFromDAPI.toBuffer());
-        }
-      });
-
       // Registering an identity we're going to top up
-      const identity = await clientWithMockTransport.platform.identities.register();
+      const identity = await client.platform.identities.register();
       // Topping up the identity
-      await clientWithMockTransport.platform.identities.topUp(identity.getId(), 10000);
+      await client.platform.identities.topUp(identity.getId(), 10000);
 
       expect(identity).to.be.not.null;
 
-      expect(interceptedIdentityStateTransition.getType()).to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
+      const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(1).args[0];
+      const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLock = interceptedIdentityStateTransition.getAssetLock();
 
+      expect(interceptedIdentityStateTransition.getType()).to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
+
+      const transaction = new Transaction(transportMock.sendTransaction.getCall(1).args[0]);
+      const isLock = createFakeInstantLock(transaction.hash);
       // Check intercepted st
       expect(interceptedAssetLock.getProof().getInstantLock()).to.be.deep.equal(isLock);
       expect(interceptedAssetLock.getTransaction().hash).to.be.equal(transaction.hash);
+    });
+
+    it('should throw TransitionBroadcastError when transport resolves error', async () => {
+      // Registering an identity we're going to top up
+      const identity = await client.platform.identities.register();
+
+      const errorResponse = {
+        error: {
+          code: 2,
+          message: "Error happened",
+          data: {},
+        }
+      };
+
+      dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
+
+      let error;
+      try {
+        // Topping up the identity
+        await client.platform.identities.topUp(identity.getId(), 10000);
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(error.getCode()).to.be.equal(errorResponse.error.code);
+      expect(error.getMessage()).to.be.equal(errorResponse.error.message);
+      expect(error.getData()).to.be.equal(errorResponse.error.data);
+    });
+  });
+
+  describe('#platform.documents.broadcast', () => {
+    it('should throw TransitionBroadcastError when transport resolves error', async () => {
+      const errorResponse = {
+        error: {
+          code: 2,
+          message: "Error happened",
+          data: {},
+        }
+      };
+
+      dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
+
+      let error;
+      try {
+        await client.platform.documents.broadcast({
+          create: documentsFixture,
+        }, identityFixture);
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(error.getCode()).to.be.equal(errorResponse.error.code);
+      expect(error.getMessage()).to.be.equal(errorResponse.error.message);
+      expect(error.getData()).to.be.equal(errorResponse.error.data);
+    });
+
+    it('should broadcast documents', async () => {
+      const proofResponse = {
+        proof: { }
+      }
+
+      dapiClientMock.platform.waitForStateTransitionResult.resolves(proofResponse);
+
+      await client.platform.documents.broadcast({
+        create: documentsFixture,
+      }, identityFixture);
+
+      const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
+      const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+
+      // .to.be.true() doesn't work after TS compilation in Chrome
+      expect(interceptedSt.verifySignature(identityFixture.getPublicKeyById(0))).to.be.equal(true);
+
+      const documentTransitions = interceptedSt.getTransitions();
+
+      expect(documentTransitions.length).to.be.greaterThan(0);
+      expect(documentTransitions.length).to.be.equal(documentsFixture.length);
+    });
+  });
+
+  describe('#platform.contracts.broadcast', () => {
+    it('should throw TransitionBroadcastError when transport resolves error', async () => {
+      const errorResponse = {
+        error: {
+          code: 2,
+          message: "Error happened",
+          data: {},
+        }
+      };
+
+      dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
+
+      let error;
+      try {
+        await client.platform.contracts.broadcast(dataContractFixture, identityFixture);
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(error.getCode()).to.be.equal(errorResponse.error.code);
+      expect(error.getMessage()).to.be.equal(errorResponse.error.message);
+      expect(error.getData()).to.be.equal(errorResponse.error.data);
+    });
+
+    it('should broadcast data contract', async () => {
+      dapiClientMock.platform.waitForStateTransitionResult.resolves({
+        proof: {  }
+      });
+
+      await client.platform.contracts.broadcast(dataContractFixture, identityFixture);
+
+      const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
+      const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+
+      // .to.be.true() doesn't work after TS compilation in Chrome
+      expect(interceptedSt.verifySignature(identityFixture.getPublicKeyById(0))).to.be.equal(true);
+      expect(interceptedSt.getEntropy()).to.be.deep.equal(dataContractFixture.entropy);
+      expect(interceptedSt.getDataContract().toObject()).to.be.deep.equal(dataContractFixture.toObject());
     });
   });
 });

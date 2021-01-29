@@ -5,6 +5,8 @@ export function createDapiClientMock(sinon: SinonSandbox) {
         platform: {
             broadcastStateTransition: sinon.stub(),
             getIdentity: sinon.stub(),
+            waitForStateTransitionResult: sinon.stub().resolves({}),
+            getDataContract: sinon.stub(),
         }
     }
 }

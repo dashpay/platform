@@ -1,27 +1,15 @@
+import crypto from "crypto";
 import { Platform } from "./Platform";
-import { wait } from "../../../utils/wait";
+import { StateTransitionBroadcastError } from "../../../errors/StateTransitionBroadcastError";
+import { IStateTransitionResult } from "./IStateTransitionResult";
+import { IPlatformStateProof } from "./IPlatformStateProof";
 
 /**
  * @param {Platform} platform
  * @param stateTransition
- * @param identity
- * @param {number} [keyIndex=0]
  */
-export default async function broadcastStateTransition(platform: Platform, stateTransition: any, identity: any, keyIndex : number = 0) {
+export default async function broadcastStateTransition(platform: Platform, stateTransition: any): Promise<IPlatformStateProof|void> {
     const { client, dpp } = platform;
-
-    const account = await client.getWalletAccount();
-
-    // @ts-ignore
-    const { privateKey } = account.getIdentityHDKeyById(
-        identity.getId().toString(),
-        keyIndex,
-    );
-
-    stateTransition.sign(
-        identity.getPublicKeyById(keyIndex),
-        privateKey,
-    );
 
     const result = await dpp.stateTransition.validateStructure(stateTransition);
 
@@ -29,8 +17,45 @@ export default async function broadcastStateTransition(platform: Platform, state
         throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
     }
 
-    await client.getDAPIClient().platform.broadcastStateTransition(stateTransition.toBuffer());
+    // Subscribing to future result
+    const hash = crypto.createHash('sha256')
+      .update(stateTransition.toBuffer())
+      .digest();
 
-    // Wait some time for propagation
-    await wait(1000);
+    const stateTransitionResultPromise: IStateTransitionResult = client.getDAPIClient().platform.waitForStateTransitionResult(hash, { prove: true });
+
+    // Broadcasting state transition
+    try {
+        await client.getDAPIClient().platform.broadcastStateTransition(stateTransition.toBuffer());
+    } catch (e) {
+        let data;
+        let message;
+
+        if (e.data) {
+            data = e.data;
+        } else if (e.metadata) {
+            const errors = e.metadata.get('errors');
+            data = {};
+            data.errors = errors && errors.length > 0 ? JSON.parse(errors) : errors;
+        }
+
+        if (e.details) {
+            message = e.details;
+        } else {
+            message = e.message;
+        }
+
+        throw new StateTransitionBroadcastError(e.code, message, data);
+    }
+
+    // Waiting for result to return
+    const stateTransitionResult = await stateTransitionResultPromise;
+
+    let { error } = stateTransitionResult;
+
+    if (error) {
+        throw new StateTransitionBroadcastError(error.code, error.message, error.data);
+    }
+
+    return stateTransitionResult.proof;
 }

@@ -1,8 +1,8 @@
 import { Platform } from "../../Platform";
-import { wait } from "../../../../../utils/wait";
 import createAssetLockTransaction from "../../createAssetLockTransaction";
 import createIdentityCreateTransition from "./internal/createIdentityCreateTransition";
 import createAssetLockProof from "./internal/createAssetLockProof";
+import broadcastStateTransition from "../../broadcastStateTransition";
 
 /**
  * Register identities to the platform
@@ -32,7 +32,7 @@ export default async function register(
         this, assetLockTransaction, assetLockOutputIndex, assetLockProof, assetLockPrivateKey
     );
 
-    await client.getDAPIClient().platform.broadcastStateTransition(identityCreateTransition.toBuffer());
+    await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
     account.storage.insertIdentityIdAtIndex(
@@ -40,13 +40,6 @@ export default async function register(
         identity.getId().toString(),
         identityIndex,
     );
-
-    let fetchedIdentity;
-    do {
-        await wait(1000);
-
-        fetchedIdentity = await this.client.getDAPIClient().platform.getIdentity(identity.getId());
-    } while (!fetchedIdentity);
 
     return identity;
 }
