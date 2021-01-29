@@ -48,6 +48,7 @@ class DAPIClient {
  * @property {number} [timeout=2000]
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]
+ * @property {boolean} [throwDeadlineExceeded]
  */
 
 module.exports = DAPIClient;

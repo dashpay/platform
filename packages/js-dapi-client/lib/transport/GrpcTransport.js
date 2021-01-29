@@ -80,7 +80,9 @@ class GrpcTransport {
         throw error;
       }
 
-      address.markAsBanned();
+      if (options.throwDeadlineExceeded && error.code === GrpcErrorCodes.DEADLINE_EXCEEDED) {
+        throw error;
+      }
 
       if (options.retries === 0) {
         throw new MaxRetriesReachedError(error);

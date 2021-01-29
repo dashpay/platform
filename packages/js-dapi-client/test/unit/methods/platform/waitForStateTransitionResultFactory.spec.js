@@ -28,6 +28,8 @@ describe('waitForStateTransitionResultFactory', () => {
 
     options = {
       timeout: 1000,
+      throwDeadlineExceeded: true,
+      retry: 0,
     };
 
     waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransportMock);

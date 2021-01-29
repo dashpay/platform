@@ -25,6 +25,8 @@ function waitForStateTransitionResultFactory(grpcTransport) {
       // Set default timeout
       timeout: 60000,
       prove: false,
+      retry: 0,
+      throwDeadlineExceeded: true,
       ...options,
     };
 
