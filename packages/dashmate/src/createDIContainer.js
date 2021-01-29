@@ -15,6 +15,7 @@ const ensureHomeDirFactory = require('./config/configFile/ensureHomeDirFactory')
 const ConfigJsonFileRepository = require('./config/configFile/ConfigJsonFileRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
 const resetSystemConfigFactory = require('./config/systemConfigs/resetSystemConfigFactory');
+const isSystemConfigFactory = require('./config/systemConfigs/isSystemConfigFactory');
 const migrateConfigOptions = require('./config/migrateConfigOptions');
 const systemConfigs = require('./config/systemConfigs/systemConfigs');
 
@@ -45,6 +46,7 @@ const registerMasternode = require('./core/wallet/registerMasternode');
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
 const initTaskFactory = require('./listr/tasks/platform/initTaskFactory');
+const tenderdashInitTaskFactory = require('./listr/tasks/platform/tenderdashInitTaskFactory');
 const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
 
 const createTenderdashRpcClient = require('./tenderdash/createTenderdashRpcClient');
@@ -68,6 +70,7 @@ async function createDIContainer(options) {
     systemConfigs: asValue(systemConfigs),
     createSystemConfigs: asFunction(createSystemConfigsFactory),
     resetSystemConfig: asFunction(resetSystemConfigFactory),
+    isSystemConfig: asFunction(isSystemConfigFactory),
     migrateConfigOptions: asValue(migrateConfigOptions),
     // `configCollection` and `config` are registering on command init
   });
@@ -136,6 +139,7 @@ async function createDIContainer(options) {
     generateToAddressTask: asFunction(generateToAddressTaskFactory),
     registerMasternodeTask: asFunction(registerMasternodeTaskFactory),
     initTask: asFunction(initTaskFactory),
+    tenderdashInitTask: asFunction(tenderdashInitTaskFactory),
     startNodeTask: asFunction(startNodeTaskFactory),
   });
 

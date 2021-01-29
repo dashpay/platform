@@ -179,16 +179,30 @@ class DockerCompose {
    * Get list of Docker containers
    *
    * @param {Object} envs
-   * @param {string} [filterServiceName]
+   * @param {string} [filterServiceNames]
+   * @param {boolean} returnServiceNames
    * @return {string[]}
    */
-  async getContainersList(envs, filterServiceName = undefined) {
+  async getContainersList(
+    envs,
+    filterServiceNames = undefined,
+    returnServiceNames = false,
+  ) {
     let psOutput;
+    const commandOptions = [];
+
+    if (returnServiceNames) {
+      commandOptions.push('--services');
+    } else {
+      commandOptions.push('--quiet');
+    }
+
+    commandOptions.push(filterServiceNames);
 
     try {
       ({ out: psOutput } = await dockerCompose.ps({
         ...this.getOptions(envs),
-        commandOptions: ['-q', filterServiceName],
+        commandOptions,
       }));
     } catch (e) {
       throw new DockerComposeError(e);
@@ -198,6 +212,26 @@ class DockerCompose {
       .trim()
       .split('\n')
       .filter(Boolean);
+  }
+
+  /**
+   * Get list of Docker volumes
+   * @param {Object} envs
+   * @return {string[]}
+   */
+  async getVolumeNames(envs) {
+    let volumeOutput;
+    try {
+      ({ out: volumeOutput } = await dockerCompose.configVolumes({
+        ...this.getOptions(envs),
+      }));
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+
+    return volumeOutput
+      .trim()
+      .split('\n');
   }
 
   /**
@@ -214,6 +248,26 @@ class DockerCompose {
         ...this.getOptions(envs),
         commandOptions: ['-v', '--remove-orphans'],
       });
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+  }
+
+  /**
+   * Remove docker compose
+   *
+   * @param {Object} envs
+   * @param {string[]} [serviceNames]
+   * @return {Promise<void>}
+   */
+  async rm(envs, serviceNames) {
+    await this.throwErrorIfNotInstalled();
+
+    try {
+      await dockerCompose.rm({
+        ...this.getOptions(envs),
+        commandOptions: ['--stop', '-v'],
+      }, ...serviceNames);
     } catch (e) {
       throw new DockerComposeError(e);
     }

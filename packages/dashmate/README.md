@@ -105,7 +105,6 @@ COMMANDS
   config:get      Get config option
   config:list     List available configs
   config:remove   Remove config
-  config:reset    Reset config
   config:set      Set config option
 ```
 
@@ -219,7 +218,9 @@ The `reset` command removes all data corresponding to the specified config and a
 USAGE
   $ mn reset
 OPTIONS
-  --config=config  configuration name to use
+  -h, --hard           reset config as well as data
+  -p, --platform-only  reset platform data only
+  --config=config      configuration name to use
 ```
 
 To reset a node:
