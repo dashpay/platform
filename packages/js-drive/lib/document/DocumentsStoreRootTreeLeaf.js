@@ -18,6 +18,16 @@ class DocumentsStoreRootTreeLeaf extends AbstractRootTreeLeaf {
   getHash() {
     return this.documentsStore.getRootHash();
   }
+
+  /**
+   * Get proof for leaf keys
+   *
+   * @param {Array<Buffer>} leafKeys
+   * @return {Buffer}
+   */
+  getProof(leafKeys) {
+    return this.documentsStore.getProof(leafKeys);
+  }
 }
 
 DocumentsStoreRootTreeLeaf.INDEX = 4;

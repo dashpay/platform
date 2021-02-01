@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const cbor = require('cbor');
+
 /**
  *
  * @param {RootTree} previousRootTree
@@ -23,23 +25,22 @@ function getProofsQueryHandlerFactory(
   /**
    * @typedef getProofsQueryHandler
    * @param params
-   * @param {Identifier[]} params.identityIds
-   * @param {Identifier[]} params.documentIds
-   * @param {Identifier[]} params.dataContractIds
+   * @param callArguments
+   * @param {Identifier[]} callArguments.identityIds
+   * @param {Identifier[]} callArguments.documentIds
+   * @param {Identifier[]} callArguments.dataContractIds
    * @return {Promise<ResponseQuery>}
    */
-  async function getProofsQueryHandler(params) {
+  async function getProofsQueryHandler(params, {
+    identityIds,
+    documentIds,
+    dataContractIds,
+  }) {
     const response = {
       documentsProof: null,
       identitiesProof: null,
       dataContractsProof: null,
     };
-
-    if (!params) {
-      return new ResponseQuery(response);
-    }
-
-    const { identityIds, documentIds, dataContractIds } = params;
 
     if (documentIds && documentIds.length) {
       response.documentsProof = previousRootTree
@@ -56,7 +57,11 @@ function getProofsQueryHandlerFactory(
         .getFullProof(previousDataContractsStoreRootTreeLeaf, dataContractIds);
     }
 
-    return new ResponseQuery(response);
+    return new ResponseQuery({
+      value: await cbor.encodeAsync(
+        response,
+      ),
+    });
   }
 
   return getProofsQueryHandler;

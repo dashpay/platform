@@ -18,6 +18,16 @@ class DataContractsStoreRootTreeLeaf extends AbstractRootTreeLeaf {
   getHash() {
     return this.dataContractsStore.getRootHash();
   }
+
+  /**
+   * Get proof for leaf keys
+   *
+   * @param {Array<Buffer>} leafKeys
+   * @return {Buffer}
+   */
+  getProof(leafKeys) {
+    return this.dataContractsStore.getProof(leafKeys);
+  }
 }
 
 DataContractsStoreRootTreeLeaf.INDEX = 3;

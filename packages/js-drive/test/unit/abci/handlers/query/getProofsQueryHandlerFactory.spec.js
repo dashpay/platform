@@ -5,6 +5,7 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+const cbor = require('cbor');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
@@ -70,7 +71,7 @@ describe('getProofsQueryHandlerFactory', () => {
     previousDataContractRepositoryMock.fetch.resolves(dataContract);
     previousRootTreeMock.getFullProof.returns(expectedProof);
 
-    const result = await getProofsQueryHandler({
+    const result = await getProofsQueryHandler({}, {
       dataContractIds: [dataContractData.id],
       identityIds: [identityData.id],
       documentIds: documentsData.ids,
@@ -90,11 +91,17 @@ describe('getProofsQueryHandlerFactory', () => {
       [dataContract.getId()],
     ]);
 
-    expect(result).to.be.deep.equal(new ResponseQuery({
-      documentsProof: expectedProof,
-      identitiesProof: expectedProof,
-      dataContractsProof: expectedProof,
-    }));
+    const expectedResult = new ResponseQuery({
+      value: cbor.encode(
+        {
+          documentsProof: expectedProof,
+          identitiesProof: expectedProof,
+          dataContractsProof: expectedProof,
+        },
+      ),
+    });
+
+    expect(result).to.be.deep.equal(expectedResult);
   });
 
   it('should return no proofs if no data contract ids were passed', async () => {
@@ -106,14 +113,16 @@ describe('getProofsQueryHandlerFactory', () => {
     previousDataContractRepositoryMock.fetch.resolves(dataContract);
     previousRootTreeMock.getFullProof.returns(expectedProof);
 
-    const result = await getProofsQueryHandler();
+    const result = await getProofsQueryHandler({}, {});
 
     expect(previousRootTreeMock.getFullProof).to.not.be.called();
 
     expect(result).to.be.deep.equal(new ResponseQuery({
-      documentsProof: null,
-      identitiesProof: null,
-      dataContractsProof: null,
+      value: cbor.encode({
+        documentsProof: null,
+        identitiesProof: null,
+        dataContractsProof: null,
+      }),
     }));
   });
 
@@ -126,7 +135,7 @@ describe('getProofsQueryHandlerFactory', () => {
     previousDataContractRepositoryMock.fetch.resolves(dataContract);
     previousRootTreeMock.getFullProof.returns(expectedProof);
 
-    const result = await getProofsQueryHandler({
+    const result = await getProofsQueryHandler({}, {
       dataContractIds: [],
       identityIds: [],
       documentIds: [],
@@ -135,9 +144,11 @@ describe('getProofsQueryHandlerFactory', () => {
     expect(previousRootTreeMock.getFullProof).to.not.be.called();
 
     expect(result).to.be.deep.equal(new ResponseQuery({
-      documentsProof: null,
-      identitiesProof: null,
-      dataContractsProof: null,
+      value: cbor.encode({
+        documentsProof: null,
+        identitiesProof: null,
+        dataContractsProof: null,
+      }),
     }));
   });
 });
