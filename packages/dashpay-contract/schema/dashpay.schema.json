@@ -26,6 +26,20 @@
         "format": "url",
         "maxLength": 2048
       },
+      "avatarHash": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "SHA256 hash of the bytes of the image specified by avatarUrl"
+      },
+      "avatarFingerprint": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 8,
+        "maxItems": 8,
+        "description": "dHash the image specified by avatarUrl"
+      },
       "publicMessage": {
         "type": "string",
         "maxLength": 140
@@ -179,6 +193,16 @@
         "byteArray": true,
         "minItems": 48,
         "maxItems": 80
+      },
+      "autoAcceptProof": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 38,
+        "maxItems": 102
+      },
+      "coreHeightCreatedAt": {
+        "type": "integer",
+        "minimum": 1
       }
     },
     "required": [
@@ -187,7 +211,8 @@
       "encryptedPublicKey",
       "senderKeyIndex",
       "recipientKeyIndex",
-      "accountReference"
+      "accountReference",
+      "coreHeightCreatedAt"
     ],
     "additionalProperties": false
   }
