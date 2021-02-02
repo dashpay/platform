@@ -17,12 +17,12 @@ const AbciResponseError = require('../../../errors/AbciResponseError');
 
 /**
  *
- * @param {DriveStateRepository} driveStateRepository
+ * @param {DriveClient} driveClient
  * @param {handleAbciResponseError} handleAbciResponseError
  * @return {getIdentityIdsByPublicKeyHashesHandler}
  */
 function getIdentityIdsByPublicKeyHashesHandlerFactory(
-  driveStateRepository, handleAbciResponseError,
+  driveClient, handleAbciResponseError,
 ) {
   /**
    * @typedef getIdentityIdsByPublicKeyHashesHandler
@@ -44,7 +44,7 @@ function getIdentityIdsByPublicKeyHashesHandlerFactory(
     let proofObject;
 
     try {
-      ({ data: identityIds, proof: proofObject } = await driveStateRepository
+      ({ data: identityIds, proof: proofObject } = await driveClient
         .fetchIdentityIdsByPublicKeyHashes(
           publicKeyHashes,
           prove,

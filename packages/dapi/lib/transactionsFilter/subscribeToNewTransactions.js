@@ -85,6 +85,10 @@ function subscribeToNewTransactions(
 
   mediator.once(ProcessMediator.EVENTS.CLIENT_DISCONNECTED, () => {
     isClientConnected = false;
+
+    mediator.removeAllListeners();
+    filterEmitter.removeAllListeners();
+
     bloomFilterEmitterCollection.remove(filterEmitter);
   });
 }

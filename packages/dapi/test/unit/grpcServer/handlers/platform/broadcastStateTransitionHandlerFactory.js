@@ -98,7 +98,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     const tx = stateTransitionFixture.toBuffer().toString('base64');
 
     expect(result).to.be.an.instanceOf(BroadcastStateTransitionResponse);
-    expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_async', { tx });
+    expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_sync', { tx });
   });
 
   it('should throw an error if transaction broadcast returns error', async () => {

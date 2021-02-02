@@ -7,7 +7,7 @@ const dirtyChai = require('dirty-chai');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const DriveStateRepository = require('../../../../lib/externalApis/drive/DriveStateRepository');
+const DriveClient = require('../../../../lib/externalApis/drive/DriveClient');
 
 const RPCError = require('../../../../lib/rpcServer/RPCError');
 const AbciResponseError = require('../../../../lib/errors/AbciResponseError');
@@ -18,10 +18,10 @@ chai.use(dirtyChai);
 
 const { expect } = chai;
 
-describe('DriveStateRepository', () => {
+describe('DriveClient', () => {
   describe('constructor', () => {
     it('Should create drive client with given options', () => {
-      const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       expect(drive.client.options.host).to.be.equal('127.0.0.1');
       expect(drive.client.options.port).to.be.equal(3000);
@@ -29,7 +29,7 @@ describe('DriveStateRepository', () => {
   });
 
   it('should throw RPCError if JSON RPC call failed', async () => {
-    const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+    const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
     const error = new Error('Some RPC error');
 
@@ -46,7 +46,7 @@ describe('DriveStateRepository', () => {
   });
 
   it('should throw ABCI error response have one', async () => {
-    const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+    const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
     const abciError = {
       message: 'Some ABCI error',
@@ -81,7 +81,7 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchDataContract', () => {
     it('Should call \'fetchContract\' RPC with the given parameters', async () => {
-      const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const contractId = 'someId';
       const data = Buffer.from('someData');
@@ -112,7 +112,7 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchDocuments', () => {
     it('Should call \'fetchDocuments\' RPC with the given parameters', async () => {
-      const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const contractId = 'someId';
       const type = 'object';
@@ -147,7 +147,7 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchIdentity', () => {
     it('Should call \'fetchIdentity\' RPC with the given parameters', async () => {
-      const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const identityId = 'someId';
       const data = Buffer.from('someData');
@@ -172,7 +172,7 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchIdentitiesByPublicKeyHashes', () => {
     it('Should call \'fetchIdentitiesByPublicKeyHashes\' RPC with the given parameters', async () => {
-      const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const identity = getIdentityFixture();
       const proof = Buffer.from('proof');
@@ -203,7 +203,7 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchIdentityIdsByPublicKeyHashes', () => {
     it('Should call \'fetchIdentityIdsByPublicKeyHashes\' RPC with the given parameters', async () => {
-      const drive = new DriveStateRepository({ host: '127.0.0.1', port: 3000 });
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const identityId = generateRandomIdentifier();
       const publicKeyHashes = [Buffer.alloc(1)];
@@ -227,6 +227,41 @@ describe('DriveStateRepository', () => {
       expect(result).to.be.deep.equal({
         data: [identityId],
         proof,
+      });
+    });
+  });
+
+  describe('#fetchProofs', () => {
+    it('should call \'fetchProofs\' RPC with the given parameters', async () => {
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
+
+      const documentIds = undefined;
+      const identityIds = [Buffer.from('id')];
+      const dataContractIds = [Buffer.from('anotherId')];
+
+      const proof = Buffer.from('proof');
+      const buffer = cbor.encode({ data: proof });
+
+      sinon.stub(drive.client, 'request')
+        .resolves({
+          result: {
+            response: { code: 0, value: buffer },
+          },
+        });
+
+      const result = await drive.fetchProofs({ documentIds, identityIds, dataContractIds });
+
+      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
+        path: '/proofs',
+        data: cbor.encode({
+          documentIds,
+          identityIds,
+          dataContractIds,
+        }).toString('hex'),
+      });
+
+      expect(result).to.be.deep.equal({
+        data: proof,
       });
     });
   });

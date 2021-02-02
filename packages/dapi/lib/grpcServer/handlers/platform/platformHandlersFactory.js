@@ -21,6 +21,7 @@ const {
     GetDocumentsRequest,
     GetIdentitiesByPublicKeyHashesRequest,
     GetIdentityIdsByPublicKeyHashesRequest,
+    WaitForStateTransitionResultRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -34,6 +35,8 @@ const {
       GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
       GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
       GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
+      WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
+      WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -60,16 +63,23 @@ const getIdentitiesByPublicKeyHashesHandlerFactory = require(
 const getIdentityIdsByPublicKeyHashesHandlerFactory = require(
   './getIdentityIdsByPublicKeyHashesHandlerFactory',
 );
+const waitForStateTransitionResultHandlerFactory = require(
+  './waitForStateTransitionResultHandlerFactory',
+);
 
 /**
  * @param {jaysonClient} rpcClient
- * @param {DriveStateRepository} driveStateRepository
+ * @param {BlockchainListener} blockchainListener
+ * @param {DriveClient} driveClient
+ * @param {DashPlatformProtocol} dpp
  * @param {boolean} isProductionEnvironment
  * @returns {Object<string, function>}
  */
 function platformHandlersFactory(
   rpcClient,
-  driveStateRepository,
+  blockchainListener,
+  driveClient,
+  dpp,
   isProductionEnvironment,
 ) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
@@ -93,7 +103,7 @@ function platformHandlersFactory(
 
   // getIdentity
   const getIdentityHandler = getIdentityHandlerFactory(
-    driveStateRepository, handleAbciResponseError,
+    driveClient, handleAbciResponseError,
   );
 
   const wrappedGetIdentity = jsonToProtobufHandlerWrapper(
@@ -109,7 +119,7 @@ function platformHandlersFactory(
 
   // getDocuments
   const getDocumentsHandler = getDocumentsHandlerFactory(
-    driveStateRepository, handleAbciResponseError,
+    driveClient, handleAbciResponseError,
   );
 
   const wrappedGetDocuments = jsonToProtobufHandlerWrapper(
@@ -125,7 +135,7 @@ function platformHandlersFactory(
 
   // getDataContract
   const getDataContractHandler = getDataContractHandlerFactory(
-    driveStateRepository, handleAbciResponseError,
+    driveClient, handleAbciResponseError,
   );
 
   const wrappedGetDataContract = jsonToProtobufHandlerWrapper(
@@ -141,7 +151,7 @@ function platformHandlersFactory(
 
   // getIdentitiesByPublicKeyHashes
   const getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
-    driveStateRepository, handleAbciResponseError,
+    driveClient, handleAbciResponseError,
   );
 
   const wrappedGetIdentitiesByPublicKeyHashes = jsonToProtobufHandlerWrapper(
@@ -157,7 +167,7 @@ function platformHandlersFactory(
 
   // getIdentityIdsByPublicKeyHashes
   const getIdentityIdsByPublicKeyHashesHandler = getIdentityIdsByPublicKeyHashesHandlerFactory(
-    driveStateRepository, handleAbciResponseError,
+    driveClient, handleAbciResponseError,
   );
 
   const wrappedGetIdentityIdsByPublicKeyHashes = jsonToProtobufHandlerWrapper(
@@ -171,6 +181,24 @@ function platformHandlersFactory(
     wrapInErrorHandler(getIdentityIdsByPublicKeyHashesHandler),
   );
 
+  // waitForStateTransitionResult
+  const waitForStateTransitionResultHandler = waitForStateTransitionResultHandlerFactory(
+    driveClient,
+    blockchainListener,
+    dpp,
+  );
+
+  const wrappedWaitForStateTransitionResult = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      WaitForStateTransitionResultRequest,
+      PBJSWaitForStateTransitionResultRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSWaitForStateTransitionResultResponse,
+    ),
+    wrapInErrorHandler(waitForStateTransitionResultHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -178,6 +206,7 @@ function platformHandlersFactory(
     getDataContract: wrappedGetDataContract,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     getIdentityIdsByPublicKeyHashes: wrappedGetIdentityIdsByPublicKeyHashes,
+    waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
   };
 }
 

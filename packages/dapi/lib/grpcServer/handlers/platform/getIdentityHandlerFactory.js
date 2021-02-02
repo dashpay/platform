@@ -16,12 +16,12 @@ const {
 const AbciResponseError = require('../../../errors/AbciResponseError');
 
 /**
- * @param {DriveStateRepository} driveStateRepository
+ * @param {DriveClient} driveClient
  * @param {handleAbciResponseError} handleAbciResponseError
  *
  * @returns {getIdentityHandler}
  */
-function getIdentityHandlerFactory(driveStateRepository, handleAbciResponseError) {
+function getIdentityHandlerFactory(driveClient, handleAbciResponseError) {
   /**
    * @typedef getIdentityHandler
    *
@@ -44,7 +44,7 @@ function getIdentityHandlerFactory(driveStateRepository, handleAbciResponseError
     let proofObject;
 
     try {
-      ({ data: identityBuffer, proof: proofObject } = await driveStateRepository
+      ({ data: identityBuffer, proof: proofObject } = await driveClient
         .fetchIdentity(id, prove));
     } catch (e) {
       if (e instanceof AbciResponseError) {

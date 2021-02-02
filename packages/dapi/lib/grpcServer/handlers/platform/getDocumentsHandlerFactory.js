@@ -19,12 +19,12 @@ const AbciResponseError = require('../../../errors/AbciResponseError');
 
 /**
  *
- * @param {DriveStateRepository} driveStateRepository
+ * @param {DriveClient} driveClient
  * @param {handleAbciResponseError} handleAbciResponseError
  *
  * @returns {getDocumentsHandler}
  */
-function getDocumentsHandlerFactory(driveStateRepository, handleAbciResponseError) {
+function getDocumentsHandlerFactory(driveClient, handleAbciResponseError) {
   /**
    * @typedef getDocumentsHandler
    *
@@ -114,7 +114,7 @@ function getDocumentsHandlerFactory(driveStateRepository, handleAbciResponseErro
     let documentBuffers;
     let proofObject;
     try {
-      ({ data: documentBuffers, proof: proofObject } = await driveStateRepository.fetchDocuments(
+      ({ data: documentBuffers, proof: proofObject } = await driveClient.fetchDocuments(
         dataContractId, documentType, options, prove,
       ));
     } catch (e) {

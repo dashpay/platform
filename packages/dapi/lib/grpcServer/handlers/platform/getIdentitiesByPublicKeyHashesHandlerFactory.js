@@ -17,12 +17,12 @@ const AbciResponseError = require('../../../errors/AbciResponseError');
 
 /**
  *
- * @param {DriveStateRepository} driveStateRepository
+ * @param {DriveClient} driveClient
  * @param {handleAbciResponseError} handleAbciResponseError
  * @return {getIdentitiesByPublicKeyHashesHandler}
  */
 function getIdentitiesByPublicKeyHashesHandlerFactory(
-  driveStateRepository, handleAbciResponseError,
+  driveClient, handleAbciResponseError,
 ) {
   /**
    * @typedef getIdentitiesByPublicKeyHashesHandler
@@ -43,7 +43,7 @@ function getIdentitiesByPublicKeyHashesHandlerFactory(
     let identities;
     let proofObject;
     try {
-      ({ data: identities, proof: proofObject } = await driveStateRepository
+      ({ data: identities, proof: proofObject } = await driveClient
         .fetchIdentitiesByPublicKeyHashes(publicKeyHashes, prove));
     } catch (e) {
       if (e instanceof AbciResponseError) {

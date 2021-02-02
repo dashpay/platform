@@ -5,7 +5,7 @@ const cbor = require('cbor');
 const RPCError = require('../../rpcServer/RPCError');
 const AbciResponseError = require('../../errors/AbciResponseError');
 
-class DriveStateRepository {
+class DriveClient {
   /**
    * @param options
    * @param {string} options.host
@@ -160,6 +160,25 @@ class DriveStateRepository {
       prove,
     );
   }
+
+  /**
+   *  Fetch proofs by ids
+   *
+   * @param {Buffer[]} [documentIds]
+   * @param {Buffer[]} [identityIds]
+   * @param {Buffer[]} [dataContractIds]
+   * @return {Promise<{data: Buffer}>}
+   */
+  async fetchProofs({ documentIds, identityIds, dataContractIds }) {
+    return this.request(
+      '/proofs',
+      {
+        documentIds,
+        identityIds,
+        dataContractIds,
+      },
+    );
+  }
 }
 
-module.exports = DriveStateRepository;
+module.exports = DriveClient;
