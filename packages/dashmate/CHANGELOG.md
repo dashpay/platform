@@ -1,3 +1,12 @@
+## [0.17.4](https://github.com/dashevo/mn-bootstrap/compare/v0.17.3...v0.17.4) (2021-02-03)
+
+
+### Features
+
+* output Drive logs into files ([#252](https://github.com/dashevo/mn-bootstrap/issues/252))
+
+
+
 ## [0.17.3](https://github.com/dashevo/mn-bootstrap/compare/v0.17.2...v0.17.3) (2021-01-19)
 
 

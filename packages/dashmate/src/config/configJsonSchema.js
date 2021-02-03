@@ -42,6 +42,20 @@ module.exports = {
       required: ['id', 'host', 'port'],
       additionalProperties: false,
     },
+    logFile: {
+      properties: {
+        level: {
+          type: 'string',
+          enum: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
+        },
+        path: {
+          type: 'string',
+          minLength: 1,
+        },
+      },
+      additionalProperties: false,
+      required: ['level', 'path'],
+    },
   },
   properties: {
     description: {
@@ -235,13 +249,24 @@ module.exports = {
                 },
                 log: {
                   properties: {
-                    level: {
-                      type: 'string',
-                      enum: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
+                    stdout: {
+                      properties: {
+                        level: {
+                          $ref: '#/definitions/logFile/properties/level',
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['level'],
+                    },
+                    prettyFile: {
+                      $ref: '#/definitions/logFile',
+                    },
+                    jsonFile: {
+                      $ref: '#/definitions/logFile',
                     },
                   },
                   additionalProperties: false,
-                  required: ['level'],
+                  required: ['stdout', 'prettyFile', 'jsonFile'],
                 },
               },
               additionalProperties: false,

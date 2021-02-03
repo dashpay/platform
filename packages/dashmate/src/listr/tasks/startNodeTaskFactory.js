@@ -1,7 +1,8 @@
+const fs = require('fs');
+
 const { Listr } = require('listr2');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
-
 const NETWORKS = require('../../networks');
 
 /**
@@ -39,6 +40,19 @@ function startNodeTaskFactory(dockerCompose) {
 
     if (isMinerEnabled === true && config.get('network') !== NETWORKS.LOCAL) {
       throw new Error(`'core.miner.enabled' option only works with local network. Your network is ${config.get('network')}.`);
+    }
+
+    // Check Drive log files are created
+    const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
+
+    if (!fs.existsSync(prettyFilePath)) {
+      fs.writeFileSync(prettyFilePath, '');
+    }
+
+    const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
+
+    if (!fs.existsSync(jsonFilePath)) {
+      fs.writeFileSync(jsonFilePath, '');
     }
 
     return new Listr([

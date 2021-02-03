@@ -1,4 +1,5 @@
 const lodashSet = require('lodash.set');
+const lodashGet = require('lodash.get');
 
 const systemConfigs = require('./systemConfigs/systemConfigs');
 const NETWORKS = require('../networks');
@@ -22,6 +23,27 @@ module.exports = {
 
     // Set DashPay contract ID and block height for testnet
     lodashSet(options, 'platform.dashpay', systemConfigs.testnet.platform.dashpay);
+
+    return options;
+  },
+  '0.17.4': (name, options) => {
+    let baseConfig = systemConfigs.base;
+    if (systemConfigs[name]) {
+      baseConfig = systemConfigs[name];
+    }
+
+    const previousStdoutLogLevel = lodashGet(
+      options,
+      'platform.drive.abci.log.level',
+    );
+
+    // Set Drive's new logging variables
+    lodashSet(options, 'platform.drive.abci.log', baseConfig.platform.drive.abci.log);
+
+    // Keep previous log level for stdout
+    if (previousStdoutLogLevel) {
+      lodashSet(options, 'platform.drive.abci.log.stdout.level', previousStdoutLogLevel);
+    }
 
     return options;
   },

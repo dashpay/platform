@@ -19,6 +19,12 @@ services:
       - core
     volumes:
       - drive_abci_data:/usr/src/app/db
+      - type: bind
+        source: ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_PATH:?err}
+        target: /var/log/drive-pretty.log
+      - type: bind
+        source: ${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_PATH:?err}
+        target: /var/log/drive-json.log
     environment:
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
@@ -33,7 +39,11 @@ services:
       - DASHPAY_CONTRACT_ID=${PLATFORM_DASHPAY_CONTRACT_ID}
       - DASHPAY_CONTRACT_BLOCK_HEIGHT=${PLATFORM_DASHPAY_CONTRACT_BLOCK_HEIGHT}
       - NODE_ENV=${ENVIRONMENT:?err}
-      - LOGGING_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_LEVEL:?err}
+      - LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
+      - LOG_PRETTY_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
+      - LOG_PRETTY_FILE_PATH=/var/log/drive-pretty.log
+      - LOG_JSON_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
+      - LOG_JSON_FILE_PATH=/var/log/drive-json.log
       - INITIAL_CORE_CHAINLOCKED_HEIGHT=${PLATFORM_DRIVE_TENDERDASH_GENESIS_INITIAL_CORE_CHAIN_LOCKED_HEIGHT:-1}
       - IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION=${PLATFORM_DRIVE_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION:?err}
     command: npm run abci
