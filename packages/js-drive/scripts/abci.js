@@ -124,8 +124,12 @@ console.log(chalk.hex('#008de4')(banner));
     container.resolve('abciHandlers'),
   );
 
-  server.on('error', async (e) => {
+  server.on('handlerError', async (e) => {
     await errorHandler(e);
+  });
+
+  server.on('connectionError', async (e) => {
+    logger.error({ error: e }, 'ABCI connection error');
   });
 
   server.listen(
