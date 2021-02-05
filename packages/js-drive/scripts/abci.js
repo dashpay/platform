@@ -115,9 +115,11 @@ console.log(chalk.hex('#008de4')(banner));
     await waitForCoreChainLockSyncFallback();
   }
 
-  logger.info('Waiting for initial core chain locked height...');
   const waitForChainLockedHeight = container.resolve('waitForChainLockedHeight');
   const initialCoreChainLockedHeight = container.resolve('initialCoreChainLockedHeight');
+
+  logger.info(`Waiting for initial core chain locked height #${initialCoreChainLockedHeight}...`);
+
   await waitForChainLockedHeight(initialCoreChainLockedHeight);
 
   const server = createServer(

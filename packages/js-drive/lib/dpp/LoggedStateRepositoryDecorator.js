@@ -1,7 +1,7 @@
 class LoggedStateRepositoryDecorator {
   /**
    * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
-   * @param {BlockExecutionContext} logger
+   * @param {BlockExecutionContext} blockExecutionContext
    */
   constructor(
     stateRepository,

@@ -160,6 +160,8 @@ const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorW
  * @param {string} options.LOG_PRETTY_FILE_PATH
  * @param {string} options.LOG_JSON_FILE_LEVEL
  * @param {string} options.LOG_JSON_FILE_PATH
+ * @param {string} options.LOG_STATE_REPOSITORY
+ * @param {string} options.LOG_MERK
  * @param {string} options.NODE_ENV
  *
  * @return {AwilixContainer}
@@ -251,6 +253,8 @@ async function createDIContainer(options) {
     logPrettyFilePath: asValue(options.LOG_PRETTY_FILE_PATH),
     logJsonFileLevel: asValue(options.LOG_JSON_FILE_LEVEL),
     logJsonFilePath: asValue(options.LOG_JSON_FILE_PATH),
+    logStateRepository: asValue(options.LOG_STATE_REPOSITORY === 'true'),
+    logMerk: asValue(options.LOG_MERK === 'true'),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
     smlMaxListsLimit: asValue(16),
@@ -359,10 +363,14 @@ async function createDIContainer(options) {
    * Register Identity
    */
   container.register({
-    publicKeyToIdentityIdStore: asFunction((publicKeyToIdentityIdStoreMerkDBFile, logger) => {
+    publicKeyToIdentityIdStore: asFunction((
+      publicKeyToIdentityIdStoreMerkDBFile,
+      logger,
+      logMerk,
+    ) => {
       const merkDb = new Merk(publicKeyToIdentityIdStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb, logger, 'publicKeyToIdentityId');
+      return new MerkDbStore(merkDb, logMerk ? logger : null, 'publicKeyToIdentityId');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -398,10 +406,10 @@ async function createDIContainer(options) {
       previousPublicKeyToIdentityIdStore,
     ) => (new PublicKeyToIdentityIdStoreRootTreeLeaf(previousPublicKeyToIdentityIdStore))),
 
-    identitiesStore: asFunction((identitiesStoreMerkDBFile, logger) => {
+    identitiesStore: asFunction((identitiesStoreMerkDBFile, logger, logMerk) => {
       const merkDb = new Merk(identitiesStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb, logger, 'identities');
+      return new MerkDbStore(merkDb, logMerk ? logger : null, 'identities');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -453,12 +461,13 @@ async function createDIContainer(options) {
     spentAssetLockTransactionsStore: asFunction((
       spentAssetLockTransactionsStoreMerkDBFile,
       logger,
+      logMerk,
     ) => {
       const merkDb = new Merk(
         spentAssetLockTransactionsStoreMerkDBFile,
       );
 
-      return new MerkDbStore(merkDb, logger, 'spentAssetLockTransactions');
+      return new MerkDbStore(merkDb, logMerk ? logger : null, 'spentAssetLockTransactions');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -512,10 +521,10 @@ async function createDIContainer(options) {
    * Register Data Contract
    */
   container.register({
-    dataContractsStore: asFunction((dataContractsStoreMerkDBFile, logger) => {
+    dataContractsStore: asFunction((dataContractsStoreMerkDBFile, logger, logMerk) => {
       const merkDb = new Merk(dataContractsStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb, logger, 'dataContracts');
+      return new MerkDbStore(merkDb, logMerk ? logger : null, 'dataContracts');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -567,10 +576,10 @@ async function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    documentsStore: asFunction((documentsStoreMerkDBFile, logger) => {
+    documentsStore: asFunction((documentsStoreMerkDBFile, logger, logMerk) => {
       const merkDb = new Merk(documentsStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb, logger, 'documents');
+      return new MerkDbStore(merkDb, logMerk ? logger : null, 'documents');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -733,10 +742,10 @@ async function createDIContainer(options) {
    * Register credits distribution pool
    */
   container.register({
-    commonStore: asFunction((commonStoreMerkDBFile, logger) => {
+    commonStore: asFunction((commonStoreMerkDBFile, logger, logMerk) => {
       const merkDb = new Merk(commonStoreMerkDBFile);
 
-      return new MerkDbStore(merkDb, logger, 'common');
+      return new MerkDbStore(merkDb, logMerk ? logger : null, 'common');
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
@@ -891,6 +900,7 @@ async function createDIContainer(options) {
       dataContractCache,
       blockExecutionContext,
       simplifiedMasternodeList,
+      logStateRepository,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -908,6 +918,10 @@ async function createDIContainer(options) {
       const cachedRepository = new CachedStateRepositoryDecorator(
         stateRepository, dataContractCache,
       );
+
+      if (!logStateRepository) {
+        return cachedRepository;
+      }
 
       return new LoggedStateRepositoryDecorator(
         cachedRepository,

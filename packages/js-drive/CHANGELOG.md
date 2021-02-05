@@ -1,3 +1,12 @@
+## [0.17.7](https://github.com/dashevo/js-drive/compare/v0.17.6...v0.17.7) (2021-02-04)
+
+
+### Features
+
+* disable state repository and merk logging by default ([#467](https://github.com/dashevo/js-drive/issues/467))
+
+
+
 ## [0.17.6](https://github.com/dashevo/js-drive/compare/v0.17.5...v0.17.6) (2021-01-26)
 
 

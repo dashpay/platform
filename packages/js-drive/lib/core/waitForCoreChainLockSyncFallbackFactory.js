@@ -27,7 +27,7 @@ function waitForCoreChainLockSyncFallbackFactory(
 
     coreZMQClient.subscribe(ZMQClient.TOPICS.hashblock);
 
-    logger.trace('Subscribe to hashblock ZMQ room');
+    logger.trace('Subscribe to hashblock ZMQ topic');
 
     let resolveFirstBlockFromZMQPromise;
     const firstBlockFromZMQPromise = new Promise((resolve) => {
@@ -44,7 +44,7 @@ function waitForCoreChainLockSyncFallbackFactory(
 
       latestCoreChainLock.update(socketChainLock);
 
-      logger.debug(socketChainLock.toJSON(), `Updated fake latestCoreChainLock for height ${block.height}`);
+      logger.debug(`Updated fake latestCoreChainLock for height ${block.height}`);
 
       if (resolveFirstBlockFromZMQPromise) {
         resolveFirstBlockFromZMQPromise();
