@@ -21,10 +21,10 @@ const InternalGrpcError = require('./lib/server/error/InternalGrpcError');
 const ResourceExhaustedGrpcError = require('./lib/server/error/ResourceExhaustedGrpcError');
 const DeadlineExceededGrpcError = require('./lib/server/error/DeadlineExceededGrpcError');
 const NotFoundGrpcError = require('./lib/server/error/NotFoundGrpcError');
+const UnavailableGrpcError = require('./lib/server/error/UnavailableGrpcError');
 const GrpcError = require('./lib/server/error/GrpcError');
 
 const isObject = require('./lib/utils/isObject');
-
 const convertObjectToMetadata = require('./lib/convertObjectToMetadata');
 const loadPackageDefinition = require('./lib/loadPackageDefinition');
 
@@ -56,6 +56,7 @@ module.exports = {
       ResourceExhaustedGrpcError,
       DeadlineExceededGrpcError,
       NotFoundGrpcError,
+      UnavailableGrpcError,
     },
     checks: {
       checkVersionWrapperFactory,
