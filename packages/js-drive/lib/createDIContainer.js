@@ -27,6 +27,8 @@ const findMyWay = require('find-my-way');
 const pino = require('pino');
 const pinoMultistream = require('pino-multi-stream');
 
+const packageJSON = require('../package.json');
+
 const ZMQClient = require('./core/ZmqClient');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
@@ -322,7 +324,8 @@ async function createDIContainer(options) {
     logger: asFunction(
       (loggerStreams) => pino({
         level: 'trace',
-      }, pinoMultistream.multistream(loggerStreams)),
+      }, pinoMultistream.multistream(loggerStreams))
+        .child({ driveVersion: packageJSON.version }),
     ).singleton(),
 
     noopLogger: asFunction(() => (
