@@ -18,13 +18,13 @@ describe('Account - getIdentityHDKeyByIndex', function suite() {
     mnemonic = 'during develop before curtain hazard rare job language become verb message travel';
 
 
-    expectedIdentityHDKey0_0 = 'tprv8oH6ANFZK6Ap3rp4bzcafECooaK2Hj7J7bvqBug5UYHYGXaQVK9CfVeVgH4Y4HmLghrPU64bRbzQk82cCv6Sm4E4JjsTRb8WJ75FG2Qwg43';
-    expectedIdentityHDKey0_1 = 'tprv8oH6ANFZK6Ap7Qik5WRLovyK32LPCaqsZGeeh7AMFwxgBTABrDfigb399HTA1KT7vjYVurMvJo4REpcGorKPr2LC6SsSBwVdogg5UYW6C6n';
-    expectedIdentityHDKey1_0 = 'tprv8oxtsevLHCPBCyTVpzhiyYnABQxhJwGp721eAT9dxb8VPBch6kp265Ry4qdL4mcktzLwPF3sZnmhTMd2oqkmSXWK6NHbwEMPFgKv6wUCGBW';
+    expectedIdentityHDKey0_0 = 'tprv8nwXBDgtqkF6xZjxESRmMcmyo8LeJ7YnhEZNYrGBUVDtDbxdtjiQQ5pyVigvrep81EJWenD3BEdCV5Yrhah2tbnzjM5Dq9bnmDvX7yyRHRr';
+    expectedIdentityHDKey0_1 = 'tprv8nwXBDgtqkF6z6Da9eSrw29t3qVcHqWTLzw5oFVzXnuxwhRF5RtMmc3LqGMD6NmShVUd4dkbs86PB4pZVQ7xWgg2BLK4Kqm7TDTct4YDifH';
+    expectedIdentityHDKey1_0 = 'tprv8oNTEowGNFSSD6Ne3aR9hQXFT2hmvf4F9kgjbbrKmCyeBWbuH9an16tPtKrHtkbAyHofhfGa1Go6a4bZQukJ8qS657PJQEMg3Sq3Z22UnH6';
 
-    expectedIdentityPrivateKey0_0 = '483b7555c139931da369c53d0cbe55bd5fe4461a713504fc777963f9062075e4';
-    expectedIdentityPrivateKey0_1 = 'f2c7ea82ffa0007ab6f27f53cfce5137d597fffa8a6e38cadefb6f9953e88e30';
-    expectedIdentityPrivateKey1_0 = '80ae8ea14f36be65fd53309115ff26e4968686b884abad902b8d5f66637a235a';
+    expectedIdentityPrivateKey0_0 = '6fcf62a14d7c452a77dee426a534b7c92cbb13a41c3b7f75700519e339ef09dc';
+    expectedIdentityPrivateKey0_1 = '5e07be03de51b0c5f7af8d60074819e2cf4bdce8eb47e59c18295e151528390f';
+    expectedIdentityPrivateKey1_0 = '276d1d2aa6df3c3b7d9da967641769eddd7e81055833b90a79cdb1b433dd18e5';
     walletMock = new Wallet({
       offlineMode: true,
       mnemonic,

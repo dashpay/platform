@@ -14,7 +14,7 @@ function getIdentityHDKeyByIndex(identityIndex, keyIndex) {
     .deriveChild(accountIndex, true)
     // ECDSA key type
     .deriveChild(0, true)
-    .deriveChild(identityIndex, false)
+    .deriveChild(identityIndex, true)
     .deriveChild(keyIndex, true);
 }
 
