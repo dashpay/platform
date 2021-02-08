@@ -7,6 +7,7 @@ const {
       ResourceExhaustedGrpcError,
       NotFoundGrpcError,
       FailedPreconditionGrpcError,
+      UnavailableGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -21,6 +22,8 @@ function handleAbciResponseError(error) {
   const data = error.getData();
 
   switch (code) {
+    case 7: // UNAVAILABLE
+      throw new UnavailableGrpcError(message, data);
     case 6: // MEMORY_LIMIT_EXCEEDED
       throw new ResourceExhaustedGrpcError(message, data);
     case 5: // EXECUTION_TIMED_OUT
