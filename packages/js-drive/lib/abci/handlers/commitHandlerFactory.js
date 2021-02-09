@@ -8,7 +8,6 @@ const {
 
 const Long = require('long');
 const { asValue } = require('awilix');
-const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
 const DataCorruptedError = require('./errors/DataCorruptedError');
 
 /**
@@ -68,29 +67,6 @@ function commitHandlerFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
-    // If the current block is higher than 1 we need to obtain previous block data
-    let previousBlockExecutionStoreTransactions;
-    if (blockHeight > 1) {
-      if (container.has('previousBlockExecutionStoreTransactions')) {
-        previousBlockExecutionStoreTransactions = container.resolve(
-          'previousBlockExecutionStoreTransactions',
-        );
-      } else {
-        // If container doesn't have previous transactions, load them from file (node cold start)
-        previousBlockExecutionStoreTransactions = (
-          await previousBlockExecutionStoreTransactionsRepository.fetch()
-        );
-
-        if (!previousBlockExecutionStoreTransactions) {
-          throw new NoPreviousBlockExecutionStoreTransactionsFoundError();
-        }
-
-        container.register({
-          previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
-        });
-      }
-    }
-
     let nextPreviousBlockExecutionStoreTransactions;
     try {
       // Create document databases for dataContracts created in the current block
@@ -137,8 +113,12 @@ function commitHandlerFactory(
     // rebuild root tree with committed data from the current block
     rootTree.rebuild();
 
-    // Commit previous block data to previous stores
-    if (previousBlockExecutionStoreTransactions) {
+    // Commit previous block data to previous stores if available
+    if (container.has('previousBlockExecutionStoreTransactions')) {
+      const previousBlockExecutionStoreTransactions = container.resolve(
+        'previousBlockExecutionStoreTransactions',
+      );
+
       // Create document databases in previous dbs
       const previousDataContractTransaction = previousBlockExecutionStoreTransactions.getTransaction('dataContracts');
       const { updates: previousCreatedDataContracts } = previousDataContractTransaction.toObject();

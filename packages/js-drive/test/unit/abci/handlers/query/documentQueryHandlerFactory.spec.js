@@ -17,6 +17,7 @@ const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQue
 const ValidationError = require('../../../../../lib/document/query/errors/ValidationError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const AbciError = require('../../../../../lib/abci/errors/AbciError');
+const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
@@ -27,6 +28,7 @@ describe('documentQueryHandlerFactory', () => {
   let options;
   let previousRootTreeMock;
   let previousDocumentsStoreRootTreeLeafMock;
+  let containerMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
@@ -39,10 +41,15 @@ describe('documentQueryHandlerFactory', () => {
 
     previousDocumentsStoreRootTreeLeafMock = this.sinon.stub();
 
+    containerMock = {
+      has: this.sinon.stub().returns(true),
+    };
+
     documentQueryHandler = documentQueryHandlerFactory(
       fetchPreviousDocumentsMock,
       previousRootTreeMock,
       previousDocumentsStoreRootTreeLeafMock,
+      containerMock,
     );
 
     params = {};
@@ -79,6 +86,7 @@ describe('documentQueryHandlerFactory', () => {
 
     expect(result.value).to.deep.equal(cbor.encode(value));
     expect(previousRootTreeMock.getFullProof).to.be.not.called();
+    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
   });
 
   it('should return serialized documents with proof', async () => {
@@ -109,6 +117,22 @@ describe('documentQueryHandlerFactory', () => {
       previousDocumentsStoreRootTreeLeafMock,
       documentIds,
     ]);
+    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+  });
+
+  it('should throw UnavailableAbciError if previousBlockExecutionStoreTransactions is not present', async () => {
+    containerMock.has.returns(false);
+
+    try {
+      await documentQueryHandler(params, data, {});
+
+      expect.fail('should throw UnavailableAbciError');
+    } catch (e) {
+      expect(e).to.be.an.instanceof(UnavailableAbciError);
+      expect(e.getCode()).to.equal(AbciError.CODES.UNAVAILABLE);
+      expect(fetchPreviousDocumentsMock).to.not.be.called();
+      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+    }
   });
 
   it('should throw InvalidArgumentAbciError on invalid query', async () => {
@@ -126,6 +150,7 @@ describe('documentQueryHandlerFactory', () => {
       expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
       expect(e.getData()).to.deep.equal({ errors: [error] });
       expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
     }
   });
 
@@ -141,6 +166,7 @@ describe('documentQueryHandlerFactory', () => {
     } catch (e) {
       expect(e).to.deep.equal(error);
       expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
     }
   });
 });

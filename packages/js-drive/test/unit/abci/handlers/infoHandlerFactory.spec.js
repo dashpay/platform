@@ -8,12 +8,13 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const NoPreviousBlockExecutionStoreTransactionsFoundError = require('../../../../lib/abci/handlers/errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
+
 const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFactory');
 
 const ChainInfo = require('../../../../lib/chainInfo/ChainInfo');
 
 const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
-
 const packageJson = require('../../../../package');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
@@ -29,6 +30,8 @@ describe('infoHandlerFactory', () => {
   let chainInfo;
   let chainInfoRepositoryMock;
   let containerMock;
+  let previousBlockExecutionStoreTransactionsRepositoryMock;
+  let blockExecutionStoreTransactionsMock;
 
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
@@ -57,6 +60,13 @@ describe('infoHandlerFactory', () => {
 
     containerMock = {
       register: this.sinon.stub(),
+      has: this.sinon.stub().withArgs('previousBlockExecutionStoreTransactions').returns(false),
+    };
+
+    blockExecutionStoreTransactionsMock = {};
+
+    previousBlockExecutionStoreTransactionsRepositoryMock = {
+      fetch: this.sinon.stub().resolves(blockExecutionStoreTransactionsMock),
     };
 
     infoHandler = infoHandlerFactory(
@@ -65,6 +75,7 @@ describe('infoHandlerFactory', () => {
       rootTreeMock,
       updateSimplifiedMasternodeListMock,
       loggerMock,
+      previousBlockExecutionStoreTransactionsRepositoryMock,
       containerMock,
     );
   });
@@ -82,6 +93,9 @@ describe('infoHandlerFactory', () => {
     });
 
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
+
+    expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.not.be.called();
+    expect(containerMock.has).to.not.be.called();
   });
 
   it('should update SML to latest core chain locked height and return stored info', async () => {
@@ -108,5 +122,26 @@ describe('infoHandlerFactory', () => {
         logger: loggerMock,
       },
     );
+
+    expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.be.calledWithExactly();
+    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+  });
+
+  it('should throw NoPreviousBlockExecutionStoreTransactionsFoundError if previous BlockExecutionStoreTransactions is not present', async () => {
+    lastBlockHeight = Long.fromInt(1);
+    lastCoreChainLockedHeight = 2;
+
+    chainInfo.setLastBlockHeight(lastBlockHeight);
+    chainInfo.setLastCoreChainLockedHeight(lastCoreChainLockedHeight);
+
+    previousBlockExecutionStoreTransactionsRepositoryMock.fetch.resolves(null);
+
+    try {
+      await infoHandler();
+
+      expect.fail('should throw NoPreviousBlockExecutionStoreTransactionsFoundError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(NoPreviousBlockExecutionStoreTransactionsFoundError);
+    }
   });
 });

@@ -21,6 +21,7 @@ function detectStandaloneRegtestModeFactory(coreRpcClient) {
     }
 
     const { result: blockchainInfo } = await coreRpcClient.getBlockchainInfo();
+
     if (blockchainInfo.chain === 'regtest') {
       // wait for core to connect to peers
       await wait(5000);

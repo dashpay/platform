@@ -10,18 +10,21 @@ const cbor = require('cbor');
 
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
+const UnavailableAbciError = require('../../errors/UnavailableAbciError');
 
 /**
  *
  * @param {fetchDocuments} fetchPreviousDocuments
  * @param {RootTree} previousRootTree
  * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
+ * @param {AwilixContainer} container
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
   fetchPreviousDocuments,
   previousRootTree,
   previousDocumentsStoreRootTreeLeaf,
+  container,
 ) {
   /**
    * @typedef documentQueryHandler
@@ -51,6 +54,10 @@ function documentQueryHandlerFactory(
     },
     request,
   ) {
+    if (!container.has('previousBlockExecutionStoreTransactions')) {
+      throw new UnavailableAbciError();
+    }
+
     let documents;
 
     try {

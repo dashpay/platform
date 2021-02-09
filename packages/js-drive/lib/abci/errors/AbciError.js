@@ -62,6 +62,7 @@ AbciError.CODES = {
   INSUFFICIENT_FUNDS: 4,
   EXECUTION_TIMED_OUT: 5,
   MEMORY_LIMIT_EXCEEDED: 6,
+  UNAVAILABLE: 7,
 };
 
 module.exports = AbciError;
