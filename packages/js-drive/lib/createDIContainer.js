@@ -294,30 +294,40 @@ async function createDIContainer(options) {
       translateTime: true,
     }),
 
+    logStdoutStream: asFunction((loggerPrettyfierOptions) => pinoMultistream.prettyStream({
+      prettyPrint: loggerPrettyfierOptions,
+    })).singleton(),
+
+    logPrettyFileStream: asFunction((
+      logPrettyFilePath,
+      loggerPrettyfierOptions,
+    ) => pinoMultistream.prettyStream({
+      prettyPrint: loggerPrettyfierOptions,
+      dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
+    })).singleton(),
+
+    logJsonFileStream: asFunction((logJsonFilePath) => fs.createWriteStream(logJsonFilePath, { flags: 'a' }))
+      .disposer(async (stream) => new Promise((resolve) => stream.end(resolve))).singleton(),
+
     loggerStreams: asFunction((
       logStdoutLevel,
+      logStdoutStream,
       logPrettyFileLevel,
-      logPrettyFilePath,
+      logPrettyFileStream,
       logJsonFileLevel,
-      logJsonFilePath,
-      loggerPrettyfierOptions,
+      logJsonFileStream,
     ) => [
       {
         level: logStdoutLevel,
-        stream: pinoMultistream.prettyStream({
-          prettyPrint: loggerPrettyfierOptions,
-        }),
+        stream: logStdoutStream,
       },
       {
         level: logPrettyFileLevel,
-        stream: pinoMultistream.prettyStream({
-          prettyPrint: loggerPrettyfierOptions,
-          dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
-        }),
+        stream: logPrettyFileStream,
       },
       {
         level: logJsonFileLevel,
-        stream: fs.createWriteStream(logJsonFilePath, { flags: 'a' }),
+        stream: logJsonFileStream,
       },
     ]),
 
