@@ -121,12 +121,12 @@
  */
 
 /**
- * Fetch Simplified Masternode List Store
+ * Verify Instant Lock
  *
  * @async
  * @method
- * @name StateRepository#fetchSMLStore
- * @returns {Promise<SimplifiedMNListStore>}
+ * @name StateRepository#verifyInstantLock
+ * @returns {Promise<boolean>}
  */
 
 /**

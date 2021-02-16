@@ -10,13 +10,11 @@ const InvalidIdentityAssetLockProofSignatureError = require('../../../../../erro
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {StateRepository} stateRepository
- * @param {boolean} skipAssetLockProofSignatureVerification
  * @returns {validateInstantAssetLockProofStructure}
  */
 function validateInstantAssetLockProofStructureFactory(
   jsonSchemaValidator,
   stateRepository,
-  skipAssetLockProofSignatureVerification,
 ) {
   /**
    * @typedef {validateInstantAssetLockProofStructure}
@@ -53,12 +51,8 @@ function validateInstantAssetLockProofStructureFactory(
       return result;
     }
 
-    if (!skipAssetLockProofSignatureVerification) {
-      const smlStore = await stateRepository.fetchSMLStore();
-
-      if (!await instantLock.verify(smlStore)) {
-        result.addError(new InvalidIdentityAssetLockProofSignatureError());
-      }
+    if (!await stateRepository.verifyInstantLock(instantLock)) {
+      result.addError(new InvalidIdentityAssetLockProofSignatureError());
     }
 
     return result;

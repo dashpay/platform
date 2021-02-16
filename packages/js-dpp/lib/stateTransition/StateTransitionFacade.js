@@ -66,9 +66,8 @@ class StateTransitionFacade {
   /**
    * @param {StateRepository} stateRepository
    * @param {JsonSchemaValidator} validator
-   * @param {boolean} skipAssetLockProofSignatureVerification
    */
-  constructor(stateRepository, validator, skipAssetLockProofSignatureVerification) {
+  constructor(stateRepository, validator) {
     this.stateRepository = stateRepository;
     this.validator = validator;
 
@@ -111,7 +110,6 @@ class StateTransitionFacade {
     const validateInstantAssetLockProofStructure = validateInstantAssetLockProofStructureFactory(
       validator,
       stateRepository,
-      skipAssetLockProofSignatureVerification,
     );
 
     const proofValidationFunctionsByType = {

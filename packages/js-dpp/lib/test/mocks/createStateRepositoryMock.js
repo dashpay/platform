@@ -9,7 +9,7 @@
  *   fetchTransaction: *,
  *   fetchIdentity: *,
  *   storeIdentity: *,
- *   fetchSMLStore: *,
+ *   verifyInstantLock: *,
  * }}
  */
 module.exports = function createStateRepositoryMock(sinonSandbox) {
@@ -25,7 +25,7 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     fetchLatestPlatformBlockHeader: sinonSandbox.stub(),
     storeIdentityPublicKeyHashes: sinonSandbox.stub(),
     fetchIdentityIdsByPublicKeyHashes: sinonSandbox.stub(),
-    fetchSMLStore: sinonSandbox.stub(),
+    verifyInstantLock: sinonSandbox.stub(),
     storeAssetLockTransactionOutPoint: sinonSandbox.stub(),
     checkAssetLockTransactionOutPointExists: sinonSandbox.stub(),
   };
