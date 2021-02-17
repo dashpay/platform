@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 
-const { Account, Wallet } = require('../../../index');
+const { Wallet, Identities } = require('../../../index');
 
 let mnemonic;
 let expectedIdentityHDKey0_0;
@@ -9,10 +9,9 @@ let expectedIdentityHDKey1_0;
 let expectedIdentityPrivateKey0_0;
 let expectedIdentityPrivateKey0_1;
 let expectedIdentityPrivateKey1_0;
-let walletMock;
-let account;
-
-describe('Account - getIdentityHDKeyByIndex', function suite() {
+let wallet;
+let identities;
+describe('Identities#getIdentityHDKeyByIndex', function suite() {
   this.timeout(10000);
   beforeEach(() => {
     mnemonic = 'during develop before curtain hazard rare job language become verb message travel';
@@ -25,21 +24,21 @@ describe('Account - getIdentityHDKeyByIndex', function suite() {
     expectedIdentityPrivateKey0_0 = '6fcf62a14d7c452a77dee426a534b7c92cbb13a41c3b7f75700519e339ef09dc';
     expectedIdentityPrivateKey0_1 = '5e07be03de51b0c5f7af8d60074819e2cf4bdce8eb47e59c18295e151528390f';
     expectedIdentityPrivateKey1_0 = '276d1d2aa6df3c3b7d9da967641769eddd7e81055833b90a79cdb1b433dd18e5';
-    walletMock = new Wallet({
+    wallet = new Wallet({
       offlineMode: true,
       mnemonic,
     });
-    account = new Account(walletMock);
+    identities = new Identities(wallet);
   });
 
   afterEach(() => {
-    walletMock.disconnect();
+    wallet.disconnect();
   });
 
   it('Should derive a key for identity for a given index', () => {
-    const actualIdentityHDKey0_0 = account.getIdentityHDKeyByIndex(0, 0);
-    const actualIdentityHDKey0_1 = account.getIdentityHDKeyByIndex(0, 1);
-    const actualIdentityHDKey1_0 = account.getIdentityHDKeyByIndex(1, 0);
+    const actualIdentityHDKey0_0 = identities.getIdentityHDKeyByIndex(0, 0);
+    const actualIdentityHDKey0_1 = identities.getIdentityHDKeyByIndex(0, 1);
+    const actualIdentityHDKey1_0 = identities.getIdentityHDKeyByIndex(1, 0);
 
     expect(actualIdentityHDKey0_0.toString()).to.be.equal(expectedIdentityHDKey0_0);
     expect(actualIdentityHDKey0_1.toString()).to.be.equal(expectedIdentityHDKey0_1);

@@ -30,7 +30,7 @@ describe('Account - sign', function suite() {
     expect(Buffer.from(transaction.toJSON().outputs[1].script, 'hex').slice(2).toString('utf-8')).to.equal(data);
   });
   it('should sign and verify a message', () => {
-    const idKey = account.getIdentityHDKeyByIndex(0, 0);
+    const idKey = account.identities.getIdentityHDKeyByIndex(0, 0);
     const idPrivateKey = idKey.privateKey;
     const idAddress = idPrivateKey.toAddress().toString();
     const message = new Dashcore.Message('hello, world');

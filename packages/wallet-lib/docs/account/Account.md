@@ -29,3 +29,5 @@ await account.init();
 ```
 
 **Reminder**: Because many parameters are inherited from the wallet object (network, plugins, transporter, storage, keychain...), initializing an Account without a Wallet will require mocking all those properties.  
+
+**Identities**: Identities are accessible from an account via the identities interface : `account.identities`. See [Identities](/identities/Identities)

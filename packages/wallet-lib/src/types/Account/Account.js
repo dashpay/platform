@@ -53,6 +53,8 @@ class Account extends EventEmitter {
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
 
+    this.identities = wallet.identities;
+
     this.state = {
       isInitialized: false,
       isReady: false,
@@ -237,9 +239,6 @@ Account.prototype.getAddress = require('./methods/getAddress');
 Account.prototype.getAddresses = require('./methods/getAddresses');
 Account.prototype.getBlockHeader = require('./methods/getBlockHeader');
 Account.prototype.getConfirmedBalance = require('./methods/getConfirmedBalance');
-Account.prototype.getIdentityHDKeyById = require('./methods/getIdentityHDKeyById');
-Account.prototype.getIdentityHDKeyByIndex = require('./methods/getIdentityHDKeyByIndex');
-Account.prototype.getIdentityIds = require('./methods/getIdentityIds');
 Account.prototype.getPlugin = require('./methods/getPlugin');
 Account.prototype.getPrivateKeys = require('./methods/getPrivateKeys');
 Account.prototype.getTotalBalance = require('./methods/getTotalBalance');

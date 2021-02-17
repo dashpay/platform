@@ -18,7 +18,7 @@ class IdentitySyncWorker extends Worker {
         'storage',
         'transport',
         'walletId',
-        'getIdentityHDKeyByIndex',
+        'identities',
       ],
       ...options,
     });
@@ -60,7 +60,7 @@ class IdentitySyncWorker extends Worker {
         index += 1;
       }
 
-      const { privateKey } = this.getIdentityHDKeyByIndex(index, 0);
+      const { privateKey } = this.identities.getIdentityHDKeyByIndex(index, 0);
       const publicKey = privateKey.toPublicKey();
 
       // eslint-disable-next-line no-await-in-loop

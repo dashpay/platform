@@ -22,7 +22,6 @@
         - [`.generateAddress()`](account/generateAddress.md)
         - [`.getAddress()`](account/getAddress.md)
         - [`.getConfirmedBalance()`](account/getConfirmedBalance.md)
-        - [`.getIdentityHDKeyByIndex()`](account/getIdentityHDKeyByIndex.md)
         - [`.getPrivateKeys()`](account/getPrivateKeys.md)
         - [`.getTotalBalance()`](account/getTotalBalance.md)
         - [`.getTransaction()`](account/getTransaction.md)
@@ -42,6 +41,9 @@
         - [`.fromSeed()`](wallet/fromSeed.md)
         - [`.generateNewWalletId()`](wallet/generateNewWalletId.md)
         - [`.getAccount()`](wallet/getAccount.md)
+    - Identities
+        - [`new Identities()`](identities/Identities.md)
+        - [`.getIdentityHDKeyByIndex()`](identities/getIdentityHDKeyByIndex.md)
     - KeyChain
         - [`new KeyChain()`](keychain/KeyChain.md)
         - [`.generateKeyForChild()`](keychain/generateKeyForChild.md)

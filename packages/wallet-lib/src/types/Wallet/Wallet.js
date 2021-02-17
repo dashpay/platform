@@ -144,6 +144,11 @@ class Wallet {
 
     this.accounts = [];
     this.interface = opts.interface;
+
+    // Suppressed global require to avoid cyclic dependencies
+    // eslint-disable-next-line global-require
+    const Identities = require('../Identities/Identities');
+    this.identities = new Identities(this);
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals
   }
 }

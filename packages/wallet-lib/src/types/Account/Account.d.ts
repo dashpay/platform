@@ -11,7 +11,7 @@ import {
     Plugins, RawTransaction, StatusInfo, TransactionsMap, WalletObj
 } from "../types";
 import { KeyChain } from "../KeyChain/KeyChain";
-import { HDPrivateKey, InstantLock } from "@dashevo/dashcore-lib";
+import { InstantLock } from "@dashevo/dashcore-lib";
 import { Wallet } from "../../index";
 import { Transport } from "../../transport/Transport";
 import { BlockHeader } from "@dashevo/dashcore-lib/typings/block/BlockHeader";
@@ -55,9 +55,6 @@ export declare class Account {
     getAddresses(_type: AddressType): [AddressObj];
     getBlockHeader(identifier: string|number):Promise<BlockHeader>
     getConfirmedBalance(displayDuffs?: boolean): number;
-    getIdentityHDKeyById(identityId: string, keyIndex: number): HDPrivateKey;
-    getIdentityHDKeyByIndex(identityIndex: number, keyIndex: number): HDPrivateKey;
-    getIdentityIds(): string[];
     getPlugin(name: string): Object;
     getPrivateKeys(addressList: [PublicAddress]): [PrivateKey];
     getTotalBalance(displayDuffs?: boolean): number;
