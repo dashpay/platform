@@ -6,6 +6,7 @@ const {
     },
   },
 } = require('@dashevo/grpc-common');
+
 const {
   v0: {
     WaitForStateTransitionResultResponse,
@@ -15,55 +16,52 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const cbor = require('cbor');
+
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
+const TransactionErrorResult = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
 
 /**
  *
- * @param {DriveClient} driveClient
+ * @param {fetchProofForStateTransition} fetchProofForStateTransition
+ * @param {waitForTransactionToBeProvable} waitForTransactionToBeProvable
  * @param {BlockchainListener} blockchainListener
  * @param {DashPlatformProtocol} dpp
  * @param {number} stateTransitionWaitTimeout
  * @return {waitForStateTransitionResultHandler}
  */
 function waitForStateTransitionResultHandlerFactory(
-  driveClient,
+  fetchProofForStateTransition,
+  waitForTransactionToBeProvable,
   blockchainListener,
   dpp,
   stateTransitionWaitTimeout = 80000,
 ) {
   /**
-   *
-   * @param {AbstractStateTransition} stateTransition
-   * @return {Promise<Object>}
+   * @param {Object} txDeliverResult
+   * @return {StateTransitionBroadcastError}
    */
-  async function fetchProof(stateTransition) {
-    const modifiedIds = stateTransition.getModifiedDataIds();
+  function createStateTransitionDeliverError(txDeliverResult) {
+    const { error: abciError } = JSON.parse(txDeliverResult.log);
 
-    let proof;
-    if (stateTransition.isDocumentStateTransition()) {
-      ({ documentsProof: proof } = await driveClient.fetchProofs(
-        { documentIds: modifiedIds },
-      ));
-    } else if (stateTransition.isIdentityStateTransition()) {
-      ({ identitiesProof: proof } = await driveClient.fetchProofs(
-        { identityIds: modifiedIds },
-      ));
-    } else if (stateTransition.isDataContractStateTransition()) {
-      ({ dataContractsProof: proof } = await driveClient.fetchProofs(
-        { dataContractIds: modifiedIds },
-      ));
+    let errorData;
+    if (abciError.data) {
+      errorData = cbor.encode(abciError.data);
     }
 
-    return proof;
-  }
+    const error = new StateTransitionBroadcastError();
 
+    error.setCode(txDeliverResult.code);
+    error.setMessage(abciError.message);
+    error.setData(errorData);
+
+    return error;
+  }
 
   /**
    * @typedef waitForStateTransitionResultHandler
    * @param {Object} call
    * @return {Promise<WaitForStateTransitionResultResponse>}
    */
-
   async function waitForStateTransitionResultHandler(call) {
     const { request } = call;
 
@@ -75,10 +73,15 @@ function waitForStateTransitionResultHandlerFactory(
     }
 
     const hashString = Buffer.from(stateTransitionHash).toString('hex').toUpperCase();
-    let data;
+
+    let result;
 
     try {
-      data = await blockchainListener.waitForTransaction(hashString, stateTransitionWaitTimeout);
+      result = await waitForTransactionToBeProvable(
+        blockchainListener,
+        hashString,
+        stateTransitionWaitTimeout,
+      );
     } catch (e) {
       if (e instanceof TransactionWaitPeriodExceededError) {
         throw new DeadlineExceededGrpcError(
@@ -88,44 +91,30 @@ function waitForStateTransitionResultHandlerFactory(
           },
         );
       }
+
       throw e;
     }
 
     const response = new WaitForStateTransitionResultResponse();
 
-    const { result, tx } = data.data.value.TxResult;
-
-    if (result && result.code !== undefined && result.code !== 0) {
-      const { error: abciError } = JSON.parse(result.log);
-
-      let errorData;
-      if (abciError.data) {
-        errorData = cbor.encode(abciError.data);
-      }
-
-      const error = new StateTransitionBroadcastError();
-
-      error.setCode(result.code);
-      error.setMessage(abciError.message);
-      error.setData(errorData);
+    if (result instanceof TransactionErrorResult) {
+      const error = createStateTransitionDeliverError(result.getDeliverResult());
 
       response.setError(error);
 
       return response;
     }
 
-    // The first block is the one with the current ST, second block is the
-    // block in which st result will be included in the proof
-    await blockchainListener.waitForBlocks(2);
-
     if (prove) {
       const stateTransition = await dpp.stateTransition.createFromBuffer(
-        Buffer.from(tx, 'base64'),
+        result.getTransaction(),
         { skipValidation: true },
       );
-      const proofObject = await fetchProof(stateTransition);
+
+      const proofObject = await fetchProofForStateTransition(stateTransition);
 
       const proof = new Proof();
+
       proof.setRootTreeProof(proofObject.rootTreeProof);
       proof.setStoreTreeProof(proofObject.storeTreeProof);
 

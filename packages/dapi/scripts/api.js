@@ -29,7 +29,7 @@ const rpcServer = require('../lib/rpcServer/server');
 const DriveClient = require('../lib/externalApis/drive/DriveClient');
 const insightAPI = require('../lib/externalApis/insight');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
-const BlockchainListener = require('../lib/externalApis/tenderdash/BlockchainListener');
+const BlockchainListener = require('../lib/externalApis/tenderdash/blockchainListener/BlockchainListener');
 const DriveStateRepository = require('../lib/dpp/DriveStateRepository');
 
 const coreHandlersFactory = require(
@@ -134,7 +134,14 @@ async function main() {
 
 main().catch((e) => {
   log.error(e.stack);
-  process.exit();
+
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (e) => {
+  log.error(e);
+
+  process.exit(1);
 });
 
 // break on ^C

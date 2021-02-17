@@ -1,12 +1,17 @@
 const EventEmitter = require('events');
-const BlockchainListener = require('../../../../lib/externalApis/tenderdash/BlockchainListener');
-const TransactionWaitPeriodExceededError = require('../../../../lib/errors/TransactionWaitPeriodExceededError');
+const crypto = require('crypto');
+const BlockchainListener = require('../../../../lib/externalApis/tenderdash/blockchainListener/BlockchainListener');
 
 describe('BlockchainListener', () => {
   let sinon;
   let wsClientMock;
   let blockchainListener;
-  let txDataMock;
+  let txQueryMessageMock;
+  let blockMessageMock;
+  let transactionHash;
+  let txBase64Mock;
+  let txBufferMock;
+  let emptyBlockMessage;
 
   beforeEach(function beforeEach() {
     ({ sinon } = this);
@@ -15,15 +20,60 @@ describe('BlockchainListener', () => {
     blockchainListener = new BlockchainListener(wsClientMock);
     blockchainListener.start();
 
-    txDataMock = {
-      events: {
-        'tx.hash': ['123'],
-      },
-    };
-
     sinon.spy(blockchainListener, 'on');
     sinon.spy(blockchainListener, 'off');
     sinon.spy(blockchainListener, 'emit');
+
+    txBase64Mock = 'aaaa';
+    txBufferMock = Buffer.from(txBase64Mock, 'base64');
+    transactionHash = crypto.createHash('sha256')
+      .update(Buffer.from(txBase64Mock, 'base64'))
+      .digest()
+      .toString('hex');
+
+    txQueryMessageMock = {
+      events: {
+        'tx.hash': [transactionHash],
+      },
+    };
+
+    blockMessageMock = {
+      data: {
+        value: {
+          block: {
+            data: {
+              txs: [txBase64Mock],
+            },
+          },
+        },
+      },
+    };
+
+    emptyBlockMessage = {
+      data: {
+        value: {
+          block: {
+            data: {
+              txs: [],
+            },
+          },
+        },
+      },
+    };
+  });
+
+  describe('.getTransactionEventName', () => {
+    it('should work', () => {
+      const topic = BlockchainListener.getTransactionEventName(transactionHash);
+      expect(topic).to.be.equal(`transaction:${transactionHash}`);
+    });
+  });
+
+  describe('.getTransactionAddedToTheBlockEventName', () => {
+    it('should work', () => {
+      const topic = BlockchainListener.getTransactionAddedToTheBlockEventName(transactionHash);
+      expect(topic).to.be.equal(`blockTransactionAdded:${transactionHash}`);
+    });
   });
 
   describe('#start', () => {
@@ -36,118 +86,34 @@ describe('BlockchainListener', () => {
         BlockchainListener.NEW_BLOCK_QUERY,
       );
     });
-  });
 
-  describe('.getTransactionEventName', () => {
-    it('should return transaction event name', () => {
-      const eventName = BlockchainListener.getTransactionEventName('123');
-      expect(eventName).to.be.equal('transaction:123');
+    it('should emit transaction hash when transaction is added to the block', (done) => {
+      const topic = BlockchainListener.getTransactionEventName(transactionHash);
+      blockchainListener.on(topic, (message) => {
+        expect(message).to.be.deep.equal(txQueryMessageMock);
+        done();
+      });
+
+      wsClientMock.emit(BlockchainListener.TX_QUERY, txQueryMessageMock);
     });
-  });
 
-  describe('#waitForTransaction', () => {
-    it('should remove listener after transaction resolves', async () => {
-      const eventName = BlockchainListener.getTransactionEventName('123');
-      const txPromise = blockchainListener.waitForTransaction('123', 2000);
+    it('should emit transaction buffer when received a block with this tx from WS connection', (done) => {
+      const topic = BlockchainListener.getTransactionAddedToTheBlockEventName(transactionHash);
+      blockchainListener.on(topic, (transactionBuffer) => {
+        expect(transactionBuffer).to.be.deep.equal(txBufferMock);
+        done();
+      });
 
-      expect(blockchainListener.listenerCount(eventName)).to.be.equal(1);
+      wsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, blockMessageMock);
+    });
+
+    it('should not emit any transaction hashes if block contents are empty', (done) => {
+      wsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, emptyBlockMessage);
 
       setTimeout(() => {
-        wsClientMock.emit(BlockchainListener.TX_QUERY, Object.assign({}, txDataMock));
-      }, 10);
-
-      const txData = await txPromise;
-
-      // Check that event listener was properly attached
-      expect(blockchainListener.on).to.be.calledOnce();
-      // Check that transaction data was emitted
-      expect(blockchainListener.emit).to.be.calledOnce();
-      // Check that the event listener was properly removed
-      expect(blockchainListener.off).to.be.calledOnce();
-      expect(blockchainListener.listenerCount(eventName)).to.be.equal(0);
-
-      expect(txData).to.be.deep.equal(txDataMock);
-    });
-
-    it('should not emit transaction event if event data has no transaction', async () => {
-      const eventName = BlockchainListener.getTransactionEventName('123');
-      txDataMock = {};
-
-      let error;
-      try {
-        const txPromise = blockchainListener.waitForTransaction('123', 1000);
-
-        expect(blockchainListener.listenerCount(eventName)).to.be.equal(1);
-
-        setTimeout(() => {
-          wsClientMock.emit(BlockchainListener.TX_QUERY, Object.assign({}, txDataMock));
-        }, 10);
-
-        await txPromise;
-      } catch (e) {
-        error = e;
-      }
-
-      // Check that the error is correct
-      expect(error).to.be.instanceOf(TransactionWaitPeriodExceededError);
-      expect(error.message).to.be.equal('Transaction waiting period for 123 exceeded');
-      expect(error.getTransactionHash()).to.be.equal('123');
-
-      // Check that event listener was properly attached
-      expect(blockchainListener.on).to.be.calledOnce();
-      // Check that event listener was properly removed
-      expect(blockchainListener.off).to.be.calledOnce();
-      expect(blockchainListener.listenerCount(eventName)).to.be.equal(0);
-      // Check that no transaction data was emitted
-      expect(blockchainListener.emit).to.not.be.called();
-    });
-
-    it('should remove listener after timeout has been exceeded', async () => {
-      const eventName = BlockchainListener.getTransactionEventName('123');
-      let error;
-      try {
-        await blockchainListener.waitForTransaction('123', 100);
-      } catch (e) {
-        error = e;
-      }
-
-      // Check that the error is correct
-      expect(error).to.be.instanceOf(TransactionWaitPeriodExceededError);
-      expect(error.message).to.be.equal('Transaction waiting period for 123 exceeded');
-      expect(error.getTransactionHash()).to.be.equal('123');
-
-      // Check that event listener was properly attached
-      expect(blockchainListener.on).to.be.calledOnce();
-      // Check that event listener was properly removed
-      expect(blockchainListener.off).to.be.calledOnce();
-      expect(blockchainListener.listenerCount(eventName)).to.be.equal(0);
-      // Check that no transaction data was emitted
-      expect(blockchainListener.emit).to.not.be.called();
-    });
-  });
-
-  describe('#waitForBlocks', () => {
-    it('should wait for n blocks and remove listeners afterwards', async () => {
-      const newBlockEvent = BlockchainListener.events.NEW_BLOCK;
-      const blockPromise = blockchainListener.waitForBlocks(2);
-
-      expect(blockchainListener.listenerCount(newBlockEvent)).to.be.equal(1);
-
-      setTimeout(() => {
-        wsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, Object.assign({}, txDataMock));
-      }, 10);
-      setTimeout(() => {
-        wsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, Object.assign({}, txDataMock));
-      }, 10);
-
-      await blockPromise;
-
-      // Check that event listener was properly attached
-      expect(blockchainListener.on).to.be.calledTwice();
-      // Check that transaction data was emitted
-      expect(blockchainListener.emit).to.be.calledTwice();
-      // Check that the event listener was properly removed
-      expect(blockchainListener.listenerCount(newBlockEvent)).to.be.equal(0);
+        expect(blockchainListener.on).to.not.be.called();
+        done();
+      }, 100);
     });
   });
 });

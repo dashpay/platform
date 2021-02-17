@@ -21,23 +21,32 @@ const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtur
 const { EventEmitter } = require('events');
 
 const cbor = require('cbor');
-const TransactionClient = require('../../../../../lib/externalApis/tenderdash/BlockchainListener');
+const BlockchainListener = require('../../../../../lib/externalApis/tenderdash/blockchainListener/BlockchainListener');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
+const fetchProofForStateTransitionFactory = require('../../../../../lib/externalApis/drive/fetchProofForStateTransitionFactory');
+const waitForTransactionToBeProvableFactory = require('../../../../../lib/externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
+const waitForTransactionResult = require('../../../../../lib/externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionResult');
+const waitForTransactionCommitment = require('../../../../../lib/externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionCommitment');
+
 const waitForStateTransitionResultHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/waitForStateTransitionResultHandlerFactory');
 
 describe('waitForStateTransitionResultHandlerFactory', () => {
   let call;
   let waitForStateTransitionResultHandler;
-  let driveStateRepositoryMock;
+  let driveClinetMock;
   let tenderDashWsClientMock;
-  let transactionClient;
+  let blockchainListener;
   let dppMock;
   let hash;
   let proofFixture;
   let wsMessagesFixture;
   let stateTransitionFixture;
   let request;
+  let emptyBlockFixture;
+  let blockWithTxFixture;
+  let fetchProofForStateTransition;
+  let waitForTransactionToBeProvable;
 
   beforeEach(function beforeEach() {
     hash = Buffer.from('56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E', 'hex');
@@ -95,6 +104,22 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
         },
       },
     };
+    emptyBlockFixture = {
+      data: { value: { block: { data: { txs: [] } } } },
+    };
+    blockWithTxFixture = {
+      data: {
+        value: {
+          block: {
+            data: {
+              txs: [
+                wsMessagesFixture.success.data.value.TxResult.tx,
+              ],
+            },
+          },
+        },
+      },
+    };
 
     proofFixture = {
       rootTreeProof: Buffer.alloc(1, 1),
@@ -114,16 +139,24 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     dppMock = createDPPMock(this.sinon);
     dppMock.stateTransition.createFromBuffer.resolves(stateTransitionFixture);
 
-    driveStateRepositoryMock = {
+    driveClinetMock = {
       fetchProofs: this.sinon.stub().resolves({ identitiesProof: proofFixture }),
     };
 
-    transactionClient = new TransactionClient(tenderDashWsClientMock);
-    transactionClient.start();
+    blockchainListener = new BlockchainListener(tenderDashWsClientMock);
+    blockchainListener.start();
+
+    fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClinetMock);
+
+    waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
+      waitForTransactionResult,
+      waitForTransactionCommitment,
+    );
 
     waitForStateTransitionResultHandler = waitForStateTransitionResultHandlerFactory(
-      driveStateRepositoryMock,
-      transactionClient,
+      fetchProofForStateTransition,
+      waitForTransactionToBeProvable,
+      blockchainListener,
       dppMock,
       1000,
     );
@@ -136,10 +169,10 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       tenderDashWsClientMock.emit('tm.event = \'Tx\'', wsMessagesFixture.success);
     }, 10);
     setTimeout(() => {
-      tenderDashWsClientMock.emit(TransactionClient.NEW_BLOCK_QUERY, wsMessagesFixture.success);
+      tenderDashWsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, blockWithTxFixture);
     }, 10);
     setTimeout(() => {
-      tenderDashWsClientMock.emit(TransactionClient.NEW_BLOCK_QUERY, wsMessagesFixture.success);
+      tenderDashWsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, emptyBlockFixture);
     }, 10);
 
     const result = await promise;
@@ -158,10 +191,10 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       tenderDashWsClientMock.emit('tm.event = \'Tx\'', wsMessagesFixture.success);
     }, 10);
     setTimeout(() => {
-      tenderDashWsClientMock.emit(TransactionClient.NEW_BLOCK_QUERY, wsMessagesFixture.success);
+      tenderDashWsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, blockWithTxFixture);
     }, 10);
     setTimeout(() => {
-      tenderDashWsClientMock.emit(TransactionClient.NEW_BLOCK_QUERY, wsMessagesFixture.success);
+      tenderDashWsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, emptyBlockFixture);
     }, 10);
 
     const result = await promise;
@@ -177,7 +210,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
     expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
 
-    expect(driveStateRepositoryMock.fetchProofs).to.be.calledOnceWithExactly({
+    expect(driveClinetMock.fetchProofs).to.be.calledOnceWithExactly({
       identityIds: stateTransitionFixture.getModifiedDataIds(),
     });
   });
@@ -207,6 +240,8 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     process.nextTick(() => {
       tenderDashWsClientMock.emit('tm.event = \'Tx\'', wsMessagesFixture.error);
+      tenderDashWsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, blockWithTxFixture);
+      tenderDashWsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, emptyBlockFixture);
     });
   });
 

@@ -6,7 +6,7 @@
     "api": "node scripts/api.js",
     "tx-filter-stream": "node scripts/tx-filter-stream.js",
     "test": "(EXIT_CODE=0; npm run test:coverage || EXIT_CODE=$?; npm run test:functional || EXIT_CODE=$?; exit $EXIT_CODE)",
-    "test:coverage": "nyc --check-coverage --lines=51 --branches=27 --functions=48 mocha --recursive test/unit test/integration",
+    "test:coverage": "nyc --check-coverage --lines=51 --branches=51 --functions=51 mocha --recursive test/unit test/integration",
     "test:unit": "mocha --recursive test/unit",
     "test:integration": "mocha --recursive test/integration",
     "test:functional": "mocha --recursive test/functional",

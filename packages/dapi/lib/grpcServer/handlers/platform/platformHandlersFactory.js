@@ -67,6 +67,11 @@ const waitForStateTransitionResultHandlerFactory = require(
   './waitForStateTransitionResultHandlerFactory',
 );
 
+const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
+const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
+const waitForTransactionResult = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionResult');
+const waitForTransactionCommitment = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionCommitment');
+
 /**
  * @param {jaysonClient} rpcClient
  * @param {BlockchainListener} blockchainListener
@@ -182,8 +187,16 @@ function platformHandlersFactory(
   );
 
   // waitForStateTransitionResult
+  const fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClient);
+
+  const waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
+    waitForTransactionResult,
+    waitForTransactionCommitment,
+  );
+
   const waitForStateTransitionResultHandler = waitForStateTransitionResultHandlerFactory(
-    driveClient,
+    fetchProofForStateTransition,
+    waitForTransactionToBeProvable,
     blockchainListener,
     dpp,
   );
