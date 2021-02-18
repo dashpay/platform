@@ -18,7 +18,7 @@ export default async function createIdentityCreateTransition(platform : Platform
     const identityIndex = await account.getUnusedIdentityIndex();
 
     // @ts-ignore
-    const { privateKey: identityPrivateKey } = account.getIdentityHDKeyByIndex(identityIndex, 0);
+    const { privateKey: identityPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 0);
     const identityPublicKey = identityPrivateKey.toPublicKey();
 
     // Create Identity

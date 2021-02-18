@@ -61,7 +61,7 @@ describe('SDK', function suite() {
   })
 
   it('should sign and verify a message', async function () {
-    const idKey = account.getIdentityHDKeyByIndex(0, 0);
+    const idKey = account.identities.getIdentityHDKeyByIndex(0, 0);
     // This transforms from a Wallet-Lib.PrivateKey to a Dashcore-lib.PrivateKey.
     // It will quickly be annoying to perform this, and we therefore need to find a better solution for that.
     const privateKey = Dash.Core.PrivateKey(idKey.privateKey);

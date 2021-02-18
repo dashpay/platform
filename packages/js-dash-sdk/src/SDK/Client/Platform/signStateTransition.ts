@@ -14,7 +14,7 @@ export async function signStateTransition(platform: Platform, stateTransition: a
     const account = await client.getWalletAccount();
 
     // @ts-ignore
-    const { privateKey } = account.getIdentityHDKeyById(
+    const { privateKey } = account.identities.getIdentityHDKeyById(
         identity.getId().toString(),
         keyIndex,
     );

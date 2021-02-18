@@ -108,7 +108,7 @@ describe('Dash - Client', function suite() {
 
   describe('#platform.identities.register', async () => {
     it('should register an identity', async () => {
-      const accountIdentitiesCountBeforeTest = account.getIdentityIds().length;
+      const accountIdentitiesCountBeforeTest = account.identities.getIdentityIds().length;
 
       const identity = await client.platform.identities.register();
 
@@ -125,14 +125,14 @@ describe('Dash - Client', function suite() {
       expect(interceptedAssetLock.getProof().getInstantLock()).to.be.deep.equal(isLock);
       expect(interceptedAssetLock.getTransaction().hash).to.be.equal(transaction.hash);
 
-      const importedIdentityIds = account.getIdentityIds();
+      const importedIdentityIds = account.identities.getIdentityIds();
       // Check that we've imported identities properly
       expect(importedIdentityIds.length).to.be.equal(accountIdentitiesCountBeforeTest + 1);
       expect(importedIdentityIds[0]).to.be.equal(interceptedIdentityStateTransition.getIdentityId().toString());
     });
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
-      const accountIdentitiesCountBeforeTest = account.getIdentityIds().length;
+      const accountIdentitiesCountBeforeTest = account.identities.getIdentityIds().length;
 
       const errorResponse = {
         error: {
@@ -156,7 +156,7 @@ describe('Dash - Client', function suite() {
       expect(error.getMessage()).to.be.equal(errorResponse.error.message);
       expect(error.getData()).to.be.equal(errorResponse.error.data);
 
-      const importedIdentityIds = account.getIdentityIds();
+      const importedIdentityIds = account.identities.getIdentityIds();
       // Check that no identities were imported
       expect(importedIdentityIds.length).to.be.equal(accountIdentitiesCountBeforeTest);
     });
