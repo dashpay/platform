@@ -167,9 +167,7 @@ function commitHandlerFactory(
       chainInfo.setLastBlockHeight(Long.fromInt(0));
       await chainInfoRepository.store(chainInfo);
 
-      consensusLogger.error(e);
-
-      throw new DataCorruptedError();
+      throw new DataCorruptedError(e);
     }
 
     const appHash = rootTree.getRootHash();

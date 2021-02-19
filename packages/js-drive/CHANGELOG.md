@@ -1,3 +1,83 @@
+## [0.17.13](https://github.com/dashevo/js-drive/compare/v0.17.12...v0.17.13) (2021-02-19)
+
+
+### Features
+
+* reimplemented ABCI server for better reliability ([#475](https://github.com/dashevo/js-drive/issues/475))
+
+
+
+## [0.17.12](https://github.com/dashevo/js-drive/compare/v0.17.11...v0.17.12) (2021-02-16)
+
+
+### Features
+
+* better handle abci connection errors ([f4348e9](https://github.com/dashevo/js-drive/commit/f4348e944825dc9b554eec8dcf7752e972081b2a))
+
+
+
+## [0.17.11](https://github.com/dashevo/js-drive/compare/v0.17.10...v0.17.11) (2021-02-16)
+
+
+### Bug Fixes
+
+* stack overflow due to write on write error ([cb3e0ac](https://github.com/dashevo/js-drive/commit/cb3e0ac4212d95372c2b402496125afdf5e69cea))
+
+
+
+## [0.17.12](https://github.com/dashevo/js-drive/compare/v0.17.8...v0.17.12) (2021-02-16)
+
+
+### Features
+
+* better handle abci connection errors ([f4348e9](https://github.com/dashevo/js-drive/commit/f4348e944825dc9b554eec8dcf7752e972081b2a))
+
+
+
+## [0.17.11](https://github.com/dashevo/js-drive/compare/v0.17.8...v0.17.11) (2021-02-16)
+
+
+### Bug Fixes
+
+* stack overflow due to write on write error ([cb3e0ac](https://github.com/dashevo/js-drive/commit/cb3e0ac4212d95372c2b402496125afdf5e69cea))
+
+
+
+## [0.17.10](https://github.com/dashevo/js-drive/compare/v0.17.8...v0.17.10) (2021-02-16)
+
+
+### Bug Fixes
+
+* abci connection error writes to closed stream ([41a891a](https://github.com/dashevo/js-drive/commit/41a891a922bf2f924c543410dd6d19b3a3ba03d0))
+
+
+
+## [0.17.9](https://github.com/dashevo/js-drive/compare/v0.17.8...v0.17.9) (2021-02-15)
+
+
+### Features
+
+* robust error handling ([#473](https://github.com/dashevo/js-drive/issues/473))
+* use a different handler for ABCI connection error ([#465](https://github.com/dashevo/js-drive/issues/465), [b9d452a](https://github.com/dashevo/js-drive/commit/b9d452a20bdf75699fa532eb69af7500fc985045))
+
+
+
+## [0.17.8](https://github.com/dashevo/js-drive/compare/v0.17.7...v0.17.8) (2021-02-11)
+
+
+### Bug Fixes
+
+* could not resolve `previousBlockExecutionStoreTransactions` on query ([#470](https://github.com/dashevo/js-drive/issues/470))
+
+
+### Features
+
+* add `driveVersion` to every log output ([#469](https://github.com/dashevo/js-drive/issues/469))
+* await Node logger stream to be ended ([#471](https://github.com/dashevo/js-drive/issues/471))
+* distinguishing log data ([#472](https://github.com/dashevo/js-drive/issues/472))
+
+
+
 ## [0.17.7](https://github.com/dashevo/js-drive/compare/v0.17.6...v0.17.7) (2021-02-04)
 
 

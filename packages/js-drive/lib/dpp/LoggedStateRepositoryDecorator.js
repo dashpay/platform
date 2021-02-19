@@ -21,9 +21,11 @@ class LoggedStateRepositoryDecorator {
     const logger = this.blockExecutionContext.getConsensusLogger();
 
     logger.trace({
-      stateRepositoryMethod: method,
-      parameters,
-      response,
+      stateRepository: {
+        method,
+        parameters,
+        response,
+      },
     }, `StateRepository#${method}`);
   }
 

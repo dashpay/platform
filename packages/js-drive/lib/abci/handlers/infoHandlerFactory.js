@@ -47,7 +47,7 @@ function infoHandlerFactory(
     });
 
     contextLogger.debug('Info ABCI method requested');
-    contextLogger.trace({ request });
+    contextLogger.trace({ abciRequest: request });
 
     const chainInfo = await chainInfoRepository.fetch();
 

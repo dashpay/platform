@@ -63,11 +63,10 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
 
           const originalError = error.getError();
 
-          if (originalError.consensusLogger) {
-            originalError.consensusLogger.error(originalError);
-          } else {
-            logger.error(originalError);
-          }
+          (originalError.consensusLogger || logger).error(
+            { err: originalError },
+            originalError.message,
+          );
 
           if (!isProductionEnvironment) {
             error = new VerboseInternalAbciError(error);

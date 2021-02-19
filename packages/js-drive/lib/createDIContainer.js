@@ -27,6 +27,8 @@ const findMyWay = require('find-my-way');
 const pino = require('pino');
 const pinoMultistream = require('pino-multi-stream');
 
+const createABCIServer = require('@dashevo/abci');
+
 const packageJSON = require('../package.json');
 
 const ZMQClient = require('./core/ZmqClient');
@@ -119,6 +121,7 @@ const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockT
 const SpentAssetLockTransactionsStoreRootTreeLeaf = require('./identity/SpentAssetLockTransactionsStoreRootTreeLeaf');
 const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneToPreviousStoreTransactionsFactory');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
+const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 
 /**
  *
@@ -1036,7 +1039,7 @@ async function createDIContainer(options) {
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
     enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
-    errorHandler: asFunction((logger) => errorHandlerFactory(logger, container)).singleton(),
+    errorHandler: asFunction(errorHandlerFactory).singleton(),
 
     abciHandlers: asFunction((
       infoHandler,
@@ -1059,6 +1062,11 @@ async function createDIContainer(options) {
       commit: enrichErrorWithConsensusError(commitHandler),
       query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
     })).singleton(),
+
+    closeAbciServer: asFunction(closeAbciServerFactory).singleton(),
+
+    abciServer: asFunction((abciHandlers) => createABCIServer(abciHandlers))
+      .singleton(),
   });
 
   return container;

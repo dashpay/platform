@@ -65,7 +65,7 @@
     "sinon-chai": "^3.5.0"
   },
   "dependencies": {
-    "@dashevo/abci": "~0.18.0",
+    "@dashevo/abci": "github:dashevo/js-abci#rework",
     "@dashevo/dashcore-lib": "~0.19.21",
     "@dashevo/dashd-rpc": "^2.0.2",
     "@dashevo/dashd-zmq": "^1.2.0",
@@ -91,7 +91,7 @@
     "lru-cache": "^5.1.1",
     "merkletreejs": "^0.2.10",
     "mongodb": "^3.5.5",
-    "node-graceful-shutdown": "^1.1.0",
+    "node-graceful": "^3.0.1",
     "pino": "^6.4.0",
     "pino-multi-stream": "^5.2.0",
     "pino-pretty": "^4.0.3",

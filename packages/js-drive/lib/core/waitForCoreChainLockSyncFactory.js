@@ -43,7 +43,7 @@ function waitForCoreChainLockSyncFactory(
       try {
         ({ chainLock } = new ChainLockSigMessage(rawChainLockMessage));
       } catch (e) {
-        logger.error(e, 'Error on creating ChainLockSigMessage');
+        logger.error({ err: e }, 'Error on creating ChainLockSigMessage');
         logger.debug({
           rawChainLockMessage: rawChainLockMessage.toString('hex'),
         });

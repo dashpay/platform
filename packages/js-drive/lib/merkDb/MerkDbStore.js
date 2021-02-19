@@ -23,10 +23,12 @@ class MerkDbStore {
   put(key, value, transaction = undefined) {
     if (this.logger) {
       this.logger.trace({
-        storeName: this.name,
-        key: key.toString('hex'),
-        value: value.toString('hex'),
-        transaction: Boolean(transaction),
+        merk: {
+          storeName: this.name,
+          key: key.toString('hex'),
+          value: value.toString('hex'),
+          transaction: Boolean(transaction),
+        },
       }, `Update ${key.toString('hex')} in ${this.name} store`);
     }
 

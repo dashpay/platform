@@ -25,7 +25,6 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
       const error = new InvalidArgumentAbciError('State Transition is not specified');
 
       logger.info('State transition is not specified');
-      logger.debug(error);
 
       throw error;
     }
@@ -42,7 +41,9 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
         const error = new InvalidArgumentAbciError('State Transition is invalid', { errors: e.getErrors() });
 
         logger.info('State transition structure is invalid');
-        logger.debug(error);
+        logger.debug({
+          consensusErrors: e.getErrors(),
+        });
 
         throw error;
       }
@@ -53,22 +54,25 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     const result = await dpp.stateTransition.validateFee(stateTransition);
 
     if (!result.isValid()) {
-      const errors = result.getErrors();
-      if (errors.length === 1 && errors[0] instanceof BalanceIsNotEnoughError) {
-        const error = new InsufficientFundsError(errors[0].getBalance());
+      const consensusErrors = result.getErrors();
+
+      let error;
+
+      if (consensusErrors.length === 1 && consensusErrors[0] instanceof BalanceIsNotEnoughError) {
+        error = new InsufficientFundsError(consensusErrors[0].getBalance());
 
         logger.info('Insufficient funds to process state transition');
-        logger.debug(error);
-
-        throw error;
       } else {
-        const error = new InvalidArgumentAbciError('State Transition is invalid', { errors: result.getErrors() });
+        error = new InvalidArgumentAbciError('State Transition is invalid', { errors: consensusErrors });
 
         logger.info('State transition structure is invalid');
-        logger.debug(error);
-
-        throw error;
       }
+
+      logger.debug({
+        consensusErrors,
+      });
+
+      throw error;
     }
 
     return stateTransition;

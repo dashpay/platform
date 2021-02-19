@@ -82,7 +82,7 @@ function deliverTxHandlerFactory(
     if (!result.isValid()) {
       consensusLogger.info('State transition data is invalid');
       consensusLogger.debug({
-        errors: result.getErrors(),
+        consensusErrors: result.getErrors(),
       });
 
       blockExecutionContext.incrementInvalidTxCount();

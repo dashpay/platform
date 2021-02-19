@@ -51,7 +51,7 @@ function beginBlockHandlerFactory(
     });
 
     consensusLogger.debug('BeginBlock ABCI method requested');
-    consensusLogger.trace({ request });
+    consensusLogger.trace({ abciRequest: request });
 
     // in case previous block execution failed in process
     // and not commited. We need to make sure

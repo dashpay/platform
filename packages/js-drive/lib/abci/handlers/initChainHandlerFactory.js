@@ -33,7 +33,7 @@ function initChainHandlerFactory(
     });
 
     contextLogger.debug('InitChain ABCI method requested');
-    contextLogger.trace({ request });
+    contextLogger.trace({ abciRequest: request });
 
     await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {
       logger: contextLogger,

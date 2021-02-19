@@ -43,13 +43,9 @@ class CreditsDistributionPoolCommonStoreRepository {
       return new CreditsDistributionPool();
     }
 
-    const {
-      amount,
-    } = cbor.decode(creditsDistributionPoolEncoded);
+    const { amount } = cbor.decode(creditsDistributionPoolEncoded);
 
-    return new CreditsDistributionPool(
-      amount,
-    );
+    return new CreditsDistributionPool(amount);
   }
 }
 
