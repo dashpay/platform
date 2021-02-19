@@ -1,6 +1,6 @@
 module.exports = {
   LOCAL: 'local',
-  EVONET: 'evonet',
+  DEVNET: 'devnet',
   TESTNET: 'testnet',
   MAINNET: 'mainnet',
 };

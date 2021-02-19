@@ -162,6 +162,14 @@ module.exports = {
           required: ['enable', 'interval', 'address'],
           additionalProperties: false,
         },
+        sentinel: {
+          type: 'object',
+          properties: {
+            docker: {
+              $ref: '#/definitions/docker/properties/docker',
+            },
+          },
+        },
         devnetName: {
           type: ['string', 'null'],
           minLength: 1,

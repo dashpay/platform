@@ -44,7 +44,7 @@ class CoreStatusCommand extends BaseCommand {
     );
 
     const explorerURLs = {
-      evonet: 'https://rpc.cloudwheels.net:26657/status',
+      testnet: null,
     };
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {

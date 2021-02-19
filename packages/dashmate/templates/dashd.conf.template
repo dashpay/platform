@@ -36,18 +36,19 @@ zmqpubrawchainlocksig=tcp://0.0.0.0:29998
 zmqpubrawtxlocksig=tcp://0.0.0.0:29998
 
 {{? it.network === 'testnet'}}testnet=1
+llmq-qvvec-sync=llmq_100_67
 [test]
 {{?? it.network === 'local'}}
 regtest=1
-[regtest]{{?? it.network === 'evonet'}}
+[regtest]{{?? it.network === 'devnet'}}
 devnet={{=it.core.devnetName}}
 [devnet]
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
 
-sporkaddr={{=it.core.spork.address}}
-minimumdifficultyblocks=1000
-highsubsidyblocks=500
+sporkaddr={{=it.core.spork.address}}	
+minimumdifficultyblocks=1000	
+highsubsidyblocks=500	
 highsubsidyfactor=10{{?}}
 
 # network

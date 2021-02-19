@@ -60,7 +60,7 @@ USAGE
   $ mn setup [PRESET] [NODE-TYPE]
 
 ARGUMENTS
-  PRESET     (testnet|evonet|local) Node configuration preset
+  PRESET     (testnet|local) Node configuration preset
   NODE-TYPE  (masternode|fullnode) Node type
 
 OPTIONS
@@ -83,7 +83,6 @@ The `config` command is used to manage your node configuration before starting t
 
  - base - basic config for use as template
  - local - standalone node for local development
- - evonet - node with Evonet configuration
  - testnet - node with testnet configuration
 
 You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `mn config:create CONFIG [FROM]` command. You must set a default config with `mn config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.

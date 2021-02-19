@@ -37,7 +37,6 @@ class CoreStatusCommand extends BaseCommand {
     );
 
     const insightURLs = {
-      evonet: 'http://insight.evonet.networks.dash.org:3001/insight-api',
       testnet: 'https://testnet-insight.dashevo.org/insight-api',
       mainnet: 'https://insight.dash.org/insight-api',
     };
