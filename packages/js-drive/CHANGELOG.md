@@ -1,3 +1,30 @@
+## [0.17.14](https://github.com/dashevo/js-drive/compare/v0.17.13...v0.17.14) (2021-02-20)
+
+
+### Bug Fixes
+
+* catching ABCI request varint decode error ([f55fac7](https://github.com/dashevo/js-drive/commit/f55fac7aced9334cf26e930cfaf23258cec66a9d))
+
+
+
+## [0.17.13](https://github.com/dashevo/js-drive/compare/v0.17.12...v0.17.13) (2021-02-19)
+
+
+### Features
+
+* reimplemented ABCI server for better reliability ([#475](https://github.com/dashevo/js-drive/issues/475)) ([4dc087b](https://github.com/dashevo/js-drive/commit/4dc087bcbda18b89116df2cc370d394c3ae13780))
+
+
+
+## [0.17.12](https://github.com/dashevo/js-drive/compare/v0.17.11...v0.17.12) (2021-02-16)
+
+
+### Features
+
+* better handle abci connection errors ([f4348e9](https://github.com/dashevo/js-drive/commit/f4348e944825dc9b554eec8dcf7752e972081b2a))
+
+
+
 ## [0.17.13](https://github.com/dashevo/js-drive/compare/v0.17.12...v0.17.13) (2021-02-19)
 
 
