@@ -144,7 +144,7 @@ console.log(chalk.hex('#008de4')(banner));
           err: e,
           abciConnectionId: socket.connection.id,
         },
-        `ABCI connection #${socket.connection.id} error`,
+        `ABCI connection #${socket.connection.id} error: ${e.message}`,
       );
     });
 
