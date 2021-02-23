@@ -18,6 +18,8 @@ const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
 const packageJson = require('../../../../package');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
+const CreditsDistributionPool = require('../../../../lib/creditsDistributionPool/CreditsDistributionPool');
+
 describe('infoHandlerFactory', () => {
   let protocolVersion;
   let lastBlockHeight;
@@ -32,6 +34,8 @@ describe('infoHandlerFactory', () => {
   let containerMock;
   let previousBlockExecutionStoreTransactionsRepositoryMock;
   let blockExecutionStoreTransactionsMock;
+  let creditsDistributionPoolRepositoryMock;
+  let creditsDistributionPool;
 
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
@@ -39,9 +43,10 @@ describe('infoHandlerFactory', () => {
     protocolVersion = Long.fromInt(0);
     lastCoreChainLockedHeight = 0;
 
-    chainInfoRepositoryMock = {
-      store: this.sinon.stub(),
-      fetch: this.sinon.stub(),
+    creditsDistributionPool = new CreditsDistributionPool();
+
+    creditsDistributionPoolRepositoryMock = {
+      fetch: this.sinon.stub().resolves(creditsDistributionPool),
     };
 
     chainInfo = new ChainInfo(
@@ -49,7 +54,10 @@ describe('infoHandlerFactory', () => {
       lastCoreChainLockedHeight,
     );
 
-    chainInfoRepositoryMock.fetch.resolves(chainInfo);
+    chainInfoRepositoryMock = {
+      store: this.sinon.stub(),
+      fetch: this.sinon.stub().resolves(chainInfo),
+    };
 
     rootTreeMock = new RootTreeMock(this.sinon);
     rootTreeMock.getRootHash.returns(lastBlockAppHash);
@@ -70,7 +78,10 @@ describe('infoHandlerFactory', () => {
     };
 
     infoHandler = infoHandlerFactory(
+      chainInfo,
       chainInfoRepositoryMock,
+      creditsDistributionPool,
+      creditsDistributionPoolRepositoryMock,
       protocolVersion,
       rootTreeMock,
       updateSimplifiedMasternodeListMock,
@@ -93,6 +104,9 @@ describe('infoHandlerFactory', () => {
     });
 
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
+
+    expect(chainInfoRepositoryMock.fetch).to.be.calledOnceWithExactly();
+    expect(creditsDistributionPoolRepositoryMock.fetch).to.be.calledOnceWithExactly();
 
     expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.not.be.called();
     expect(containerMock.has).to.not.be.called();
@@ -122,6 +136,9 @@ describe('infoHandlerFactory', () => {
         logger: loggerMock,
       },
     );
+
+    expect(chainInfoRepositoryMock.fetch).to.be.calledOnceWithExactly();
+    expect(creditsDistributionPoolRepositoryMock.fetch).to.be.calledOnceWithExactly();
 
     expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.be.calledWithExactly();
     expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');

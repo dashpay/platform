@@ -8,12 +8,15 @@ const {
 
 const { asValue } = require('awilix');
 
-const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
-
 const { version: driveVersion } = require('../../../package');
 
+const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
+
 /**
+ * @param {ChainInfo} chainInfo
  * @param {ChainInfoExternalStoreRepository} chainInfoRepository
+ * @param {CreditsDistributionPool} creditsDistributionPool
+ * @param {CreditsDistributionPoolCommonStoreRepository} creditsDistributionPoolRepository
  * @param {Number} protocolVersion
  * @param {RootTree} rootTree
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
@@ -25,7 +28,10 @@ const { version: driveVersion } = require('../../../package');
  * @return {infoHandler}
  */
 function infoHandlerFactory(
+  chainInfo,
   chainInfoRepository,
+  creditsDistributionPool,
+  creditsDistributionPoolRepository,
   protocolVersion,
   rootTree,
   updateSimplifiedMasternodeList,
@@ -49,11 +55,15 @@ function infoHandlerFactory(
     contextLogger.debug('Info ABCI method requested');
     contextLogger.trace({ abciRequest: request });
 
-    const chainInfo = await chainInfoRepository.fetch();
+    // Update ChainInfo
+    const fetchedChainInfo = await chainInfoRepository.fetch();
 
-    container.register({
-      chainInfo: asValue(chainInfo),
-    });
+    chainInfo.populate(fetchedChainInfo.toJSON());
+
+    // Update CreditsDistributionPool
+    const fetchedCreditsDistributionPool = await creditsDistributionPoolRepository.fetch();
+
+    creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
 
     contextLogger = contextLogger.child({
       height: chainInfo.getLastBlockHeight().toString(),

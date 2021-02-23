@@ -121,6 +121,8 @@ const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockT
 const SpentAssetLockTransactionsStoreRootTreeLeaf = require('./identity/SpentAssetLockTransactionsStoreRootTreeLeaf');
 const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneToPreviousStoreTransactionsFactory');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
+const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
+const ChainInfo = require('./chainInfo/ChainInfo');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 
 /**
@@ -171,7 +173,7 @@ const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
  *
  * @return {AwilixContainer}
  */
-async function createDIContainer(options) {
+function createDIContainer(options) {
   if (options.DPNS_CONTRACT_ID && !options.DPNS_CONTRACT_BLOCK_HEIGHT) {
     throw new Error('DPNS_CONTRACT_BLOCK_HEIGHT must be set');
   }
@@ -744,14 +746,7 @@ async function createDIContainer(options) {
     previousChainInfoRepository: asFunction((
       previousExternalLevelDB,
     ) => (new ChainInfoExternalStoreRepository(previousExternalLevelDB))).singleton(),
-  });
-
-  const chainInfoRepository = container.resolve('chainInfoRepository');
-
-  const chainInfo = await chainInfoRepository.fetch();
-
-  container.register({
-    chainInfo: asValue(chainInfo),
+    chainInfo: asValue(new ChainInfo()),
   });
 
   /**
@@ -799,13 +794,8 @@ async function createDIContainer(options) {
     previousCreditsDistributionPoolRepository: asFunction((
       previousCommonStore,
     ) => (new CreditsDistributionPoolCommonStoreRepository(previousCommonStore))).singleton(),
-  });
 
-  const creditsDistributionPoolRepository = container.resolve('creditsDistributionPoolRepository');
-  const creditsDistributionPool = await creditsDistributionPoolRepository.fetch();
-
-  container.register({
-    creditsDistributionPool: asValue(creditsDistributionPool),
+    creditsDistributionPool: asValue(new CreditsDistributionPool()),
   });
 
   /**

@@ -36,10 +36,10 @@ describe('queryHandlerFactory', function main() {
     await mongoDB.remove();
   });
 
-  beforeEach(async function beforeEach() {
+  beforeEach(function beforeEach() {
     proof = Buffer.from('843176bc004504d6baf735cf0215e9d9a3fecf1d', 'hex');
 
-    container = await createTestDIContainer(mongoDB);
+    container = createTestDIContainer(mongoDB);
 
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture(dataContract);

@@ -26,7 +26,7 @@ describe('waitReplicaSetInitializeFactory', function main() {
   });
 
   it('should wait until mongodb replica set is initialed', async () => {
-    container = await createTestDIContainer(mongoDB, dashCore);
+    container = createTestDIContainer(mongoDB, dashCore);
 
     waitReplicaSetInitialize = container.resolve('waitReplicaSetInitialize');
 

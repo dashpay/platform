@@ -57,6 +57,22 @@ class ChainInfo {
   }
 
   /**
+   * Populate with data
+   *
+   * @param {{
+   *    lastBlockHeight: string,
+   *    lastCoreChainLockedHeight: number,
+   * }} object
+   * @return {ChainInfo}
+   */
+  populate(object) {
+    this.lastBlockHeight = Long.fromString(object.lastBlockHeight);
+    this.lastCoreChainLockedHeight = object.lastCoreChainLockedHeight;
+
+    return this;
+  }
+
+  /**
    * Get plain JS object
    *
    * @return {{

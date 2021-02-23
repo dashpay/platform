@@ -1,6 +1,6 @@
 const createDIContainer = require('../createDIContainer');
 
-async function createTestDIContainer(mongoDB, dashCore = undefined) {
+function createTestDIContainer(mongoDB, dashCore = undefined) {
   const documentMongoDBUrl = `mongodb://127.0.0.1:${mongoDB.options.getMongoPort()}`
     + `/?replicaSet=${mongoDB.options.options.replicaSetName}`;
 

@@ -22,7 +22,7 @@ const banner = '\n ____       ______      ____        __  __                 ___
 console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
-  const container = await createDIContainer(process.env);
+  const container = createDIContainer(process.env);
   const logger = container.resolve('logger');
   const errorHandler = container.resolve('errorHandler');
   const protocolVersion = container.resolve('protocolVersion');

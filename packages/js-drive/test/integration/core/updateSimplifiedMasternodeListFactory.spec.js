@@ -30,7 +30,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
   it('should wait until SML will be retrieved', async () => {
     dashCore = await startDashCore();
 
-    container = await createTestDIContainer(mongoDB, dashCore);
+    container = createTestDIContainer(mongoDB, dashCore);
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
 

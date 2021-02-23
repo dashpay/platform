@@ -29,7 +29,7 @@ describe('PreviousBlockExecutionStoreTransactionsRepository', function main() {
   });
 
   beforeEach(async () => {
-    container = await createTestDIContainer(mongoDB);
+    container = createTestDIContainer(mongoDB);
 
     fileDb = container.resolve('previousBlockExecutionTransactionDB');
     repository = container.resolve('previousBlockExecutionStoreTransactionsRepository');

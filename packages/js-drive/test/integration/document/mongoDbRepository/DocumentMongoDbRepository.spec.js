@@ -36,7 +36,7 @@ describe('DocumentMongoDbRepository', function main() {
   });
 
   beforeEach(async () => {
-    container = await createTestDIContainer(mongoDb);
+    container = createTestDIContainer(mongoDb);
 
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture(dataContract).slice(0, 5);

@@ -44,6 +44,7 @@ describe('commitHandlerFactory', () => {
   let populateMongoDbTransactionFromObjectMock;
   let mongoDbTransactionMock;
   let cloneToPreviousStoreTransactionsMock;
+  let header;
 
   beforeEach(function beforeEach() {
     nextPreviousBlockExecutionStoreTransactionsMock = 'nextPreviousBlockExecutionStoreTransactionsMock';
@@ -54,7 +55,7 @@ describe('commitHandlerFactory', () => {
     };
 
     creditsDistributionPoolMock = {
-      setAmount: this.sinon.stub(),
+      incrementAmount: this.sinon.stub(),
     };
 
     dataContract = getDataContractFixture();
@@ -72,10 +73,13 @@ describe('commitHandlerFactory', () => {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getDataContracts.returns([dataContract]);
-    blockExecutionContextMock.getAccumulativeFees.returns(accumulativeFees);
-    blockExecutionContextMock.getHeader.returns({
-      height: 1,
-    });
+    blockExecutionContextMock.getCumulativeFees.returns(accumulativeFees);
+
+    header = {
+      height: Long.fromInt(1),
+    };
+
+    blockExecutionContextMock.getHeader.returns(header);
 
     documentsDatabaseManagerMock = {
       create: this.sinon.stub(),
@@ -165,11 +169,11 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionStoreTransactionsMock.commit).to.be.calledOnce();
 
-    expect(creditsDistributionPoolMock.setAmount).to.be.calledOnceWith(
+    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(
       accumulativeFees,
     );
 
-    expect(blockExecutionContextMock.getAccumulativeFees).to.be.calledOnce();
+    expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
 
     expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnceWithExactly('common');
 
@@ -191,9 +195,7 @@ describe('commitHandlerFactory', () => {
   });
 
   it('should commit db transactions, update chain info, create document dbs and return ResponseCommit on height > 1', async () => {
-    blockExecutionContextMock.getHeader.returns({
-      height: 2,
-    });
+    header.height = Long.fromInt(2);
 
     containerMock.has.withArgs('previousBlockExecutionStoreTransactions').returns(true);
 
@@ -218,8 +220,8 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWithExactly(dataContract);
-    expect(creditsDistributionPoolMock.setAmount).to.be.calledOnceWith(accumulativeFees);
-    expect(blockExecutionContextMock.getAccumulativeFees).to.be.calledOnce();
+    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(accumulativeFees);
+    expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
 
     expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnceWithExactly('common');
     expect(chainInfoRepositoryMock.store).to.be.calledOnceWith(chainInfoMock);
@@ -255,9 +257,7 @@ describe('commitHandlerFactory', () => {
   });
 
   it('should abort DB transactions', async () => {
-    blockExecutionContextMock.getHeader.returns({
-      height: 2,
-    });
+    header.height = Long.fromInt(2);
 
     containerMock.has.withArgs('previousBlockExecutionStoreTransactionsMock').returns(true);
 

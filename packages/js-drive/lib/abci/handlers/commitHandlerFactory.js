@@ -75,8 +75,8 @@ function commitHandlerFactory(
       }
 
       // Store ST fees from the block to distribution pool
-      creditsDistributionPool.setAmount(
-        blockExecutionContext.getAccumulativeFees(),
+      creditsDistributionPool.incrementAmount(
+        blockExecutionContext.getCumulativeFees(),
       );
 
       const commonStoreTransaction = blockExecutionStoreTransactions.getTransaction('common');

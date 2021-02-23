@@ -51,29 +51,29 @@ describe('BlockExecutionContext', () => {
     });
   });
 
-  describe('#getAccumulativeFees', () => {
-    it('should get accumulative fees', async () => {
-      let result = blockExecutionContext.getAccumulativeFees();
+  describe('#getCumulativeFees', () => {
+    it('should get cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeFees();
 
       expect(result).to.equal(0);
 
-      blockExecutionContext.accumulativeFees = 10;
+      blockExecutionContext.cumulativeFees = 10;
 
-      result = blockExecutionContext.getAccumulativeFees();
+      result = blockExecutionContext.getCumulativeFees();
 
       expect(result).to.equal(10);
     });
   });
 
-  describe('#incrementAccumulativeFees', () => {
-    it('should increment accumulative fees', async () => {
-      let result = blockExecutionContext.getAccumulativeFees();
+  describe('#incrementCumulativeFees', () => {
+    it('should increment cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeFees();
 
       expect(result).to.equal(0);
 
-      blockExecutionContext.incrementAccumulativeFees(15);
+      blockExecutionContext.incrementCumulativeFees(15);
 
-      result = blockExecutionContext.getAccumulativeFees();
+      result = blockExecutionContext.getCumulativeFees();
 
       expect(result).to.equal(15);
     });

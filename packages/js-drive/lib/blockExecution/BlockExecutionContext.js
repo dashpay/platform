@@ -1,7 +1,7 @@
 class BlockExecutionContext {
   constructor() {
     this.dataContracts = [];
-    this.accumulativeFees = 0;
+    this.cumulativeFees = 0;
     this.header = null;
     this.validTxs = 0;
     this.invalidTxs = 0;
@@ -42,17 +42,17 @@ class BlockExecutionContext {
   /**
    * @return {number}
    */
-  getAccumulativeFees() {
-    return this.accumulativeFees;
+  getCumulativeFees() {
+    return this.cumulativeFees;
   }
 
   /**
-   * Increment accumulative fees
+   * Increment cumulative fees
    *
    * @param {number} fee
    */
-  incrementAccumulativeFees(fee) {
-    this.accumulativeFees += fee;
+  incrementCumulativeFees(fee) {
+    this.cumulativeFees += fee;
 
     return this;
   }
@@ -144,7 +144,7 @@ class BlockExecutionContext {
    */
   reset() {
     this.dataContracts = [];
-    this.accumulativeFees = 0;
+    this.cumulativeFees = 0;
     this.header = null;
     this.validTxs = 0;
     this.invalidTxs = 0;

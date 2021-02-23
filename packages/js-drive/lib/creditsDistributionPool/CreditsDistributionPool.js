@@ -12,11 +12,23 @@ class CreditsDistributionPool {
   /**
    * Set credits distribution pool
    *
-   * @param {number} credits
+   * @param {number} amount
    * @return {CreditsDistributionPool}
    */
-  setAmount(credits) {
-    this.amount = credits;
+  setAmount(amount) {
+    this.amount = amount;
+
+    return this;
+  }
+
+  /**
+   * Increment credits distribution pool
+   *
+   * @param {number} amount
+   * @return {CreditsDistributionPool}
+   */
+  incrementAmount(amount) {
+    this.amount += amount;
 
     return this;
   }
@@ -28,6 +40,20 @@ class CreditsDistributionPool {
    */
   getAmount() {
     return this.amount;
+  }
+
+  /**
+   * Populate with data
+   *
+   * @param {{
+   *    amount: number,
+   * }} object
+   * @return {CreditsDistributionPool}
+   */
+  populate(object) {
+    this.amount = object.amount;
+
+    return this;
   }
 
   /**

@@ -120,7 +120,7 @@ describe('deliverTxHandlerFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWith(identity);
 
-    expect(blockExecutionContextMock.incrementAccumulativeFees).to.be.calledOnceWith(
+    expect(blockExecutionContextMock.incrementCumulativeFees).to.be.calledOnceWith(
       stateTransitionFee,
     );
   });
@@ -146,7 +146,7 @@ describe('deliverTxHandlerFactory', () => {
       dataContractCreateTransitionFixture.getDataContract(),
     );
 
-    expect(blockExecutionContextMock.incrementAccumulativeFees).to.be.calledOnceWith(
+    expect(blockExecutionContextMock.incrementCumulativeFees).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.calculateFee(),
     );
   });
@@ -168,7 +168,7 @@ describe('deliverTxHandlerFactory', () => {
       expect(e.getMessage()).to.equal('Invalid state transition');
       expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
       expect(e.getData()).to.deep.equal({ errors: [error] });
-      expect(blockExecutionContextMock.incrementAccumulativeFees).to.not.be.called();
+      expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();
     }
   });
 
@@ -186,7 +186,7 @@ describe('deliverTxHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getMessage()).to.equal(errorMessage);
       expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
-      expect(blockExecutionContextMock.incrementAccumulativeFees).to.not.be.called();
+      expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();
       expect(dppMock.stateTransition.validateData).to.not.be.called();
     }
   });

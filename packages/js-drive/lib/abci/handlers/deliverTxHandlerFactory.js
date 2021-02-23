@@ -107,7 +107,7 @@ function deliverTxHandlerFactory(
 
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 
-    blockExecutionContext.incrementAccumulativeFees(stateTransitionFee);
+    blockExecutionContext.incrementCumulativeFees(stateTransitionFee);
 
     // Logging
     switch (stateTransition.getType()) {

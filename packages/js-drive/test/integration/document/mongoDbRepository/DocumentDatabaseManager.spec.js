@@ -28,7 +28,7 @@ describe('DocumentDatabaseManager', function main() {
     mongoDB = mongo;
   });
 
-  beforeEach(async () => {
+  beforeEach(() => {
     dataContract = getDataContractFixture();
 
     const documentMongoDBPrefix = 'test';
@@ -52,7 +52,7 @@ describe('DocumentDatabaseManager', function main() {
       fetch: () => dataContract,
     };
 
-    container = await createTestDIContainer(mongoDB);
+    container = createTestDIContainer(mongoDB);
 
     createDocumentRepository = createDocumentMongoDbRepositoryFactory(
       convertWhereToMongoDbQuery,

@@ -34,7 +34,7 @@ describe('detectStandaloneRegtestModeFactory', function main() {
   it('should return true if chain is regtest and has no peers', async () => {
     firstDashCore = await startDashCore();
 
-    container = await createTestDIContainer(mongoDB, firstDashCore);
+    container = createTestDIContainer(mongoDB, firstDashCore);
 
     const detectStandaloneRegtestMode = container.resolve('detectStandaloneRegtestMode');
 
@@ -49,7 +49,7 @@ describe('detectStandaloneRegtestModeFactory', function main() {
     secondDashCore = await startDashCore();
     await secondDashCore.connect(firstDashCore);
 
-    container = await createTestDIContainer(mongoDB, firstDashCore);
+    container = createTestDIContainer(mongoDB, firstDashCore);
 
     const detectStandaloneRegtestMode = container.resolve('detectStandaloneRegtestMode');
 

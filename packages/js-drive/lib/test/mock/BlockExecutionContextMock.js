@@ -1,8 +1,8 @@
 /**
  * @method addDataContract
  * @method getDataContracts
- * @method getAccumulativeFees
- * @method incrementAccumulativeFees
+ * @method getCumulativeFees
+ * @method incrementCumulativeFees
  * @method reset
  */
 class BlockExecutionContextMock {
@@ -13,8 +13,8 @@ class BlockExecutionContextMock {
     this.addDataContract = sinon.stub();
     this.hasDataContract = sinon.stub();
     this.getDataContracts = sinon.stub();
-    this.getAccumulativeFees = sinon.stub();
-    this.incrementAccumulativeFees = sinon.stub();
+    this.getCumulativeFees = sinon.stub();
+    this.incrementCumulativeFees = sinon.stub();
     this.reset = sinon.stub();
     this.setHeader = sinon.stub();
     this.getHeader = sinon.stub();
