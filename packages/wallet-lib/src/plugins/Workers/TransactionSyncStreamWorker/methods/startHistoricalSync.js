@@ -53,7 +53,11 @@ module.exports = async function startHistoricalSync(network) {
     }
 
     this.stream = null;
-    throw e;
+    this.emit('error', e, {
+      type: 'plugin',
+      pluginType: 'worker',
+      pluginName: this.name,
+    });
   }
 
   this.setLastSyncedBlockHeight(bestBlockHeight);

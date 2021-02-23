@@ -1,5 +1,6 @@
 const { PrivateKey, Networks } = require('@dashevo/dashcore-lib');
 
+const EventEmitter = require('events');
 const _ = require('lodash');
 const Storage = require('../Storage/Storage');
 const {
@@ -38,12 +39,13 @@ const createTransportFromOptions = require('../../transport/createTransportFromO
  *     - address : opts.privateKey is provided. Allow to handle a single address object.
  *     - hdwallet : opts.mnemonic or opts.seed is provided. Handle a HD Wallet with it's account.
  */
-class Wallet {
+class Wallet extends EventEmitter {
   /**
    *
    * @param opts
    */
   constructor(opts = defaultOptions) {
+    super();
     // Immediate prototype method-composition are used in order to give access in constructor.
     Object.assign(Wallet.prototype, {
       fromMnemonic,
