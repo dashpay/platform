@@ -39,9 +39,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseErr
 
     const tx = Buffer.from(stByteArray).toString('base64');
 
-    const { result } = await rpcClient.request('broadcast_tx_sync', { tx });
-
-    const { error: jsonRpcError } = result;
+    const { result, error: jsonRpcError } = await rpcClient.request('broadcast_tx_sync', { tx });
 
     if (jsonRpcError) {
       if (jsonRpcError.data === 'tx already exists in cache') {
