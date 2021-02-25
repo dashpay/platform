@@ -35,10 +35,6 @@ class GroupBaseCommand extends BaseCommand {
 
     const config = configFile.getConfig(configName);
 
-    if (config.get('group') !== null) {
-      throw new Error(`${config.getName()} config belongs to a group ${config.get('group')}. Please, consider using 'group' commands`);
-    }
-
     this.container.register({
       config: asValue(config),
     });
