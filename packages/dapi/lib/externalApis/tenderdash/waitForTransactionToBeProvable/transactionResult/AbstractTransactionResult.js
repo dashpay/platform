@@ -1,10 +1,12 @@
 class AbstractTransactionResult {
   /**
-   * @param {Object} deliverResult
+   * @param {Object} result
+   * @param {number} height
    * @param {Buffer} transaction
    */
-  constructor(deliverResult, transaction) {
-    this.deliverResult = deliverResult;
+  constructor(result, height, transaction) {
+    this.deliverResult = result;
+    this.height = height;
     this.transaction = transaction;
   }
 
@@ -13,8 +15,17 @@ class AbstractTransactionResult {
    *
    * @return {Object}
    */
-  getDeliverResult() {
+  getResult() {
     return this.deliverResult;
+  }
+
+  /**
+   * Get transaction block height
+   *
+   * @return {number}
+   */
+  getHeight() {
+    return this.height;
   }
 
   /**

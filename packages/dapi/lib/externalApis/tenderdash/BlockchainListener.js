@@ -1,5 +1,3 @@
-const crypto = require('crypto');
-
 const EventEmitter = require('events');
 
 const TX_QUERY = 'tm.event = \'Tx\'';
@@ -28,15 +26,6 @@ class BlockchainListener extends EventEmitter {
   }
 
   /**
-   *
-   * @param transactionHashString
-   * @return {string}
-   */
-  static getTransactionAddedToTheBlockEventName(transactionHashString) {
-    return `blockTransactionAdded:${transactionHashString}`;
-  }
-
-  /**
    * Subscribe to blocks and transaction results
    */
   start() {
@@ -54,23 +43,7 @@ class BlockchainListener extends EventEmitter {
 
     // Emit blocks and contained transactions
     this.wsClient.subscribe(NEW_BLOCK_QUERY);
-    this.wsClient.on(NEW_BLOCK_QUERY, (message) => {
-      this.emit(EVENTS.NEW_BLOCK, message);
-
-      // Emit transaction hashes from block
-      message.data.value.block.data.txs.forEach((base64tx) => {
-        const transaction = Buffer.from(base64tx, 'base64');
-        const hashString = crypto.createHash('sha256')
-          .update(transaction)
-          .digest()
-          .toString('hex');
-
-        this.emit(
-          BlockchainListener.getTransactionAddedToTheBlockEventName(hashString),
-          transaction,
-        );
-      });
-    });
+    this.wsClient.on(NEW_BLOCK_QUERY, message => this.emit(EVENTS.NEW_BLOCK, message));
   }
 }
 

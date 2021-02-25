@@ -29,7 +29,7 @@ const rpcServer = require('../lib/rpcServer/server');
 const DriveClient = require('../lib/externalApis/drive/DriveClient');
 const insightAPI = require('../lib/externalApis/insight');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
-const BlockchainListener = require('../lib/externalApis/tenderdash/blockchainListener/BlockchainListener');
+const BlockchainListener = require('../lib/externalApis/tenderdash/BlockchainListener');
 const DriveStateRepository = require('../lib/dpp/DriveStateRepository');
 
 const coreHandlersFactory = require(

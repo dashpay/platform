@@ -68,9 +68,10 @@ const waitForStateTransitionResultHandlerFactory = require(
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
-const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
-const waitForTransactionResult = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionResult');
-const waitForTransactionCommitment = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/waitForTransactionCommitment');
+const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
+const waitForTransactionResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
+const waitForHeightFactory = require('../../../externalApis/tenderdash/waitForHeightFactory');
+const getExistingTransactionResultFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/getExistingTransactionResult');
 
 /**
  * @param {jaysonClient} rpcClient
@@ -189,9 +190,16 @@ function platformHandlersFactory(
   // waitForStateTransitionResult
   const fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClient);
 
+  const getExistingTransactionResult = getExistingTransactionResultFactory(
+    rpcClient,
+  );
+
+  const waitForHeight = waitForHeightFactory(blockchainListener);
+
   const waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
     waitForTransactionResult,
-    waitForTransactionCommitment,
+    getExistingTransactionResult,
+    waitForHeight,
   );
 
   const waitForStateTransitionResultHandler = waitForStateTransitionResultHandlerFactory(

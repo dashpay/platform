@@ -1,17 +1,15 @@
 const EventEmitter = require('events');
 const crypto = require('crypto');
-const BlockchainListener = require('../../../../lib/externalApis/tenderdash/blockchainListener/BlockchainListener');
+
+const BlockchainListener = require('../../../../lib/externalApis/tenderdash/BlockchainListener');
 
 describe('BlockchainListener', () => {
   let sinon;
   let wsClientMock;
   let blockchainListener;
   let txQueryMessageMock;
-  let blockMessageMock;
   let transactionHash;
-  let txBase64Mock;
-  let txBufferMock;
-  let emptyBlockMessage;
+  let blockMessageMock;
 
   beforeEach(function beforeEach() {
     ({ sinon } = this);
@@ -24,8 +22,7 @@ describe('BlockchainListener', () => {
     sinon.spy(blockchainListener, 'off');
     sinon.spy(blockchainListener, 'emit');
 
-    txBase64Mock = 'aaaa';
-    txBufferMock = Buffer.from(txBase64Mock, 'base64');
+    const txBase64Mock = 'aaaa';
     transactionHash = crypto.createHash('sha256')
       .update(Buffer.from(txBase64Mock, 'base64'))
       .digest()
@@ -42,18 +39,6 @@ describe('BlockchainListener', () => {
         value: {
           block: {
             data: {
-              txs: [txBase64Mock],
-            },
-          },
-        },
-      },
-    };
-
-    emptyBlockMessage = {
-      data: {
-        value: {
-          block: {
-            data: {
               txs: [],
             },
           },
@@ -63,16 +48,9 @@ describe('BlockchainListener', () => {
   });
 
   describe('.getTransactionEventName', () => {
-    it('should work', () => {
+    it('should return event name', () => {
       const topic = BlockchainListener.getTransactionEventName(transactionHash);
       expect(topic).to.be.equal(`transaction:${transactionHash}`);
-    });
-  });
-
-  describe('.getTransactionAddedToTheBlockEventName', () => {
-    it('should work', () => {
-      const topic = BlockchainListener.getTransactionAddedToTheBlockEventName(transactionHash);
-      expect(topic).to.be.equal(`blockTransactionAdded:${transactionHash}`);
     });
   });
 
@@ -87,33 +65,26 @@ describe('BlockchainListener', () => {
       );
     });
 
-    it('should emit transaction hash when transaction is added to the block', (done) => {
-      const topic = BlockchainListener.getTransactionEventName(transactionHash);
-      blockchainListener.on(topic, (message) => {
-        expect(message).to.be.deep.equal(txQueryMessageMock);
-        done();
-      });
+    it('should emit block when new block is arrived', (done) => {
+      blockchainListener.on(BlockchainListener.EVENTS.NEW_BLOCK, (message) => {
+        expect(message).to.be.deep.equal(blockMessageMock);
 
-      wsClientMock.emit(BlockchainListener.TX_QUERY, txQueryMessageMock);
-    });
-
-    it('should emit transaction buffer when received a block with this tx from WS connection', (done) => {
-      const topic = BlockchainListener.getTransactionAddedToTheBlockEventName(transactionHash);
-      blockchainListener.on(topic, (transactionBuffer) => {
-        expect(transactionBuffer).to.be.deep.equal(txBufferMock);
         done();
       });
 
       wsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, blockMessageMock);
     });
 
-    it('should not emit any transaction hashes if block contents are empty', (done) => {
-      wsClientMock.emit(BlockchainListener.NEW_BLOCK_QUERY, emptyBlockMessage);
+    it('should emit transaction when transaction is arrived', (done) => {
+      const topic = BlockchainListener.getTransactionEventName(transactionHash);
 
-      setTimeout(() => {
-        expect(blockchainListener.on).to.not.be.called();
+      blockchainListener.on(topic, (message) => {
+        expect(message).to.be.deep.equal(txQueryMessageMock);
+
         done();
-      }, 100);
+      });
+
+      wsClientMock.emit(BlockchainListener.TX_QUERY, txQueryMessageMock);
     });
   });
 });

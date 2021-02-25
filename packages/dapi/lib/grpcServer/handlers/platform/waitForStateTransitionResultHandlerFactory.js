@@ -18,7 +18,7 @@ const {
 const cbor = require('cbor');
 
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
-const TransactionErrorResult = require('../../../externalApis/tenderdash/blockchainListener/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
+const TransactionErrorResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
 
 /**
  *
@@ -98,7 +98,7 @@ function waitForStateTransitionResultHandlerFactory(
     const response = new WaitForStateTransitionResultResponse();
 
     if (result instanceof TransactionErrorResult) {
-      const error = createStateTransitionDeliverError(result.getDeliverResult());
+      const error = createStateTransitionDeliverError(result.getResult());
 
       response.setError(error);
 
