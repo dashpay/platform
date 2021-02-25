@@ -45,6 +45,28 @@ const mockedStore2 = {
                   },
             }
           },
+          "m/44'/1'/1'/0/0":{
+            address: 'yQ5TfKcj3NHM4V4K5VBgoFJj9Q4LKX13gn',
+            balanceSat: 14419880000,
+            fetchedLast: 0,
+            path: "m/44'/1'/1'/0/0",
+            transactions: [
+              'b8838022a663ae486192cf2499f9ae657e8c3a7e823a447b8b7e3d348d3916ba',
+            ],
+            index: 0,
+            unconfirmedBalanceSat: 0,
+            used: true,
+            utxos: {
+              "b8838022a663ae486192cf2499f9ae657e8c3a7e823a447b8b7e3d348d3916ba-0":
+                  {
+                    address: 'yQ5TfKcj3NHM4V4K5VBgoFJj9Q4LKX13gn',
+                    txId: 'b8838022a663ae486192cf2499f9ae657e8c3a7e823a447b8b7e3d348d3916ba',
+                    outputIndex: 0,
+                    script: '76a914293b5b9a2154a0e4543027d694276cd5fdcb74cd88ac',
+                    satoshis: 14419880000,
+                  },
+            }
+          }
         },
       },
     },
@@ -80,6 +102,31 @@ const mockedStore2 = {
       "type": 5,
       "extraPayload": "020064080000aa254fcb634bf1962b67bb64ce178a954353c71d0b6119361390a9fd1a71bd2c0000000000000000000000000000000000000000000000000000000000000000"
     }),
+    b8838022a663ae486192cf2499f9ae657e8c3a7e823a447b8b7e3d348d3916ba: new Transaction({
+      "hash": "f13a95fc3a9b6146590b12fbe48749738a1b3ffe30e42de5b1898f8f9d76b879",
+      "version": 3,
+      "inputs": [
+        {
+          "prevTxId": "0000000000000000000000000000000000000000000000000000000000000000",
+          "outputIndex": 4294967295,
+          "sequenceNumber": 4294967295,
+          "script": "0264080101"
+        }
+      ],
+      "outputs": [
+        {
+          "satoshis": 7972544484,
+          "script": "76a9144c1b05387342497e3c8fbe0b80754ae4b33134c488ac"
+        },
+        {
+          "satoshis": 7972544480,
+          "script": "76a914214035c10a2d2cef9992ca715a0115366edd229e88ac"
+        }
+      ],
+      "nLockTime": 0,
+      "type": 5,
+      "extraPayload": "020064080000aa254fcb634bf1962b67bb64ce178a954353c71d0b6119361390a9fd1a71bd2c0000000000000000000000000000000000000000000000000000000000000000"
+    }),
   }
 };
 
@@ -90,7 +137,9 @@ describe('Account - getUTXOS', function suite() {
       store: mockedStoreEmpty,
       getStore: mockedStoreEmpty,
       walletId: '123456789',
-      network: 'testnet'
+      network: 'testnet',
+      walletType: 'hdwallet',
+      BIP44PATH: "m/44'/1'/0'"
     });
     expect(utxos).to.be.deep.equal([]);
 
@@ -98,7 +147,9 @@ describe('Account - getUTXOS', function suite() {
       store: mockedStore2,
       getStore: mockedStore2,
       walletId: '123456789',
-      network: 'testnet'
+      network: 'testnet',
+      walletType: 'hdwallet',
+      BIP44PATH: "m/44'/1'/0'"
     });
 
     expect(utxos2).to.be.deep.equal([new Dashcore.Transaction.UnspentOutput(
