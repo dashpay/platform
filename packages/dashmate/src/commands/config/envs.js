@@ -3,9 +3,9 @@ const path = require('path');
 
 const { flags: flagTypes } = require('@oclif/command');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
-class ConfigEnvsCommand extends BaseCommand {
+class ConfigEnvsCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -46,7 +46,7 @@ Export configuration options as Docker Compose envs
 `;
 
 ConfigEnvsCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
   'output-file': flagTypes.string({
     char: 'o',
     description: 'output to file',

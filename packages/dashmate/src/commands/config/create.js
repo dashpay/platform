@@ -4,7 +4,7 @@ class ConfigCreateCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {ConfigCollection} configCollection
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -13,9 +13,9 @@ class ConfigCreateCommand extends BaseCommand {
       from: fromConfigName,
     },
     flags,
-    configCollection,
+    configFile,
   ) {
-    configCollection.createConfig(configName, fromConfigName);
+    configFile.createConfig(configName, fromConfigName);
 
     // eslint-disable-next-line no-console
     console.log(`${configName} created`);

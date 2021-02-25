@@ -2,11 +2,11 @@ const { Listr } = require('listr2');
 
 const { flags: flagTypes } = require('@oclif/command');
 
-const BaseCommand = require('../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
-class StartCommand extends BaseCommand {
+class StartCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -27,13 +27,10 @@ class StartCommand extends BaseCommand {
     startNodeTask,
     config,
   ) {
-    const isMasternode = config.get('core.masternode.enable');
-    const network = config.get('network');
-
     const tasks = new Listr(
       [
         {
-          title: `Start ${network} ${isMasternode ? 'masternode' : 'full node'}`,
+          title: `Start ${config.getName()} node`,
           task: () => startNodeTask(
             config,
             {
@@ -68,7 +65,7 @@ Start node
 `;
 
 StartCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
   update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),

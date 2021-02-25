@@ -2,12 +2,12 @@ const { Listr } = require('listr2');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-const BaseCommand = require('../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
 const masternodeDashAmount = require('../core/masternodeDashAmount');
 
-class RegisterCommand extends BaseCommand {
+class RegisterCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -72,7 +72,7 @@ RegisterCommand.args = [{
 }];
 
 RegisterCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
 };
 
 module.exports = RegisterCommand;

@@ -2,21 +2,18 @@ const { Listr } = require('listr2');
 
 const { flags: flagTypes } = require('@oclif/command');
 
-const BaseCommand = require('../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
-class ResetCommand extends BaseCommand {
+class ResetCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {resetSystemConfig} resetSystemConfig
    * @param {isSystemConfig} isSystemConfig
    * @param {Config} config
-   * @param {ConfigCollection} configCollection
-   * @param {DockerCompose} dockerCompose
-   * @param {Docker} docker
-   * @param {tenderdashInitTask} tenderdashInitTask
+   * @param {resetNodeTask} resetNodeTask
+   *
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -26,64 +23,24 @@ class ResetCommand extends BaseCommand {
       hard: isHardReset,
       'platform-only': isPlatformOnlyReset,
     },
-    resetSystemConfig,
     isSystemConfig,
     config,
-    configCollection,
-    dockerCompose,
-    docker,
-    tenderdashInitTask,
+    resetNodeTask,
   ) {
     if (isHardReset && !isSystemConfig(config.getName())) {
       throw new Error(`Cannot hard reset non-system config "${config.getName()}"`);
     }
 
+    const isPlatformServicesEnabled = config.get('compose.file').includes('docker-compose.platform.yml');
+
+    if (isPlatformServicesEnabled && isPlatformOnlyReset) {
+      throw new Error('Cannot reset platform only if platform services are not enabled in config');
+    }
+
     const tasks = new Listr([
       {
-        title: 'Stop services',
-        task: async () => dockerCompose.stop(config.toEnvs()),
-      },
-      {
-        title: 'Remove all services and associated data',
-        enabled: () => !isPlatformOnlyReset,
-        task: async () => dockerCompose.down(config.toEnvs()),
-      },
-      {
-        title: 'Remove platform services and associated data',
-        enabled: () => isPlatformOnlyReset,
-        task: async () => {
-          // Remove containers
-          const coreContainerNames = ['core', 'sentinel'];
-          const containerNames = await dockerCompose
-            .getContainersList(config.toEnvs(), undefined, true);
-          const platformContainerNames = containerNames
-            .filter((containerName) => !coreContainerNames.includes(containerName));
-
-          await dockerCompose.rm(config.toEnvs(), platformContainerNames);
-
-          // Remove volumes
-          const coreVolumeNames = ['core_data'];
-          const { COMPOSE_PROJECT_NAME: composeProjectName } = config.toEnvs();
-
-          const projectvolumeNames = await dockerCompose.getVolumeNames(config.toEnvs());
-
-          const volumeRemovePromises = projectvolumeNames
-            .filter((volumeName) => !coreVolumeNames.includes(volumeName))
-            .map((volumeName) => `${composeProjectName}_${volumeName}`)
-            .map((volumeName) => docker.getVolume(volumeName).remove());
-
-          await Promise.all(volumeRemovePromises);
-        },
-      },
-      {
-        title: `Reset config ${config.getName()}`,
-        enabled: () => isHardReset,
-        task: () => resetSystemConfig(configCollection, config.getName(), isPlatformOnlyReset),
-      },
-      {
-        title: 'Initialize Tenderdash',
-        enabled: () => !isHardReset,
-        task: () => tenderdashInitTask(config),
+        title: `Reset ${config.getName()} node`,
+        task: () => resetNodeTask(config),
       },
     ],
     {
@@ -96,7 +53,10 @@ class ResetCommand extends BaseCommand {
     });
 
     try {
-      await tasks.run();
+      await tasks.run({
+        isHardReset,
+        isPlatformOnlyReset,
+      });
     } catch (e) {
       throw new MuteOneLineError(e);
     }
@@ -109,7 +69,7 @@ Reset node data
 `;
 
 ResetCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
   hard: flagTypes.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
   'platform-only': flagTypes.boolean({ char: 'p', description: 'reset platform data only', default: false }),
 };

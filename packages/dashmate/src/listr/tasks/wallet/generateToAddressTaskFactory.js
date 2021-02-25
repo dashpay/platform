@@ -26,7 +26,13 @@ function generateToAddressTaskFactory(
     return new Listr([
       {
         title: 'Start Core',
+        enabled: (ctx) => {
+          ctx.coreServicePassed = Boolean(ctx.coreService);
+
+          return !ctx.coreServicePassed;
+        },
         task: async (ctx) => {
+          ctx.coreServicePassed = false;
           ctx.coreService = await startCore(config, { wallet: true });
         },
       },
@@ -52,8 +58,11 @@ function generateToAddressTaskFactory(
       },
       {
         title: `Generate ≈${amount} dash to address`,
-        task: (ctx, task) => (
-          new Observable(async (observer) => {
+        task: (ctx, task) => {
+          // eslint-disable-next-line no-param-reassign
+          task.title += ` ${ctx.address}`;
+
+          return new Observable(async (observer) => {
             await generateToAddress(
               ctx.coreService,
               amount,
@@ -72,8 +81,10 @@ function generateToAddressTaskFactory(
             ctx.fundingPrivateKeyString = ctx.privateKey;
 
             observer.complete();
-          })
-        ),
+
+            return this;
+          });
+        },
         options: { persistentOutput: true },
       },
       {
@@ -90,11 +101,14 @@ function generateToAddressTaskFactory(
             );
 
             observer.complete();
+
+            return this;
           })
         ),
       },
       {
         title: 'Stop Core',
+        enabled: (ctx) => !ctx.coreServicePassed,
         task: async (ctx) => ctx.coreService.stop(),
       },
     ]);

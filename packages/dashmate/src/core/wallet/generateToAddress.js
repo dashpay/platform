@@ -6,7 +6,7 @@ const { toDash } = require('../../util/satoshiConverter');
  * @param {CoreService} coreService
  * @param {number} amount
  * @param {string} address
- * @param {function(balance: number)} progressCallback
+ * @param {function(balance: number)} [progressCallback]
  * @returns {Promise<void>}
  */
 async function generateToAddress(

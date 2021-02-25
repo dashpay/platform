@@ -2,12 +2,12 @@ const { Listr } = require('listr2');
 
 const { flags: flagTypes } = require('@oclif/command');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
-const NETWORKS = require('../../networks');
+const { NETWORK_LOCAL } = require('../../constants');
 
-class MintCommand extends BaseCommand {
+class MintCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -28,7 +28,7 @@ class MintCommand extends BaseCommand {
   ) {
     const network = config.get('network');
 
-    if (network !== NETWORKS.LOCAL) {
+    if (network !== NETWORK_LOCAL) {
       throw new Error('Only local network supports generation of dash');
     }
 
@@ -64,7 +64,7 @@ Mint specified amount of dash to a new address or specified one
 `;
 
 MintCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
   address: flagTypes.string({ char: 'a', description: 'recipient address instead of a new one', default: null }),
 };
 

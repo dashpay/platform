@@ -1,4 +1,4 @@
-const NETWORKS = require('../networks');
+const { NETWORKS } = require('../../src/constants');
 
 module.exports = {
   $schema: 'http://json-schema.org/draft-07/schema#',
@@ -59,6 +59,9 @@ module.exports = {
   },
   properties: {
     description: {
+      type: ['string', 'null'],
+    },
+    group: {
       type: ['string', 'null'],
     },
     core: {
@@ -326,8 +329,11 @@ module.exports = {
                 genesis: {
                   type: 'object',
                 },
+                nodeId: {
+                  type: ['string', 'null'],
+                },
               },
-              required: ['docker', 'p2p', 'rpc', 'validatorKey', 'nodeKey', 'genesis'],
+              required: ['docker', 'p2p', 'rpc', 'validatorKey', 'nodeKey', 'genesis', 'nodeId'],
               additionalProperties: false,
             },
             skipAssetLockConfirmationValidation: {
@@ -396,7 +402,7 @@ module.exports = {
     },
     network: {
       type: 'string',
-      enum: Object.values(NETWORKS),
+      enum: NETWORKS,
     },
     compose: {
       type: 'object',
@@ -413,6 +419,6 @@ module.exports = {
       enum: ['development', 'production'],
     },
   },
-  required: ['description', 'core', 'platform', 'externalIp', 'network', 'compose', 'environment'],
+  required: ['description', 'group', 'core', 'platform', 'externalIp', 'network', 'compose', 'environment'],
   additionalProperties: false,
 };

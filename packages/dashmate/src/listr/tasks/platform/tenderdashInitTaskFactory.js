@@ -1,16 +1,16 @@
 const { Listr } = require('listr2');
-const NETWORKS = require('../../../networks');
 
 /**
  * @param {initializeTenderdashNode} initializeTenderdashNode
  * @param {Docker} docker
- * @return tenderdashInitTask
+ * @return {tenderdashInitTask}
  */
 function tenderdashInitTaskFactory(
   initializeTenderdashNode,
   docker,
 ) {
   /**
+   * @typedef {tenderdashInitTask}
    * @param {Config} config
    * @return {Listr}
    */
@@ -32,10 +32,13 @@ function tenderdashInitTaskFactory(
           if (isValidatorKeyPresent && isNodeKeyPresent
             && isGenesisPresent && isDataVolumePresent) {
             task.skip('Node already initialized');
+
             return;
           }
 
-          const [validatorKey, nodeKey, genesis] = await initializeTenderdashNode(config);
+          const [validatorKey, nodeKey, genesis, nodeId] = await initializeTenderdashNode(config);
+
+          config.set('platform.drive.tenderdash.nodeId', nodeId);
 
           if (!isValidatorKeyPresent) {
             config.set('platform.drive.tenderdash.validatorKey', validatorKey);
@@ -46,10 +49,6 @@ function tenderdashInitTaskFactory(
           }
 
           if (!isGenesisPresent) {
-            if (config.get('network') === NETWORKS.LOCAL) {
-              genesis.initial_core_chain_locked_height = 1000;
-            }
-
             config.set('platform.drive.tenderdash.genesis', genesis);
           }
         },

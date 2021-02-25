@@ -2,18 +2,18 @@ const { table } = require('table');
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
-class CoreStatusCommand extends BaseCommand {
+class PlatformStatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
-   * @param {CoreService} coreService
+   * @param {createRpcClient} createRpcClient
    * @param {Config} config
    * @return {Promise<void>}
    */
@@ -24,7 +24,7 @@ class CoreStatusCommand extends BaseCommand {
     createRpcClient,
     config,
   ) {
-    if (config.options.network === 'mainnet') {
+    if (config.get('network') === 'mainnet') {
       // eslint-disable-next-line no-console
       console.log('Platform is not supported on mainnet yet!');
       this.exit();
@@ -206,10 +206,10 @@ class CoreStatusCommand extends BaseCommand {
   }
 }
 
-CoreStatusCommand.description = 'Show platform status details';
+PlatformStatusCommand.description = 'Show platform status details';
 
-CoreStatusCommand.flags = {
-  ...BaseCommand.flags,
+PlatformStatusCommand.flags = {
+  ...ConfigBaseCommand.flags,
 };
 
-module.exports = CoreStatusCommand;
+module.exports = PlatformStatusCommand;

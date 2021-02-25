@@ -6,15 +6,15 @@ class ConfigListCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {ConfigCollection} configCollection
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     flags,
-    configCollection,
+    configFile,
   ) {
-    const rows = configCollection.getAllConfigs()
+    const rows = configFile.getAllConfigs()
       .map((config) => [config.getName(), config.get('description')]);
 
     const output = table(rows);

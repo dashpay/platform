@@ -6,7 +6,7 @@ const { PrivateKey } = require('@dashevo/dashcore-lib');
  * @param {CoreService} coreService
  * @param {number} blocks
  * @param {string} network
- * @param {function(balance: number)} progressCallback
+ * @param {function(balance: number)} [progressCallback]
  * @returns {Promise<void>}
  */
 async function generateBlocks(

@@ -2,17 +2,17 @@ const { table } = require('table');
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
-class CoreStatusCommand extends BaseCommand {
+class CoreStatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
-   * @param {CoreService} coreService
+   * @param {createRpcClient} createRpcClient
    * @param {Config} config
    * @return {Promise<void>}
    */
@@ -192,7 +192,7 @@ class CoreStatusCommand extends BaseCommand {
 CoreStatusCommand.description = 'Show core status details';
 
 CoreStatusCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
 };
 
 module.exports = CoreStatusCommand;

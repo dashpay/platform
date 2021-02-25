@@ -4,7 +4,7 @@ const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 const lodashCloneDeep = require('lodash.clonedeep');
 
-const configJsonSchema = require('./configJsonSchema');
+const configJsonSchema = require('../../configs/schema/configJsonSchema');
 
 const convertObjectToEnvs = require('./convertObjectToEnvs');
 

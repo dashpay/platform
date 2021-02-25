@@ -1,19 +1,19 @@
 const { table } = require('table');
 const chalk = require('chalk');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
 const blocksToTime = require('../../util/blocksToTime');
 const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
-class MasternodeStatusCommand extends BaseCommand {
+class MasternodeStatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
-   * @param {CoreService} coreService
+   * @param {createRpcClient} createRpcClient
    * @param {Config} config
    * @return {Promise<void>}
    */
@@ -145,7 +145,7 @@ class MasternodeStatusCommand extends BaseCommand {
 MasternodeStatusCommand.description = 'Show masternode status details';
 
 MasternodeStatusCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
 };
 
 module.exports = MasternodeStatusCommand;

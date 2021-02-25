@@ -4,7 +4,7 @@ class ConfigDefaultCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {ConfigCollection} configCollection
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -12,13 +12,13 @@ class ConfigDefaultCommand extends BaseCommand {
       config: configName,
     },
     flags,
-    configCollection,
+    configFile,
   ) {
     if (configName === null) {
       // eslint-disable-next-line no-console
-      console.log(configCollection.getDefaultConfigName());
+      console.log(configFile.getDefaultConfigName());
     } else {
-      configCollection.setDefaultConfigName(configName);
+      configFile.setDefaultConfigName(configName);
 
       // eslint-disable-next-line no-console
       console.log(`${configName} config set as default`);

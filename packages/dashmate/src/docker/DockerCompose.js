@@ -217,7 +217,7 @@ class DockerCompose {
   /**
    * Get list of Docker volumes
    * @param {Object} envs
-   * @return {string[]}
+   * @return {Promise<string[]>}
    */
   async getVolumeNames(envs) {
     let volumeOutput;

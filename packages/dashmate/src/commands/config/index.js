@@ -1,8 +1,8 @@
 const { inspect } = require('util');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
-class ConfigCommand extends BaseCommand {
+class ConfigCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -30,7 +30,7 @@ Display configuration options for default config
 `;
 
 ConfigCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
 };
 
 module.exports = ConfigCommand;

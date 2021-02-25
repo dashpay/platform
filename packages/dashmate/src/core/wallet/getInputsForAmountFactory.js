@@ -6,7 +6,7 @@
  */
 function getInputsForAmountFactory(coreClient) {
   /**
-   * @typedef getInputsForAmount
+   * @typedef {getInputsForAmount}
    * @param {string} address
    * @param {number} amountInSatoshi
    * @return {Promise<Array>}

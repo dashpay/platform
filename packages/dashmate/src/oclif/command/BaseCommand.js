@@ -15,6 +15,11 @@ const ConfigFileNotFoundError = require('../../config/errors/ConfigFileNotFoundE
  */
 class BaseCommand extends Command {
   async init() {
+    const { args, flags } = this.parse(this.constructor);
+
+    this.parsedArgs = args;
+    this.parsedFlags = flags;
+
     this.container = await createDIContainer(process.env);
 
     // Set up home dir
@@ -27,14 +32,14 @@ class BaseCommand extends Command {
 
     // Load configs
     /**
-     * @type {ConfigJsonFileRepository}
+     * @type {ConfigFileJsonRepository}
      */
-    const configManager = this.container.resolve('configRepository');
+    const configFileRepository = this.container.resolve('configFileRepository');
 
-    let configCollection;
+    let configFile;
     try {
       // Load config collection from config file
-      configCollection = await configManager.read();
+      configFile = await configFileRepository.read();
     } catch (e) {
       // Create default config collection if config file is not present
       // on the first start for example
@@ -48,12 +53,12 @@ class BaseCommand extends Command {
        */
       const createSystemConfigs = this.container.resolve('createSystemConfigs');
 
-      configCollection = createSystemConfigs();
+      configFile = createSystemConfigs();
     }
 
     // Register config collection in the container
     this.container.register({
-      configCollection: asValue(configCollection),
+      configFile: asValue(configFile),
     });
 
     // Graceful exit
@@ -79,61 +84,36 @@ class BaseCommand extends Command {
       throw new Error('`run` or `runWithDependencies` must be implemented');
     }
 
-    const { args, flags } = this.parse(this.constructor);
-
-    if (Object.prototype.hasOwnProperty.call(flags, 'config')) {
-      const configCollection = this.container.resolve('configCollection');
-      const config = flags.config === null
-        ? configCollection.getDefaultConfig()
-        : configCollection.getConfig(flags.config);
-
-      if (!config) {
-        throw new Error('Default config is not set. Please use `--config` option or set default config');
-      }
-
-      this.container.register({
-        config: asValue(config),
-      });
-
-      const renderServiceTemplates = this.container.resolve('renderServiceTemplates');
-      const writeServiceConfigs = this.container.resolve('writeServiceConfigs');
-
-      const configFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), configFiles);
-    }
-
     const params = getFunctionParams(this.runWithDependencies, 2);
 
     const dependencies = params.map((paramName) => this.container.resolve(paramName));
 
-    return this.runWithDependencies(args, flags, ...dependencies);
+    return this.runWithDependencies(this.parsedArgs, this.parsedFlags, ...dependencies);
   }
 
   async finally(err) {
     // Save configs collection
-    const configRepository = this.container.resolve('configRepository');
+    if (this.container) {
+      const configFileRepository = this.container.resolve('configFileRepository');
 
-    if (this.container.has('configCollection')) {
-      const configCollection = this.container.resolve('configCollection');
+      if (this.container.has('configFile')) {
+        const configFile = this.container.resolve('configFile');
 
-      await configRepository.write(configCollection);
+        await configFileRepository.write(configFile);
+      }
+
+      // Stop all running containers
+      const stopAllContainers = this.container.resolve('stopAllContainers');
+      const startedContainers = this.container.resolve('startedContainers');
+
+      await stopAllContainers(startedContainers.getContainers());
     }
-
-    // Stop all running containers
-    const stopAllContainers = this.container.resolve('stopAllContainers');
-    const startedContainers = this.container.resolve('startedContainers');
-
-    await stopAllContainers(startedContainers.getContainers());
 
     return super.finally(err);
   }
 }
 
 BaseCommand.flags = {
-  config: flagTypes.string({
-    description: 'configuration name to use',
-    default: null,
-  }),
   verbose: flagTypes.boolean({
     char: 'v',
     description: 'use verbose mode for output',

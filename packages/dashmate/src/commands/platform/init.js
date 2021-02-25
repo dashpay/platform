@@ -2,10 +2,10 @@ const { Listr } = require('listr2');
 
 const { flags: flagTypes } = require('@oclif/command');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
-class InitCommand extends BaseCommand {
+class InitCommand extends ConfigBaseCommand {
   /**
    *
    * @param {Object} args
@@ -74,7 +74,7 @@ InitCommand.args = [{
 }];
 
 InitCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
   'drive-image-build-path': flagTypes.string({
     description: 'drive\'s docker image build path',
     default: null,

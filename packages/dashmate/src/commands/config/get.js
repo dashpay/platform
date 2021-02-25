@@ -1,6 +1,6 @@
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
-class ConfigGetCommand extends BaseCommand {
+class ConfigGetCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -33,7 +33,7 @@ ConfigGetCommand.args = [{
 }];
 
 ConfigGetCommand.flags = {
-  ...BaseCommand.flags,
+  ...ConfigBaseCommand.flags,
 };
 
 module.exports = ConfigGetCommand;

@@ -1,19 +1,19 @@
 /**
  * @param {Object} systemConfigs
- * @return {checkSystemConfig}
+ * @return {isSystemConfig}
  */
-function checkSystemConfigFactory(systemConfigs) {
+function isSystemConfigFactory(systemConfigs) {
   /**
-   * @typedef {checkSystemConfig}
+   * @typedef {isSystemConfig}
    * @param configName
    * @return {boolean}
    */
-  function checkSystemConfig(configName) {
+  function isSystemConfig(configName) {
     const systemConfigNames = Object.keys(systemConfigs);
     return systemConfigNames.includes(configName);
   }
 
-  return checkSystemConfig;
+  return isSystemConfig;
 }
 
-module.exports = checkSystemConfigFactory;
+module.exports = isSystemConfigFactory;

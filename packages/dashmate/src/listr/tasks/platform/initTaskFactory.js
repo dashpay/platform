@@ -9,7 +9,7 @@ const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
 const dashpayDocumentSchema = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 
-const NETWORKS = require('../../../networks');
+const { NETWORK_LOCAL } = require('../../../constants');
 
 /**
  *
@@ -115,7 +115,7 @@ function initTaskFactory(
             .update(ctx.dataContractStateTransition.toBuffer())
             .digest();
 
-          if (ctx.dapiAddress || config.get('network') !== NETWORKS.LOCAL) {
+          if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
             task.skip('Can\'t obtain DPNS contract commit block height from remote node.'
               + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
               + 'and set it to "platform.dpns.contract.id" config option');
@@ -191,7 +191,7 @@ function initTaskFactory(
             .update(ctx.dashpayStateTransition.toBuffer())
             .digest();
 
-          if (ctx.dapiAddress || config.get('network') !== NETWORKS.LOCAL) {
+          if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
             task.skip('Can\'t obtain Dashpay contract commit block height from remote node.'
               + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
               + 'and set it to "platform.dashpay.contract.id" config option');

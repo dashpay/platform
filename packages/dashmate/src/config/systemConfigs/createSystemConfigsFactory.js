@@ -1,6 +1,6 @@
 const Config = require('../Config');
 
-const ConfigCollection = require('../ConfigCollection');
+const ConfigFile = require('../configFile/ConfigFile');
 
 const packageJson = require('../../../package.json');
 
@@ -11,14 +11,19 @@ const packageJson = require('../../../package.json');
 function createSystemConfigsFactory(systemConfigs) {
   /**
    * @typedef {createSystemConfigs}
-   * @returns {ConfigCollection}
+   * @returns {ConfigFile}
    */
   function createSystemConfigs() {
     const configs = Object.entries(systemConfigs).map(([name, options]) => (
       new Config(name, options)
     ));
 
-    return new ConfigCollection(configs, 'base', packageJson.version);
+    return new ConfigFile(
+      configs,
+      packageJson.version,
+      'base',
+      null,
+    );
   }
 
   return createSystemConfigs;

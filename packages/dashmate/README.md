@@ -15,10 +15,12 @@ Distribution package for Dash Masternode installation
   - [Configure node](#configure-node)
   - [Start node](#start-node)
   - [Stop node](#stop-node)
-  - [Restart node](#restard-node)
+  - [Restart node](#restart-node)
+  - [Show node status](#show-node-status)
   - [Register masternode](#register-masternode)
-  - [Reset data](#reset-data)
+  - [Reset node data](#reset-node-data)
   - [Full node](#full-node)
+  - [Node groups](#node-groups)
   - [Development](#development)
   - [Docker Compose](#docker-compose)
 - [Contributing](#contributing)
@@ -72,6 +74,10 @@ OPTIONS
   --drive-image-build-path=drive-image-build-path          drive's docker image build path
 ```
 
+Supported presets:
+ * `testnet` - a masternode or full node for testnet
+ * `local` - a node group to run a local dash network with the specified number of masternodes. To operate a group of nodes, use the [group commands](#node-groups)
+
 To setup a testnet masternode:
 ```bash
 $ mn setup testnet masternode
@@ -82,8 +88,8 @@ $ mn setup testnet masternode
 The `config` command is used to manage your node configuration before starting the node. Several system configurations are provided as a starting point:
 
  - base - basic config for use as template
- - local - standalone node for local development
- - testnet - node with testnet configuration
+ - local - template for local node configs
+ - testnet - testnet node configuration
 
 You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `mn config:create CONFIG [FROM]` command. You must set a default config with `mn config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
 
@@ -92,6 +98,7 @@ USAGE
   $ mn config
 
 OPTIONS
+  -v, --verbose    use verbose mode for output
   --config=config  configuration name to use
 
 DESCRIPTION
@@ -114,9 +121,11 @@ The `start` command is used to start a node with the default or specified config
 ```
 USAGE
   $ mn start
+
 OPTIONS
-  -u, --update                                     download updated services before start
+  -v, --verbose                                    use verbose mode for output
   --config=config                                  configuration name to use
+  -u, --update                                     download updated services before starting
   --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
   --drive-image-build-path=drive-image-build-path  drive's docker image build path
 ```
@@ -133,7 +142,9 @@ The `stop` command is used to stop a running node.
 ```
 USAGE
   $ mn stop
+
 OPTIONS
+  -v, --verbose    use verbose mode for output
   --config=config  configuration name to use
 ```
 
@@ -151,15 +162,33 @@ USAGE
   $ mn restart
 
 OPTIONS
-  -u, --update                                     download updated services before start
-  --config=config                                  configuration name to use
-  --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
-  --drive-image-build-path=drive-image-build-path  drive's docker image build path
+  -v, --verbose    use verbose mode for output
+  --config=config  configuration name to use
 ```
 
-To update services and restart a masternode:
+### Show node status
+
+The `status` command outputs status information relating to either the host, masternode or services.
+
+```
+USAGE
+  $ mn status
+
+OPTIONS
+  -v, --verbose    use verbose mode for output
+  --config=config  configuration name to use
+
+COMMANDS
+  status:core        Show core status details
+  status:host        Show host status details
+  status:masternode  Show masternode status details
+  status:platform    Show platform status details
+  status:services    Show service status details
+```
+
+To show the host status:
 ```bash
-$ mn restart -u
+$ mn status:host
 ```
 
 ### Register masternode
@@ -170,7 +199,7 @@ The `register` command creates a collateral funding transaction and then uses it
 
 Before registering the masternode, you must have access to an address on the network you intend to use with a balance of more than 1000 Dash. 1000 Dash is used for the collateral transaction, and the remainder will be used for transaction fees. Make sure you have access to the private key for this address, since you will need to provide it in the next step. If using Dash Core, you can get the private key for a given address using the following command:
 
-```
+```bash
 dumpprivkey "address"
 ```
 
@@ -179,11 +208,14 @@ If using a config specifying the `local` network, you can create and fund a new 
 ```
 USAGE
   $ mn wallet:mint AMOUNT
+
 ARGUMENTS
   AMOUNT  amount of dash to be generated to address
+
 OPTIONS
-  -a, --address=address  recipient address instead of a new one
+  -v, --verbose          use verbose mode for output
   --config=config        configuration name to use
+  -a, --address=address  recipient address instead of a new one
 ```
 
 To generate 1001 Dash to a new address:
@@ -198,9 +230,12 @@ Run the `register` command as described below. The command will first verify suf
 ```
 USAGE
   $ mn register FUNDING-PRIVATE-KEY
+
 ARGUMENTS
   FUNDING-PRIVATE-KEY  private key with more than 1000 dash for funding collateral
+
 OPTIONS
+  -v, --verbose    use verbose mode for output
   --config=config  configuration name to use
 ```
 
@@ -209,41 +244,26 @@ To register a masternode:
 $ mn register cVdEfkXLHqftgXzRYZW4EdwtcnJ8Mktw9L4vcEcqbVDs3e2qdzCf
 ```
 
-### Reset data
+### Reset node data
 
 The `reset` command removes all data corresponding to the specified config and allows you to start a node from scratch.
 
 ```
 USAGE
   $ mn reset
+
 OPTIONS
+  -v, --verbose        use verbose mode for output
+  --config=config      configuration name to use
   -h, --hard           reset config as well as data
   -p, --platform-only  reset platform data only
-  --config=config      configuration name to use
 ```
+
+With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
 
 To reset a node:
 ```bash
 $ mn reset
-```
-
-### Show status
-
-The `status` command outputs status information relating to either the host, masternode or services.
-
-```
-USAGE
-  $ mn status:COMMAND
-
-COMMANDS
-  status:host        Show host status details
-  status:masternode  Show masternode status details
-  status:services    Show service status details
-```
-
-To show the host status:
-```bash
-$ mn status:host
 ```
 
 ### Full node
@@ -254,24 +274,147 @@ It is also possible to start a full node instead of a masternode. Modify the con
 mn config:set core.masternode.enable false
 ```
 
+### Node groups
+
+CLI allows to [setup](#setup-node) and operate multiple nodes. Only the `local` preset is supported at the moment.
+
+#### Default group
+
+The [setup](#setup-node) command set corresponding group as default. To output the current default group or set another one as default use `group:default` command.
+
+```
+USAGE
+  $ mn group:default [GROUP]
+
+ARGUMENTS
+  GROUP  group name
+
+OPTIONS
+  -v, --verbose  use verbose mode for output
+```
+
+#### List group configs
+
+The `group:list` command outputs a list of group configs.
+
+```
+USAGE
+  $ mn group:list
+
+OPTIONS
+  -v, --verbose  use verbose mode for output
+  --group=group  group name to use
+```
+
+#### Start group nodes
+
+The `group:start` command is used to start a group of nodes belonging to the default group or a specified group.
+
+```
+USAGE
+  $ mn group:start
+
+OPTIONS
+  -u, --update                                     download updated services before start
+  -v, --verbose                                    use verbose mode for output
+  --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
+  --drive-image-build-path=drive-image-build-path  drive's docker image build path
+  --group=group                                    group name to use
+```
+
+#### Stop group nodes
+
+The `group:stop` command is used to stop group nodes belonging to the default group or a specified group.
+
+```
+USAGE
+  $ mn group:stop
+
+OPTIONS
+  -v, --verbose  use verbose mode for output
+  --group=group  group name to use
+```
+
+#### Restart group nodes
+
+The `group:restart` command is used to restart group nodes belonging to the default group or a specified group.
+
+```
+USAGE
+  $ mn group:restart
+
+OPTIONS
+  -v, --verbose  use verbose mode for output
+  --group=group  group name to use
+```
+
+#### Show group status
+
+The `group:status` command outputs group status information.
+
+```
+USAGE
+  $ mn group:status
+
+OPTIONS
+  -v, --verbose  use verbose mode for output
+  --group=group  group name to use
+```
+
+#### Reset group nodes
+
+The `group:reset` command removes all data corresponding to the specified group and allows you to start group nodes from scratch.
+
+```
+USAGE
+  $ mn reset
+
+OPTIONS
+  -v, --verbose        use verbose mode for output
+  --config=config      configuration name to use
+  -h, --hard           reset config as well as data
+  -p, --platform-only  reset platform data only
+```
+
+With the hard reset mode enabled, corresponding configs will be reset as well. To proceed, running the node [setup](#setup-node) is required.
+
+#### Create config group
+
+To group nodes together, set a group name to `group` option in corresponding configs.
+
+Create a group of two testnet nodes:
+```bash
+# create a new config using `testnet` config as template
+mn config:create testnet_2 testnet
+
+# combine configs into the group
+mn config:set --config=testnet group testnet
+mn config:set --config=testnet_2 group testnet
+
+# set the group as default
+mn group:default testnet
+```
+
+To start the group of nodes, ports and other required options need to be updated.
+
 ### Development
 
-When developing on a standalone node (a config specifying the `local` network), `setup local` can be used to generate some dash, register a masternode and populate the node with the data required for local development.
+To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some dash, register masternodes and populate the nodes with the data required for local development.
 
-To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `start` command. A Docker image will be built from the provided path and then used by mn-bootstrap.
+To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `group:start` command. A Docker image will be built from the provided path and then used by mn-bootstrap.
 
 ### Docker Compose
 
 If you want to use Docker Compose directly, you will need to pass a configuration as a dotenv file. You can output a config to a dotenv file for Docker Compose as follows:
 
 ```bash
-$ mn config:envs --output-file .env
+$ mn config:envs --config=testnet --output-file .env.testnet
 ```
 
-Docker Compose will attempt to read a file named `.env` by default. You can optionally specify a dotenv file with a different filename for Docker Compose by adding `--env-file` option to the `docker-compose` command as follows:
+Then specify the created dotenv file as an option for the `docker-compose` command:
 
 ```bash
-$ docker-compose --env-file=<filename>
+$ docker-compose --env-file=.env.testnet
 ```
 
 ## Contributing

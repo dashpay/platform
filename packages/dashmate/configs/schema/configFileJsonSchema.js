@@ -8,10 +8,13 @@ module.exports = {
     defaultConfigName: {
       type: ['string', 'null'],
     },
+    defaultGroupName: {
+      type: ['string', 'null'],
+    },
     configs: {
       type: 'object',
     },
   },
-  required: ['configFormatVersion', 'defaultConfigName', 'configs'],
+  required: ['configFormatVersion', 'defaultConfigName', 'defaultGroupName', 'configs'],
   additionalProperties: false,
 };

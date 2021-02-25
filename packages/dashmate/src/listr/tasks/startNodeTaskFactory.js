@@ -3,7 +3,7 @@ const fs = require('fs');
 const { Listr } = require('listr2');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
-const NETWORKS = require('../../networks');
+const { NETWORK_LOCAL, NETWORK_MAINNET } = require('../../constants');
 
 /**
  *
@@ -14,7 +14,7 @@ function startNodeTaskFactory(dockerCompose) {
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
-   * @param {Object} options
+   * @param {Object} [options]
    * @param {string} [options.driveImageBuildPath]
    * @param {string} [options.dapiImageBuildPath]
    * @param {boolean} [options.isUpdate]
@@ -28,7 +28,7 @@ function startNodeTaskFactory(dockerCompose) {
       dapiImageBuildPath = undefined,
       isUpdate = undefined,
       isMinerEnabled = undefined,
-    },
+    } = {},
   ) {
     // Check external IP is set
     config.get('externalIp', true);
@@ -38,7 +38,7 @@ function startNodeTaskFactory(dockerCompose) {
       isMinerEnabled = config.get('core.miner.enable');
     }
 
-    if (isMinerEnabled === true && config.get('network') !== NETWORKS.LOCAL) {
+    if (isMinerEnabled === true && config.get('network') !== NETWORK_LOCAL) {
       throw new Error(`'core.miner.enabled' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
@@ -81,7 +81,7 @@ function startNodeTaskFactory(dockerCompose) {
           const envs = config.toEnvs();
 
           if (driveImageBuildPath || dapiImageBuildPath) {
-            if (config.get('network') === NETWORKS.MAINNET) {
+            if (config.get('network') === NETWORK_MAINNET) {
               throw new Error('You can\'t use drive-image-build-path and dapi-image-build-path options with mainnet network');
             }
 
