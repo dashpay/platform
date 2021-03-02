@@ -49,7 +49,7 @@
   "homepage": "https://github.com/dashevo/mn-bootstrap#readme",
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.19.21",
-    "@dashevo/dashd-rpc": "~2.0.2",
+    "@dashevo/dashd-rpc": "~2.1.1",
     "@dashevo/dashpay-contract": "github:dashevo/dashpay-contract#bc4e9b2d0073e27bd716b3ae63ccfdd60d8c4f36",
     "@dashevo/dpns-contract": "~0.3.0-dev.6",
     "@dashevo/wallet-lib": "~7.18.0-dev.3",

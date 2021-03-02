@@ -1,4 +1,8 @@
 const { Listr } = require('listr2');
+const {
+  PrivateKey,
+} = require('@dashevo/dashcore-lib');
+const isSeedNode = require('../../../../util/isSeedNode');
 
 /**
  * @param {resolveDockerHostIp} resolveDockerHostIp
@@ -7,6 +11,8 @@ const { Listr } = require('listr2');
  * @param {startCore} startCore
  * @param {generateBlocks} generateBlocks
  * @param {waitForCoreSync} waitForCoreSync
+ * @param {activateCoreSpork} activateCoreSpork
+ * @param {waitForCoreQuorum} waitForCoreQuorum
  * @param {generateToAddressTask} generateToAddressTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @return {configureCoreTask}
@@ -18,6 +24,8 @@ function configureCoreTaskFactory(
   startCore,
   generateBlocks,
   waitForCoreSync,
+  activateCoreSpork,
+  waitForCoreQuorum,
   generateToAddressTask,
   registerMasternodeTask,
 ) {
@@ -36,16 +44,34 @@ function configureCoreTaskFactory(
             ctx.hostDockerInternalIp = await resolveDockerHostIp();
           }
 
+          const network = configGroup[0].get('network');
+          const sporkPrivKey = new PrivateKey(undefined, network);
+          const sporkAddress = sporkPrivKey.toAddress(network).toString();
+
           const p2pSeeds = configGroup.map((config) => ({
             host: ctx.hostDockerInternalIp,
             port: config.get('core.p2p.port'),
           }));
 
           configGroup.forEach((config, i) => {
+            // seeds
             config.set(
               'core.p2p.seeds',
               p2pSeeds.filter((seed, index) => index !== i),
             );
+
+            // sporks
+            config.set(
+              'core.spork.address',
+              sporkAddress,
+            );
+
+            if (isSeedNode(config)) {
+              config.set(
+                'core.spork.privateKey',
+                sporkPrivKey.toWIF(),
+              );
+            }
 
             // Write configs
             const configFiles = renderServiceTemplates(config);

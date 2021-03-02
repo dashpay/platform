@@ -41,6 +41,8 @@ llmq-qvvec-sync=llmq_100_67
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
+sporkaddr={{=it.core.spork.address}}
+{{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
 {{?? it.network === 'devnet'}}
