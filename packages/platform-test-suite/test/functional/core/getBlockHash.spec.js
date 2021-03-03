@@ -27,14 +27,17 @@ describe('Core', () => {
     it('should return RPC error if hash not found', async () => {
       const height = lastBlockHeight * 2;
 
+      let broadcastError;
+
       try {
         await client.getDAPIClient().core.getBlockHash(height);
-
-        expect.fail('Should throw error');
       } catch (e) {
-        expect(e.name).to.equal('JsonRpcError');
-        expect(e.message).contains('Block height out of range');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.name).to.equal('JsonRpcError');
+      expect(broadcastError.message).contains('Block height out of range');
     });
   });
 });

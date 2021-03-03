@@ -29,14 +29,17 @@ describe('Platform', () => {
       // random is generated within the function
       dataContractFixture = getDataContractFixture();
 
+      let broadcastError;
+
       try {
         await client.platform.contracts.broadcast(dataContractFixture, identity);
-
-        expect.fail('should throw invalid argument error');
       } catch (e) {
-        const [error] = JSON.parse(e.message.replace('StateTransition is invalid - ', ''));
-        expect(error.name).to.equal('IdentityNotFoundError');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      const [error] = JSON.parse(broadcastError.message.replace('StateTransition is invalid - ', ''));
+      expect(error.name).to.equal('IdentityNotFoundError');
     });
 
     it('should create new data contract with previously created identity as an owner', async () => {

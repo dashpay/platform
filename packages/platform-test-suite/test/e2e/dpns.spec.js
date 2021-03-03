@@ -79,33 +79,39 @@ describe('DPNS', () => {
     it('should not be able to update domain', async () => {
       createdTLD.set('label', 'anotherlabel');
 
+      let broadcastError;
+
       try {
         await ownerClient.platform.documents.broadcast({
           replace: [createdTLD],
         }, identity);
-
-        expect.fail('should throw an error');
       } catch (e) {
-        expect(e.code).to.equal(3);
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Action is not allowed');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
+      expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });
 
     it('should not be able to delete domain', async () => {
+      let broadcastError;
+
       try {
         await ownerClient.platform.documents.broadcast({
           delete: [createdTLD],
         }, identity);
-
-        expect.fail('should throw an error');
       } catch (e) {
-        expect(e.code).to.equal(3);
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Action is not allowed');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
+      expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });
   });
 
@@ -119,17 +125,21 @@ describe('DPNS', () => {
     });
 
     it('should not be able to register TLD', async () => {
+      let broadcastError;
+
       try {
         await client.platform.names.register(getRandomDomain(), {
           dashAliasIdentityId: identity.getId(),
         }, identity);
-
-        expect.fail('Should throw error');
       } catch (e) {
-        expect(e.code).to.equal(3);
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DataTriggerConditionError');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Can\'t create top level domain for this identity');
+      expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
+      expect(broadcastError.data.errors[0].message).to.equal('Can\'t create top level domain for this identity');
     });
 
     it('should be able to register a second level domain', async () => {
@@ -143,6 +153,8 @@ describe('DPNS', () => {
     });
 
     it('should not be able to register a subdomain for parent domain which is not exist', async () => {
+      let broadcastError;
+
       try {
         const domain = `${getRandomDomain()}.${getRandomDomain()}.${topLevelDomain}`;
 
@@ -152,11 +164,14 @@ describe('DPNS', () => {
 
         expect.fail('Should throw error');
       } catch (e) {
-        expect(e.code).to.equal(3);
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Parent domain is not present');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Parent domain is not present');
+      expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
+      expect(broadcastError.data.errors[0].message).to.equal('Parent domain is not present');
     });
 
     it('should be able to search a domain', async () => {
@@ -187,6 +202,8 @@ describe('DPNS', () => {
     it('should not be able to update domain', async () => {
       registeredDomain.set('label', 'newlabel');
 
+      let broadcastError;
+
       try {
         await client.platform.documents.broadcast({
           replace: [registeredDomain],
@@ -194,26 +211,32 @@ describe('DPNS', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e.code).to.equal(3);
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Action is not allowed');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
+      expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });
 
     it('should not be able to delete domain', async () => {
+      let broadcastError;
+
       try {
         await client.platform.documents.broadcast({
           delete: [registeredDomain],
         }, identity);
-
-        expect.fail('should throw an error');
       } catch (e) {
-        expect(e.code).to.equal(3);
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DataTriggerConditionError');
-        expect(error.message).to.equal('Action is not allowed');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
+      expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });
 
     it('should not be able to register two domains with same `dashAliasIdentityId` record');

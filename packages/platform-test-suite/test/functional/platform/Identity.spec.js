@@ -13,9 +13,7 @@ const waitForBalanceToChange = require('../../../lib/test/waitForBalanceToChange
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Platform', () => {
-  describe('Identity', function main() {
-    this.timeout(700000);
-
+  describe('Identity', () => {
     let dpp;
     let client;
     let identity;
@@ -29,7 +27,7 @@ describe('Platform', () => {
       walletAccount = await client.getWalletAccount();
       ({
         publicKey: walletPublicKey,
-      } = walletAccount.getIdentityHDKeyByIndex(0, 0));
+      } = walletAccount.identities.getIdentityHDKeyByIndex(0, 0));
     });
 
     after(async () => {
@@ -68,15 +66,21 @@ describe('Platform', () => {
         client.platform, transaction, outputIndex, assetLockProof, privateKey,
       );
 
+      let broadcastError;
+
       try {
-        await client.getDAPIClient().platform.broadcastStateTransition(
-          invalidIdentityCreateTransition.toBuffer(),
+        await client.platform.broadcastStateTransition(
+          invalidIdentityCreateTransition,
         );
-        expect.fail('Error was not thrown');
       } catch (e) {
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('InvalidIdentityAssetLockProofSignatureError');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.be.equal(3);
+      expect(broadcastError.message).to.be.equal('State Transition is invalid: IdentityAssetLockTransactionNotFoundError: Contract doesn\'t contain type undefinedType');
+      const [error] = broadcastError.data.errors;
+      expect(error.name).to.equal('IdentityAssetLockTransactionNotFoundError');
     });
 
     it('should fail to create an identity with already used asset lock output', async () => {
@@ -100,8 +104,8 @@ describe('Platform', () => {
         client.platform, transaction, outputIndex, assetLockProof, privateKey,
       );
 
-      await client.getDAPIClient().platform.broadcastStateTransition(
-        identityCreateTransitionOne.toBuffer(),
+      await client.platform.broadcastStateTransition(
+        identityCreateTransitionOne,
       );
 
       walletAccount.storage.insertIdentityIdAtIndex(
@@ -117,16 +121,21 @@ describe('Platform', () => {
         client.platform, transaction, outputIndex, assetLockProof, privateKey,
       );
 
-      try {
-        await client.getDAPIClient().platform.broadcastStateTransition(
-          identityCreateDoubleSpendTransition.toBuffer(),
-        );
+      let broadcastError;
 
-        expect.fail('Error was not thrown');
+      try {
+        await client.platform.broadcastStateTransition(
+          identityCreateDoubleSpendTransition,
+        );
       } catch (e) {
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('IdentityAssetLockTransactionOutPointAlreadyExistsError');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.be.equal(3);
+      expect(broadcastError.message).to.be.equal('State Transition is invalid: IdentityAssetLockTransactionOutPointAlreadyExistsError: Asset lock transaction outPoint already exists');
+      const [error] = broadcastError.data.errors;
+      expect(error.name).to.equal('IdentityAssetLockTransactionOutPointAlreadyExistsError');
     });
 
     it('should fail to create an identity with already used public key', async () => {
@@ -156,17 +165,23 @@ describe('Platform', () => {
         privateKey,
       );
 
-      try {
-        await client.getDAPIClient().platform.broadcastStateTransition(
-          duplicateIdentityCreateTransition.toBuffer(),
-        );
+      let broadcastError;
 
-        expect.fail('Error was not thrown');
+      try {
+        await client.platform.broadcastStateTransition(
+          duplicateIdentityCreateTransition,
+        );
       } catch (e) {
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('IdentityPublicKeyAlreadyExistsError');
-        expect(Buffer.from(error.publicKeyHash)).to.deep.equal(identity.getPublicKeyById(0).hash());
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+
+      expect(broadcastError.code).to.be.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: IdentityPublicKeyAlreadyExistsError: Identity public key already exists');
+      const [error] = broadcastError.data.errors;
+      expect(error.name).to.equal('IdentityPublicKeyAlreadyExistsError');
+      expect(Buffer.from(error.publicKeyHash)).to.deep.equal(identity.getPublicKeyById(0).hash());
     });
 
     it('should be able to get newly created identity', async () => {
@@ -242,15 +257,19 @@ describe('Platform', () => {
           },
         );
 
+        let broadcastError;
+
         try {
           await client.platform.documents.broadcast({
             create: [document],
           }, identity);
-
-          expect.fail('Error was not thrown');
         } catch (e) {
-          expect(e.details).to.equal('Failed precondition: Not enough credits');
+          broadcastError = e;
         }
+
+        expect(broadcastError).to.exist();
+        expect(broadcastError.code).to.be.equal(9);
+        expect(broadcastError.message).to.be.equal('Failed precondition: Not enough credits');
       });
 
       it.skip('should fail top-up if instant lock is not valid', async () => {
@@ -277,16 +296,21 @@ describe('Platform', () => {
           privateKey,
         );
 
-        try {
-          await client.getDAPIClient().platform.broadcastStateTransition(
-            identityTopUpTransition.toBuffer(),
-          );
+        let broadcastError;
 
-          expect.fail('Error was not thrown');
+        try {
+          await client.platform.broadcastStateTransition(
+            identityTopUpTransition,
+          );
         } catch (e) {
-          const [error] = JSON.parse(e.metadata.get('errors'));
-          expect(error.name).to.equal('IdentityAssetLockTransactionNotFoundError');
+          broadcastError = e;
         }
+
+        expect(broadcastError).to.exist();
+        expect(broadcastError.code).to.be.equal(3);
+        expect(broadcastError.message).to.be.equal('State Transition is invalid: IdentityAssetLockTransactionNotFoundError: Contract doesn\'t contain type undefinedType');
+        const [error] = broadcastError.data.errors;
+        expect(error.name).to.equal('IdentityAssetLockTransactionNotFoundError');
       });
 
       it('should be able to top-up credit balance', async () => {
@@ -346,20 +370,25 @@ describe('Platform', () => {
           client.platform, transaction, outputIndex, assetLockProof, privateKey, identity.getId(),
         );
 
-        await client.getDAPIClient().platform.broadcastStateTransition(
-          identityTopUpTransitionOne.toBuffer(),
+        await client.platform.broadcastStateTransition(
+          identityTopUpTransitionOne,
         );
 
-        try {
-          await client.getDAPIClient().platform.broadcastStateTransition(
-            conflictingTopUpStateTransition.toBuffer(),
-          );
+        let broadcastError;
 
-          expect.fail('Error was not thrown');
+        try {
+          await client.platform.broadcastStateTransition(
+            conflictingTopUpStateTransition,
+          );
         } catch (e) {
-          const [error] = JSON.parse(e.metadata.get('errors'));
-          expect(error.name).to.equal('IdentityAssetLockTransactionOutPointAlreadyExistsError');
+          broadcastError = e;
         }
+
+        expect(broadcastError).to.exist();
+        expect(broadcastError.code).to.be.equal(3);
+        expect(broadcastError.message).to.be.equal('State Transition is invalid: IdentityAssetLockTransactionOutPointAlreadyExistsError: Asset lock transaction outPoint already exists');
+        const [error] = broadcastError.data.errors;
+        expect(error.name).to.equal('IdentityAssetLockTransactionOutPointAlreadyExistsError');
       });
     });
   });

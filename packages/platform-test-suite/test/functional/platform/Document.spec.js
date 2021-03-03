@@ -7,6 +7,8 @@ const getIdentityFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getIdentityFixture',
 );
 
+const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
+
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Platform', () => {
@@ -69,19 +71,21 @@ describe('Platform', () => {
         isValid: () => true,
       });
 
+      let broadcastError;
+
       try {
         await client.platform.documents.broadcast({
           create: [newDocument],
         }, identity);
-
-        expect.fail('should throw invalid argument error');
       } catch (e) {
-        const [error] = JSON.parse(e.metadata.get('errors')[0]);
-        expect(error.name).to.equal('InvalidDocumentTypeError');
-        expect(e.message).to.satisfy(
-          (msg) => msg.startsWith('3 INVALID_ARGUMENT: State Transition is invalid'),
-        );
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.be.equal(3);
+      expect(broadcastError.message).to.be.equal('State Transition is invalid: InvalidDocumentTypeError: Contract doesn\'t contain type undefinedType');
+      const [error] = broadcastError.data.errors;
+      expect(error.name).to.equal('InvalidDocumentTypeError');
     });
 
     it('should fail to create a new document with an unknown owner', async () => {
@@ -95,15 +99,20 @@ describe('Platform', () => {
         },
       );
 
+      let broadcastError;
+
       try {
         await client.platform.documents.broadcast({
           create: [document],
         }, unknownIdentity);
       } catch (e) {
-        expect(e.message).to.equal(
-          `Identity with ID ${unknownIdentity.getId()} is not associated with wallet, or it's not synced`,
-        );
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.message).to.equal(
+        `Identity with ID ${unknownIdentity.getId()} is not associated with wallet, or it's not synced`,
+      );
     });
 
     it('should fail to create a document that violates unique index constraint', async () => {
@@ -133,22 +142,29 @@ describe('Platform', () => {
         },
       );
 
+      let broadcastError;
+
       try {
         await client.platform.documents.broadcast({
           create: [secondDocument],
         }, identity);
-        expect.fail('Error was not thrown');
       } catch (e) {
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DuplicateDocumentError');
-        expect(error.indexDefinition).to.deep.equal({
-          unique: true,
-          properties: [
-            { $ownerId: 'asc' },
-            { firstName: 'desc' },
-          ],
-        });
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.be.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DuplicateDocumentError: Duplicate Document found');
+
+      const [error] = broadcastError.data.errors;
+      expect(error.name).to.equal('DuplicateDocumentError');
+      expect(error.indexDefinition).to.deep.equal({
+        unique: true,
+        properties: [
+          { $ownerId: 'asc' },
+          { firstName: 'desc' },
+        ],
+      });
     });
 
     it('should be able to create new document', async () => {
@@ -218,14 +234,30 @@ describe('Platform', () => {
 
       updatedAt.setMinutes(updatedAt.getMinutes() - 10);
 
+      let broadcastError;
+
+      const documentsBatchTransition = await client.platform.documents.broadcast({
+        replace: [storedDocument],
+      }, identity);
+
+      documentsBatchTransition.transitions[0].updatedAt = updatedAt;
+      documentsBatchTransition.transitions[0].revision += 1;
+      const signedTransition = await signStateTransition(
+        client.platform, documentsBatchTransition, identity,
+      );
+
       try {
-        await client.platform.documents.broadcast({
-          replace: [storedDocument],
-        }, identity);
+        await client.platform.broadcastStateTransition(signedTransition);
       } catch (e) {
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DocumentTimestampWindowViolationError');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DocumentTimestampWindowViolationError: Document updatedAt timestamp are out of block time window');
+      expect(broadcastError.code).to.be.equal(2);
+
+      const [error] = broadcastError.data.errors;
+      expect(error.name).to.equal('DocumentTimestampWindowViolationError');
     });
 
     it('should fail to create a new document with timestamp in violated time frame', async () => {
@@ -244,16 +276,22 @@ describe('Platform', () => {
 
       document.setUpdatedAt(createdAt);
 
+      let broadcastError;
+
       try {
         await client.platform.documents.broadcast({
           create: [document],
         }, identity);
-
-        expect.fail('Error was not thrown');
       } catch (e) {
-        const [error] = JSON.parse(e.metadata.get('errors'));
-        expect(error.name).to.equal('DocumentTimestampWindowViolationError');
+        broadcastError = e;
       }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.be.equal(2);
+      expect(broadcastError.message).to.be.equal('Invalid state transition: DocumentTimestampWindowViolationError: Document createdAt timestamp are out of block time window and 2 more');
+
+      const [error] = broadcastError.data.errors;
+      expect(error.name).to.equal('DocumentTimestampWindowViolationError');
     });
   });
 });

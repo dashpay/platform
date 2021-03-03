@@ -1,3 +1,18 @@
+# [0.18.0](https://github.com/dashevo/plaform-test-suite/compare/v0.17.0...v0.18.0) (2021-03-03)
+
+
+### Features
+
+* use SDK with new ST acknowledgment ([#96](https://github.com/dashevo/platform-test-suite/pull/96))
+
+
+### Bug Fixes
+
+* identity was used in a wrong way ([f115468](https://github.com/dashevo/plaform-test-suite/commit/f1154689e5a9c451a625a77c5b8c929e118a7fc6))
+* removed unused identity variable ([81f4839](https://github.com/dashevo/plaform-test-suite/commit/81f4839bc67a8fdcb0df6283dae3276a72c579d7))
+
+
+
 # [0.17.0](https://github.com/dashevo/plaform-test-suite/compare/v0.16.0...v0.17.0) (2020-12-30)
 
 
