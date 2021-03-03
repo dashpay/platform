@@ -1,3 +1,19 @@
+# [0.18.0](https://github.com/dashevo/dapi/compare/v0.17.1...v0.18.0) (2021-03-03)
+
+
+### Features
+
+* handle Unavailable ABCI error ([#337](https://github.com/dashevo/dapi/issues/337))
+* `waitForStateTransitionResult` endpoint ([#331](https://github.com/dashevo/dapi/issues/331), [#338](https://github.com/dashevo/dapi/issues/338), [#340](https://github.com/dashevo/dapi/issues/340), [#341](https://github.com/dashevo/dapi/issues/341))
+* replace `broadcast_tx_commit` with `broadcast_tx_sync` (#330)
+
+
+### BREAKING CHANGE
+
+* `broadcastStateTransition` doesn't wait for state transition commit. Use `waitForStateTransitionResult` to get ST acknowledgment.
+
+
+
 ## [0.17.1](https://github.com/dashevo/dapi/compare/v0.17.0...v0.17.1) (2021-01-19)
 
 
