@@ -1,10 +1,18 @@
+## [3.18.1](https://github.com/dashevo/DashJS/compare/v3.18.0...v3.18.1) (2021-03-03)
+
+
+### Features
+
+* handle wallet async errors ([#190](https://github.com/dashevo/DashJS/issues/190))
+
+
+
 # [3.18.0](https://github.com/dashevo/DashJS/compare/v3.18.0...v3.17.0) (2021-03-03)
 
 ### Features
 
-* update dependencies ([#186](https://github.com/dashevo/DashJS/issues/186), [#191](https://github.com/dashevo/js-dash-sdk/issues/191))
-* feat!: make identity derivation DIP-11 compatible ([#188](https://github.com/dashevo/DashJS/issues/188)
-* feat: wait for state transition result ([#180](https://github.com/dashevo/DashJS/issues/180))
+* make identity derivation DIP-11 compatible ([#188](https://github.com/dashevo/DashJS/issues/188)
+* more reliable and secure ST ack ([#180](https://github.com/dashevo/DashJS/issues/180))
 
 
 ### Bug Fixes
