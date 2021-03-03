@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { Account, Wallet } from "@dashevo/wallet-lib";
 import DAPIClientTransport from "@dashevo/wallet-lib/src/transport/DAPIClientTransport/DAPIClientTransport"
 import { Platform } from './Platform';
@@ -37,7 +38,7 @@ export interface ClientOpts {
  * Client class that wraps all components together to allow integrated payments on both the Dash Network (layer 1)
  * and the Dash Platform (layer 2).
  */
-export class Client {
+export class Client extends EventEmitter {
     public network: string = 'testnet';
     public wallet: Wallet | undefined;
     public account: Account | undefined;
@@ -53,6 +54,8 @@ export class Client {
      * @param {ClientOpts} [options] - options for SDK Client
      */
     constructor(options: ClientOpts = {}) {
+        super();
+
         this.options = {
             walletAccountIndex: 0,
             ...options
@@ -93,6 +96,11 @@ export class Client {
                 network: this.network,
                 ...this.options.wallet,
             });
+
+            // @ts-ignore
+            this.wallet.on('error', (error, context) => (
+                this.emit('error', error, { wallet: context })
+            ));
 
             // @ts-ignore
             this.walletAccountIndex = this.options.walletAccountIndex;
