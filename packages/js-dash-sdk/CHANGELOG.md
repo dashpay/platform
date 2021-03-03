@@ -1,3 +1,23 @@
+# [3.18.0](https://github.com/dashevo/DashJS/compare/v3.18.0...v3.17.0) (2021-03-03)
+
+### Features
+
+* update dependencies ([#186](https://github.com/dashevo/DashJS/issues/186), [#191](https://github.com/dashevo/js-dash-sdk/issues/191))
+* feat!: make identity derivation DIP-11 compatible ([#188](https://github.com/dashevo/DashJS/issues/188)
+* feat: wait for state transition result ([#180](https://github.com/dashevo/DashJS/issues/180))
+
+
+### Bug Fixes
+
+* ensure name search uses lowercase label ([#183](https://github.com/dashevo/DashJS/issues/183))
+
+
+### BREAKING CHANGES
+
+* Identities registered in versions prior to that one won't sync, as identities are now using hardened derivation and derived from the wallet, not from the account. This change is made to make JS SDK compatible with Android and iOS apps and DIP 11.
+
+
+
 # [3.17.0](https://github.com/dashevo/DashJS/compare/v3.16.2...v3.17.0) (2020-12-30)
 
 
