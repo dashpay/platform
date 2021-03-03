@@ -1,3 +1,17 @@
+# [0.18.0](https://github.com/dashevo/js-dpp/compare/v0.17.0...v0.18.0) (2021-03-03)
+
+
+### Features
+
+* get modified data ids from state transitions ([#290](https://github.com/dashevo/js-dpp/issues/290))
+
+
+### Bug Fixes
+
+* BLS was throwing an error inside `uncaughtException` handler ([#293](https://github.com/dashevo/js-dpp/issues/293))
+
+
+
 # [0.17.0](https://github.com/dashevo/js-dpp/compare/v0.16.0...v0.17.0) (2020-12-29)
 
 
