@@ -20,7 +20,6 @@ function getStatusHandlerFactory(insightAPI) {
       version,
       protocolversion,
       blocks,
-      timeoffset,
       connections,
       proxy,
       difficulty,
@@ -34,7 +33,6 @@ function getStatusHandlerFactory(insightAPI) {
     response.setCoreVersion(version);
     response.setProtocolVersion(protocolversion);
     response.setBlocks(blocks);
-    response.setTimeOffset(timeoffset);
     response.setConnections(connections);
     response.setProxy(proxy);
     response.setDifficulty(difficulty);

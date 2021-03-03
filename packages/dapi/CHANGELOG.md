@@ -1,3 +1,12 @@
+## [0.17.1](https://github.com/dashevo/dapi/compare/v0.17.0...v0.17.1) (2021-01-19)
+
+
+### Bug Fixes
+
+* **core:** timeOffset from Insight expected to be uint32 ([#332](https://github.com/dashevo/dapi/issues/332))
+
+
+
 # [0.17.0](https://github.com/dashevo/dapi/compare/v0.16.2...v0.17.0) (2020-12-30)
 
 
@@ -8,7 +17,7 @@
 * use new drive response format ([#316](https://github.com/dashevo/dapi/issues/316))
 * update dashcore-lib to 0.19.5 ([#312](https://github.com/dashevo/dapi/issues/312))
 
-
+k
 ### Bug Fixes
 
 * internal error if state transaction was broadcasted twice ([#328](https://github.com/dashevo/dapi/issues/328))
