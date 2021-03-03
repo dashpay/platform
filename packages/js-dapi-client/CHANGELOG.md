@@ -1,3 +1,23 @@
+# [0.18.0](https://github.com/dashevo/dapi-client/compare/v0.17.2...v0.18.0) (2021-03-03)
+
+
+### Bug Fixes
+
+* BLS was throwing an error inside `uncaughtException` handler ([#226](https://github.com/dashevo/dapi-client/issues/226))
+
+
+### Features
+
+
+* `waitForStateTransitionResult` method ([#221](https://github.com/dashevo/dapi-client/issues/221), ([#223](https://github.com/dashevo/dapi-client/issues/223))
+
+
+### Chores
+
+* remove temporary `timeout` option from `broadcastStateTransition` ([2abdf5](https://github.com/dashevo/js-dapi-client/commit/2abdf5dc45859bc142dd0f293d9f071190f2a59d))
+
+
+
 ## [0.17.2](https://github.com/dashevo/dapi-client/compare/v0.17.1...v0.17.2) (2020-12-30)
 
 
