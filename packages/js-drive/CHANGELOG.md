@@ -1,3 +1,77 @@
+# [0.18.0](https://github.com/dashevo/js-drive/compare/v0.17.14...v0.18.0) (2021-03-03)
+
+
+### Bug Fixes
+
+* ABCI request length error still not parsing properly ([#476](https://github.com/dashevo/js-drive/issues/476))
+
+
+### Features
+
+* output ABCI connection error message ([ff3660a](https://github.com/dashevo/js-drive/commit/ff3660a638f0f4170ff3f7242f84c256e75fa4c6))
+* getProofs ABCI query endpoint ([#451](https://github.com/dashevo/js-drive/issues/451), [#462](https://github.com/dashevo/js-drive/issues/462))
+
+
+
+## [0.17.14](https://github.com/dashevo/js-drive/compare/v0.18.0-dev.5...v0.17.14) (2021-02-20)
+
+
+### Bug Fixes
+
+* can't parse ABCI request length error ([f55fac7](https://github.com/dashevo/js-drive/commit/f55fac7aced9334cf26e930cfaf23258cec66a9d))
+
+
+
+# [0.18.0-dev.4](https://github.com/dashevo/js-drive/compare/v0.17.7...v0.18.0-dev.4) (2021-02-08)
+
+
+### Features
+
+* update dependencies ([#466](https://github.com/dashevo/js-drive/issues/466)) ([7e5943d](https://github.com/dashevo/js-drive/commit/7e5943d41996c31d5fa79da61fb0d4c778bdbbcf))
+* use different handler for ABCI connection error ([#465](https://github.com/dashevo/js-drive/issues/465)) ([5d6787a](https://github.com/dashevo/js-drive/commit/5d6787a05a4466223186100c91c691a4f37e1931))
+
+
+
+# [0.18.0-dev.3](https://github.com/dashevo/js-drive/compare/v0.17.6...v0.18.0-dev.3) (2021-02-02)
+
+
+### Bug Fixes
+
+* proofs abci query ([#462](https://github.com/dashevo/js-drive/issues/462)) ([115bc0c](https://github.com/dashevo/js-drive/commit/115bc0cf4f6a9fe0a08214acc1220e212540afa4))
+
+
+
+# [0.18.0-dev.2](https://github.com/dashevo/js-drive/compare/v0.17.5...v0.18.0-dev.2) (2021-01-21)
+
+
+
+# [0.18.0-dev.1](https://github.com/dashevo/js-drive/compare/v0.17.0...v0.18.0-dev.1) (2021-01-11)
+
+
+### Features
+
+* getProofs ABCI query ([#451](https://github.com/dashevo/js-drive/issues/451)) ([852094b](https://github.com/dashevo/js-drive/commit/852094b057440aaef5ea2e8e4dff4d90721c02c5))
+
+
+
+## [0.17.13](https://github.com/dashevo/js-drive/compare/v0.17.12...v0.17.13) (2021-02-19)
+
+
+### Features
+
+* reimplemented ABCI server for better reliability ([#475](https://github.com/dashevo/js-drive/issues/475)) ([4dc087b](https://github.com/dashevo/js-drive/commit/4dc087bcbda18b89116df2cc370d394c3ae13780))
+
+
+
+## [0.17.12](https://github.com/dashevo/js-drive/compare/v0.17.11...v0.17.12) (2021-02-16)
+
+
+### Features
+
+* better handle abci connection errors ([f4348e9](https://github.com/dashevo/js-drive/commit/f4348e944825dc9b554eec8dcf7752e972081b2a))
+
+
+
 ## [0.17.14](https://github.com/dashevo/js-drive/compare/v0.17.13...v0.17.14) (2021-02-20)
 
 
