@@ -1,3 +1,18 @@
+# [0.18.0](https://github.com/dashevo/dapi-grpc/compare/v0.17.0...v0.18.0) (2021-03-03)
+
+
+### Bug Fixes
+
+* lock file contained not patched protobufjs ([#104](https://github.com/dashevo/dapi-grpc/issues/104))
+
+
+### Features
+
+
+* `waitForStateTransitionResult` endpoint ([#99](https://github.com/dashevo/dapi-grpc/issues/99), [#101](https://github.com/dashevo/dapi-grpc/issues/101))
+
+
+
 # [0.17.0](https://github.com/dashevo/dapi-grpc/compare/v0.16.0...v0.17.0) (2020-12-29)
 
 
