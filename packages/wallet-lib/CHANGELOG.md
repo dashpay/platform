@@ -1,3 +1,30 @@
+# [7.18.0](https://github.com/dashevo/wallet-lib/compare/v7.17.2...v7.18.0) (2021-03-03)
+
+
+### Bug Fixes
+
+* UTXO being mixed up with multiple account in parallel ([#233](https://github.com/dashevo/wallet-lib/issues/233))
+
+
+### Features
+
+* workers and plugins error handling using events ([#221](https://github.com/dashevo/wallet-lib/issues/221))
+* aligning identityIndex as defined in DIP13 as hardened ([#222](https://github.com/dashevo/wallet-lib/issues/222))
+* add `skipSynchronizationBeforeHeight` unsafe option ([#217](https://github.com/dashevo/wallet-lib/issues/217))
+
+
+### Refactoring
+
+* Identities class ([#227](https://github.com/dashevo/wallet-lib/issues/227))
+
+
+### BREAKING CHANGES
+
+* to access identities from account use `account.identities` property
+* previous identity created with DashJS / Wallet-lib would not be resolvable anymore
+
+
+
 ## [7.17.2](https://github.com/dashevo/wallet-lib/compare/v7.17.1...v7.17.2) (2020-12-30)
 
 
