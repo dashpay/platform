@@ -101,12 +101,12 @@ class CoreStatusCommand extends ConfigBaseCommand {
       config.toEnvs(),
       'sentinel',
       'python bin/sentinel.py -v',
-    )).out.split('\n')[0].replace(/Dash Sentinel v/, '');
+    )).out.split(/\r?\n/)[0].replace(/Dash Sentinel v/, '');
     let sentinelState = (await dockerCompose.execCommand(
       config.toEnvs(),
       'sentinel',
       'python bin/sentinel.py',
-    )).out.split('\n')[0];
+    )).out.split(/\r?\n/)[0];
 
     // Determine status
     let status;

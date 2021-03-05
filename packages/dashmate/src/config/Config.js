@@ -134,6 +134,7 @@ class Config {
     return {
       COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
       CONFIG_NAME: this.getName(),
+      COMPOSE_PATH_SEPARATOR: ':',
       ...convertObjectToEnvs(this.getOptions()),
     };
   }

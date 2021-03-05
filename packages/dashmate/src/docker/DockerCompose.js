@@ -51,7 +51,7 @@ class DockerCompose {
       throw new DockerComposeError(e);
     }
 
-    containerName = containerName.trim().split('\n').pop();
+    containerName = containerName.trim().split(/\r?\n/).pop();
 
     this.startedContainers.addContainer(containerName);
 
@@ -210,7 +210,7 @@ class DockerCompose {
 
     return psOutput
       .trim()
-      .split('\n')
+      .split(/\r?\n/)
       .filter(Boolean);
   }
 
@@ -231,7 +231,7 @@ class DockerCompose {
 
     return volumeOutput
       .trim()
-      .split('\n');
+      .split(/\r?\n/);
   }
 
   /**
