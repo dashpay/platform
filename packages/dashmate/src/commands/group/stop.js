@@ -27,7 +27,9 @@ class GroupStopCommand extends GroupBaseCommand {
         {
           title: `Stop ${groupName} nodes`,
           task: () => (
-            new Listr(configGroup.map((config) => ({
+            // So we stop the miner first, as there's a chance that MNs will get banned
+            // if the miner is still running when stopping them
+            new Listr(configGroup.reverse().map((config) => ({
               task: () => stopNodeTask(config),
             })))
           ),

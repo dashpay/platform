@@ -73,7 +73,9 @@ function initializePlatformTaskFactory(
       {
         title: 'Stopping nodes',
         task: async () => {
-          const stopNodeTasks = configGroup.map((config) => ({
+          // So we stop the miner first, as there's a chance that MNs will get banned
+          // if the miner is still running when stopping them
+          const stopNodeTasks = configGroup.reverse().map((config) => ({
             title: `Stop ${config.getName()} node`,
             task: () => dockerCompose.stop(config.toEnvs()),
           }));

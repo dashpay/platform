@@ -15,7 +15,7 @@ async function waitForCoreQuorum(rpcClient) {
 
     if (quorums) {
       for (const quorum of Object.values(quorums)) {
-        if (quorum.length > 0) {
+        if (quorum.length > 1) {
           hasQuorums = true;
         }
       }

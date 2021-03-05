@@ -62,8 +62,6 @@ function initTaskFactory(
             wallet: {
               mnemonic: null,
             },
-            passFakeAssetLockProofForTests:
-              config.get('platform.drive.passFakeAssetLockProofForTests', true),
           });
 
           const amount = 40000;
