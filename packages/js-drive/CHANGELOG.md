@@ -1,3 +1,12 @@
+# [0.18.1](https://github.com/dashevo/js-drive/compare/v0.18.0...v0.18.1) (2021-03-08)
+
+
+### Documentation
+
+* polish changelog ([ac434e](https://github.com/dashevo/dapi/commit/ac434eea9e1588077445ac13a7f4c066a710a3ec))
+
+
+
 # [0.18.0](https://github.com/dashevo/js-drive/compare/v0.17.14...v0.18.0) (2021-03-03)
 
 
