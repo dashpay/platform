@@ -14,10 +14,10 @@ const {
 } = require('@dashevo/grpc-common');
 
 /**
- * @param {InsightAPI} insightAPI
+ * @param {CoreRpcClient} coreRPCClient
  * @returns {getBlockHandler}
  */
-function getBlockHandlerFactory(insightAPI) {
+function getBlockHandlerFactory(coreRPCClient) {
   /**
    * @typedef getBlockHandler
    * @param {Object} call
@@ -27,7 +27,7 @@ function getBlockHandlerFactory(insightAPI) {
     const { request } = call;
 
     const height = request.getHeight();
-    const hash = request.getHash();
+    let hash = request.getHash();
 
     if (!hash && !height) {
       throw new InvalidArgumentGrpcError('hash or height is not specified');
@@ -35,26 +35,31 @@ function getBlockHandlerFactory(insightAPI) {
 
     let serializedBlock;
 
-    if (hash) {
+    if (!hash) {
       try {
-        serializedBlock = await insightAPI.getRawBlockByHash(hash);
+        hash = await coreRPCClient.getBlockHash(height);
       } catch (e) {
-        if (e.statusCode === 404) {
-          throw new NotFoundGrpcError('Block not found');
-        }
-
-        throw e;
-      }
-    } else {
-      try {
-        serializedBlock = await insightAPI.getRawBlockByHeight(height);
-      } catch (e) {
-        if (e.statusCode === 400) {
+        if (e.code === -8) {
+          // Block height out of range
           throw new InvalidArgumentGrpcError('Invalid block height');
         }
+        if (e.code === -1) {
+          // Invalid argument (not integer or integer out of range)
+          throw new InvalidArgumentGrpcError(e.message);
+        }
 
         throw e;
       }
+    }
+
+    try {
+      serializedBlock = await coreRPCClient.getRawBlock(hash);
+    } catch (e) {
+      if (e.code === -5) {
+        throw new NotFoundGrpcError('Block not found');
+      }
+
+      throw e;
     }
 
     const response = new GetBlockResponse();

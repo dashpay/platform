@@ -145,7 +145,7 @@ const getRawTransaction = txid => new Promise((resolve, reject) => {
   });
 });
 
-const getRawBlock = txid => getBlock(txid, false);
+const getRawBlock = blockhash => getBlock(blockhash, false);
 
 // This is only for in-wallet transaction
 const getTransaction = txid => new Promise((resolve, reject) => {

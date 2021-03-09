@@ -57,7 +57,7 @@ function coreHandlersFactory(insightAPI, coreRPCClient, isProductionEnvironment)
   const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
 
   // getBlock
-  const getBlockHandler = getBlockHandlerFactory(insightAPI);
+  const getBlockHandler = getBlockHandlerFactory(coreRPCClient);
   const wrappedGetBlock = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetBlockRequest,
