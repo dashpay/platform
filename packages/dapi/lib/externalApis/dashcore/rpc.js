@@ -147,6 +147,7 @@ const getRawTransaction = txid => new Promise((resolve, reject) => {
 
 const getRawBlock = txid => getBlock(txid, false);
 
+// This is only for in-wallet transaction
 const getTransaction = txid => new Promise((resolve, reject) => {
   client.gettransaction(txid, (err, r) => {
     if (err) {

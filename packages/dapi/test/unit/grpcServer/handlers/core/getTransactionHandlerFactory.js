@@ -25,7 +25,7 @@ describe('getTransactionHandlerFactory', () => {
   let id;
   let rawTransactionFixture;
   let getTransactionHandler;
-  let insightAPIMock;
+  let coreRPCClientMock;
 
   beforeEach(function beforeEach() {
     id = 'id';
@@ -37,11 +37,11 @@ describe('getTransactionHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    insightAPIMock = {
-      getRawTransactionById: this.sinon.stub().resolves(rawTransactionFixture),
+    coreRPCClientMock = {
+      getRawTransaction: this.sinon.stub().resolves(rawTransactionFixture),
     };
 
-    getTransactionHandler = getTransactionHandlerFactory(insightAPIMock);
+    getTransactionHandler = getTransactionHandlerFactory(coreRPCClientMock);
   });
 
   it('should return valid result', async () => {
@@ -57,7 +57,7 @@ describe('getTransactionHandlerFactory', () => {
 
     expect(returnedTransaction.toString()).to.deep.equal(rawTransactionFixture);
 
-    expect(insightAPIMock.getRawTransactionById).to.be.calledOnceWith(id);
+    expect(coreRPCClientMock.getRawTransaction).to.be.calledOnceWith(id);
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {
@@ -71,14 +71,14 @@ describe('getTransactionHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('id is not specified');
-      expect(insightAPIMock.getRawTransactionById).to.be.not.called();
+      expect(coreRPCClientMock.getRawTransaction).to.be.not.called();
     }
   });
 
   it('should throw NotFoundGrpcError if transaction is not found', async () => {
     const error = new Error();
-    error.statusCode = 404;
-    insightAPIMock.getRawTransactionById.throws(error);
+    error.code = -5;
+    coreRPCClientMock.getRawTransaction.throws(error);
 
     try {
       await getTransactionHandler(call);
@@ -87,7 +87,7 @@ describe('getTransactionHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
       expect(e.getMessage()).to.equal('Transaction not found');
-      expect(insightAPIMock.getRawTransactionById).to.be.calledOnceWith(id);
+      expect(coreRPCClientMock.getRawTransaction).to.be.calledOnceWith(id);
     }
   });
 });

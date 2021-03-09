@@ -83,7 +83,7 @@ function coreHandlersFactory(insightAPI, coreRPCClient, isProductionEnvironment)
   );
 
   // getTransaction
-  const getTransactionHandler = getTransactionHandlerFactory(insightAPI);
+  const getTransactionHandler = getTransactionHandlerFactory(coreRPCClient);
   const wrappedGetTransaction = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetTransactionRequest,

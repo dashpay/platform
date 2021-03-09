@@ -16,10 +16,10 @@ const {
 } = require('@dashevo/grpc-common');
 
 /**
- * @param {InsightAPI} insightAPI
+ * @param {CoreRpcClient} coreRPCClient
  * @returns {getTransactionHandler}
  */
-function getTransactionHandlerFactory(insightAPI) {
+function getTransactionHandlerFactory(coreRPCClient) {
   /**
    * @typedef getTransactionHandler
    * @param {Object} call
@@ -36,9 +36,9 @@ function getTransactionHandlerFactory(insightAPI) {
 
     let serializedTransaction;
     try {
-      serializedTransaction = await insightAPI.getRawTransactionById(id);
+      serializedTransaction = await coreRPCClient.getRawTransaction(id);
     } catch (e) {
-      if (e.statusCode === 404) {
+      if (e.code === -5) {
         throw new NotFoundGrpcError('Transaction not found');
       }
 
