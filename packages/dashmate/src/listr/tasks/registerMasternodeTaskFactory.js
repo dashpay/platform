@@ -2,9 +2,10 @@ const { Listr } = require('listr2');
 
 const { Observable } = require('rxjs');
 
-const { NETWORK_LOCAL } = require('../../constants');
-
-const masternodeDashAmount = require('../../core/masternodeDashAmount');
+const {
+  NETWORK_LOCAL,
+  MASTERNODE_DASH_AMOUNT,
+} = require('../../constants');
 
 /**
  *
@@ -15,7 +16,6 @@ const masternodeDashAmount = require('../../core/masternodeDashAmount');
  * @param {waitForCoreSync} waitForCoreSync
  * @param {importPrivateKey} importPrivateKey
  * @param {getAddressBalance} getAddressBalance
- * @param {generateBlsKeys} generateBlsKeys
  * @param {sendToAddress} sendToAddress
  * @param {waitForConfirmations} waitForConfirmations
  * @param {registerMasternode} registerMasternode
@@ -29,7 +29,6 @@ function registerMasternodeTaskFactory(
   waitForCoreSync,
   importPrivateKey,
   getAddressBalance,
-  generateBlsKeys,
   sendToAddress,
   waitForConfirmations,
   registerMasternode,
@@ -40,12 +39,6 @@ function registerMasternodeTaskFactory(
    * @return {Listr}
    */
   function registerMasternodeTask(config) {
-    const operatorPrivateKey = config.get('core.masternode.operator.privateKey');
-
-    if (operatorPrivateKey !== null) {
-      throw new Error(`Masternode operator private key ('core.masternode.operator.privateKey') is already set in ${config.getName()} config`);
-    }
-
     return new Listr([
       {
         title: 'Start Core',
@@ -67,11 +60,25 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `${ctx.fundingPrivateKeyString} imported.`;
         },
+        options: { persistentOutput: true },
       },
       {
         title: 'Sync Core with network',
         enabled: () => config.get('network') !== NETWORK_LOCAL,
-        task: async (ctx) => waitForCoreSync(ctx.coreService),
+        task: async (ctx) => (
+          new Observable(async (observer) => {
+            await waitForCoreSync(
+              ctx.coreService,
+              (verificationProgress) => {
+                observer.next(`${(verificationProgress * 100).toFixed(2)}% complete`);
+              },
+            );
+
+            observer.complete();
+
+            return this;
+          })
+        ),
       },
       {
         title: 'Check funding address balance',
@@ -81,22 +88,10 @@ function registerMasternodeTaskFactory(
 
           const balance = await getAddressBalance(ctx.coreService, ctx.fundingAddress);
 
-          if (balance <= masternodeDashAmount) {
-            throw new Error(`You need to have more than ${masternodeDashAmount} Dash on your funding address`);
+          if (balance <= MASTERNODE_DASH_AMOUNT) {
+            throw new Error(`You need to have more than ${MASTERNODE_DASH_AMOUNT} Dash on your funding address`);
           }
         },
-      },
-      {
-        title: 'Generate a masternode operator key',
-        task: async (ctx, task) => {
-          ctx.operator = await generateBlsKeys();
-
-          config.set('core.masternode.operator.privateKey', ctx.operator.privateKey);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Public key: ${ctx.operator.publicKey}\nPrivate key: ${ctx.operator.privateKey}`;
-        },
-        options: { persistentOutput: true },
       },
       {
         title: 'Create a new collateral address',
@@ -119,14 +114,14 @@ function registerMasternodeTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: `Send ${masternodeDashAmount} dash from funding address to collateral address`,
+        title: `Send ${MASTERNODE_DASH_AMOUNT} dash from funding address to collateral address`,
         task: async (ctx, task) => {
           ctx.collateralTxId = await sendToAddress(
             ctx.coreService,
             ctx.fundingPrivateKeyString,
             ctx.fundingAddress,
             ctx.collateral.address,
-            masternodeDashAmount,
+            MASTERNODE_DASH_AMOUNT,
           );
 
           // eslint-disable-next-line no-param-reassign
@@ -135,14 +130,14 @@ function registerMasternodeTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Wait for 15 confirmations',
+        title: 'Wait for 1 confirmation',
         enabled: () => config.get('network') !== NETWORK_LOCAL,
         task: async (ctx) => (
           new Observable(async (observer) => {
             await waitForConfirmations(
               ctx.coreService,
               ctx.collateralTxId,
-              15,
+              1,
               (confirmations) => {
                 observer.next(`${confirmations} ${confirmations > 1 ? 'confirmations' : 'confirmation'}`);
               },

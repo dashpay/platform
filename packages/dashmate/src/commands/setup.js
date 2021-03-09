@@ -11,6 +11,7 @@ const {
   PRESETS,
   NODE_TYPES,
   NODE_TYPE_MASTERNODE,
+  MASTERNODE_DASH_AMOUNT,
 } = require('../constants');
 
 class SetupCommand extends BaseCommand {
@@ -30,6 +31,7 @@ class SetupCommand extends BaseCommand {
     {
       'external-ip': externalIp,
       'operator-bls-private-key': operatorBlsPrivateKey,
+      'funding-private-key': fundingPrivateKeyString,
       'drive-image-build-path': driveImageBuildPath,
       'dapi-image-build-path': dapiImageBuildPath,
       'node-count': nodeCount,
@@ -98,6 +100,7 @@ class SetupCommand extends BaseCommand {
         nodeCount,
         externalIp,
         operatorBlsPrivateKey,
+        fundingPrivateKeyString,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
@@ -126,6 +129,7 @@ SetupCommand.args = [{
 SetupCommand.flags = {
   'external-ip': flagTypes.string({ char: 'i', description: 'external ip' }),
   'operator-bls-private-key': flagTypes.string({ char: 'k', description: 'operator bls private key' }),
+  'funding-private-key': flagTypes.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
   update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),

@@ -15,6 +15,7 @@ const isSeedNode = require('../../../../util/isSeedNode');
  * @param {waitForCoreQuorum} waitForCoreQuorum
  * @param {generateToAddressTask} generateToAddressTask
  * @param {registerMasternodeTask} registerMasternodeTask
+ * @param {generateBlsKeys} generateBlsKeys
  * @return {configureCoreTask}
  */
 function configureCoreTaskFactory(
@@ -28,6 +29,7 @@ function configureCoreTaskFactory(
   waitForCoreQuorum,
   generateToAddressTask,
   registerMasternodeTask,
+  generateBlsKeys,
 ) {
   /**
    * @typedef {configureCoreTask}
@@ -124,6 +126,18 @@ function configureCoreTaskFactory(
                       task: () => {
                         ctx.coreService = ctx.coreServices[i];
                       },
+                    },
+                    {
+                      title: 'Generate a masternode operator key',
+                      task: async (task) => {
+                        ctx.operator = await generateBlsKeys();
+
+                        config.set('core.masternode.operator.privateKey', ctx.operator.privateKey);
+
+                        // eslint-disable-next-line no-param-reassign
+                        task.output = `Public key: ${ctx.operator.publicKey}\nPrivate key: ${ctx.operator.privateKey}`;
+                      },
+                      options: { persistentOutput: true },
                     },
                     {
                       title: 'Await for Core to sync',
