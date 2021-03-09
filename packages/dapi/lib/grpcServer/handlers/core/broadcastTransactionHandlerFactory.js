@@ -16,10 +16,10 @@ const {
 const { Transaction } = require('@dashevo/dashcore-lib');
 
 /**
- * @param {InsightAPI} insightAPI
+ * @param {CoreRpcClient} coreRPCClient
  * @returns {broadcastTransactionHandler}
  */
-function broadcastTransactionHandlerFactory(insightAPI) {
+function broadcastTransactionHandlerFactory(coreRPCClient) {
   /**
    * @typedef broadcastTransactionHandler
    * @param {Object} call
@@ -53,10 +53,15 @@ function broadcastTransactionHandlerFactory(insightAPI) {
 
     let transactionId;
     try {
-      transactionId = await insightAPI.sendTransaction(serializedTransaction.toString('hex'));
+      transactionId = await coreRPCClient.sendRawTransaction(serializedTransaction.toString('hex'));
     } catch (e) {
-      if (e.statusCode === 400) {
-        throw new InvalidArgumentGrpcError(`invalid transaction: ${e.error}`);
+      if ([-22, -25].includes(e.code)) {
+        throw new InvalidArgumentGrpcError(`invalid transaction: ${e.message}`);
+      }
+
+      if (e.code === -27) {
+        // RPC_VERIFY_ALREADY_IN_CHAIN
+        throw new InvalidArgumentGrpcError(`Cannot broadcast transaction: ${e.message}`);
       }
 
       throw e;

@@ -49,10 +49,11 @@ const broadcastTransactionHandlerFactory = require(
 
 /**
  * @param {InsightAPI} insightAPI
+ * @param {CoreRpcClient} coreRPCClient
  * @param {boolean} isProductionEnvironment
  * @returns {Object<string, function>}
  */
-function coreHandlersFactory(insightAPI, isProductionEnvironment) {
+function coreHandlersFactory(insightAPI, coreRPCClient, isProductionEnvironment) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
 
   // getBlock
@@ -95,7 +96,7 @@ function coreHandlersFactory(insightAPI, isProductionEnvironment) {
   );
 
   // broadcastTransaction
-  const broadcastTransactionHandler = broadcastTransactionHandlerFactory(insightAPI);
+  const broadcastTransactionHandler = broadcastTransactionHandlerFactory(coreRPCClient);
   const wrappedBroadcastTransaction = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       BroadcastTransactionRequest,

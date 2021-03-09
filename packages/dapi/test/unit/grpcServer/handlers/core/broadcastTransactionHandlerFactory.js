@@ -20,7 +20,7 @@ const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
 describe('broadcastTransactionHandlerFactory', () => {
   let call;
-  let insightAPIMock;
+  let coreRPCClientMock;
   let request;
   let serializedTransaction;
   let transactionId;
@@ -39,11 +39,11 @@ describe('broadcastTransactionHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    insightAPIMock = {
-      sendTransaction: this.sinon.stub().resolves(transactionId),
+    coreRPCClientMock = {
+      sendRawTransaction: this.sinon.stub().resolves(transactionId),
     };
 
-    broadcastTransactionHandler = broadcastTransactionHandlerFactory(insightAPIMock);
+    broadcastTransactionHandler = broadcastTransactionHandlerFactory(coreRPCClientMock);
   });
 
   it('should return valid result', async () => {
@@ -51,7 +51,7 @@ describe('broadcastTransactionHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(BroadcastTransactionResponse);
     expect(result.getTransactionId()).to.equal(transactionId);
-    expect(insightAPIMock.sendTransaction).to.be.calledOnceWith(serializedTransaction.toString('hex'));
+    expect(coreRPCClientMock.sendRawTransaction).to.be.calledOnceWith(serializedTransaction.toString('hex'));
   });
 
   it('should throw InvalidArgumentGrpcError error if transaction is not specified', async () => {
@@ -65,7 +65,7 @@ describe('broadcastTransactionHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('transaction is not specified');
-      expect(insightAPIMock.sendTransaction).to.be.not.called();
+      expect(coreRPCClientMock.sendRawTransaction).to.be.not.called();
     }
   });
 
@@ -80,7 +80,7 @@ describe('broadcastTransactionHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('invalid transaction:'));
-      expect(insightAPIMock.sendTransaction).to.be.not.called();
+      expect(coreRPCClientMock.sendRawTransaction).to.be.not.called();
     }
   });
 
@@ -95,7 +95,7 @@ describe('broadcastTransactionHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('invalid transaction:'));
-      expect(insightAPIMock.sendTransaction).to.be.not.called();
+      expect(coreRPCClientMock.sendRawTransaction).to.be.not.called();
     }
   });
 });

@@ -17,7 +17,7 @@ function generateToAddress(blocksNumber, address) {
   return new Promise((resolve, reject) => { // not exist?
     client.generateToAddress(blocksNumber, address, (err, r) => {
       if (err) {
-        reject(new DashCoreRpcError(err.message));
+        reject(new DashCoreRpcError(err.message, null, err.code));
       } else {
         resolve(r.result);
       }
@@ -28,7 +28,7 @@ function generateToAddress(blocksNumber, address) {
 const getBestBlockHash = () => new Promise((resolve, reject) => {
   client.getbestblockhash((err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -38,7 +38,7 @@ const getBestBlockHash = () => new Promise((resolve, reject) => {
 const getBestBlockHeight = () => new Promise((resolve, reject) => {
   client.getblockcount((err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -48,7 +48,7 @@ const getBestBlockHeight = () => new Promise((resolve, reject) => {
 const getBlock = (hash, isParsed = 1) => new Promise((resolve, reject) => {
   client.getblock(hash, isParsed, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -58,7 +58,7 @@ const getBlock = (hash, isParsed = 1) => new Promise((resolve, reject) => {
 const getBlockHash = index => new Promise((resolve, reject) => {
   client.getblockhash(index, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -68,7 +68,7 @@ const getBlockHash = index => new Promise((resolve, reject) => {
 const getBlockHeader = blockHash => new Promise((resolve, reject) => {
   client.getblockheader(blockHash, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -78,7 +78,7 @@ const getBlockHeader = blockHash => new Promise((resolve, reject) => {
 const getBlockHeaders = (offset, limit = 1, verbose = false) => new Promise((resolve, reject) => {
   client.getblockheaders(offset, limit, verbose, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -88,7 +88,7 @@ const getBlockHeaders = (offset, limit = 1, verbose = false) => new Promise((res
 const getMasternodesList = () => new Promise((resolve, reject) => {
   client.masternodelist((err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -98,7 +98,7 @@ const getMasternodesList = () => new Promise((resolve, reject) => {
 const getMempoolInfo = () => new Promise((resolve, reject) => {
   client.getmempoolinfo((err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -108,7 +108,7 @@ const getMempoolInfo = () => new Promise((resolve, reject) => {
 const getMnListDiff = (baseBlockHash, blockHash) => new Promise((resolve, reject) => {
   client.protx(constants.DASHCORE_RPC_COMMANDS.protx.diff, baseBlockHash, blockHash, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -127,7 +127,7 @@ const getQuorum = regtxid => new Promise((resolve, reject) => {
   // re-add when rpc getQuorum available
   // client.getquorum(regtxid, (err, r) => {
   //   if (err) {
-  //     reject(new DashCoreRpcError(err.message));
+  //     reject(new DashCoreRpcError(err.message, null, err.code));
   //   } else {
   //     resolve(r.result);
   //   }
@@ -138,7 +138,7 @@ const getQuorum = regtxid => new Promise((resolve, reject) => {
 const getRawTransaction = txid => new Promise((resolve, reject) => {
   client.getrawtransaction(txid, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -150,7 +150,7 @@ const getRawBlock = txid => getBlock(txid, false);
 const getTransaction = txid => new Promise((resolve, reject) => {
   client.gettransaction(txid, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -160,7 +160,7 @@ const getTransaction = txid => new Promise((resolve, reject) => {
 const getTransactionFirstInputAddress = txId => new Promise((resolve, reject) => {
   client.gettransaction(txId, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.details.address);
     }
@@ -170,7 +170,7 @@ const getTransactionFirstInputAddress = txId => new Promise((resolve, reject) =>
 const getUser = txId => new Promise((resolve, reject) => { // not exist?
   client.getuser(txId, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -181,7 +181,7 @@ const getUser = txId => new Promise((resolve, reject) => { // not exist?
 const getUTXO = addr => new Promise((resolve, reject) => {
   client.getaddressutxos(addr, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -214,7 +214,7 @@ const getMerkleBlocks = (bloomFilter, fromBlockHash, count) => new Promise((reso
 const sendRawTransition = ts => new Promise((resolve, reject) => { // not exist?
   client.sendrawtransition(ts, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -236,7 +236,7 @@ const sendRawTransition = ts => new Promise((resolve, reject) => { // not exist?
 const sendRawTransaction = tx => new Promise((resolve, reject) => {
   client.sendrawtransaction(tx, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
@@ -246,7 +246,7 @@ const sendRawTransaction = tx => new Promise((resolve, reject) => {
 const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
   client.sendrawtransaction(tx, false, true, (err, r) => {
     if (err) {
-      reject(new DashCoreRpcError(err.message));
+      reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
       resolve(r.result);
     }
