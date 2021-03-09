@@ -44,7 +44,8 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     );
 
     const explorerURLs = {
-      testnet: null,
+      testnet: 'https://rpc.cloudwheels.net:26657',
+      mainnet: '',
     };
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
@@ -91,7 +92,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     let explorerLatestBlockHeight;
     if (explorerURLs[config.options.network]) {
       try {
-        const explorerBlockHeightRes = await fetch(explorerURLs[config.options.network]);
+        const explorerBlockHeightRes = await fetch(`${explorerURLs[config.options.network]}/status`);
         ({
           result: {
             sync_info: {

@@ -1,3 +1,28 @@
+# [0.18.0](https://github.com/dashevo/mn-bootstrap/compare/v0.17.4...v0.18.0) (2021-03-03)
+
+
+### Bug Fixes
+
+* platform sync shows Infinity% ([#281](https://github.com/dashevo/mn-bootstrap/issues/281))
+* status command returns TypeError ([#251](https://github.com/dashevo/mn-bootstrap/issues/251))
+* uncaught errors when remote services down ([#241](https://github.com/dashevo/mn-bootstrap/issues/241))
+
+
+### Features
+
+* enable `llmq-qvved-sync` on testnet ([#267](https://github.com/dashevo/mn-bootstrap/issues/267))
+* include sentinel image version in config ([#265](https://github.com/dashevo/mn-bootstrap/issues/265))
+* update dashd to `0.17.0.0-rc3-hotfix1` ([#276](https://github.com/dashevo/mn-bootstrap/issues/276))
+* hard and soft resets, `--platform-only` option ([#249](https://github.com/dashevo/mn-bootstrap/issues/249), [#258](https://github.com/dashevo/mn-bootstrap/issues/258), [#272](https://github.com/dashevo/mn-bootstrap/issues/272))
+* update Tenderdash to 0.34.3 ([#274](https://github.com/dashevo/mn-bootstrap/issues/274))
+
+
+### Chores
+
+* remove evonet-specific code ([#268](https://github.com/dashevo/mn-bootstrap/issues/274))
+
+
+
 ## [0.17.4](https://github.com/dashevo/mn-bootstrap/compare/v0.17.3...v0.17.4) (2021-02-03)
 
 
