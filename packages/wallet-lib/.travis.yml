@@ -1,4 +1,4 @@
-dist: bionic
+dist: focal
 language: node_js
 
 # Support Active LTS versions of Node.js
@@ -17,8 +17,11 @@ services:
 
 addons:
   apt:
+    sources:
+      - sourceline: 'deb https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable'
     packages:
       - docker-ce
+      - jq
 
 env:
   - DOCKER_COMPOSE_VERSION=1.25.5

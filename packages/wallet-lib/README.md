@@ -26,7 +26,7 @@ A pure and extensible JavaScript Wallet Library for Dash
 
 In order to use this library, you will need to add it to your project as a dependency.
 
-Having [NodeJS](https://nodejs.org/) installed, just type in your terminal : 
+Having [NodeJS](https://nodejs.org/) installed, just type in your terminal :
 
 ```sh
 npm install @dashevo/wallet-lib
@@ -64,7 +64,7 @@ wallet.getAccount().then((account) => {
 });
 ```
 
-Wallet will by default connects to DAPI and use either localforage (browser based device) or a InMem adapter.  
+Wallet will by default connects to DAPI and use either localforage (browser based device) or a InMem adapter.
 Account will by default be on expected BIP44 path (...0/0).
 
 ### Transports:
@@ -80,7 +80,7 @@ Insight-Client has been removed from MVP and is not working since Wallet-lib v3.
 
 ## Documentation
 
-You can see some [Examples here](/docs/usage/examples.md).
+You can see some [examples here](/docs/usage/examples.md).
 
 More extensive documentation is available at https://dashevo.github.io/wallet-lib along with additional [examples & snippets](https://dashevo.github.io/wallet-lib/#/usage/examples).
 
