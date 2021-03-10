@@ -107,9 +107,7 @@ const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory')
 
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
-const waitForCoreChainLockSyncFallbackFactory = require('./core/waitForCoreChainLockSyncFallbackFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
-const detectStandaloneRegtestModeFactory = require('./core/detectStandaloneRegtestModeFactory');
 const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMasternodeListFactory');
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
@@ -156,7 +154,6 @@ const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
  * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
  * @param {string} options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE
  * @param {string} options.NETWORK
- * @param {string} options.IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION
  * @param {string} options.DPNS_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.DPNS_CONTRACT_ID
  * @param {string} options.DASHPAY_CONTRACT_ID
@@ -274,12 +271,7 @@ function createDIContainer(options) {
    * Register global DPP options
    */
   container.register({
-    dppOptions: asValue({
-      identities: {
-        skipAssetLockProofSignatureVerification: options
-          .IDENTITY_SKIP_ASSET_LOCK_CONFIRMATION_VALIDATION === 'true',
-      },
-    }),
+    dppOptions: asValue({}),
   });
 
   /**
@@ -964,12 +956,7 @@ function createDIContainer(options) {
    * Register Core stuff
    */
   container.register({
-    detectStandaloneRegtestMode: asFunction(detectStandaloneRegtestModeFactory).singleton(),
-
     waitForCoreSync: asFunction(waitForCoreSyncFactory).singleton(),
-
-    waitForCoreChainLockSyncFallback:
-      asFunction(waitForCoreChainLockSyncFallbackFactory).singleton(),
 
     updateSimplifiedMasternodeList: asFunction(updateSimplifiedMasternodeListFactory).singleton(),
 

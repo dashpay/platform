@@ -63,25 +63,20 @@ console.log(chalk.hex('#008de4')(banner));
 
   logger.info('Connecting to Core...');
 
-  const detectStandaloneRegtestMode = container.resolve('detectStandaloneRegtestMode');
-  const isStandaloneRegtestMode = await detectStandaloneRegtestMode();
-
   /**
    * Make sure Core is synced
    */
 
-  if (!isStandaloneRegtestMode) {
-    const waitForCoreSync = container.resolve('waitForCoreSync');
-    await waitForCoreSync((currentBlockHeight, currentHeaderNumber) => {
-      let message = `waiting for core to finish sync ${currentBlockHeight}/${currentHeaderNumber}...`;
+  const waitForCoreSync = container.resolve('waitForCoreSync');
+  await waitForCoreSync((currentBlockHeight, currentHeaderNumber) => {
+    let message = `waiting for core to finish sync ${currentBlockHeight}/${currentHeaderNumber}...`;
 
-      if (currentBlockHeight === 0 && currentHeaderNumber === 0) {
-        message = 'waiting for core to connect to peers...';
-      }
+    if (currentBlockHeight === 0 && currentHeaderNumber === 0) {
+      message = 'waiting for core to connect to peers...';
+    }
 
-      logger.info(message);
-    });
-  }
+    logger.info(message);
+  });
 
   /**
    * Connect to Core ZMQ socket
@@ -111,22 +106,28 @@ console.log(chalk.hex('#008de4')(banner));
     await errorHandler(error);
   }
 
-  if (!isStandaloneRegtestMode) {
-    logger.info('Obtaining the latest chain lock...');
-    const waitForCoreChainLockSync = container.resolve('waitForCoreChainLockSync');
-    await waitForCoreChainLockSync();
-  } else {
-    logger.info('Obtaining the latest core block for chain lock sync fallback...');
-    const waitForCoreChainLockSyncFallback = container.resolve('waitForCoreChainLockSyncFallback');
-    await waitForCoreChainLockSyncFallback();
-  }
+  /**
+   * Obtain chain lock
+   */
 
-  const waitForChainLockedHeight = container.resolve('waitForChainLockedHeight');
+  logger.info('Obtaining the latest chain lock...');
+
+  const waitForCoreChainLockSync = container.resolve('waitForCoreChainLockSync');
+  await waitForCoreChainLockSync();
+
+  /**
+   * Wait for initial core chain locked height
+   */
   const initialCoreChainLockedHeight = container.resolve('initialCoreChainLockedHeight');
 
   logger.info(`Waiting for initial core chain locked height #${initialCoreChainLockedHeight}...`);
 
+  const waitForChainLockedHeight = container.resolve('waitForChainLockedHeight');
   await waitForChainLockedHeight(initialCoreChainLockedHeight);
+
+  /**
+   * Start ABCI server
+   */
 
   const abciServer = container.resolve('abciServer');
 
