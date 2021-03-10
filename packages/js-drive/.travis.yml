@@ -1,4 +1,3 @@
-sudo: required
 dist: focal
 language: node_js
 
@@ -16,8 +15,10 @@ services:
 
 addons:
   apt:
+    sources:
+      - sourceline: 'deb https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable'
     packages:
-      - docker.io
+      - docker-ce
       - jq
 
 env:
