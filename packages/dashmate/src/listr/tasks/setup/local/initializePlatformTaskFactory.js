@@ -1,22 +1,23 @@
 const { Listr } = require('listr2');
 
-const wait = require('../../../../util/wait');
-const baseConfig = require('../../../../../configs/system/base');
-const isSeedNode = require('../../../../util/isSeedNode');
-const getSeedNodeConfig = require('../../../../util/getSeedNodeConfig');
-
 /**
  *
  * @param {startNodeTask} startNodeTask
  * @param {initTask} initTask
- * @param {activateSporksTask} activateSporksTask
+ * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
+ * @param {activateCoreSpork} activateCoreSpork
+ * @param {enableCoreQuorums} enableCoreQuorums
+ * @param {createRpcClient} createRpcClient
  * @param {DockerCompose} dockerCompose
  * @return {initializePlatformTask}
  */
 function initializePlatformTaskFactory(
   startNodeTask,
   initTask,
-  activateSporksTask,
+  waitForNodeToBeReadyTask,
+  activateCoreSpork,
+  enableCoreQuorums,
+  createRpcClient,
   dockerCompose,
 ) {
   /**
@@ -25,14 +26,9 @@ function initializePlatformTaskFactory(
    * @return {Listr}
    */
   function initializePlatformTask(configGroup) {
+    const seedConfig = configGroup.find((config) => !config.isPlatformServicesEnabled());
+
     return new Listr([
-      {
-        task: () => {
-          // to activate sporks faster, set miner interval to 2s
-          const seedNodeConfig = getSeedNodeConfig(configGroup);
-          seedNodeConfig.set('core.miner.interval', '2s');
-        },
-      },
       {
         title: 'Starting nodes',
         task: async (ctx) => {
@@ -44,7 +40,7 @@ function initializePlatformTaskFactory(
                 driveImageBuildPath: ctx.driveImageBuildPath,
                 dapiImageBuildPath: ctx.dapiImageBuildPath,
                 // run miner only at seed node
-                isMinerEnabled: isSeedNode(config),
+                isMinerEnabled: !config.isPlatformServicesEnabled(),
               },
             ),
           }));
@@ -53,21 +49,60 @@ function initializePlatformTaskFactory(
         },
       },
       {
-        title: 'Wait 20 seconds to ensure all services are running',
-        task: () => wait(20000),
+        title: 'Await for nodes to be ready',
+        task: async () => {
+          await Promise.all(
+            configGroup
+              .filter((config) => config.isPlatformServicesEnabled())
+              .map(waitForNodeToBeReadyTask),
+          );
+        },
       },
       {
-        title: 'Activate sporks',
-        task: () => activateSporksTask(configGroup),
+        title: 'Enable sporks',
+        task: async (ctx) => {
+          ctx.rpcClient = createRpcClient({
+            port: seedConfig.get('core.rpc.port'),
+            user: seedConfig.get('core.rpc.user'),
+            pass: seedConfig.get('core.rpc.password'),
+          });
+
+          const sporks = [
+            'SPORK_2_INSTANTSEND_ENABLED',
+            'SPORK_3_INSTANTSEND_BLOCK_FILTERING',
+            'SPORK_9_SUPERBLOCKS_ENABLED',
+            'SPORK_17_QUORUM_DKG_ENABLED',
+            'SPORK_19_CHAINLOCKS_ENABLED',
+          ];
+
+          await Promise.all(
+            sporks.map(async (spork) => (
+              activateCoreSpork(ctx.rpcClient, spork))),
+          );
+        },
+      },
+      {
+        title: 'Wait for quorums to be enabled',
+        task: async (ctx) => {
+          const network = seedConfig.get('network');
+
+          await enableCoreQuorums(ctx.rpcClient, network);
+        },
       },
       {
         task: () => initTask(configGroup[0]),
       },
       {
         task: () => {
-          // back to default
-          const seedNodeConfig = getSeedNodeConfig(configGroup);
-          seedNodeConfig.set('core.miner.interval', baseConfig.core.miner.interval);
+          // set platform data contracts
+          const [initializedConfig, ...otherConfigs] = configGroup;
+
+          otherConfigs
+            .filter((config) => config.isPlatformServicesEnabled())
+            .forEach((config) => {
+              config.set('platform.dpns', initializedConfig.get('platform.dpns'));
+              config.set('platform.dashpay', initializedConfig.get('platform.dashpay'));
+            });
         },
       },
       {

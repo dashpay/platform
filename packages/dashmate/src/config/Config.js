@@ -127,6 +127,13 @@ class Config {
   }
 
   /**
+   * @return {boolean}
+   */
+  isPlatformServicesEnabled() {
+    return this.get('compose.file').includes('docker-compose.platform.yml');
+  }
+
+  /**
    *
    * @return {{CONFIG_NAME: string, COMPOSE_PROJECT_NAME: string}}
    */

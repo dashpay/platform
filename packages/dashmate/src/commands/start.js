@@ -12,6 +12,7 @@ class StartCommand extends ConfigBaseCommand {
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
    * @param {startNodeTask} startNodeTask
+   * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
    * @param {Config} config
    * @return {Promise<void>}
    */
@@ -21,10 +22,12 @@ class StartCommand extends ConfigBaseCommand {
       update: isUpdate,
       'drive-image-build-path': driveImageBuildPath,
       'dapi-image-build-path': dapiImageBuildPath,
+      'wait-for-readiness': waitForReadiness,
       verbose: isVerbose,
     },
     dockerCompose,
     startNodeTask,
+    waitForNodeToBeReadyTask,
     config,
   ) {
     const tasks = new Listr(
@@ -39,6 +42,11 @@ class StartCommand extends ConfigBaseCommand {
               isUpdate,
             },
           ),
+        },
+        {
+          title: 'Await for nodes to be ready',
+          enabled: waitForReadiness,
+          task: () => waitForNodeToBeReadyTask(config),
         },
       ],
       {
@@ -69,6 +77,7 @@ StartCommand.flags = {
   update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),
+  'wait-for-readiness': flagTypes.boolean({ description: 'await for nodes to be ready', default: false }),
 };
 
 module.exports = StartCommand;

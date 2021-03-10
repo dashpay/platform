@@ -14,14 +14,6 @@ function setupLocalPresetTaskFactory(
   initializePlatformTask,
 ) {
   /**
-   * @param {Config} config
-   * @return {boolean}
-   */
-  function isSeedNode(config) {
-    return config.getName() === 'local_seed';
-  }
-
-  /**
    * @typedef {setupLocalPresetTask}
    * @return {Listr}
    */
@@ -72,7 +64,7 @@ function setupLocalPresetTaskFactory(
                 config.set('core.rpc.port', 20002 + (i * 100));
                 config.set('externalIp', '127.0.0.1');
 
-                if (isSeedNode(config)) {
+                if (!config.isPlatformServicesEnabled()) {
                   config.set('description', 'seed node for local network');
 
                   config.set('compose.file', 'docker-compose.yml');

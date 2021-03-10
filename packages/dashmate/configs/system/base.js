@@ -65,7 +65,7 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.18-dev',
+          image: 'dashpay/dapi:0.18',
         },
       },
       insight: {
@@ -82,7 +82,7 @@ module.exports = {
       },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.18-dev',
+          image: 'dashpay/drive:0.18',
         },
         log: {
           stdout: {

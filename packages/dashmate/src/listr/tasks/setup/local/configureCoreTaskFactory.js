@@ -2,7 +2,6 @@ const { Listr } = require('listr2');
 const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
-const isSeedNode = require('../../../../util/isSeedNode');
 
 /**
  * @param {resolveDockerHostIp} resolveDockerHostIp
@@ -12,7 +11,7 @@ const isSeedNode = require('../../../../util/isSeedNode');
  * @param {generateBlocks} generateBlocks
  * @param {waitForCoreSync} waitForCoreSync
  * @param {activateCoreSpork} activateCoreSpork
- * @param {waitForCoreQuorum} waitForCoreQuorum
+ * @param {enableCoreQuorums} enableCoreQuorums
  * @param {generateToAddressTask} generateToAddressTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {generateBlsKeys} generateBlsKeys
@@ -26,7 +25,7 @@ function configureCoreTaskFactory(
   generateBlocks,
   waitForCoreSync,
   activateCoreSpork,
-  waitForCoreQuorum,
+  enableCoreQuorums,
   generateToAddressTask,
   registerMasternodeTask,
   generateBlsKeys,
@@ -68,7 +67,8 @@ function configureCoreTaskFactory(
               sporkAddress,
             );
 
-            if (isSeedNode(config)) {
+            // Set private key to seed node
+            if (!config.isPlatformServicesEnabled()) {
               config.set(
                 'core.spork.privateKey',
                 sporkPrivKey.toWIF(),

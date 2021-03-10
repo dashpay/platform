@@ -31,9 +31,7 @@ class ResetCommand extends ConfigBaseCommand {
       throw new Error(`Cannot hard reset non-system config "${config.getName()}"`);
     }
 
-    const isPlatformServicesEnabled = config.get('compose.file').includes('docker-compose.platform.yml');
-
-    if (isPlatformServicesEnabled && isPlatformOnlyReset) {
+    if (config.isPlatformServicesEnabled() && isPlatformOnlyReset) {
       throw new Error('Cannot reset platform only if platform services are not enabled in config');
     }
 

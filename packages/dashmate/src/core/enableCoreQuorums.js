@@ -1,13 +1,18 @@
+const { PrivateKey } = require('@dashevo/dashcore-lib');
 const wait = require('../util/wait');
 
 /**
  * Wait Core to set quorum
  *
- * @typedef {waitForCoreQuorum}
+ * @typedef {enableCoreQuorums}
  * @param {RpcClient} rpcClient
+ * @param {string} network
  * @return {Promise<void>}
  */
-async function waitForCoreQuorum(rpcClient) {
+async function enableCoreQuorums(rpcClient, network) {
+  const privateKey = new PrivateKey();
+  const address = privateKey.toAddress(network).toString();
+
   let hasQuorums = false;
 
   do {
@@ -22,9 +27,10 @@ async function waitForCoreQuorum(rpcClient) {
     }
 
     if (!hasQuorums) {
-      await wait(10000);
+      await rpcClient.generateToAddress(1, address, 10000000);
+      await wait(5000);
     }
   } while (!hasQuorums);
 }
 
-module.exports = waitForCoreQuorum;
+module.exports = enableCoreQuorums;
