@@ -5,7 +5,7 @@ const wait = require('../util/wait');
  * @typedef waitForBlocks
  * @param {CoreService} coreService
  * @param {number} blocks
- * @param {function(confirmations: number)} progressCallback
+ * @param {function(confirmations: number)} [progressCallback]
  * @returns {Promise<void>}
  */
 async function waitForBlocks(coreService, blocks, progressCallback = () => {}) {

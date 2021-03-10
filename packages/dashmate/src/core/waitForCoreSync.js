@@ -5,10 +5,10 @@ const wait = require('../util/wait');
  *
  * @typedef {waitForCoreSync}
  * @param {CoreService} coreService
- * @param {function(progress: number)} progressCallback
+ * @param {function(progress: number)} [progressCallback]
  * @return {Promise<void>}
  */
-async function waitForCoreSync(coreService, progressCallback) {
+async function waitForCoreSync(coreService, progressCallback = () => {}) {
   let isSynced = false;
   let isBlockchainSynced = false;
   let verificationProgress = 0.0;

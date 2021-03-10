@@ -6,7 +6,7 @@ const wait = require('../util/wait');
  * @param {CoreService} coreService
  * @param {string} txHash
  * @param {number} confirmations
- * @param {function(confirmations: number)} progressCallback
+ * @param {function(confirmations: number)} [progressCallback]
  * @returns {Promise<void>}
  */
 async function waitForConfirmations(
