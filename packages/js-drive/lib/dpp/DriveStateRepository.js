@@ -232,12 +232,33 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch Simplified Masternode List Store
+   * Verify instant lock
    *
-   * @return {Promise<SimplifiedMNListStore>}
+   * @param {InstantLock} instantLock
+   *
+   * @return {Promise<boolean>}
    */
-  async fetchSMLStore() {
-    return this.simplifiedMasternodeList.getStore();
+  async verifyInstantLock(instantLock) {
+    const { coreChainLockedHeight } = this.blockExecutionContext.getHeader();
+
+    try {
+      const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
+        instantLock.getRequestId().toString('hex'),
+        instantLock.txid,
+        instantLock.signature,
+        coreChainLockedHeight,
+      );
+
+      return isVerified;
+    } catch (e) {
+      // Invalid address or key error or
+      // Invalid, missing or duplicate parameter
+      if ([-8, -5].includes(e.code)) {
+        return false;
+      }
+
+      throw e;
+    }
   }
 
   /**

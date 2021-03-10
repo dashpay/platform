@@ -346,17 +346,19 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch Simplified Masternode List Store
+   * Verify instant lock
    *
-   * @return {Promise<SimplifiedMNListStore>}
+   * @param {InstantLock} instantLock
+   *
+   * @return {Promise<boolean>}
    */
-  async fetchSMLStore() {
+  async verifyInstantLock(instantLock) {
     let response;
 
     try {
-      response = await this.stateRepository.fetchSMLStore();
+      response = await this.stateRepository.verifyInstantLock(instantLock);
     } finally {
-      this.log('fetchSMLStore', { }, response);
+      this.log('verifyInstantLock', { instantLock }, response);
     }
 
     return response;

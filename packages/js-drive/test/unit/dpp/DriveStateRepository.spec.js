@@ -22,6 +22,7 @@ describe('DriveStateRepository', () => {
   let transactionMock;
   let blockExecutionContextMock;
   let simplifiedMasternodeListMock;
+  let instantLockMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -31,6 +32,7 @@ describe('DriveStateRepository', () => {
 
     coreRpcClientMock = {
       getRawTransaction: this.sinon.stub(),
+      verifyIsLock: this.sinon.stub(),
     };
 
     dataContractRepositoryMock = {
@@ -88,6 +90,12 @@ describe('DriveStateRepository', () => {
     );
 
     transactionMock = {};
+
+    instantLockMock = {
+      getRequestId: () => 'someRequestId',
+      txid: 'someTxId',
+      signature: 'signature',
+    };
 
     blockExecutionDBTransactionsMock.getTransaction.returns(transactionMock);
   });
@@ -316,15 +324,64 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#fetchSMLStore', () => {
-    it('should fetch SML store', async () => {
-      const smlStore = {};
+  describe('#verifyInstantLock', () => {
+    it('should verify instant lock', async () => {
+      blockExecutionContextMock.getHeader.returns({
+        coreChainLockedHeight: 42,
+      });
+      coreRpcClientMock.verifyIsLock.resolves({ result: true });
 
-      simplifiedMasternodeListMock.getStore.resolves(smlStore);
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
 
-      const result = await stateRepository.fetchSMLStore();
+      expect(result).to.equal(true);
+      expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
+        'someRequestId',
+        'someTxId',
+        'signature',
+        42,
+      );
+    });
 
-      expect(result).to.equal(smlStore);
+    it('should return false if core throws Invalid address or key error', async () => {
+      blockExecutionContextMock.getHeader.returns({
+        coreChainLockedHeight: 42,
+      });
+
+      const error = new Error('Some error');
+      error.code = -5;
+
+      coreRpcClientMock.verifyIsLock.throws(error);
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
+
+      expect(result).to.equal(false);
+      expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
+        'someRequestId',
+        'someTxId',
+        'signature',
+        42,
+      );
+    });
+
+    it('should return false if core throws Invalid parameter', async () => {
+      blockExecutionContextMock.getHeader.returns({
+        coreChainLockedHeight: 42,
+      });
+
+      const error = new Error('Some error');
+      error.code = -8;
+
+      coreRpcClientMock.verifyIsLock.throws(error);
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
+
+      expect(result).to.equal(false);
+      expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
+        'someRequestId',
+        'someTxId',
+        'signature',
+        42,
+      );
     });
   });
 });

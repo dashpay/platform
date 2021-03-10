@@ -166,12 +166,14 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch Simplified Masternode List Store
+   * Verify instant lock
    *
-   * @return {Promise<SimplifiedMNListStore>}
+   * @param {InstantLock} instantLock
+   *
+   * @return {Promise<boolean>}
    */
-  async fetchSMLStore() {
-    return this.stateRepository.fetchSMLStore();
+  async verifyInstantLock(instantLock) {
+    return this.stateRepository.verifyInstantLock(instantLock);
   }
 }
 
