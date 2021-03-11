@@ -54,12 +54,14 @@ class GroupStartCommand extends GroupBaseCommand {
         {
           title: 'Await for nodes to be ready',
           enabled: waitForReadiness,
-          task: async () => {
-            await Promise.all(
-              configGroup
-                .filter((config) => config.isPlatformServicesEnabled())
-                .map(waitForNodeToBeReadyTask),
-            );
+          task: () => {
+            const waitForNodeToBeReadyTasks = configGroup
+              .filter((config) => config.isPlatformServicesEnabled())
+              .map((config) => ({
+                task: () => waitForNodeToBeReadyTask(config),
+              }));
+
+            return new Listr(waitForNodeToBeReadyTasks);
           },
         },
       ],
