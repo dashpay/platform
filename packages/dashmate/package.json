@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/mn-bootstrap",
-  "version": "0.19.0-dev.5",
+  "version": "0.19.0-dev.6",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
