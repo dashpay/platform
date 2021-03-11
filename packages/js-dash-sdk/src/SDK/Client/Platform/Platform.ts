@@ -138,6 +138,7 @@ export class Platform {
             // perform the check as in this client we always use a new transaction
             // register/top up identity
             checkAssetLockTransactionOutPointExists() { return false; },
+            verifyInstantLock() { return true; },
         };
 
         this.dpp = new DashPlatformProtocol({

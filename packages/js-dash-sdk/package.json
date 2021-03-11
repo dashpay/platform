@@ -33,8 +33,8 @@
   "dependencies": {
     "@dashevo/dapi-client": "~0.18.0",
     "@dashevo/dashcore-lib": "~0.19.21",
-    "@dashevo/dpp": "~0.18.0",
-    "@dashevo/wallet-lib": "~7.18.0",
+    "@dashevo/dpp": "~0.19.0-dev.1",
+    "@dashevo/wallet-lib": "~7.19.0-dev.1",
     "bs58": "^4.0.1"
   },
   "devDependencies": {
