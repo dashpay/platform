@@ -82,7 +82,7 @@ module.exports = {
       },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.18',
+          image: 'dashpay/drive:0.19-dev',
         },
         log: {
           stdout: {
