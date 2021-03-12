@@ -142,7 +142,7 @@ function configureCoreTaskFactory(
                     {
                       title: 'Await for Core to sync',
                       enabled: () => i > 0,
-                      task: () => waitForCoreSync(ctx.coreService),
+                      task: () => waitForCoreSync(ctx.coreService.getRpcClient()),
                     },
                     {
                       title: `Generate ${amount} dash to local wallet`,

@@ -24,14 +24,7 @@ function waitForNodeToBeReadyTaskFactory(
 
           let success = false;
           do {
-            console.log(config.getName());
-
-            const response = await tenderdashRpcClient.request('status', {})
-              .catch((e) => {
-                console.log(e);
-              });
-
-            console.log(response);
+            const response = await tenderdashRpcClient.request('status', {}).catch(() => {});
 
             if (response) {
               success = !response.error;

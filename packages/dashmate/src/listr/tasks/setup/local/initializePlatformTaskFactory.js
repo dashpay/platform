@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const waitForCoreSync = require('../../../../core/waitForCoreSync');
 
 /**
  *
@@ -49,19 +50,7 @@ function initializePlatformTaskFactory(
         },
       },
       {
-        title: 'Await for nodes to be ready',
-        task: () => {
-          const waitForNodeToBeReadyTasks = configGroup
-            .filter((config) => config.isPlatformServicesEnabled())
-            .map((config) => ({
-              task: () => waitForNodeToBeReadyTask(config),
-            }));
-
-          return new Listr(waitForNodeToBeReadyTasks);
-        },
-      },
-      {
-        title: 'Enable sporks',
+        title: 'Waiting for Core seed node to be avalable',
         task: async (ctx) => {
           ctx.rpcClient = createRpcClient({
             port: seedConfig.get('core.rpc.port'),
@@ -69,6 +58,12 @@ function initializePlatformTaskFactory(
             pass: seedConfig.get('core.rpc.password'),
           });
 
+          await waitForCoreSync(ctx.rpcClient);
+        },
+      },
+      {
+        title: 'Enable sporks',
+        task: async (ctx) => {
           const sporks = [
             'SPORK_2_INSTANTSEND_ENABLED',
             'SPORK_3_INSTANTSEND_BLOCK_FILTERING',
@@ -89,6 +84,18 @@ function initializePlatformTaskFactory(
           const network = seedConfig.get('network');
 
           await enableCoreQuorums(ctx.rpcClient, network);
+        },
+      },
+      {
+        title: 'Await for nodes to be ready',
+        task: () => {
+          const waitForNodeToBeReadyTasks = configGroup
+            .filter((config) => config.isPlatformServicesEnabled())
+            .map((config) => ({
+              task: () => waitForNodeToBeReadyTask(config),
+            }));
+
+          return new Listr(waitForNodeToBeReadyTasks);
         },
       },
       {

@@ -4,11 +4,11 @@ const wait = require('../util/wait');
  * Wait Core to be synced
  *
  * @typedef {waitForCoreSync}
- * @param {CoreService} coreService
+ * @param {RpcClient} rpcClient
  * @param {function(progress: number)} [progressCallback]
  * @return {Promise<void>}
  */
-async function waitForCoreSync(coreService, progressCallback = () => {}) {
+async function waitForCoreSync(rpcClient, progressCallback = () => {}) {
   let isSynced = false;
   let isBlockchainSynced = false;
   let verificationProgress = 0.0;
@@ -16,10 +16,10 @@ async function waitForCoreSync(coreService, progressCallback = () => {}) {
   do {
     ({
       result: { IsSynced: isSynced, IsBlockchainSynced: isBlockchainSynced },
-    } = await coreService.getRpcClient().mnsync('status'));
+    } = await rpcClient.mnsync('status'));
     ({
       result: { verificationprogress: verificationProgress },
-    } = await coreService.getRpcClient().getBlockchainInfo());
+    } = await rpcClient.getBlockchainInfo());
 
     if (!isSynced || !isBlockchainSynced) {
       await wait(10000);
