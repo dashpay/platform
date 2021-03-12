@@ -4,7 +4,7 @@ const SimplifiedMNListStore = require('@dashevo/dashcore-lib/lib/deterministicmn
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
 describe('updateSimplifiedMasternodeListFactory', function main() {
-  this.timeout(90000);
+  this.timeout(190000);
 
   let mongoDB;
   let container;
