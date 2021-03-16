@@ -239,7 +239,12 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async verifyInstantLock(instantLock) {
-    const { coreChainLockedHeight } = this.blockExecutionContext.getHeader();
+    const header = this.blockExecutionContext.getHeader();
+
+    let coreChainLockedHeight;
+    if (header) {
+      ({ coreChainLockedHeight } = header);
+    }
 
     try {
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(

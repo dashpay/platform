@@ -383,5 +383,23 @@ describe('DriveStateRepository', () => {
         42,
       );
     });
+
+    it('should return false if header is null', async () => {
+      blockExecutionContextMock.getHeader.resolves(null);
+
+      const error = new Error('Some error');
+      error.code = -8;
+
+      coreRpcClientMock.verifyIsLock.throws(error);
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
+      expect(result).to.equal(false);
+      expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
+        'someRequestId',
+        'someTxId',
+        'signature',
+        undefined,
+      );
+    });
   });
 });
