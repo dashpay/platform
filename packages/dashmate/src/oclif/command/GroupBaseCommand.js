@@ -27,7 +27,7 @@ class GroupBaseCommand extends BaseCommand {
       }
 
       if (!configFile.isGroupExists(defaultGroupName)) {
-        throw new Error(`Default group ${defaultGroupName} is not exist. Please use '--group' option or change default group`);
+        throw new Error(`Default group ${defaultGroupName} does not exist. Please use '--group' option or change default group`);
       }
 
       groupName = defaultGroupName;

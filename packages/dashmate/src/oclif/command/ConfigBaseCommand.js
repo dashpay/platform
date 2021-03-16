@@ -27,7 +27,7 @@ class GroupBaseCommand extends BaseCommand {
       }
 
       if (!configFile.isConfigExists(defaultConfigName)) {
-        throw new Error(`Default config ${defaultConfigName} is not exist. Please use '--config' option or change default config`);
+        throw new Error(`Default config ${defaultConfigName} does not exist. Please use '--config' option or change default config`);
       }
 
       configName = defaultConfigName;
