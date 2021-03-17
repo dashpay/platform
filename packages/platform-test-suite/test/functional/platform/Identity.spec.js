@@ -44,11 +44,7 @@ describe('Platform', () => {
       await waitForBalanceToChange(walletAccount);
     });
 
-    it('should fail to create an identity if instantLock is not valid', async function it() {
-      if (process.env.NETWORK === 'regtest') {
-        this.skip('instant lock quorum is not active');
-      }
-
+    it('should fail to create an identity if instantLock is not valid', async () => {
       const {
         transaction,
         privateKey,
@@ -78,9 +74,9 @@ describe('Platform', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.code).to.be.equal(3);
-      expect(broadcastError.message).to.be.equal('State Transition is invalid: IdentityAssetLockTransactionNotFoundError: Contract doesn\'t contain type undefinedType');
+      expect(broadcastError.message).to.be.equal('State Transition is invalid: InvalidIdentityAssetLockProofSignatureError: Invalid Asset lock proof signature');
       const [error] = broadcastError.data.errors;
-      expect(error.name).to.equal('IdentityAssetLockTransactionNotFoundError');
+      expect(error.name).to.equal('InvalidIdentityAssetLockProofSignatureError');
     });
 
     it('should fail to create an identity with already used asset lock output', async () => {

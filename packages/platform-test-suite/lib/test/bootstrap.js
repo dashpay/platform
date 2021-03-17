@@ -27,4 +27,5 @@ beforeEach(function beforeEach() {
 afterEach(function afterEach() {
   this.sinon.restore();
 });
+
 global.expect = expect;

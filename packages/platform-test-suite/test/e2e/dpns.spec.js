@@ -168,8 +168,8 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Parent domain is not present');
+      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
       expect(broadcastError.data.errors[0].message).to.equal('Parent domain is not present');
     });

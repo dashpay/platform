@@ -1,7 +1,3 @@
-const {
-  PrivateKey,
-} = require('@dashevo/dashcore-lib');
-
 const wait = require('./wait');
 
 /**
@@ -11,23 +7,14 @@ const wait = require('./wait');
  * @return {Promise<void>}
  */
 module.exports = async function waitForBlocks(dapiClient, numberOfBlocks) {
-  if (process.env.NETWORK === 'regtest' || process.env.NETWORK === 'local') {
-    const privateKey = new PrivateKey();
+  let { blocks: currentBlockHeight } = await dapiClient.core.getStatus();
 
-    await dapiClient.core.generateToAddress(
-      numberOfBlocks,
-      privateKey.toAddress(process.env.NETWORK).toString(),
-    );
-  } else {
-    let { blocks: currentBlockHeight } = await dapiClient.core.getStatus();
+  const desiredBlockHeight = currentBlockHeight + numberOfBlocks;
+  do {
+    ({ blocks: currentBlockHeight } = await dapiClient.core.getStatus());
 
-    const desiredBlockHeight = currentBlockHeight + numberOfBlocks;
-    do {
-      ({ blocks: currentBlockHeight } = await dapiClient.core.getStatus());
-
-      if (currentBlockHeight < desiredBlockHeight) {
-        await wait(30000);
-      }
-    } while (currentBlockHeight < desiredBlockHeight);
-  }
+    if (currentBlockHeight < desiredBlockHeight) {
+      await wait(5000);
+    }
+  } while (currentBlockHeight < desiredBlockHeight);
 };
