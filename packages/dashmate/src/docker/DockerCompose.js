@@ -305,6 +305,22 @@ class DockerCompose {
       throw new Error('Docker Compose is not installed');
     }
 
+    // check docker version
+    const dockerVersion = await new Promise((resolve, reject) => {
+      this.docker.version((err, data) => {
+        if (err) {
+          return reject(err);
+        }
+
+        return resolve(data.Version);
+      });
+    });
+
+    if (semver.lt(dockerVersion.trim(), DockerCompose.DOCKER_MIN_VERSION)) {
+      throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher`);
+    }
+
+    // check docker compose version
     const { out: version } = await dockerCompose.version();
     if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
       throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
@@ -331,5 +347,6 @@ class DockerCompose {
 }
 
 DockerCompose.DOCKER_COMPOSE_MIN_VERSION = '1.25.0';
+DockerCompose.DOCKER_MIN_VERSION = '20.10.0';
 
 module.exports = DockerCompose;
