@@ -17,72 +17,17 @@ message GetStatusRequest {
 }
 
 message GetStatusResponse {
-  message Version {
-    uint32 protocol = 1;
-    uint32 software = 2;
-    string agent = 3;
-  }
-
-  message Time {
-    uint32 now = 1;
-    int32 offset = 2;
-    uint32 median = 3;
-  }
-
-  enum Status {
-    NOT_STARTED = 0;
-    SYNCING = 1;
-    READY = 2;
-    ERROR = 3;
-  }
-
-  message Chain {
-    string name = 1;
-    uint32 headers_count = 2;
-    uint32 blocks_count = 3;
-    bytes best_block_hash = 4;
-    double difficulty = 5;
-    bytes chain_work = 6;
-    bool is_synced = 7;
-    double sync_progress = 8;
-  }
-
-  message Masternode {
-    enum Status {
-      UNKNOWN = 0;
-      WAITING_FOR_PROTX = 1;
-      POSE_BANNED = 2;
-      REMOVED = 3;
-      OPERATOR_KEY_CHANGED = 4;
-      PROTX_IP_CHANGED = 5;
-      READY = 6;
-      ERROR = 7;
-    }
-
-    Status status = 1;
-    bytes pro_tx_hash = 2;
-    uint32 pose_penalty = 3;
-    bool is_synced = 4;
-    double sync_progress = 5;
-  }
-
-  message NetworkFee {
-    double relay = 1;
-    double incremental = 2;
-  }
-
-  message Network {
-    uint32 peers_count = 1;
-    NetworkFee fee = 2;
-  }
-
-  Version version = 1;
-  Time time = 2;
-  Status status = 3;
-  double sync_progress = 4;
-  Chain chain = 5;
-  Masternode masternode = 6;
-  Network network = 7;
+  uint32 core_version = 1;
+  uint32 protocol_version = 2;
+  uint32 blocks = 3;
+  uint32 time_offset = 4;
+  uint32 connections = 5;
+  string proxy = 6;
+  double difficulty = 7;
+  bool testnet = 8;
+  double relay_fee = 9;
+  string errors = 10;
+  string network = 11;
 }
 
 message GetBlockRequest {
