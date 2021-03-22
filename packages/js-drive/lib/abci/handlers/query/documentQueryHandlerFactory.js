@@ -58,6 +58,12 @@ function documentQueryHandlerFactory(
       throw new UnavailableAbciError();
     }
 
+    const previousBlockExecutionTransactions = container.resolve('previousBlockExecutionStoreTransactions');
+    const dataContractTransaction = previousBlockExecutionTransactions.getTransaction('dataContracts');
+    if (!dataContractTransaction.isStarted()) {
+      throw new UnavailableAbciError();
+    }
+
     let documents;
 
     try {

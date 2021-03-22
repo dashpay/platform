@@ -29,6 +29,8 @@ describe('documentQueryHandlerFactory', () => {
   let previousRootTreeMock;
   let previousDocumentsStoreRootTreeLeafMock;
   let containerMock;
+  let previousBlockExecutionTransactionsMock;
+  let transactionMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
@@ -41,8 +43,17 @@ describe('documentQueryHandlerFactory', () => {
 
     previousDocumentsStoreRootTreeLeafMock = this.sinon.stub();
 
+    transactionMock = {
+      isStarted: this.sinon.stub().returns(true),
+    };
+
+    previousBlockExecutionTransactionsMock = {
+      getTransaction: this.sinon.stub().returns(transactionMock),
+    };
+
     containerMock = {
       has: this.sinon.stub().returns(true),
+      resolve: this.sinon.stub().returns(previousBlockExecutionTransactionsMock),
     };
 
     documentQueryHandler = documentQueryHandlerFactory(
@@ -132,6 +143,23 @@ describe('documentQueryHandlerFactory', () => {
       expect(e.getCode()).to.equal(AbciError.CODES.UNAVAILABLE);
       expect(fetchPreviousDocumentsMock).to.not.be.called();
       expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+    }
+  });
+
+  it('should throw UnavailableAbciError if transaction is not started', async () => {
+    transactionMock.isStarted.returns(false);
+
+    try {
+      await documentQueryHandler(params, data, {});
+
+      expect.fail('should throw UnavailableAbciError');
+    } catch (e) {
+      expect(e).to.be.an.instanceof(UnavailableAbciError);
+      expect(e.getCode()).to.equal(AbciError.CODES.UNAVAILABLE);
+      expect(fetchPreviousDocumentsMock).to.not.be.called();
+      expect(containerMock.resolve).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+      expect(previousBlockExecutionTransactionsMock.getTransaction).to.be.calledOnceWithExactly('dataContracts');
+      expect(transactionMock.isStarted).to.be.calledOnce();
     }
   });
 
