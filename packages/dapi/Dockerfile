@@ -33,8 +33,8 @@ ENV NODE_ENV ${NODE_ENV}
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
 
-# Copy ZMQ shared library
-COPY --from=node_modules /usr/lib/libzmq.so /usr/lib/libzmq.so
+# Install ZMQ shared library
+RUN apk update && apk add --no-cache zeromq-dev
 
 # Copy NPM modules
 COPY --from=node_modules /node_modules/ /node_modules
