@@ -1,6 +1,7 @@
 const {
   v0: {
     GetStatusRequest,
+    GetStatusResponse,
     CorePromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
@@ -27,7 +28,15 @@ function getStatusFactory(grpcTransport) {
       options,
     );
 
-    return response.toObject();
+    const responseObject = response.toObject();
+
+    responseObject.status = Object.keys(GetStatusResponse.Status)
+      .find((key) => GetStatusResponse.Status[key] === responseObject.status);
+
+    responseObject.masternode.status = Object.keys(GetStatusResponse.Masternode.Status)
+      .find((key) => GetStatusResponse.Masternode.Status[key] === responseObject.masternode.status);
+
+    return responseObject;
   }
 
   return getStatus;

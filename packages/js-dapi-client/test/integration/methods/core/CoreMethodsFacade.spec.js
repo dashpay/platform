@@ -124,7 +124,17 @@ describe('CoreMethodsFacade', () => {
   describe('#getStatus', () => {
     it('should get status', async () => {
       const response = new GetStatusResponse();
+
+      response.setStatus(GetStatusResponse.Status.READY);
+
+      const masternode = new GetStatusResponse.Masternode();
+
+      masternode.setStatus(GetStatusResponse.Masternode.Status.READY);
+
+      response.setMasternode(masternode);
+
       grpcTransportMock.request.resolves(response);
+
       await coreMethods.getStatus();
 
       expect(jsonRpcTransportMock.request).to.be.not.called();

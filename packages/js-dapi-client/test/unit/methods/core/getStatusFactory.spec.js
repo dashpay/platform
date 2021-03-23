@@ -22,6 +22,14 @@ describe('getStatusFactory', () => {
   it('should return status', async () => {
     const response = new GetStatusResponse();
 
+    response.setStatus(GetStatusResponse.Status.READY);
+
+    const masternode = new GetStatusResponse.Masternode();
+
+    masternode.setStatus(GetStatusResponse.Masternode.Status.READY);
+
+    response.setMasternode(masternode);
+
     grpcTransportMock.request.resolves(response);
 
     const options = {
@@ -41,6 +49,13 @@ describe('getStatusFactory', () => {
       options,
     );
 
-    expect(result).to.deep.equal(response.toObject());
+    expect(result).to.deep.equal({
+      ...response.toObject(),
+      status: 'READY',
+      masternode: {
+        ...response.getMasternode().toObject(),
+        status: 'READY',
+      },
+    });
   });
 });
