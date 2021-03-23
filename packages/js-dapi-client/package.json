@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "0.18.0",
+  "version": "0.19.0-dev.1",
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "lib/DAPIClient.js",
   "contributors": [
@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.10.2",
-    "@dashevo/dpp": "~0.18.0",
+    "@dashevo/dpp": "~0.19.0-dev.1",
     "babel-loader": "^8.0.6",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
