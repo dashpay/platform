@@ -48,7 +48,7 @@
   },
   "homepage": "https://github.com/dashevo/js-drive",
   "devDependencies": {
-    "@dashevo/dp-services-ctl": "^0.14.0",
+    "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev",
     "@types/pino": "^6.3.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
