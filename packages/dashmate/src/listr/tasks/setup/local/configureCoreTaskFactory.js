@@ -140,7 +140,7 @@ function configureCoreTaskFactory(
                       options: { persistentOutput: true },
                     },
                     {
-                      title: 'Await for Core to sync',
+                      title: 'Wait for Core to sync',
                       enabled: () => i > 0,
                       task: () => waitForCoreSync(ctx.coreService.getRpcClient()),
                     },

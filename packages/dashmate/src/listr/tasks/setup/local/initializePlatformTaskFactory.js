@@ -87,7 +87,7 @@ function initializePlatformTaskFactory(
         },
       },
       {
-        title: 'Await for nodes to be ready',
+        title: 'Wait for nodes to be ready',
         task: () => {
           const waitForNodeToBeReadyTasks = configGroup
             .filter((config) => config.isPlatformServicesEnabled())

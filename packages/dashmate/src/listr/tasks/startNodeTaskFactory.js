@@ -106,7 +106,7 @@ function startNodeTaskFactory(
         },
       },
       {
-        title: 'Await for peer to be connected',
+        title: 'Wait for peer to be connected',
         enabled: () => isMinerEnabled === true,
         task: async () => {
           const rpcClient = createRpcClient({

@@ -44,7 +44,7 @@ class StartCommand extends ConfigBaseCommand {
           ),
         },
         {
-          title: 'Await for nodes to be ready',
+          title: 'Wait for nodes to be ready',
           enabled: waitForReadiness,
           task: () => waitForNodeToBeReadyTask(config),
         },
@@ -77,7 +77,7 @@ StartCommand.flags = {
   update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
   'drive-image-build-path': flagTypes.string({ description: 'drive\'s docker image build path', default: null }),
   'dapi-image-build-path': flagTypes.string({ description: 'dapi\'s docker image build path', default: null }),
-  'wait-for-readiness': flagTypes.boolean({ description: 'await for nodes to be ready', default: false }),
+  'wait-for-readiness': flagTypes.boolean({ description: 'wait for nodes to be ready', default: false }),
 };
 
 module.exports = StartCommand;
