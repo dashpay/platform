@@ -34,6 +34,16 @@ class Config {
   }
 
   /**
+   * Is option present
+   *
+   * @param {string} path
+   * @return {boolean}
+   */
+  has(path) {
+    return lodashGet(this.options, path) !== undefined;
+  }
+
+  /**
    * Get config option
    *
    * @param {string} path
@@ -127,21 +137,31 @@ class Config {
   }
 
   /**
-   * @return {boolean}
-   */
-  isPlatformServicesEnabled() {
-    return this.get('compose.file').includes('docker-compose.platform.yml');
-  }
-
-  /**
    *
    * @return {{CONFIG_NAME: string, COMPOSE_PROJECT_NAME: string}}
    */
   toEnvs() {
+    const dockerComposeFiles = ['docker-compose.yml'];
+
+    if (this.has('platform')) {
+      dockerComposeFiles.push('docker-compose.platform.yml');
+
+      if (this.get('platform.drive.abci.docker.build.path') !== null) {
+        dockerComposeFiles.push('docker-compose.platform.build-drive.yml');
+      }
+
+      if (this.get('platform.dapi.api.docker.build.path') !== null) {
+        dockerComposeFiles.push('docker-compose.platform.build-dapi.yml');
+      }
+    }
+
     return {
-      COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
       CONFIG_NAME: this.getName(),
+      COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
+      COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
+      COMPOSE_DOCKER_CLI_BUILD: 1,
+      DOCKER_BUILDKIT: 1,
       ...convertObjectToEnvs(this.getOptions()),
     };
   }

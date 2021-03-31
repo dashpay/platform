@@ -2,9 +2,9 @@ version: '3.7'
 
 services:
   dapi_api:
-    build: ${PLATFORM_DAPI_DOCKER_IMAGE_BUILD_PATH:?err}
+    build: ${PLATFORM_DAPI_API_DOCKER_BUILD_PATH:?err}
     image: dapi:local
 
   dapi_tx_filter_stream:
-    build: ${PLATFORM_DAPI_DOCKER_IMAGE_BUILD_PATH:?err}
+    build: ${PLATFORM_DAPI_API_DOCKER_BUILD_PATH:?err}
     image: dapi:local

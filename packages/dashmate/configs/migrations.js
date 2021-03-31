@@ -83,14 +83,36 @@ module.exports = {
       configFile.defaultGroupName = null;
     }
 
-    // Add groups to existing configs
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
+        // Add groups
         if (typeof config.group === 'undefined') {
           config.group = null;
         }
 
-        config.platform.drive.tenderdash.nodeId = null;
+        if (typeof config.compose !== 'undefined') {
+          // Remove platform option for non platform configs
+          if (!config.compose.file.includes('docker-compose.platform.yml')) {
+            delete config.platform;
+          }
+
+          // Remove compose option
+          delete config.compose;
+        }
+
+        if (typeof config.platform !== 'undefined') {
+          // Add Tenderdash node ID
+          config.platform.drive.tenderdash.nodeId = null;
+
+          // Add build options for DAPI and Drive
+          config.platform.drive.abci.docker.build = {
+            path: null,
+          };
+
+          config.platform.dapi.api.docker.build = {
+            path: null,
+          };
+        }
       });
 
     // Replace local config to group template

@@ -40,7 +40,7 @@ function resetNodeTaskFactory(
       },
       {
         title: 'Remove platform services and associated data',
-        enabled: (ctx) => ctx.isPlatformOnlyReset && config.isPlatformServicesEnabled(),
+        enabled: (ctx) => ctx.isPlatformOnlyReset && config.has('platform'),
         task: async () => {
           // Remove containers
           const coreContainerNames = ['core', 'sentinel'];
@@ -83,7 +83,7 @@ function resetNodeTaskFactory(
       {
         title: 'Initialize Tenderdash',
         enabled: (ctx) => (
-          !ctx.isHardReset && !ctx.skipPlatformInitialization && config.isPlatformServicesEnabled()
+          !ctx.isHardReset && !ctx.skipPlatformInitialization && config.has('platform')
         ),
         task: () => tenderdashInitTask(config),
       },

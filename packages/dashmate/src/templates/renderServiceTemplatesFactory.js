@@ -20,20 +20,33 @@ function renderServiceTemplatesFactory() {
 
     const templatesPath = path.join(__dirname, '..', '..', 'templates');
 
-    // Don't create blank tenderdash config objects for tenderdash init
-    const skipEmpty = {
-      genesis: 'genesis',
-      node_key: 'nodeKey',
-      priv_validator_key: 'validatorKey',
-    };
+    const templatePaths = glob
+      .sync(`${templatesPath}/**/*.dot`)
+      .filter((templatePath) => {
+        // Do not render platform templates if it's not configured
+        if (templatePath.includes('templates/platform') && !config.has('platform')) {
+          return false;
+        }
 
-    const emptyConfigsMask = Object.keys(skipEmpty).filter((key) => {
-      const option = config.get(`platform.drive.tenderdash.${skipEmpty[key]}`);
+        // Don't create blank tenderdash configs
+        if (templatePath.includes('templates/platform/drive/tenderdash')) {
+          const skipEmpty = {
+            genesis: 'genesis',
+            node_key: 'nodeKey',
+            priv_validator_key: 'validatorKey',
+          };
 
-      return Object.values(option).length === 0;
-    }).join('|');
+          for (const [configName, optionName] of Object.entries(skipEmpty)) {
+            const option = config.get(`platform.drive.tenderdash.${optionName}`);
 
-    const templatePaths = glob.sync(`${templatesPath}/**/!(${emptyConfigsMask}).*.template`);
+            if (templatePath.includes(configName) && Object.values(option).length === 0) {
+              return false;
+            }
+          }
+        }
+
+        return true;
+      });
 
     const configFiles = {};
     for (const templatePath of templatePaths) {
@@ -42,7 +55,7 @@ function renderServiceTemplatesFactory() {
 
       const configPath = templatePath
         .substring(templatesPath.length + 1)
-        .replace('.template', '');
+        .replace('.dot', '');
 
       configFiles[configPath] = template(config.options);
     }

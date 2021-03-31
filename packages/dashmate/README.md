@@ -17,7 +17,6 @@ Distribution package for Dash Masternode installation
   - [Stop node](#stop-node)
   - [Restart node](#restart-node)
   - [Show node status](#show-node-status)
-  - [Register masternode](#register-masternode)
   - [Reset node data](#reset-node-data)
   - [Full node](#full-node)
   - [Node groups](#node-groups)
@@ -71,8 +70,6 @@ OPTIONS
   -p, --funding-private-key=funding-private-key            private key with more than 1000 dash for funding collateral
   -u, --update                                             download updated services before start
   -v, --verbose                                            use verbose mode for output
-  --dapi-image-build-path=dapi-image-build-path            dapi's docker image build path
-  --drive-image-build-path=drive-image-build-path          drive's docker image build path
 ```
 
 Supported presets:
@@ -131,8 +128,6 @@ OPTIONS
   -v, --verbose                                    use verbose mode for output
   --config=config                                  configuration name to use
   -u, --update                                     download updated services before starting
-  --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
-  --drive-image-build-path=drive-image-build-path  drive's docker image build path
 ```
 
 To start a masternode:
@@ -267,11 +262,9 @@ USAGE
   $ mn group:start
 
 OPTIONS
-  -u, --update                                     download updated services before start
-  -v, --verbose                                    use verbose mode for output
-  --dapi-image-build-path=dapi-image-build-path    dapi's docker image build path
-  --drive-image-build-path=drive-image-build-path  drive's docker image build path
-  --group=group                                    group name to use
+  -u, --update   download updated services before start
+  -v, --verbose  use verbose mode for output
+  --group=group  group name to use
 ```
 
 #### Stop group nodes
@@ -353,7 +346,7 @@ To start the group of nodes, ports and other required options need to be updated
 
 To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some dash, register masternodes and populate the nodes with the data required for local development.
 
-To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `--drive-image-build-path` and `--dapi-image-build-path` options of the `group:start` command. A Docker image will be built from the provided path and then used by mn-bootstrap.
+To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `platform.drive.abci.docker.build.path` and `platform.dapi.api.docker.build.path` config options. A Docker image will be built from the provided path and then used by mn-bootstrap.
 
 ### Docker Compose
 

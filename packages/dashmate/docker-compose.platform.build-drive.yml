@@ -2,5 +2,5 @@ version: '3.7'
 
 services:
   drive_abci:
-    build: ${PLATFORM_DRIVE_DOCKER_IMAGE_BUILD_PATH:?err}
+    build: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_PATH:?err}
     image: drive:local

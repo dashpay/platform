@@ -66,6 +66,9 @@ module.exports = {
       api: {
         docker: {
           image: 'dashpay/dapi:0.18',
+          build: {
+            path: null,
+          },
         },
       },
       insight: {
@@ -83,6 +86,9 @@ module.exports = {
       abci: {
         docker: {
           image: 'dashpay/drive:0.19-dev',
+          build: {
+            path: null,
+          },
         },
         log: {
           stdout: {
@@ -140,8 +146,5 @@ module.exports = {
   },
   externalIp: null,
   network: NETWORK_TESTNET,
-  compose: {
-    file: 'docker-compose.yml:docker-compose.platform.yml',
-  },
   environment: 'production',
 };

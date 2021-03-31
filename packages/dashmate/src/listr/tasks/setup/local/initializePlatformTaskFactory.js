@@ -32,7 +32,7 @@ function initializePlatformTaskFactory(
                 driveImageBuildPath: ctx.driveImageBuildPath,
                 dapiImageBuildPath: ctx.dapiImageBuildPath,
                 // run miner only at seed node
-                isMinerEnabled: !config.isPlatformServicesEnabled(),
+                isMinerEnabled: !config.has('platform'),
               },
             ),
           }));
@@ -44,7 +44,7 @@ function initializePlatformTaskFactory(
         title: 'Wait for nodes to be ready',
         task: () => {
           const waitForNodeToBeReadyTasks = configGroup
-            .filter((config) => config.isPlatformServicesEnabled())
+            .filter((config) => config.has('platform'))
             .map((config) => ({
               task: () => waitForNodeToBeReadyTask(config),
             }));
@@ -61,7 +61,7 @@ function initializePlatformTaskFactory(
           const [initializedConfig, ...otherConfigs] = configGroup;
 
           otherConfigs
-            .filter((config) => config.isPlatformServicesEnabled())
+            .filter((config) => config.has('platform'))
             .forEach((config) => {
               config.set('platform.dpns', initializedConfig.get('platform.dpns'));
               config.set('platform.dashpay', initializedConfig.get('platform.dashpay'));

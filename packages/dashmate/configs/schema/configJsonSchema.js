@@ -7,18 +7,34 @@ module.exports = {
     docker: {
       type: 'object',
       properties: {
-        docker: {
-          type: 'object',
-          properties: {
-            image: {
-              type: 'string',
-            },
-          },
-          required: ['image'],
-          additionalProperties: false,
+        image: {
+          type: 'string',
+          minLength: 1,
         },
       },
-      required: ['docker'],
+      required: ['image'],
+      additionalProperties: false,
+    },
+    dockerBuild: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          minLength: 1,
+        },
+        build: {
+          properties: {
+            path: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+          },
+          additionalProperties: false,
+          required: ['path'],
+        },
+      },
+      required: ['image', 'build'],
+      additionalProperties: false,
     },
     port: {
       type: 'integer',
@@ -68,7 +84,7 @@ module.exports = {
       type: 'object',
       properties: {
         docker: {
-          $ref: '#/definitions/docker/properties/docker',
+          $ref: '#/definitions/docker',
         },
         p2p: {
           type: 'object',
@@ -169,9 +185,11 @@ module.exports = {
           type: 'object',
           properties: {
             docker: {
-              $ref: '#/definitions/docker/properties/docker',
+              $ref: '#/definitions/docker',
             },
           },
+          required: ['docker'],
+          additionalProperties: false,
         },
         devnetName: {
           type: ['string', 'null'],
@@ -188,12 +206,19 @@ module.exports = {
           type: 'object',
           properties: {
             envoy: {
-              $ref: '#/definitions/docker',
+              type: 'object',
+              properties: {
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+              },
+              required: ['docker'],
+              additionalProperties: false,
             },
             nginx: {
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker/properties/docker',
+                  $ref: '#/definitions/docker',
                 },
                 http: {
                   type: 'object',
@@ -238,10 +263,24 @@ module.exports = {
               additionalProperties: false,
             },
             api: {
-              $ref: '#/definitions/docker',
+              type: 'object',
+              properties: {
+                docker: {
+                  $ref: '#/definitions/dockerBuild',
+                },
+              },
+              required: ['docker'],
+              additionalProperties: false,
             },
             insight: {
-              $ref: '#/definitions/docker',
+              type: 'object',
+              properties: {
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+              },
+              required: ['docker'],
+              additionalProperties: false,
             },
           },
           required: ['envoy', 'nginx', 'api', 'insight'],
@@ -251,12 +290,19 @@ module.exports = {
           type: 'object',
           properties: {
             mongodb: {
-              $ref: '#/definitions/docker',
+              type: 'object',
+              properties: {
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+              },
+              required: ['docker'],
+              additionalProperties: false,
             },
             abci: {
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker/properties/docker',
+                  $ref: '#/definitions/dockerBuild',
                 },
                 log: {
                   properties: {
@@ -286,7 +332,7 @@ module.exports = {
             tenderdash: {
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker/properties/docker',
+                  $ref: '#/definitions/docker',
                 },
                 p2p: {
                   type: 'object',
@@ -404,21 +450,11 @@ module.exports = {
       type: 'string',
       enum: NETWORKS,
     },
-    compose: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-        },
-      },
-      required: ['file'],
-      additionalProperties: false,
-    },
     environment: {
       type: 'string',
       enum: ['development', 'production'],
     },
   },
-  required: ['description', 'group', 'core', 'platform', 'externalIp', 'network', 'compose', 'environment'],
+  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment'],
   additionalProperties: false,
 };

@@ -2,7 +2,7 @@ const { Listr } = require('listr2');
 
 const publicIp = require('public-ip');
 
-const { PrivateKey: BlsPrivateKey } = require('bls-signatures');
+const BlsSignatures = require('bls-signatures');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
@@ -97,6 +97,10 @@ function setupRegularPresetTaskFactory(
           }
 
           const operatorBlsPrivateKeyBuffer = Buffer.from(ctx.operatorBlsPrivateKey, 'hex');
+
+          const blsSignatures = await BlsSignatures();
+          const { PrivateKey: BlsPrivateKey } = blsSignatures;
+
           const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
           const publicKey = privateKey.getPublicKey();
           const publicKeyHex = Buffer.from(publicKey.serialize()).toString('hex');

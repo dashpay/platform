@@ -59,7 +59,7 @@
     "@oclif/plugin-help": "^3.2.2",
     "ajv": "^6.12.3",
     "awilix": "^4.2.6",
-    "bls-signatures": "^0.1.9",
+    "bls-signatures": "^0.2.5",
     "chalk": "^4.0.0",
     "dash": "github:dashevo/js-dash-sdk#feat/verify-is-lock",
     "docker-compose": "^0.23.3",
