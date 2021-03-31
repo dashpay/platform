@@ -2,7 +2,7 @@ const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 /**
  *
- * @typedef generateBlocks
+ * @typedef {generateBlocks}
  * @param {CoreService} coreService
  * @param {number} blocks
  * @param {string} network
@@ -23,7 +23,7 @@ async function generateBlocks(
   do {
     const { result: blockHashes } = await coreService
       .getRpcClient()
-      .generateToAddress(1, address, 10000000);
+      .generateToAddress(blocks, address, 10000000);
 
     generatedBlocks += blockHashes.length;
 

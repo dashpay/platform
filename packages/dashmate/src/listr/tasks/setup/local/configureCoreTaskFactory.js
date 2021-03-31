@@ -1,7 +1,13 @@
 const { Listr } = require('listr2');
+const { Observable } = require('rxjs');
+
 const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
+
+const waitForNodesToHaveTheSameSporks = require('../../../../core/waitForNodesToHaveTheSameSporks');
+
+const { NETWORK_LOCAL, MASTERNODE_DASH_AMOUNT } = require('../../../../constants');
 
 /**
  * @param {resolveDockerHostIp} resolveDockerHostIp
@@ -11,10 +17,10 @@ const {
  * @param {generateBlocks} generateBlocks
  * @param {waitForCoreSync} waitForCoreSync
  * @param {activateCoreSpork} activateCoreSpork
- * @param {enableCoreQuorums} enableCoreQuorums
  * @param {generateToAddressTask} generateToAddressTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {generateBlsKeys} generateBlsKeys
+ * @param {enableCoreQuorumsTask} enableCoreQuorumsTask
  * @return {configureCoreTask}
  */
 function configureCoreTaskFactory(
@@ -25,10 +31,10 @@ function configureCoreTaskFactory(
   generateBlocks,
   waitForCoreSync,
   activateCoreSpork,
-  enableCoreQuorums,
   generateToAddressTask,
   registerMasternodeTask,
   generateBlsKeys,
+  enableCoreQuorumsTask,
 ) {
   /**
    * @typedef {configureCoreTask}
@@ -36,8 +42,6 @@ function configureCoreTaskFactory(
    * @return {Listr}
    */
   function configureCoreTask(configGroup) {
-    const amount = 1100;
-
     return new Listr([
       {
         task: async (ctx) => {
@@ -55,25 +59,22 @@ function configureCoreTaskFactory(
           }));
 
           configGroup.forEach((config, i) => {
-            // seeds
+            // Set seeds
             config.set(
               'core.p2p.seeds',
               p2pSeeds.filter((seed, index) => index !== i),
             );
 
-            // sporks
+            // Set sporks key
             config.set(
               'core.spork.address',
               sporkAddress,
             );
 
-            // Set private key to seed node
-            if (!config.isPlatformServicesEnabled()) {
-              config.set(
-                'core.spork.privateKey',
-                sporkPrivKey.toWIF(),
-              );
-            }
+            config.set(
+              'core.spork.privateKey',
+              sporkPrivKey.toWIF(),
+            );
 
             // Write configs
             const configFiles = renderServiceTemplates(config);
@@ -82,37 +83,63 @@ function configureCoreTaskFactory(
 
           return new Listr([
             {
-              title: 'Starting Core nodes',
+              title: 'Starting a wallet',
               task: async () => {
-                const coreServices = [];
+                const config = configGroup[0];
 
-                let isGenesisBlockGenerated = false;
+                ctx.coreService = await startCore(config, { wallet: true, addressIndex: true });
+              },
+            },
+            {
+              title: 'Activating DIP3',
+              task: () => new Observable(async (observer) => {
+                const dip3ActivationHeight = 500;
+                const blocksToGenerateInOneStep = 10;
 
-                for (const config of configGroup) {
-                  const coreService = await startCore(config, { wallet: true, addressIndex: true });
-                  coreServices.push(coreService);
+                let blocksGenerated = 0;
+                let {
+                  result: currentBlockHeight,
+                } = await ctx.coreService.getRpcClient().getBlockCount();
 
-                  // need to generate 1 block to connect nodes to each other
-                  if (!isGenesisBlockGenerated) {
-                    await generateBlocks(
-                      coreService,
-                      1,
-                      config.get('network'),
-                    );
+                do {
+                  ({
+                    result: currentBlockHeight,
+                  } = await ctx.coreService.getRpcClient().getBlockCount());
 
-                    isGenesisBlockGenerated = true;
-                  }
-                }
+                  await generateBlocks(
+                    ctx.coreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
 
-                ctx.coreServices = coreServices;
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
+                  );
+                } while (dip3ActivationHeight > currentBlockHeight);
+
+                observer.complete();
+
+                return this;
+              }),
+            },
+            {
+              title: 'Generating funds to use as a collateral for masternodes',
+              task: () => {
+                const amount = MASTERNODE_DASH_AMOUNT * configGroup.length;
+                return generateToAddressTask(
+                  configGroup[0],
+                  amount,
+                );
               },
             },
             {
               title: 'Register masternodes',
-              task: () => {
+              task: async () => {
                 const masternodeConfigs = configGroup.filter((config) => config.get('core.masternode.enable'));
 
-                const subTasks = masternodeConfigs.map((config, i) => ({
+                const subTasks = masternodeConfigs.map((config) => ({
                   title: `Register ${config.getName()} masternode`,
                   skip: () => {
                     if (config.get('core.masternode.operator.privateKey')) {
@@ -122,11 +149,6 @@ function configureCoreTaskFactory(
                     return false;
                   },
                   task: () => new Listr([
-                    {
-                      task: () => {
-                        ctx.coreService = ctx.coreServices[i];
-                      },
-                    },
                     {
                       title: 'Generate a masternode operator key',
                       task: async (task) => {
@@ -140,24 +162,7 @@ function configureCoreTaskFactory(
                       options: { persistentOutput: true },
                     },
                     {
-                      title: 'Wait for Core to sync',
-                      enabled: () => i > 0,
-                      task: () => waitForCoreSync(ctx.coreService.getRpcClient()),
-                    },
-                    {
-                      title: `Generate ${amount} dash to local wallet`,
-                      task: () => generateToAddressTask(config, amount),
-                    },
-                    {
                       task: () => registerMasternodeTask(config),
-                    },
-                    {
-                      // hidden task to clear values
-                      task: async () => {
-                        ctx.address = null;
-                        ctx.privateKey = null;
-                        ctx.coreService = null;
-                      },
                     },
                   ]),
                 }));
@@ -167,7 +172,102 @@ function configureCoreTaskFactory(
               },
             },
             {
-              title: 'Stopping nodes',
+              title: 'Enable sporks',
+              task: async () => {
+                const sporks = [
+                  'SPORK_2_INSTANTSEND_ENABLED',
+                  'SPORK_3_INSTANTSEND_BLOCK_FILTERING',
+                  'SPORK_9_SUPERBLOCKS_ENABLED',
+                  'SPORK_17_QUORUM_DKG_ENABLED',
+                  'SPORK_19_CHAINLOCKS_ENABLED',
+                ];
+
+                await Promise.all(
+                  sporks.map(async (spork) => (
+                    activateCoreSpork(ctx.coreService.getRpcClient(), spork))),
+                );
+
+                await waitForNodesToHaveTheSameSporks(ctx.coreServices);
+              },
+            },
+            {
+              title: 'Activating DIP8 to enable ChainLocks',
+              task: () => new Observable(async (observer) => {
+                let isDip8Activated = false;
+                let blockchainInfo;
+
+                let blocksGenerated = 0;
+
+                const blocksToGenerateInOneStep = 10;
+
+                do {
+                  ({
+                    result: blockchainInfo,
+                  } = await ctx.coreService.getRpcClient().getBlockchainInfo());
+
+                  isDip8Activated = blockchainInfo.bip9_softforks.dip0008.status === 'active';
+
+                  if (isDip8Activated) {
+                    break;
+                  }
+
+                  await generateBlocks(
+                    ctx.coreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
+
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
+                  );
+                } while (!isDip8Activated);
+
+                observer.next(`DIP8 has been activated at height ${blockchainInfo.bip9_softforks.dip0008.since}`);
+
+                observer.complete();
+
+                return this;
+              }),
+            },
+            {
+              title: 'Stopping wallet',
+              task: async () => {
+                ctx.coreService.stop();
+              },
+            },
+            {
+              title: 'Starting masternodes',
+              task: async () => {
+                const coreServices = [];
+
+                for (const config of configGroup) {
+                  const coreService = await startCore(config);
+                  coreServices.push(coreService);
+                }
+
+                ctx.coreServices = coreServices;
+              },
+            },
+            {
+              title: 'Wait for core quorums to be enabled',
+              task: () => enableCoreQuorumsTask(),
+            },
+            {
+              title: 'Setting initial core chain locked height',
+              task: async (_, task) => {
+                const rpcClient = ctx.coreServices[0].getRpcClient();
+                const { result: initialCoreChainLockedHeight } = await rpcClient.getBlockCount();
+
+                ctx.initialCoreChainLockedHeight = initialCoreChainLockedHeight;
+
+                // eslint-disable-next-line no-param-reassign
+                task.output = `Initial chain locked core height is set to: ${ctx.initialCoreChainLockedHeight}`;
+              },
+            },
+            {
+              title: 'Stopping masternodes',
               task: async () => (Promise.all(
                 ctx.coreServices.map((coreService) => coreService.stop()),
               )),

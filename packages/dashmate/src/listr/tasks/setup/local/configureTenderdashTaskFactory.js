@@ -35,7 +35,7 @@ function configureTenderdashTaskFactory(
 
           // Interconnect Tenderdash nodes
           subTasks.push({
-            task: () => {
+            task: async () => {
               const validators = masternodeConfigs.map((config) => {
                 const validatorKey = config.get('platform.drive.tenderdash.validatorKey');
 
@@ -55,7 +55,10 @@ function configureTenderdashTaskFactory(
               masternodeConfigs.forEach((config, index) => {
                 config.set('platform.drive.tenderdash.genesis.genesis_time', genesisTime);
                 config.set('platform.drive.tenderdash.genesis.chain_id', chainId);
-                config.set('platform.drive.tenderdash.genesis.initial_core_chain_locked_height', 1000);
+                config.set(
+                  'platform.drive.tenderdash.genesis.initial_core_chain_locked_height',
+                  ctx.initialCoreChainLockedHeight,
+                );
 
                 const p2pPeers = masternodeConfigs
                   .filter((_, i) => i !== index)

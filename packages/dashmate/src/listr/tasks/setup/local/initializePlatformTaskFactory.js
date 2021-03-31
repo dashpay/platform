@@ -1,14 +1,10 @@
 const { Listr } = require('listr2');
-const waitForCoreSync = require('../../../../core/waitForCoreSync');
 
 /**
  *
  * @param {startNodeTask} startNodeTask
  * @param {initTask} initTask
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
- * @param {activateCoreSpork} activateCoreSpork
- * @param {enableCoreQuorums} enableCoreQuorums
- * @param {createRpcClient} createRpcClient
  * @param {DockerCompose} dockerCompose
  * @return {initializePlatformTask}
  */
@@ -16,9 +12,6 @@ function initializePlatformTaskFactory(
   startNodeTask,
   initTask,
   waitForNodeToBeReadyTask,
-  activateCoreSpork,
-  enableCoreQuorums,
-  createRpcClient,
   dockerCompose,
 ) {
   /**
@@ -27,8 +20,6 @@ function initializePlatformTaskFactory(
    * @return {Listr}
    */
   function initializePlatformTask(configGroup) {
-    const seedConfig = configGroup.find((config) => !config.isPlatformServicesEnabled());
-
     return new Listr([
       {
         title: 'Starting nodes',
@@ -47,43 +38,6 @@ function initializePlatformTaskFactory(
           }));
 
           return new Listr(startNodeTasks);
-        },
-      },
-      {
-        title: 'Waiting for Core seed node to be avalable',
-        task: async (ctx) => {
-          ctx.rpcClient = createRpcClient({
-            port: seedConfig.get('core.rpc.port'),
-            user: seedConfig.get('core.rpc.user'),
-            pass: seedConfig.get('core.rpc.password'),
-          });
-
-          await waitForCoreSync(ctx.rpcClient);
-        },
-      },
-      {
-        title: 'Enable sporks',
-        task: async (ctx) => {
-          const sporks = [
-            'SPORK_2_INSTANTSEND_ENABLED',
-            'SPORK_3_INSTANTSEND_BLOCK_FILTERING',
-            'SPORK_9_SUPERBLOCKS_ENABLED',
-            'SPORK_17_QUORUM_DKG_ENABLED',
-            'SPORK_19_CHAINLOCKS_ENABLED',
-          ];
-
-          await Promise.all(
-            sporks.map(async (spork) => (
-              activateCoreSpork(ctx.rpcClient, spork))),
-          );
-        },
-      },
-      {
-        title: 'Wait for quorums to be enabled',
-        task: async (ctx) => {
-          const network = seedConfig.get('network');
-
-          await enableCoreQuorums(ctx.rpcClient, network);
         },
       },
       {

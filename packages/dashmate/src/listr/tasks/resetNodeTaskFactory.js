@@ -6,7 +6,6 @@ const { Listr } = require('listr2');
  * @param {tenderdashInitTask} tenderdashInitTask
  * @param {initTask} initTask
  * @param {startNodeTask} startNodeTask
- * @param {registerMasternodeTask} registerMasternodeTask
  * @param {generateToAddressTask} generateToAddressTask
  * @param {systemConfigs} systemConfigs
  * @return {resetNodeTask}
@@ -17,7 +16,6 @@ function resetNodeTaskFactory(
   tenderdashInitTask,
   initTask,
   startNodeTask,
-  registerMasternodeTask,
   generateToAddressTask,
   systemConfigs,
 ) {

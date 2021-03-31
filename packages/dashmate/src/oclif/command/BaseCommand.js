@@ -106,7 +106,12 @@ class BaseCommand extends Command {
       const stopAllContainers = this.container.resolve('stopAllContainers');
       const startedContainers = this.container.resolve('startedContainers');
 
-      await stopAllContainers(startedContainers.getContainers());
+      await stopAllContainers(
+        startedContainers.getContainers(),
+        {
+          remove: !this.config.debug,
+        },
+      );
     }
 
     return super.finally(err);

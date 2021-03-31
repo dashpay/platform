@@ -1,3 +1,5 @@
+const { config } = require('@oclif/errors');
+
 const AbstractError = require('../../errors/AbstractError');
 
 class MuteOneLineError extends AbstractError {
@@ -7,7 +9,7 @@ class MuteOneLineError extends AbstractError {
   constructor(error) {
     super('SIGINT');
 
-    if (error.message && error.message.trimEnd().includes('\n')) {
+    if (config.debug || (error.message && error.message.trimEnd().includes('\n'))) {
       this.name = error.name;
       this.message = error.message;
       this.stack = error.stack;

@@ -170,38 +170,6 @@ function registerMasternodeTaskFactory(
         ),
       },
       {
-        title: 'Reach 1000 blocks to enable DML',
-        enabled: () => config.get('network') === NETWORK_LOCAL,
-        // eslint-disable-next-line consistent-return
-        task: async (ctx, task) => {
-          const { result: blockCount } = await ctx.coreService.getRpcClient().getBlockCount();
-
-          if (blockCount >= 1000) {
-            // eslint-disable-next-line no-param-reassign
-            task.skip = true;
-
-            return;
-          }
-
-          // eslint-disable-next-line consistent-return
-          return new Observable(async (observer) => {
-            await generateBlocks(
-              ctx.coreService,
-              1000 - blockCount,
-              config.get('network'),
-              (blocks) => {
-                const remaining = 1000 - blockCount - blocks;
-                observer.next(`${remaining} ${remaining > 1 ? 'blocks' : 'block'} remaining`);
-              },
-            );
-
-            observer.complete();
-
-            return this;
-          });
-        },
-      },
-      {
         title: 'Broadcast masternode registration transaction',
         task: async (ctx, task) => {
           const proRegTx = await registerMasternode(

@@ -35,7 +35,6 @@ const waitForBlocks = require('./core/waitForBlocks');
 const waitForConfirmations = require('./core/waitForConfirmations');
 const generateBlsKeys = require('./core/generateBlsKeys');
 const activateCoreSpork = require('./core/activateCoreSpork');
-const enableCoreQuorums = require('./core/enableCoreQuorums');
 const waitForCorePeersConnected = require('./core/waitForCorePeersConnected');
 
 const createNewAddress = require('./core/wallet/createNewAddress');
@@ -64,6 +63,7 @@ const configureCoreTaskFactory = require('./listr/tasks/setup/local/configureCor
 const configureTenderdashTaskFactory = require('./listr/tasks/setup/local/configureTenderdashTaskFactory');
 const initializePlatformTaskFactory = require('./listr/tasks/setup/local/initializePlatformTaskFactory');
 const waitForNodeToBeReadyTaskFactory = require('./listr/tasks/platform/waitForNodeToBeReadyTaskFactory');
+const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCoreQuorumsTaskFactory');
 
 async function createDIContainer(options) {
   const container = createAwilixContainer({
@@ -123,7 +123,6 @@ async function createDIContainer(options) {
     waitForConfirmations: asValue(waitForConfirmations),
     generateBlsKeys: asValue(generateBlsKeys),
     activateCoreSpork: asValue(activateCoreSpork),
-    enableCoreQuorums: asValue(enableCoreQuorums),
     waitForCorePeersConnected: asValue(waitForCorePeersConnected),
   });
 
@@ -167,6 +166,7 @@ async function createDIContainer(options) {
     initializePlatformTask: asFunction(initializePlatformTaskFactory).singleton(),
     outputStatusOverview: asFunction(outputStatusOverviewFactory),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
+    enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
   });
 
   return container;
