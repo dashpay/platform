@@ -11,15 +11,10 @@ import { createFakeInstantLock } from "../../../../../../utils/createFakeIntantL
  */
 export default async function createAssetLockProof(platform : Platform, assetLockTransaction: Transaction): Promise<any> {
     const account = await platform.client.getWalletAccount();
-    const {dpp, passFakeAssetLockProofForTests} = platform;
+    const { dpp } = platform;
 
-    let instantLock;
+    let instantLock = await account.waitForInstantLock(assetLockTransaction.hash);
     // Create poof that the transaction won't be double spend
-    if (passFakeAssetLockProofForTests) {
-        instantLock = createFakeInstantLock(assetLockTransaction.hash);
-    } else {
-        instantLock = await account.waitForInstantLock(assetLockTransaction.hash);
-    }
 
     // @ts-ignore
     return await dpp.identity.createInstantAssetLockProof(instantLock);
