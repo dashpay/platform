@@ -8,7 +8,7 @@ const BlsSignatures = require('bls-signatures');
  * @return {Promise<{privateKey: *, address: *}>}
  */
 async function generateBlsKeys() {
-  const blsSignatures = await BlsSignatures;
+  const blsSignatures = await BlsSignatures();
   const { PrivateKey: BlsPrivateKey } = blsSignatures;
 
   const randomBytes = new Uint8Array(crypto.randomBytes(256));
