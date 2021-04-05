@@ -159,7 +159,7 @@ then
   cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key}"
 fi
 
-cmd="${cmd} NODE_ENV=test mocha ${scope_dirs}"
+cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha ${scope_dirs}"
 
 if [ -n "$timeout" ]
 then
