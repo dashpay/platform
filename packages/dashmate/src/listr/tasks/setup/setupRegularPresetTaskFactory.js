@@ -98,7 +98,7 @@ function setupRegularPresetTaskFactory(
 
           const operatorBlsPrivateKeyBuffer = Buffer.from(ctx.operatorBlsPrivateKey, 'hex');
 
-          const blsSignatures = await BlsSignatures();
+          const blsSignatures = await BlsSignatures;
           const { PrivateKey: BlsPrivateKey } = blsSignatures;
 
           const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
