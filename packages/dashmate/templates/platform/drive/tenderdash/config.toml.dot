@@ -346,8 +346,8 @@ double_sign_check_height = 0
 skip_timeout_commit = false
 
 # EmptyBlocks mode and possible interval between empty blocks
-create_empty_blocks = true
-create_empty_blocks_interval = "3m"
+create_empty_blocks = {{? it.platform.drive.tenderdash.consensus.createEmptyBlocks }}true{{??}}false{{?}}
+create_empty_blocks_interval = "{{= it.platform.drive.tenderdash.consensus.createEmptyBlocksInterval }}"
 
 # Reactor sleep duration parameters
 peer_gossip_sleep_duration = "100ms"

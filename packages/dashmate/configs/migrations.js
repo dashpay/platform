@@ -112,6 +112,10 @@ module.exports = {
           config.platform.dapi.api.docker.build = {
             path: null,
           };
+
+          // Add consensus options
+          config.platform.drive.tenderdash.consensus = systemConfigs.base
+            .platform.drive.tenderdash.consensus;
         }
       });
 

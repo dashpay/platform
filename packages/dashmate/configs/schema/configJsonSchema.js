@@ -356,6 +356,20 @@ module.exports = {
                   required: ['port', 'persistentPeers', 'seeds'],
                   additionalProperties: false,
                 },
+                consensus: {
+                  type: 'object',
+                  properties: {
+                    createEmptyBlocks: {
+                      type: 'boolean',
+                    },
+                    createEmptyBlocksInterval: {
+                      type: 'string',
+                      pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval'],
+                },
                 rpc: {
                   type: 'object',
                   properties: {
@@ -379,7 +393,7 @@ module.exports = {
                   type: ['string', 'null'],
                 },
               },
-              required: ['docker', 'p2p', 'rpc', 'validatorKey', 'nodeKey', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus', 'validatorKey', 'nodeKey', 'genesis', 'nodeId'],
               additionalProperties: false,
             },
             skipAssetLockConfirmationValidation: {

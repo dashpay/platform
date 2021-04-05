@@ -116,6 +116,10 @@ module.exports = {
         rpc: {
           port: 26657,
         },
+        consensus: {
+          createEmptyBlocks: true,
+          createEmptyBlocksInterval: '3m',
+        },
         validatorKey: {
 
         },
