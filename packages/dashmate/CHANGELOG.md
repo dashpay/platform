@@ -1,3 +1,12 @@
+## [0.18.1](https://github.com/dashevo/mn-bootstrap/compare/v0.18.0...v0.18.1) (2021-03-09)
+
+
+### Features
+
+* update Drive and DAPI images ([0273d33](https://github.com/dashevo/mn-bootstrap/commit/0273d33d524bd6dfa7facdd708fe79d4a2e83328))
+
+
+
 # [0.18.0](https://github.com/dashevo/mn-bootstrap/compare/v0.17.4...v0.18.0) (2021-03-03)
 
 
