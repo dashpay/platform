@@ -70,7 +70,7 @@
     "glob": "^7.1.6",
     "hasbin": "^1.2.3",
     "jayson": "^3.3.4",
-    "listr2": "^3.3.3",
+    "listr2": "^3.5.0",
     "lodash.clonedeep": "^4.5.0",
     "lodash.get": "^4.4.2",
     "lodash.isequal": "^4.5.0",

@@ -38,6 +38,7 @@ class GroupStopCommand extends GroupBaseCommand {
       {
         renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
+          showTimer: isVerbose,
           clearOutput: false,
           collapse: false,
           showSubtasks: true,
