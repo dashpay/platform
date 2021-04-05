@@ -17,8 +17,6 @@ module.exports = lodashMerge({}, baseConfig, {
       },
     },
     drive: {
-      skipAssetLockConfirmationValidation: true,
-      passFakeAssetLockProofForTests: true,
       tenderdash: {
         consensus: {
           createEmptyBlocks: true,

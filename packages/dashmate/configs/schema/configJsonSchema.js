@@ -396,14 +396,8 @@ module.exports = {
               required: ['docker', 'p2p', 'rpc', 'consensus', 'validatorKey', 'nodeKey', 'genesis', 'nodeId'],
               additionalProperties: false,
             },
-            skipAssetLockConfirmationValidation: {
-              type: 'boolean',
-            },
-            passFakeAssetLockProofForTests: {
-              type: 'boolean',
-            },
           },
-          required: ['mongodb', 'abci', 'tenderdash', 'skipAssetLockConfirmationValidation'],
+          required: ['mongodb', 'abci', 'tenderdash'],
           additionalProperties: false,
         },
         dpns: {

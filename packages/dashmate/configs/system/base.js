@@ -131,8 +131,6 @@ module.exports = {
         },
         nodeId: null,
       },
-      skipAssetLockConfirmationValidation: false,
-      passFakeAssetLockProofForTests: false,
     },
     dpns: {
       contract: {

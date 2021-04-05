@@ -116,6 +116,15 @@ module.exports = {
           // Add consensus options
           config.platform.drive.tenderdash.consensus = systemConfigs.base
             .platform.drive.tenderdash.consensus;
+
+          // Remove fallbacks
+          if (typeof config.platform.drive.skipAssetLockConfirmationValidation !== 'undefined') {
+            delete config.platform.drive.skipAssetLockConfirmationValidation;
+          }
+
+          if (typeof config.platform.drive.passFakeAssetLockProofForTests !== 'undefined') {
+            delete config.platform.drive.passFakeAssetLockProofForTests;
+          }
         }
       });
 

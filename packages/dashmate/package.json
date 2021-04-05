@@ -61,7 +61,7 @@
     "awilix": "^4.2.6",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.0.0",
-    "dash": "github:dashevo/js-dash-sdk#feat/verify-is-lock",
+    "dash": "github:dashevo/js-dash-sdk#v0.19-dev",
     "docker-compose": "^0.23.3",
     "dockerode": "^3.2.0",
     "dot": "^1.1.3",
