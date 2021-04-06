@@ -95,6 +95,7 @@ describe('DriveStateRepository', () => {
       getRequestId: () => 'someRequestId',
       txid: 'someTxId',
       signature: 'signature',
+      verify: this.sinon.stub(),
     };
 
     blockExecutionDBTransactionsMock.getTransaction.returns(transactionMock);
@@ -326,23 +327,30 @@ describe('DriveStateRepository', () => {
 
   describe('#verifyInstantLock', () => {
     it('should verify instant lock', async () => {
-      blockExecutionContextMock.getHeader.returns({
-        coreChainLockedHeight: 42,
-      });
-      coreRpcClientMock.verifyIsLock.resolves({ result: true });
+      instantLockMock.verify.resolves(true);
 
       const result = await stateRepository.verifyInstantLock(instantLockMock);
 
-      expect(result).to.equal(true);
-      expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
-        'someRequestId',
-        'someTxId',
-        'signature',
-        42,
-      );
+      expect(result).to.be.true();
+
+      // TODO: Enable logic with feature flags
+      // blockExecutionContextMock.getHeader.returns({
+      //   coreChainLockedHeight: 42,
+      // });
+      // coreRpcClientMock.verifyIsLock.resolves({ result: true });
+      //
+      // const result = await stateRepository.verifyInstantLock(instantLockMock);
+      //
+      // expect(result).to.equal(true);
+      // expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
+      //   'someRequestId',
+      //   'someTxId',
+      //   'signature',
+      //   42,
+      // );
     });
 
-    it('should return false if core throws Invalid address or key error', async () => {
+    it.skip('should return false if core throws Invalid address or key error', async () => {
       blockExecutionContextMock.getHeader.returns({
         coreChainLockedHeight: 42,
       });
@@ -363,7 +371,7 @@ describe('DriveStateRepository', () => {
       );
     });
 
-    it('should return false if core throws Invalid parameter', async () => {
+    it.skip('should return false if core throws Invalid parameter', async () => {
       blockExecutionContextMock.getHeader.returns({
         coreChainLockedHeight: 42,
       });
@@ -384,7 +392,7 @@ describe('DriveStateRepository', () => {
       );
     });
 
-    it('should return false if header is null', async () => {
+    it.skip('should return false if header is null', async () => {
       blockExecutionContextMock.getHeader.resolves(null);
 
       const error = new Error('Some error');

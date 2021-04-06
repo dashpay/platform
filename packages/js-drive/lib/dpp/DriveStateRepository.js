@@ -239,31 +239,34 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async verifyInstantLock(instantLock) {
-    const header = this.blockExecutionContext.getHeader();
+    return instantLock.verify(this.simplifiedMasternodeList.getStore());
 
-    let coreChainLockedHeight;
-    if (header) {
-      ({ coreChainLockedHeight } = header);
-    }
-
-    try {
-      const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
-        instantLock.getRequestId().toString('hex'),
-        instantLock.txid,
-        instantLock.signature,
-        coreChainLockedHeight,
-      );
-
-      return isVerified;
-    } catch (e) {
-      // Invalid address or key error or
-      // Invalid, missing or duplicate parameter
-      if ([-8, -5].includes(e.code)) {
-        return false;
-      }
-
-      throw e;
-    }
+    // TODO: Enable with feature flag:
+    // const header = this.blockExecutionContext.getHeader();
+    //
+    // let coreChainLockedHeight;
+    // if (header) {
+    //   ({ coreChainLockedHeight } = header);
+    // }
+    //
+    // try {
+    //   const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
+    //     instantLock.getRequestId().toString('hex'),
+    //     instantLock.txid,
+    //     instantLock.signature,
+    //     coreChainLockedHeight,
+    //   );
+    //
+    //   return isVerified;
+    // } catch (e) {
+    //   // Invalid address or key error or
+    //   // Invalid, missing or duplicate parameter
+    //   if ([-8, -5].includes(e.code)) {
+    //     return false;
+    //   }
+    //
+    //   throw e;
+    // }
   }
 
   /**
