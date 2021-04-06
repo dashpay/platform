@@ -45,6 +45,7 @@ services:
       - LOG_JSON_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
       - LOG_JSON_FILE_PATH=/var/log/drive-json.log
       - INITIAL_CORE_CHAINLOCKED_HEIGHT=${PLATFORM_DRIVE_TENDERDASH_GENESIS_INITIAL_CORE_CHAIN_LOCKED_HEIGHT:-1}
+      - NETWORK=${NETWORK}
     command: npm run abci
 
   drive_tenderdash:
