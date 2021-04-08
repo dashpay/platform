@@ -159,7 +159,12 @@ then
   cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key}"
 fi
 
-cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha ${scope_dirs}"
+if [ -n "$GITHUB_ACTIONS" ]
+then
+  cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha ${scope_dirs}"
+else
+  cmd="${cmd} NODE_ENV=test mocha ${scope_dirs}"
+fi
 
 if [ -n "$timeout" ]
 then
