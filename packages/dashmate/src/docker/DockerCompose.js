@@ -73,7 +73,15 @@ class DockerCompose {
     for (const containerId of coreContainerIds) {
       const container = this.docker.getContainer(containerId);
 
-      const { State: { Status: status } } = await container.inspect();
+      let status;
+
+      try {
+        ({ State: { Status: status } } = await container.inspect());
+      } catch (e) {
+        if (!e.message.includes(`No such container: ${containerId}`)) {
+          throw e;
+        }
+      }
 
       if (status === 'running') {
         return true;
