@@ -61,11 +61,13 @@ console.log(chalk.hex('#008de4')(banner));
     );
   });
 
-  logger.info('Connecting to Core...');
-
   /**
    * Make sure Core is synced
    */
+
+  const network = container.resolve('network');
+
+  logger.info(`Connecting to Core in ${network} network...`);
 
   const waitForCoreSync = container.resolve('waitForCoreSync');
   await waitForCoreSync((currentBlockHeight, currentHeaderNumber) => {
