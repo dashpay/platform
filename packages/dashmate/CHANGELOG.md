@@ -1,3 +1,12 @@
+## [0.18.2](https://github.com/dashevo/mn-bootstrap/compare/v0.18.1...v0.18.2) (2021-04-14)
+
+
+### Features
+
+* update to core 0.17.0.0-rc4 ([#326](https://github.com/dashevo/mn-bootstrap/issues/326))
+
+
+
 ## [0.18.1](https://github.com/dashevo/mn-bootstrap/compare/v0.18.0...v0.18.1) (2021-03-09)
 
 
