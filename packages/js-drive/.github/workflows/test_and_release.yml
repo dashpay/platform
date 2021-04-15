@@ -12,7 +12,7 @@ on:
 
 jobs:
   test:
-    name: Test with Drive's tests
+    name: Run Drive's tests
     runs-on: ubuntu-20.04
     timeout-minutes: 10
     steps:
@@ -45,7 +45,7 @@ jobs:
         run: npm run test:coverage
 
   test_suite:
-    name: Test with Platform Test Suite
+    name: Run Platform Test Suite
     needs: test
     runs-on: ubuntu-20.04
     timeout-minutes: 60
