@@ -68,8 +68,8 @@ OPTIONS
   -i, --external-ip=external-ip                            external ip
   -k, --operator-bls-private-key=operator-bls-private-key  operator bls private key
   -p, --funding-private-key=funding-private-key            private key with more than 1000 dash for funding collateral
-  -u, --update                                             download updated services before start
   -v, --verbose                                            use verbose mode for output
+  --node-count=node-count                                  number of nodes to setup
 ```
 
 Supported presets:
@@ -125,9 +125,9 @@ USAGE
   $ mn start
 
 OPTIONS
-  -v, --verbose                                    use verbose mode for output
-  --config=config                                  configuration name to use
-  -u, --update                                     download updated services before starting
+  -v, --verbose             use verbose mode for output
+  -w, --wait-for-readiness  wait for nodes to be ready
+  --config=config           configuration name to use
 ```
 
 To start a masternode:
@@ -262,9 +262,9 @@ USAGE
   $ mn group:start
 
 OPTIONS
-  -u, --update   download updated services before start
-  -v, --verbose  use verbose mode for output
-  --group=group  group name to use
+  -v, --verbose             use verbose mode for output
+  -w, --wait-for-readiness  wait for nodes to be ready
+  --group=group             group name to use
 ```
 
 #### Stop group nodes
@@ -312,13 +312,13 @@ The `group:reset` command removes all data corresponding to the specified group 
 
 ```
 USAGE
-  $ mn reset
+  $ mn group:reset
 
 OPTIONS
-  -v, --verbose        use verbose mode for output
-  --config=config      configuration name to use
   -h, --hard           reset config as well as data
   -p, --platform-only  reset platform data only
+  -v, --verbose        use verbose mode for output
+  --group=group        group name to use
 ```
 
 With the hard reset mode enabled, corresponding configs will be reset as well. To proceed, running the node [setup](#setup-node) is required.

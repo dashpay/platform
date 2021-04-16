@@ -84,8 +84,7 @@ GroupStartCommand.description = 'Start group nodes';
 
 GroupStartCommand.flags = {
   ...GroupBaseCommand.flags,
-  update: flagTypes.boolean({ char: 'u', description: 'download updated services before start', default: false }),
-  'wait-for-readiness': flagTypes.boolean({ description: 'wait for nodes to be ready', default: false }),
+  'wait-for-readiness': flagTypes.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
 };
 
 module.exports = GroupStartCommand;

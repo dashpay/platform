@@ -28,14 +28,12 @@ function startNodeTaskFactory(
    * @typedef {startNodeTask}
    * @param {Config} config
    * @param {Object} [options]
-   * @param {boolean} [options.isUpdate]
    * @param {boolean} [options.isMinerEnabled]
    * @return {Object}
    */
   function startNodeTask(
     config,
     {
-      isUpdate = undefined,
       isMinerEnabled = undefined,
     } = {},
   ) {
@@ -73,16 +71,6 @@ function startNodeTaskFactory(
           if (await dockerCompose.isServiceRunning(config.toEnvs())) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
-        },
-      },
-      {
-        title: 'Download updates',
-        enabled: () => isUpdate === true,
-        skip: (ctx) => ctx.skipFurtherServiceUpdates === true,
-        task: async (ctx) => {
-          ctx.skipFurtherServiceUpdates = true;
-
-          await dockerCompose.pull(config.toEnvs());
         },
       },
       {
