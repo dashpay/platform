@@ -1,0 +1,120 @@
+name: Test and Release
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+.[0-9]+-dev
+
+jobs:
+  test:
+    name: Run Wallet lib tests
+    runs-on: ubuntu-20.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '12'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Check NPM package lock version is updated
+        run: npm run check-package # TODO: does this exist as an action already?
+
+      - name: Run ESLinter
+        run: npm run lint
+
+      - name: Cache Docker layers
+        uses: satackey/action-docker-layer-caching@v0.0.11
+        continue-on-error: true
+        with:
+          concurrency: 8
+
+      - name: Parse variables from PR body
+        uses: dashevo/gh-action-runtime-vars@master
+        id: runtime-vars
+        if: ${{ contains(github.event.pull_request.body, '/set-var')}}
+        with:
+          pull-request-body: ${{ github.event.pull_request.body }}
+
+      - name: Set compatible branches for Platform components
+        uses: dashevo/gh-action-platform-branches@master
+        id: platform-branches
+        with:
+          override-major-version: 0
+          override-dashmate-branch: ${{ steps.runtime-vars.outputs.dashmate-branch }}
+          override-testsuite-branch: ${{ steps.runtime-vars.outputs.testsuite-branch }}
+
+      - name: Start Dash local network
+        uses: dashevo/gh-action-start-local-network@master
+        with:
+          actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
+          actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
+          drive-branch: ${{ steps.runtime-vars.outputs.drive-branch }}
+          dapi-branch: ${{ steps.runtime-vars.outputs.dapi-branch }}
+          dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
+          install-sdk-version: ${{ steps.runtime-vars.outputs.install-sdk-version }}
+
+      - name: Create dotenv file
+        run: |
+          echo "DAPI_SEED=127.0.0.1" > .env
+          echo "FAUCET_PRIVATE_KEY=${{ env.faucet-private-key }}" >> .env
+          echo "NETWORK=regtest" >> .env
+          echo "DPNS_CONTRACT_ID=${{ env.dpns-contract-id }}" >> .env
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v1
+
+  release:
+    name: Release NPM package
+    runs-on: ubuntu-20.04
+    needs: test
+    if: ${{ github.event_name == 'release' }}
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.1.0
+        env:
+          TAG_PREFIX: refs/tags/v
+      
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Set release tag
+        uses: actions/github-script@v3
+        id: tag
+        with:
+          result-encoding: string
+          script: |
+            return (context.payload.release.tag_name.includes('dev') ? 'dev' : 'latest');
+
+      - uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: ${{ steps.tag.outputs.result }}
