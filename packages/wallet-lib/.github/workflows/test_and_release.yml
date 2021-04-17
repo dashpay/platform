@@ -47,8 +47,6 @@ jobs:
         uses: dashevo/gh-action-runtime-vars@master
         id: runtime-vars
         if: ${{ contains(github.event.pull_request.body, '/set-var')}}
-        with:
-          pull-request-body: ${{ github.event.pull_request.body }}
 
       - name: Set compatible branches for Platform components
         uses: dashevo/gh-action-platform-branches@master
@@ -114,7 +112,8 @@ jobs:
           script: |
             return (context.payload.release.tag_name.includes('dev') ? 'dev' : 'latest');
 
-      - uses: JS-DevTools/npm-publish@v1
+      - name: Publish NPM package
+        uses: JS-DevTools/npm-publish@v1
         with:
           token: ${{ secrets.NPM_TOKEN }}
           tag: ${{ steps.tag.outputs.result }}
