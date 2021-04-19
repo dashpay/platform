@@ -1,18 +1,14 @@
 const { ValidTransportLayerRequired } = require('../../../errors');
 
 /**
- * @return {Promise<StatusInfo|{blocks:number}>} status
+ * @return {Promise<Object>} status
  */
 async function fetchStatus() {
-  if (!this.transport) throw new ValidTransportLayerRequired('fetchStatus');
-  const status = { blocks: -1 };
-
-  try {
-    return await this.transport.getStatus();
-  } catch (e) {
-    status.blocks = await this.transport.getBestBlockHeight();
+  if (!this.transport) {
+    throw new ValidTransportLayerRequired('fetchStatus');
   }
-  return status;
+
+  return this.transport.getStatus();
 }
 
 module.exports = fetchStatus;

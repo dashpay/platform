@@ -46,19 +46,7 @@ export declare type AddressObj<T extends object = object> = T & {
 export declare type AddressInfoMap<T extends object = object> = T & {
     [pathName: string]: AddressInfo
 }
-export declare type StatusInfo<T extends object = object> = T & {
-    coreVersion: number;
-    protocolVersion: number;
-    blocks: number;
-    timeOffset: number;
-    connections: number;
-    proxy: string;
-    difficulty: number;
-    testnet: false;
-    relayFee: number;
-    errors: string;
-    network: Network
-}
+
 export declare type AddressInfo<T extends AddressObj = AddressObj> = T & {
     path: string;
     address: string;
@@ -90,6 +78,45 @@ export declare type WalletObj = {
         internal: AddressInfoMap,
         misc: AddressInfoMap
     }
+}
+
+export declare type StatusInfo<T extends object = object> = T & {
+    version: {
+        protocol: number,
+        software: number,
+        agent: string,
+    },
+    time: {
+        now: number,
+        offset: number,
+        median: number,
+    },
+    status: string,
+    syncProgress: number,
+    chain: {
+        name: string,
+        headersCount: number,
+        blocksCount: number,
+        bestBlockHash: string,
+        difficulty: number,
+        chainWork: string,
+        isSynced: boolean,
+        syncProgress: number,
+    },
+    masternode: {
+        status: string,
+        proTxHash: string,
+        posePenalty: string
+        isSynced: true,
+        syncProgress: number,
+    },
+    network: {
+        peersCount: number,
+        fee: {
+            relay: number,
+            incremental: number,
+        },
+    },
 }
 
 export declare type TransactionsMap = {

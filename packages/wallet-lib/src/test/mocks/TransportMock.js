@@ -1,3 +1,5 @@
+const getStatus = require('../../transport/FixtureTransport/methods/getStatus');
+
 class TransportMock {
   constructor(sinonSandbox, transactionStreamMock) {
     this.sinonSandbox = sinonSandbox;
@@ -9,6 +11,7 @@ class TransportMock {
     this.subscribeToBlocks = sinonSandbox.stub();
     this.getIdentityIdsByPublicKeyHash = sinonSandbox.stub().returns([null]);
     this.sendTransaction = sinonSandbox.stub();
+    this.getStatus = sinonSandbox.stub().resolves(getStatus());
   }
 }
 

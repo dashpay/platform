@@ -8,7 +8,7 @@ import {
     PrivateKey,
     Strategy,
     Network,
-    Plugins, RawTransaction, StatusInfo, TransactionsMap, WalletObj
+    Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo
 } from "../types";
 import { KeyChain } from "../KeyChain/KeyChain";
 import { InstantLock } from "@dashevo/dashcore-lib";
@@ -48,7 +48,7 @@ export declare class Account {
     decrypt(method: string, data: any, secret: string, encoding: "hex"|string): string;
     disconnect(): Promise<Boolean>;
     fetchAddressInfo(addresObj: AddressObj, fetchUtxo: boolean): Promise<AddressInfo | false>;
-    fetchStatus(): Promise<StatusInfo|{blocks:number}>
+    fetchStatus(): Promise<StatusInfo>;
     forceRefreshAccount(): boolean;
     generateAddress(path: string): AddressObj;
     getAddress(index: number, _type: AddressType): AddressObj;
