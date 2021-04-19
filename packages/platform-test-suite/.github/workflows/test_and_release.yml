@@ -1,0 +1,157 @@
+name: Test and Release
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+.[0-9]+-dev
+
+jobs:
+  test:
+    name: Run Platform Test Suite with Docker
+    runs-on: ubuntu-20.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '12'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Check NPM package lock version is updated
+        run: npm run check-package # TODO: does this exist as an action already?
+
+      - name: Run ESLinter
+        run: npm run lint
+
+      - name: Cache Docker layers
+        uses: satackey/action-docker-layer-caching@v0.0.11
+        continue-on-error: true
+        with:
+          concurrency: 8
+
+      - name: Parse variables from PR body
+        uses: dashevo/gh-action-runtime-vars@master
+        id: runtime-vars
+        if: ${{ contains(github.event.pull_request.body, '/set-var')}}
+
+      - name: Set compatible branches for Platform components
+        uses: dashevo/gh-action-platform-branches@master
+        id: platform-branches
+        with:
+          override-dashmate-branch: ${{ steps.runtime-vars.outputs.dashmate-branch }}
+          override-testsuite-branch: ${{ steps.runtime-vars.outputs.testsuite-branch }}
+
+      - name: Start Dash local network
+        uses: dashevo/gh-action-start-local-network@master
+        with:
+          actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
+          actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
+          drive-branch: ${{ steps.runtime-vars.outputs.drive-branch }}
+          dapi-branch: ${{ steps.runtime-vars.outputs.dapi-branch }}
+          dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
+          install-sdk-version: ${{ steps.runtime-vars.outputs.install-sdk-version }}
+
+      - name: Build Platform Test Suite Docker image
+        run: docker build -t platform-test-suite:local .
+
+      - name: Run Platform Test Suite
+        run: |
+          docker run --network="host" platform-test-suite:local 127.0.0.1:3000:3010 \
+          --faucet-key=${{ env.faucet-private-key }} \
+          --network=regtest \
+          --dpns-tld-identity-private-key=${{ env.dpns-top-level-identity-private-key }} \
+          --dpns-tld-identity-id=${{ env.dpns-top-level-identity-id }} \
+          --dpns-contract-id=${{ env.dpns-contract-id }}
+
+  release:
+    name: Release Docker image
+    runs-on: ubuntu-20.04
+    needs: test
+    if: ${{ github.event_name == 'release' }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.1.0
+        env:
+          TAG_PREFIX: refs/tags/v
+
+      - name: Set up Docker BuildX
+        uses: docker/setup-buildx-action@v1
+        with:
+          install: true
+          driver-opts: image=moby/buildkit:latest
+
+      - name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set suffix to Docker tags
+        uses: actions/github-script@v3
+        id: suffix
+        with:
+          result-encoding: string
+          script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
+
+      - name: Set Docker tags and labels
+        id: docker_meta
+        uses: crazy-max/ghaction-docker-meta@v2
+        with:
+          images: strophy/platform-test-suite
+          tags: |
+            type=match,pattern=v(\d+),group=1
+            type=match,pattern=v(\d+.\d+),group=1
+            type=match,pattern=v(\d+.\d+.\d+),group=1
+            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+          flavor: |
+            latest=${{ !contains(github.event.release.tag_name, '-dev') }}
+            suffix=${{ steps.suffix.outputs.result }}
+
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,mode=max,dest=/tmp/.buildx-cache-new
+          # platforms: linux/amd64,linux/arm64,linux/arm/v7
+
+      # https://github.com/docker/build-push-action/issues/252
+      # https://github.com/moby/buildkit/issues/1896
+
+      - name: Run temporary fix for Docker cache action
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Output Docker image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
