@@ -1,7 +1,7 @@
 # Dash Platform Test Suite
 
 [![Latest Release](https://img.shields.io/github/v/release/dashevo/platform-test-suite)](https://github.com/dashevo/platform-test-suite/releases/latest)
-[![Build Status](https://img.shields.io/travis/com/dashevo/platform-test-suite)](https://travis-ci.com/dashevo/platform-test-suite)
+[![Build Status](https://github.com/dashevo/platform-test-suite/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/platform-test-suite/actions/workflows/test_and_release.yml)
 [![Release Date](https://img.shields.io/github/release-date/dashevo/platform-test-suite)](https://img.shields.io/github/release-date/dashevo/platform-test-suite)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
