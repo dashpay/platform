@@ -41,16 +41,16 @@ describe('getDataTriggers', () => {
       dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.CREATE, createDomainDataTrigger, topLevelIdentity,
     );
     updateTrigger = new DataTrigger(
-      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger, topLevelIdentity,
+      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger,
     );
     deleteTrigger = new DataTrigger(
-      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger, topLevelIdentity,
+      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger,
     );
     updatePreorderTrigger = new DataTrigger(
-      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger, topLevelIdentity,
+      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger,
     );
     deletePreorderTrigger = new DataTrigger(
-      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger, topLevelIdentity,
+      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger,
     );
 
     this.sinonSandbox.stub(process, 'env').value({

@@ -7,6 +7,7 @@ const DataTrigger = require('./DataTrigger');
 const rejectDataTrigger = require('./rejectDataTrigger');
 const createDomainDataTrigger = require('./dpnsTriggers/createDomainDataTrigger');
 const createContactRequestDataTrigger = require('./dashpayDataTriggers/createContactRequestDataTrigger');
+const createFeatureFlagDataTrigger = require('./featureFlagsDataTriggers/createFeatureFlagDataTrigger');
 
 /**
  * Get respective data triggers (factory)
@@ -29,6 +30,18 @@ function getDataTriggersFactory() {
     dashPayDataContractId = Identifier.from(process.env.DASHPAY_CONTRACT_ID);
   }
 
+  let featureFlagsDataContractId = Buffer.alloc(0);
+  if (process.env.FEATURE_FLAGS_CONTRACT_ID) {
+    featureFlagsDataContractId = Identifier.from(process.env.FEATURE_FLAGS_CONTRACT_ID);
+  }
+
+  let featureFlagsTopLevelIdentityId = Buffer.alloc(0);
+  if (process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY) {
+    featureFlagsTopLevelIdentityId = Identifier.from(
+      process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY,
+    );
+  }
+
   const dataTriggers = [
     new DataTrigger(
       dpnsDataContractId,
@@ -42,28 +55,24 @@ function getDataTriggersFactory() {
       'domain',
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
-      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
       dpnsDataContractId,
       'domain',
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
-      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
       dpnsDataContractId,
       'preorder',
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
-      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
       dpnsDataContractId,
       'preorder',
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
-      dpnsTopLevelIdentityId,
     ),
     new DataTrigger(
       dashPayDataContractId,
@@ -80,6 +89,44 @@ function getDataTriggersFactory() {
     new DataTrigger(
       dashPayDataContractId,
       'contactRequest',
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      'updateConsensusParams',
+      AbstractDocumentTransition.ACTIONS.CREATE,
+      createFeatureFlagDataTrigger,
+      featureFlagsTopLevelIdentityId,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      'updateConsensusParams',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      'updateConsensusParams',
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      'fixCumulativeFeesBug',
+      AbstractDocumentTransition.ACTIONS.CREATE,
+      createFeatureFlagDataTrigger,
+      featureFlagsTopLevelIdentityId,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      'fixCumulativeFeesBug',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      'fixCumulativeFeesBug',
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
     ),
