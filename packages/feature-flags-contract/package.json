@@ -1,0 +1,47 @@
+{
+  "name": "@dashevo/feature-flags-contract",
+  "version": "0.3.0",
+  "description": "Data Contract to store Dash Platform feature flags",
+  "scripts": {
+    "check-package": "npm run check-package:name && npm run check-package:version",
+    "check-package:name": "test $(jq -r .name package.json) = $(jq -r .name package-lock.json)",
+    "check-package:version": "test $(jq -r .version package.json) = $(jq -r .version package-lock.json)",
+    "lint": "eslint .",
+    "test": "npm run test:unit",
+    "test:unit": "mocha 'test/unit/**/*.spec.js'"
+  },
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "ivan@shumkov.ru",
+      "url": "https://github.com/shumkov"
+    },
+    {
+      "name": "Djavid Gabibiyan",
+      "email": "djavid@dash.org",
+      "url": "https://github.com/jawid-h"
+    },
+    {
+      "name": "Anton Suprunchuk",
+      "email": "anton.suprunchuk@dash.org",
+      "url": "https://github.com/antouhou"
+    },
+    {
+      "name": "Konstantin Shuplenkov",
+      "email": "konstantin.shuplenkov@dash.org",
+      "url": "https://github.com/shuplenkov"
+    }
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@dashevo/dpp": "~0.18.0",
+    "chai": "^4.2.0",
+    "dirty-chai": "^2.0.1",
+    "eslint": "^6.7.2",
+    "eslint-config-airbnb-base": "^14.0.0",
+    "eslint-plugin-import": "^2.19.1",
+    "mocha": "^8.1.1",
+    "sinon": "^8.0.1",
+    "sinon-chai": "^3.4.0"
+  }
+}

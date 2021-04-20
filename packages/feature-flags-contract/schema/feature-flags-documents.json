@@ -1,0 +1,112 @@
+{
+  "updateConsensusParams": {
+    "description": "Updates Tenderdash consensus params",
+    "indices": [
+      {
+        "properties": [
+          {
+            "enableAtHeight": "desc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "enableAtHeight": {
+        "description": "Block height on which params will be applied",
+        "type": "integer",
+        "minimum": 1
+      },
+      "block": {
+        "description": "Parameters limiting the size of a block and time between consecutive blocks",
+        "properties": {
+          "maxBytes": {
+            "description": "Max size of a block, in bytes",
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxGas": {
+            "description": "Max sum of GasWanted in a proposed block",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "minProperties": 1,
+        "additionalProperties": false
+      },
+      "evidence": {
+        "description": "Parameters limiting the validity of evidence of byzantine behaviour",
+        "properties": {
+          "maxAgeNumBlocks": {
+            "description": "Max age of evidence, in blocks",
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxAgeDuration": {
+            "description": "Max age of evidence, in time",
+            "type": "object",
+            "properties": {
+              "seconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "nanos": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": ["seconds", "nanos"]
+          },
+          "maxBytes": {
+            "description": "Maximum size in bytes of total evidence allowed to be entered into a block",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "minProperties": 1,
+        "additionalProperties": false
+      },
+      "version": {
+        "properties": {
+          "appVersion": {
+            "description": "The ABCI application version",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "minProperties": 1,
+        "additionalProperties": false
+      }
+    },
+    "minProperties": 3,
+    "additionalProperties": false,
+    "required": ["$createdAt", "enableAtHeight"]
+  },
+  "fixCumulativeFeesBug": {
+    "description": "Defines if cumulative fees should be processed in an old way or new one",
+    "indices": [
+      {
+        "properties": [
+          {
+            "enableAtHeight": "desc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "enabled": {
+        "description": "Switch to determine if feature should be enabled",
+        "type": "boolean"
+      },
+      "enableAtHeight": {
+        "description": "Block height on which flag will be applied",
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "additionalProperties": false,
+    "required": ["$createdAt", "enableAtHeight", "enabled"]
+  }
+}
