@@ -65,6 +65,11 @@ jobs:
           dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
           sdk-branch: ${{ env.SDK_BRANCH }}
 
+      - name: Install Dash SDK
+        if: ${{ env.SDK_BRANCH }}
+        run: |
+          npm install github:dashevo/js-dash-sdk#${{ env.SDK_BRANCH }}
+
       - name: Build Platform Test Suite Docker image
         run: docker build -t platform-test-suite:local .
 
