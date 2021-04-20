@@ -10,4 +10,4 @@ test/rpc
 /.nyc_output
 coverage/
 dapidb/
-.env
+/.env
