@@ -1,0 +1,129 @@
+name: Test and Release
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+.[0-9]+-dev
+
+jobs:
+  test:
+    name: Run SDK tests
+    runs-on: ubuntu-20.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '12'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Check NPM package lock version is updated
+        run: npm run check-package # TODO: does this exist as an action already?
+
+      - name: Cache Docker layers
+        uses: satackey/action-docker-layer-caching@v0.0.11
+        continue-on-error: true
+        with:
+          concurrency: 8
+
+      - name: Load workflow dotenv file
+        uses: c-py/action-dotenv-to-setenv@v3
+        with:
+          env-file: .github/workflows/.env
+
+      - name: Set compatible branches for Platform components
+        uses: dashevo/gh-action-platform-branches@master
+        id: platform-branches
+        with:
+          override-major-version: 0
+          override-dashmate-branch: ${{ env.DASHMATE_BRANCH }}
+          override-testsuite-branch: ${{ env.TEST_SUITE_BRANCH }}
+
+      - name: Start Dash local network
+        uses: dashevo/gh-action-start-local-network@master
+        with:
+          actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
+          actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
+          drive-branch: ${{ env.DRIVE_BRANCH }}
+          dapi-branch: ${{ env.DAPI_BRANCH }}
+          dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
+          sdk-branch: ${{ steps.platform-branches.outputs.current-branch }}
+
+      - name: Create dotenv file
+        run: |
+          echo "DAPI_SEED=127.0.0.1" > .env
+          echo "FAUCET_PRIVATE_KEY=${{ env.faucet-private-key }}" >> .env
+          echo "NETWORK=regtest" >> .env
+          echo "DPNS_CONTRACT_ID=${{ env.dpns-contract-id }}" >> .env
+
+      - name: Run SDK tests
+        run: npm run test
+
+      - name: Run Platform Test Suite
+        uses: dashevo/gh-action-run-platform-test-suite@master
+        with:
+          sdk-branch: ${{ steps.platform-branches.outputs.current-branch }}
+          faucet-private-key: ${{ env.faucet-private-key }}
+          dpns-contract-id: ${{ env.dpns-contract-id }}
+          dpns-top-level-identity-id: ${{ env.dpns-top-level-identity-id }}
+          dpns-top-level-identity-private-key: ${{ env.dpns-top-level-identity-private-key }}
+          platform-test-suite-branch: ${{ steps.platform-branches.outputs.testsuite-branch }}
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v1
+
+  release:
+    name: Release NPM package
+    runs-on: ubuntu-20.04
+    needs: test
+    if: ${{ github.event_name == 'release' }}
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.1.0
+        env:
+          TAG_PREFIX: refs/tags/v
+      
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Set release tag
+        uses: actions/github-script@v3
+        id: tag
+        with:
+          result-encoding: string
+          script: |
+            const tag = context.payload.release.tag_name;
+            const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
+            return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
+
+      - name: Publish NPM package
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: ${{ steps.tag.outputs.result }}
