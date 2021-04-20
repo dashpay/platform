@@ -27,9 +27,10 @@ describe('Core', () => {
     });
 
     it('should get block by height', async () => {
-      const { blocks } = await client.getDAPIClient().core.getStatus();
+      const { chain: { blocksCount: bestBlockHeight } } = await client
+        .getDAPIClient().core.getStatus();
 
-      const blockBinary = await client.getDAPIClient().core.getBlockByHeight(blocks);
+      const blockBinary = await client.getDAPIClient().core.getBlockByHeight(bestBlockHeight);
 
       expect(blockBinary).to.be.an.instanceof(Buffer);
 

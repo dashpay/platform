@@ -19,19 +19,40 @@ describe('Core', () => {
     it('should return status', async () => {
       const result = await client.getDAPIClient().core.getStatus();
 
-      expect(result).to.have.a.property('coreVersion');
-      expect(result).to.have.a.property('protocolVersion');
-      expect(result).to.have.a.property('blocks');
-      expect(result).to.have.a.property('timeOffset');
-      expect(result).to.have.a.property('connections');
-      expect(result).to.have.a.property('proxy');
-      expect(result).to.have.a.property('difficulty');
-      expect(result).to.have.a.property('testnet');
-      expect(result).to.have.a.property('relayFee');
-      expect(result).to.have.a.property('errors');
-      expect(result).to.have.a.property('network');
+      const {
+        version, time, status, syncProgress, chain, masternode, network,
+      } = result;
 
-      expect(result.blocks).to.be.a('number');
+      expect(version.protocol).to.be.a('number');
+      expect(version.software).to.be.a('number');
+      expect(version.agent).to.be.a('string');
+
+      expect(time.now).to.be.a('number');
+      expect(time.offset).to.be.a('number');
+      expect(time.median).to.be.a('number');
+
+      expect(status).to.be.a('string');
+
+      expect(syncProgress).to.be.a('number');
+
+      expect(chain.name).to.be.a('string');
+      expect(chain.headersCount).to.be.a('number');
+      expect(chain.blocksCount).to.be.a('number');
+      expect(chain.bestBlockHash).to.be.a('string');
+      expect(chain.difficulty).to.be.a('number');
+      expect(chain.chainWork).to.be.a('string');
+      expect(chain.isSynced).to.be.a('boolean');
+      expect(chain.syncProgress).to.be.a('number');
+
+      expect(masternode.status).to.be.a('string');
+      expect(masternode.proTxHash).to.be.a('string');
+      expect(masternode.posePenalty).to.be.a('number');
+      expect(masternode.isSynced).to.be.a('boolean');
+      expect(masternode.syncProgress).to.be.a('number');
+
+      expect(network.peersCount).to.be.a('number');
+      expect(network.fee.relay).to.be.a('number');
+      expect(network.fee.incremental).to.be.a('number');
     });
   });
 });
