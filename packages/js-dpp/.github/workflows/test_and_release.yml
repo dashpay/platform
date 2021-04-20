@@ -1,0 +1,83 @@
+name: Test and Release
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+.[0-9]+-dev
+
+jobs:
+  test:
+    name: Run DPP tests
+    runs-on: ubuntu-20.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '12'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Check NPM package lock version is updated
+        run: npm run check-package # TODO: does this exist as an action already?
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Run ESLinter
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test
+
+  release:
+    name: Release NPM package
+    runs-on: ubuntu-20.04
+    needs: test
+    if: ${{ github.event_name == 'release' }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.1.0
+        env:
+          TAG_PREFIX: refs/tags/v
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Set release tag
+        uses: actions/github-script@v3
+        id: tag
+        with:
+          result-encoding: string
+          script: |
+            const tag = context.payload.release.tag_name;
+            const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
+            return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
+
+      - name: Publish NPM package
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: ${{ steps.tag.outputs.result }}
