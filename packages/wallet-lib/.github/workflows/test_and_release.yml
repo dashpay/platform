@@ -109,7 +109,9 @@ jobs:
         with:
           result-encoding: string
           script: |
-            return (context.payload.release.tag_name.includes('dev') ? 'dev' : 'latest');
+            const tag = context.payload.release.tag_name;
+            const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
+            return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
 
       - name: Publish NPM package
         uses: JS-DevTools/npm-publish@v1
