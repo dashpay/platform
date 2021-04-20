@@ -44,27 +44,26 @@ jobs:
         with:
           concurrency: 8
 
-      - name: Parse variables from PR body
-        uses: dashevo/gh-action-runtime-vars@master
-        id: runtime-vars
-        if: ${{ contains(github.event.pull_request.body, '/set-var')}}
+      - name: Load workflow dotenv file
+        uses: c-py/action-dotenv-to-setenv@v3
+        with:
+          env-file: .github/workflows/.env
 
       - name: Set compatible branches for Platform components
         uses: dashevo/gh-action-platform-branches@master
         id: platform-branches
         with:
-          override-dashmate-branch: ${{ steps.runtime-vars.outputs.dashmate-branch }}
-          override-testsuite-branch: ${{ steps.runtime-vars.outputs.testsuite-branch }}
+          override-dashmate-branch: ${{ env.DASHMATE_BRANCH }}
 
       - name: Start Dash local network
         uses: dashevo/gh-action-start-local-network@master
         with:
           actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
           actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
-          drive-branch: ${{ steps.runtime-vars.outputs.drive-branch }}
-          dapi-branch: ${{ steps.runtime-vars.outputs.dapi-branch }}
+          drive-branch: ${{ env.DRIVE_BRANCH }}
+          dapi-branch: ${{ env.DAPI_BRANCH }}
           dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
-          install-sdk-version: ${{ steps.runtime-vars.outputs.install-sdk-version }}
+          sdk-branch: ${{ env.SDK_BRANCH }}
 
       - name: Build Platform Test Suite Docker image
         run: docker build -t platform-test-suite:local .
