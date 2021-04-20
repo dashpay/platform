@@ -96,7 +96,7 @@ jobs:
       - name: Run Platform Test Suite
         uses: dashevo/gh-action-run-platform-test-suite@master
         with:
-          sdk-install: ${{ env.SDK_BRANCH }}
+          sdk-branch: ${{ env.SDK_BRANCH }}
           faucet-private-key: ${{ env.faucet-private-key }}
           dpns-contract-id: ${{ env.dpns-contract-id }}
           dpns-top-level-identity-id: ${{ env.dpns-top-level-identity-id }}
