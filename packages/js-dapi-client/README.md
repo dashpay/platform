@@ -1,7 +1,7 @@
 # DAPI Client
 
 [![NPM Version](https://img.shields.io/npm/v/@dashevo/dapi-client)](https://www.npmjs.com/package/@dashevo/dapi-client)
-[![Build Status](https://travis-ci.com/dashevo/js-dapi-client.svg?branch=master)](https://travis-ci.com/dashevo/js-dapi-client)
+[![Build Status](https://github.com/dashevo/js-dapi-client/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/js-dapi-client/actions/workflows/test_and_release.yml)
 [![Release Date](https://img.shields.io/github/release-date/dashevo/js-dapi-client)](https://github.com/dashevo/js-dapi-client/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
