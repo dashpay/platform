@@ -234,7 +234,7 @@ function configureCoreTaskFactory(
             {
               title: 'Stopping wallet',
               task: async () => {
-                ctx.coreService.stop();
+                await ctx.coreService.stop();
               },
             },
             {

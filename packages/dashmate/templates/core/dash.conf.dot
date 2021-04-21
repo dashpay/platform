@@ -22,7 +22,7 @@ dnsseed=0
 allowprivatenet=0
 externalip={{=it.externalIp}}
 
-# optional indices (required for Insight)
+# Indices
 txindex=1
 addressindex=1
 timestampindex=1

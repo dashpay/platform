@@ -125,6 +125,11 @@ module.exports = {
           if (typeof config.platform.drive.passFakeAssetLockProofForTests !== 'undefined') {
             delete config.platform.drive.passFakeAssetLockProofForTests;
           }
+
+          // Remove Insight API configuration
+          if (config.platform.dapi.insight) {
+            delete config.platform.dapi.insight;
+          }
         }
       });
 

@@ -272,18 +272,8 @@ module.exports = {
               required: ['docker'],
               additionalProperties: false,
             },
-            insight: {
-              type: 'object',
-              properties: {
-                docker: {
-                  $ref: '#/definitions/docker',
-                },
-              },
-              required: ['docker'],
-              additionalProperties: false,
-            },
           },
-          required: ['envoy', 'nginx', 'api', 'insight'],
+          required: ['envoy', 'nginx', 'api'],
           additionalProperties: false,
         },
         drive: {
