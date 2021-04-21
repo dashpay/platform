@@ -70,7 +70,7 @@ function coreHandlersFactory(insightAPI, coreRPCClient, isProductionEnvironment)
   );
 
   // getStatus
-  const getStatusHandler = getStatusHandlerFactory(insightAPI);
+  const getStatusHandler = getStatusHandlerFactory(coreRPCClient);
   const wrappedGetStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetStatusRequest,

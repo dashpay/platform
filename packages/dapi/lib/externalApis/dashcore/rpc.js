@@ -115,25 +115,25 @@ const getMnListDiff = (baseBlockHash, blockHash) => new Promise((resolve, reject
   });
 });
 
-/*eslint-disable */
-// Temporary mock result
-const getQuorum = regtxid => new Promise((resolve, reject) => {
-
-  //remove when rpc getQuorum available
-  const coreFixtures = require('../../../test/mocks/coreAPIFixture');
-  coreFixtures.getQuorum(regtxid)
-    .then(mockData => resolve(mockData))
-
-  // re-add when rpc getQuorum available
-  // client.getquorum(regtxid, (err, r) => {
-  //   if (err) {
-  //     reject(new DashCoreRpcError(err.message, null, err.code));
-  //   } else {
-  //     resolve(r.result);
-  //   }
-  // });
+const getMnSync = command => new Promise((resolve, reject) => {
+  client.mnsync(command, (err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
 });
-/* eslint-enable */
+
+const getMasternode = command => new Promise((resolve, reject) => {
+  client.masternode(command, (err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
+});
 
 const getRawTransaction = txid => new Promise((resolve, reject) => {
   client.getrawtransaction(txid, (err, r) => {
@@ -254,6 +254,27 @@ const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
   });
 });
 
+const getNetworkInfo = () => new Promise((resolve, reject) => {
+  client.getnetworkinfo((err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
+const getBlockchainInfo = () => new Promise((resolve, reject) => {
+  client.getblockchaininfo((err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
+
 /**
  * @typedef CoreRpcClient
  * @type {{
@@ -265,10 +286,14 @@ const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
  * getBlockHash: (function(*=): Promise<any>),
  * getBestBlockHash: (function(): Promise<any>),
  * getMnListDiff: (function(*=, *=): Promise<any>),
+ * getMnSync: (function(*=, *=): Promise<any>),
+ * getMasternode: (function(*=, *=): Promise<any>),
  * getBlockHeaders: (function(*=, *=, *=): Promise<any>),
  * getRawTransaction: (function(*=): Promise<any>),
  * getTransactionFirstInputAddress: (function(*=): Promise<any>),
  * getBlockHeader: (function(*=): Promise<any>),
+ * getBlockchainInfo: (function(): Promise<any>),
+ * getNetworkInfo: (function(): Promise<any>),
  * sendRawIxTransaction: (function(*=): Promise<any>),
  * getRawBlock: (function(*=): (*|Promise<any>)),
  * getQuorum: (function(*=): Promise<any>),
@@ -290,7 +315,8 @@ module.exports = {
   getMasternodesList,
   getMempoolInfo,
   getMnListDiff,
-  getQuorum,
+  getMnSync,
+  getMasternode,
   sendRawTransition,
   sendRawTransaction,
   sendRawIxTransaction,
@@ -301,4 +327,6 @@ module.exports = {
   getUser,
   getUTXO,
   getMerkleBlocks,
+  getBlockchainInfo,
+  getNetworkInfo,
 };

@@ -7,11 +7,7 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
-const DriveAbciOptions = require('@dashevo/dp-services-ctl/lib/services/drive/abci/DriveAbciOptions');
-const DapiCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/core/DapiCoreOptions');
-const DapiTxFilterStreamOptions = require('@dashevo/dp-services-ctl/lib/services/dapi/txFilterStream/DapiTxFilterStreamOptions');
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
-const InsightApiOptions = require('@dashevo/dp-services-ctl/lib/services/insightApi/InsightApiOptions');
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -46,32 +42,10 @@ if (process.env.SERVICE_IMAGE_DAPI) {
   };
 }
 
-DapiCoreOptions.setDefaultCustomOptions(dapiOptions);
-DapiTxFilterStreamOptions.setDefaultCustomOptions(dapiOptions);
-
-if (process.env.SERVICE_IMAGE_DRIVE) {
-  DriveAbciOptions.setDefaultCustomOptions({
-    container: {
-      image: process.env.SERVICE_IMAGE_DRIVE,
-      envs: [
-        'IDENTITY_ENABLE_ASSET_LOCK_TX_ONE_BLOCK_CONFIRMATION_FALLBACK=true',
-      ],
-    },
-  });
-}
-
 if (process.env.SERVICE_IMAGE_CORE) {
   DashCoreOptions.setDefaultCustomOptions({
     container: {
       image: process.env.SERVICE_IMAGE_CORE,
-    },
-  });
-}
-
-if (process.env.SERVICE_IMAGE_INSIGHT) {
-  InsightApiOptions.setDefaultCustomOptions({
-    container: {
-      image: process.env.SERVICE_IMAGE_INSIGHT,
     },
   });
 }
