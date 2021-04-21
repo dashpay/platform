@@ -1,7 +1,6 @@
 module.exports = {
   getConfigFixture() {
     return {
-      insightUri: '123',
       dashcore: {
         p2p: {
           host: '123',

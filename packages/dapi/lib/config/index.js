@@ -1,5 +1,4 @@
 const OPTIONS = {
-  INSIGHT_URI: 'INSIGHT_URI',
   LIVENET: 'LIVENET',
   API_JSON_RPC_PORT: 'API_JSON_RPC_PORT',
   API_GRPC_PORT: 'API_GRPC_PORT',
@@ -22,7 +21,6 @@ const OPTIONS = {
 
 const DEFAULT_CONFIG = {};
 
-DEFAULT_CONFIG[OPTIONS.INSIGHT_URI] = 'http://127.0.0.1:3001/insight-api';
 DEFAULT_CONFIG[OPTIONS.LIVENET] = false;
 DEFAULT_CONFIG[OPTIONS.API_JSON_RPC_PORT] = 2501;
 DEFAULT_CONFIG[OPTIONS.API_GRPC_PORT] = 2500;
@@ -54,7 +52,6 @@ Object
 const config = Object.assign({}, DEFAULT_CONFIG, envConfig);
 
 module.exports = {
-  insightUri: config[OPTIONS.INSIGHT_URI],
   livenet: Boolean(config[OPTIONS.LIVENET]),
   rpcServer: {
     port: parseInt(config[OPTIONS.API_JSON_RPC_PORT], 10),

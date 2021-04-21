@@ -27,7 +27,6 @@ const { validateConfig } = require('../lib/config/validator');
 const log = require('../lib/log');
 const rpcServer = require('../lib/rpcServer/server');
 const DriveClient = require('../lib/externalApis/drive/DriveClient');
-const insightAPI = require('../lib/externalApis/insight');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const BlockchainListener = require('../lib/externalApis/tenderdash/BlockchainListener');
 const DriveStateRepository = require('../lib/dpp/DriveStateRepository');
@@ -102,7 +101,6 @@ async function main() {
   log.info('Starting GRPC server');
 
   const coreHandlers = coreHandlersFactory(
-    insightAPI,
     dashCoreRpcClient,
     isProductionEnvironment,
   );
