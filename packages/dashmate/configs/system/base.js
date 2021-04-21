@@ -65,7 +65,7 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.18',
+          image: 'dashpay/dapi:0.19-dev',
           build: {
             path: null,
           },
