@@ -98,6 +98,6 @@
     "rimraf": "^3.0.2",
     "setimmediate": "^1.0.5",
     "through2": "^3.0.1",
-    "zeromq": "~5.2.0"
+    "zeromq": "5.2.0"
   }
 }
