@@ -126,7 +126,6 @@ async function main() {
   log.info(`GRPC API RPC server is listening on port ${config.grpcServer.port}`);
 
   // Display message that everything is ok
-  log.info(`Insight uri is ${config.insightUri}`);
   log.info(`DAPI Core process is up and running in ${config.livenet ? 'livenet' : 'testnet'} mode`);
   log.info(`Network is ${config.network}`);
 }
