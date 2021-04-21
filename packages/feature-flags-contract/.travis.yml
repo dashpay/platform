@@ -26,4 +26,4 @@ deploy:
   script: bash bin/travis-deploy.sh
   on:
     tags: true
-    repo: dashevo/dpns-contract
+    repo: dashevo/feature-flags-contract
