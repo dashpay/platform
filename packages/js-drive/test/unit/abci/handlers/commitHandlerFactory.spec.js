@@ -20,6 +20,8 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 const DataCorruptedError = require('../../../../lib/abci/handlers/errors/DataCorruptedError');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
+const featureFlagTypes = require('../../../../lib/featureFlag/featureFlagTypes');
+
 describe('commitHandlerFactory', () => {
   let commitHandler;
   let appHash;
@@ -45,6 +47,7 @@ describe('commitHandlerFactory', () => {
   let mongoDbTransactionMock;
   let cloneToPreviousStoreTransactionsMock;
   let header;
+  let getLatestFeatureFlagMock;
 
   beforeEach(function beforeEach() {
     nextPreviousBlockExecutionStoreTransactionsMock = 'nextPreviousBlockExecutionStoreTransactionsMock';
@@ -56,6 +59,7 @@ describe('commitHandlerFactory', () => {
 
     creditsDistributionPoolMock = {
       incrementAmount: this.sinon.stub(),
+      setAmount: this.sinon.stub(),
     };
 
     dataContract = getDataContractFixture();
@@ -134,6 +138,11 @@ describe('commitHandlerFactory', () => {
       nextPreviousBlockExecutionStoreTransactionsMock,
     );
 
+    getLatestFeatureFlagMock = this.sinon.stub();
+    getLatestFeatureFlagMock.resolves({
+      get: () => true,
+    });
+
     commitHandler = commitHandlerFactory(
       chainInfoMock,
       chainInfoRepositoryMock,
@@ -150,6 +159,34 @@ describe('commitHandlerFactory', () => {
       containerMock,
       loggerMock,
       cloneToPreviousStoreTransactionsMock,
+      getLatestFeatureFlagMock,
+      featureFlagTypes,
+    );
+  });
+
+  it('should call setAmount instead of incrementAmount if feature flag was not set', async () => {
+    containerMock.has.withArgs('previousBlockExecutionStoreTransactions').returns(false);
+
+    getLatestFeatureFlagMock.resolves(null);
+
+    await commitHandler();
+
+    expect(creditsDistributionPoolMock.setAmount).to.be.calledOnceWith(
+      accumulativeFees,
+    );
+  });
+
+  it('should call setAmount instead of incrementAmount if feature flag was set to false', async () => {
+    containerMock.has.withArgs('previousBlockExecutionStoreTransactions').returns(false);
+
+    getLatestFeatureFlagMock.resolves({
+      get: () => false,
+    });
+
+    await commitHandler();
+
+    expect(creditsDistributionPoolMock.setAmount).to.be.calledOnceWith(
+      accumulativeFees,
     );
   });
 

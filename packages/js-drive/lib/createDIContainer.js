@@ -122,6 +122,9 @@ const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorW
 const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
 const ChainInfo = require('./chainInfo/ChainInfo');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
+const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
+const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
+const featureFlagTypes = require('./featureFlag/featureFlagTypes');
 
 /**
  *
@@ -265,6 +268,18 @@ function createDIContainer(options) {
     initialCoreChainLockedHeight: asValue(
       parseInt(options.INITIAL_CORE_CHAINLOCKED_HEIGHT, 10),
     ),
+    featureFlagDataContractId: asValue(
+      options.FEATURE_FLAGS_CONTRACT_ID
+        ? Identifier.from(options.FEATURE_FLAGS_CONTRACT_ID)
+        : undefined,
+    ),
+    featureFlagDataContractBlockHeight: asFunction(() => {
+      if (options.FEATURE_FLAGS_BLOCK_HEIGHT === undefined || options.FEATURE_FLAGS_BLOCK_HEIGHT === '') {
+        return new Long();
+      }
+
+      return Long.fromString(options.FEATURE_FLAGS_BLOCK_HEIGHT);
+    }),
   });
 
   /**
@@ -950,6 +965,15 @@ function createDIContainer(options) {
         stateRepository: transactionalStateRepository,
       })
     )).singleton(),
+  });
+
+  /**
+   * Register feature flags stuff
+   */
+  container.register({
+    getLatestFeatureFlag: asFunction(getLatestFeatureFlagFactory),
+    getFeatureFlagForHeight: asFunction(getFeatureFlagForHeightFactory),
+    featureFlagTypes: asValue(featureFlagTypes),
   });
 
   /**

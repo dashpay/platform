@@ -28,6 +28,7 @@ const DataCorruptedError = require('./errors/DataCorruptedError');
  * @param {AwilixContainer} container
  * @param {BaseLogger} logger
  * @param cloneToPreviousStoreTransactions
+ * @param {Object} featureFlagTypes
  *
  * @return {commitHandler}
  */
@@ -47,6 +48,8 @@ function commitHandlerFactory(
   container,
   logger,
   cloneToPreviousStoreTransactions,
+  getLatestFeatureFlag,
+  featureFlagTypes,
 ) {
   /**
    * Commit ABCI handler
@@ -74,10 +77,20 @@ function commitHandlerFactory(
         await documentDatabaseManager.create(dataContract);
       }
 
-      // Store ST fees from the block to distribution pool
-      creditsDistributionPool.incrementAmount(
-        blockExecutionContext.getCumulativeFees(),
+      const fixCumulativeFeesFeatureFlag = await getLatestFeatureFlag(
+        featureFlagTypes.FIX_CUMULATIVE_FEES, blockHeight,
       );
+
+      // Store ST fees from the block to distribution pool
+      if (fixCumulativeFeesFeatureFlag && fixCumulativeFeesFeatureFlag.get('enabled')) {
+        creditsDistributionPool.incrementAmount(
+          blockExecutionContext.getCumulativeFees(),
+        );
+      } else {
+        creditsDistributionPool.setAmount(
+          blockExecutionContext.getCumulativeFees(),
+        );
+      }
 
       const commonStoreTransaction = blockExecutionStoreTransactions.getTransaction('common');
       await creditsDistributionPoolRepository.store(
