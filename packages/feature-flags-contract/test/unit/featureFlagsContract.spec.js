@@ -737,5 +737,142 @@ describe('Feature Flags contract', () => {
         expect(result.isValid()).to.be.true();
       });
     });
+
+    describe('verifyLLMQSignaturesWithCore', () => {
+      let rawVerifyLLMQSignaturesWithCore;
+
+      beforeEach(() => {
+        rawVerifyLLMQSignaturesWithCore = {
+          enabled: true,
+          enableAtHeight: 42,
+        };
+      });
+
+      it('should not have additional properties', async () => {
+        rawVerifyLLMQSignaturesWithCore.someOtherProperty = 42;
+
+        try {
+          dpp.document.create(dataContract, identityId, 'verifyLLMQSignaturesWithCore', rawVerifyLLMQSignaturesWithCore);
+
+          expect.fail('should throw error');
+        } catch (e) {
+          expect(e.name).to.equal('InvalidDocumentError');
+          expect(e.getErrors()).to.have.a.lengthOf(1);
+
+          const [error] = e.getErrors();
+
+          expect(error.name).to.equal('JsonSchemaError');
+          expect(error.keyword).to.equal('additionalProperties');
+          expect(error.params.additionalProperty).to.equal('someOtherProperty');
+        }
+      });
+
+      describe('enabled', () => {
+        it('should be present', async () => {
+          delete rawVerifyLLMQSignaturesWithCore.enabled;
+
+          try {
+            dpp.document.create(dataContract, identityId, 'verifyLLMQSignaturesWithCore', rawVerifyLLMQSignaturesWithCore);
+
+            expect.fail('should throw error');
+          } catch (e) {
+            expect(e.name).to.equal('InvalidDocumentError');
+            expect(e.getErrors()).to.have.a.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('required');
+            expect(error.params.missingProperty).to.equal('enabled');
+          }
+        });
+
+        it('should be boolean', () => {
+          rawVerifyLLMQSignaturesWithCore.enabled = 'string';
+
+          try {
+            dpp.document.create(dataContract, identityId, 'verifyLLMQSignaturesWithCore', rawVerifyLLMQSignaturesWithCore);
+
+            expect.fail('should throw error');
+          } catch (e) {
+            expect(e.name).to.equal('InvalidDocumentError');
+            expect(e.getErrors()).to.have.a.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('boolean');
+          }
+        });
+      });
+
+      describe('enabledAtHeight', () => {
+        it('should be present', async () => {
+          delete rawVerifyLLMQSignaturesWithCore.enableAtHeight;
+
+          try {
+            dpp.document.create(dataContract, identityId, 'verifyLLMQSignaturesWithCore', rawVerifyLLMQSignaturesWithCore);
+
+            expect.fail('should throw error');
+          } catch (e) {
+            expect(e.name).to.equal('InvalidDocumentError');
+            expect(e.getErrors()).to.have.a.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('required');
+            expect(error.params.missingProperty).to.equal('enableAtHeight');
+          }
+        });
+
+        it('should be integer', () => {
+          rawVerifyLLMQSignaturesWithCore.enableAtHeight = 'string';
+
+          try {
+            dpp.document.create(dataContract, identityId, 'verifyLLMQSignaturesWithCore', rawVerifyLLMQSignaturesWithCore);
+
+            expect.fail('should throw error');
+          } catch (e) {
+            expect(e.name).to.equal('InvalidDocumentError');
+            expect(e.getErrors()).to.have.a.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('integer');
+          }
+        });
+
+        it('should be at least 1', () => {
+          rawVerifyLLMQSignaturesWithCore.enableAtHeight = 0;
+
+          try {
+            dpp.document.create(dataContract, identityId, 'verifyLLMQSignaturesWithCore', rawVerifyLLMQSignaturesWithCore);
+
+            expect.fail('should throw error');
+          } catch (e) {
+            expect(e.name).to.equal('InvalidDocumentError');
+            expect(e.getErrors()).to.have.a.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('minimum');
+            expect(error.params.limit).to.equal(1);
+          }
+        });
+      });
+
+      it('should be valid', async () => {
+        const verifyLLMQSignaturesWithCore = dpp.document.create(dataContract, identityId, 'verifyLLMQSignaturesWithCore', rawVerifyLLMQSignaturesWithCore);
+
+        const result = await dpp.document.validate(verifyLLMQSignaturesWithCore);
+
+        expect(result.isValid()).to.be.true();
+      });
+    });
   });
 });

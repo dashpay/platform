@@ -108,5 +108,31 @@
     },
     "additionalProperties": false,
     "required": ["$createdAt", "enableAtHeight", "enabled"]
+  },
+  "verifyLLMQSignaturesWithCore": {
+    "description": "Defines if LLMQ sigantures should be validated though Dash Core",
+    "indices": [
+      {
+        "properties": [
+          {
+            "enableAtHeight": "desc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "enabled": {
+        "description": "Switch to determine if feature should be enabled",
+        "type": "boolean"
+      },
+      "enableAtHeight": {
+        "description": "Block height on which flag will be applied",
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "additionalProperties": false,
+    "required": ["$createdAt", "enableAtHeight", "enabled"]
   }
 }
