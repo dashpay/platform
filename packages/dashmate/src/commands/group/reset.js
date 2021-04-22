@@ -55,6 +55,7 @@ class GroupResetCommand extends GroupBaseCommand {
               if (config.has('platform')) {
                 config.set('platform.dpns', baseConfig.platform.dpns);
                 config.set('platform.dashpay', baseConfig.platform.dashpay);
+                config.set('platform.featureFlags', baseConfig.platform.featureFlags);
 
                 // TODO: Should stay the same
                 config.set('platform.drive.tenderdash.nodeId', baseConfig.platform.drive.tenderdash.nodeId);

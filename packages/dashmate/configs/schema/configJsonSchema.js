@@ -436,8 +436,33 @@ module.exports = {
           required: ['contract'],
           additionalProperties: false,
         },
+        featureFlags: {
+          type: 'object',
+          properties: {
+            contract: {
+              properties: {
+                id: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+                blockHeight: {
+                  type: ['integer', 'null'],
+                  minimum: 1,
+                },
+              },
+              required: ['id', 'blockHeight'],
+              additionalProperties: false,
+            },
+            ownerId: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+          },
+          required: ['contract', 'ownerId'],
+          additionalProperties: false,
+        },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags'],
       additionalProperties: false,
     },
     externalIp: {

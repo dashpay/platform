@@ -61,7 +61,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           await ctx.bumpMockTime(bestBlock.time);
 
           // Sync nodes
-          ctx.bumpMockTime();
+          await ctx.bumpMockTime();
 
           await generateBlocks(
             ctx.coreServices[0],
