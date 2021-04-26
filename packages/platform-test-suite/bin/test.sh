@@ -12,7 +12,7 @@ Usage: test <seed> [options]
               --npm-install=pkg                             - install npm package before running the suite
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
   -k=key      --faucet-key=key                              - faucet private key string
-  -n=network  --network=network                             - use regtest or testnet
+  -n=network  --network=network                             - use regtest, devnet or testnet
               --dpns-tld-identity-private-key=private_key   - top level identity private key
               --dpns-tld-identity-id=identity_id            - top level identity id
               --dpns-contract-id=contract_id                - dpns contract id
