@@ -120,6 +120,9 @@ jobs:
         env:
           TAG_PREFIX: refs/tags/v
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
       - name: Set up Docker BuildX
         uses: docker/setup-buildx-action@v1
         with:
@@ -176,7 +179,7 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           cache-from: type=local,src=/tmp/.buildx-cache # <---
           cache-to: type=local,mode=max,dest=/tmp/.buildx-cache-new # <---
-          # platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
 
       - name: Temporary fix for Docker cache action
         run: |
