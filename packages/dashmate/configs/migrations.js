@@ -135,6 +135,8 @@ module.exports = {
             delete config.platform.dapi.insight;
           }
         }
+
+        config.core.docker.image = systemConfigs.base.core.docker.image;
       });
 
     // Replace local config to group template
