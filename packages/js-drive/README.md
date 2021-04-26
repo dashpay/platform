@@ -1,7 +1,7 @@
 # Drive
 
 [![Latest Release](https://img.shields.io/github/v/release/dashevo/js-drive-abci)](https://github.com/dashevo/js-drive-abci/releases/latest)
-[![Build Status](https://img.shields.io/travis/com/dashevo/js-drive-abci)](https://travis-ci.com/dashevo/js-drive-abci)
+[![Build Status](https://github.com/dashevo/js-drive/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/js-drive/actions/workflows/test_and_release.yml)
 [![Release Date](https://img.shields.io/github/release-date/dashevo/js-drive-abci)](https://img.shields.io/github/release-date/dashevo/js-drive-abci)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
