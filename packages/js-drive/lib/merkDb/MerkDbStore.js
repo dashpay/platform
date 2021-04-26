@@ -107,7 +107,7 @@ class MerkDbStore {
    * @return {Buffer}
    */
   getProof(keys) {
-    return this.db.proveSync(keys);
+    return this.db.proveSync(keys.sort(Buffer.compare));
   }
 }
 
