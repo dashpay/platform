@@ -52,7 +52,7 @@
     "@dashevo/dashd-rpc": "~2.2.2",
     "@dashevo/dashpay-contract": "github:dashevo/dashpay-contract#bc4e9b2d0073e27bd716b3ae63ccfdd60d8c4f36",
     "@dashevo/dpns-contract": "~0.3.0-dev.6",
-    "@dashevo/feature-flags-contract": "~0.1.0-dev.1",
+    "@dashevo/feature-flags-contract": "~0.1.0-dev.2",
     "@dashevo/wallet-lib": "~7.19.0-dev.2",
     "@oclif/command": "^1.8.0",
     "@oclif/config": "^1.17.0",

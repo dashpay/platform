@@ -58,17 +58,28 @@ function initializePlatformTaskFactory(
       {
         title: 'Activating feature flags',
         task: async (ctx) => {
-          const document = await ctx.client.platform.documents.create(
+          const enableAtHeight = parseInt(ctx.featureFlagsContractBlockHeight, 10) + 1;
+
+          const cumulativeFeesDocument = await ctx.client.platform.documents.create(
             'featureFlags.fixCumulativeFeesBug',
             ctx.featureFlagsIdentity,
             {
               enabled: true,
-              enableAtHeight: parseInt(ctx.featureFlagsContractBlockHeight, 10) + 1,
+              enableAtHeight,
+            },
+          );
+
+          const verifyLLMQDocument = await ctx.client.platform.documents.create(
+            'featureFlags.verifyLLMQSignaturesWithCore',
+            ctx.featureFlagsIdentity,
+            {
+              enabled: true,
+              enableAtHeight,
             },
           );
 
           await ctx.client.platform.documents.broadcast({
-            create: [document],
+            create: [cumulativeFeesDocument, verifyLLMQDocument],
           }, ctx.featureFlagsIdentity);
         },
       },
