@@ -126,6 +126,7 @@
  * @async
  * @method
  * @name StateRepository#verifyInstantLock
+ * @param {InstantLock} instantLock
  * @returns {Promise<boolean>}
  */
 
@@ -134,7 +135,7 @@
  *
  * @async
  * @method
- * @name StateRepository#checkAssetLockTransactionOutPointExists
+ * @name StateRepository#isAssetLockTransactionOutPointAlreadyUsed
  * @param {Buffer} outPointBuffer
  * @returns {Promise<boolean>}
  */
@@ -144,7 +145,7 @@
  *
  * @async
  * @method
- * @name StateRepository#storeAssetLockTransactionOutPoint
+ * @name StateRepository#markAssetLockTransactionOutPointAsUsed
  * @param {Buffer} outPointBuffer
  * @returns {Promise<void>}
  */

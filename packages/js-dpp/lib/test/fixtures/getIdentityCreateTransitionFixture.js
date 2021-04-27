@@ -5,7 +5,7 @@ const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 
 const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes');
 
-const getAssetLockFixture = require('./getAssetLockFixture');
+const getInstantAssetLockProofFixture = require('./getInstantAssetLockProofFixture');
 
 /**
  * @param {PrivateKey} oneTimePrivateKey
@@ -16,7 +16,7 @@ module.exports = function getIdentityCreateTransitionFixture(oneTimePrivateKey =
   const rawStateTransition = {
     protocolVersion: 0,
     type: stateTransitionTypes.IDENTITY_CREATE,
-    assetLock: getAssetLockFixture(oneTimePrivateKey).toObject(),
+    assetLockProof: getInstantAssetLockProofFixture(oneTimePrivateKey).toObject(),
     publicKeys: [
       {
         id: 0,

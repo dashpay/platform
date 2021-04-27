@@ -5,15 +5,15 @@ const convertBuffersToArrays = require('../../../util/convertBuffersToArrays');
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validatePublicKeys} validatePublicKeys
- * @param {validateAssetLockStructure} validateAssetLockStructure
  * @param {validateSignatureAgainstAssetLockPublicKey} validateSignatureAgainstAssetLockPublicKey
+ * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @return {validateIdentityCreateTransitionStructure}
  */
 function validateIdentityCreateTransitionStructureFactory(
   jsonSchemaValidator,
   validatePublicKeys,
-  validateAssetLockStructure,
   validateSignatureAgainstAssetLockPublicKey,
+  proofValidationFunctionsByType,
 ) {
   /**
    * @typedef validateIdentityCreateTransitionStructure
@@ -39,17 +39,23 @@ function validateIdentityCreateTransitionStructureFactory(
       return result;
     }
 
-    const assetLockValidationResult = await validateAssetLockStructure(
-      rawStateTransition.assetLock,
+    const proofValidationFunction = proofValidationFunctionsByType[
+      rawStateTransition.assetLockProof.type
+    ];
+
+    const assetLockProofValidationResult = await proofValidationFunction(
+      rawStateTransition.assetLockProof,
     );
 
-    result.merge(assetLockValidationResult);
+    result.merge(
+      assetLockProofValidationResult,
+    );
 
     if (!result.isValid()) {
       return result;
     }
 
-    const publicKeyHash = assetLockValidationResult.getData();
+    const publicKeyHash = assetLockProofValidationResult.getData();
 
     result.merge(
       await validateSignatureAgainstAssetLockPublicKey(rawStateTransition, publicKeyHash),

@@ -26,16 +26,12 @@ class IdentityFacade {
   /**
    * Create Identity
    *
-   * @param {Transaction} assetLockTransaction
-   * @param {number} outputIndex
-   * @param {InstantAssetLockProof} assetLockProof
+   * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
    * @param {PublicKey[]} publicKeys
    * @return {Identity}
    */
-  create(assetLockTransaction, outputIndex, assetLockProof, publicKeys) {
+  create(assetLockProof, publicKeys) {
     return this.factory.create(
-      assetLockTransaction,
-      outputIndex,
       assetLockProof,
       publicKeys,
     );
@@ -83,13 +79,26 @@ class IdentityFacade {
   }
 
   /**
-   * Create Asset Lock with proofs
+   * Create Instant Asset Lock proof
    *
    * @param {InstantLock} instantLock
+   * @param {Transaction} assetLockTransaction
+   * @param {number} outputIndex
    * @returns {InstantAssetLockProof}
    */
-  createInstantAssetLockProof(instantLock) {
-    return this.factory.createInstantAssetLockProof(instantLock);
+  createInstantAssetLockProof(instantLock, assetLockTransaction, outputIndex) {
+    return this.factory.createInstantAssetLockProof(instantLock, assetLockTransaction, outputIndex);
+  }
+
+  /**
+   * Create Chain Asset Lock proof
+   *
+   * @param {number} coreChainLockedHeight
+   * @param {Buffer} outPoint
+   * @returns {InstantAssetLockProof|ChainAssetLockProof}
+   */
+  createChainAssetLockProof(coreChainLockedHeight, outPoint) {
+    return this.factory.createChainAssetLockProof(coreChainLockedHeight, outPoint);
   }
 
   /**
@@ -106,16 +115,12 @@ class IdentityFacade {
    * Create identity top up transition
    *
    * @param {Identifier|Buffer|string} identityId - identity to top up
-   * @param {Transaction} assetLockTransaction
-   * @param {number} outputIndex
-   * @param {InstantAssetLockProof} assetLockProof
+   * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
    * @return {IdentityTopUpTransition}
    */
-  createIdentityTopUpTransition(identityId, assetLockTransaction, outputIndex, assetLockProof) {
+  createIdentityTopUpTransition(identityId, assetLockProof) {
     return this.factory.createIdentityTopUpTransition(
       identityId,
-      assetLockTransaction,
-      outputIndex,
       assetLockProof,
     );
   }

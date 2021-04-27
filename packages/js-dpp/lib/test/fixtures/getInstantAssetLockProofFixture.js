@@ -5,13 +5,12 @@ const {
   Script,
   Opcode,
 } = require('@dashevo/dashcore-lib');
-
-const AssetLock = require('../../identity/stateTransitions/assetLock/AssetLock');
+const InstantAssetLockProof = require('../../identity/stateTransitions/assetLockProof/instant/InstantAssetLockProof');
 
 /**
  * @param {PrivateKey} [oneTimePrivateKey]
  */
-function getAssetLockFixture(oneTimePrivateKey = new PrivateKey()) {
+function getInstantAssetLockProofFixture(oneTimePrivateKey = new PrivateKey()) {
   const privateKeyHex = 'cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY';
   const privateKey = new PrivateKey(privateKeyHex);
   const fromAddress = privateKey.toAddress();
@@ -49,14 +48,12 @@ function getAssetLockFixture(oneTimePrivateKey = new PrivateKey()) {
     signature: '8967c46529a967b3822e1ba8a173066296d02593f0f59b3a78a30a7eef9c8a120847729e62e4a32954339286b79fe7590221331cd28d576887a263f45b595d499272f656c3f5176987c976239cac16f972d796ad82931d532102a4f95eec7d80',
   });
 
-  return new AssetLock({
+  return new InstantAssetLockProof({
+    type: 0,
+    instantLock: instantLock.toBuffer(),
     transaction: transaction.toBuffer(),
     outputIndex: 0,
-    proof: {
-      type: 0,
-      instantLock: instantLock.toBuffer(),
-    },
   });
 }
 
-module.exports = getAssetLockFixture;
+module.exports = getInstantAssetLockProofFixture;

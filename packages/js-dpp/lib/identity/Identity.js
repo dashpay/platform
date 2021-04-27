@@ -163,24 +163,24 @@ class Identity {
   }
 
   /**
-   * Set asset lock
+   * Set asset lock proof
    *
-   * @param {AssetLock} assetLock
+   * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
    * @return {Identity}
    */
-  setAssetLock(assetLock) {
-    this.assetLock = assetLock;
+  setAssetLockProof(assetLockProof) {
+    this.assetLockProof = assetLockProof;
 
     return this;
   }
 
   /**
-   * Get locked out point
+   * Get asset lock proof
    *
-   * @return {AssetLock}
+   * @return {InstantAssetLockProof|ChainAssetLockProof}
    */
-  getAssetLock() {
-    return this.assetLock;
+  getAssetLockProof() {
+    return this.assetLockProof;
   }
 
   /**

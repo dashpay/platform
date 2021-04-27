@@ -8,8 +8,8 @@ const IdentityTopUpTransition = require('./stateTransitions/identityTopUpTransit
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
-const AssetLock = require('./stateTransitions/assetLock/AssetLock');
-const InstantAssetLockProof = require('./stateTransitions/assetLock/proof/instant/InstantAssetLockProof');
+const InstantAssetLockProof = require('./stateTransitions/assetLockProof/instant/InstantAssetLockProof');
+const ChainAssetLockProof = require('./stateTransitions/assetLockProof/chain/ChainAssetLockProof');
 
 class IdentityFactory {
   /**
@@ -22,22 +22,14 @@ class IdentityFactory {
   /**
    * Create Identity
    *
-   * @param {Transaction} assetLockTransaction
-   * @param {number} outputIndex
    * @param {InstantAssetLockProof} assetLockProof
    * @param {PublicKey[]} publicKeys
    * @return {Identity}
    */
-  create(assetLockTransaction, outputIndex, assetLockProof, publicKeys) {
-    const assetLock = new AssetLock({
-      transaction: assetLockTransaction.toBuffer(),
-      outputIndex,
-      proof: assetLockProof.toObject(),
-    });
-
+  create(assetLockProof, publicKeys) {
     const identity = new Identity({
       protocolVersion: Identity.PROTOCOL_VERSION,
-      id: assetLock.createIdentifier(),
+      id: assetLockProof.createIdentifier(),
       balance: 0,
       publicKeys: publicKeys.map((publicKey, i) => ({
         id: i,
@@ -47,7 +39,7 @@ class IdentityFactory {
       revision: 0,
     });
 
-    identity.setAssetLock(assetLock);
+    identity.setAssetLockProof(assetLockProof);
 
     return identity;
   }
@@ -99,14 +91,32 @@ class IdentityFactory {
   }
 
   /**
-   * Create Asset Lock with proofs
+   * Create Instant Asset Lock proof
    *
    * @param {InstantLock} instantLock
+   * @param {Transaction} assetLockTransaction
+   * @param {number} outputIndex
    * @returns {InstantAssetLockProof}
    */
-  createInstantAssetLockProof(instantLock) {
+  createInstantAssetLockProof(instantLock, assetLockTransaction, outputIndex) {
     return new InstantAssetLockProof({
       instantLock: instantLock.toBuffer(),
+      transaction: assetLockTransaction.toBuffer(),
+      outputIndex,
+    });
+  }
+
+  /**
+   * Create Chain Asset Lock proof
+   *
+   * @param {number} coreChainLockedHeight
+   * @param {Buffer} outPoint
+   * @returns {InstantAssetLockProof}
+   */
+  createChainAssetLockProof(coreChainLockedHeight, outPoint) {
+    return new ChainAssetLockProof({
+      coreChainLockedHeight,
+      outPoint,
     });
   }
 
@@ -119,7 +129,7 @@ class IdentityFactory {
   createIdentityCreateTransition(identity) {
     const stateTransition = new IdentityCreateTransition({
       protocolVersion: Identity.PROTOCOL_VERSION,
-      assetLock: identity.getAssetLock().toObject(),
+      assetLockProof: identity.getAssetLockProof().toObject(),
     });
 
     stateTransition.setPublicKeys(identity.getPublicKeys());
@@ -131,22 +141,14 @@ class IdentityFactory {
    * Create identity top up transition
    *
    * @param {Identifier|Buffer|string} identityId - identity to top up
-   * @param {Transaction} assetLockTransaction
-   * @param {number} outputIndex
    * @param {InstantAssetLockProof} assetLockProof
    * @return {IdentityTopUpTransition}
    */
-  createIdentityTopUpTransition(identityId, assetLockTransaction, outputIndex, assetLockProof) {
-    const assetLock = new AssetLock({
-      transaction: assetLockTransaction.toBuffer(),
-      outputIndex,
-      proof: assetLockProof.toObject(),
-    });
-
+  createIdentityTopUpTransition(identityId, assetLockProof) {
     return new IdentityTopUpTransition({
       protocolVersion: Identity.PROTOCOL_VERSION,
       identityId,
-      assetLock: assetLock.toObject(),
+      assetLockProof: assetLockProof.toObject(),
     });
   }
 }

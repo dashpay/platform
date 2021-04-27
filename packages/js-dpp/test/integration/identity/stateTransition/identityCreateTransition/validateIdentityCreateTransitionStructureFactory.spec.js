@@ -15,15 +15,17 @@ const {
 
 const ValidationResult = require('../../../../../lib/validation/ValidationResult');
 const ConsensusError = require('../../../../../lib/errors/ConsensusError');
+const InstantAssetLockProof = require('../../../../../lib/identity/stateTransitions/assetLockProof/instant/InstantAssetLockProof');
+const ChainAssetLockProof = require('../../../../../lib/identity/stateTransitions/assetLockProof/chain/ChainAssetLockProof');
 
 describe('validateIdentityCreateTransitionStructureFactory', () => {
   let validateIdentityCreateTransitionStructure;
   let rawStateTransition;
   let stateTransition;
   let validatePublicKeysMock;
-  let validateAssetLockStructureMock;
   let validateSignatureAgainstAssetLockPublicKeyMock;
   let assetLockPublicKeyHash;
+  let proofValidationFunctionsByTypeMock;
 
   beforeEach(function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
@@ -35,20 +37,25 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
     assetLockValidationResult.setData(assetLockPublicKeyHash);
 
-    validateAssetLockStructureMock = this.sinonSandbox.stub()
-      .resolves(assetLockValidationResult);
-
     validateSignatureAgainstAssetLockPublicKeyMock = this.sinonSandbox.stub()
       .resolves(new ValidationResult());
 
     const ajv = createAjv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
+    const proofValidationResult = new ValidationResult();
+    proofValidationResult.setData(assetLockPublicKeyHash);
+
+    proofValidationFunctionsByTypeMock = {
+      [InstantAssetLockProof.type]: this.sinonSandbox.stub().resolves(proofValidationResult),
+      [ChainAssetLockProof.type]: this.sinonSandbox.stub().resolves(proofValidationResult),
+    };
+
     validateIdentityCreateTransitionStructure = validateIdentityCreateTransitionStructureFactory(
       jsonSchemaValidator,
       validatePublicKeysMock,
-      validateAssetLockStructureMock,
       validateSignatureAgainstAssetLockPublicKeyMock,
+      proofValidationFunctionsByTypeMock,
     );
 
     stateTransition = getIdentityCreateTransitionFixture();
@@ -145,9 +152,9 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
     });
   });
 
-  describe('assetLock', () => {
+  describe('assetLockProof', () => {
     it('should be present', async () => {
-      delete rawStateTransition.assetLock;
+      delete rawStateTransition.assetLockProof;
 
       const result = await validateIdentityCreateTransitionStructure(
         rawStateTransition,
@@ -158,12 +165,12 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('');
-      expect(error.params.missingProperty).to.equal('assetLock');
+      expect(error.params.missingProperty).to.equal('assetLockProof');
       expect(error.keyword).to.equal('required');
     });
 
     it('should be an object', async () => {
-      rawStateTransition.assetLock = 1;
+      rawStateTransition.assetLockProof = 1;
 
       const result = await validateIdentityCreateTransitionStructure(rawStateTransition);
 
@@ -171,7 +178,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.assetLock');
+      expect(error.dataPath).to.equal('.assetLockProof');
       expect(error.keyword).to.equal('type');
     });
 
@@ -181,7 +188,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
         assetLockError,
       ]);
 
-      validateAssetLockStructureMock.returns(assetLockResult);
+      proofValidationFunctionsByTypeMock[InstantAssetLockProof.type].resolves(assetLockResult);
 
       const result = await validateIdentityCreateTransitionStructure(
         rawStateTransition,
@@ -193,9 +200,10 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       expect(error).to.equal(assetLockError);
 
-      expect(validateAssetLockStructureMock).to.be.calledOnceWithExactly(
-        rawStateTransition.assetLock,
-      );
+      expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
+        .to.be.calledOnceWithExactly(
+          rawStateTransition.assetLockProof,
+        );
     });
   });
 

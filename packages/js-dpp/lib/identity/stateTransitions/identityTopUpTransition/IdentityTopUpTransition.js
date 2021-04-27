@@ -1,7 +1,7 @@
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const Identifier = require('../../../identifier/Identifier');
-const AssetLock = require('../assetLock/AssetLock');
+const createAssetLockProofInstance = require('../assetLockProof/createAssetLockProofInstance');
 
 class IdentityTopUpTransition extends AbstractStateTransition {
   /**
@@ -14,8 +14,8 @@ class IdentityTopUpTransition extends AbstractStateTransition {
       this.setIdentityId(rawStateTransition.identityId);
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'assetLock')) {
-      this.setAssetLock(new AssetLock(rawStateTransition.assetLock));
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'assetLockProof')) {
+      this.setAssetLockProof(createAssetLockProofInstance(rawStateTransition.assetLockProof));
     }
   }
 
@@ -31,20 +31,20 @@ class IdentityTopUpTransition extends AbstractStateTransition {
   /**
    * Set Asset Lock
    *
-   * @param {AssetLock} assetLock
+   * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
    * @return {IdentityTopUpTransition}
    */
-  setAssetLock(assetLock) {
-    this.assetLock = assetLock;
+  setAssetLockProof(assetLockProof) {
+    this.assetLockProof = assetLockProof;
 
     return this;
   }
 
   /**
-   * @return {AssetLock}
+   * @return {InstantAssetLockProof|ChainAssetLockProof}
    */
-  getAssetLock() {
-    return this.assetLock;
+  getAssetLockProof() {
+    return this.assetLockProof;
   }
 
   /**
@@ -98,7 +98,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
     const rawStateTransition = {
       ...super.toObject(options),
       identityId: this.getIdentityId(),
-      assetLock: this.getAssetLock().toObject(),
+      assetLockProof: this.getAssetLockProof().toObject(),
     };
 
     if (!options.skipIdentifiersConversion) {
@@ -117,7 +117,7 @@ class IdentityTopUpTransition extends AbstractStateTransition {
     return {
       ...super.toJSON(),
       identityId: this.getIdentityId().toString(),
-      assetLock: this.getAssetLock().toJSON(),
+      assetLockProof: this.getAssetLockProof().toJSON(),
     };
   }
 
@@ -133,13 +133,13 @@ class IdentityTopUpTransition extends AbstractStateTransition {
 
 /**
  * @typedef {RawStateTransition & Object} RawIdentityTopUpTransition
- * @property {RawAssetLock} assetLock
+ * @property {RawInstantAssetLockProof|RawChainAssetLockProof} assetLockProof
  * @property {Buffer} identityId
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonIdentityTopUpTransition
- * @property {JsonAssetLock} assetLock
+ * @property {JsonInstantAssetLockProof|JsonChainAssetLockProof} assetLockProof
  * @property {string} identityId
  */
 

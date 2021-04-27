@@ -11,11 +11,13 @@ const { convertSatoshiToCredits } = require('../../identity/creditsConverter');
  *
  * @param {StateRepository} stateRepository
  * @param {calculateStateTransitionFee} calculateStateTransitionFee
+ * @param {fetchAssetLockTransactionOutput} fetchAssetLockTransactionOutput
  * @return {validateStateTransitionFee}
  */
 function validateStateTransitionFeeFactory(
   stateRepository,
   calculateStateTransitionFee,
+  fetchAssetLockTransactionOutput,
 ) {
   /**
    * @typedef validateStateTransitionFee
@@ -32,7 +34,7 @@ function validateStateTransitionFeeFactory(
     switch (stateTransition.getType()) {
       case stateTransitionTypes.IDENTITY_TOP_UP:
       case stateTransitionTypes.IDENTITY_CREATE: {
-        const output = stateTransition.getAssetLock().getOutput();
+        const output = await fetchAssetLockTransactionOutput(stateTransition.getAssetLockProof());
 
         balance = convertSatoshiToCredits(output.satoshis);
 

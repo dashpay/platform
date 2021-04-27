@@ -11,7 +11,7 @@
       "type": "integer",
       "const": 2
     },
-    "assetLock": {
+    "assetLockProof": {
       "type": "object"
     },
     "publicKeys": {
@@ -31,7 +31,7 @@
   "required": [
     "protocolVersion",
     "type",
-    "assetLock",
+    "assetLockProof",
     "publicKeys",
     "signature"
   ]

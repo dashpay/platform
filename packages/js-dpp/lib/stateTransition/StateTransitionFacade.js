@@ -56,11 +56,14 @@ const applyIdentityCreateTransitionFactory = require(
 const applyIdentityTopUpTransitionFactory = require(
   '../identity/stateTransitions/identityTopUpTransition/applyIdentityTopUpTransitionFactory',
 );
-const validateAssetLockStructureFactory = require('../identity/stateTransitions/assetLock/validateAssetLockStructureFactory');
 const validateSignatureAgainstAssetLockPublicKeyFactory = require('../identity/stateTransitions/validateSignatureAgainstAssetLockPublicKeyFactory');
-const AssetLock = require('../identity/stateTransitions/assetLock/AssetLock');
-const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransitions/assetLock/proof/instant/validateInstantAssetLockProofStructureFactory');
+const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransitions/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
 const calculateStateTransitionFee = require('./calculateStateTransitionFee');
+const InstantAssetLockProof = require('../identity/stateTransitions/assetLockProof/instant/InstantAssetLockProof');
+const ChainAssetLockProof = require('../identity/stateTransitions/assetLockProof/chain/ChainAssetLockProof');
+const validateChainAssetLockProofStructureFactory = require('../identity/stateTransitions/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
+const fetchAssetLockTransactionOutputFactory = require('../identity/stateTransitions/assetLockProof/fetchAssetLockTransactionOutputFactory');
+const validateAssetLockTransactionFactory = require('../identity/stateTransitions/assetLockProof/validateAssetLockTransactionFactory');
 
 class StateTransitionFacade {
   /**
@@ -107,20 +110,24 @@ class StateTransitionFacade {
       )
     );
 
+    const validateAssetLockTransaction = validateAssetLockTransactionFactory(stateRepository);
+
     const validateInstantAssetLockProofStructure = validateInstantAssetLockProofStructureFactory(
       validator,
       stateRepository,
+      validateAssetLockTransaction,
+    );
+
+    const validateChainAssetLockProofStructure = validateChainAssetLockProofStructureFactory(
+      validator,
+      stateRepository,
+      validateAssetLockTransaction,
     );
 
     const proofValidationFunctionsByType = {
-      [AssetLock.PROOF_TYPE_INSTANT]: validateInstantAssetLockProofStructure,
+      [InstantAssetLockProof.type]: validateInstantAssetLockProofStructure,
+      [ChainAssetLockProof.type]: validateChainAssetLockProofStructure,
     };
-
-    const validateAssetLockStructure = validateAssetLockStructureFactory(
-      validator,
-      proofValidationFunctionsByType,
-      stateRepository,
-    );
 
     const validateSignatureAgainstAssetLockPublicKey = (
       validateSignatureAgainstAssetLockPublicKeyFactory(
@@ -137,8 +144,8 @@ class StateTransitionFacade {
       validateIdentityCreateTransitionStructureFactory(
         validator,
         validatePublicKeys,
-        validateAssetLockStructure,
         validateSignatureAgainstAssetLockPublicKey,
+        proofValidationFunctionsByType,
       )
     );
 
@@ -146,8 +153,8 @@ class StateTransitionFacade {
       validateIdentityTopUpTransitionStructureFactory(
         validator,
         validateIdentityExistence,
-        validateAssetLockStructure,
         validateSignatureAgainstAssetLockPublicKey,
+        proofValidationFunctionsByType,
       )
     );
 
@@ -209,9 +216,12 @@ class StateTransitionFacade {
       [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionData,
     });
 
+    const fetchAssetLockTransactionOutput = fetchAssetLockTransactionOutputFactory(stateRepository);
+
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
       stateRepository,
       calculateStateTransitionFee,
+      fetchAssetLockTransactionOutput,
     );
 
     this.factory = new StateTransitionFactory(
@@ -230,10 +240,12 @@ class StateTransitionFacade {
 
     const applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
       stateRepository,
+      fetchAssetLockTransactionOutput,
     );
 
     const applyIdentityTopUpTransition = applyIdentityTopUpTransitionFactory(
       stateRepository,
+      fetchAssetLockTransactionOutput,
     );
 
     this.applyStateTransition = applyStateTransitionFactory(

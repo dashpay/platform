@@ -1,7 +1,7 @@
 const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const IdentityPublicKey = require('../../IdentityPublicKey');
-const AssetLock = require('../assetLock/AssetLock');
+const createAssetLockProofInstance = require('../assetLockProof/createAssetLockProofInstance');
 
 class IdentityCreateTransition extends AbstractStateTransition {
   /**
@@ -19,8 +19,8 @@ class IdentityCreateTransition extends AbstractStateTransition {
       );
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'assetLock')) {
-      this.setAssetLock(new AssetLock(rawStateTransition.assetLock));
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'assetLockProof')) {
+      this.setAssetLockProof(createAssetLockProofInstance(rawStateTransition.assetLockProof));
     }
   }
 
@@ -36,22 +36,22 @@ class IdentityCreateTransition extends AbstractStateTransition {
   /**
    * Set asset lock
    *
-   * @param {AssetLock} assetLock
+   * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
    * @return {IdentityCreateTransition}
    */
-  setAssetLock(assetLock) {
-    this.assetLock = assetLock;
+  setAssetLockProof(assetLockProof) {
+    this.assetLockProof = assetLockProof;
 
-    this.identityId = assetLock.createIdentifier();
+    this.identityId = assetLockProof.createIdentifier();
 
     return this;
   }
 
   /**
-   * @return {AssetLock}
+   * @return {InstantAssetLockProof|ChainAssetLockProof}
    */
-  getAssetLock() {
-    return this.assetLock;
+  getAssetLockProof() {
+    return this.assetLockProof;
   }
 
   /**
@@ -121,7 +121,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
 
     return {
       ...super.toObject(options),
-      assetLock: this.getAssetLock().toObject(),
+      assetLockProof: this.getAssetLockProof().toObject(),
       publicKeys: this.getPublicKeys()
         .map((publicKey) => publicKey.toObject()),
     };
@@ -136,7 +136,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
   toJSON() {
     return {
       ...super.toJSON(),
-      assetLock: this.getAssetLock().toJSON(),
+      assetLockProof: this.getAssetLockProof().toJSON(),
       publicKeys: this.getPublicKeys().map((publicKey) => publicKey.toJSON()),
     };
   }
@@ -153,13 +153,13 @@ class IdentityCreateTransition extends AbstractStateTransition {
 
 /**
  * @typedef {RawStateTransition & Object} RawIdentityCreateTransition
- * @property {RawAssetLock} assetLock
+ * @property {RawInstantAssetLockProof|RawChainAssetLockProof} assetLockProof
  * @property {RawIdentityPublicKey[]} publicKeys
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonIdentityCreateTransition
- * @property {JsonAssetLock} assetLock
+ * @property {JsonInstantAssetLockProof|JsonChainAssetLockProof} assetLockProof
  * @property {JsonIdentityPublicKey[]} publicKeys
  */
 

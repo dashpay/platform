@@ -14,21 +14,30 @@ describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
   let applyIdentityCreateTransition;
   let stateRepositoryMock;
+  let fetchAssetLockTransactionOutputMock;
+  let output;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     stateTransition = getIdentityCreateTransitionFixture();
 
+    output = stateTransition.getAssetLockProof().getOutput();
+
+    fetchAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
+
     applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
       stateRepositoryMock,
+      fetchAssetLockTransactionOutputMock,
     );
   });
 
   it('should store identity created from state transition', async () => {
     await applyIdentityCreateTransition(stateTransition);
 
-    const balance = convertSatoshiToCredits(stateTransition.getAssetLock().getOutput().satoshis);
+    const balance = convertSatoshiToCredits(
+      output.satoshis,
+    );
 
     const identity = new Identity({
       protocolVersion: Identity.PROTOCOL_VERSION,
@@ -51,9 +60,12 @@ describe('applyIdentityCreateTransitionFactory', () => {
       publicKeyHashes,
     );
 
-    expect(stateRepositoryMock.storeAssetLockTransactionOutPoint).to.have.been
+    expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
-        stateTransition.getAssetLock().getOutPoint(),
+        stateTransition.getAssetLockProof().getOutPoint(),
       );
+
+    expect(fetchAssetLockTransactionOutputMock)
+      .to.be.calledOnceWithExactly(stateTransition.getAssetLockProof());
   });
 });

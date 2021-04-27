@@ -26,7 +26,8 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     storeIdentityPublicKeyHashes: sinonSandbox.stub(),
     fetchIdentityIdsByPublicKeyHashes: sinonSandbox.stub(),
     verifyInstantLock: sinonSandbox.stub(),
-    storeAssetLockTransactionOutPoint: sinonSandbox.stub(),
-    checkAssetLockTransactionOutPointExists: sinonSandbox.stub(),
+    markAssetLockTransactionOutPointAsUsed: sinonSandbox.stub(),
+    verifyChainLockHeight: sinonSandbox.stub(),
+    isAssetLockTransactionOutPointAlreadyUsed: sinonSandbox.stub(),
   };
 };

@@ -4,7 +4,7 @@ const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes
 
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
-const getAssetLockFixture = require('./getAssetLockFixture');
+const getInstantAssetLockProofFixture = require('./getInstantAssetLockProofFixture');
 
 /**
  *
@@ -14,7 +14,7 @@ module.exports = function getIdentityTopUpTransitionFixture() {
   const rawStateTransition = {
     protocolVersion: 0,
     type: stateTransitionTypes.IDENTITY_CREATE,
-    assetLock: getAssetLockFixture().toObject(),
+    assetLockProof: getInstantAssetLockProofFixture().toObject(),
     identityId: generateRandomIdentifier(),
   };
 

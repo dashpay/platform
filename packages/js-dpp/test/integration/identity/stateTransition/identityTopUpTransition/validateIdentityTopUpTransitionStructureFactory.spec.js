@@ -18,15 +18,17 @@ const ValidationResult = require('../../../../../lib/validation/ValidationResult
 const ConsensusError = require('../../../../../lib/errors/ConsensusError');
 const IdentityNotFoundError = require('../../../../../lib/errors/IdentityNotFoundError');
 const Identifier = require('../../../../../lib/identifier/Identifier');
+const ChainAssetLockProof = require('../../../../../lib/identity/stateTransitions/assetLockProof/chain/ChainAssetLockProof');
+const InstantAssetLockProof = require('../../../../../lib/identity/stateTransitions/assetLockProof/instant/InstantAssetLockProof');
 
 describe('validateIdentityTopUpTransitionStructureFactory', () => {
   let rawStateTransition;
   let stateTransition;
   let assetLockPublicKeyHash;
   let validateIdentityTopUpTransitionStructure;
-  let validateAssetLockStructureMock;
   let validateSignatureAgainstAssetLockPublicKeyMock;
   let validateIdentityExistenceMock;
+  let proofValidationFunctionsByTypeMock;
 
   beforeEach(function beforeEach() {
     validateIdentityExistenceMock = this.sinonSandbox.stub().resolves(new ValidationResult());
@@ -36,8 +38,10 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
     const assetLockValidationResult = new ValidationResult();
     assetLockValidationResult.setData(assetLockPublicKeyHash);
 
-    validateAssetLockStructureMock = this.sinonSandbox.stub()
-      .resolves(assetLockValidationResult);
+    proofValidationFunctionsByTypeMock = {
+      [InstantAssetLockProof.type]: this.sinonSandbox.stub().resolves(assetLockValidationResult),
+      [ChainAssetLockProof.type]: this.sinonSandbox.stub().resolves(assetLockValidationResult),
+    };
 
     validateSignatureAgainstAssetLockPublicKeyMock = this.sinonSandbox.stub()
       .resolves(new ValidationResult());
@@ -48,8 +52,8 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
     validateIdentityTopUpTransitionStructure = validateIdentityTopUpTransitionStructureFactory(
       jsonSchemaValidator,
       validateIdentityExistenceMock,
-      validateAssetLockStructureMock,
       validateSignatureAgainstAssetLockPublicKeyMock,
+      proofValidationFunctionsByTypeMock,
     );
 
     stateTransition = getIdentityTopUpTransitionFixture();
@@ -146,9 +150,9 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
     });
   });
 
-  describe('assetLock', () => {
+  describe('assetLockProof', () => {
     it('should be present', async () => {
-      delete rawStateTransition.assetLock;
+      delete rawStateTransition.assetLockProof;
 
       const result = await validateIdentityTopUpTransitionStructure(
         rawStateTransition,
@@ -159,12 +163,12 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.dataPath).to.equal('');
-      expect(error.params.missingProperty).to.equal('assetLock');
+      expect(error.params.missingProperty).to.equal('assetLockProof');
       expect(error.keyword).to.equal('required');
     });
 
     it('should be an object', async () => {
-      rawStateTransition.assetLock = 1;
+      rawStateTransition.assetLockProof = 1;
 
       const result = await validateIdentityTopUpTransitionStructure(rawStateTransition);
 
@@ -172,7 +176,7 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.assetLock');
+      expect(error.dataPath).to.equal('.assetLockProof');
       expect(error.keyword).to.equal('type');
     });
 
@@ -182,7 +186,7 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
         assetLockError,
       ]);
 
-      validateAssetLockStructureMock.returns(assetLockResult);
+      proofValidationFunctionsByTypeMock[InstantAssetLockProof.type].resolves(assetLockResult);
 
       const result = await validateIdentityTopUpTransitionStructure(
         rawStateTransition,
@@ -194,9 +198,10 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
 
       expect(error).to.equal(assetLockError);
 
-      expect(validateAssetLockStructureMock).to.be.calledOnceWithExactly(
-        rawStateTransition.assetLock,
-      );
+      expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
+        .to.be.calledOnceWithExactly(
+          rawStateTransition.assetLockProof,
+        );
     });
   });
 
@@ -375,5 +380,10 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
     const result = await validateIdentityTopUpTransitionStructure(rawStateTransition);
 
     expect(result.isValid()).to.be.true();
+
+    expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
+      .to.be.calledOnceWithExactly(
+        rawStateTransition.assetLockProof,
+      );
   });
 });

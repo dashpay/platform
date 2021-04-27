@@ -25,6 +25,7 @@ describe('validateStateTransitionFeeFactory', () => {
   let identity;
   let dataContract;
   let calculateStateTransitionFeeMock;
+  let fetchAssetLockTransactionOutputMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -32,11 +33,15 @@ describe('validateStateTransitionFeeFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
+    const output = getIdentityCreateTransitionFixture().getAssetLockProof().getOutput();
+
     calculateStateTransitionFeeMock = this.sinonSandbox.stub().returns(2);
+    fetchAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
 
     validateStateTransitionFee = validateStateTransitionFeeFactory(
       stateRepositoryMock,
       calculateStateTransitionFeeMock,
+      fetchAssetLockTransactionOutputMock,
     );
 
     dataContract = getDataContractFixture();
@@ -70,6 +75,8 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         dataContractCreateTransition,
       );
+
+      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
     });
 
     it('should return valid result', async () => {
@@ -86,6 +93,8 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         dataContractCreateTransition,
       );
+
+      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
     });
   });
 
@@ -124,6 +133,8 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         documentsBatchTransition,
       );
+
+      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
     });
 
     it('should return valid result', async () => {
@@ -140,6 +151,8 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         documentsBatchTransition,
       );
+
+      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
     });
   });
 
@@ -150,7 +163,9 @@ describe('validateStateTransitionFeeFactory', () => {
     beforeEach(() => {
       identityCreateTransition = getIdentityCreateTransitionFixture();
 
-      const { satoshis } = identityCreateTransition.getAssetLock().getOutput();
+      const { satoshis } = identityCreateTransition
+        .getAssetLockProof()
+        .getOutput();
 
       outputAmount = satoshis * RATIO;
     });
@@ -171,6 +186,10 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         identityCreateTransition,
       );
+
+      expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+        identityCreateTransition.getAssetLockProof(),
+      );
     });
 
     it('should return valid result', async () => {
@@ -185,6 +204,10 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         identityCreateTransition,
       );
+
+      expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+        identityCreateTransition.getAssetLockProof(),
+      );
     });
   });
 
@@ -195,7 +218,9 @@ describe('validateStateTransitionFeeFactory', () => {
     beforeEach(() => {
       identityTopUpTransition = getIdentityTopUpTransitionFixture();
 
-      const { satoshis } = identityTopUpTransition.getAssetLock().getOutput();
+      const { satoshis } = identityTopUpTransition
+        .getAssetLockProof()
+        .getOutput();
 
       outputAmount = satoshis * RATIO;
     });
@@ -220,6 +245,10 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         identityTopUpTransition,
       );
+
+      expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+        identityTopUpTransition.getAssetLockProof(),
+      );
     });
 
     it('should return valid result', async () => {
@@ -237,6 +266,10 @@ describe('validateStateTransitionFeeFactory', () => {
 
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
         identityTopUpTransition,
+      );
+
+      expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+        identityTopUpTransition.getAssetLockProof(),
       );
     });
   });
@@ -262,6 +295,8 @@ describe('validateStateTransitionFeeFactory', () => {
 
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(stateTransitionMock);
       expect(stateRepositoryMock.fetchIdentity).to.not.be.called();
+
+      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
     }
   });
 });
