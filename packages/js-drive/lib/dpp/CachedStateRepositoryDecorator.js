@@ -63,8 +63,8 @@ class CachedStateRepositoryDecorator {
    *
    * @return {Promise<void>}
    */
-  async storeAssetLockTransactionOutPoint(outPointBuffer) {
-    return this.stateRepository.storeAssetLockTransactionOutPoint(outPointBuffer);
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
+    return this.stateRepository.markAssetLockTransactionOutPointAsUsed(outPointBuffer);
   }
 
   /**
@@ -74,8 +74,8 @@ class CachedStateRepositoryDecorator {
    *
    * @return {Promise<boolean>}
    */
-  async checkAssetLockTransactionOutPointExists(outPointBuffer) {
-    return this.stateRepository.checkAssetLockTransactionOutPointExists(outPointBuffer);
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
+    return this.stateRepository.isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer);
   }
 
   /**

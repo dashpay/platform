@@ -268,14 +268,18 @@ describe('DriveStateRepository', () => {
   describe('#fetchTransaction', () => {
     it('should fetch transaction from core', async () => {
       const rawTransaction = {
-        data: 'some result',
+        hex: 'some result',
+        height: 1,
       };
 
       coreRpcClientMock.getRawTransaction.resolves({ result: rawTransaction });
 
       const result = await stateRepository.fetchTransaction(id);
 
-      expect(result).to.deep.equal(rawTransaction);
+      expect(result).to.deep.equal({
+        data: Buffer.from(rawTransaction.hex, 'hex'),
+        height: rawTransaction.height,
+      });
       expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWithExactly(id, 1);
     });
 

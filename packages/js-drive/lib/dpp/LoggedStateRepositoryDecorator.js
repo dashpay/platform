@@ -139,14 +139,14 @@ class LoggedStateRepositoryDecorator {
    *
    * @return {Promise<void>}
    */
-  async storeAssetLockTransactionOutPoint(outPointBuffer) {
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
     let response;
 
     try {
-      response = await this.stateRepository.storeAssetLockTransactionOutPoint(outPointBuffer);
+      response = await this.stateRepository.markAssetLockTransactionOutPointAsUsed(outPointBuffer);
     } finally {
       this.log(
-        'storeAssetLockTransactionOutPoint',
+        'markAssetLockTransactionOutPointAsUsed',
         {
           outPointBuffer: outPointBuffer.toString('base64'),
         },
@@ -164,14 +164,16 @@ class LoggedStateRepositoryDecorator {
    *
    * @return {Promise<boolean>}
    */
-  async checkAssetLockTransactionOutPointExists(outPointBuffer) {
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
     let response;
 
     try {
-      response = await this.stateRepository.checkAssetLockTransactionOutPointExists(outPointBuffer);
+      response = await this.stateRepository.isAssetLockTransactionOutPointAlreadyUsed(
+        outPointBuffer,
+      );
     } finally {
       this.log(
-        'checkAssetLockTransactionOutPointExists',
+        'isAssetLockTransactionOutPointAlreadyUsed',
         {
           outPointBuffer: outPointBuffer.toString('base64'),
         },

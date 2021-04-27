@@ -86,7 +86,7 @@ class DriveStateRepository {
    *
    * @return {Promise<void>}
    */
-  async storeAssetLockTransactionOutPoint(outPointBuffer) {
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
     const transaction = this.getDBTransaction('assetLockTransactions');
 
     this.spentAssetLockTransactionsRepository.store(
@@ -102,7 +102,7 @@ class DriveStateRepository {
    *
    * @return {Promise<boolean>}
    */
-  async checkAssetLockTransactionOutPointExists(outPointBuffer) {
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
     const transaction = this.getDBTransaction('assetLockTransactions');
 
     const result = this.spentAssetLockTransactionsRepository.fetch(
@@ -211,7 +211,10 @@ class DriveStateRepository {
     try {
       const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, 1);
 
-      return transaction;
+      return {
+        data: Buffer.from(transaction.hex, 'hex'),
+        height: transaction.height,
+      };
     } catch (e) {
       // Invalid address or key error
       if (e.code === -5) {
