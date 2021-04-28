@@ -15,10 +15,11 @@ function getLatestFeatureFlagFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
+   * @param {DocumentsIndexedTransaction} [transaction]
    *
    * @return {Promise<Document|null>}
    */
-  async function getLatestFeatureFlag(flagType, blockHeight) {
+  async function getLatestFeatureFlag(flagType, blockHeight, transaction = undefined) {
     if (!featureFlagDataContractId) {
       return null;
     }
@@ -29,7 +30,7 @@ function getLatestFeatureFlagFactory(
 
     const query = {
       where: [
-        ['enableAtHeight', '<=', blockHeight.toInt()],
+        ['enableAtHeight', '<=', blockHeight.toNumber()],
       ],
       orderBy: [
         ['enableAtHeight', 'desc'],
@@ -41,6 +42,7 @@ function getLatestFeatureFlagFactory(
       featureFlagDataContractId,
       flagType,
       query,
+      transaction,
     );
 
     return document;

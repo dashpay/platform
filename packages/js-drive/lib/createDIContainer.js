@@ -882,6 +882,7 @@ function createDIContainer(options) {
       dataContractCache,
       blockExecutionContext,
       simplifiedMasternodeList,
+      getLatestFeatureFlag,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -893,6 +894,8 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        featureFlagTypes,
+        getLatestFeatureFlag,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -914,6 +917,7 @@ function createDIContainer(options) {
       blockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
+      getLatestFeatureFlag,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -925,6 +929,8 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        featureFlagTypes,
+        getLatestFeatureFlag,
         blockExecutionStoreTransactions,
       );
 

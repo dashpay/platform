@@ -25,9 +25,15 @@ function createDocumentMongoDbRepositoryFactory(
    * @typedef {Promise} createDocumentMongoDbRepository
    * @param {Identifier} dataContractId
    * @param {string} documentType
+   * @param {Object} [runtimeOptions = {}]
+   * @param {boolean} [runtimeOptions.isTransactional]
    * @returns {Promise<DocumentMongoDbRepository>}
    */
-  async function createDocumentMongoDbRepository(dataContractId, documentType) {
+  async function createDocumentMongoDbRepository(
+    dataContractId,
+    documentType,
+    runtimeOptions = {},
+  ) {
     const documentsMongoDBDatabase = await getDocumentMongoDBDatabase(dataContractId);
 
     const { isPrevious } = options;
@@ -37,7 +43,13 @@ function createDocumentMongoDbRepositoryFactory(
       blockExecutionTransactions = container.resolve('previousBlockExecutionStoreTransactions');
     }
 
-    const dataContractTransaction = blockExecutionTransactions.getTransaction('dataContracts');
+    const isTransactional = runtimeOptions.isTransactional === undefined ? true
+      : runtimeOptions.isTransactional;
+
+    let dataContractTransaction;
+    if (isTransactional) {
+      dataContractTransaction = blockExecutionTransactions.getTransaction('dataContracts');
+    }
 
     // As documents are always created in the next block
     // we don't need transaction for data contracts here

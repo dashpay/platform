@@ -13,17 +13,18 @@ function getFeatureFlagForHeightFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
+   * @param {DocumentsIndexedTransaction} [transaction]
    *
    * @return {Promise<Document|null>}
    */
-  async function getFeatureFlagForHeight(flagType, blockHeight) {
+  async function getFeatureFlagForHeight(flagType, blockHeight, transaction = undefined) {
     if (!featureFlagDataContractId) {
       return null;
     }
 
     const query = {
       where: [
-        ['enableAtHeight', '==', blockHeight.toInt()],
+        ['enableAtHeight', '==', blockHeight.toNumber()],
       ],
     };
 
@@ -31,6 +32,7 @@ function getFeatureFlagForHeightFactory(
       featureFlagDataContractId,
       flagType,
       query,
+      transaction,
     );
 
     return document;

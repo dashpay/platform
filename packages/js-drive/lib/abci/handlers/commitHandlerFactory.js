@@ -77,8 +77,10 @@ function commitHandlerFactory(
         await documentDatabaseManager.create(dataContract);
       }
 
+      const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
+
       const fixCumulativeFeesFeatureFlag = await getLatestFeatureFlag(
-        featureFlagTypes.FIX_CUMULATIVE_FEES, blockHeight,
+        featureFlagTypes.FIX_CUMULATIVE_FEES, blockHeight, documentsTransaction,
       );
 
       // Store ST fees from the block to distribution pool

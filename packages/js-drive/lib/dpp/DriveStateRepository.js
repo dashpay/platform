@@ -9,6 +9,8 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
+   * @param {FeatureFlagTypes} featureFlagTypes
+   * @param {getLatestFeatureFlag} getLatestFeatureFlag
    * @param {BlockExecutionStoreTransactions} [blockExecutionStoreTransactions]
    */
   constructor(
@@ -21,6 +23,8 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
+    featureFlagTypes,
+    getLatestFeatureFlag,
     blockExecutionStoreTransactions = undefined,
   ) {
     this.identityRepository = identityRepository;
@@ -33,6 +37,8 @@ class DriveStateRepository {
     this.blockExecutionStoreTransactions = blockExecutionStoreTransactions;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
+    this.featureFlagTypes = featureFlagTypes;
+    this.getLatestFeatureFlag = getLatestFeatureFlag;
   }
 
   /**
@@ -242,34 +248,48 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async verifyInstantLock(instantLock) {
-    return instantLock.verify(this.simplifiedMasternodeList.getStore());
+    const header = await this.blockExecutionContext.getHeader();
 
-    // TODO: Enable with feature flag:
-    // const header = this.blockExecutionContext.getHeader();
-    //
-    // let coreChainLockedHeight;
-    // if (header) {
-    //   ({ coreChainLockedHeight } = header);
-    // }
-    //
-    // try {
-    //   const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
-    //     instantLock.getRequestId().toString('hex'),
-    //     instantLock.txid,
-    //     instantLock.signature,
-    //     coreChainLockedHeight,
-    //   );
-    //
-    //   return isVerified;
-    // } catch (e) {
-    //   // Invalid address or key error or
-    //   // Invalid, missing or duplicate parameter
-    //   if ([-8, -5].includes(e.code)) {
-    //     return false;
-    //   }
-    //
-    //   throw e;
-    // }
+    if (!header) {
+      return false;
+    }
+
+    const {
+      height: blockHeight,
+      coreChainLockedHeight,
+    } = header;
+
+    const verifyLLMQSignaturesWithCoreFeatureFlag = await this.getLatestFeatureFlag(
+      this.featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
+      blockHeight,
+      this.getDBTransaction('documents'),
+    );
+
+    if (!verifyLLMQSignaturesWithCoreFeatureFlag || !verifyLLMQSignaturesWithCoreFeatureFlag.get('enabled')) {
+      // Here dashcore lib is used to verify signatures,
+      // but this approach doesn’t handle signatures created by old quorums
+      // that’a why a Core RPC method is used otherwise
+      return instantLock.verify(this.simplifiedMasternodeList.getStore());
+    }
+
+    try {
+      const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
+        instantLock.getRequestId().toString('hex'),
+        instantLock.txid,
+        instantLock.signature,
+        coreChainLockedHeight,
+      );
+
+      return isVerified;
+    } catch (e) {
+      // Invalid address or key error or
+      // Invalid, missing or duplicate parameter
+      if ([-8, -5].includes(e.code)) {
+        return false;
+      }
+
+      throw e;
+    }
   }
 
   /**

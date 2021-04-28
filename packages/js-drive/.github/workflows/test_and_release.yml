@@ -65,11 +65,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - name: Cache Docker layers
-        uses: satackey/action-docker-layer-caching@v0.0.11
-        continue-on-error: true
-        with:
-          concurrency: 8
+      # - name: Cache Docker layers
+      #   uses: satackey/action-docker-layer-caching@v0.0.11
+      #   continue-on-error: true
+      #   with:
+      #     concurrency: 8
 
       - name: Load workflow dotenv file
         uses: c-py/action-dotenv-to-setenv@v3

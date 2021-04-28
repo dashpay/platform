@@ -28,6 +28,9 @@ class DocumentIndexedStoreRepository {
     const indicesRepository = await this.createDocumentMongoDbRepository(
       document.getDataContractId(),
       document.getType(),
+      {
+        isTransactional: transaction !== undefined,
+      },
     );
 
     await indicesRepository.store(document, mongoDbTransaction);
@@ -74,6 +77,9 @@ class DocumentIndexedStoreRepository {
     const indicesRepository = await this.createDocumentMongoDbRepository(
       dataContractId,
       documentType,
+      {
+        isTransactional: transaction !== undefined,
+      },
     );
 
     const documentIds = await indicesRepository.find(query, mongoDbTransaction);
@@ -106,6 +112,9 @@ class DocumentIndexedStoreRepository {
     const indicesRepository = await this.createDocumentMongoDbRepository(
       dataContractId,
       documentType,
+      {
+        isTransactional: transaction !== undefined,
+      },
     );
 
     await indicesRepository.delete(documentId, mongoDbTransaction);
