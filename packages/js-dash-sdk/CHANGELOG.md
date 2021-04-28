@@ -1,3 +1,9 @@
+## [3.18.2](https://github.com/dashevo/DashJS/compare/v3.18.1...v3.18.2) (2021-04-28)
+
+### Bug Fixes
+* tranasction.isCoinbase is not a function and other fixes from wallet-lib 7.18.1 ([#236](https://github.com/dashevo/wallet-lib/issues/236))
+
+
 ## [3.18.1](https://github.com/dashevo/DashJS/compare/v3.18.0...v3.18.1) (2021-03-03)
 
 
