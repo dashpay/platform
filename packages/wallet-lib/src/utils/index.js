@@ -4,6 +4,7 @@ const {
   duffsToDash,
   getBytesOf,
   hasProp,
+  hasMethod,
 } = require('./utils');
 const {
   generateNewMnemonic,
@@ -36,5 +37,6 @@ module.exports = {
   doubleSha256,
   sha256,
   hasProp,
+  hasMethod,
   fundWallet,
 };

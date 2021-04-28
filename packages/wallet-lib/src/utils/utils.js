@@ -13,6 +13,7 @@ function duffsToDash(duffs) {
   }
   return duffs / DUFFS_PER_DASH;
 }
+
 function hasProp(obj, prop) {
   if (!obj) return false;
   if (Array.isArray(obj)) {
@@ -20,6 +21,17 @@ function hasProp(obj, prop) {
   }
   return {}.hasOwnProperty.call(obj, prop);
 }
+
+/**
+ *
+ * @param {object} obj
+ * @param {string} methodName
+ * @return {boolean}
+ */
+function hasMethod(obj, methodName) {
+  return typeof obj[methodName] === 'function';
+}
+
 function getBytesOf(elem, type) {
   let BASE_BYTES = 0;
   let SCRIPT_BYTES = 0;
@@ -38,5 +50,5 @@ function getBytesOf(elem, type) {
   }
 }
 module.exports = {
-  dashToDuffs, duffsToDash, getBytesOf, hasProp,
+  dashToDuffs, duffsToDash, getBytesOf, hasProp, hasMethod,
 };

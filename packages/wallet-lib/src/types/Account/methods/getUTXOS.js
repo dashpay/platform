@@ -33,7 +33,8 @@ function getUTXOS() {
       for (const identifier in address.utxos) {
         if (!identifier) continue;
         const [txid, outputIndex] = identifier.split('-');
-        const transaction = this.store.transactions[txid];
+        const transaction = new Transaction(this.store.transactions[txid]);
+
         if (transaction.isCoinbase()) {
           // If the transaction is not a special transaction, we can't check its
           // maturity at the moment of writing this comment.
