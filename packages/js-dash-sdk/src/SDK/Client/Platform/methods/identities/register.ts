@@ -26,10 +26,10 @@ export default async function register(
 
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
-    const assetLockProof = await createAssetLockProof(this, assetLockTransaction);
+    const assetLockProof = await createAssetLockProof(this, assetLockTransaction, assetLockOutputIndex);
 
     const { identity, identityCreateTransition, identityIndex } = await createIdentityCreateTransition(
-        this, assetLockTransaction, assetLockOutputIndex, assetLockProof, assetLockPrivateKey
+        this, assetLockProof, assetLockPrivateKey
     );
 
     await broadcastStateTransition(this, identityCreateTransition);

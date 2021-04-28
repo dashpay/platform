@@ -1,7 +1,7 @@
 # Dash SDK
 
 [![NPM Version](https://img.shields.io/npm/v/dash)](https://www.npmjs.org/package/dash)
-[![Build Status](https://img.shields.io/travis/com/dashevo/js-dash-sdk)](https://travis-ci.com/dashevo/js-dash-sdk)
+[![Build Status](https://github.com/dashevo/js-dash-sdk/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/dashcore-lib/actions/workflows/test_and_release.yml)
 [![Release Date](https://img.shields.io/github/release-date/dashevo/js-dash-sdk)](https://github.com/dashevo/js-dash-sdk/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 

@@ -116,14 +116,14 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
       const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
-      const interceptedAssetLock = interceptedIdentityStateTransition.getAssetLock();
+      const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(0).args[0]);
       const isLock = createFakeInstantLock(transaction.hash);
 
       // Check intercepted st
-      expect(interceptedAssetLock.getProof().getInstantLock()).to.be.deep.equal(isLock);
-      expect(interceptedAssetLock.getTransaction().hash).to.be.equal(transaction.hash);
+      expect(interceptedAssetLockProof.getInstantLock()).to.be.deep.equal(isLock);
+      expect(interceptedAssetLockProof.getTransaction().hash).to.be.equal(transaction.hash);
 
       const importedIdentityIds = account.identities.getIdentityIds();
       // Check that we've imported identities properly
@@ -173,15 +173,15 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(1).args[0];
       const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
-      const interceptedAssetLock = interceptedIdentityStateTransition.getAssetLock();
+      const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       expect(interceptedIdentityStateTransition.getType()).to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(1).args[0]);
       const isLock = createFakeInstantLock(transaction.hash);
       // Check intercepted st
-      expect(interceptedAssetLock.getProof().getInstantLock()).to.be.deep.equal(isLock);
-      expect(interceptedAssetLock.getTransaction().hash).to.be.equal(transaction.hash);
+      expect(interceptedAssetLockProof.getInstantLock()).to.be.deep.equal(isLock);
+      expect(interceptedAssetLockProof.getTransaction().hash).to.be.equal(transaction.hash);
     });
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {

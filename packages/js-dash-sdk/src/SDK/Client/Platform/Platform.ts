@@ -21,6 +21,7 @@ import resolveNameByRecord from "./methods/names/resolveByRecord";
 import searchName from "./methods/names/search";
 import broadcastStateTransition from "./broadcastStateTransition";
 import { IPlatformStateProof } from "./IPlatformStateProof";
+import StateRepository from './StateRepository';
 
 /**
  * Interface for PlatformOpts
@@ -129,21 +130,14 @@ export class Platform {
             topUp: topUpIdentity.bind(this),
         };
 
-        const stateRepository = {
-            fetchIdentity: getIdentity.bind(this),
-            fetchDataContract: getContract.bind(this),
-            // This check still exists on the client side, however there's no need to
-            // perform the check as in this client we always use a new transaction
-            // register/top up identity
-            checkAssetLockTransactionOutPointExists() { return false; },
-            verifyInstantLock() { return true; },
-        };
+        this.client = options.client;
+
+        const dppForParsingContracts = new DashPlatformProtocol();
+        const stateRepository = new StateRepository(this.client, dppForParsingContracts);
 
         this.dpp = new DashPlatformProtocol({
             stateRepository,
             ...options,
         });
-
-        this.client = options.client;
     }
 }

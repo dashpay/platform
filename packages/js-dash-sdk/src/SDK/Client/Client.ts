@@ -57,7 +57,7 @@ export class Client extends EventEmitter {
 
         this.options = {
             walletAccountIndex: 0,
-            ...options
+            ...options,
         }
 
         this.network = this.options.network ? this.options.network.toString() : 'testnet';

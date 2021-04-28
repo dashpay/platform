@@ -31,10 +31,10 @@ export async function topUp(this: Platform, identityId: Identifier | string, amo
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
     // Create a proof for the asset lock transaction
-    const assetLockProof = await createAssetLockProof(this, assetLockTransaction);
+    const assetLockProof = await createAssetLockProof(this, assetLockTransaction, assetLockOutputIndex);
 
     // @ts-ignore
-    const identityTopUpTransition = await createIdentityTopUpTransition(this, assetLockTransaction, assetLockOutputIndex, assetLockProof, assetLockPrivateKey, identityId);
+    const identityTopUpTransition = await createIdentityTopUpTransition(this, assetLockProof, assetLockPrivateKey, identityId);
 
     // Broadcast ST
     await broadcastStateTransition(this, identityTopUpTransition);

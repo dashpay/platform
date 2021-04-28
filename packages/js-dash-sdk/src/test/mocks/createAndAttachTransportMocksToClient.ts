@@ -47,11 +47,13 @@ function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
         let interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(stBuffer);
 
         if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
+
+
             let identityToResolve = new Identity({
                 protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
                 id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
                 publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject()),
-                balance: interceptedIdentityStateTransition.getAssetLock().getOutput().satoshis,
+                balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
                 revision: 0,
             });
             dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId()).resolves(identityToResolve.toBuffer());
