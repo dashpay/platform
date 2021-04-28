@@ -126,7 +126,7 @@ jobs:
         id: docker_meta
         uses: crazy-max/ghaction-docker-meta@v2
         with:
-          images: strophy/platform-test-suite
+          images: dashpay/platform-test-suite
           tags: |
             type=match,pattern=v(\d+),group=1
             type=match,pattern=v(\d+.\d+),group=1
