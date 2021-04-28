@@ -54,12 +54,16 @@ describe('Platform', () => {
       }, 1);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
-      const assetLockProof = await dpp.identity.createInstantAssetLockProof(invalidInstantLock);
+      const assetLockProof = await dpp.identity.createInstantAssetLockProof(
+        invalidInstantLock,
+        transaction,
+        outputIndex,
+      );
 
       const {
         identityCreateTransition: invalidIdentityCreateTransition,
       } = await createIdentityCreateTransition(
-        client.platform, transaction, outputIndex, assetLockProof, privateKey,
+        client.platform, assetLockProof, privateKey,
       );
 
       let broadcastError;
@@ -89,7 +93,7 @@ describe('Platform', () => {
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
       await waitForBlocks(client.getDAPIClient(), 1);
 
-      const assetLockProof = await createAssetLockProof(client.platform, transaction);
+      const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
 
       // Creating normal transition
       const {
@@ -97,7 +101,7 @@ describe('Platform', () => {
         identityCreateTransition: identityCreateTransitionOne,
         identityIndex: identityOneIndex,
       } = await createIdentityCreateTransition(
-        client.platform, transaction, outputIndex, assetLockProof, privateKey,
+        client.platform, assetLockProof, privateKey,
       );
 
       await client.platform.broadcastStateTransition(
@@ -114,7 +118,7 @@ describe('Platform', () => {
       const {
         identityCreateTransition: identityCreateDoubleSpendTransition,
       } = await createIdentityCreateTransition(
-        client.platform, transaction, outputIndex, assetLockProof, privateKey,
+        client.platform, assetLockProof, privateKey,
       );
 
       let broadcastError;
@@ -144,11 +148,9 @@ describe('Platform', () => {
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
       await waitForBlocks(client.getDAPIClient(), 1);
 
-      const assetLockProof = await createAssetLockProof(client.platform, transaction);
+      const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
 
       const duplicateIdentity = dpp.identity.create(
-        transaction,
-        outputIndex,
         assetLockProof,
         [walletPublicKey],
       );
@@ -228,6 +230,72 @@ describe('Platform', () => {
 
       expect(identityId).to.be.not.null();
       expect(identityId).to.deep.equal(identity.getId());
+    });
+
+    describe('chainLock', () => {
+      let chainLockIdentity;
+
+      it('should create identity using chainLock', async () => {
+        const {
+          transaction,
+          privateKey,
+          outputIndex,
+        } = await createAssetLockTransaction({
+          client,
+        }, 1);
+
+        // Broadcast Asset Lock transaction
+        await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+        await waitForBlocks(client.getDAPIClient(), 1);
+
+        const { chain } = await client.getDAPIClient().core.getStatus();
+
+        const outPoint = transaction.getOutPointBuffer(outputIndex);
+
+        const assetLockProof = await dpp.identity.createChainAssetLockProof(
+          chain.blocksCount,
+          outPoint,
+        );
+
+        await waitForBlocks(client.getDAPIClient(), 1);
+
+        const identityCreateTransitionData = await createIdentityCreateTransition(
+          client.platform, assetLockProof, privateKey,
+        );
+
+        const {
+
+          identityCreateTransition,
+        } = identityCreateTransitionData;
+
+        ({ identity: chainLockIdentity } = identityCreateTransitionData);
+
+        await client.platform.broadcastStateTransition(
+          identityCreateTransition,
+        );
+
+        expect(chainLockIdentity).to.exist();
+
+        await waitForBalanceToChange(walletAccount);
+      });
+
+      it('should be able to get newly created identity', async () => {
+        const fetchedIdentity = await client.platform.identities.get(
+          chainLockIdentity.getId(),
+        );
+
+        expect(fetchedIdentity).to.be.not.null();
+
+        const fetchedIdentityWithoutBalance = fetchedIdentity.toJSON();
+        delete fetchedIdentityWithoutBalance.balance;
+
+        const localIdentityWithoutBalance = chainLockIdentity.toJSON();
+        delete localIdentityWithoutBalance.balance;
+
+        expect(fetchedIdentityWithoutBalance).to.deep.equal(localIdentityWithoutBalance);
+
+        expect(fetchedIdentity.getBalance()).to.be.greaterThan(0);
+      });
     });
 
     describe('Credits', () => {
@@ -355,15 +423,19 @@ describe('Platform', () => {
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
         await waitForBlocks(client.getDAPIClient(), 1);
 
-        const assetLockProof = await createAssetLockProof(client.platform, transaction);
+        const assetLockProof = await createAssetLockProof(
+          client.platform,
+          transaction,
+          outputIndex,
+        );
 
         // Creating normal transition
         const identityTopUpTransitionOne = await createIdentityTopUpTransition(
-          client.platform, transaction, outputIndex, assetLockProof, privateKey, identity.getId(),
+          client.platform, assetLockProof, privateKey, identity.getId(),
         );
         // Creating ST that tries to spend the same output
         const conflictingTopUpStateTransition = await createIdentityTopUpTransition(
-          client.platform, transaction, outputIndex, assetLockProof, privateKey, identity.getId(),
+          client.platform, assetLockProof, privateKey, identity.getId(),
         );
 
         await client.platform.broadcastStateTransition(

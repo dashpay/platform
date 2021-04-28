@@ -7,11 +7,11 @@ const wait = require('./wait');
  * @return {Promise<void>}
  */
 module.exports = async function waitForBlocks(dapiClient, numberOfBlocks) {
-  let { blocks: currentBlockHeight } = await dapiClient.core.getStatus();
+  let { chain: { blocksCount: currentBlockHeight } } = await dapiClient.core.getStatus();
 
   const desiredBlockHeight = currentBlockHeight + numberOfBlocks;
   do {
-    ({ blocks: currentBlockHeight } = await dapiClient.core.getStatus());
+    ({ chain: { blocksCount: currentBlockHeight } } = await dapiClient.core.getStatus());
 
     if (currentBlockHeight < desiredBlockHeight) {
       await wait(5000);
