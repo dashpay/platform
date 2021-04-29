@@ -284,7 +284,8 @@ class DriveStateRepository {
     } catch (e) {
       // Invalid address or key error or
       // Invalid, missing or duplicate parameter
-      if ([-8, -5].includes(e.code)) {
+      // Parse error
+      if ([-8, -5, -32700].includes(e.code)) {
         return false;
       }
 
