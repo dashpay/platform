@@ -28,7 +28,7 @@
   "dependencies": {
     "@dashevo/dapi-grpc": "~0.19.0-dev.1",
     "@dashevo/dashcore-lib": "~0.19.21",
-    "axios": "^0.19.2",
+    "axios": "^0.21.1",
     "cbor": "^5.0.1",
     "lodash.sample": "^4.2.1"
   },
