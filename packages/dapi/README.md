@@ -1,9 +1,9 @@
 # DAPI
 
-[![Build Status](https://travis-ci.com/dashevo/dapi.svg?branch=master)](https://travis-ci.com/dashevo/dapi)
+[![Build Status](https://github.com/dashevo/dapi/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/dapi/actions/workflows/test_and_release.yml)
 [![API stability](https://img.shields.io/badge/stability-stable-green.svg)](https://nodejs.org/api/documentation.html#documentation_stability_index)
 
-> A decentralized API for the Dash network
+A decentralized API for the Dash network
 
 ## Table of Contents
 - [Install](#install)
