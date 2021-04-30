@@ -709,23 +709,6 @@ describe('Dashpay Contract', () => {
       });
 
       describe('coreHeightCreatedAt', () => {
-        it('should be defined', async () => {
-          delete contactRequestData.coreHeightCreatedAt;
-
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
-
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('coreHeightCreatedAt');
-          }
-        });
-
         it('should not be less than 1', async () => {
           contactRequestData.coreHeightCreatedAt = -1;
 
