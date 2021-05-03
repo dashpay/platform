@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/feature-flags-contract",
-  "version": "0.1.0-dev.2",
+  "version": "0.1.0",
   "description": "Data Contract to store Dash Platform feature flags",
   "scripts": {
     "check-package": "npm run check-package:name && npm run check-package:version",
@@ -34,7 +34,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dpp": "~0.18.0",
+    "@dashevo/dpp": "~0.19.0",
     "chai": "^4.2.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^6.7.2",
