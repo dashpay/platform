@@ -84,7 +84,7 @@
     "pretty-ms": "^7.0.0",
     "public-ip": "^4.0.1",
     "rimraf": "^3.0.2",
-    "rxjs": "latest",
+    "rxjs": "^6.6.7",
     "semver": "^7.3.2",
     "table": "^5.4.6"
   },
