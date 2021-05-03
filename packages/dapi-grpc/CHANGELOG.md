@@ -1,3 +1,17 @@
+# [0.19.0](https://github.com/dashevo/dapi-grpc/compare/v0.18.0...v0.19.0) (2021-04-30)
+
+
+### Features
+
+* restructure core status response ([#107](https://github.com/dashevo/dapi-grpc/issues/107))
+
+
+### BREAKING CHANGES
+
+* structure of `getStatus` method response has changed and not compatible with the previous version.
+
+
+
 # [0.18.0](https://github.com/dashevo/dapi-grpc/compare/v0.17.0...v0.18.0) (2021-03-03)
 
 
@@ -114,6 +128,5 @@
 * add more methods to Core service ([41f3ad0](https://github.com/dashevo/dapi-grpc/commit/41f3ad0ad6aee3acf4b1760949cde36d8df7d6f2))
 * fetchIdentity endpoint ([75d32d8](https://github.com/dashevo/dapi-grpc/commit/75d32d883be4d7a113fe34f1d008e1d9bcc3c7e1))
 * introduce Platform service ([c88b891](https://github.com/dashevo/dapi-grpc/commit/c88b891ecfac8987cd76c773b2f783ad7a155540))
-
 
 
