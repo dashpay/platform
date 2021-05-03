@@ -1,3 +1,22 @@
+# [0.19.0](https://github.com/dashevo/dapi-client/compare/v0.18.0...v0.19.0) (2021-05-03)
+
+
+### Features
+
+* `getStatus` method handler response updated ([#229](https://github.com/dashevo/dapi-client/issues/229), [#230](https://github.com/dashevo/dapi-client/issues/230))
+
+
+### Bug Fixes
+
+* critical security vulnerability in axios@0.19.2 ([#233](https://github.com/dashevo/dapi-client/issues/233))
+
+
+### BREAKING CHANGES
+
+* `getStatus` method handler response have changed
+
+
+
 # [0.18.0](https://github.com/dashevo/dapi-client/compare/v0.17.2...v0.18.0) (2021-03-03)
 
 
