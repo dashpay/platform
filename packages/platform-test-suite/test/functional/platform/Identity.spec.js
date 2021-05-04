@@ -251,7 +251,6 @@ describe('Platform', () => {
         const { chain } = await client.getDAPIClient().core.getStatus();
 
         const outPoint = transaction.getOutPointBuffer(outputIndex);
-
         const assetLockProof = await dpp.identity.createChainAssetLockProof(
           chain.blocksCount,
           outPoint,
@@ -264,15 +263,36 @@ describe('Platform', () => {
         );
 
         const {
-
           identityCreateTransition,
         } = identityCreateTransitionData;
 
         ({ identity: chainLockIdentity } = identityCreateTransitionData);
 
-        await client.platform.broadcastStateTransition(
-          identityCreateTransition,
-        );
+        try {
+          await client.platform.broadcastStateTransition(
+            identityCreateTransition,
+          );
+        } catch (e) {
+          if (e.constructor.name === 'StateTransitionBroadcastError' && e.data.errors[0] && e.data.errors[0].name === 'InvalidIdentityAssetLockProofCoreHeightError') {
+            const stateTransitionError = e.data.errors[0];
+
+            const {
+              proofCoreChainLockedHeight,
+              currentCoreChainLockedHeight,
+            } = stateTransitionError;
+
+            await waitForBlocks(
+              client.getDAPIClient(),
+              proofCoreChainLockedHeight - currentCoreChainLockedHeight + 1,
+            );
+
+            await client.platform.broadcastStateTransition(
+              identityCreateTransition,
+            );
+          } else {
+            throw e;
+          }
+        }
 
         expect(chainLockIdentity).to.exist();
 
