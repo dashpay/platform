@@ -218,9 +218,9 @@ function initTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Register Feature Fags identity',
+        title: 'Register Feature Flags identity',
         task: async (ctx, task) => {
-          ctx.featureFlagsIdentity = await ctx.client.platform.identities.register(5);
+          ctx.featureFlagsIdentity = await ctx.client.platform.identities.register(5000);
 
           config.set('platform.featureFlags.ownerId', ctx.featureFlagsIdentity.getId().toString());
 

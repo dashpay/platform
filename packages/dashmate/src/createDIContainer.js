@@ -48,6 +48,7 @@ const registerMasternode = require('./core/wallet/registerMasternode');
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
 const initTaskFactory = require('./listr/tasks/platform/initTaskFactory');
+const featureFlagTaskFactory = require('./listr/tasks/platform/featureFlagTaskFactory');
 const tenderdashInitTaskFactory = require('./listr/tasks/platform/tenderdashInitTaskFactory');
 const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
 
@@ -154,6 +155,7 @@ async function createDIContainer(options) {
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
     registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
     initTask: asFunction(initTaskFactory).singleton(),
+    featureFlagTask: asFunction(featureFlagTaskFactory).singleton(),
     tenderdashInitTask: asFunction(tenderdashInitTaskFactory).singleton(),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
