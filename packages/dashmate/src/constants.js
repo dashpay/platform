@@ -8,7 +8,6 @@ const networks = {
 const presets = {
   PRESET_TESTNET: 'testnet',
   PRESET_LOCAL: 'local',
-  PRESET_DEVNET: 'devnet',
   PRESET_MAINNET: 'mainnet',
 };
 
