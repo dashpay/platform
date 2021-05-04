@@ -38,14 +38,14 @@ describe('Core', () => {
       expect(chain.name).to.be.a('string');
       expect(chain.headersCount).to.be.a('number');
       expect(chain.blocksCount).to.be.a('number');
-      expect(chain.bestBlockHash).to.be.a('string');
+      expect(chain.bestBlockHash).to.be.an.instanceOf(Buffer);
       expect(chain.difficulty).to.be.a('number');
-      expect(chain.chainWork).to.be.a('string');
+      expect(chain.chainWork).to.be.an.instanceOf(Buffer);
       expect(chain.isSynced).to.be.a('boolean');
       expect(chain.syncProgress).to.be.a('number');
 
       expect(masternode.status).to.be.a('string');
-      expect(masternode.proTxHash).to.be.a('string');
+      expect(masternode.proTxHash).to.be.an.instanceOf(Buffer);
       expect(masternode.posePenalty).to.be.a('number');
       expect(masternode.isSynced).to.be.a('boolean');
       expect(masternode.syncProgress).to.be.a('number');
