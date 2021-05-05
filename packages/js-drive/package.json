@@ -70,6 +70,7 @@
     "@dashevo/dashd-rpc": "^2.3.0",
     "@dashevo/dashd-zmq": "^1.2.0",
     "@dashevo/dpp": "~0.19.1",
+    "@dashevo/feature-flags-contract": "^0.1.0",
     "@dashevo/merk": "github:dashevo/node-merk",
     "ajv": "^6.10.0",
     "ajv-keywords": "^3.5.2",

@@ -8,6 +8,9 @@ const {
 
 const Long = require('long');
 const { asValue } = require('awilix');
+
+const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
+
 const DataCorruptedError = require('./errors/DataCorruptedError');
 
 /**
@@ -27,8 +30,8 @@ const DataCorruptedError = require('./errors/DataCorruptedError');
  * @param {populateMongoDbTransactionFromObject} populateMongoDbTransactionFromObject
  * @param {AwilixContainer} container
  * @param {BaseLogger} logger
- * @param cloneToPreviousStoreTransactions
- * @param {Object} featureFlagTypes
+ * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
+ * @param {getLatestFeatureFlag} getLatestFeatureFlag
  *
  * @return {commitHandler}
  */
@@ -49,7 +52,6 @@ function commitHandlerFactory(
   logger,
   cloneToPreviousStoreTransactions,
   getLatestFeatureFlag,
-  featureFlagTypes,
 ) {
   /**
    * Commit ABCI handler

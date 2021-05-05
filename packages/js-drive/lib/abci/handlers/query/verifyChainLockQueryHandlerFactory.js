@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
+
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
@@ -14,7 +16,6 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  * @param {decodeChainLock} decodeChainLock
  * @param {getLatestFeatureFlag} getLatestFeatureFlag
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {FeatureFlagTypes} featureFlagTypes
  * @param {RpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @return {verifyChainLockQueryHandler}
@@ -24,7 +25,6 @@ function verifyChainLockQueryHandlerFactory(
   decodeChainLock,
   getLatestFeatureFlag,
   blockExecutionContext,
-  featureFlagTypes,
   coreRpcClient,
   logger,
 ) {
@@ -51,14 +51,15 @@ function verifyChainLockQueryHandlerFactory(
       );
     }
 
-    const {
-      height: blockHeight,
-    } = blockExecutionContext.getHeader();
+    let verifyLLMQSignaturesWithCoreFeatureFlag;
 
-    const verifyLLMQSignaturesWithCoreFeatureFlag = await getLatestFeatureFlag(
-      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
-      blockHeight,
-    );
+    const header = blockExecutionContext.getHeader();
+    if (header) {
+      verifyLLMQSignaturesWithCoreFeatureFlag = await getLatestFeatureFlag(
+        featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
+        header.height,
+      );
+    }
 
     if (!verifyLLMQSignaturesWithCoreFeatureFlag || !verifyLLMQSignaturesWithCoreFeatureFlag.get('enabled')) {
       const smlStore = simplifiedMasternodeList.getStore();

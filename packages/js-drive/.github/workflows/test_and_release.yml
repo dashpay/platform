@@ -17,6 +17,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # using `persist-credentials: false` and replacing github url solves
+      # https://github.com/actions/setup-node/issues/214
+
+      - name: Reconfigure git to use HTTP authentication
+        run: >
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
 
       - uses: actions/setup-node@v2
         with:
@@ -52,6 +62,16 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # using `persist-credentials: false` and replacing github url solves
+      # https://github.com/actions/setup-node/issues/214
+
+      - name: Reconfigure git to use HTTP authentication
+        run: >
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
 
       - uses: actions/setup-node@v2
         with:

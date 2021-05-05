@@ -10,8 +10,6 @@ const verifyChainLockQueryHandlerFactory = require('../../../../../lib/abci/hand
 
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 
-const featureFlagTypes = require('../../../../../lib/featureFlag/featureFlagTypes');
-
 const AbciError = require('../../../../../lib/abci/errors/AbciError');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
@@ -72,7 +70,6 @@ describe('verifyChainLockQueryHandlerFactory', () => {
       decodeChainLockMock,
       getLatestFeatureFlagMock,
       blockExecutionContextMock,
-      featureFlagTypes,
       coreRpcClientMock,
       loggerMock,
     );

@@ -3,8 +3,6 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const featureFlagTypes = require('../../../lib/featureFlag/featureFlagTypes');
-
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 
 describe('DriveStateRepository', () => {
@@ -91,7 +89,6 @@ describe('DriveStateRepository', () => {
       coreRpcClientMock,
       blockExecutionContextMock,
       simplifiedMasternodeListMock,
-      featureFlagTypes,
       getLatestFeatureFlagMock,
       blockExecutionDBTransactionsMock,
     );

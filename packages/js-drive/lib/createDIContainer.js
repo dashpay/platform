@@ -124,7 +124,6 @@ const ChainInfo = require('./chainInfo/ChainInfo');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
-const featureFlagTypes = require('./featureFlag/featureFlagTypes');
 
 /**
  *
@@ -894,7 +893,6 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        featureFlagTypes,
         getLatestFeatureFlag,
       );
 
@@ -929,7 +927,6 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        featureFlagTypes,
         getLatestFeatureFlag,
         blockExecutionStoreTransactions,
       );
@@ -979,7 +976,6 @@ function createDIContainer(options) {
   container.register({
     getLatestFeatureFlag: asFunction(getLatestFeatureFlagFactory),
     getFeatureFlagForHeight: asFunction(getFeatureFlagForHeightFactory),
-    featureFlagTypes: asValue(featureFlagTypes),
   });
 
   /**

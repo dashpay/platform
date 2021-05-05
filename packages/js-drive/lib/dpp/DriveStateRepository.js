@@ -1,3 +1,5 @@
+const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
+
 class DriveStateRepository {
   /**
    * @param {IdentityStoreRepository} identityRepository
@@ -9,7 +11,6 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {FeatureFlagTypes} featureFlagTypes
    * @param {getLatestFeatureFlag} getLatestFeatureFlag
    * @param {BlockExecutionStoreTransactions} [blockExecutionStoreTransactions]
    */
@@ -23,7 +24,6 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
-    featureFlagTypes,
     getLatestFeatureFlag,
     blockExecutionStoreTransactions = undefined,
   ) {
@@ -37,7 +37,6 @@ class DriveStateRepository {
     this.blockExecutionStoreTransactions = blockExecutionStoreTransactions;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
-    this.featureFlagTypes = featureFlagTypes;
     this.getLatestFeatureFlag = getLatestFeatureFlag;
   }
 
@@ -260,7 +259,7 @@ class DriveStateRepository {
     } = header;
 
     const verifyLLMQSignaturesWithCoreFeatureFlag = await this.getLatestFeatureFlag(
-      this.featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
+      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
       blockHeight,
       this.getDBTransaction('documents'),
     );

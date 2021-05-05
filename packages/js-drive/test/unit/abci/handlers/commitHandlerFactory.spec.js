@@ -20,8 +20,6 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 const DataCorruptedError = require('../../../../lib/abci/handlers/errors/DataCorruptedError');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
-const featureFlagTypes = require('../../../../lib/featureFlag/featureFlagTypes');
-
 describe('commitHandlerFactory', () => {
   let commitHandler;
   let appHash;
@@ -160,7 +158,6 @@ describe('commitHandlerFactory', () => {
       loggerMock,
       cloneToPreviousStoreTransactionsMock,
       getLatestFeatureFlagMock,
-      featureFlagTypes,
     );
   });
 
