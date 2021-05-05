@@ -1,3 +1,23 @@
+# [0.19.0](https://github.com/dashevo/dapi/compare/v0.18.1...v0.19.0) (2021-05-05)
+
+
+### Features
+
+* enable Docker build npm cache ([#348](https://github.com/dashevo/dapi/issues/348))
+* remove insight API ([#351](https://github.com/dashevo/dapi/issues/351), [#344](https://github.com/dashevo/dapi/issues/344), [#345](https://github.com/dashevo/dapi/issues/345), [#346](https://github.com/dashevo/dapi/issues/346), [#345](https://github.com/dashevo/dapi/issues/345), [#347](https://github.com/dashevo/dapi/issues/347), [#362](https://github.com/dashevo/dapi/issues/362))
+
+
+### Bug Fixes
+
+* error loading shared library libzmq.so.5 ([51e66f7](https://github.com/dashevo/dapi/commit/51e66f76c9fbdecef000fc6acd5d2ab5dd20f01d))
+
+
+### BREAKING CHANGES
+
+* `getStatus` response format is changed and is not compatible with older version
+
+
+
 # [0.18.1](https://github.com/dashevo/dapi/compare/v0.18.0...v0.18.1) (2021-03-08)
 
 
@@ -17,7 +37,7 @@
 * replace `broadcast_tx_commit` with `broadcast_tx_sync` ([#330](https://github.com/dashevo/dapi/issues/330))
 
 
-### BREAKING CHANGE
+### BREAKING CHANGES
 
 * `broadcastStateTransition` doesn't wait for state transition commit. Use `waitForStateTransitionResult` to get ST acknowledgment.
 
