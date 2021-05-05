@@ -42,9 +42,9 @@ function getStatusHandlerFactory(coreRPCClient) {
     chain.setName(blockchainInfoResponse.chain);
     chain.setBlocksCount(blockchainInfoResponse.blocks);
     chain.setHeadersCount(blockchainInfoResponse.headers);
-    chain.setBestBlockHash(blockchainInfoResponse.bestblockhash);
+    chain.setBestBlockHash(Buffer.from(blockchainInfoResponse.bestblockhash, 'hex'));
     chain.setDifficulty(blockchainInfoResponse.difficulty);
-    chain.setChainWork(blockchainInfoResponse.chainwork);
+    chain.setChainWork(Buffer.from(blockchainInfoResponse.chainwork, 'hex'));
     chain.setIsSynced(mnSyncStatusResponse.IsBlockchainSynced);
     chain.setSyncProgress(blockchainInfoResponse.verificationprogress);
 
@@ -53,7 +53,7 @@ function getStatusHandlerFactory(coreRPCClient) {
     const masternodeStatus = GetStatusResponse.Masternode.Status[masternodeStatusResponse.state];
 
     masternode.setStatus(masternodeStatus);
-    masternode.setProTxHash(masternodeStatusResponse.proTxHash);
+    masternode.setProTxHash(Buffer.from(masternodeStatusResponse.proTxHash, 'hex'));
     masternode.setPosePenalty(masternodeStatusResponse.dmnState.PoSePenalty);
     masternode.setIsSynced(mnSyncStatusResponse.IsSynced);
 
