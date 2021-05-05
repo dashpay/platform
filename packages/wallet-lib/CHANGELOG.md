@@ -1,3 +1,27 @@
+# [7.19.0](https://github.com/dashevo/wallet-lib/compare/v7.18.1...v7.19.0) (2021-05-03)
+
+
+### Features
+
+* update dpp with verifyInstantLock method ([#234](https://github.com/dashevo/wallet-lib/issues/234))
+
+
+### BREAKING CHANGES
+
+* `Account#fetchStatus` response format is changed and not compatible with the previous version
+* `Transport#getStatus` responded format is changed and not compatible with the previous version
+
+
+
+## [7.18.1](https://github.com/dashevo/wallet-lib/compare/v7.18.0...v7.18.1) (2021-04-28)
+
+
+### Bug Fixes
+
+* transaction.isConbase is not a function ([#246](https://github.com/dashevo/wallet-lib/issues/246))
+
+
+
 # [7.18.0](https://github.com/dashevo/wallet-lib/compare/v7.17.2...v7.18.0) (2021-03-03)
 
 
