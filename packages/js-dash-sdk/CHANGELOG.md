@@ -1,11 +1,30 @@
+# [3.19.0](https://github.com/dashevo/DashJS/compare/v3.18.2...v3.19.0) (2021-05-04)
+
+### Features
+
+* add `verifyInstantLock` to state repository ([#193](https://github.com/dashevo/DashJS/issues/193))
+* Chain Asset Lock proof ([#203](https://github.com/dashevo/DashJS/issues/203))
+* update to new getStatus endpoint ([#205](https://github.com/dashevo/DashJS/issues/205))
+* remove fake Instant Asset Locks proofs ([#198](https://github.com/dashevo/DashJS/issues/198))
+
+
+### BREAKING CHANGES
+
+* Fallbacks for Instant Asset lock proofs are removed. SDK is not compatible with local network created with mn-bootstrap v0.18
+* See [DPP breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.19.0)
+* See [Wallet lib breaking changes](https://github.com/dashevo/wallet-lib/releases/tag/v7.19.0)
+
+
+
 ## [3.18.2](https://github.com/dashevo/DashJS/compare/v3.18.1...v3.18.2) (2021-04-28)
 
 ### Bug Fixes
-* tranasction.isCoinbase is not a function and other fixes from wallet-lib 7.18.1 ([#236](https://github.com/dashevo/wallet-lib/issues/236))
+
+* `transaction.isCoinbase` is not a function and other fixes from wallet-lib 7.18.1 ([#236](https://github.com/dashevo/wallet-lib/issues/236))
+
 
 
 ## [3.18.1](https://github.com/dashevo/DashJS/compare/v3.18.0...v3.18.1) (2021-03-03)
-
 
 ### Features
 
