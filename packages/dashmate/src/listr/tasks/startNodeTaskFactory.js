@@ -3,6 +3,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 
 const { Listr } = require('listr2');
+const { Observable } = require('rxjs');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 const { NETWORK_LOCAL } = require('../../constants');
@@ -11,6 +12,7 @@ const { NETWORK_LOCAL } = require('../../constants');
  *
  * @param {DockerCompose} dockerCompose
  * @param {waitForCorePeersConnected} waitForCorePeersConnected
+ * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
  * @param {Docker} docker
  * @return {startNodeTask}
@@ -18,6 +20,7 @@ const { NETWORK_LOCAL } = require('../../constants');
 function startNodeTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
+  waitForMasternodesSync,
   createRpcClient,
   docker,
 ) {
@@ -189,6 +192,30 @@ function startNodeTaskFactory(
           });
 
           await waitForCorePeersConnected(rpcClient);
+        },
+      },
+      {
+        title: 'Wait for sync',
+        enabled: () => config.get('network') === NETWORK_LOCAL,
+        task: async () => {
+          const rpcClient = createRpcClient({
+            port: config.get('core.rpc.port'),
+            user: config.get('core.rpc.user'),
+            pass: config.get('core.rpc.password'),
+          });
+
+          return new Observable(async (observer) => {
+            await waitForMasternodesSync(
+              rpcClient,
+              (verificationProgress) => {
+                observer.next(`${(verificationProgress * 100).toFixed(2)}% complete`);
+              },
+            );
+
+            observer.complete();
+
+            return this;
+          });
         },
       },
       {

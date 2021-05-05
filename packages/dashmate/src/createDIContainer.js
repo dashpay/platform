@@ -31,6 +31,7 @@ const startCoreFactory = require('./core/startCoreFactory');
 const createRpcClient = require('./core/createRpcClient');
 const waitForCoreStart = require('./core/waitForCoreStart');
 const waitForCoreSync = require('./core/waitForCoreSync');
+const waitForMasternodesSync = require('./core/waitForMasternodesSync');
 const waitForBlocks = require('./core/waitForBlocks');
 const waitForConfirmations = require('./core/waitForConfirmations');
 const generateBlsKeys = require('./core/generateBlsKeys');
@@ -119,6 +120,7 @@ async function createDIContainer(options) {
     createRpcClient: asValue(createRpcClient),
     waitForCoreStart: asValue(waitForCoreStart),
     waitForCoreSync: asValue(waitForCoreSync),
+    waitForMasternodesSync: asValue(waitForMasternodesSync),
     startCore: asFunction(startCoreFactory).singleton(),
     waitForBlocks: asValue(waitForBlocks),
     waitForConfirmations: asValue(waitForConfirmations),
