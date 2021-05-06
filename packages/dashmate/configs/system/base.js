@@ -46,21 +46,17 @@ module.exports = {
         docker: {
           image: 'envoyproxy/envoy:v1.16-latest',
         },
-      },
-      nginx: {
         http: {
           port: 3000,
         },
         grpc: {
           port: 3010,
         },
-        docker: {
-          image: 'nginx:latest',
-        },
         rateLimiter: {
-          enable: true,
-          rate: 120,
-          burst: 300,
+          maxTokens: 300,
+          tokensPerFill: 150,
+          fillInterval: '60s',
+          enabled: true,
         },
       },
       api: {

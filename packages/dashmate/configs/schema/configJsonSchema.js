@@ -211,15 +211,6 @@ module.exports = {
                 docker: {
                   $ref: '#/definitions/docker',
                 },
-              },
-              required: ['docker'],
-              additionalProperties: false,
-            },
-            nginx: {
-              properties: {
-                docker: {
-                  $ref: '#/definitions/docker',
-                },
                 http: {
                   type: 'object',
                   properties: {
@@ -243,19 +234,23 @@ module.exports = {
                 rateLimiter: {
                   type: 'object',
                   properties: {
-                    enable: {
+                    maxTokens: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    tokensPerFill: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    fillInterval: {
+                      type: 'string',
+                      pattern: '^[0-9]+(ms|s|m|h)$',
+                    },
+                    enabled: {
                       type: 'boolean',
                     },
-                    rate: {
-                      type: 'integer',
-                      minimum: 0,
-                    },
-                    burst: {
-                      type: 'integer',
-                      minimum: 0,
-                    },
                   },
-                  required: ['enable', 'rate', 'burst'],
+                  required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
                   additionalProperties: false,
                 },
               },
@@ -273,7 +268,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['envoy', 'nginx', 'api'],
+          required: ['envoy', 'api'],
           additionalProperties: false,
         },
         drive: {

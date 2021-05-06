@@ -114,9 +114,9 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     let gRpcPortState;
     let p2pPortState;
     try {
-      const httpPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.nginx.http.port}/`);
+      const httpPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.envoy.http.port}/`);
       httpPortState = await httpPortStateRes.text();
-      const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.nginx.grpc.port}/`);
+      const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.envoy.grpc.port}/`);
       gRpcPortState = await gRpcPortStateRes.text();
       const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.drive.tenderdash.p2p.port}/`);
       p2pPortState = await p2pPortStateRes.text();
@@ -193,10 +193,10 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     }
     rows.push(['Peer count', platformPeers]);
     rows.push(['App hash', platformLatestAppHash]);
-    rows.push(['HTTP service', `${config.options.externalIp}:${config.options.platform.dapi.nginx.http.port}`]);
-    rows.push(['HTTP port', `${config.options.platform.dapi.nginx.http.port} ${httpPortState}`]);
-    rows.push(['gRPC service', `${config.options.externalIp}:${config.options.platform.dapi.nginx.grpc.port}`]);
-    rows.push(['gRPC port', `${config.options.platform.dapi.nginx.grpc.port} ${gRpcPortState}`]);
+    rows.push(['HTTP service', `${config.options.externalIp}:${config.options.platform.dapi.envoy.http.port}`]);
+    rows.push(['HTTP port', `${config.options.platform.dapi.envoy.http.port} ${httpPortState}`]);
+    rows.push(['gRPC service', `${config.options.externalIp}:${config.options.platform.dapi.envoy.grpc.port}`]);
+    rows.push(['gRPC port', `${config.options.platform.dapi.envoy.grpc.port} ${gRpcPortState}`]);
     rows.push(['P2P service', `${config.options.externalIp}:${config.options.platform.drive.tenderdash.p2p.port}`]);
     rows.push(['P2P port', `${config.options.platform.drive.tenderdash.p2p.port} ${p2pPortState}`]);
     rows.push(['RPC service', `127.0.0.1:${config.options.platform.drive.tenderdash.rpc.port}`]);

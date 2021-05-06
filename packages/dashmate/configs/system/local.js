@@ -10,9 +10,9 @@ module.exports = lodashMerge({}, baseConfig, {
   description: 'template for local configs',
   platform: {
     dapi: {
-      nginx: {
+      envoy: {
         rateLimiter: {
-          enable: false,
+          enabled: false,
         },
       },
     },

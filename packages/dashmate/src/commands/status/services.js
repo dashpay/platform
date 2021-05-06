@@ -32,7 +32,6 @@ class ServicesStatusCommand extends ConfigBaseCommand {
         dapi_api: 'DAPI API',
         dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
         dapi_envoy: 'DAPI Envoy',
-        dapi_nginx: 'DAPI Nginx',
       });
     }
 
