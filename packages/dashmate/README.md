@@ -9,6 +9,7 @@ Distribution package for Dash Masternode installation
 ## Table of Contents
 
 - [Install](#install)
+- [Update] (#update)
 - [Usage](#usage)
   - [Command line interface](#cli)
   - [Setup node](#setup-node)
@@ -42,6 +43,28 @@ $ git clone -b master https://github.com/dashevo/mn-bootstrap.git
 $ cd mn-bootstrap
 $ npm install # optional: install CLI dependencies
 $ sudo npm link # optional: link CLI for system-wide execution
+```
+
+## Update
+
+```bash
+$ mn stop
+$ git checkout master
+$ git pull
+$ mn update
+$ mn start
+```
+
+If the platform layer has been wiped, you must additionally reset platform data:
+
+```bash
+$ mn stop
+$ git checkout master
+$ git pull
+$ mn reset --platform-only --hard
+$ mn update
+$ mn setup -k <bls-key>
+$ mn start
 ```
 
 ## Usage
