@@ -1,3 +1,32 @@
+# [0.19.0](https://github.com/dashevo/js-drive/compare/v0.18.1...v0.19.0) (2021-05-05)
+
+
+### Features
+
+* use Dash Core to verify chain locks ([#503](https://github.com/dashevo/js-drive/issues/503), [#505](https://github.com/dashevo/js-drive/issues/505), [#506](https://github.com/dashevo/js-drive/issues/506))
+* verify instant locks using Dash Core ([#499](https://github.com/dashevo/js-drive/issues/499), [#501](https://github.com/dashevo/js-drive/issues/501), [#492](https://github.com/dashevo/js-drive/issues/492), [#498](https://github.com/dashevo/js-drive/issues/498))
+* feature flags ([#491](https://github.com/dashevo/js-drive/issues/491), [#504](https://github.com/dashevo/js-drive/issues/504), [#485](https://github.com/dashevo/js-drive/issues/485))
+* output Core network on start ([#490](https://github.com/dashevo/js-drive/issues/490))
+* update js-dp-services-ctl to 0.19-dev ([#486](https://github.com/dashevo/js-drive/issues/486))
+* enable docker build npm cache ([#478](https://github.com/dashevo/js-drive/issues/478))
+* do not setup node if SKIP_TEST_SUITE option is set ([#480](https://github.com/dashevo/js-drive/issues/480))
+* remove regtest fallbacks ([#477](https://github.com/dashevo/js-drive/issues/477))
+* add `verifyInstantLock` in favor of `getSMLStore` method ([#474](https://github.com/dashevo/js-drive/issues/474))
+
+
+### Bug Fixes
+
+* error loading shared library libzmq.so.5 ([#483](https://github.com/dashevo/js-drive/issues/483))
+* blockExecutionContext header might be null ([#481](https://github.com/dashevo/js-drive/issues/481))
+
+
+### BREAKING CHANGES
+
+* running in standalone regtest mode is not supported anymore
+* `fetchSMLStore` method has been removed
+* See [DPP v0.19 breaking changes](https://github.com/dashevo/js-dpp/releases/tag/v0.19.0)
+
+
 # [0.18.1](https://github.com/dashevo/js-drive/compare/v0.18.0...v0.18.1) (2021-03-08)
 
 
