@@ -19,16 +19,23 @@ module.exports = lodashMerge({}, baseConfig, {
   platform: {
     dpns: {
       contract: {
-        id: '36ez8VqoDbR8NkdXwFaf9Tp8ukBdQxN8eYs8JNMnUyKz',
-        blockHeight: 30,
+        id: '76wgB8KBxLGhtEzn4Hp5zgheyzzpHYvfcWGLs69B2ahq',
+        blockHeight: 59,
       },
-      ownerId: 'G7sYtiobAP2eq79uYR9Pd6u2b6mapf4q6Pq2Q3BHiBK8',
+      ownerId: '4yaJaaeUU9xG6sonkCHZkcZkhcXGqwf5TcNLw5Nh5LJ4',
     },
     dashpay: {
       contract: {
-        id: 'matk8g1YRpzZskecRfpG5GCAgRmWCGJfjUemrsLkFDg',
-        blockHeight: 42,
+        id: '6wfobip5Mfn6NNGK9JTQ5eHtZozpkNx4aZUsnCxkfgj5',
+        blockHeight: 71,
       },
+    },
+    featureFlags: {
+      contract: {
+        id: '4CTBQw6eJK9Kg7k4F4v6U1RPMtkfCoPbQzUJDCi85pQb',
+        blockHeight: 77,
+      },
+      ownerId: 'GkodzWzGU9v4aCfc4qmzw4PeNCH8pqcxcEQrm7B24rNw',
     },
     drive: {
       abci: {
@@ -45,20 +52,20 @@ module.exports = lodashMerge({}, baseConfig, {
         p2p: {
           seeds: [
             {
-              id: '4bc75fcb13e37ad6473383ea92408a451ed1b6d1',
+              id: 'aa4c3870e6cebd575c80371b4ae0e902a2885e14',
               host: '54.189.200.56',
               port: 26656,
             },
             {
-              id: '173fcd535bccde1ed20ca8fb1519858dd5cef618',
+              id: '81c79324942867f694ee49108f05e744c343f5a1',
               host: '52.43.162.96',
               port: 26656,
             },
           ],
         },
         genesis: {
-          genesis_time: '2020-12-30T14:08:02.904199237Z',
-          chain_id: 'dash-testnet',
+          genesis_time: '2021-05-06T16:28:56.385117522Z',
+          chain_id: 'dash-dash-testnet-2',
           consensus_params: {
             block: {
               max_bytes: '22020096',
@@ -79,191 +86,191 @@ module.exports = lodashMerge({}, baseConfig, {
           initial_core_chain_locked_height: 415765,
           validators: [
             {
-              address: '1EBEA21DD88D3BE63AF73FBF3C63E0924C383993',
+              address: '3FB8B07867CCC4E30628DBD0A94FF5DFDB93DF07',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'i5jzHe+F6Y2KXB+y6aqjMivzRbsWnViFa0isQtjcMetQ+I+/4DeV2bgXrbhEjKO3',
+                  'EDJsyuN1r5cdIEl5JrVtDG/WNR2t9eL4d5BdtmLLpv7fLGfqLOYmawjHaq5KkpVs',
               },
               power: '1',
               name: 'masternode-1',
             },
             {
-              address: 'CDA301F28F1EFE8D4777B66F32359C0758B23716',
+              address: 'E212A0CE251B9C112121ADA2C55170E49270B62B',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'CHlEEQPlC/Tgt50RytPMSXUzKpgV7b99JCfbo5SwIjarnkeiTjo6p3vQWL55pe4L',
+                  'gPeCHnIHfln1f0zhDGtCR4YT9nCVfYY+jP/ekF9a5iR4UqwgA2Fni6mEWDXxz/oT',
               },
               power: '1',
               name: 'masternode-2',
             },
             {
-              address: '98148E4FAA4E0FEF352A6395C06726BF3D8DCF12',
+              address: '8772470A89B36858874D6414A580DD968A3BA0BB',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'DujBMSzFxG4YY9fy8edR3AkPyv48z+aEY2X/yc7H+2ZxLX2cQqiH7rr27kQpAZIr',
+                  'GRy1esJVXIX1ecnlrN3LEQYuon7Rdwyo9DnbMiHe0t+An5zpNBfa3woUC4uavlhP',
               },
               power: '1',
               name: 'masternode-3',
             },
             {
-              address: 'D39A8DE0F43D5593C78084712BE51B85E3F5ECA5',
+              address: 'C572E4A96E38663151E2984AD08779F9E525D2DB',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'jDGeJvJ/anuztdlhNnh6Lh5dBSSS6enep/N2OFscqwGRUqG2LfGeQt+xwDD++4Yg',
+                  'gpg7S9w2FR4tLiZmG0l7mrVqRUuidoFTjyR9GsVH3XVZeejcxKQVC9MsR9tKpRWo',
               },
               power: '1',
               name: 'masternode-4',
             },
             {
-              address: '030A38B3D3BEDD513B5B688688EB3FCBA45891CF',
+              address: '653B6C3910A716FA7959200F848BBE16B98C292D',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'CvSOgEMJhw3kYqVMSClcEjazTz5YKDQF2dSZQuQcoOHYjVy06T/cz4RwJFwKArhF',
+                  'BQr7IrX/PMdd1mKlky/LDtjHJuAACPDZRbF9PZUJnK4lsHLatSDLWrO0gtdc3Csh',
               },
               power: '1',
               name: 'masternode-5',
             },
             {
-              address: 'EAE52660FCD29ADBB9413F8C62B2AEB1530BA930',
+              address: 'FFEBF8C8516123AAFDBF38A1805D3E309F58D0EB',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'CUuqwqy3X6DhqStIjOGm4pzMmICKkGN+clskdedJMClnLpXMJw1WUTVHqah1htgA',
+                  'BNTJrk1X4PIuW3cmdtcMUx/12NOMSa7h1mLT1GQu8mnq9cG1vTR8QnJGF7TKbDe6',
               },
               power: '1',
               name: 'masternode-6',
             },
             {
-              address: 'C42BB57CCCE3FBC1B961A25163983DAA49BA7E9E',
+              address: '0C25155268048921636E160AEFBFBC07A7367149',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'mLN3dHV1iOMZ+6HH6flCGziUCsAQimxA4SBBcIwe2bf7a4z8KfkdZMuwSoB6ku/T',
+                  'jEhInUfX+SxSgbO93eeyQA7xMwKfDqfjeqdUTe9WBeWIQgPmaB8rCqOuDUz62QFc',
               },
               power: '1',
               name: 'masternode-7',
             },
             {
-              address: '6475387F2739F3427CF303E0509D7D59FF42C83A',
+              address: '780474EDC42AB9C385753E01AE2E407B65B34DF0',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'BmRwmqWjzCwn9h+rdMjstD56OFbsG+vf7Qw5kH2GQqqk5U2Ap4RCw4bOA8PKVP4/',
+                  'lorarv7ec1pIvHFrYKkCKVXXIpVCRuCvL8c8rHEHKvF7VD6nuMk4f+C1TxQw2M7t',
               },
               power: '1',
               name: 'masternode-8',
             },
             {
-              address: 'AABF94B323D690751BE0FAA6E2428D0DCFC12FE3',
+              address: '130D7CAB09C399543BFA23F906425173B7C956EC',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'lA9YNOjuuHxQqQrX6ju/7PkvQzRihkurZL2m898nwVus9H0+nMDtfdwIhqX0bjpH',
+                  'Dc7R8JpiiC4gaVFnigBbKFIqtbj6rYSPvQb/NyeDMw/TXglTu6oQNB2chYBiyt1n',
               },
               power: '1',
               name: 'masternode-9',
             },
             {
-              address: 'CED6DD8FD612FEBD5C613B5C982544A57E452793',
+              address: '7C8D95F4ECF7DF91FE456D1E8EC3B6EBF50A044F',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'Fyff3hc0+9/xNCtwfx0jZ/SZLsYeeDRqkf8wQ2vHGeq97+2bht5GjiZenWG9GJcI',
+                  'jprbGM5zEe62FoCsC3xPsDw/WPimRvyW+vHrg3hJmbB1B95JVSDXhlJG+nh5PgOe',
               },
               power: '1',
               name: 'masternode-10',
             },
             {
-              address: 'E5F9C7E6CC8F6998ADE638F3AD231B3BA84F2CF8',
+              address: 'FA65A826CADC7121BC5975CA14729D449971A02E',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'A7di/Va23m+WBe9EkcgdVPukH2IOqj+eyfW58bf2Oh3ieI1pDGb8vsIRVKbxp/2d',
+                  'Egp2UZNteF60cgd8qiRK2ZCG2Ng+vNvvwAQnG5+zuCJeHqZleVlCondEDyaIPLww',
               },
               power: '1',
               name: 'masternode-11',
             },
             {
-              address: '8172056086CAFC834B62ECE3CBA7422993ECBEC3',
+              address: 'ADC542CB9E585E0A9932B76D37F6E22503E936F4',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'igJ3TVw9IrLCcoWeaGccz74XZs2k8IogSHmn6dyT2Ds6EqkUznCrX3Am7qPXWaC2',
+                  'CnCCaovxDHldeHrZrmzkC2+HNAau+TyJla5chZ/9ePDY4q5HT1PrAtr1am6+c+la',
               },
               power: '1',
               name: 'masternode-12',
             },
             {
-              address: '4ADD35B17299141F453853D291892F0AB5749430',
+              address: '4ECAD50762EF361E77BA9242FA8AE536C9369E3E',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'gGlwT/PBXvdhkt/aw8Pchmtc+dRcxXTpFyIBA194cK76VcFhoL+4B3fErtqro1q0',
+                  'EgLb056Mj+HyFxDw/2r7fCI/qjeUIcXb+N3RP3kcyw2apsl7q6QrwJi7DDnQUCSp',
               },
               power: '1',
               name: 'masternode-13',
             },
             {
-              address: '5A639948DB72533FAC6099661ED14440E589CDD5',
+              address: '5435BA428DC0C71B25B289F8B98C299B88DB8AEC',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'GdmemSYPhtxOhDdz/oiNWTRGoBXjKIMEznQb2UQi1hmoe4+pWzy7+f8IB5Hir9Rx',
+                  'gqgyKUAuSPfZJJ33mzW/TVeon+Ltn9HuViGKhWvJwtHU3hpgpWqL0bBtN+mNUz7m',
               },
               power: '1',
               name: 'masternode-14',
             },
             {
-              address: 'BA447D4EA32286A8DA316F6BCC206092D09BD4A8',
+              address: 'B792FF3A7A05AD513A5C76E57ACD007214E0F978',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'gfNfKbv1H47o0Bbb6Ot5NFOLTwsLDN0M54Q2cNiA1fvUBE+Wg7upIvJI4KyICXQJ',
+                  'hZ4CAlBwHL/TbmRCaiJQHcQEk7HpmRzsNelaS14m5oxv6llhZALWxgL42PEqSCBZ',
               },
               power: '1',
               name: 'masternode-15',
             },
             {
-              address: 'E5DE61BA6AC60B21D7B3D4EA7B5F8070CEB96960',
+              address: 'DB689C55F81FB3B877A2E29F92ECF0DF624BA0F8',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'Fb1kgu4x8JALUdoEPsOFYQDbyIuKkGTBNiWTQiDdtu+ORfW7k3xX6v/zjL+11zVh',
+                  'kliOiW/zWqQoLz7VeqGiXRqDifaq2HmfLakqb4J/vGiO+bE9GarVdpxLjlOBDZZu',
               },
               power: '1',
               name: 'masternode-16',
             },
             {
-              address: 'B4DFB2B1031E05C340FCE4CAEA89ABA35DB3E343',
+              address: 'AC808E82CC1920154C7C56F2728229F6186B7EA3',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'CFXmkqPlcevJiXq6Zs3rllKgvW1yiLUe/tcEq243m2h2mU3tmAoWXgzWolXKnaPf',
+                  'lYTEiH3Fr05z3oRt8hTOq05ruJ4DCdymG1nTJxsMLgM8W3a2QHgXRgKHVLoHyiRf',
               },
               power: '1',
               name: 'masternode-17',
             },
             {
-              address: '4DBB37DFA38A1C1D112C69A2C9CA2CD266DCF257',
+              address: 'CD1049EA61AD092865A5D276E069F6151A125EA4',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'CUD+5l8sjyrL+QD7qs1hwk/FpirXDMIQuY2pFlmJtrJKUi5PMBMm2JN5lyjyjjRH',
+                  'CMd94Mx6QZCNkpHAMwOrNHE6+6P61Zaq/sR2btkim6RrdpKlsx7zZ35X8WHvv4Hr',
               },
               power: '1',
               name: 'masternode-18',
             },
             {
-              address: '989D1396E454B41B78057C8BFEFE2E89E208E92C',
+              address: '8C3AD3B4FDF2C40636BF34E6DD26D1711B7B8A63',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'AEllXrjmwj9rmokacAYqCspuWRl4FCk/SzV1C1s8B4c+u+zT0anm039DbL5hX3Ur',
+                  'hqGtHHF7xL/BD33Lo027zmdRebh1wJxSGjHNDWbh+QemBu5VTV4FPaJ6QdVqg77I',
               },
               power: '1',
               name: 'masternode-19',
@@ -279,301 +286,301 @@ module.exports = lodashMerge({}, baseConfig, {
               name: 'masternode-20',
             },
             {
-              address: '5967C19F4F9FCE1C6D9BF4DEF8515BE8CC077F0C',
+              address: '69A53C9C0450105E3D4B611A1B3D561675C279A6',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'By6RyRnzqOkwH67eSKZHEyBDUu1nTzcKTeWG+d4Gscq5A49vvi3PpMGIAclL9SoB',
+                  'gPgSnhPzeErVPju2KGTXJzJzx8E6Xn9syMGCVUsTSRtCIqsG3TtyVCcmfiU5iZWn',
               },
               power: '1',
               name: 'masternode-21',
             },
             {
-              address: 'C1E943EF10312454277CF0A7837B9F773D124D9A',
+              address: '4DB233922817232ECDCDFB256EA0F8B6A0497DA8',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'DB7Er6FvLg8uwT5Gh9NoCl0aAZD64p0ie/Y5xQXMuUvGE1+uR/nrBTlbU9IbQYPO',
+                  'gDiUGis0sowBvQCDvCeQDFu6rylNeYsE6ORaHaZYwTv1PWrjeOmZkGlk2m9Tc4xN',
               },
               power: '1',
               name: 'masternode-22',
             },
             {
-              address: '6E8F97C1DF921F1FC510003F26E7CE6E2D083EEA',
+              address: 'EC47E2D9E64A818BE0B6E22738FB1231879BAB51',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'hefH4frYjhDCISbG99ZHqL8BXu/qK4L8iauAY9CqRHCtbclSeDTk8dUfGGFEIsC7',
+                  'lAQ+lLTEamPbna9xaXpBJC4dfHGOimT0MZG0Ee/CwH3GX/wyIDtXRK2kGkitFTa1',
               },
               power: '1',
               name: 'masternode-23',
             },
             {
-              address: '8B0052703AA5EE4CC8A603CE7312B9889F04C831',
+              address: '85A839F4150FD010954A124B5F7DC7287FAE2ABC',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'F3vbFAZ0W/08mclOj1j0heBuA3gyr+VFR9RMg6iqZe2HY5Lym1oDPrqH12QHI5Iy',
+                  'mZDMo+8rGVz2jQ1AyJNeyghiWZ6B/cx4MbpOAa5m+TQRlVKVq2mI/gakzrwf02xH',
               },
               power: '1',
               name: 'masternode-24',
             },
             {
-              address: 'A91FF05D096BEF19A7BFEEC8F5249B6A44A7E0D8',
+              address: '0CFB03735B9F3A661353861A9778D4437E014D78',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'EIIJW3MBY7Kp6YVVbwVxEejr89VsFFLRLbUQZ2NHQdB8lxtXPX/E1dzfYCcXHWXh',
+                  'lNdDoEU3G0Xa8zgDa4MBgkCghI7GattY4EjoS4/B1yJtjYKDFM21dTQTR2PZKghF',
               },
               power: '1',
               name: 'masternode-25',
             },
             {
-              address: 'F93F6EF89B0C92D4B8EEBCD8C25E098CB321102C',
+              address: 'C1C853BE786E8EB70A277B94A279CF34AA2F898C',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'EwBTb9osBFEjHHAC3nbYvkO5ogd00C4y6j8jO3z7G6fs41PRH4myYLqgjR9Tu/TO',
+                  'BOs3G6Zlcloa+3mkxwpLTuXxuWhBs058DtE8K9COAJu+KazeZGyGaSW4VHtM/6E8',
               },
               power: '1',
               name: 'masternode-26',
             },
             {
-              address: 'BE5B9F1734CFB696C230FB3039A3EE9B828DD7DC',
+              address: 'BE4346DB2DA3EFA1C72EDF2BBEAC536B624FE01C',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'hCHdKIZmhaH8l4ZPFRYRdSRI4ZY+/iU2BPrigKMiC/snZXzaPJ/d+venQUYjOnVa',
+                  'BE6dZrQNZLr8SQiSot6kpHaapWKODI/iOi2VfCrGrzM/6IiIuy0jvm4XjHfPfnqg',
               },
               power: '1',
               name: 'masternode-27',
             },
             {
-              address: '68666401A05018E50D8948B1066A8C3F9F5D197C',
+              address: '1C6E273649E8CCB32E4C1BF715CC0334AD76CF8C',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'kqs/IZSxhGm59Vtesz3PY1oyZpr0nDmWTXcGm5iC5l6OEd6WvHHlym3+Y7nKzDxL',
+                  'DVP2TfiY9+2p3r/9y2+BB6iD1pBxpAavGWXLZ8JZZyjBbDPl31QjdmYL5zjebMbo',
               },
               power: '1',
               name: 'masternode-28',
             },
             {
-              address: 'D017EFA62E88FA2DEA801D01C2CB4FAC68530986',
+              address: '639D7F33AD2993D6883C3605EEA66BAE4F31F5F2',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'Fy0nV9ABqGtSbqBjGDVuSQ3IhXELiPf3vL8Xe1zXuyk+qWUapfteD//FncqfqWVa',
+                  'kjCDXyBtkiqFsLDZxzrOd6lqc9/W18vSqTuKYHt7jET47ovgpnu8FY5sGQtYF3aw',
               },
               power: '1',
               name: 'masternode-29',
             },
             {
-              address: '1C0E0B3D4E916A39C8FD3A0A93009C7E9DB51E45',
+              address: '87B0405FB9E1C0BE84DFFC8D678A96CE95265EF7',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'CJF96qHDpIZ9hMEcZYTj3tLixpBBgwD+BH7NoFWBITMDEkrC3pAYgFXl9GLuyLd4',
+                  'BFPTwXu5icm/veDYdzzPc+56oAwYNH53xMknQpfrnSkF7gFMfCbsY+Y61kfOh6BG',
               },
               power: '1',
               name: 'masternode-30',
             },
             {
-              address: '49F1751ED85E96EA3139AA6E47A1A87155C89F3B',
+              address: 'E561951B266689615499C767B34793ED8F7091F3',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'GfH3f+vDuRjaspLldbxe0r9z66Wr6AGlShZ5zABvWkYDt1skN4MhuP3+KC54Ybr5',
+                  'gE4acBzBnEi+Tns1TzJEvmXah5OSpoFlWMaRcfWU+vEpa6JdcEC1hZtC4IY+LQqw',
               },
               power: '1',
               name: 'masternode-31',
             },
             {
-              address: 'A2A74CBF859881EEE8ED82CF2C447A4F02545E86',
+              address: '3A02F4D0BBE65749AB937307F2191FB5E7200BCE',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'FcWrTNKGbMEa7FNQCGNUpDV+RyPJtY/tvlHrFVYZmygjJtLBL24H/CRI+t5ppNtZ',
+                  'hGSWb3/JPpICvDLuckSmUIcDbqxHTMfJNy5f2jiiFt0cpVNko4sjM5dZfSB4QvXX',
               },
               power: '1',
               name: 'masternode-32',
             },
             {
-              address: '3584086E58E9439A254DE1D023F30579E0ABECDC',
+              address: '12AAA6752191F2226342C6C1C251A2B3078946CA',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'Btx2e5/kpnc6ULExTdru3iX+DOsXGHPdh6QaxscpkbLs6FmauP+5lHnUXcozsQY/',
+                  'EwpuqAQJIhPJhD84PzsGaGEafldXetRQ8cIcDkE92RJadWrM3gDC5cbkSX1Ame5n',
               },
               power: '1',
               name: 'masternode-33',
             },
             {
-              address: '4145C30B756D6BC4CD44185AF164A381413EBEEF',
+              address: 'FC034769ED1930CA5C0D7F28E24348FCEFB3DD6B',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'BLd136AB0FiZkTEeWw1c5r4J7tqxk/iZqBbBYeTbmBhjIBbQtFVz8hV0EWtNiLuT',
+                  'D98xj5j8L4p6xW57+BUMBT929VBa8jmqH5V7n5/SbMJCyCh4adJtVGwXZomq+R8l',
               },
               power: '1',
               name: 'masternode-34',
             },
             {
-              address: 'C4858F331785C217C7EB26C85ACDCC761071390B',
+              address: '2B3366F08C10801A78F8C8132695DB0CA700BF26',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'gzYZml6XxJFANEYNUJq/dp8Y2WvWQJreLiP/GNY5lnixpqvFJnPt/ENX3fW5Ig5L',
+                  'lwAE66OfX/Z3MUBJ9/MshjagP5tq/1rBm5Zx9A3iizqKO7UMmnjt48TJemq/shC5',
               },
               power: '1',
               name: 'masternode-35',
             },
             {
-              address: '92FE4F0727BB286983B32F67B9DA75B3727B8078',
+              address: '003A49B44CE04A18D2B973E1761C868D59BF6965',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'B5z3dYNwjhYPjVO7/RyCboJkA2FCPtWSpURSCs4DQeygRK5JxfSvTnVzwzQ+JbG5',
+                  'CHxFeYUREcuHCEwuyYgs/DhvJmQsPlzsHZOIIe/YSbvOUTJHOpQ7LqQYTQ17eDgP',
               },
               power: '1',
               name: 'masternode-36',
             },
             {
-              address: '4CEF639E12437BA4811B07BFCCDF14A3A447B7C6',
+              address: '431FF615AA37F85C79CBC6F52F0C7BF16E54CE71',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'AMPJh/mc5FJEp/YV0sIzCUrJCdCgw8SQj3UgdIT4uqhS2GO1USyB3fqYZQD8MR0N',
+                  'hNZjWJiMzKBQWid/foYDRok4DieVcKmEMyUVJbUuS4zwY3IWUV133mr0fhUxnxbX',
               },
               power: '1',
               name: 'masternode-37',
             },
             {
-              address: '0768F189FE5B7455A9799E14824399946DB0D9C4',
+              address: 'C2978A4DE5B09509BDEC36A809D4F406A280F50E',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'CYGlY4yJNc8R/AY+6Ih0l+lInYCSX+fSBYuFvBa0ckOx4Ul/99bX8MOaR4Eh7Fgt',
+                  'hcVXMlqXvY+EaSziGaYSvxA0MpAwxgGyazXdRIoBlDNC/aoAaYRYh1YgWTzJ00AP',
               },
               power: '1',
               name: 'masternode-38',
             },
             {
-              address: 'DC868031215A9FCDAD4DE50D1BC3F1CF92953E42',
+              address: '8424D3CFD9666011D02C52B0DD7DE43D0C2B5FCA',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'BKIYZzGvAI8XwD6j1lhqbPcG6UFcrm7wGIG66UA3SZ1gUsc1kf7p/2ZMZBOWUivD',
+                  'ES6bs4uy/nB0UUMbsjLf1W0zn07FXBBxZhSDoEERWN3SmjQ8hDg8DvYbeKplr083',
               },
               power: '1',
               name: 'masternode-39',
             },
             {
-              address: 'B3F1DEC7BC6EBC6780C5A27A8841763551B58305',
+              address: '2A57D56D66B16218E8032543F203187FA452BAC7',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'hDHzXRa5T/Ci+0q+ETy8G199Rj72ZvEZxlIyOwBrP7CAoc5MWwVo3DOutkdLEb9a',
+                  'hsKQYDAzx02HaH6/C7r+7hFrkMEnuI3w98dmKuJUwLG7ejkHlgffvycvvRJ7Ynz9',
               },
               power: '1',
               name: 'masternode-40',
             },
             {
-              address: '04437C50C6B9FAE1A1906B7CFAB5192716388B67',
+              address: 'F43B832A018B6CC7DB371A277E56F7E1A92471BC',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'kkjZpIrA99HJVWhFpKv89oUcDeCLtsAGOy0MY+V0tBVkLmltvwGKYYLJW3Lbou2q',
+                  'igXlIELWdQh4WmNkWEL8pgeWR2gf1kFommFYaQc3sfxNNu4lcRhlDjh1rS/RDqdi',
               },
               power: '1',
               name: 'masternode-41',
             },
             {
-              address: '46C1599A1C8610D07BB4B7215720B04C4613B84C',
+              address: '3F24F49B221D0CCA0875BB1AB54EED6B90575EBC',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'kSIl1Zh077twJ6a+tviXsFzIsYXtQE/qZcCujppVeLz2NzSyvsbU5lF/WCp5vzax',
+                  'i02syBXFDGvrjLZuWLV1hfsB3D18WstauPReCSAe9g/uczDOAhPme0HvanQVUC4O',
               },
               power: '1',
               name: 'masternode-42',
             },
             {
-              address: '7943866D9F50D6229249D86ED31D344AC2DAB7F9',
+              address: '0BCF1AF7C0AC734ED55E333133FF6160053CA401',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'l2PeSRJAXTt/mCGlvLs7aFmLQIAKk6Rl0dbnjvCy86nLtUJSFsIQJ2yd0hYrTFGY',
+                  'ijjRF5BR72seoWsQjp1+VXVjFl5tKERRs8jbiOiQg9xcAahtJSxezinmcEnDcknm',
               },
               power: '1',
               name: 'masternode-43',
             },
             {
-              address: 'E3ACCB76F4455C8B384AF4D63244EB78A1FF6060',
+              address: 'DF112B36143798E7CDF0B35C9F3642B586313F3E',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'jZoe0v4sjAOJql7MJW+3FHe14lL8HsyBNeQELADa8edHTjBsQ5T6Bs/hXB9DK2Uf',
+                  'C58dv65RVcbST5NHAO+/UC6AzfeSkZA0VMjxttWpW7uGz9cx7ufoctJMPXSn/wo9',
               },
               power: '1',
               name: 'masternode-44',
             },
             {
-              address: 'B77DB22D3D089467B1496D55C3872FA02665502B',
+              address: 'BF4A8CFA5B8B749A0815AE83396AFA8479148C38',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'EEUPwsStCtNIICeUYzSzi6K1qrrRWYmkstI6zqFYZv1ayCMc08SSDzXBYfdLPWoJ',
+                  'jj3FRNpqVRZCJehv99li3AejT1D/j0/6u0rpk13m7C22hjQMjFaRusienjf84UGK',
               },
               power: '1',
               name: 'masternode-45',
             },
             {
-              address: '1BC727ED0A48DE8B87D2FCF52BCBD7ABF06456C5',
+              address: '60F10F23194263C3DAB9EDC1D502CD4B344739E6',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'lxYemf6KwM5QkEpmp+ocxjQ6sH/YQ5pS7CMR5W7GXWPvH+In20gS0jRS1EGSd8PC',
+                  'EXw8Dw2OVPUGYq3HxNHdLVNFlrD9YwDjyk2RKT9ERcI+jizmjsweOcTxt3DL7RDu',
               },
               power: '1',
               name: 'masternode-46',
             },
             {
-              address: '44C96778285042612D445253DBFD8C7D01C508BF',
+              address: 'A05507F5A17AAFE8371867CEC4B17F613B0D662C',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'FEO/iJ7UoJAF7FlqA4lqLXdx7m5T1DkxH8SPew79ZahQjbf5JWIDC+9g1ypJ75xO',
+                  'DjVzih3sNq/wsF4QmD3kWSLnRZnD3qYpZMQI/qqQzX1SPOjiKAKpQaReu89DzD+p',
               },
               power: '1',
               name: 'masternode-47',
             },
             {
-              address: '84B2CC28A97772BAC263BE89B1C3E7EDF3685560',
+              address: '648440F7207C5F188757AF7C732C9A2912241A03',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'ERb5RWY84nf115UUNqF5EKyluRaGm/iObWl9zzF87+Q/oQhpJlMOrN/pWk8dAK6B',
+                  'FD2mFBrBzmrMtPwS0dzhva7kCqhb4AgW/CsXPmGGJHvajYRwVZyHyLGKVsFNE/B+',
               },
               power: '1',
               name: 'masternode-48',
             },
             {
-              address: '31E6E408485C3B0F28069BDB143D903BE59B710D',
+              address: '7742BFDD7630DCF89506DA213750A5465114CBC2',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'mWgQhnc6Gd+stIc+k0QCuFpp9ZOyCNdUWorC6OBqCTOUF6WQ6S88KscUa5MfyXlo',
+                  'AH4jhMBX6HYIfCmIbVNE+hjw6qS49QjhdiidR5o0RoDyFlAw4FvA8P+6PZ9lUJ5K',
               },
               power: '1',
               name: 'masternode-49',
             },
             {
-              address: '0E955EAF6D7ACCB09DB3E5F865551E4E63B7F03C',
+              address: '12BA0A782BB3E34029E2187B33F91F95DEE8A36F',
               pub_key: {
                 type: 'tendermint/PubKeyBLS12381',
                 value:
-                  'Enw3AkvMVDKa0frk2Byp0Ok6E8ztRWl5aOOiMO0aeaWVZGNui51wE9jv1xRLOpMs',
+                  'ALFicBvONnfA3IrtPFKWpBpje3XYB7FSPnBhUZHBkVwQr3Fgs6tQ3lpn6nFmTNGh',
               },
               power: '1',
               name: 'masternode-50',

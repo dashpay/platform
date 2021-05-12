@@ -61,7 +61,7 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.19-dev',
+          image: 'dashpay/dapi:0.19',
           build: {
             path: null,
           },
@@ -76,7 +76,7 @@ module.exports = {
       },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.19-dev',
+          image: 'dashpay/drive:0.19',
           build: {
             path: null,
           },
