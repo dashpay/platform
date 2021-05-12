@@ -75,7 +75,7 @@ async function createDIContainer(options) {
   /**
    * Config
    */
-  const homeDirPath = options.MN_HOME_DIR ? options.MN_HOME_DIR : path.resolve(os.homedir(), '.mn');
+  const homeDirPath = options.DASHMATE_HOME_DIR ? options.DASHMATE_HOME_DIR : path.resolve(os.homedir(), '.dashmate');
 
   container.register({
     homeDirPath: asValue(homeDirPath),

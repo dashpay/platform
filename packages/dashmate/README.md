@@ -1,7 +1,7 @@
-# MN Bootstrap
+# Dashmate
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/mn-bootstrap)](https://github.com/dashevo/mn-bootstrap/releases)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/mn-bootstrap)](https://github.com/dashevo/mn-bootstrap/releases/latest)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
 Distribution package for Dash Masternode installation
@@ -9,7 +9,7 @@ Distribution package for Dash Masternode installation
 ## Table of Contents
 
 - [Install](#install)
-- [Update] (#update)
+- [Update](#update)
 - [Usage](#usage)
   - [Command line interface](#cli)
   - [Setup node](#setup-node)
@@ -39,8 +39,8 @@ For Linux installations you may optionally wish to follow the [post-installation
 ### Distribution package
 
 ```bash
-$ git clone -b master https://github.com/dashevo/mn-bootstrap.git
-$ cd mn-bootstrap
+$ git clone -b master https://github.com/dashevo/dashmate.git
+$ cd dashmate
 $ npm install # optional: install CLI dependencies
 $ sudo npm link # optional: link CLI for system-wide execution
 ```
@@ -73,7 +73,7 @@ The package contains a CLI, Docker Compose and configuration files.
 
 ### CLI
 
-The CLI can be used to perform routine tasks. Invoke the CLI with `mn` if linked during installation, or with `node bin/mn` if not linked. To list available commands, either run `mn` with no parameters or execute `mn help`. To list the help on any command just execute the command, followed by the `--help` option.
+The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate` if linked during installation, or with `node bin/dashmate` if not linked. To list available commands, either run `dashmate` with no parameters or execute `dashmate help`. To list the help on any command just execute the command, followed by the `--help` option.
 
 ### Setup node
 
@@ -81,7 +81,7 @@ The `setup` command is used to quickly configure common node configurations. Arg
 
 ```
 USAGE
-  $ mn setup [PRESET] [NODE-TYPE]
+  $ dashmate setup [PRESET] [NODE-TYPE]
 
 ARGUMENTS
   PRESET     (testnet|local) Node configuration preset
@@ -101,7 +101,7 @@ Supported presets:
 
 To setup a testnet masternode:
 ```bash
-$ mn setup testnet masternode
+$ dashmate setup testnet masternode
 ```
 
 #### Masternode registration
@@ -116,11 +116,11 @@ The `config` command is used to manage your node configuration before starting t
  - local - template for local node configs
  - testnet - testnet node configuration
 
-You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `mn config:create CONFIG [FROM]` command. You must set a default config with `mn config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
+You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `dashmate config:create CONFIG [FROM]` command. You must set a default config with `dashmate config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
 
 ```
 USAGE
-  $ mn config
+  $ dashmate config
 
 OPTIONS
   -v, --verbose    use verbose mode for output
@@ -145,7 +145,7 @@ The `start` command is used to start a node with the default or specified config
 
 ```
 USAGE
-  $ mn start
+  $ dashmate start
 
 OPTIONS
   -v, --verbose             use verbose mode for output
@@ -155,7 +155,7 @@ OPTIONS
 
 To start a masternode:
 ```bash
-$ mn start
+$ dashmate start
 ```
 
 ### Stop node
@@ -164,7 +164,7 @@ The `stop` command is used to stop a running node.
 
 ```
 USAGE
-  $ mn stop
+  $ dashmate stop
 
 OPTIONS
   -v, --verbose    use verbose mode for output
@@ -173,7 +173,7 @@ OPTIONS
 
 To stop a node:
 ```bash
-$ mn stop
+$ dashmate stop
 ```
 
 ### Restart node
@@ -182,7 +182,7 @@ The `restart` command is used to restart a node with the default or specified co
 
 ```
 USAGE
-  $ mn restart
+  $ dashmate restart
 
 OPTIONS
   -v, --verbose    use verbose mode for output
@@ -195,7 +195,7 @@ The `status` command outputs status information relating to either the host, mas
 
 ```
 USAGE
-  $ mn status
+  $ dashmate status
 
 OPTIONS
   -v, --verbose    use verbose mode for output
@@ -211,7 +211,7 @@ COMMANDS
 
 To show the host status:
 ```bash
-$ mn status:host
+$ dashmate status:host
 ```
 
 ### Reset node data
@@ -220,7 +220,7 @@ The `reset` command removes all data corresponding to the specified config and a
 
 ```
 USAGE
-  $ mn reset
+  $ dashmate reset
 
 OPTIONS
   -v, --verbose        use verbose mode for output
@@ -233,7 +233,7 @@ With the hard reset mode enabled, the corresponding config will be reset as well
 
 To reset a node:
 ```bash
-$ mn reset
+$ dashmate reset
 ```
 
 ### Full node
@@ -241,7 +241,7 @@ $ mn reset
 It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
 
 ```bash
-mn config:set core.masternode.enable false
+dashmate config:set core.masternode.enable false
 ```
 
 ### Node groups
@@ -254,7 +254,7 @@ The [setup](#setup-node) command set corresponding group as default. To output t
 
 ```
 USAGE
-  $ mn group:default [GROUP]
+  $ dashmate group:default [GROUP]
 
 ARGUMENTS
   GROUP  group name
@@ -269,7 +269,7 @@ The `group:list` command outputs a list of group configs.
 
 ```
 USAGE
-  $ mn group:list
+  $ dashmate group:list
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -282,7 +282,7 @@ The `group:start` command is used to start a group of nodes belonging to the def
 
 ```
 USAGE
-  $ mn group:start
+  $ dashmate group:start
 
 OPTIONS
   -v, --verbose             use verbose mode for output
@@ -296,7 +296,7 @@ The `group:stop` command is used to stop group nodes belonging to the default gr
 
 ```
 USAGE
-  $ mn group:stop
+  $ dashmate group:stop
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -309,7 +309,7 @@ The `group:restart` command is used to restart group nodes belonging to the defa
 
 ```
 USAGE
-  $ mn group:restart
+  $ dashmate group:restart
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -322,7 +322,7 @@ The `group:status` command outputs group status information.
 
 ```
 USAGE
-  $ mn group:status
+  $ dashmate group:status
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -335,7 +335,7 @@ The `group:reset` command removes all data corresponding to the specified group 
 
 ```
 USAGE
-  $ mn group:reset
+  $ dashmate group:reset
 
 OPTIONS
   -h, --hard           reset config as well as data
@@ -353,14 +353,14 @@ To group nodes together, set a group name to `group` option in corresponding con
 Create a group of two testnet nodes:
 ```bash
 # create a new config using `testnet` config as template
-mn config:create testnet_2 testnet
+dashmate config:create testnet_2 testnet
 
 # combine configs into the group
-mn config:set --config=testnet group testnet
-mn config:set --config=testnet_2 group testnet
+dashmate config:set --config=testnet group testnet
+dashmate config:set --config=testnet_2 group testnet
 
 # set the group as default
-mn group:default testnet
+dashmate group:default testnet
 ```
 
 To start the group of nodes, ports and other required options need to be updated.
@@ -369,14 +369,14 @@ To start the group of nodes, ports and other required options need to be updated
 
 To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some dash, register masternodes and populate the nodes with the data required for local development.
 
-To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `platform.drive.abci.docker.build.path` and `platform.dapi.api.docker.build.path` config options. A Docker image will be built from the provided path and then used by mn-bootstrap.
+To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `platform.drive.abci.docker.build.path` and `platform.dapi.api.docker.build.path` config options. A Docker image will be built from the provided path and then used by Dashmate.
 
 ### Docker Compose
 
 If you want to use Docker Compose directly, you will need to pass a configuration as a dotenv file. You can output a config to a dotenv file for Docker Compose as follows:
 
 ```bash
-$ mn config:envs --config=testnet --output-file .env.testnet
+$ dashmate config:envs --config=testnet --output-file .env.testnet
 ```
 
 Then specify the created dotenv file as an option for the `docker-compose` command:
@@ -387,7 +387,7 @@ $ docker-compose --env-file=.env.testnet
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/mn-bootstrap/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/dashmate/issues/new) or submit PRs.
 
 ## License
 

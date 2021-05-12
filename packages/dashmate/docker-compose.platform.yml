@@ -61,7 +61,7 @@ services:
       - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:26657 # RPC
     volumes:
       - drive_tenderdash:/tenderdash
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
 
   dapi_api:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -118,7 +118,7 @@ services:
       - dapi_api
       - dapi_tx_filter_stream
     volumes:
-      - ${MN_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
 
 volumes:
   drive_abci_data:
