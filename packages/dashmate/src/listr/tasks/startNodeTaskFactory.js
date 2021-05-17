@@ -244,7 +244,38 @@ function startNodeTaskFactory(
             ['--detach'],
           );
         },
-      }]);
+      },
+      {
+        title: 'Start bump mock time',
+        enabled: () => config.get('network') === NETWORK_LOCAL,
+        task: async () => {
+          const minerInterval = config.get('core.miner.interval');
+          const secondsToAdd = 150;
+
+          /* eslint-disable no-useless-escape */
+          await dockerCompose.execCommand(
+            config.toEnvs(),
+            'core',
+            [
+              'bash',
+              '-c',
+              `
+              while true
+              do
+                response=\$(dash-cli getblockchaininfo)
+                mediantime=\$(echo \${response} | grep -o -E '\"mediantime\"\: [0-9]+' |  cut -d ' ' -f2)
+                mocktime=\$((mediantime + ${secondsToAdd}))
+                dash-cli setmocktime \$mocktime
+                sleep ${minerInterval}
+              done
+              `,
+            ],
+            ['--detach'],
+          );
+          /* eslint-enable no-useless-escape */
+        },
+      },
+    ]);
   }
 
   return startNodeTask;
