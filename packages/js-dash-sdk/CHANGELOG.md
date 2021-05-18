@@ -1,3 +1,12 @@
+## [3.19.2](https://github.com/dashevo/DashJS/compare/v3.19.1...v3.19.2) (2021-05-18)
+
+
+### Bug Fixes
+
+* add some handler for metadata error ([#216](https://github.com/dashevo/DashJS/issues/216))
+
+
+
 ## [3.19.1](https://github.com/dashevo/DashJS/compare/v3.19.0...v3.19.1) (2021-05-10)
 
 

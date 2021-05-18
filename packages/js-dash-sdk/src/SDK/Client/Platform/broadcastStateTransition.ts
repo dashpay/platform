@@ -22,9 +22,10 @@ export default async function broadcastStateTransition(platform: Platform, state
       .update(stateTransition.toBuffer())
       .digest();
 
-    // Broadcasting state transition
+    const serializedStateTransition = stateTransition.toBuffer();
+
     try {
-        await client.getDAPIClient().platform.broadcastStateTransition(stateTransition.toBuffer());
+        await client.getDAPIClient().platform.broadcastStateTransition(serializedStateTransition);
     } catch (e) {
         let data;
         let message;
@@ -32,9 +33,24 @@ export default async function broadcastStateTransition(platform: Platform, state
         if (e.data) {
             data = e.data;
         } else if (e.metadata) {
-            const errors = e.metadata.get('errors');
-            data = {};
-            data.errors = errors && errors.length > 0 ? JSON.parse(errors) : errors;
+            // Due to an unknown bug in the minifier, `get` method of the metadata can be stripped off.
+            // See the comment in the 'else' branch for more details
+            if (typeof e.metadata.get === 'function') {
+                const errors = e.metadata.get('errors');
+                data = {};
+                data.errors = errors && errors.length > 0 ? JSON.parse(errors) : errors;
+            } else {
+                // This code can be executed only if deserialization failed and no errors
+                // were provided in the metadata, so we can deserialize here again
+                // and see the details locally
+                try {
+                    await dpp.stateTransition.createFromBuffer(serializedStateTransition);
+                } catch (deserializationError) {
+                    data = {};
+                    data.errors = deserializationError.errors;
+                    data.rawStateTransition = deserializationError.rawStateTransition;
+                }
+            }
         }
 
         if (e.details) {
