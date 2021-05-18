@@ -1,3 +1,12 @@
+## [3.19.1](https://github.com/dashevo/DashJS/compare/v3.19.0...v3.19.1) (2021-05-10)
+
+
+### Bug Fixes
+
+* invalid testnet DPNS contract id ([#214](https://github.com/dashevo/DashJS/issues/214))
+
+
+
 # [3.19.0](https://github.com/dashevo/DashJS/compare/v3.18.2...v3.19.0) (2021-05-04)
 
 ### Features
