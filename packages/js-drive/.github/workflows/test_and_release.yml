@@ -41,7 +41,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Check NPM package lock version is updated
-        run: npm run check-package # TODO: does this exist as an action already?
+        uses: dashevo/gh-action-check-package-lock@v1
 
       - name: Install NPM dependencies
         run: npm ci
@@ -97,14 +97,14 @@ jobs:
           env-file: .github/workflows/.env
 
       - name: Set compatible branches for Platform components
-        uses: dashevo/gh-action-platform-branches@master
+        uses: dashevo/gh-action-platform-branches@v1
         id: platform-branches
         with:
           override-dashmate-branch: ${{ env.DASHMATE_BRANCH }}
           override-testsuite-branch: ${{ env.TEST_SUITE_BRANCH }}
 
       - name: Start Dash local network
-        uses: dashevo/gh-action-start-local-network@master
+        uses: dashevo/gh-action-start-local-network@v1
         id: start-local-network
         with:
           actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
@@ -115,7 +115,7 @@ jobs:
           sdk-branch: ${{ env.SDK_BRANCH }}
 
       - name: Run Platform Test Suite
-        uses: dashevo/gh-action-run-platform-test-suite@master
+        uses: dashevo/gh-action-run-platform-test-suite@v1
         with:
           sdk-branch: ${{ env.SDK_BRANCH }}
           faucet-private-key: ${{ steps.start-local-network.outputs.faucet-private-key }}
