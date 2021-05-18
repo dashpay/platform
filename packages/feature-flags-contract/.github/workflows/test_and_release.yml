@@ -30,11 +30,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Check NPM package lock version is updated
+        uses: dashevo/gh-action-check-package-lock@v1
+
       - name: Install NPM dependencies
         run: npm ci
-
-      - name: Check NPM package lock version is updated
-        run: npm run check-package # TODO: does this exist as an action already?
 
       - name: Run ESLinter
         run: npm run lint
