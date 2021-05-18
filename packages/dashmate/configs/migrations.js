@@ -154,4 +154,11 @@ module.exports = {
 
     return configFile;
   },
+  '0.19.1': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        // Update image version
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+      });
+  },
 };

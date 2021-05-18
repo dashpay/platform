@@ -1,3 +1,12 @@
+## [0.19.1](https://github.com/dashevo/dashmate/compare/v0.19.0...v0.19.1) (2021-05-18)
+
+
+### Features
+
+* update Core to 0.17.0.0-rc5 ([#353](https://github.com/dashevo/dashmate/issues/353))
+
+
+
 # [0.19.0](https://github.com/dashevo/dashmate/compare/v0.18.2...v0.19.0) (2021-05-12)
 
 
