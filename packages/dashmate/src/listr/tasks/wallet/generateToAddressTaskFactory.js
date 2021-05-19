@@ -8,6 +8,7 @@ const { Observable } = require('rxjs');
  * @param {createNewAddress} createNewAddress
  * @param {generateToAddress} generateToAddress
  * @param {generateBlocks} generateBlocks
+ * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {generateToAddressTask}
  */
 function generateToAddressTaskFactory(
@@ -15,6 +16,7 @@ function generateToAddressTaskFactory(
   createNewAddress,
   generateToAddress,
   generateBlocks,
+  waitForBalanceToConfirm,
 ) {
   /**
    * @typedef {generateToAddressTask}
@@ -88,15 +90,15 @@ function generateToAddressTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Mine 101 blocks to confirm coinbase',
+        title: 'Wait for balance to confirm',
         task: async (ctx) => (
           new Observable(async (observer) => {
-            await generateBlocks(
+            await waitForBalanceToConfirm(
               ctx.coreService,
-              101,
               config.get('network'),
-              (blocks) => {
-                observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
+              ctx.address,
+              (balance) => {
+                observer.next(`${balance} dash to confirm`);
               },
             );
 

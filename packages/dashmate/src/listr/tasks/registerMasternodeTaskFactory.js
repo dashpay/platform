@@ -19,6 +19,7 @@ const {
  * @param {sendToAddress} sendToAddress
  * @param {waitForConfirmations} waitForConfirmations
  * @param {registerMasternode} registerMasternode
+ * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {registerMasternodeTask}
  */
 function registerMasternodeTaskFactory(
@@ -32,6 +33,7 @@ function registerMasternodeTaskFactory(
   sendToAddress,
   waitForConfirmations,
   registerMasternode,
+  waitForBalanceToConfirm,
 ) {
   /**
    * @typedef {registerMasternodeTask}
@@ -114,6 +116,47 @@ function registerMasternodeTaskFactory(
         options: { persistentOutput: true },
       },
       {
+        title: 'Create a new reward addresses',
+        task: async (ctx, task) => {
+          ctx.reward = await createNewAddress(ctx.coreService);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Address: ${ctx.reward.address}\nPrivate key: ${ctx.reward.privateKey}`;
+        },
+        options: { persistentOutput: true },
+      },
+      {
+        title: 'Send 0.1 dash from funding address to reward address',
+        task: async (ctx) => {
+          ctx.collateralTxId = await sendToAddress(
+            ctx.coreService,
+            ctx.fundingPrivateKeyString,
+            ctx.fundingAddress,
+            ctx.reward.address,
+            0.1,
+          );
+        },
+        options: { persistentOutput: true },
+      },
+      {
+        title: 'Wait for balance to confirm',
+        task: async (ctx) => (
+          new Observable(async (observer) => {
+            await waitForBalanceToConfirm(
+              ctx.coreService,
+              config.get('network'),
+              ctx.reward.address,
+              (balance) => {
+                observer.next(`${balance} dash to confirm`);
+              },
+            );
+            observer.complete();
+
+            return this;
+          })
+        ),
+      },
+      {
         title: `Send ${MASTERNODE_DASH_AMOUNT} dash from funding address to collateral address`,
         task: async (ctx, task) => {
           ctx.collateralTxId = await sendToAddress(
@@ -150,16 +193,16 @@ function registerMasternodeTaskFactory(
         ),
       },
       {
-        title: 'Mine 15 blocks to confirm',
+        title: 'Wait for balance to confirm',
         enabled: () => config.get('network') === NETWORK_LOCAL,
         task: async (ctx) => (
           new Observable(async (observer) => {
-            await generateBlocks(
+            await waitForBalanceToConfirm(
               ctx.coreService,
-              15,
               config.get('network'),
-              (blocks) => {
-                observer.next(`${blocks} ${blocks > 1 ? 'blocks' : 'block'} mined`);
+              ctx.collateral.address,
+              (balance) => {
+                observer.next(`${balance} dash to confirm`);
               },
             );
 
@@ -177,7 +220,7 @@ function registerMasternodeTaskFactory(
             ctx.collateralTxId,
             ctx.owner.address,
             ctx.operator.publicKey,
-            ctx.fundingAddress,
+            ctx.reward.address,
             config,
           );
 

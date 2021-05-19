@@ -45,6 +45,7 @@ const importPrivateKey = require('./core/wallet/importPrivateKey');
 const getAddressBalance = require('./core/wallet/getAddressBalance');
 const sendToAddress = require('./core/wallet/sendToAddress');
 const registerMasternode = require('./core/wallet/registerMasternode');
+const waitForBalanceToConfirm = require('./core/wallet/waitForBalanceToConfirm');
 
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
@@ -140,6 +141,7 @@ async function createDIContainer(options) {
     getAddressBalance: asValue(getAddressBalance),
     sendToAddress: asValue(sendToAddress),
     registerMasternode: asValue(registerMasternode),
+    waitForBalanceToConfirm: asValue(waitForBalanceToConfirm),
   });
 
   /**
