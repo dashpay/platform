@@ -3,6 +3,7 @@ daemon=0  # leave this set to 0 for Docker
 logtimestamps=1
 maxconnections=256
 printtoconsole=1
+debug={{=it.core.debug }}
 
 # JSONRPC
 server=1

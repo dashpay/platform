@@ -38,6 +38,7 @@ module.exports = {
         image: 'dashpay/sentinel:1.5.0',
       },
     },
+    debug: 0,
     devnetName: null,
   },
   platform: {
