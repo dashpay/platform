@@ -1,3 +1,11 @@
+## [7.19.1](https://github.com/dashevo/wallet-lib/compare/v7.19.0...v7.19.1) (2021-05-20)
+
+
+### Chores
+
+* update dpp and dapi-client to 0.19.2 ([#258](https://github.com/dashevo/wallet-lib/pull/258))
+
+
 # [7.19.0](https://github.com/dashevo/wallet-lib/compare/v7.18.1...v7.19.0) (2021-05-03)
 
 
