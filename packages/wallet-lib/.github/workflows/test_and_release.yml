@@ -15,6 +15,11 @@ jobs:
     runs-on: ubuntu-20.04
     timeout-minutes: 60
     steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.9.0
+        with:
+          access_token: ${{ github.token }}
+
       - uses: actions/checkout@v2
 
       - uses: actions/setup-node@v2
@@ -29,11 +34,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Check NPM package lock version is updated
+        uses: dashevo/gh-action-check-package-lock@v1
+
       - name: Install NPM dependencies
         run: npm ci
-
-      - name: Check NPM package lock version is updated
-        run: npm run check-package # TODO: does this exist as an action already?
 
       - name: Run ESLinter
         run: npm run lint
@@ -50,7 +55,7 @@ jobs:
           env-file: .github/workflows/.env
 
       - name: Set compatible branches for Platform components
-        uses: dashevo/gh-action-platform-branches@master
+        uses: dashevo/gh-action-platform-branches@v1
         id: platform-branches
         with:
           override-major-version: 0
@@ -58,7 +63,8 @@ jobs:
           override-testsuite-branch: ${{ env.TEST_SUITE_BRANCH }}
 
       - name: Start Dash local network
-        uses: dashevo/gh-action-start-local-network@master
+        uses: dashevo/gh-action-start-local-network@v1
+        id: start-local-network
         with:
           actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
           actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
@@ -69,9 +75,9 @@ jobs:
       - name: Create dotenv file
         run: |
           echo "DAPI_SEED=127.0.0.1" > .env
-          echo "FAUCET_PRIVATE_KEY=${{ env.faucet-private-key }}" >> .env
+          echo "FAUCET_PRIVATE_KEY=${{ steps.start-local-network.outputs.faucet-private-key }}" >> .env
           echo "NETWORK=regtest" >> .env
-          echo "DPNS_CONTRACT_ID=${{ env.dpns-contract-id }}" >> .env
+          echo "DPNS_CONTRACT_ID=${{ steps.start-local-network.outputs.dpns-contract-id }}" >> .env
 
       - name: Run tests
         run: npm run test
