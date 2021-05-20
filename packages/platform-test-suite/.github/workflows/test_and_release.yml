@@ -16,7 +16,13 @@ jobs:
     runs-on: ubuntu-20.04
     timeout-minutes: 60
     steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.9.0
+        with:
+          access_token: ${{ github.token }}
+
       - uses: actions/checkout@v2
+
       - uses: actions/setup-node@v2
         with:
           node-version: '12'
@@ -29,11 +35,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Check NPM package lock version is updated
+        uses: dashevo/gh-action-check-package-lock@v1
+
       - name: Install NPM dependencies
         run: npm ci
-
-      - name: Check NPM package lock version is updated
-        run: npm run check-package # TODO: does this exist as an action already?
 
       - name: Run ESLinter
         run: npm run lint
@@ -50,13 +56,14 @@ jobs:
           env-file: .github/workflows/.env
 
       - name: Set compatible branches for Platform components
-        uses: dashevo/gh-action-platform-branches@master
+        uses: dashevo/gh-action-platform-branches@v1
         id: platform-branches
         with:
           override-dashmate-branch: ${{ env.DASHMATE_BRANCH }}
 
       - name: Start Dash local network
-        uses: dashevo/gh-action-start-local-network@master
+        uses: dashevo/gh-action-start-local-network@v1
+        id: start-local-network
         with:
           actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
           actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
@@ -76,11 +83,11 @@ jobs:
       - name: Run Platform Test Suite
         run: |
           docker run --network="host" platform-test-suite:local 127.0.0.1:3000:3010 \
-          --faucet-key=${{ env.faucet-private-key }} \
+          --faucet-key=${{ steps.start-local-network.outputs.faucet-private-key }} \
           --network=regtest \
-          --dpns-tld-identity-private-key=${{ env.dpns-top-level-identity-private-key }} \
-          --dpns-tld-identity-id=${{ env.dpns-top-level-identity-id }} \
-          --dpns-contract-id=${{ env.dpns-contract-id }}
+          --dpns-tld-identity-private-key=${{ steps.start-local-network.outputs.dpns-top-level-identity-private-key }} \
+          --dpns-tld-identity-id=${{ steps.start-local-network.outputs.dpns-top-level-identity-id }} \
+          --dpns-contract-id=${{ steps.start-local-network.outputs.dpns-contract-id }}
 
   release:
     name: Release Docker image
