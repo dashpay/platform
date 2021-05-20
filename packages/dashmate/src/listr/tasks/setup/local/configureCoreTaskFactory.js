@@ -6,11 +6,11 @@ const {
 } = require('@dashevo/dashcore-lib');
 
 const waitForNodesToHaveTheSameSporks = require('../../../../core/waitForNodesToHaveTheSameSporks');
+const waitForNodesToHaveTheSameHeight = require('../../../../core/waitForNodesToHaveTheSameHeight');
 
 const { NETWORK_LOCAL, MASTERNODE_DASH_AMOUNT } = require('../../../../constants');
 
 /**
- * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {startCore} startCore
@@ -21,10 +21,10 @@ const { NETWORK_LOCAL, MASTERNODE_DASH_AMOUNT } = require('../../../../constants
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {generateBlsKeys} generateBlsKeys
  * @param {enableCoreQuorumsTask} enableCoreQuorumsTask
+ * @param {waitForMasternodesSync} waitForMasternodesSync
  * @return {configureCoreTask}
  */
 function configureCoreTaskFactory(
-  resolveDockerHostIp,
   renderServiceTemplates,
   writeServiceConfigs,
   startCore,
@@ -35,7 +35,10 @@ function configureCoreTaskFactory(
   registerMasternodeTask,
   generateBlsKeys,
   enableCoreQuorumsTask,
+  waitForMasternodesSync,
 ) {
+  const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
+
   /**
    * @typedef {configureCoreTask}
    * @param {Config[]} configGroup
@@ -45,25 +48,24 @@ function configureCoreTaskFactory(
     return new Listr([
       {
         task: async (ctx) => {
-          if (!ctx.hostDockerInternalIp) {
-            ctx.hostDockerInternalIp = await resolveDockerHostIp();
-          }
-
           const network = configGroup[0].get('network');
           const sporkPrivKey = new PrivateKey(undefined, network);
           const sporkAddress = sporkPrivKey.toAddress(network).toString();
 
-          const p2pSeeds = configGroup.map((config) => ({
-            host: ctx.hostDockerInternalIp,
-            port: config.get('core.p2p.port'),
-          }));
+          const seedNodes = configGroup.filter((config) => config.getName() === 'local_seed')
+            .map((config) => ({
+              host: config.get('externalIp'),
+              port: config.get('core.p2p.port'),
+            }));
 
-          configGroup.forEach((config, i) => {
+          configGroup.forEach((config) => {
             // Set seeds
-            config.set(
-              'core.p2p.seeds',
-              p2pSeeds.filter((seed, index) => index !== i),
-            );
+            if (config.getName() !== 'local_seed') {
+              config.set(
+                'core.p2p.seeds',
+                seedNodes,
+              );
+            }
 
             // Set sporks key
             config.set(
@@ -83,9 +85,9 @@ function configureCoreTaskFactory(
 
           return new Listr([
             {
-              title: 'Starting a wallet',
+              title: 'Starting seed node as a wallet',
               task: async () => {
-                const config = configGroup[0];
+                const config = configGroup.find((c) => c.getName() === 'local_seed');
 
                 ctx.coreService = await startCore(config, { wallet: true, addressIndex: true });
               },
@@ -129,7 +131,7 @@ function configureCoreTaskFactory(
               task: () => {
                 const amount = MASTERNODE_DASH_AMOUNT * configGroup.length;
                 return generateToAddressTask(
-                  configGroup[0],
+                  configGroup.find((c) => c.getName() === 'local_seed'),
                   amount,
                 );
               },
@@ -172,6 +174,72 @@ function configureCoreTaskFactory(
               },
             },
             {
+              title: 'Stopping wallet',
+              task: async () => {
+                await ctx.coreService.stop();
+              },
+            },
+            {
+              title: 'Starting nodes',
+              task: async () => {
+                ctx.coreServices = await Promise.all(
+                  configGroup.map((config) => startCore(config)),
+                );
+
+                ctx.rpcClients = ctx.coreServices.map((coreService) => coreService.getRpcClient());
+
+                ctx.seedCoreService = ctx.coreServices.find((coreService) => (
+                  coreService.getConfig().getName() === 'local_seed'
+                ));
+
+                ctx.seedRpcClient = ctx.seedCoreService.getRpcClient();
+
+                ctx.mockTime = 0;
+                ctx.bumpMockTime = async (time = 1) => {
+                  ctx.mockTime += time;
+
+                  await Promise.all(
+                    ctx.rpcClients.map((rpcClient) => rpcClient.setMockTime(ctx.mockTime)),
+                  );
+                };
+              },
+            },
+            {
+              title: 'Force masternodes to sync',
+              task: async () => {
+                await Promise.all(ctx.coreServices.map((coreService) => (
+                  // TODO: Rename function "wait -> force"
+                  waitForMasternodesSync(coreService.getRpcClient())
+                )));
+              },
+            },
+            {
+              title: 'Set initial mock time',
+              task: async () => {
+                // Set initial mock time from the last block
+                const { result: bestBlockHash } = await ctx.seedRpcClient.getBestBlockHash();
+                const { result: bestBlock } = await ctx.seedRpcClient.getBlock(bestBlockHash);
+
+                await ctx.bumpMockTime(bestBlock.time);
+
+                // Sync nodes
+                await ctx.bumpMockTime();
+
+                await generateBlocks(
+                  ctx.seedCoreService,
+                  1,
+                  NETWORK_LOCAL,
+                );
+              },
+            },
+            {
+              title: 'Wait for nodes to have the same height',
+              task: () => waitForNodesToHaveTheSameHeight(
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
+              ),
+            },
+            {
               title: 'Enable sporks',
               task: async () => {
                 const sporks = [
@@ -184,11 +252,13 @@ function configureCoreTaskFactory(
 
                 await Promise.all(
                   sporks.map(async (spork) => (
-                    activateCoreSpork(ctx.coreService.getRpcClient(), spork))),
+                    activateCoreSpork(ctx.seedCoreService.getRpcClient(), spork))),
                 );
-
-                await waitForNodesToHaveTheSameSporks(ctx.coreServices);
               },
+            },
+            {
+              title: 'Wait for nodes to have the same sporks',
+              task: () => waitForNodesToHaveTheSameSporks(ctx.coreServices),
             },
             {
               title: 'Activating DIP8 to enable ChainLocks',
@@ -203,7 +273,7 @@ function configureCoreTaskFactory(
                 do {
                   ({
                     result: blockchainInfo,
-                  } = await ctx.coreService.getRpcClient().getBlockchainInfo());
+                  } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
 
                   isDip8Activated = blockchainInfo.bip9_softforks.dip0008.status === 'active';
 
@@ -212,7 +282,7 @@ function configureCoreTaskFactory(
                   }
 
                   await generateBlocks(
-                    ctx.coreService,
+                    ctx.seedCoreService,
                     blocksToGenerateInOneStep,
                     NETWORK_LOCAL,
                     // eslint-disable-next-line no-loop-func
@@ -232,32 +302,35 @@ function configureCoreTaskFactory(
               }),
             },
             {
-              title: 'Stopping wallet',
-              task: async () => {
-                await ctx.coreService.stop();
-              },
+              title: 'Wait for nodes to have the same height',
+              task: () => waitForNodesToHaveTheSameHeight(
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
+              ),
             },
             {
-              title: 'Starting masternodes',
+              title: 'Make sure masternodes are enabled',
               task: async () => {
-                const coreServices = [];
+                const { result: masternodesStatus } = await ctx.seedRpcClient.masternodelist('status');
 
-                for (const config of configGroup) {
-                  const coreService = await startCore(config);
-                  coreServices.push(coreService);
+                const hasNotEnabled = Boolean(
+                  Object.values(masternodesStatus)
+                    .find((status) => status !== 'ENABLED'),
+                );
+
+                if (hasNotEnabled) {
+                  throw new Error('Not all masternodes are enabled');
                 }
-
-                ctx.coreServices = coreServices;
               },
             },
             {
-              title: 'Wait for core quorums to be enabled',
+              title: 'Wait for quorums to be enabled',
               task: () => enableCoreQuorumsTask(),
             },
             {
               title: 'Setting initial core chain locked height',
               task: async (_, task) => {
-                const rpcClient = ctx.coreServices[0].getRpcClient();
+                const rpcClient = ctx.seedCoreService.getRpcClient();
                 const { result: initialCoreChainLockedHeight } = await rpcClient.getBlockCount();
 
                 ctx.initialCoreChainLockedHeight = initialCoreChainLockedHeight;
@@ -267,7 +340,7 @@ function configureCoreTaskFactory(
               },
             },
             {
-              title: 'Stopping masternodes',
+              title: 'Stopping nodes',
               task: async () => (Promise.all(
                 ctx.coreServices.map((coreService) => coreService.stop()),
               )),

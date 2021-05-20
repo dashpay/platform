@@ -1,11 +1,8 @@
 const fs = require('fs');
-const { exec } = require('child_process');
-const { promisify } = require('util');
 
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 
-const { PrivateKey } = require('@dashevo/dashcore-lib');
 const { NETWORK_LOCAL } = require('../../constants');
 
 /**
@@ -14,7 +11,7 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {waitForCorePeersConnected} waitForCorePeersConnected
  * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
- * @param {Docker} docker
+ * @param {buildServicesTask} buildServicesTask
  * @return {startNodeTask}
  */
 function startNodeTaskFactory(
@@ -22,31 +19,18 @@ function startNodeTaskFactory(
   waitForCorePeersConnected,
   waitForMasternodesSync,
   createRpcClient,
-  docker,
+  buildServicesTask,
 ) {
-  const execAsync = promisify(exec);
-  const followDockerProgress = promisify(docker.modem.followProgress.bind(docker.modem));
-
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
-   * @param {Object} [options]
-   * @param {boolean} [options.isMinerEnabled]
    * @return {Object}
    */
-  function startNodeTask(
-    config,
-    {
-      isMinerEnabled = undefined,
-    } = {},
-  ) {
+  function startNodeTask(config) {
     // Check external IP is set
     config.get('externalIp', true);
 
-    if (isMinerEnabled === undefined) {
-      // eslint-disable-next-line no-param-reassign
-      isMinerEnabled = config.get('core.miner.enable');
-    }
+    const isMinerEnabled = config.get('core.miner.enable');
 
     if (isMinerEnabled === true && config.get('network') !== NETWORK_LOCAL) {
       throw new Error(`'core.miner.enabled' option only works with local network. Your network is ${config.get('network')}.`);
@@ -78,94 +62,12 @@ function startNodeTaskFactory(
       },
       {
         title: 'Build services',
-        skip: (ctx) => ctx.skipFurtherServiceBuilds === true,
-        enabled: () => config.has('platform')
+        enabled: (ctx) => !ctx.skipBuildServices && config.has('platform')
           && (
             config.get('platform.dapi.api.docker.build.path') !== null
             || config.get('platform.drive.abci.docker.build.path') !== null
           ),
-        task: (ctx) => {
-          ctx.skipFurtherServiceBuilds = true;
-
-          const serviceBuildConfigs = [
-            {
-              name: 'Drive',
-              buildOptions: config.get('platform.drive.abci.docker.build'),
-              serviceName: 'drive_abci',
-            },
-            {
-              name: 'DAPI',
-              buildOptions: config.get('platform.dapi.api.docker.build'),
-              serviceName: 'dapi_api',
-            },
-          ];
-
-          const buildTasks = serviceBuildConfigs
-            .filter(({ buildOptions }) => buildOptions.path !== null)
-            .map(({
-              name,
-              buildOptions,
-              serviceName,
-            }) => ({
-              title: `Build ${name}`,
-              task: () => (
-                new Listr([
-                  {
-                    title: 'Build Docker image',
-                    task: async () => {
-                      const envs = config.toEnvs();
-
-                      await dockerCompose.build(envs, serviceName);
-                    },
-                  },
-                  {
-                    title: 'Update NPM cache',
-                    task: async () => {
-                      // Build node_modules stage only to access to npm cache
-                      const buildStream = await docker.buildImage({
-                        context: buildOptions.path,
-                        src: ['Dockerfile', 'docker/cache', 'package.json', 'package-lock.json'],
-                      }, {
-                        target: 'node_modules',
-                      });
-
-                      const output = await followDockerProgress(buildStream);
-
-                      const buildError = output.find(({ error }) => error);
-
-                      if (buildError) {
-                        throw new Error(buildError.error);
-                      }
-
-                      const {
-                        aux: {
-                          ID: nodeModulesImageId,
-                        },
-                      } = output.find(({ aux }) => aux && aux.ID);
-
-                      // Copy npm cache from node_modules stage image back to cache dir
-                      const container = await docker.createContainer({
-                        Image: nodeModulesImageId,
-                      });
-
-                      await Promise.all([
-                        execAsync(`docker cp ${container.id}:/root/.cache ${buildOptions.path}/docker/cache`),
-                        execAsync(`docker cp ${container.id}:/root/.npm ${buildOptions.path}/docker/cache`),
-                      ]);
-
-                      // Remove node_modules stage container and image
-                      await container.remove();
-
-                      const nodeModulesImage = docker.getImage(nodeModulesImageId);
-                      await nodeModulesImage.remove();
-                    },
-                  },
-                ])
-              ),
-            }));
-
-          return new Listr(buildTasks);
-        },
+        task: () => buildServicesTask(config),
       },
       {
         title: 'Start services',
@@ -182,20 +84,7 @@ function startNodeTaskFactory(
         },
       },
       {
-        title: 'Wait for peers to be connected',
-        enabled: () => isMinerEnabled === true,
-        task: async () => {
-          const rpcClient = createRpcClient({
-            port: config.get('core.rpc.port'),
-            user: config.get('core.rpc.user'),
-            pass: config.get('core.rpc.password'),
-          });
-
-          await waitForCorePeersConnected(rpcClient);
-        },
-      },
-      {
-        title: 'Wait for sync',
+        title: 'Force nodes to sync',
         enabled: () => config.get('network') === NETWORK_LOCAL,
         task: async () => {
           const rpcClient = createRpcClient({
@@ -216,63 +105,6 @@ function startNodeTaskFactory(
 
             return this;
           });
-        },
-      },
-      {
-        title: 'Start a miner',
-        enabled: () => isMinerEnabled === true,
-        task: async () => {
-          let minerAddress = config.get('core.miner.address');
-
-          if (minerAddress === null) {
-            const privateKey = new PrivateKey();
-            minerAddress = privateKey.toAddress('regtest').toString();
-
-            config.set('core.miner.address', minerAddress);
-          }
-
-          const minerInterval = config.get('core.miner.interval');
-
-          await dockerCompose.execCommand(
-            config.toEnvs(),
-            'core',
-            [
-              'bash',
-              '-c',
-              `while true; do dash-cli generatetoaddress 1 ${minerAddress}; sleep ${minerInterval}; done`,
-            ],
-            ['--detach'],
-          );
-        },
-      },
-      {
-        title: 'Start bump mock time',
-        enabled: () => config.get('network') === NETWORK_LOCAL,
-        task: async () => {
-          const minerInterval = config.get('core.miner.interval');
-          const secondsToAdd = 150;
-
-          /* eslint-disable no-useless-escape */
-          await dockerCompose.execCommand(
-            config.toEnvs(),
-            'core',
-            [
-              'bash',
-              '-c',
-              `
-              while true
-              do
-                response=\$(dash-cli getblockchaininfo)
-                mediantime=\$(echo \${response} | grep -o -E '\"mediantime\"\: [0-9]+' |  cut -d ' ' -f2)
-                mocktime=\$((mediantime + ${secondsToAdd}))
-                dash-cli setmocktime \$mocktime
-                sleep ${minerInterval}
-              done
-              `,
-            ],
-            ['--detach'],
-          );
-          /* eslint-enable no-useless-escape */
         },
       },
     ]);

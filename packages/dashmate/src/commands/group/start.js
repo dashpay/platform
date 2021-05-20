@@ -12,20 +12,19 @@ class GroupStartCommand extends GroupBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {startNodeTask} startNodeTask
    * @param {Config[]} configGroup
-   * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
+   * @param {startGroupNodesTask} startGroupNodesTask
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     {
-      update: isUpdate,
       'wait-for-readiness': waitForReadiness,
       verbose: isVerbose,
     },
     dockerCompose,
     startNodeTask,
     configGroup,
-    waitForNodeToBeReadyTask,
+    startGroupNodesTask,
   ) {
     const groupName = configGroup[0].get('group');
 
@@ -33,32 +32,7 @@ class GroupStartCommand extends GroupBaseCommand {
       [
         {
           title: `Start ${groupName} nodes`,
-          task: async () => (
-            new Listr(configGroup.map((config) => (
-              {
-                title: `Starting ${config.getName()} node`,
-                task: () => startNodeTask(
-                  config,
-                  {
-                    isUpdate,
-                  },
-                ),
-              }
-            )))
-          ),
-        },
-        {
-          title: 'Wait for nodes to be ready',
-          enabled: () => waitForReadiness,
-          task: () => {
-            const waitForNodeToBeReadyTasks = configGroup
-              .filter((config) => config.has('platform'))
-              .map((config) => ({
-                task: () => waitForNodeToBeReadyTask(config),
-              }));
-
-            return new Listr(waitForNodeToBeReadyTasks);
-          },
+          task: () => startGroupNodesTask(configGroup),
         },
       ],
       {
@@ -73,7 +47,9 @@ class GroupStartCommand extends GroupBaseCommand {
     );
 
     try {
-      await tasks.run();
+      await tasks.run({
+        waitForReadiness,
+      });
     } catch (e) {
       throw new MuteOneLineError(e);
     }

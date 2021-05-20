@@ -26,11 +26,6 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
     return new Listr([
       {
         task: (ctx) => {
-          ctx.rpcClients = ctx.coreServices.map((coreService) => coreService.getRpcClient());
-
-          // eslint-disable-next-line prefer-destructuring
-          ctx.firstRpcClient = ctx.rpcClients[0];
-
           // Those are default values for the quorum size 3 with all nodes
           // behaving correctly with "llmq_test" quorum
           ctx.expectedMembers = 3;
@@ -40,60 +35,16 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           ctx.expectedContributions = 3;
           ctx.expectedJustifications = 0;
           ctx.expectedComplaints = 0;
-
-          ctx.mockTime = 0;
-          ctx.bumpMockTime = async (time = 1) => {
-            ctx.mockTime += time;
-
-            for (const rpcClient of ctx.rpcClients) {
-              await rpcClient.setMockTime(ctx.mockTime);
-            }
-          };
-        },
-      },
-      {
-        title: 'Waiting for all nodes to catch up',
-        task: async (ctx) => {
-          // Set initial mock time
-          const { result: bestBlockHash } = await ctx.firstRpcClient.getBestBlockHash();
-          const { result: bestBlock } = await ctx.firstRpcClient.getBlock(bestBlockHash);
-
-          await ctx.bumpMockTime(bestBlock.time);
-
-          // Sync nodes
-          await ctx.bumpMockTime();
-
-          await generateBlocks(
-            ctx.coreServices[0],
-            1,
-            NETWORK_LOCAL,
-          );
-
-          await waitForNodesToHaveTheSameHeight(
-            ctx.rpcClients,
-            WAIT_FOR_NODES_TIMEOUT,
-          );
-
-          const { result: masternodesStatus } = await ctx.firstRpcClient.masternodelist('status');
-
-          const hasNotEnabled = Boolean(
-            Object.values(masternodesStatus)
-              .find((status) => status !== 'ENABLED'),
-          );
-
-          if (hasNotEnabled) {
-            throw new Error('Not all masternodes are enabled');
-          }
         },
       },
       {
         title: 'Start DKG session',
         task: async (ctx) => {
-          const { result: initialQuorumList } = await ctx.firstRpcClient.quorum('list');
+          const { result: initialQuorumList } = await ctx.seedRpcClient.quorum('list');
 
           ctx.initialQuorumList = initialQuorumList;
 
-          const { result: bestBlockHeight } = await ctx.firstRpcClient.getBlockCount();
+          const { result: bestBlockHeight } = await ctx.seedRpcClient.getBlockCount();
 
           // move forward to next DKG
           const blocksUntilNextDKG = 24 - (bestBlockHeight % 24);
@@ -101,7 +52,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
             await ctx.bumpMockTime();
 
             await generateBlocks(
-              ctx.coreServices[0],
+              ctx.seedCoreService,
               blocksUntilNextDKG,
               NETWORK_LOCAL,
             );
@@ -116,7 +67,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
       {
         title: 'Waiting for phase 1 (init)',
         task: async (ctx) => {
-          const { result: quorumHash } = await ctx.firstRpcClient.getBestBlockHash();
+          const { result: quorumHash } = await ctx.seedRpcClient.getBestBlockHash();
 
           ctx.quorumHash = quorumHash;
 
@@ -133,7 +84,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
             ctx.bumpMockTime,
           );
 
-          const { result: sporks } = await ctx.firstRpcClient.spork('show');
+          const { result: sporks } = await ctx.seedRpcClient.spork('show');
           const isSpork21Active = sporks.SPORK_21_QUORUM_ALL_CONNECTED === 0;
 
           if (isSpork21Active) {
@@ -146,7 +97,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           await ctx.bumpMockTime();
 
           await generateBlocks(
-            ctx.coreServices[0],
+            ctx.seedCoreService,
             2,
             NETWORK_LOCAL,
           );
@@ -170,7 +121,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           await ctx.bumpMockTime();
 
           await generateBlocks(
-            ctx.coreServices[0],
+            ctx.seedCoreService,
             2,
             NETWORK_LOCAL,
           );
@@ -196,7 +147,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           await ctx.bumpMockTime();
 
           await generateBlocks(
-            ctx.coreServices[0],
+            ctx.seedCoreService,
             2,
             NETWORK_LOCAL,
           );
@@ -222,7 +173,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           await ctx.bumpMockTime();
 
           await generateBlocks(
-            ctx.coreServices[0],
+            ctx.seedCoreService,
             2,
             NETWORK_LOCAL,
           );
@@ -248,7 +199,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           await ctx.bumpMockTime();
 
           await generateBlocks(
-            ctx.coreServices[0],
+            ctx.seedCoreService,
             2,
             NETWORK_LOCAL,
           );
@@ -283,20 +234,20 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           await ctx.bumpMockTime();
 
           await generateBlocks(
-            ctx.coreServices[0],
+            ctx.seedCoreService,
             1,
             NETWORK_LOCAL,
           );
 
-          let { result: newQuorumList } = await ctx.firstRpcClient.quorum('list');
+          let { result: newQuorumList } = await ctx.seedRpcClient.quorum('list');
 
           while (isEqual(ctx.initialQuorumList, newQuorumList)) {
-            await wait(2000);
+            await wait(300);
 
             await ctx.bumpMockTime();
 
             await generateBlocks(
-              ctx.coreServices[0],
+              ctx.seedCoreService,
               1,
               NETWORK_LOCAL,
             );
@@ -306,19 +257,19 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
               WAIT_FOR_NODES_TIMEOUT,
             );
 
-            ({ result: newQuorumList } = await ctx.firstRpcClient.quorum('list'));
+            ({ result: newQuorumList } = await ctx.seedRpcClient.quorum('list'));
           }
 
-          const { result: quorumList } = await ctx.firstRpcClient.quorum('list', 1);
+          const { result: quorumList } = await ctx.seedRpcClient.quorum('list', 1);
 
           const newQuorumHash = quorumList[LLMQ_TYPE_TEST][0];
 
-          const { result: quorumInfo } = await ctx.firstRpcClient.quorum('info', 100, newQuorumHash);
+          const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', 100, newQuorumHash);
 
           // Mine 8 (SIGN_HEIGHT_OFFSET) more blocks to make sure
           // that the new quorum gets eligable for signing sessions
           await generateBlocks(
-            ctx.coreServices[0],
+            ctx.seedCoreService,
             8,
             NETWORK_LOCAL,
           );

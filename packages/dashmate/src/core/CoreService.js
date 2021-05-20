@@ -1,12 +1,21 @@
 class CoreService {
   /**
    *
+   * @param {Config} config
    * @param {RpcClient} rpcClient
    * @param {Container} dockerContainer
    */
-  constructor(rpcClient, dockerContainer) {
+  constructor(config, rpcClient, dockerContainer) {
+    this.config = config;
     this.rpcClient = rpcClient;
     this.dockerContainer = dockerContainer;
+  }
+
+  /**
+   * @return {Config}
+   */
+  getConfig() {
+    return this.config;
   }
 
   /**

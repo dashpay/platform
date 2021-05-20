@@ -5,10 +5,10 @@ const isEqual = require('lodash.isequal');
  * @return {Promise<boolean>}
  */
 async function checkSporksAreTheSame(coreServices) {
-  const initialSporks = coreServices[0].sporks('show');
+  const { result: initialSporks } = await coreServices[0].getRpcClient().spork('show');
 
   for (const coreService of coreServices.slice(1)) {
-    const sporks = await coreService.getRpcClient().sporks('show');
+    const { result: sporks } = await coreService.getRpcClient().spork('show');
 
     if (!isEqual(initialSporks, sporks)) {
       return false;
@@ -28,7 +28,7 @@ async function waitForNodesToHaveTheSameSporks(coreServices, timeout = 30000) {
 
   let isReady = false;
 
-  while (isReady) {
+  while (!isReady) {
     isReady = await checkSporksAreTheSame(coreServices);
 
     if (Date.now() > deadline) {

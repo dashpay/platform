@@ -13,7 +13,7 @@ async function waitForCorePeersConnected(rpcClient) {
   do {
     const { result: peers } = await rpcClient.getPeerInfo();
 
-    hasPeers = peers && peers.length > 2;
+    hasPeers = peers && peers.length > 0;
 
     if (!hasPeers) {
       await wait(10000);

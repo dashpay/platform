@@ -33,6 +33,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     const rows = [];
 
     const coreService = new CoreService(
+      config,
       createRpcClient(
         {
           port: config.get('core.rpc.port'),

@@ -66,6 +66,7 @@ function startCoreFactory(
     );
 
     const coreService = new CoreService(
+      config,
       rpcClient,
       coreContainer,
     );

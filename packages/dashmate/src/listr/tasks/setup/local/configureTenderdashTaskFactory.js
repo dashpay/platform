@@ -4,14 +4,12 @@ const { Listr } = require('listr2');
  * @param {tenderdashInitTask} tenderdashInitTask
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
- * @param {resolveDockerHostIp} resolveDockerHostIp
  * @return {configureTenderdashTask}
  */
 function configureTenderdashTaskFactory(
   tenderdashInitTask,
   renderServiceTemplates,
   writeServiceConfigs,
-  resolveDockerHostIp,
 ) {
   /**
    * @typedef {configureTenderdashTask}
@@ -22,10 +20,6 @@ function configureTenderdashTaskFactory(
     return new Listr([
       {
         task: async (ctx) => {
-          if (!ctx.hostDockerInternalIp) {
-            ctx.hostDockerInternalIp = await resolveDockerHostIp();
-          }
-
           const masternodeConfigs = configGroup.filter((config) => config.get('core.masternode.enable'));
 
           const subTasks = masternodeConfigs.map((config) => ({
@@ -68,7 +62,7 @@ function configureTenderdashTaskFactory(
 
                     return {
                       id: nodeId,
-                      host: ctx.hostDockerInternalIp,
+                      host: config.get('externalIp'),
                       port,
                     };
                   });

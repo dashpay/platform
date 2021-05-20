@@ -7,7 +7,8 @@ class GroupRestartCommand extends GroupBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
-   * @param {restartNodeTask} restartNodeTask
+   * @param {stopNodeTask} stopNodeTask
+   * @param {startGroupNodesTask} startGroupNodesTask
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
@@ -17,35 +18,42 @@ class GroupRestartCommand extends GroupBaseCommand {
       verbose: isVerbose,
     },
     dockerCompose,
-    restartNodeTask,
+    stopNodeTask,
+    startGroupNodesTask,
     configGroup,
   ) {
     const groupName = configGroup[0].get('group');
 
-    const tasks = new Listr(
-      [
-        {
-          title: `Restart ${groupName} nodes`,
-          task: async () => (
-            new Listr(configGroup.map((config) => (
-              {
-                title: `Restarting ${config.getName()} node`,
-                task: () => restartNodeTask(config),
-              }
-            )))
-          ),
-        },
-      ],
-      {
-        renderer: isVerbose ? 'verbose' : 'default',
-        rendererOptions: {
-          showTimer: isVerbose,
-          clearOutput: false,
-          collapse: false,
-          showSubtasks: true,
-        },
+    const tasks = new Listr({
+      title: `Restart ${groupName} nodes`,
+      task: async () => (
+        new Listr([
+          {
+            title: 'Stop nodes',
+            task: () => (
+              // So we stop the miner first, as there's a chance that MNs will get banned
+              // if the miner is still running when stopping them
+              new Listr(configGroup.reverse().map((config) => ({
+                task: () => stopNodeTask(config),
+              })))
+            ),
+          },
+          {
+            title: 'Start nodes',
+            task: () => startGroupNodesTask(configGroup),
+          },
+        ])
+      ),
+    },
+    {
+      renderer: isVerbose ? 'verbose' : 'default',
+      rendererOptions: {
+        showTimer: isVerbose,
+        clearOutput: false,
+        collapse: false,
+        showSubtasks: true,
       },
-    );
+    });
 
     try {
       await tasks.run();
