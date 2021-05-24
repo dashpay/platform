@@ -16,16 +16,8 @@ module.exports = lodashMerge({}, baseConfig, {
         },
       },
     },
-    drive: {
-      tenderdash: {
-        consensus: {
-          createEmptyBlocks: true,
-          createEmptyBlocksInterval: '10s',
-        },
-      },
-    },
   },
-  externalIp: '127.0.0.1',
+  externalIp: null,
   environment: 'development',
   network: NETWORK_LOCAL,
 });

@@ -88,7 +88,7 @@ filter_peers = false
 [rpc]
 
 # TCP or UNIX socket address for the RPC server to listen on
-laddr = "tcp://0.0.0.0:26657"
+laddr = "tcp://0.0.0.0:{{=it.platform.drive.tenderdash.rpc.port}}"
 
 # A list of origins a cross-domain request can be executed from
 # Default value '[]' disables cors support
@@ -172,7 +172,7 @@ pprof_laddr = ""
 [p2p]
 
 # Address to listen for incoming connections
-laddr = "tcp://0.0.0.0:26656"
+laddr = "tcp://0.0.0.0:{{=it.platform.drive.tenderdash.p2p.port}}"
 
 # Address to advertise to peers for them to dial
 # If empty, will use the same port as the laddr,
@@ -194,7 +194,7 @@ addr_book_file = "data/addrbook.json"
 
 # Set true for strict address routability rules
 # Set false for private or local networks
-addr_book_strict = false
+addr_book_strict = {{?it.network == 'local'}}false{{??}}true{{?}}
 
 # Maximum number of inbound peers
 max_num_inbound_peers = 40
@@ -203,7 +203,7 @@ max_num_inbound_peers = 40
 max_num_outbound_peers = 10
 
 # List of node IDs, to which a connection will be (re)established ignoring any existing limits
-unconditional_peer_ids = ""
+unconditional_peer_ids = "{{?it.network == 'local'}}{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:index}}{{? index }},{{?}}{{=peer.id}}{{~}}{{?}}"
 
 # Maximum pause when redialing a persistent peer (if zero, exponential backoff is used)
 persistent_peers_max_dial_period = "0s"
@@ -221,7 +221,7 @@ send_rate = 5120000
 recv_rate = 5120000
 
 # Set true to enable the peer-exchange reactor
-pex = true
+pex = {{?it.network == 'local'}}false{{??}}true{{?}}
 
 # Seed mode, in which node constantly crawls the network and looks for
 # peers. If another node asks it for addresses, it responds and disconnects.
@@ -233,7 +233,7 @@ seed_mode = false
 private_peer_ids = ""
 
 # Toggle to disable guard against peers connecting from the same ip.
-allow_duplicate_ip = false
+allow_duplicate_ip = {{?it.network == 'local'}}true{{??}}false{{?}}
 
 # Peer connection configuration.
 handshake_timeout = "20s"

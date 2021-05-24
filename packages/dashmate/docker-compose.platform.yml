@@ -57,8 +57,8 @@ services:
     depends_on:
       - drive_abci
     ports:
-      - ${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:26656 # P2P
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:26657 # RPC
+      - ${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
+      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
