@@ -90,6 +90,7 @@ ARGUMENTS
 OPTIONS
   -i, --external-ip=external-ip                            external ip
   -k, --operator-bls-private-key=operator-bls-private-key  operator bls private key
+  -m, --miner-interval=miner-interval                      interval between blocks
   -p, --funding-private-key=funding-private-key            private key with more than 1000 dash for funding collateral
   -v, --verbose                                            use verbose mode for output
   --node-count=node-count                                  number of nodes to setup

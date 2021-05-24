@@ -42,6 +42,24 @@ function setupLocalPresetTaskFactory(
         },
       },
       {
+        title: 'Set the core miner interval',
+        enabled: (ctx) => ctx.minerInterval === null,
+        task: async (ctx, task) => {
+          ctx.minerInterval = await task.prompt({
+            type: 'input',
+            message: 'Enter the interval between core blocks',
+            initial: configFile.getConfig('base').options.core.miner.interval,
+            validate: (state) => {
+              if (state.match(/\d+(\.\d+)?(m|s)/)) {
+                return true;
+              }
+
+              return 'Please enter a valid integer or decimal duration with m or s units';
+            },
+          });
+        },
+      },
+      {
         title: 'Create local group configs',
         task: async (ctx) => {
           ctx.configGroup = new Array(ctx.nodeCount)
@@ -73,6 +91,10 @@ function setupLocalPresetTaskFactory(
 
                   config.set('core.masternode.enable', false);
                   config.set('core.miner.enable', true);
+
+                  // Enable miner for the seed node
+                  config.set('core.miner.enable', true);
+                  config.set('core.miner.interval', ctx.minerInterval);
 
                   // Disable platform for the seed node
                   config.set('platform', undefined);
