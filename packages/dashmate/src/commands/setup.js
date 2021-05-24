@@ -33,6 +33,7 @@ class SetupCommand extends BaseCommand {
       'operator-bls-private-key': operatorBlsPrivateKey,
       'funding-private-key': fundingPrivateKeyString,
       'node-count': nodeCount,
+      'debug-logs': debugLogs,
       'miner-interval': minerInterval,
       verbose: isVerbose,
     },
@@ -96,6 +97,7 @@ class SetupCommand extends BaseCommand {
         preset,
         nodeType,
         nodeCount,
+        debugLogs,
         minerInterval,
         externalIp,
         operatorBlsPrivateKey,
@@ -126,6 +128,9 @@ SetupCommand.args = [{
 }];
 
 SetupCommand.flags = {
+  'debug-logs': flagTypes.boolean({
+    char: 'd', description: 'enable debug logs', allowNo: true, default: null,
+  }),
   'external-ip': flagTypes.string({ char: 'i', description: 'external ip' }),
   'operator-bls-private-key': flagTypes.string({ char: 'k', description: 'operator bls private key' }),
   'funding-private-key': flagTypes.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),

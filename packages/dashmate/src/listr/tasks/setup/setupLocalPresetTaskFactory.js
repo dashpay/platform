@@ -42,6 +42,19 @@ function setupLocalPresetTaskFactory(
         },
       },
       {
+        title: 'Enable debug logs',
+        enabled: (ctx) => ctx.debugLogs === null,
+        task: async (ctx, task) => {
+          ctx.debugLogs = await task.prompt({
+            type: 'Toggle',
+            message: 'Enable debug logs?',
+            enabled: 'yes',
+            disabled: 'no',
+            initial: 'no',
+          });
+        },
+      },
+      {
         title: 'Set the core miner interval',
         enabled: (ctx) => ctx.minerInterval === null,
         task: async (ctx, task) => {
@@ -85,6 +98,9 @@ function setupLocalPresetTaskFactory(
                 config.set('core.p2p.port', 20001 + (i * 100));
                 config.set('core.rpc.port', 20002 + (i * 100));
                 config.set('externalIp', hostDockerInternalIp);
+
+                config.set('core.debug', ctx.debugLogs ? 1 : 0);
+                config.set('platform.drive.abci.log.stdout.level', ctx.debugLogs ? 'trace' : 'info');
 
                 if (config.getName() === 'local_seed') {
                   config.set('description', 'seed node for local network');
