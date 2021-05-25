@@ -273,11 +273,11 @@ function createDIContainer(options) {
         : undefined,
     ),
     featureFlagDataContractBlockHeight: asFunction(() => {
-      if (options.FEATURE_FLAGS_BLOCK_HEIGHT === undefined || options.FEATURE_FLAGS_BLOCK_HEIGHT === '') {
+      if (options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT === undefined || options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT === '') {
         return new Long();
       }
 
-      return Long.fromString(options.FEATURE_FLAGS_BLOCK_HEIGHT);
+      return Long.fromString(options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT);
     }),
   });
 

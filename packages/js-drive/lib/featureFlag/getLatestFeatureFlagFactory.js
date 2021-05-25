@@ -24,7 +24,7 @@ function getLatestFeatureFlagFactory(
       return null;
     }
 
-    if (blockHeight.lt(featureFlagDataContractBlockHeight)) {
+    if (blockHeight.lte(featureFlagDataContractBlockHeight)) {
       return null;
     }
 
