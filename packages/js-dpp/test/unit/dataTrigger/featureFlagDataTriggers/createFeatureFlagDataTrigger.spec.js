@@ -14,10 +14,10 @@ describe('createFeatureFlagDataTrigger', () => {
   let contextMock;
   let stateRepositoryMock;
   let documentTransition;
-  let topLevelIdentity;
+  let topLevelIdentityId;
 
   beforeEach(function beforeEach() {
-    topLevelIdentity = getIdentityFixture();
+    topLevelIdentityId = getIdentityFixture().getId();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
@@ -35,14 +35,14 @@ describe('createFeatureFlagDataTrigger', () => {
       getOwnerId: this.sinonSandbox.stub(),
       getDataContract: () => getFeatureFlagsDocumentsFixture.dataContract,
     };
-    contextMock.getOwnerId.returns(topLevelIdentity.getId());
+    contextMock.getOwnerId.returns(topLevelIdentityId);
   });
 
   it('should return an error if heigh is lower than block height', async () => {
     documentTransition.data.enableAtHeight = 1;
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentity,
+      documentTransition, contextMock, topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -58,7 +58,7 @@ describe('createFeatureFlagDataTrigger', () => {
     contextMock.getOwnerId.returns(Identifier.from(Buffer.alloc(32, 1)));
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentity,
+      documentTransition, contextMock, topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -72,7 +72,7 @@ describe('createFeatureFlagDataTrigger', () => {
 
   it('should pass', async () => {
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentity,
+      documentTransition, contextMock, topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);

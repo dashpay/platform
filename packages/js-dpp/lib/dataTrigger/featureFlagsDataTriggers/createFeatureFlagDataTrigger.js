@@ -3,7 +3,13 @@ const Long = require('long');
 const DataTriggerConditionError = require('../../errors/DataTriggerConditionError');
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
 
-async function createFeatureFlagDataTrigger(documentTransition, context, topLevelIdentity) {
+/**
+ * @param {DocumentCreateTransition} documentTransition
+ * @param {DataTriggerExecutionContext} context
+ * @param {Identifier} topLevelIdentityId
+ * @return {Promise<DataTriggerExecutionResult>}
+ */
+async function createFeatureFlagDataTrigger(documentTransition, context, topLevelIdentityId) {
   const result = new DataTriggerExecutionResult();
 
   const stateRepository = context.getStateRepository();
@@ -23,7 +29,7 @@ async function createFeatureFlagDataTrigger(documentTransition, context, topLeve
     return result;
   }
 
-  if (!context.getOwnerId().equals(topLevelIdentity.getId())) {
+  if (!context.getOwnerId().equals(topLevelIdentityId)) {
     result.addError(
       new DataTriggerConditionError(
         documentTransition,

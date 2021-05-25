@@ -1,3 +1,5 @@
+const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
+
 const Identifier = require('../identifier/Identifier');
 
 const AbstractDocumentTransition = require('../document/stateTransition/documentTransition/AbstractDocumentTransition');
@@ -94,39 +96,58 @@ function getDataTriggersFactory() {
     ),
     new DataTrigger(
       featureFlagsDataContractId,
-      'updateConsensusParams',
+      featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
       AbstractDocumentTransition.ACTIONS.CREATE,
       createFeatureFlagDataTrigger,
       featureFlagsTopLevelIdentityId,
     ),
     new DataTrigger(
       featureFlagsDataContractId,
-      'updateConsensusParams',
+      featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
     ),
     new DataTrigger(
       featureFlagsDataContractId,
-      'updateConsensusParams',
+      featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
     ),
     new DataTrigger(
       featureFlagsDataContractId,
-      'fixCumulativeFeesBug',
+      featureFlagTypes.FIX_CUMULATIVE_FEES,
       AbstractDocumentTransition.ACTIONS.CREATE,
       createFeatureFlagDataTrigger,
       featureFlagsTopLevelIdentityId,
     ),
     new DataTrigger(
       featureFlagsDataContractId,
-      'fixCumulativeFeesBug',
+      featureFlagTypes.FIX_CUMULATIVE_FEES,
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
     ),
     new DataTrigger(
       featureFlagsDataContractId,
-      'fixCumulativeFeesBug',
+      featureFlagTypes.FIX_CUMULATIVE_FEES,
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
+      AbstractDocumentTransition.ACTIONS.CREATE,
+      createFeatureFlagDataTrigger,
+      featureFlagsTopLevelIdentityId,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      featureFlagsDataContractId,
+      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
     ),
