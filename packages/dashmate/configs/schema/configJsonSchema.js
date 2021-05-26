@@ -58,7 +58,7 @@ module.exports = {
       required: ['id', 'host', 'port'],
       additionalProperties: false,
     },
-    logFile: {
+    abciLogFile: {
       properties: {
         level: {
           type: 'string',
@@ -71,6 +71,10 @@ module.exports = {
       },
       additionalProperties: false,
       required: ['level', 'path'],
+    },
+    tenderdashLogModule: {
+      type: 'string',
+      enum: ['debug', 'info', 'error'],
     },
   },
   properties: {
@@ -298,17 +302,17 @@ module.exports = {
                     stdout: {
                       properties: {
                         level: {
-                          $ref: '#/definitions/logFile/properties/level',
+                          $ref: '#/definitions/abciLogFile/properties/level',
                         },
                       },
                       additionalProperties: false,
                       required: ['level'],
                     },
                     prettyFile: {
-                      $ref: '#/definitions/logFile',
+                      $ref: '#/definitions/abciLogFile',
                     },
                     jsonFile: {
-                      $ref: '#/definitions/logFile',
+                      $ref: '#/definitions/abciLogFile',
                     },
                   },
                   additionalProperties: false,
@@ -358,6 +362,54 @@ module.exports = {
                   },
                   additionalProperties: false,
                   required: ['createEmptyBlocks', 'createEmptyBlocksInterval'],
+                },
+                log: {
+                  type: 'object',
+                  properties: {
+                    level: {
+                      type: 'object',
+                      properties: {
+                        'abci-client': {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        blockchain: {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        consensus: {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        main: {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        mempool: {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        p2p: {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        'rpc-server': {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        state: {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        statesync: {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                        '*': {
+                          $ref: '#/definitions/tenderdashLogModule',
+                        },
+                      },
+                      minProperties: 1,
+                      additionalProperties: false,
+                    },
+                    format: {
+                      type: 'string',
+                      enum: ['plain', 'json'],
+                    },
+                  },
+                  required: ['level', 'format'],
+                  additionalProperties: false,
                 },
                 rpc: {
                   type: 'object',

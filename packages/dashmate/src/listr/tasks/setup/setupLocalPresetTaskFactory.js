@@ -99,8 +99,13 @@ function setupLocalPresetTaskFactory(
                 config.set('core.rpc.port', 20002 + (i * 100));
                 config.set('externalIp', hostDockerInternalIp);
 
-                config.set('core.debug', ctx.debugLogs ? 1 : 0);
-                config.set('platform.drive.abci.log.stdout.level', ctx.debugLogs ? 'trace' : 'info');
+                if (ctx.debugLogs) {
+                  config.set('core.debug', 1);
+                  config.set('platform.drive.abci.log.stdout.level', 'trace');
+                  config.set('platform.drive.tenderdash.log.level', {
+                    '*': 'debug',
+                  });
+                }
 
                 if (config.getName() === 'local_seed') {
                   config.set('description', 'seed node for local network');

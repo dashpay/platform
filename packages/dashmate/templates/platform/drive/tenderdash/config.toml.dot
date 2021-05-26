@@ -47,10 +47,10 @@ db_backend = "goleveldb"
 db_dir = "data"
 
 # Output level for logging, including package level options
-log_level = "main:info,state:info,statesync:info,*:error"
+log_level = "{{~Object.keys(it.platform.drive.tenderdash.log.level) :module:index}}{{? index }},{{?}}{{=module}}:{{=it.platform.drive.tenderdash.log.level[module]}}{{~}}"
 
 # Output format: 'plain' (colored text) or 'json'
-log_format = "plain"
+log_format = "{{=it.platform.drive.tenderdash.log.format}}"
 
 ##### additional base config options #####
 
