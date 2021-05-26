@@ -28,7 +28,10 @@ describe('getStatusFactory', () => {
 
     masternode.setStatus(GetStatusResponse.Masternode.Status.READY);
 
+    const chain = new GetStatusResponse.Chain();
+
     response.setMasternode(masternode);
+    response.setChain(chain);
 
     grpcTransportMock.request.resolves(response);
 
