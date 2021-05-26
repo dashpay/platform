@@ -48,23 +48,23 @@ $ sudo npm link # optional: link CLI for system-wide execution
 ## Update
 
 ```bash
-$ mn stop
+$ dashmate stop
 $ git checkout master
 $ git pull
-$ mn update
-$ mn start
+$ dashmate update
+$ dashmate start
 ```
 
 If the platform layer has been wiped, you must additionally reset platform data:
 
 ```bash
-$ mn stop
+$ dashmate stop
 $ git checkout master
 $ git pull
-$ mn reset --platform-only --hard
-$ mn update
-$ mn setup -k <bls-key>
-$ mn start
+$ dashmate reset --platform-only --hard
+$ dashmate update
+$ dashmate setup -k <bls-key>
+$ dashmate start
 ```
 
 ## Usage
