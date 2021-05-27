@@ -107,6 +107,10 @@ function setupLocalPresetTaskFactory(
                   });
                 }
 
+                // Although not all nodes are miners, all nodes should be aware of
+                // the miner interval to be able to sync mocked time
+                config.set('core.miner.interval', ctx.minerInterval);
+
                 if (config.getName() === 'local_seed') {
                   config.set('description', 'seed node for local network');
 
@@ -115,7 +119,6 @@ function setupLocalPresetTaskFactory(
 
                   // Enable miner for the seed node
                   config.set('core.miner.enable', true);
-                  config.set('core.miner.interval', ctx.minerInterval);
 
                   // Disable platform for the seed node
                   config.set('platform', undefined);
