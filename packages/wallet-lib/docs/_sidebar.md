@@ -25,7 +25,7 @@
         - [`.getPrivateKeys()`](account/getPrivateKeys.md)
         - [`.getTotalBalance()`](account/getTotalBalance.md)
         - [`.getTransaction()`](account/getTransaction.md)
-        - [`.getTransactionHistory()`](account/getTransactionHistory.md)
+        - [`.getTransactions()`](account/getTransactions.md)
         - [`.getUnconfirmedBalance()`](account/getUnconfirmedBalance.md)
         - [`.getUTXOS()`](account/getUTXOS.md)
         - [`.sign()`](account/sign.md)
