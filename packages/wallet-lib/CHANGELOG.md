@@ -1,3 +1,10 @@
+## [7.19.2](https://github.com/dashevo/wallet-lib/compare/v7.19.1...v7.19.2) (2021-05-28)
+
+
+### Bugfixes
+
+* platform queries with binary fields not serialized properly ([#264](https://github.com/dashevo/wallet-lib/pull/264))
+
 ## [7.19.1](https://github.com/dashevo/wallet-lib/compare/v7.19.0...v7.19.1) (2021-05-20)
 
 
