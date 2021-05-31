@@ -7,7 +7,7 @@ class UniqueIndicesLimitReachedError extends AbstractIndexError {
    */
   constructor(rawDataContract, documentType) {
     const message = `'${documentType}' document has more `
-      + `than ${UniqueIndicesLimitReachedError.UNIQUE_INDEX_LIMIT} unique index definitions`;
+      + `than ${UniqueIndicesLimitReachedError.UNIQUE_INDEX_LIMIT} unique index $defs`;
 
     super(
       message,

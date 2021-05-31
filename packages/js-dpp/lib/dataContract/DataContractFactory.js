@@ -37,7 +37,7 @@ class DataContractFactory {
       $id: dataContractId,
       ownerId,
       documents,
-      definitions: {},
+      $defs: {},
     });
 
     dataContract.setEntropy(dataContractEntropy);

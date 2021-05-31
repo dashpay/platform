@@ -1,4 +1,4 @@
-const Ajv = require('ajv');
+const { default: Ajv } = require('ajv');
 
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
 const JsonSchemaValidator = require('../../lib/validation/JsonSchemaValidator');

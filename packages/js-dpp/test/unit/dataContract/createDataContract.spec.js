@@ -40,8 +40,8 @@ describe('createDataContract', () => {
     expect(dataContract.getDocuments()).to.equal(rawDataContract.documents);
   });
 
-  it('should return new DataContract with "definitions" if present', () => {
-    rawDataContract.definitions = {
+  it('should return new DataContract with "$defs" if present', () => {
+    rawDataContract.$defs = {
       subSchema: { type: 'object' },
     };
 
@@ -49,7 +49,7 @@ describe('createDataContract', () => {
 
     expect(dataContract).to.be.an.instanceOf(DataContract);
 
-    expect(dataContract.getDefinitions()).to.equal(rawDataContract.definitions);
+    expect(dataContract.getDefinitions()).to.equal(rawDataContract.$defs);
 
     expect(dataContract.getOwnerId()).to.deep.equal(rawDataContract.ownerId);
     expect(dataContract.getDocuments()).to.equal(rawDataContract.documents);

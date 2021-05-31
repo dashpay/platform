@@ -160,7 +160,7 @@ module.exports = function validateDataContractFactory(
             return;
           }
 
-          // Validate indexed property definitions
+          // Validate indexed property $defs
           propertyDefinitionEntities.forEach(([propertyName, propertyDefinition]) => {
             const {
               type: propertyType,

@@ -67,7 +67,7 @@ describe('DataContractFactory', () => {
         $id: dataContract.id.toBuffer(),
         ownerId: dataContract.ownerId.toBuffer(),
         documents: rawDataContract.documents,
-        definitions: {},
+        $defs: {},
       });
     });
   });

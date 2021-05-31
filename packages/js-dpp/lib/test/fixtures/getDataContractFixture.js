@@ -14,6 +14,7 @@ const Identifier = require('../../identifier/Identifier');
 module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
   const documents = {
     niceDocument: {
+      type: 'object',
       properties: {
         name: {
           type: 'string',
@@ -23,15 +24,17 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       additionalProperties: false,
     },
     prettyDocument: {
+      type: 'object',
       properties: {
         lastName: {
-          $ref: '#/definitions/lastName',
+          $ref: '#/$defs/lastName',
         },
       },
       required: ['lastName', '$updatedAt'],
       additionalProperties: false,
     },
     indexedDocument: {
+      type: 'object',
       indices: [
         {
           properties: [
@@ -79,6 +82,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       additionalProperties: false,
     },
     noTimeDocument: {
+      type: 'object',
       properties: {
         name: {
           type: 'string',
@@ -87,6 +91,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       additionalProperties: false,
     },
     uniqueDates: {
+      type: 'object',
       indices: [
         {
           properties: [
@@ -113,6 +118,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       additionalProperties: false,
     },
     withByteArrays: {
+      type: 'object',
       indices: [
         {
           properties: [
@@ -138,6 +144,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       additionalProperties: false,
     },
     optionalUniqueIndexedDocument: {
+      type: 'object',
       properties: {
         firstName: {
           type: 'string',

@@ -9,6 +9,12 @@ class JsonSchemaValidator {
 
     // TODO Validator shouldn't know about schemas
     this.ajv.addMetaSchema(dataContractMetaSchema);
+    this.ajv.addVocabulary([
+      'ownerId',
+      'documents',
+      'protocolVersion',
+      'indices',
+    ]);
   }
 
   /**

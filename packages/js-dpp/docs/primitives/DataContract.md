@@ -11,7 +11,7 @@
 | **rawDataContract.protocolVersion**   | number           | yes                |                           |
 | **rawDataContract.ownerId**           | Buffer           | yes                |                           |
 | **rawDataContract.documents**         | Object<str, obj> | yes                |                           |
-| **rawDataContract.definitions**       | Object<str, obj> | no                 |                           |
+| **rawDataContract.$defs**       | Object<str, obj> | no                 |                           |
 
 **Returns**: A new valid instance of DataContract
 
@@ -136,25 +136,25 @@
 
 **Returns**: {{$ref: string}} - reference
 
-## .setDefinitions(definitions)
+## .setDefinitions($defs)
 
-**Description**: Setter for definitions.
+**Description**: Setter for $defs.
 
 **Parameters**:  
 
 | parameters         | type                   | required           | Description                      |  
 |--------------------|------------------------|--------------------| -------------------------------- |
-| **definitions**    | Object<string, Object> | yes                |                                  |
+| **$defs**    | Object<string, Object> | yes                |                                  |
 
 **Returns**: {DataContract}
 
 ## .getDefinitions()
 
-**Description**: Get Data Contract definitions
+**Description**: Get Data Contract $defs
 
 **Parameters**: None.  
 
-**Returns**: {Object<string, Object>} - definitions
+**Returns**: {Object<string, Object>} - $defs
 
 ## .getBinaryProperties(type)
 

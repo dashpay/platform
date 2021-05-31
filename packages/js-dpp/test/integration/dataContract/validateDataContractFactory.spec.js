@@ -22,7 +22,9 @@ const UniqueIndicesLimitReachedError = require('../../../lib/errors/UniqueIndice
 const InvalidIndexedPropertyConstraintError = require('../../../lib/errors/InvalidIndexedPropertyConstraintError');
 const InvalidCompoundIndexError = require('../../../lib/errors/InvalidCompoundIndexError');
 
-describe('validateDataContractFactory', () => {
+describe('validateDataContractFactory', function main() {
+  this.timeout(10000);
+
   let dataContract;
   let rawDataContract;
   let validateDataContract;
@@ -44,6 +46,13 @@ describe('validateDataContractFactory', () => {
 
   describe('protocolVersion', () => {
     it('should be present', async () => {
+      rawDataContract = {
+        documents: {
+          zalupa: {
+            type: 'object',
+          },
+        },
+      };
       delete rawDataContract.protocolVersion;
 
       const result = await validateDataContract(rawDataContract);
@@ -66,7 +75,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.protocolVersion');
+      expect(error.dataPath).to.equal('/protocolVersion');
       expect(error.keyword).to.equal('type');
     });
 
@@ -80,7 +89,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minimum');
-      expect(error.dataPath).to.equal('.protocolVersion');
+      expect(error.dataPath).to.equal('/protocolVersion');
     });
 
     it('should not be greater than current version (0)', async () => {
@@ -93,7 +102,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('maximum');
-      expect(error.dataPath).to.equal('.protocolVersion');
+      expect(error.dataPath).to.equal('/protocolVersion');
     });
   });
 
@@ -121,7 +130,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.$schema');
+      expect(error.dataPath).to.equal('/$schema');
       expect(error.keyword).to.equal('type');
     });
 
@@ -135,7 +144,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('const');
-      expect(error.dataPath).to.equal('.$schema');
+      expect(error.dataPath).to.equal('/$schema');
     });
   });
 
@@ -163,7 +172,7 @@ describe('validateDataContractFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.ownerId[0]');
+      expect(error.dataPath).to.equal('/ownerId/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -178,7 +187,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.ownerId');
+      expect(error.dataPath).to.equal('/ownerId');
       expect(error.keyword).to.equal('minItems');
     });
 
@@ -191,7 +200,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.ownerId');
+      expect(error.dataPath).to.equal('/ownerId');
       expect(error.keyword).to.equal('maxItems');
     });
   });
@@ -220,7 +229,7 @@ describe('validateDataContractFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.$id[0]');
+      expect(error.dataPath).to.equal('/$id/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -235,7 +244,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.$id');
+      expect(error.dataPath).to.equal('/$id');
       expect(error.keyword).to.equal('minItems');
     });
 
@@ -248,14 +257,14 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.$id');
+      expect(error.dataPath).to.equal('/$id');
       expect(error.keyword).to.equal('maxItems');
     });
   });
 
-  describe('definitions', () => {
+  describe('$defs', () => {
     it('may not be present', async () => {
-      delete rawDataContract.definitions;
+      delete rawDataContract.$defs;
       delete rawDataContract.documents.prettyDocument;
 
       const result = await validateDataContract(rawDataContract);
@@ -265,7 +274,7 @@ describe('validateDataContractFactory', () => {
     });
 
     it('should be an object', async () => {
-      rawDataContract.definitions = 1;
+      rawDataContract.$defs = 1;
 
       const result = await validateDataContract(rawDataContract);
 
@@ -273,12 +282,12 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.definitions');
+      expect(error.dataPath).to.equal('/$defs');
       expect(error.keyword).to.equal('type');
     });
 
     it('should not be empty', async () => {
-      rawDataContract.definitions = {};
+      rawDataContract.$defs = {};
 
       const result = await validateDataContract(rawDataContract);
 
@@ -286,12 +295,12 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.definitions');
+      expect(error.dataPath).to.equal('/$defs');
       expect(error.keyword).to.equal('minProperties');
     });
 
     it('should have no non-alphanumeric properties', async () => {
-      rawDataContract.definitions = {
+      rawDataContract.$defs = {
         $subSchema: {},
       };
 
@@ -301,18 +310,18 @@ describe('validateDataContractFactory', () => {
 
       const [patternError, propertyNamesError] = result.getErrors();
 
-      expect(patternError.dataPath).to.equal('.definitions');
+      expect(patternError.dataPath).to.equal('/$defs');
       expect(patternError.keyword).to.equal('pattern');
 
-      expect(propertyNamesError.dataPath).to.equal('.definitions');
+      expect(propertyNamesError.dataPath).to.equal('/$defs');
       expect(propertyNamesError.keyword).to.equal('propertyNames');
     });
 
     it('should have no more than 100 properties', async () => {
-      rawDataContract.definitions = {};
+      rawDataContract.$defs = {};
 
       Array(101).fill({ type: 'string' }).forEach((item, i) => {
-        rawDataContract.definitions[i] = item;
+        rawDataContract.$defs[i] = item;
       });
 
       const result = await validateDataContract(rawDataContract);
@@ -321,7 +330,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.definitions');
+      expect(error.dataPath).to.equal('/$defs');
       expect(error.keyword).to.equal('maxProperties');
     });
 
@@ -331,7 +340,7 @@ describe('validateDataContractFactory', () => {
 
       await Promise.all(
         validNames.map(async (name) => {
-          rawDataContract.definitions[name] = {
+          rawDataContract.$defs[name] = {
             type: 'string',
           };
 
@@ -347,7 +356,7 @@ describe('validateDataContractFactory', () => {
 
       await Promise.all(
         invalidNames.map(async (name) => {
-          rawDataContract.definitions[name] = {
+          rawDataContract.$defs[name] = {
             type: 'string',
           };
 
@@ -357,7 +366,7 @@ describe('validateDataContractFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.definitions');
+          expect(error.dataPath).to.equal('/$defs');
           expect(error.keyword).to.equal('pattern');
         }),
       );
@@ -388,7 +397,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.documents');
+      expect(error.dataPath).to.equal('/documents');
       expect(error.keyword).to.equal('type');
     });
 
@@ -401,7 +410,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.documents');
+      expect(error.dataPath).to.equal('/documents');
       expect(error.keyword).to.equal('minProperties');
     });
 
@@ -433,7 +442,7 @@ describe('validateDataContractFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents');
+          expect(error.dataPath).to.equal('/documents');
           expect(error.keyword).to.equal('pattern');
         }),
       );
@@ -454,7 +463,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.documents');
+      expect(error.dataPath).to.equal('/documents');
       expect(error.keyword).to.equal('maxProperties');
     });
 
@@ -464,11 +473,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties');
+        expect(error.dataPath).to.equal('/documents/niceDocument/properties');
         expect(error.keyword).to.equal('minProperties');
       });
 
@@ -481,7 +490,7 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].type');
+        expect(error.dataPath).to.equal('/documents/niceDocument/type');
         expect(error.keyword).to.equal('const');
       });
 
@@ -494,9 +503,9 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\']');
+        expect(error.dataPath).to.equal('/documents/niceDocument');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('.properties');
+        expect(error.params.missingProperty).to.equal('properties');
       });
 
       it('should have nested "properties"', async () => {
@@ -504,25 +513,27 @@ describe('validateDataContractFactory', () => {
           type: 'array',
           items: [
             {
+              type: 'object',
               properties: {
                 something: {
-                  additionalProperties: false,
+                  type: 'object',
                 },
               },
               additionalProperties: false,
             },
           ],
+          additionalItems: false,
         };
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result, 3);
+        expectJsonSchemaError(result, 6);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties[\'object\'].items[0].properties[\'something\']');
+        expect(error.dataPath).to.equal('/documents/niceDocument/properties/object/items/0/properties/something');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('.properties');
+        expect(error.params.missingProperty).to.equal('properties');
       });
 
       it('should have valid property names', async () => {
@@ -547,6 +558,7 @@ describe('validateDataContractFactory', () => {
           'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
         rawDataContract.documents.niceDocument.properties.something = {
+          type: 'object',
           properties: {},
           additionalProperties: false,
         };
@@ -573,13 +585,13 @@ describe('validateDataContractFactory', () => {
 
             const result = await validateDataContract(rawDataContract);
 
-            expectJsonSchemaError(result, 2);
+            expectJsonSchemaError(result, 3);
 
             const errors = result.getErrors();
 
-            expect(errors[0].dataPath).to.equal('.documents[\'niceDocument\'].properties');
+            expect(errors[0].dataPath).to.equal('/documents/niceDocument/properties');
             expect(errors[0].keyword).to.equal('pattern');
-            expect(errors[1].dataPath).to.equal('.documents[\'niceDocument\'].properties');
+            expect(errors[1].dataPath).to.equal('/documents/niceDocument/properties');
             expect(errors[1].keyword).to.equal('propertyNames');
           }),
         );
@@ -599,16 +611,16 @@ describe('validateDataContractFactory', () => {
 
             const result = await validateDataContract(rawDataContract);
 
-            expectJsonSchemaError(result, 2);
+            expectJsonSchemaError(result, 4);
 
             const errors = result.getErrors();
 
             expect(errors[0].dataPath).to.equal(
-              '.documents[\'niceDocument\'].properties[\'something\'].properties',
+              '/documents/niceDocument/properties/something/properties',
             );
             expect(errors[0].keyword).to.equal('pattern');
             expect(errors[1].dataPath).to.equal(
-              '.documents[\'niceDocument\'].properties[\'something\'].properties',
+              '/documents/niceDocument/properties/something/properties',
             );
             expect(errors[1].keyword).to.equal('propertyNames');
           }),
@@ -624,9 +636,9 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\']');
+        expect(error.dataPath).to.equal('/documents/niceDocument');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('.additionalProperties');
+        expect(error.params.missingProperty).to.equal('additionalProperties');
       });
 
       it('should have "additionalProperties" defined to false', async () => {
@@ -638,7 +650,7 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].additionalProperties');
+        expect(error.dataPath).to.equal('/documents/niceDocument/additionalProperties');
         expect(error.keyword).to.equal('const');
       });
 
@@ -647,6 +659,7 @@ describe('validateDataContractFactory', () => {
           type: 'array',
           items: [
             {
+              type: 'object',
               properties: {
                 something: {
                   type: 'string',
@@ -654,17 +667,18 @@ describe('validateDataContractFactory', () => {
               },
             },
           ],
+          additionalItems: false,
         };
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result, 3);
+        expectJsonSchemaError(result, 5);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties[\'object\'].items[0]');
+        expect(error.dataPath).to.equal('/documents/niceDocument/properties/object/items/0');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('.additionalProperties');
+        expect(error.params.missingProperty).to.equal('additionalProperties');
       });
 
       it('should return invalid result if there are additional properties', async () => {
@@ -691,11 +705,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'niceDocument\'].properties');
+        expect(error.dataPath).to.equal('/documents/niceDocument/properties');
         expect(error.keyword).to.equal('maxProperties');
       });
 
@@ -711,31 +725,13 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'new\'].properties[\'something\']');
+        expect(error.dataPath).to.equal('/documents/new/properties/something');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('.items');
-      });
-
-      it('should not have additionalItems for arrays if items is subschema', async () => {
-        rawDataContract.documents.new = {
-          properties: {
-            something: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-            },
-          },
-          additionalProperties: false,
-        };
-
-        const result = await validateDataContract(rawDataContract);
-
-        expectJsonSchemaError(result, 0);
+        expect(error.params.missingProperty).to.equal('items');
       });
 
       it('should have additionalItems for arrays', async () => {
@@ -758,17 +754,18 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'new\'].properties[\'something\']');
+        expect(error.dataPath).to.equal('/documents/new/properties/something');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('.additionalItems');
+        expect(error.params.missingProperty).to.equal('additionalItems');
       });
 
       it('should have additionalItems disabled for arrays', async () => {
         rawDataContract.documents.new = {
+          type: 'object',
           properties: {
             something: {
               type: 'array',
@@ -780,6 +777,7 @@ describe('validateDataContractFactory', () => {
                   type: 'number',
                 },
               ],
+              minItems: 2,
               additionalItems: false,
             },
           },
@@ -812,17 +810,17 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result, 3);
+        expectJsonSchemaError(result, 5);
 
         const [shouldBeAnObjectError, shouldEqualConstant] = result.getErrors();
 
         expect(shouldBeAnObjectError.dataPath).to.equal(
-          '.documents[\'new\'].properties[\'something\'].additionalItems',
+          '/documents/new/properties/something/additionalItems',
         );
         expect(shouldBeAnObjectError.keyword).to.equal('type');
 
         expect(shouldEqualConstant.dataPath).to.equal(
-          '.documents[\'new\'].properties[\'something\'].additionalItems',
+          '/documents/new/properties/something/additionalItems',
         );
         expect(shouldEqualConstant.keyword).to.equal('const');
       });
@@ -832,11 +830,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'firstName\']');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/properties/firstName');
         expect(error.keyword).to.equal('additionalProperties');
       });
 
@@ -851,7 +849,7 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].$ref');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/$ref');
         expect(error.keyword).to.equal('pattern');
       });
 
@@ -875,7 +873,7 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\']');
+        expect(error.dataPath).to.equal('/documents/indexedDocument');
         expect(error.keyword).to.equal('additionalProperties');
         expect(error.params.additionalProperty).to.equal('propertyNames');
       });
@@ -894,13 +892,13 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\']');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/properties/something');
         expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('maxItems');
+        expect(error.params.missingProperty).to.equal('items');
       });
 
       it('should have `maxItems` no bigger than 100000 if `uniqueItems` is used', async () => {
@@ -911,6 +909,15 @@ describe('validateDataContractFactory', () => {
               type: 'array',
               uniqueItems: true,
               maxItems: 200000,
+              items: {
+                type: 'object',
+                properties: {
+                  property: {
+                    type: 'string',
+                  },
+                },
+                additionalProperties: false,
+              },
             },
           },
           additionalProperties: false,
@@ -918,11 +925,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\'].maxItems');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/properties/something/maxItems');
         expect(error.keyword).to.equal('maximum');
       });
 
@@ -946,7 +953,7 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.message).to.be.a('string').and.satisfy((msg) => (
-          msg.startsWith('unknown format "lalala" is used')
+          msg.startsWith('unknown format "lalala" ignored in schema')
         ));
       });
 
@@ -964,11 +971,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\']');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/properties/something');
         expect(error.keyword).to.equal('required');
         expect(error.params.missingProperty).to.equal('maxLength');
       });
@@ -988,11 +995,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\'].maxLength');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/properties/something/maxLength');
         expect(error.keyword).to.equal('maximum');
       });
 
@@ -1010,11 +1017,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\']');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/properties/something');
         expect(error.keyword).to.equal('required');
         expect(error.params.missingProperty).to.equal('maxLength');
       });
@@ -1034,11 +1041,11 @@ describe('validateDataContractFactory', () => {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectJsonSchemaError(result, 2);
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].properties[\'something\'].maxLength');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/properties/something/maxLength');
         expect(error.keyword).to.equal('maximum');
       });
 
@@ -1048,11 +1055,11 @@ describe('validateDataContractFactory', () => {
 
           const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result);
+          expectJsonSchemaError(result, 2);
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].byteArray');
+          expect(error.dataPath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
           expect(error.keyword).to.equal('type');
           expect(error.params.type).to.equal('boolean');
         });
@@ -1062,11 +1069,11 @@ describe('validateDataContractFactory', () => {
 
           const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result);
+          expectJsonSchemaError(result, 2);
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].byteArray');
+          expect(error.dataPath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
           expect(error.keyword).to.equal('const');
           expect(error.params.allowedValue).to.equal(true);
         });
@@ -1076,11 +1083,11 @@ describe('validateDataContractFactory', () => {
 
           const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result);
+          expectJsonSchemaError(result, 2);
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'byteArrayField\'].type');
+          expect(error.dataPath).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
           expect(error.keyword).to.equal('const');
         });
 
@@ -1091,7 +1098,7 @@ describe('validateDataContractFactory', () => {
 
           const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result);
+          expectJsonSchemaError(result, 2);
 
           const [error] = result.getErrors();
 
@@ -1107,11 +1114,11 @@ describe('validateDataContractFactory', () => {
 
             const result = await validateDataContract(rawDataContract);
 
-            expectJsonSchemaError(result);
+            expectJsonSchemaError(result, 2);
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\']');
+            expect(error.dataPath).to.equal('/documents/withByteArrays/properties/identifierField');
             expect(error.keyword).to.equal('required');
           });
 
@@ -1120,11 +1127,11 @@ describe('validateDataContractFactory', () => {
 
             const result = await validateDataContract(rawDataContract);
 
-            expectJsonSchemaError(result);
+            expectJsonSchemaError(result, 2);
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\'].minItems');
+            expect(error.dataPath).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
             expect(error.keyword).to.equal('const');
           });
 
@@ -1133,11 +1140,11 @@ describe('validateDataContractFactory', () => {
 
             const result = await validateDataContract(rawDataContract);
 
-            expectJsonSchemaError(result);
+            expectJsonSchemaError(result, 2);
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('.documents[\'withByteArrays\'].properties[\'identifierField\'].maxItems');
+            expect(error.dataPath).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
             expect(error.keyword).to.equal('const');
           });
         });
@@ -1155,7 +1162,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices');
+      expect(error.dataPath).to.equal('/documents/indexedDocument/indices');
       expect(error.keyword).to.equal('type');
     });
 
@@ -1168,7 +1175,7 @@ describe('validateDataContractFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices');
+      expect(error.dataPath).to.equal('/documents/indexedDocument/indices');
       expect(error.keyword).to.equal('minItems');
     });
 
@@ -1198,7 +1205,7 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices[0]');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/indices/0');
         expect(error.keyword).to.equal('type');
       });
 
@@ -1211,7 +1218,7 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices[0]');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/indices/0');
         expect(error.params.missingProperty).to.equal('properties');
         expect(error.keyword).to.equal('required');
       });
@@ -1228,7 +1235,7 @@ describe('validateDataContractFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.dataPath).to.equal(
-            '.documents[\'indexedDocument\'].indices[0].properties',
+            '/documents/indexedDocument/indices/0/properties',
           );
           expect(error.keyword).to.equal('type');
         });
@@ -1244,12 +1251,12 @@ describe('validateDataContractFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.dataPath).to.equal(
-            '.documents[\'indexedDocument\'].indices[0].properties',
+            '/documents/indexedDocument/indices/0/properties',
           );
           expect(error.keyword).to.equal('minItems');
         });
 
-        it('should have no more than 10 property definitions', async () => {
+        it('should have no more than 10 property $defs', async () => {
           for (let i = 0; i < 10; i++) {
             rawDataContract.documents.indexedDocument.indices[0]
               .properties.push({ [`field${i}`]: 'asc' });
@@ -1262,7 +1269,7 @@ describe('validateDataContractFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.dataPath).to.equal(
-            '.documents[\'indexedDocument\'].indices[0].properties',
+            '/documents/indexedDocument/indices/0/properties',
           );
           expect(error.keyword).to.equal('maxItems');
         });
@@ -1279,7 +1286,7 @@ describe('validateDataContractFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal(
-              '.documents[\'indexedDocument\'].indices[0].properties[0]',
+              '/documents/indexedDocument/indices/0/properties/0',
             );
             expect(error.keyword).to.equal('type');
           });
@@ -1295,7 +1302,7 @@ describe('validateDataContractFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal(
-              '.documents[\'indexedDocument\'].indices[0].properties',
+              '/documents/indexedDocument/indices/0/properties',
             );
             expect(error.keyword).to.equal('minItems');
           });
@@ -1313,7 +1320,7 @@ describe('validateDataContractFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal(
-              '.documents[\'indexedDocument\'].indices[0].properties[0]',
+              '/documents/indexedDocument/indices/0/properties/0',
             );
             expect(error.keyword).to.equal('maxProperties');
           });
@@ -1329,7 +1336,7 @@ describe('validateDataContractFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.dataPath).to.equal(
-              '.documents[\'indexedDocument\'].indices[0].properties[0][\'$ownerId\']',
+              '/documents/indexedDocument/indices/0/properties/0/$ownerId',
             );
             expect(error.keyword).to.equal('enum');
           });
@@ -1345,7 +1352,7 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.documents[\'indexedDocument\'].indices[0].unique');
+        expect(error.dataPath).to.equal('/documents/indexedDocument/indices/0/unique');
         expect(error.keyword).to.equal('type');
       });
 
@@ -1367,7 +1374,7 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.dataPath).to.equal(
-          '.documents[\'indexedDocument\'].indices',
+          '/documents/indexedDocument/indices',
         );
         expect(error.keyword).to.equal('maxItems');
       });
@@ -1544,7 +1551,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
 
-      it('should return invalid result if index property is array with many item definitions', async () => {
+      it('should return invalid result if index property is array with many item $defs', async () => {
         const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
 
         indexedDocumentDefinition.properties.arrayProperty = {
@@ -1554,6 +1561,7 @@ describe('validateDataContractFactory', () => {
           }, {
             type: 'number',
           }],
+          minItems: 2,
           additionalItems: false,
         };
 
@@ -1596,7 +1604,7 @@ describe('validateDataContractFactory', () => {
   });
 
   it('should return invalid result with circular $ref pointer', async () => {
-    rawDataContract.definitions.object = { $ref: '#/definitions/object' };
+    rawDataContract.$defs.object = { $ref: '#/$defs/object' };
 
     const result = await validateDataContract(rawDataContract);
 

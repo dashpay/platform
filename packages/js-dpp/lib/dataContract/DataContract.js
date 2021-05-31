@@ -18,7 +18,7 @@ class DataContract {
 
     this.setJsonMetaSchema(rawDataContract.$schema);
     this.setDocuments(rawDataContract.documents);
-    this.setDefinitions(rawDataContract.definitions);
+    this.setDefinitions(rawDataContract.$defs);
 
     this.binaryProperties = {};
   }
@@ -144,11 +144,11 @@ class DataContract {
   }
 
   /**
-   * @param {Object<string, Object>} definitions
+   * @param {Object<string, Object>} $defs
    * @return {DataContract}
    */
-  setDefinitions(definitions) {
-    this.definitions = definitions;
+  setDefinitions($defs) {
+    this.$defs = $defs;
 
     return this;
   }
@@ -157,7 +157,7 @@ class DataContract {
    * @return {Object<string, Object>}
    */
   getDefinitions() {
-    return this.definitions;
+    return this.$defs;
   }
 
   /**
@@ -234,10 +234,10 @@ class DataContract {
       rawDataContract.ownerId = this.getOwnerId().toBuffer();
     }
 
-    const definitions = this.getDefinitions();
+    const $defs = this.getDefinitions();
 
-    if (definitions && Object.getOwnPropertyNames(definitions).length) {
-      rawDataContract.definitions = definitions;
+    if ($defs && Object.getOwnPropertyNames($defs).length) {
+      rawDataContract.$defs = $defs;
     }
 
     return rawDataContract;
@@ -282,7 +282,7 @@ class DataContract {
  * @property {string} $schema
  * @property {Buffer} ownerId
  * @property {Object<string, Object>} documents
- * @property {Object<string, Object>} [definitions]
+ * @property {Object<string, Object>} [$defs]
  */
 
 /**
@@ -292,7 +292,7 @@ class DataContract {
  * @property {string} $schema
  * @property {string} ownerId
  * @property {Object<string, Object>} documents
- * @property {Object<string, Object>} [definitions]
+ * @property {Object<string, Object>} [$defs]
  */
 
 DataContract.PROTOCOL_VERSION = 0;

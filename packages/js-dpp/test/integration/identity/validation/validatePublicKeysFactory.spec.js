@@ -64,7 +64,7 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.id');
+      expect(error.dataPath).to.equal('/id');
       expect(error.keyword).to.equal('type');
     });
 
@@ -77,7 +77,7 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.id');
+      expect(error.dataPath).to.equal('/id');
       expect(error.keyword).to.equal('type');
     });
 
@@ -90,7 +90,7 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.id');
+      expect(error.dataPath).to.equal('/id');
       expect(error.keyword).to.equal('minimum');
     });
   });
@@ -105,9 +105,8 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('type');
+      expect(error.dataPath).to.equal('/data');
+      expect(error.keyword).to.equal('minItems');
     });
 
     it('should be a number', () => {
@@ -119,7 +118,7 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.type');
+      expect(error.dataPath).to.equal('/type');
       expect(error.keyword).to.equal('type');
     });
   });
@@ -148,7 +147,7 @@ describe('validatePublicKeysFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.data[0]');
+      expect(error.dataPath).to.equal('/data/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -164,7 +163,7 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.data');
+        expect(error.dataPath).to.equal('/data');
         expect(error.keyword).to.equal('minItems');
       });
 
@@ -177,7 +176,7 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.data');
+        expect(error.dataPath).to.equal('/data');
         expect(error.keyword).to.equal('maxItems');
       });
     });
@@ -193,7 +192,7 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.data');
+        expect(error.dataPath).to.equal('/data');
         expect(error.keyword).to.equal('minItems');
       });
 
@@ -207,7 +206,7 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.data');
+        expect(error.dataPath).to.equal('/data');
         expect(error.keyword).to.equal('maxItems');
       });
     });

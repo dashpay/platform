@@ -73,7 +73,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$protocolVersion');
+        expect(error.dataPath).to.equal('/$protocolVersion');
         expect(error.keyword).to.equal('type');
       });
 
@@ -86,7 +86,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$protocolVersion');
+        expect(error.dataPath).to.equal('/$protocolVersion');
         expect(error.keyword).to.equal('minimum');
       });
 
@@ -99,7 +99,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$protocolVersion');
+        expect(error.dataPath).to.equal('/$protocolVersion');
         expect(error.keyword).to.equal('maximum');
       });
     });
@@ -128,7 +128,7 @@ describe('validateDocumentFactory', () => {
 
         const [error, byteArrayError] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$id[0]');
+        expect(error.dataPath).to.equal('/$id/0');
         expect(error.keyword).to.equal('type');
 
         expect(byteArrayError.keyword).to.equal('byteArray');
@@ -143,7 +143,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$id');
+        expect(error.dataPath).to.equal('/$id');
         expect(error.keyword).to.equal('minItems');
       });
 
@@ -156,7 +156,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$id');
+        expect(error.dataPath).to.equal('/$id');
         expect(error.keyword).to.equal('maxItems');
       });
     });
@@ -234,7 +234,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$revision');
+        expect(error.dataPath).to.equal('/$revision');
         expect(error.keyword).to.equal('type');
       });
 
@@ -247,7 +247,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$revision');
+        expect(error.dataPath).to.equal('/$revision');
         expect(error.keyword).to.equal('type');
       });
 
@@ -260,7 +260,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$revision');
+        expect(error.dataPath).to.equal('/$revision');
         expect(error.keyword).to.equal('minimum');
       });
     });
@@ -289,7 +289,7 @@ describe('validateDocumentFactory', () => {
 
         const [error, byteArrayError] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$dataContractId[0]');
+        expect(error.dataPath).to.equal('/$dataContractId/0');
         expect(error.keyword).to.equal('type');
 
         expect(byteArrayError.keyword).to.equal('byteArray');
@@ -304,7 +304,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$dataContractId');
+        expect(error.dataPath).to.equal('/$dataContractId');
         expect(error.keyword).to.equal('minItems');
       });
 
@@ -317,7 +317,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$dataContractId');
+        expect(error.dataPath).to.equal('/$dataContractId');
         expect(error.keyword).to.equal('maxItems');
       });
     });
@@ -346,7 +346,7 @@ describe('validateDocumentFactory', () => {
 
         const [error, byteArrayError] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$ownerId[0]');
+        expect(error.dataPath).to.equal('/$ownerId/0');
         expect(error.keyword).to.equal('type');
 
         expect(byteArrayError.keyword).to.equal('byteArray');
@@ -361,7 +361,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$ownerId');
+        expect(error.dataPath).to.equal('/$ownerId');
         expect(error.keyword).to.equal('minItems');
       });
 
@@ -374,7 +374,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.dataPath).to.equal('.$ownerId');
+        expect(error.dataPath).to.equal('/$ownerId');
         expect(error.keyword).to.equal('maxItems');
       });
     });
@@ -390,7 +390,7 @@ describe('validateDocumentFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.name');
+      expect(error.dataPath).to.equal('/name');
       expect(error.keyword).to.equal('type');
     });
 
@@ -435,7 +435,7 @@ describe('validateDocumentFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.dataPath).to.equal('.byteArrayField');
+    expect(error.dataPath).to.equal('/byteArrayField');
     expect(error.keyword).to.equal('maxItems');
   });
 

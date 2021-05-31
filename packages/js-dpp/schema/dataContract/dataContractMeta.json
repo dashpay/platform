@@ -2,12 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema",
   "$id": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "type": "object",
-  "definitions": {
+  "$defs": {
     "documentProperties": {
       "type": "object",
       "patternProperties": {
         "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$": {
-          "$ref": "#/definitions/documentSchema"
+          "$ref": "#/$defs/documentSchema"
         }
       },
       "propertyNames": {
@@ -20,7 +20,7 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "#/definitions/documentSchema"
+        "$ref": "#/$defs/documentSchema"
       }
     },
     "documentSchema": {
@@ -72,7 +72,7 @@
         "additionalItems": {
           "oneOf": [
             {
-              "$ref": "#/definitions/documentSchema"
+              "$ref": "#/$defs/documentSchema"
             },
             {
               "type": "boolean",
@@ -83,10 +83,10 @@
         "items": {
           "oneOf": [
             {
-              "$ref": "#/definitions/documentSchemaArray"
+              "$ref": "#/$defs/documentSchemaArray"
             },
             {
-              "$ref": "#/definitions/documentSchema"
+              "$ref": "#/$defs/documentSchema"
             }
           ]
         },
@@ -116,11 +116,11 @@
           "const": false
         },
         "properties": {
-          "$ref": "#/definitions/documentProperties"
+          "$ref": "#/$defs/documentProperties"
         },
         "patternProperties": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/definitions/documentSchema" },
+          "additionalProperties": { "$ref": "#/$defs/documentSchema" },
           "propertyNames": { "format": "regex" },
           "default": {}
         },
@@ -128,7 +128,7 @@
           "type": "object",
           "additionalProperties": {
             "oneOf": [
-              { "$ref": "#/definitions/documentSchema" },
+              { "$ref": "#/$defs/documentSchema" },
               { "$ref": "http://json-schema.org/draft-07/schema#/definitions/stringArray" }
             ]
           }
@@ -198,22 +198,18 @@
                 "const": true
               },
               "items": {
+                "type": "object",
                 "properties": {
                   "type": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "object",
-                          "array"
-                        ]
+                        "type": "string",
+                        "enum": ["object", "array"]
                       },
                       {
                         "type": "array",
                         "contains": {
-                          "enum": [
-                            "object",
-                            "array"
-                          ]
+                          "enum": ["object", "array"]
                         }
                       }
                     ]
@@ -229,9 +225,7 @@
                 "maximum": 100000
               }
             },
-            "required": [
-              "maxItems"
-            ]
+            "required": ["maxItems"]
           }
         },
         "pattern": {
@@ -256,9 +250,7 @@
               "maximum": 50000
             }
           },
-          "required": [
-            "maxLength"
-          ]
+          "required": ["maxLength"]
         }
       },
       "allOf": [
@@ -271,10 +263,18 @@
             },
             "required": ["type"],
             "not": {
+              "properties": {
+                "byteArray": true
+              },
               "required": ["byteArray"]
             }
           },
           "then": {
+            "properties": {
+              "items": {
+                "$ref": "#/$defs/documentSchema/properties/items"
+              }
+            },
             "required": ["items"]
           }
         },
@@ -291,6 +291,11 @@
             "required": ["type", "items"]
           },
           "then": {
+            "properties": {
+              "additionalItems": {
+                "$ref": "#/$defs/documentSchema/properties/additionalItems"
+              }
+            },
             "required": ["additionalItems"]
           }
         },
@@ -304,15 +309,33 @@
             "not": {
               "anyOf": [
                 {
+                  "properties": {
+                    "$ref": {
+                      "$ref": "#/$defs/documentSchema/properties/$ref"
+                    }
+                  },
                   "required": ["$ref"]
                 },
                 {
+                  "properties": {
+                    "byteArray": {
+                      "$ref": "#/$defs/documentSchema/properties/byteArray"
+                    }
+                  },
                   "required": ["byteArray"]
                 }
               ]
             }
           },
           "then": {
+            "properties": {
+              "properties": {
+                "$ref": "#/$defs/documentProperties"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/documentSchema/properties/additionalProperties"
+              }
+            },
             "required": ["properties", "additionalProperties"]
           }
         }
@@ -419,11 +442,11 @@
               "const": false
             },
             "properties": {
-              "$ref": "#/definitions/documentProperties"
+              "$ref": "#/$defs/documentProperties"
             },
             "patternProperties": {
               "type": "object",
-              "additionalProperties": { "$ref": "#/definitions/documentSchema" },
+              "additionalProperties": { "$ref": "#/$defs/documentSchema" },
               "propertyNames": { "format": "regex" },
               "default": {}
             },
@@ -431,33 +454,12 @@
               "type": "object",
               "additionalProperties": {
                 "oneOf": [
-                  { "$ref": "#/definitions/documentSchema" },
+                  { "$ref": "#/$defs/documentSchema" },
                   { "$ref": "http://json-schema.org/draft-07/schema#/definitions/stringArray" }
                 ]
               }
             },
-            "const": true,
-            "if": {
-              "$ref": "#/definitions/documentSchema"
-            },
-            "then": {
-              "$ref": "#/definitions/documentSchema"
-            },
-            "else": {
-              "$ref": "#/definitions/documentSchema"
-            },
-            "allOf": {
-              "$ref": "#/definitions/documentSchemaArray"
-            },
-            "anyOf": {
-              "$ref": "#/definitions/documentSchemaArray"
-            },
-            "oneOf": {
-              "$ref": "#/definitions/documentSchemaArray"
-            },
-            "not": {
-              "$ref": "#/definitions/documentSchema"
-            }
+            "const": true
           },
           "if": {
             "properties": {
@@ -466,10 +468,21 @@
               }
             },
             "not": {
+              "properties": {
+                "$ref": true
+              },
               "required": ["$ref"]
             }
           },
           "then": {
+            "properties": {
+              "properties": {
+                "$ref": "#/$defs/documentProperties"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/documentSchema/properties/additionalProperties"
+              }
+            },
             "required": ["properties", "additionalProperties"]
           },
           "minProperties": 1,
@@ -483,8 +496,8 @@
       "minProperties": 1,
       "maxProperties": 100
     },
-    "definitions": {
-      "$ref": "#/definitions/documentProperties"
+    "$defs": {
+      "$ref": "#/$defs/documentProperties"
     }
   },
   "required": [

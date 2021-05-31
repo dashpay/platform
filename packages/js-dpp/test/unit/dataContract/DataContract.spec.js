@@ -64,7 +64,7 @@ describe('DataContract', () => {
       $id: contractId,
       ownerId,
       documents,
-      definitions: {},
+      $defs: {},
     });
   });
 
@@ -77,14 +77,14 @@ describe('DataContract', () => {
         $id: id,
         ownerId,
         documents,
-        definitions: {},
+        $defs: {},
       });
 
       expect(dataContract.id).to.deep.equal(id);
       expect(dataContract.ownerId).to.deep.equal(ownerId);
       expect(dataContract.schema).to.equal(DataContract.DEFAULTS.SCHEMA);
       expect(dataContract.documents).to.equal(documents);
-      expect(dataContract.definitions).to.deep.equal({});
+      expect(dataContract.$defs).to.deep.equal({});
     });
   });
 
@@ -225,21 +225,21 @@ describe('DataContract', () => {
   });
 
   describe('#setDefinitions', () => {
-    it('should set definitions', () => {
-      const definitions = {};
+    it('should set $defs', () => {
+      const $defs = {};
 
-      const result = dataContract.setDefinitions(definitions);
+      const result = dataContract.setDefinitions($defs);
 
       expect(result).to.equal(dataContract);
-      expect(dataContract.definitions).to.equal(definitions);
+      expect(dataContract.$defs).to.equal($defs);
     });
   });
 
   describe('#getDefinitions', () => {
-    it('should return definitions', () => {
+    it('should return $defs', () => {
       const result = dataContract.getDefinitions();
 
-      expect(result).to.equal(dataContract.definitions);
+      expect(result).to.equal(dataContract.$defs);
     });
   });
 
@@ -256,12 +256,12 @@ describe('DataContract', () => {
       });
     });
 
-    it('should return plain object with "definitions" if present', () => {
-      const definitions = {
+    it('should return plain object with "$defs" if present', () => {
+      const $defs = {
         subSchema: { type: 'object' },
       };
 
-      dataContract.setDefinitions(definitions);
+      dataContract.setDefinitions($defs);
 
       const result = dataContract.toJSON();
 
@@ -271,7 +271,7 @@ describe('DataContract', () => {
         $id: bs58.encode(contractId),
         ownerId: bs58.encode(ownerId),
         documents,
-        definitions,
+        $defs,
       });
     });
   });

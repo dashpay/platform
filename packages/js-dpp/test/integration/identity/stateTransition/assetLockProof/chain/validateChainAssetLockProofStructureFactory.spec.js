@@ -90,7 +90,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.type');
+      expect(error.dataPath).to.equal('/type');
       expect(error.keyword).to.equal('const');
 
       expect(stateRepositoryMock.fetchTransaction).to.not.be.called();
@@ -126,7 +126,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.coreChainLockedHeight');
+      expect(error.dataPath).to.equal('/coreChainLockedHeight');
       expect(error.keyword).to.equal('type');
 
       expect(stateRepositoryMock.fetchTransaction).to.not.be.called();
@@ -143,7 +143,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.coreChainLockedHeight');
+      expect(error.dataPath).to.equal('/coreChainLockedHeight');
       expect(error.keyword).to.equal('type');
 
       expect(stateRepositoryMock.fetchTransaction).to.not.be.called();
@@ -160,7 +160,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.coreChainLockedHeight');
+      expect(error.dataPath).to.equal('/coreChainLockedHeight');
       expect(error.keyword).to.equal('minimum');
 
       expect(stateRepositoryMock.fetchTransaction).to.not.be.called();
@@ -177,7 +177,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.coreChainLockedHeight');
+      expect(error.dataPath).to.equal('/coreChainLockedHeight');
       expect(error.keyword).to.equal('maximum');
 
       expect(stateRepositoryMock.fetchTransaction).to.not.be.called();
@@ -228,7 +228,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.outPoint[0]');
+      expect(error.dataPath).to.equal('/outPoint/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -247,7 +247,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.outPoint');
+      expect(error.dataPath).to.equal('/outPoint');
       expect(error.keyword).to.equal('minItems');
 
       expect(stateRepositoryMock.fetchTransaction).to.not.be.called();
@@ -264,7 +264,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.outPoint');
+      expect(error.dataPath).to.equal('/outPoint');
       expect(error.keyword).to.equal('maxItems');
 
       expect(stateRepositoryMock.fetchTransaction).to.not.be.called();

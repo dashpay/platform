@@ -67,7 +67,7 @@ describe('validateIdentityFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.id[0]');
+      expect(error.dataPath).to.equal('/id/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -85,7 +85,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minItems');
-      expect(error.dataPath).to.equal('.id');
+      expect(error.dataPath).to.equal('/id');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -100,7 +100,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('maxItems');
-      expect(error.dataPath).to.equal('.id');
+      expect(error.dataPath).to.equal('/id');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -133,7 +133,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('type');
-      expect(error.dataPath).to.equal('.balance');
+      expect(error.dataPath).to.equal('/balance');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -148,7 +148,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minimum');
-      expect(error.dataPath).to.equal('.balance');
+      expect(error.dataPath).to.equal('/balance');
 
       expect(validatePublicKeysMock).to.not.be.called();
 
@@ -186,7 +186,7 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('.publicKeys');
+      expect(error.dataPath).to.equal('/publicKeys');
       expect(error.keyword).to.equal('type');
 
       expect(validatePublicKeysMock).to.not.be.called();
@@ -202,7 +202,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minItems');
-      expect(error.dataPath).to.equal('.publicKeys');
+      expect(error.dataPath).to.equal('/publicKeys');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -217,7 +217,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('uniqueItems');
-      expect(error.dataPath).to.equal('.publicKeys');
+      expect(error.dataPath).to.equal('/publicKeys');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -237,7 +237,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('maxItems');
-      expect(error.dataPath).to.equal('.publicKeys');
+      expect(error.dataPath).to.equal('/publicKeys');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -270,7 +270,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('type');
-      expect(error.dataPath).to.equal('.revision');
+      expect(error.dataPath).to.equal('/revision');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -285,7 +285,7 @@ describe('validateIdentityFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minimum');
-      expect(error.dataPath).to.equal('.revision');
+      expect(error.dataPath).to.equal('/revision');
 
       expect(validatePublicKeysMock).to.not.be.called();
 

@@ -1,5 +1,7 @@
 const byteArray = {
-  type: 'array',
+  keyword: 'byteArray',
+  type: ['array'],
+  schemaType: [],
   macro(schema, parentSchema) {
     if (parentSchema.items) {
       throw new Error("'byteArray' should not be used with 'items'");
