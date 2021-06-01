@@ -45,7 +45,8 @@ export declare class Account {
     connect(): boolean;
     createTransaction(opts: Account.createTransactionOptions): Transaction;
     decode(method: string, data: any): any;
-    decrypt(method: string, data: any, secret: string, encoding: "hex"|string): string;
+    decrypt(method: string, data: any, secret: string, encoding?: "hex"|string): string;
+    encrypt(method: string, data: any, secret: string): string;
     disconnect(): Promise<Boolean>;
     fetchAddressInfo(addresObj: AddressObj, fetchUtxo: boolean): Promise<AddressInfo | false>;
     fetchStatus(): Promise<StatusInfo>;
