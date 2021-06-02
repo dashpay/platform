@@ -27,11 +27,11 @@ function waitForNodeToBeReadyTaskFactory(
             const response = await tenderdashRpcClient.request('status', {}).catch(() => {});
 
             if (response) {
-              success = !response.error;
+              success = !response.result.sync_info.catching_up;
             }
 
             if (!success) {
-              await wait(2000);
+              await wait(500);
             }
           } while (!success);
         },
