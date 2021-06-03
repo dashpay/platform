@@ -249,47 +249,44 @@ class DriveStateRepository {
   async verifyInstantLock(instantLock) {
     const header = await this.blockExecutionContext.getHeader();
 
-    if (!header) {
-      return false;
-    }
-
-    const {
-      height: blockHeight,
-      coreChainLockedHeight,
-    } = header;
-
-    const verifyLLMQSignaturesWithCoreFeatureFlag = await this.getLatestFeatureFlag(
-      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
-      blockHeight,
-      this.getDBTransaction('documents'),
-    );
-
-    if (!verifyLLMQSignaturesWithCoreFeatureFlag || !verifyLLMQSignaturesWithCoreFeatureFlag.get('enabled')) {
-      // Here dashcore lib is used to verify signatures,
-      // but this approach doesn’t handle signatures created by old quorums
-      // that’a why a Core RPC method is used otherwise
-      return instantLock.verify(this.simplifiedMasternodeList.getStore());
-    }
-
-    try {
-      const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
-        instantLock.getRequestId().toString('hex'),
-        instantLock.txid,
-        instantLock.signature,
+    // Inital block is produced
+    if (header) {
+      const {
+        height: blockHeight,
         coreChainLockedHeight,
+      } = header;
+
+      const verifyLLMQSignaturesWithCoreFeatureFlag = await this.getLatestFeatureFlag(
+        featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
+        blockHeight,
+        this.getDBTransaction('documents'),
       );
 
-      return isVerified;
-    } catch (e) {
-      // Invalid address or key error or
-      // Invalid, missing or duplicate parameter
-      // Parse error
-      if ([-8, -5, -32700].includes(e.code)) {
-        return false;
-      }
+      // Use Core RPC to verify signatures
+      if (verifyLLMQSignaturesWithCoreFeatureFlag && verifyLLMQSignaturesWithCoreFeatureFlag.get('enabled')) {
+        try {
+          const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
+            instantLock.getRequestId().toString('hex'),
+            instantLock.txid,
+            instantLock.signature,
+            coreChainLockedHeight,
+          );
 
-      throw e;
+          return isVerified;
+        } catch (e) {
+          // Invalid address or key error or
+          // Invalid, missing or duplicate parameter
+          // Parse error
+          if ([-8, -5, -32700].includes(e.code)) {
+            return false;
+          }
+
+          throw e;
+        }
+      }
     }
+
+    return instantLock.verify(this.simplifiedMasternodeList.getStore());
   }
 
   /**

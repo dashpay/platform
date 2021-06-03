@@ -334,22 +334,31 @@ describe('DriveStateRepository', () => {
   });
 
   describe('#verifyInstantLock', () => {
+    let smlStore;
+
     beforeEach(() => {
       blockExecutionContextMock.getHeader.returns({
         header: 41,
         coreChainLockedHeight: 42,
       });
+
+      smlStore = {};
+
+      simplifiedMasternodeListMock.getStore.returns(smlStore);
     });
 
-    it('should verify instant lock', async () => {
+    it('should verify instant lock using dashcore-lib', async () => {
       instantLockMock.verify.resolves(true);
 
       const result = await stateRepository.verifyInstantLock(instantLockMock);
 
       expect(result).to.be.true();
+
+      expect(instantLockMock.verify).to.have.been.calledOnceWithExactly(smlStore);
+      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
     });
 
-    it('it should verify instant lock using core if feature flag is enabled', async () => {
+    it('it should verify instant lock using Core if feature flag is enabled', async () => {
       getLatestFeatureFlagMock.resolves({
         get: () => true,
       });
@@ -365,6 +374,7 @@ describe('DriveStateRepository', () => {
         'signature',
         42,
       );
+      expect(instantLockMock.verify).to.have.not.been.called();
     });
 
     it('should return false if core throws Invalid address or key error', async () => {
@@ -386,6 +396,7 @@ describe('DriveStateRepository', () => {
         'signature',
         42,
       );
+      expect(instantLockMock.verify).to.have.not.been.called();
     });
 
     it('should return false if core throws Invalid parameter', async () => {
@@ -407,18 +418,19 @@ describe('DriveStateRepository', () => {
         'signature',
         42,
       );
+      expect(instantLockMock.verify).to.have.not.been.called();
     });
 
-    it('should return false if header is null', async () => {
-      blockExecutionContextMock.getHeader.resolves(null);
+    it('should verify instant lock using dashcore-lib if header is null', async () => {
+      instantLockMock.verify.resolves(true);
 
-      const error = new Error('Some error');
-      error.code = -8;
-
-      coreRpcClientMock.verifyIsLock.throws(error);
+      blockExecutionContextMock.getHeader.returns(null);
 
       const result = await stateRepository.verifyInstantLock(instantLockMock);
-      expect(result).to.equal(false);
+
+      expect(result).to.be.true();
+
+      expect(instantLockMock.verify).to.have.been.calledOnceWithExactly(smlStore);
       expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
     });
   });
