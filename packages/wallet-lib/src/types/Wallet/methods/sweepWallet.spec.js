@@ -20,7 +20,8 @@ describe('Wallet - sweepWallet', function suite() {
   before(async () => {
     emptyWallet = new Wallet({
       privateKey: paperWallet.privateKey,
-      transport: transportOpts
+      transport: transportOpts,
+      network: process.env.NETWORK
     });
 
     emptyAccount = await emptyWallet.getAccount();
