@@ -1,3 +1,12 @@
+## [0.19.1](https://github.com/dashevo/platform-test-suite/compare/v0.19.0...v0.19.1) (2021-06-04)
+
+
+### Bug Fixes
+
+* should fail to create an identity ([#132](https://github.com/dashevo/platform-test-suite/issues/132))
+
+
+
 # [0.19.0](https://github.com/dashevo/platform-test-suite/compare/v0.18.0...v0.19.0) (2021-05-05)
 
 
