@@ -187,6 +187,9 @@ module.exports = {
           // Update images
           config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
             .drive.tenderdash.docker.image;
+
+          config.platform.drive.abci.docker.image = systemConfigs.base.platform
+            .drive.abci.docker.image;
         }
       });
   },

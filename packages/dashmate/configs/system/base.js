@@ -77,7 +77,7 @@ module.exports = {
       },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.19',
+          image: 'dashpay/drive:0.20-dev',
           build: {
             path: null,
           },
