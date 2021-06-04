@@ -21,6 +21,8 @@ const NoDashpayContractFoundError = require('./errors/NoDashpayContractFoundErro
  * @param {number|undefined} dashpayContractBlockHeight
  * @param {Identifier|undefined} dashpayContractId
  * @param {LatestCoreChainLock} latestCoreChainLock
+ * @param {ValidatorSet} validatorSet
+ * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
  *
  * @return {endBlockHandler}
@@ -32,14 +34,15 @@ function endBlockHandlerFactory(
   dashpayContractBlockHeight,
   dashpayContractId,
   latestCoreChainLock,
+  validatorSet,
+  createValidatorSetUpdate,
   logger,
 ) {
   /**
    * @typedef endBlockHandler
    *
    * @param {abci.RequestEndBlock} request
-   *
-   * @return {Promise<abci.ResponseBeginBlock>}
+   * @return {Promise<abci.ResponseEndBlock>}
    */
   async function endBlockHandler(request) {
     const { height } = request;
@@ -66,25 +69,42 @@ function endBlockHandlerFactory(
     }
 
     const header = blockExecutionContext.getHeader();
+    const lastCommitInfo = blockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();
 
-    let response = {};
+    // Rotate validators
 
+    let validatorSetUpdate;
+    const rotationEntropy = Buffer.from(lastCommitInfo.stateSignature);
+    if (await validatorSet.rotate(height, coreChainLock.height, rotationEntropy)) {
+      validatorSetUpdate = createValidatorSetUpdate(validatorSet);
+
+      const { quorumHash } = validatorSet.getQuorum();
+
+      consensusLogger.debug(
+        {
+          quorumHash,
+        },
+        `Validator Set switched to ${quorumHash} quorum`,
+      );
+    }
+
+    // Update Core Chain Locks
+
+    let nextCoreChainLockUpdate;
     if (coreChainLock && coreChainLock.height > header.coreChainLockedHeight) {
+      nextCoreChainLockUpdate = new CoreChainLock({
+        coreBlockHeight: coreChainLock.height,
+        coreBlockHash: coreChainLock.blockHash,
+        signature: coreChainLock.signature,
+      });
+
       consensusLogger.trace(
         {
           nextCoreChainLockHeight: coreChainLock.height,
         },
         `Provide next chain lock for Core height ${coreChainLock.height}`,
       );
-
-      response = {
-        nextCoreChainLockUpdate: new CoreChainLock({
-          coreBlockHeight: coreChainLock.height,
-          coreBlockHash: coreChainLock.blockHash,
-          signature: coreChainLock.signature,
-        }),
-      };
     }
 
     const validTxCount = blockExecutionContext.getValidTxCount();
@@ -98,7 +118,10 @@ function endBlockHandlerFactory(
       `Block end #${height} (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
     );
 
-    return new ResponseEndBlock(response);
+    return new ResponseEndBlock({
+      validatorSetUpdate,
+      nextCoreChainLockUpdate,
+    });
   }
 
   return endBlockHandler;

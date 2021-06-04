@@ -36,7 +36,7 @@ function deliverTxHandlerFactory(
   logger,
 ) {
   /**
-   * DeliverTx ABCI handler
+   * DeliverTx ABCI Handler
    *
    * @typedef deliverTxHandler
    *

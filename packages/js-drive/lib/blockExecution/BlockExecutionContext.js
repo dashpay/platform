@@ -3,6 +3,7 @@ class BlockExecutionContext {
     this.dataContracts = [];
     this.cumulativeFees = 0;
     this.header = null;
+    this.lastCommitInfo = null;
     this.validTxs = 0;
     this.invalidTxs = 0;
     this.consensusLogger = null;
@@ -75,6 +76,26 @@ class BlockExecutionContext {
    */
   getHeader() {
     return this.header;
+  }
+
+  /**
+   * Set current block lastCommitInfo
+   * @param {ILastCommitInfo} lastCommitInfo
+   * @return {BlockExecutionContext}
+   */
+  setLastCommitInfo(lastCommitInfo) {
+    this.lastCommitInfo = lastCommitInfo;
+
+    return this;
+  }
+
+  /**
+   * Get block lastCommitInfo
+   *
+   * @return {ILastCommitInfo|null}
+   */
+  getLastCommitInfo() {
+    return this.lastCommitInfo;
   }
 
   /**

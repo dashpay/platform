@@ -9,7 +9,7 @@ const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
  */
 function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
   /**
-   * Query ABCI handler
+   * Query ABCI Handler
    *
    * @typedef queryHandler
    *

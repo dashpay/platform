@@ -54,7 +54,7 @@ function commitHandlerFactory(
   getLatestFeatureFlag,
 ) {
   /**
-   * Commit ABCI handler
+   * Commit ABCI Handler
    *
    * @typedef commitHandler
    *

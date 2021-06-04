@@ -2,6 +2,7 @@ const {
   tendermint: {
     abci: {
       ResponseEndBlock,
+      ValidatorSetUpdate,
     },
     types: {
       CoreChainLock,
@@ -23,6 +24,7 @@ describe('endBlockHandlerFactory', () => {
   let endBlockHandler;
   let requestMock;
   let headerMock;
+  let lastCommitInfoMock;
   let blockExecutionContextMock;
   let dpnsContractId;
   let dpnsContractBlockHeight;
@@ -30,17 +32,24 @@ describe('endBlockHandlerFactory', () => {
   let dashpayContractBlockHeight;
   let latestCoreChainLockMock;
   let loggerMock;
+  let createValidatorSetUpdateMock;
   let chainLockMock;
+  let validatorSetMock;
 
   beforeEach(function beforeEach() {
     headerMock = {
       coreChainLockedHeight: 2,
     };
 
+    lastCommitInfoMock = {
+      stateSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
+    };
+
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.hasDataContract.returns(true);
     blockExecutionContextMock.getHeader.returns(headerMock);
+    blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
 
     chainLockMock = {
       height: 1,
@@ -60,6 +69,13 @@ describe('endBlockHandlerFactory', () => {
     dashpayContractId = generateRandomIdentifier();
     dashpayContractBlockHeight = 2;
 
+    validatorSetMock = {
+      rotate: this.sinon.stub(),
+      getQuorum: this.sinon.stub(),
+    };
+
+    createValidatorSetUpdateMock = this.sinon.stub();
+
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
       dpnsContractBlockHeight,
@@ -67,6 +83,8 @@ describe('endBlockHandlerFactory', () => {
       dashpayContractBlockHeight,
       dashpayContractId,
       latestCoreChainLockMock,
+      validatorSetMock,
+      createValidatorSetUpdateMock,
       loggerMock,
     );
 
@@ -75,7 +93,7 @@ describe('endBlockHandlerFactory', () => {
     };
   });
 
-  it('should simply return a response if DPNS contract was not set', async () => {
+  it('should return a response', async () => {
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
       undefined,
@@ -83,6 +101,8 @@ describe('endBlockHandlerFactory', () => {
       undefined,
       undefined,
       latestCoreChainLockMock,
+      validatorSetMock,
+      createValidatorSetUpdateMock,
       loggerMock,
     );
 
@@ -102,6 +122,8 @@ describe('endBlockHandlerFactory', () => {
       undefined,
       undefined,
       latestCoreChainLockMock,
+      validatorSetMock,
+      createValidatorSetUpdateMock,
       loggerMock,
     );
 
@@ -124,6 +146,8 @@ describe('endBlockHandlerFactory', () => {
       undefined,
       undefined,
       latestCoreChainLockMock,
+      validatorSetMock,
+      createValidatorSetUpdateMock,
       loggerMock,
     );
 
@@ -146,42 +170,7 @@ describe('endBlockHandlerFactory', () => {
     }
   });
 
-  it('should return nextCoreChainLockUpdate if latestCoreChainLock above header height', async () => {
-    chainLockMock.height = 3;
-
-    const response = await endBlockHandler(requestMock);
-
-    expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
-
-    const expectedCoreChainLock = new CoreChainLock({
-      coreBlockHeight: chainLockMock.height,
-      coreBlockHash: chainLockMock.blockHash,
-      signature: chainLockMock.signature,
-    });
-
-    expect(response.nextCoreChainLockUpdate).to.deep.equal(expectedCoreChainLock);
-  });
-
-  it('should simply return a response if Dashpay contract was not set', async () => {
-    endBlockHandler = endBlockHandlerFactory(
-      blockExecutionContextMock,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      latestCoreChainLockMock,
-      loggerMock,
-    );
-
-    const response = await endBlockHandler(requestMock);
-
-    expect(response).to.be.an.instanceOf(ResponseEndBlock);
-    expect(response.toJSON()).to.be.empty();
-
-    expect(blockExecutionContextMock.hasDataContract).to.not.have.been.called();
-  });
-
-  it('should return a response if Dashpay contract is present at specified height', async () => {
+  it('should return a response if DashPay contract is present at specified height', async () => {
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
       undefined,
@@ -189,6 +178,8 @@ describe('endBlockHandlerFactory', () => {
       dashpayContractBlockHeight,
       dashpayContractId,
       latestCoreChainLockMock,
+      validatorSetMock,
+      createValidatorSetUpdateMock,
       loggerMock,
     );
 
@@ -203,7 +194,7 @@ describe('endBlockHandlerFactory', () => {
     );
   });
 
-  it('should throw and error if Dashpay contract is not present at specified height', async () => {
+  it('should throw and error if DashPay contract is not present at specified height', async () => {
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
       undefined,
@@ -211,6 +202,8 @@ describe('endBlockHandlerFactory', () => {
       dashpayContractBlockHeight,
       dashpayContractId,
       latestCoreChainLockMock,
+      validatorSetMock,
+      createValidatorSetUpdateMock,
       loggerMock,
     );
 
@@ -231,5 +224,53 @@ describe('endBlockHandlerFactory', () => {
 
       expect(latestCoreChainLockMock.getChainLock).to.have.not.been.called();
     }
+  });
+
+  it('should return nextCoreChainLockUpdate if latestCoreChainLock above header height', async () => {
+    chainLockMock.height = 3;
+
+    const response = await endBlockHandler(requestMock);
+
+    expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
+
+    const expectedCoreChainLock = new CoreChainLock({
+      coreBlockHeight: chainLockMock.height,
+      coreBlockHash: chainLockMock.blockHash,
+      signature: chainLockMock.signature,
+    });
+
+    expect(response.nextCoreChainLockUpdate).to.deep.equal(expectedCoreChainLock);
+    expect(response.validatorSetUpdate).to.be.null();
+  });
+
+  it('should rotate validator set and return ValidatorSetUpdate if height is divisible by ROTATION_BLOCK_INTERVAL', async () => {
+    requestMock = {
+      height: 15,
+    };
+
+    validatorSetMock.rotate.resolves(true);
+
+    const quorumHash = Buffer.alloc(64).fill(1).toString('hex');
+    validatorSetMock.getQuorum.returns({
+      quorumHash,
+    });
+
+    const validatorSetUpdate = new ValidatorSetUpdate();
+
+    createValidatorSetUpdateMock.returns(validatorSetUpdate);
+
+    const response = await endBlockHandler(requestMock);
+
+    expect(response).to.be.an.instanceOf(ResponseEndBlock);
+
+    expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
+      requestMock.height,
+      chainLockMock.height,
+      Buffer.from(lastCommitInfoMock.stateSignature),
+    );
+
+    expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
+
+    expect(response.validatorSetUpdate).to.be.equal(validatorSetUpdate);
   });
 });

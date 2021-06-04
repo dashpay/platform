@@ -124,4 +124,34 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.getHeader()).to.deep.equal(header);
     });
   });
+
+  describe('#setLastCommitInfo', () => {
+    it('should set lastCommitInfo', async () => {
+      const lastCommitInfo = {
+        quorumHash: Uint8Array.from('000003c60ecd9576a05a7e15d93baae18729cb4477d44246093bd2cf8d4f53d8'),
+        blockSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
+        stateSignature: Uint8Array.from('09c3e46f5bc1abcb7c130b8c36a168e1fbc471fa86445dfce49e151086a277216e7a5618a7554b823d995c5606d0642f18f9c4caa249605d2ab156e14728c82f58f9008d4bcc6e21e0a561e3185e2ae654605613e86af507ca49079595872532'),
+      };
+
+      const result = blockExecutionContext.setLastCommitInfo(lastCommitInfo);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
+    });
+  });
+
+  describe('#getLastCommitInfo', () => {
+    it('should get lastCommitInfo', async () => {
+      const lastCommitInfo = {
+        quorumHash: Uint8Array.from('000003c60ecd9576a05a7e15d93baae18729cb4477d44246093bd2cf8d4f53d8'),
+        blockSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
+        stateSignature: Uint8Array.from('09c3e46f5bc1abcb7c130b8c36a168e1fbc471fa86445dfce49e151086a277216e7a5618a7554b823d995c5606d0642f18f9c4caa249605d2ab156e14728c82f58f9008d4bcc6e21e0a561e3185e2ae654605613e86af507ca49079595872532'),
+      };
+
+      blockExecutionContext.lastCommitInfo = lastCommitInfo;
+
+      expect(blockExecutionContext.getLastCommitInfo()).to.deep.equal(lastCommitInfo);
+    });
+  });
 });

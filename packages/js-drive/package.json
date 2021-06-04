@@ -62,7 +62,7 @@
     "sinon-chai": "^3.5.0"
   },
   "dependencies": {
-    "@dashevo/abci": "github:dashevo/js-abci#rework",
+    "@dashevo/abci": "github:dashevo/js-abci#signing",
     "@dashevo/dashcore-lib": "~0.19.23",
     "@dashevo/dashd-rpc": "^2.3.0",
     "@dashevo/dashd-zmq": "^1.2.0",

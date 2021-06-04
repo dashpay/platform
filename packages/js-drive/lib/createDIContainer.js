@@ -124,6 +124,10 @@ const ChainInfo = require('./chainInfo/ChainInfo');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
+const ValidatorSet = require('./validator/ValidatorSet');
+const createValidatorSetUpdate = require('./abci/handlers/validator/createValidatorSetUpdate');
+const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
+const getRandomQuorum = require('./core/getRandomQuorum');
 
 /**
  *
@@ -295,6 +299,8 @@ function createDIContainer(options) {
     latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
     decodeChainLock: asValue(decodeChainLock),
+    fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
+    getRandomQuorum: asValue(getRandomQuorum),
   });
 
   /**
@@ -971,6 +977,13 @@ function createDIContainer(options) {
   });
 
   /**
+   * Register validator quorums
+   */
+  container.register({
+    validatorSet: asClass(ValidatorSet),
+  });
+
+  /**
    * Register feature flags stuff
    */
   container.register({
@@ -997,6 +1010,7 @@ function createDIContainer(options) {
    * Register ABCI handlers
    */
   container.register({
+    createValidatorSetUpdate: asValue(createValidatorSetUpdate),
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
     dataContractQueryHandler: asFunction(dataContractQueryHandlerFactory).singleton(),
     documentQueryHandler: asFunction(documentQueryHandlerFactory).singleton(),

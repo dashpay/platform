@@ -15,7 +15,7 @@ function checkTxHandlerFactory(
   unserializeStateTransition,
 ) {
   /**
-   * CheckTx ABCI handler
+   * CheckTx ABCI Handler
    *
    * @typedef checkTxHandler
    *

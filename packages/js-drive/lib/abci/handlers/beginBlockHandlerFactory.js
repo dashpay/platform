@@ -9,7 +9,7 @@ const {
 const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolVersionError');
 
 /**
- * Begin block ABCI handler
+ * Begin Block ABCI Handler
  *
  * @param {ChainInfo} chainInfo
  * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
@@ -37,7 +37,7 @@ function beginBlockHandlerFactory(
    * @return {Promise<abci.ResponseBeginBlock>}
    */
   async function beginBlockHandler(request) {
-    const { header } = request;
+    const { header, lastCommitInfo } = request;
 
     const {
       coreChainLockedHeight,
@@ -54,13 +54,15 @@ function beginBlockHandlerFactory(
     consensusLogger.trace({ abciRequest: request });
 
     // in case previous block execution failed in process
-    // and not commited. We need to make sure
+    // and not committed. We need to make sure
     // previous context is reset.
     blockExecutionContext.reset();
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
     blockExecutionContext.setHeader(header);
+
+    blockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
     await waitForChainLockedHeight(coreChainLockedHeight);
 

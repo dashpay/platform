@@ -11,6 +11,8 @@ const {
  *
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {number} initialCoreChainLockedHeight
+ * @param {ValidatorSet} validatorSet
+ * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
  *
  * @return {initChainHandler}
@@ -18,6 +20,8 @@ const {
 function initChainHandlerFactory(
   updateSimplifiedMasternodeList,
   initialCoreChainLockedHeight,
+  validatorSet,
+  createValidatorSetUpdate,
   logger,
 ) {
   /**
@@ -41,7 +45,15 @@ function initChainHandlerFactory(
 
     contextLogger.info(`Init ${request.chainId} chain on block #${request.initialHeight.toString()}`);
 
-    return new ResponseInitChain();
+    await validatorSet.initialize(initialCoreChainLockedHeight);
+
+    const { quorumHash } = validatorSet.getQuorum();
+
+    contextLogger.trace(`Initial validator set selected: quorumHash ${quorumHash}`);
+
+    return new ResponseInitChain({
+      validatorSetUpdate: createValidatorSetUpdate(validatorSet),
+    });
   }
 
   return initChainHandler;
