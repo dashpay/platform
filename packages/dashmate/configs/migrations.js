@@ -178,11 +178,15 @@ module.exports = {
           if (config.platform.drive.tenderdash.consensus.createEmptyBlocks.createEmptyBlocksInterval === '10s') {
             config.platform.drive.tenderdash.consensus.createEmptyBlocks.createEmptyBlocksInterval = '3m';
           }
-        }
 
-        // Tenderdash logging levels
-        if (typeof config.platform.drive.tenderdash.log === 'undefined') {
-          config.platform.drive.tenderdash.log = systemConfigs.base.platform.drive.tenderdash.log;
+          // Tenderdash logging levels
+          if (typeof config.platform.drive.tenderdash.log === 'undefined') {
+            config.platform.drive.tenderdash.log = systemConfigs.base.platform.drive.tenderdash.log;
+          }
+
+          // Update images
+          config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
+            .drive.tenderdash.docker.image;
         }
       });
   },

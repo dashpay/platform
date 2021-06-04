@@ -67,6 +67,19 @@ priv_validator_state_file = "data/priv_validator_state.json"
 # connections from an external PrivValidator process
 priv_validator_laddr = ""
 
+# Local Dash Core Host to connect to
+# If this is set, the node follows a Dash Core PrivValidator process
+priv_validator_core_rpc_host = "core:{{= it.core.rpc.port}}"
+
+# Local Dash Core RPC Username
+priv_validator_core_rpc_username = "{{= it.core.rpc.user}}"
+
+# Local Dash Core RPC Password
+priv_validator_core_rpc_password = "{{= it.core.rpc.password}}"
+
+# LLMQ Type used
+llmq_type_used = 100
+
 # Path to the JSON file containing the private key to use for node authentication in the p2p protocol
 node_key_file = "config/node_key.json"
 
@@ -348,6 +361,12 @@ skip_timeout_commit = false
 # EmptyBlocks mode and possible interval between empty blocks
 create_empty_blocks = {{? it.platform.drive.tenderdash.consensus.createEmptyBlocks }}true{{??}}false{{?}}
 create_empty_blocks_interval = "{{= it.platform.drive.tenderdash.consensus.createEmptyBlocksInterval }}"
+
+# Set the Dash Core quorum type
+quorum_type = 100
+
+# Set the App hash size
+app_hash_size = 20
 
 # Reactor sleep duration parameters
 peer_gossip_sleep_duration = "100ms"

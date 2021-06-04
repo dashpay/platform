@@ -262,9 +262,10 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
 
           const { result: quorumList } = await ctx.seedRpcClient.quorum('list', 1);
 
-          const newQuorumHash = quorumList[LLMQ_TYPE_TEST][0];
+          // eslint-disable-next-line prefer-destructuring
+          ctx.quorumHash = quorumList[LLMQ_TYPE_TEST][0];
 
-          const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', 100, newQuorumHash);
+          const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', 100, ctx.quorumHash);
 
           // Mine 8 (SIGN_HEIGHT_OFFSET) more blocks to make sure
           // that the new quorum gets eligable for signing sessions
@@ -280,7 +281,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           );
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `New quorum mined: height: ${quorumInfo.height}, quorum hash: ${newQuorumHash}, mined in block: ${quorumInfo.minedBlock}`;
+          task.output = `New quorum mined: height: ${quorumInfo.height}, quorum hash: ${ctx.quorumHash}, mined in block: ${quorumInfo.minedBlock}`;
         },
       },
     ]);

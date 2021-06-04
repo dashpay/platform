@@ -30,17 +30,6 @@ function configureTenderdashTaskFactory(
           // Interconnect Tenderdash nodes
           subTasks.push({
             task: async () => {
-              const validators = masternodeConfigs.map((config) => {
-                const validatorKey = config.get('platform.drive.tenderdash.validatorKey');
-
-                return {
-                  address: validatorKey.address,
-                  pub_key: validatorKey.pub_key,
-                  power: '1',
-                  name: config.getName(),
-                };
-              });
-
               const randomChainIdPart = Math.floor(Math.random() * 60) + 1;
               const chainId = `dash_masternode_local_${randomChainIdPart}`;
 
@@ -68,7 +57,7 @@ function configureTenderdashTaskFactory(
                   });
 
                 config.set('platform.drive.tenderdash.p2p.persistentPeers', p2pPeers);
-                config.set('platform.drive.tenderdash.genesis.validators', validators);
+                config.set('platform.drive.tenderdash.genesis.quorum_hash', ctx.quorumHash);
 
                 const configFiles = renderServiceTemplates(config);
                 writeServiceConfigs(config.getName(), configFiles);
