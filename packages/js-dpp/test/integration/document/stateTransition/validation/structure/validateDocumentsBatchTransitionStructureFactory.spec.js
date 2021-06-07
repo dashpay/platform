@@ -51,7 +51,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
   let enrichSpy;
   let documentTransitions;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture(dataContract);
 
@@ -90,7 +90,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
-    validator = new JsonSchemaValidator(createAjv());
+    validator = new JsonSchemaValidator(await createAjv());
 
     enrichSpy = this.sinonSandbox.spy(enrichDataContractWithBaseSchema);
 

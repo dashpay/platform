@@ -26,7 +26,7 @@ describe('StateTransitionFacade', () => {
   let dataContract;
   let identityPublicKey;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const privateKeyModel = new PrivateKey();
     const privateKey = privateKeyModel.toBuffer();
     const publicKey = privateKeyModel.toPublicKey().toBuffer();
@@ -73,11 +73,14 @@ describe('StateTransitionFacade', () => {
     dpp = new DashPlatformProtocol({
       stateRepository: stateRepositoryMock,
     });
+
+    await dpp.initialize();
   });
 
   describe('createFromObject', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.stateTransition.createFromObject(
@@ -93,6 +96,7 @@ describe('StateTransitionFacade', () => {
 
     it('should skip checking for state repository if skipValidation is set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       await dpp.stateTransition.createFromObject(
         dataContractCreateTransition.toObject(),
@@ -114,6 +118,7 @@ describe('StateTransitionFacade', () => {
   describe('createFromBuffer', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.stateTransition.createFromBuffer(
@@ -129,6 +134,7 @@ describe('StateTransitionFacade', () => {
 
     it('should skip checking for state repository if skipValidation is set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       await dpp.stateTransition.createFromBuffer(
         dataContractCreateTransition.toBuffer(),
@@ -220,6 +226,7 @@ describe('StateTransitionFacade', () => {
   describe('validateStructure', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.stateTransition.validateStructure(
@@ -246,6 +253,7 @@ describe('StateTransitionFacade', () => {
   describe('validateData', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.stateTransition.validateData(
@@ -272,6 +280,7 @@ describe('StateTransitionFacade', () => {
   describe('validateFee', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.stateTransition.validateFee(

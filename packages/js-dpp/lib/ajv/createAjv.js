@@ -1,12 +1,17 @@
 const { default: Ajv } = require('ajv');
 
 const addFormats = require('ajv-formats');
+
 const addByteArrayKeyword = require('./keywords/byteArray/addByteArrayKeyword');
 
+const injectRE2 = require('./injectRE2');
+
 /**
- * @return {ajv.Ajv}
+ * @return {Promise<ajv.Ajv>}
  */
-function createAjv() {
+async function createAjv() {
+  await injectRE2();
+
   const ajv = new Ajv({
     strictTypes: true,
     strictTuples: true,

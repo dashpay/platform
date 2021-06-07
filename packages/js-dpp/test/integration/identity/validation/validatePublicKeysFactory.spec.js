@@ -30,10 +30,10 @@ describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
   let validatePublicKeys;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
-    const validator = new JsonSchemaValidator(createAjv());
+    const validator = new JsonSchemaValidator(await createAjv());
 
     validatePublicKeys = validatePublicKeysFactory(
       validator,

@@ -34,7 +34,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
   let validateStateTransitionSignatureMock;
   let validateIdentityExistenceMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     validateDataContractMock = this.sinonSandbox.stub();
 
     dataContract = getDataContractFixture();
@@ -56,7 +56,7 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       new ValidationResult(),
     );
 
-    const ajv = createAjv();
+    const ajv = await createAjv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     // eslint-disable-next-line max-len

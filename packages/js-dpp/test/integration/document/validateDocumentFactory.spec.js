@@ -30,8 +30,8 @@ describe('validateDocumentFactory', () => {
   let validateDocument;
   let validator;
 
-  beforeEach(function beforeEach() {
-    const ajv = createAjv();
+  beforeEach(async function beforeEach() {
+    const ajv = await createAjv();
 
     validator = new JsonSchemaValidator(ajv);
     this.sinonSandbox.spy(validator, 'validate');

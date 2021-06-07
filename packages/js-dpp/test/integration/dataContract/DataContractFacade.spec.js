@@ -15,8 +15,9 @@ describe('DataContractFacade', () => {
   let dataContract;
   let dataContractFactory;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dpp = new DashPlatformProtocol();
+    await dpp.initialize();
 
     dataContract = getDataContractFixture();
 

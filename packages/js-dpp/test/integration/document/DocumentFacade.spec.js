@@ -23,7 +23,7 @@ describe('DocumentFacade', () => {
   let ownerId;
   let stateRepositoryMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     ownerId = generateRandomIdentifier();
     dataContract = getDataContractFixture(ownerId);
 
@@ -34,6 +34,7 @@ describe('DocumentFacade', () => {
     dpp = new DashPlatformProtocol({
       stateRepository: stateRepositoryMock,
     });
+    await dpp.initialize();
 
     documents = getDocumentsFixture(dataContract);
     ([document] = documents);
@@ -58,6 +59,7 @@ describe('DocumentFacade', () => {
   describe('createFromObject', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.document.createFromObject(document.toObject());
@@ -81,6 +83,7 @@ describe('DocumentFacade', () => {
   describe('createFromBuffer', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.document.createFromBuffer(document.toObject());
@@ -117,6 +120,7 @@ describe('DocumentFacade', () => {
   describe('validate', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       try {
         await dpp.document.validate(document);

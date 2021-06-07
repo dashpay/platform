@@ -10,7 +10,7 @@ describe('DashPlatformProtocol', () => {
   let stateRepositoryMock;
   let jsonSchemaValidatorMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     jsonSchemaValidatorMock = {};
 
@@ -18,11 +18,13 @@ describe('DashPlatformProtocol', () => {
       stateRepository: stateRepositoryMock,
       jsonSchemaValidator: jsonSchemaValidatorMock,
     });
+    await dpp.initialize();
   });
 
   describe('constructor', () => {
-    it('should create JsonSchemaValidator if not passed in options', () => {
+    it('should create JsonSchemaValidator if not passed in options', async () => {
       dpp = new DashPlatformProtocol();
+      await dpp.initialize();
 
       const jsonSchemaValidator = dpp.getJsonSchemaValidator();
 

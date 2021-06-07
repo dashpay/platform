@@ -26,8 +26,8 @@ describe('validateIdentityFactory', () => {
   let identity;
   let validatePublicKeysMock;
 
-  beforeEach(function beforeEach() {
-    const schemaValidator = new JsonSchemaValidator(createAjv());
+  beforeEach(async function beforeEach() {
+    const schemaValidator = new JsonSchemaValidator(await createAjv());
 
     validatePublicKeysMock = this.sinonSandbox.stub().returns(new ValidationResult());
 

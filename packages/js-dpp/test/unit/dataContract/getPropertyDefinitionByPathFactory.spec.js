@@ -1,11 +1,21 @@
-const getPropertyDefinitionByPath = require(
-  '../../../lib/dataContract/getPropertyDefinitionByPath',
+const getRE2Class = require('@dashevo/re2-wasm').default;
+
+const getPropertyDefinitionByPathFactory = require(
+  '../../../lib/dataContract/getPropertyDefinitionByPathFactory',
 );
 
-describe('getPropertyDefinitionByPath', () => {
+describe('getPropertyDefinitionByPathFactory', () => {
   let schema;
+  let getPropertyDefinitionByPath;
+  let RE2;
+
+  before(async () => {
+    RE2 = await getRE2Class();
+  });
 
   beforeEach(() => {
+    getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory(RE2);
+
     schema = {
       properties: {
         a: {

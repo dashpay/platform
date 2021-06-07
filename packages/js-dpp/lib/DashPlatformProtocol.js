@@ -1,3 +1,4 @@
+const getRE2Class = require('@dashevo/re2-wasm').default;
 const createAjv = require('./ajv/createAjv');
 
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
@@ -21,21 +22,19 @@ class DashPlatformProtocol {
     this.stateRepository = options.stateRepository;
 
     this.jsonSchemaValidator = options.jsonSchemaValidator;
+  }
+
+  async initialize() {
     if (this.jsonSchemaValidator === undefined) {
-      const ajv = createAjv();
+      const ajv = await createAjv();
 
       this.jsonSchemaValidator = new JsonSchemaValidator(ajv);
     }
 
-    this.initializeFacades();
-  }
-
-  /**
-   * @private
-   */
-  initializeFacades() {
+    const RE2 = await getRE2Class();
     this.dataContract = new DataContractFacade(
       this.jsonSchemaValidator,
+      RE2,
     );
 
     this.document = new DocumentFacade(
@@ -46,6 +45,7 @@ class DashPlatformProtocol {
     this.stateTransition = new StateTransitionFacade(
       this.stateRepository,
       this.jsonSchemaValidator,
+      RE2,
     );
 
     this.identity = new IdentityFacade(

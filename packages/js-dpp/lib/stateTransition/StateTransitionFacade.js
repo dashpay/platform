@@ -12,6 +12,7 @@ const stateTransitionTypes = require('./stateTransitionTypes');
 const createStateTransitionFactory = require('./createStateTransitionFactory');
 
 const validateDataContractFactory = require('../dataContract/validateDataContractFactory');
+const validateDataContractPatternsFactory = require('../dataContract/validateDataContractPatternsFactory');
 const validateDataContractCreateTransitionStructureFactory = require('../dataContract/stateTransition/validation/validateDataContractCreateTransitionStructureFactory');
 const validateStateTransitionStructureFactory = require('./validation/validateStateTransitionStructureFactory');
 const validateDataContractCreateTransitionDataFactory = require('../dataContract/stateTransition/validation/validateDataContractCreateTransitionDataFactory');
@@ -69,17 +70,21 @@ class StateTransitionFacade {
   /**
    * @param {StateRepository} stateRepository
    * @param {JsonSchemaValidator} validator
+   * @param {RE2} RE2
    */
-  constructor(stateRepository, validator) {
+  constructor(stateRepository, validator, RE2) {
     this.stateRepository = stateRepository;
     this.validator = validator;
 
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
+    const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
 
     const validateDataContract = validateDataContractFactory(
       validator,
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
+      validateDataContractPatterns,
+      RE2,
     );
 
     const validateStateTransitionSignature = validateStateTransitionSignatureFactory(

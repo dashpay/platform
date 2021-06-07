@@ -13,7 +13,7 @@ const UniqueIndicesLimitReachedError = require('../errors/UniqueIndicesLimitReac
 const InvalidIndexedPropertyConstraintError = require('../errors/InvalidIndexedPropertyConstraintError');
 const InvalidCompoundIndexError = require('../errors/InvalidCompoundIndexError');
 
-const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
+const getPropertyDefinitionByPathFactory = require('./getPropertyDefinitionByPathFactory');
 
 const convertBuffersToArrays = require('../util/convertBuffersToArrays');
 
@@ -26,12 +26,16 @@ const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validateDataContractMaxDepth} validateDataContractMaxDepth
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
+ * @param {validateDataContractPatterns} validateDataContractPatterns
+ * @param {RE2} RE2
  * @return {validateDataContract}
  */
 module.exports = function validateDataContractFactory(
   jsonSchemaValidator,
   validateDataContractMaxDepth,
   enrichDataContractWithBaseSchema,
+  validateDataContractPatterns,
+  RE2,
 ) {
   /**
    * @typedef validateDataContract
@@ -56,6 +60,15 @@ module.exports = function validateDataContractFactory(
     result.merge(
       await validateDataContractMaxDepth(rawDataContract),
     );
+
+    // Validate regexp patterns are compatible with Re2
+    result.merge(
+      validateDataContractPatterns(rawDataContract),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
 
     // Validate Document JSON Schemas
     const enrichedDataContract = enrichDataContractWithBaseSchema(
@@ -131,6 +144,7 @@ module.exports = function validateDataContractFactory(
           // Ensure index properties are defined in the document
           const userDefinedProperties = indexPropertyNames
             .filter((name) => !allowedSystemProperties.includes(name));
+          const getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory(RE2);
 
           const propertyDefinitionEntities = userDefinedProperties
             .map((propertyName) => (

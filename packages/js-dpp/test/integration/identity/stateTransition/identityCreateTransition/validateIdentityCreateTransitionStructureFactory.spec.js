@@ -27,7 +27,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
   let assetLockPublicKeyHash;
   let proofValidationFunctionsByTypeMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
@@ -40,7 +40,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
     validateSignatureAgainstAssetLockPublicKeyMock = this.sinonSandbox.stub()
       .resolves(new ValidationResult());
 
-    const ajv = createAjv();
+    const ajv = await createAjv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     const proofValidationResult = new ValidationResult();

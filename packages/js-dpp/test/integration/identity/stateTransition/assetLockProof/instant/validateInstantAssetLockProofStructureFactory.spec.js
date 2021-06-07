@@ -31,13 +31,13 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
   let publicKeyHash;
   let validateAssetLockTransactionMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const assetLock = getInstantAssetLockFixture();
     transaction = assetLock.getTransaction();
 
     rawProof = assetLock.toObject();
 
-    jsonSchemaValidator = new JsonSchemaValidator(createAjv());
+    jsonSchemaValidator = new JsonSchemaValidator(await createAjv());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.verifyInstantLock.resolves(true);

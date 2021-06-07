@@ -5,18 +5,24 @@ const DataContractFactory = require('./DataContractFactory');
 const validateDataContractFactory = require('./validateDataContractFactory');
 const enrichDataContractWithBaseSchema = require('./enrichDataContractWithBaseSchema');
 const validateDataContractMaxDepthFactory = require('./stateTransition/validation/validateDataContractMaxDepthFactory');
+const validateDataContractPatternsFactory = require('./validateDataContractPatternsFactory');
 
 class DataContractFacade {
   /**
    * @param {JsonSchemaValidator} jsonSchemaValidator
+   * @param {RE2} RE2
    */
-  constructor(jsonSchemaValidator) {
+  constructor(jsonSchemaValidator, RE2) {
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
+
+    const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
 
     this.validateDataContract = validateDataContractFactory(
       jsonSchemaValidator,
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
+      validateDataContractPatterns,
+      RE2,
     );
 
     this.factory = new DataContractFactory(

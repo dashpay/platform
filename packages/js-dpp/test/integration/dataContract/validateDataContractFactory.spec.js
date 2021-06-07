@@ -1,3 +1,4 @@
+const getRE2Class = require('@dashevo/re2-wasm').default;
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
 const createAjv = require('../../../lib/ajv/createAjv');
@@ -9,6 +10,7 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 const validateDataContractFactory = require('../../../lib/dataContract/validateDataContractFactory');
 const validateDataContractMaxDepthFactory = require('../../../lib/dataContract/stateTransition/validation/validateDataContractMaxDepthFactory');
 const enrichDataContractWithBaseSchema = require('../../../lib/dataContract/enrichDataContractWithBaseSchema');
+const validateDataContractPatternsFactory = require('../../../lib/dataContract/validateDataContractPatternsFactory');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
@@ -21,6 +23,7 @@ const SystemPropertyIndexAlreadyPresentError = require('../../../lib/errors/Syst
 const UniqueIndicesLimitReachedError = require('../../../lib/errors/UniqueIndicesLimitReachedError');
 const InvalidIndexedPropertyConstraintError = require('../../../lib/errors/InvalidIndexedPropertyConstraintError');
 const InvalidCompoundIndexError = require('../../../lib/errors/InvalidCompoundIndexError');
+const IncompatibleRe2PatternError = require('../../../lib/document/errors/IncompatibleRe2PatternError');
 
 describe('validateDataContractFactory', function main() {
   this.timeout(10000);
@@ -28,19 +31,28 @@ describe('validateDataContractFactory', function main() {
   let dataContract;
   let rawDataContract;
   let validateDataContract;
+  let RE2;
 
-  beforeEach(() => {
+  before(async () => {
+    RE2 = await getRE2Class();
+  });
+
+  beforeEach(async () => {
     dataContract = getDataContractFixture();
     rawDataContract = dataContract.toObject();
 
-    const jsonSchemaValidator = new JsonSchemaValidator(createAjv());
+    const jsonSchemaValidator = new JsonSchemaValidator(await createAjv());
 
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
+
+    const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
 
     validateDataContract = validateDataContractFactory(
       jsonSchemaValidator,
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
+      validateDataContractPatterns,
+      RE2,
     );
   });
 
@@ -335,7 +347,7 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should have valid property names', async () => {
-      const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123', 'ValidName',
+      const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'ab12c', 'abc123', 'ValidName',
         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
       await Promise.all(
@@ -352,7 +364,7 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should return an invalid result if a property has invalid format', async () => {
-      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
+      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abci', 'ab'];
 
       await Promise.all(
         invalidNames.map(async (name) => {
@@ -415,7 +427,7 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should have valid property names (document types)', async () => {
-      const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123', 'ValidName', 'validName',
+      const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123123bc', 'ab123c', 'ValidName', 'validName',
         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
       await Promise.all(
@@ -430,7 +442,7 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should return an invalid result if a property (document type) has invalid format', async () => {
-      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
+      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abc', 'ab'];
 
       await Promise.all(
         invalidNames.map(async (name) => {
@@ -537,7 +549,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should have valid property names', async () => {
-        const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123', 'ValidName', 'validName',
+        const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
           'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
         await Promise.all(
@@ -554,7 +566,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should have valid nested property names', async () => {
-        const validNames = ['validName', 'valid_name', 'valid-name', 'abc', '123abc', 'abc123', 'ValidName', 'validName',
+        const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
           'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
         rawDataContract.documents.niceDocument.properties.something = {
@@ -577,7 +589,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should return an invalid result if a property has invalid format', async () => {
-        const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
+        const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abc', 'ab'];
 
         await Promise.all(
           invalidNames.map(async (name) => {
@@ -1047,6 +1059,32 @@ describe('validateDataContractFactory', function main() {
 
         expect(error.dataPath).to.equal('/documents/indexedDocument/properties/something/maxLength');
         expect(error.keyword).to.equal('maximum');
+      });
+
+      it('should not have incompatible patterns', async () => {
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              maxLength: 100,
+              pattern: '^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, IncompatibleRe2PatternError);
+
+        const [error] = result.getErrors();
+
+        expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
+        expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
+        expect(error.getOriginalErrorMessage()).to.be.a('string').and.satisfy((msg) => (
+          msg.startsWith('Invalid regular expression')
+        ));
       });
 
       describe('byteArray', () => {

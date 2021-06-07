@@ -30,7 +30,7 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
   let validateIdentityExistenceMock;
   let proofValidationFunctionsByTypeMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     validateIdentityExistenceMock = this.sinonSandbox.stub().resolves(new ValidationResult());
 
     assetLockPublicKeyHash = Buffer.alloc(20, 1);
@@ -46,7 +46,7 @@ describe('validateIdentityTopUpTransitionStructureFactory', () => {
     validateSignatureAgainstAssetLockPublicKeyMock = this.sinonSandbox.stub()
       .resolves(new ValidationResult());
 
-    const ajv = createAjv();
+    const ajv = await createAjv();
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     validateIdentityTopUpTransitionStructure = validateIdentityTopUpTransitionStructureFactory(

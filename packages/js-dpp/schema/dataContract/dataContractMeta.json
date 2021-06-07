@@ -6,12 +6,12 @@
     "documentProperties": {
       "type": "object",
       "patternProperties": {
-        "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$": {
+        "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$": {
           "$ref": "#/$defs/documentSchema"
         }
       },
       "propertyNames": {
-        "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
+        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
       },
       "minProperties": 1,
       "maxProperties": 100
@@ -371,7 +371,7 @@
     "documents": {
       "type": "object",
       "patternProperties": {
-        "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$": {
+        "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$": {
           "type": "object",
           "properties": {
             "indices": {
@@ -384,7 +384,7 @@
                     "items": {
                       "type": "object",
                       "patternProperties": {
-                        "^((?!-|_|\\.)[a-zA-Z0-9-\\._$]{0,62}[a-zA-Z0-9])$": {
+                        "^[a-zA-Z$][a-zA-Z0-9-_\\.]{1,62}[a-zA-Z0-9]$": {
                           "type": "string",
                           "enum": ["asc", "desc"]
                         }
@@ -491,7 +491,7 @@
         }
       },
       "propertyNames": {
-        "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
+        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
       },
       "minProperties": 1,
       "maxProperties": 100
