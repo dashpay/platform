@@ -6,11 +6,13 @@ class ValidatorSet {
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {getRandomQuorum} getRandomQuorum
    * @param {fetchQuorumMembers} fetchQuorumMembers
+   * @param {number} validatorSetLLMQType
    */
-  constructor(simplifiedMasternodeList, getRandomQuorum, fetchQuorumMembers) {
+  constructor(simplifiedMasternodeList, getRandomQuorum, fetchQuorumMembers, validatorSetLLMQType) {
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.getRandomQuorum = getRandomQuorum;
     this.fetchQuorumMembers = fetchQuorumMembers;
+    this.validatorSetLLMQType = validatorSetLLMQType;
 
     this.quorum = null;
     this.validators = [];
@@ -94,12 +96,12 @@ class ValidatorSet {
   async switchToRandomQuorum(sml, coreHeight, rotationEntropy) {
     this.quorum = await this.getRandomQuorum(
       sml,
-      sml.getValidatorLLMQType(),
+      this.validatorSetLLMQType,
       rotationEntropy,
     );
 
     const quorumMembers = await this.fetchQuorumMembers(
-      sml.getValidatorLLMQType(),
+      this.validatorSetLLMQType,
       this.quorum.quorumHash,
     );
 

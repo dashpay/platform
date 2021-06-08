@@ -36,7 +36,6 @@ describe('ValidatorSet', () => {
 
     smlMock = {
       getQuorum: this.sinon.stub().returns(quorumEntry),
-      getValidatorLLMQType: this.sinon.stub().returns(validatorSetLLMQType),
       toSimplifiedMNListDiff: this.sinon.stub().returns(smlDiffMock),
       getQuorumsOfType: this.sinon.stub().returns(
         getSmlFixture()[0].newQuorums.filter((quorum) => quorum.llmqType === 1),
@@ -82,6 +81,7 @@ describe('ValidatorSet', () => {
       simplifiedMasternodeListMock,
       getRandomQuorumMock,
       fetchQuorumMembersMock,
+      validatorSetLLMQType,
     );
   });
 

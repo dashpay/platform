@@ -165,6 +165,7 @@ const getRandomQuorum = require('./core/getRandomQuorum');
  * @param {string} options.DASHPAY_CONTRACT_ID
  * @param {string} options.DASHPAY_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
+ * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.LOG_STDOUT_LEVEL
  * @param {string} options.LOG_PRETTY_FILE_LEVEL
  * @param {string} options.LOG_PRETTY_FILE_PATH
@@ -270,6 +271,9 @@ function createDIContainer(options) {
     smlMaxListsLimit: asValue(16),
     initialCoreChainLockedHeight: asValue(
       parseInt(options.INITIAL_CORE_CHAINLOCKED_HEIGHT, 10),
+    ),
+    validatorSetLLMQType: asValue(
+      parseInt(options.VALIDATOR_SET_LLMQ_TYPE, 10),
     ),
     featureFlagDataContractId: asValue(
       options.FEATURE_FLAGS_CONTRACT_ID
