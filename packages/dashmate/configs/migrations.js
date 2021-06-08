@@ -164,6 +164,8 @@ module.exports = {
         // Update image version
         config.core.docker.image = systemConfigs.base.core.docker.image;
       });
+
+    return configFile;
   },
   '0.20.0-dev': (configFile) => {
     Object.entries(configFile.configs)
@@ -173,8 +175,8 @@ module.exports = {
           config.core.debug = 0;
         }
 
-        // Set empty block interval back to 3
         if (config.platform) {
+          // Set empty block interval back to 3
           if (config.platform.drive.tenderdash.consensus.createEmptyBlocks.createEmptyBlocksInterval === '10s') {
             config.platform.drive.tenderdash.consensus.createEmptyBlocks.createEmptyBlocksInterval = '3m';
           }
@@ -192,5 +194,21 @@ module.exports = {
             .drive.abci.docker.image;
         }
       });
+
+    // Set validator set LLMQ Type
+    configFile.configs.base.platform.drive.abci.validatorSet.llmqType = systemConfigs.base
+      .platform.drive.abci.validatorSet.llmqType;
+
+    configFile.configs.local.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+      .platform.drive.abci.validatorSet.llmqType;
+
+    Object.entries(configFile.configs)
+      .filter(([, config]) => config.group === 'local')
+      .forEach(([, config]) => {
+        config.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+          .platform.drive.abci.validatorSet.llmqType;
+      });
+
+    return configFile;
   },
 };

@@ -16,6 +16,13 @@ module.exports = lodashMerge({}, baseConfig, {
         },
       },
     },
+    drive: {
+      abci: {
+        validatorSet: {
+          llmqType: 100,
+        },
+      },
+    },
   },
   externalIp: null,
   environment: 'development',

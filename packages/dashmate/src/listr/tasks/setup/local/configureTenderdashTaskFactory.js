@@ -57,6 +57,12 @@ function configureTenderdashTaskFactory(
                   });
 
                 config.set('platform.drive.tenderdash.p2p.persistentPeers', p2pPeers);
+
+                config.set(
+                  'platform.drive.tenderdash.genesis.quorum_type',
+                  config.get('platform.drive.abci.validatorSet.llmqType').toString(),
+                );
+
                 config.set('platform.drive.tenderdash.genesis.quorum_hash', ctx.quorumHash);
 
                 const configFiles = renderServiceTemplates(config);

@@ -95,6 +95,9 @@ module.exports = {
             path: '/tmp/base-drive-json.json',
           },
         },
+        validatorSet: {
+          llmqType: 4,
+        },
       },
       tenderdash: {
         docker: {
