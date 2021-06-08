@@ -100,7 +100,7 @@ describe('populateMongoDbTransactionFromObjectFactory', () => {
       transactionMock,
     );
     expect(mongoDbRepositoryMock.delete).to.be.calledOnceWithExactly(
-      'documentIdToDelete',
+      documentToDelete.getId(),
       transactionMock,
     );
   });

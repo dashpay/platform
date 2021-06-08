@@ -1,3 +1,12 @@
+## [0.19.3](https://github.com/dashevo/js-drive/compare/v0.19.2...v0.19.3) (2021-06-04)
+
+
+### Bug Fixes
+
+* documents were deleted using wrong id ([#514](https://github.com/dashevo/js-drive/issues/514))
+
+
+
 ## [0.19.2](https://github.com/dashevo/js-drive/compare/v0.19.1...v0.19.2) (2021-05-25)
 
 

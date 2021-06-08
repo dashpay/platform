@@ -36,7 +36,7 @@ function populateMongoDbTransactionFromObjectFactory(
       });
 
     const deleteOperations = Object.entries(transactionObject.deletes)
-      .map(async ([documentId, serializedDocument]) => {
+      .map(async ([, serializedDocument]) => {
         const document = await dpp.document.createFromBuffer(serializedDocument, {
           skipValidation: true,
         });
@@ -46,7 +46,7 @@ function populateMongoDbTransactionFromObjectFactory(
           document.getType(),
         );
 
-        return mongoDbRepository.delete(documentId, transaction);
+        return mongoDbRepository.delete(document.getId(), transaction);
       });
 
     await Promise.all(updateOperations.concat(deleteOperations));
