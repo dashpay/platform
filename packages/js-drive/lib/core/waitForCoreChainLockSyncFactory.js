@@ -53,7 +53,7 @@ function waitForCoreChainLockSyncFactory(
 
       latestCoreChainLock.update(chainLock);
 
-      logger.trace(`Updated latestCoreChanLock for core height ${chainLock.height}`);
+      logger.trace(`Updated latestCoreChainLock for core height ${chainLock.height}`);
 
       if (resolveFirstChainLockFromZMQPromise) {
         resolveFirstChainLockFromZMQPromise();
