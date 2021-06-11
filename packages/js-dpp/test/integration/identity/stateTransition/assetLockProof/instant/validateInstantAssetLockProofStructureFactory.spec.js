@@ -89,7 +89,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('type');
 
@@ -107,7 +107,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/type');
+      expect(error.instancePath).to.equal('/type');
       expect(error.keyword).to.equal('const');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
@@ -126,7 +126,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('instantLock');
 
@@ -144,7 +144,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/instantLock/0');
+      expect(error.instancePath).to.equal('/instantLock/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -163,7 +163,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/instantLock');
+      expect(error.instancePath).to.equal('/instantLock');
       expect(error.keyword).to.equal('minItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
@@ -180,7 +180,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/instantLock');
+      expect(error.instancePath).to.equal('/instantLock');
       expect(error.keyword).to.equal('maxItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
@@ -241,7 +241,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('transaction');
 
@@ -259,7 +259,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/transaction/0');
+      expect(error.instancePath).to.equal('/transaction/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -278,7 +278,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/transaction');
+      expect(error.instancePath).to.equal('/transaction');
       expect(error.keyword).to.equal('minItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
@@ -295,7 +295,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/transaction');
+      expect(error.instancePath).to.equal('/transaction');
       expect(error.keyword).to.equal('maxItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
@@ -331,7 +331,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('outputIndex');
 
@@ -348,7 +348,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/outputIndex');
+      expect(error.instancePath).to.equal('/outputIndex');
       expect(error.keyword).to.equal('type');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
@@ -364,7 +364,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/outputIndex');
+      expect(error.instancePath).to.equal('/outputIndex');
       expect(error.keyword).to.equal('minimum');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();

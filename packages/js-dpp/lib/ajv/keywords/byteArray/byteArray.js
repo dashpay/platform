@@ -7,6 +7,10 @@ const byteArray = {
       throw new Error("'byteArray' should not be used with 'items'");
     }
 
+    if (parentSchema.prefixItems) {
+      throw new Error("'byteArray' should not be used with 'prefixItems'");
+    }
+
     return {
       items: {
         type: 'integer',

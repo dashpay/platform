@@ -66,7 +66,7 @@ describe('addByteArrayKeyword', () => {
 
           expect.fail('should fail with keyword schema error');
         } catch (e) {
-          expect(e.message).to.equal('keyword value is invalid: data should be boolean');
+          expect(e.message).to.equal('keyword "byteArray" value is invalid at path "#": data must be boolean');
         }
       });
 
@@ -81,7 +81,7 @@ describe('addByteArrayKeyword', () => {
 
           expect.fail('should fail with keyword schema error');
         } catch (e) {
-          expect(e.message).to.equal('keyword value is invalid: data should be equal to constant');
+          expect(e.message).to.equal('keyword "byteArray" value is invalid at path "#": data must be equal to constant');
         }
       });
     });
@@ -101,7 +101,7 @@ describe('addByteArrayKeyword', () => {
 
         expect(error.keyword).to.equal('type');
         expect(error.schemaPath).to.equal('#/byteArray/items/type');
-        expect(error.message).to.equal('should be integer');
+        expect(error.message).to.equal('must be integer');
 
         expect(byteArrayError.keyword).to.equal('byteArray');
       });
@@ -120,7 +120,7 @@ describe('addByteArrayKeyword', () => {
 
         expect(error.keyword).to.equal('minimum');
         expect(error.schemaPath).to.equal('#/byteArray/items/minimum');
-        expect(error.message).to.equal('should be >= 0');
+        expect(error.message).to.equal('must be >= 0');
 
         expect(byteArrayError.keyword).to.equal('byteArray');
       });
@@ -139,7 +139,7 @@ describe('addByteArrayKeyword', () => {
 
         expect(error.keyword).to.equal('maximum');
         expect(error.schemaPath).to.equal('#/byteArray/items/maximum');
-        expect(error.message).to.equal('should be <= 255');
+        expect(error.message).to.equal('must be <= 255');
 
         expect(byteArrayError.keyword).to.equal('byteArray');
       });

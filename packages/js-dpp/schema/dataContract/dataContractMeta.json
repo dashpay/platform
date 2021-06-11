@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "type": "object",
   "$defs": {
@@ -7,7 +7,13 @@
       "type": "object",
       "patternProperties": {
         "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$": {
-          "$ref": "#/$defs/documentSchema"
+          "type": "object",
+          "allOf": [
+            {
+              "$ref": "#/$defs/documentSchema"
+            }
+          ],
+          "unevaluatedProperties": false
         }
       },
       "propertyNames": {
@@ -20,7 +26,13 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "#/$defs/documentSchema"
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/$defs/documentSchema"
+          }
+        ],
+        "unevaluatedProperties": false
       }
     },
     "documentSchema": {
@@ -37,79 +49,58 @@
           "minLength": 1
         },
         "$comment": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/$comment"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/core#/properties/$comment"
         },
         "description": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/description"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/description"
         },
         "examples": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/examples"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/examples"
         },
         "multipleOf": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/multipleOf"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/multipleOf"
         },
         "maximum": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/maximum"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maximum"
         },
         "exclusiveMaximum": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/exclusiveMaximum"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMaximum"
         },
         "minimum": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/minimum"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minimum"
         },
         "exclusiveMinimum": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/exclusiveMinimum"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMinimum"
         },
         "maxLength": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/maxLength"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxLength"
         },
         "minLength": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/minLength"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minLength"
         },
         "pattern": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/pattern"
-        },
-        "additionalItems": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/documentSchema"
-            },
-            {
-              "type": "boolean",
-              "const": false
-            }
-          ]
-        },
-        "items": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/documentSchemaArray"
-            },
-            {
-              "$ref": "#/$defs/documentSchema"
-            }
-          ]
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/pattern"
         },
         "maxItems": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/maxItems"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxItems"
         },
         "minItems": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/minItems"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minItems"
         },
         "uniqueItems": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/uniqueItems"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/uniqueItems"
         },
         "contains": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/contains"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/applicator#/properties/contains"
         },
         "maxProperties": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/maxProperties"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxProperties"
         },
         "minProperties": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/minProperties"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minProperties"
         },
         "required": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/required"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/required"
         },
         "additionalProperties": {
           "type": "boolean",
@@ -118,19 +109,18 @@
         "properties": {
           "$ref": "#/$defs/documentProperties"
         },
-        "patternProperties": {
+        "dependentSchemas": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/documentSchema" },
-          "propertyNames": { "format": "regex" },
-          "default": {}
-        },
-        "dependencies": {
-          "type": "object",
+          "minProperties": 1,
           "additionalProperties": {
-            "oneOf": [
-              { "$ref": "#/$defs/documentSchema" },
-              { "$ref": "http://json-schema.org/draft-07/schema#/definitions/stringArray" }
-            ]
+            "$ref": "#/$defs/documentSchema"
+          }
+        },
+        "dependentRequired": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/$defs/stringArray"
           }
         },
         "const": true,
@@ -141,20 +131,24 @@
           "uniqueItems": true
         },
         "type": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/type"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/type"
         },
         "format": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/format"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/format-annotation#/properties/format"
         },
         "contentMediaType": {
-          "$ref": "http://json-schema.org/draft-07/schema#/properties/contentMediaType"
+          "$ref": "https://json-schema.org/draft/2020-12/meta/content#/properties/contentMediaType"
         },
         "byteArray": {
           "type": "boolean",
           "const": true
-        }
+        },
+        "prefixItems": {
+          "$ref": "#/$defs/documentSchemaArray"
+        },
+        "items": true
       },
-      "dependencies": {
+      "dependentSchemas": {
         "byteArray": {
           "description": "should be used only with array type",
           "properties": {
@@ -164,6 +158,11 @@
             }
           },
           "not": {
+            "properties": {
+              "items": {
+                "type": "array"
+              }
+            },
             "required": ["items"]
           }
         },
@@ -251,10 +250,21 @@
             }
           },
           "required": ["maxLength"]
+        },
+        "prefixItems": {
+          "$comment": "array must not contain undefined item sub schemas",
+          "properties": {
+            "items": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": ["items"]
         }
       },
       "allOf": [
         {
+          "$comment": "array must contain items",
           "if": {
             "properties": {
               "type": {
@@ -271,35 +281,31 @@
           },
           "then": {
             "properties": {
-              "items": {
-                "$ref": "#/$defs/documentSchema/properties/items"
-              }
+              "items": true
             },
             "required": ["items"]
           }
         },
         {
+          "$comment": "array without prefixItems must contain items sub schema",
           "if": {
-            "properties": {
-              "type": {
-                "const": "array"
+            "not": {
+              "properties": {
+                "prefixItems": true
               },
-              "items": {
-                "type": "array"
-              }
-            },
-            "required": ["type", "items"]
+              "required": ["prefixItems"]
+            }
           },
           "then": {
             "properties": {
-              "additionalItems": {
-                "$ref": "#/$defs/documentSchema/properties/additionalItems"
+              "items": {
+                "$ref": "#/$defs/documentSchema"
               }
-            },
-            "required": ["additionalItems"]
+            }
           }
         },
         {
+          "$comment": "all object properties must be defined",
           "if": {
             "properties": {
               "type": {
@@ -307,24 +313,10 @@
               }
             },
             "not": {
-              "anyOf": [
-                {
-                  "properties": {
-                    "$ref": {
-                      "$ref": "#/$defs/documentSchema/properties/$ref"
-                    }
-                  },
-                  "required": ["$ref"]
-                },
-                {
-                  "properties": {
-                    "byteArray": {
-                      "$ref": "#/$defs/documentSchema/properties/byteArray"
-                    }
-                  },
-                  "required": ["byteArray"]
-                }
-              ]
+              "properties": {
+                "$ref": true
+              },
+              "required": ["$ref"]
             }
           },
           "then": {
@@ -339,8 +331,7 @@
             "required": ["properties", "additionalProperties"]
           }
         }
-      ],
-      "additionalProperties": false
+      ]
     }
   },
   "properties": {
@@ -370,128 +361,56 @@
     },
     "documents": {
       "type": "object",
-      "patternProperties": {
-        "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$": {
-          "type": "object",
-          "properties": {
-            "indices": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
+      "propertyNames": {
+        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "allOf": [
+          {
+            "properties": {
+              "indices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
                   "properties": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "patternProperties": {
-                        "^[a-zA-Z$][a-zA-Z0-9-_\\.]{1,62}[a-zA-Z0-9]$": {
+                    "properties": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "pattern": "^[a-zA-Z$][a-zA-Z0-9-_\\.]{1,62}[a-zA-Z0-9]$"
+                        },
+                        "additionalProperties": {
                           "type": "string",
                           "enum": ["asc", "desc"]
-                        }
+                        },
+                        "minProperties": 1,
+                        "maxProperties": 1
                       },
-                      "minProperties": 1,
-                      "maxProperties": 1,
-                      "additionalProperties": false
+                      "minItems": 1,
+                      "maxItems": 10
                     },
-                    "minItems": 1,
-                    "maxItems": 10
+                    "unique": {
+                      "type": "boolean"
+                    }
                   },
-                  "unique": {
-                    "type": "boolean"
-                  }
+                  "required": ["properties"],
+                  "additionalProperties": false
                 },
-                "required": ["properties"],
-                "additionalProperties": false
+                "minItems": 1,
+                "maxItems": 10
               },
-              "minItems": 1,
-              "maxItems": 10
-            },
-            "type": {
-              "const": "object"
-            },
-            "$id": {
-              "type": "string",
-              "pattern": "^#",
-              "minLength": 1
-            },
-            "$ref": {
-              "type": "string",
-              "pattern": "^#",
-              "minLength": 1
-            },
-            "$comment": {
-              "$ref": "http://json-schema.org/draft-07/schema#/properties/$comment"
-            },
-            "description": {
-              "$ref": "http://json-schema.org/draft-07/schema#/properties/description"
-            },
-            "examples": {
-              "$ref": "http://json-schema.org/draft-07/schema#/properties/examples"
-            },
-            "maxProperties": {
-              "$ref": "http://json-schema.org/draft-07/schema#/properties/maxProperties"
-            },
-            "minProperties": {
-              "$ref": "http://json-schema.org/draft-07/schema#/properties/minProperties"
-            },
-            "required": {
-              "$ref": "http://json-schema.org/draft-07/schema#/properties/required"
-            },
-            "additionalProperties": {
-              "type": "boolean",
-              "const": false
-            },
-            "properties": {
-              "$ref": "#/$defs/documentProperties"
-            },
-            "patternProperties": {
-              "type": "object",
-              "additionalProperties": { "$ref": "#/$defs/documentSchema" },
-              "propertyNames": { "format": "regex" },
-              "default": {}
-            },
-            "dependencies": {
-              "type": "object",
-              "additionalProperties": {
-                "oneOf": [
-                  { "$ref": "#/$defs/documentSchema" },
-                  { "$ref": "http://json-schema.org/draft-07/schema#/definitions/stringArray" }
-                ]
-              }
-            },
-            "const": true
-          },
-          "if": {
-            "properties": {
               "type": {
                 "const": "object"
               }
-            },
-            "not": {
-              "properties": {
-                "$ref": true
-              },
-              "required": ["$ref"]
             }
           },
-          "then": {
-            "properties": {
-              "properties": {
-                "$ref": "#/$defs/documentProperties"
-              },
-              "additionalProperties": {
-                "$ref": "#/$defs/documentSchema/properties/additionalProperties"
-              }
-            },
-            "required": ["properties", "additionalProperties"]
-          },
-          "minProperties": 1,
-          "maxProperties": 100,
-          "additionalProperties": false
-        }
-      },
-      "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+          {
+            "$ref": "#/$defs/documentSchema"
+          }
+        ],
+        "unevaluatedProperties": false
       },
       "minProperties": 1,
       "maxProperties": 100

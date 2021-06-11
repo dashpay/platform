@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
     "id": {
@@ -17,12 +17,7 @@
       "description": "Public key type. 0 - ECDSA Secp256k1, 1 - BLS 12-381",
       "$comment": "It can't be changed after adding a key"
     },
-    "data": {
-      "type": "array",
-      "byteArray": true,
-      "description": "Raw public key",
-      "$comment": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
-    }
+    "data": true
   },
   "allOf": [
     {
@@ -39,7 +34,9 @@
             "type": "array",
             "byteArray": true,
             "minItems": 33,
-            "maxItems": 33
+            "maxItems": 33,
+            "description": "Raw ECDSA public key",
+            "$comment": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
           }
         }
       }
@@ -58,7 +55,9 @@
             "type": "array",
             "byteArray": true,
             "minItems": 48,
-            "maxItems": 48
+            "maxItems": 48,
+            "description": "Raw BLS public key",
+            "$comment": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
           }
         }
       }

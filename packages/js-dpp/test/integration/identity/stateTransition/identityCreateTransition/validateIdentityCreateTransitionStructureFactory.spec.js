@@ -77,7 +77,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('protocolVersion');
     });
@@ -91,7 +91,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/protocolVersion');
+      expect(error.instancePath).to.equal('/protocolVersion');
       expect(error.keyword).to.equal('type');
     });
 
@@ -105,7 +105,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minimum');
-      expect(error.dataPath).to.equal('/protocolVersion');
+      expect(error.instancePath).to.equal('/protocolVersion');
     });
 
     it('should not be greater than current version (0)', async () => {
@@ -118,7 +118,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('maximum');
-      expect(error.dataPath).to.equal('/protocolVersion');
+      expect(error.instancePath).to.equal('/protocolVersion');
     });
   });
 
@@ -132,7 +132,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('type');
     });
@@ -146,7 +146,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/type');
+      expect(error.instancePath).to.equal('/type');
       expect(error.keyword).to.equal('const');
       expect(error.params.allowedValue).to.equal(2);
     });
@@ -164,7 +164,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.params.missingProperty).to.equal('assetLockProof');
       expect(error.keyword).to.equal('required');
     });
@@ -178,7 +178,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/assetLockProof');
+      expect(error.instancePath).to.equal('/assetLockProof');
       expect(error.keyword).to.equal('type');
     });
 
@@ -219,7 +219,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.params.missingProperty).to.equal('publicKeys');
       expect(error.keyword).to.equal('required');
     });
@@ -236,7 +236,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minItems');
-      expect(error.dataPath).to.equal('/publicKeys');
+      expect(error.instancePath).to.equal('/publicKeys');
     });
 
     it('should not have more than 10 items', async () => {
@@ -255,7 +255,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('maxItems');
-      expect(error.dataPath).to.equal('/publicKeys');
+      expect(error.instancePath).to.equal('/publicKeys');
     });
 
     it('should be unique', async () => {
@@ -270,7 +270,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('uniqueItems');
-      expect(error.dataPath).to.equal('/publicKeys');
+      expect(error.instancePath).to.equal('/publicKeys');
     });
 
     it('should be valid', async () => {
@@ -305,7 +305,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('signature');
     });
@@ -319,7 +319,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signature/0');
+      expect(error.instancePath).to.equal('/signature/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -334,7 +334,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signature');
+      expect(error.instancePath).to.equal('/signature');
       expect(error.keyword).to.equal('minItems');
     });
 
@@ -347,7 +347,7 @@ describe('validateIdentityCreateTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signature');
+      expect(error.instancePath).to.equal('/signature');
       expect(error.keyword).to.equal('maxItems');
     });
 

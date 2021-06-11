@@ -115,7 +115,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('protocolVersion');
     });
@@ -129,7 +129,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/protocolVersion');
+      expect(error.instancePath).to.equal('/protocolVersion');
       expect(error.keyword).to.equal('type');
     });
 
@@ -143,7 +143,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('minimum');
-      expect(error.dataPath).to.equal('/protocolVersion');
+      expect(error.instancePath).to.equal('/protocolVersion');
     });
 
     it('should not be greater than current version (0)', async () => {
@@ -156,7 +156,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.keyword).to.equal('maximum');
-      expect(error.dataPath).to.equal('/protocolVersion');
+      expect(error.instancePath).to.equal('/protocolVersion');
     });
   });
 
@@ -170,7 +170,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('type');
     });
@@ -184,7 +184,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/type');
+      expect(error.instancePath).to.equal('/type');
       expect(error.keyword).to.equal('const');
       expect(error.params.allowedValue).to.equal(1);
     });
@@ -202,7 +202,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('ownerId');
     });
@@ -218,7 +218,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/ownerId/0');
+      expect(error.instancePath).to.equal('/ownerId/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -235,7 +235,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/ownerId');
+      expect(error.instancePath).to.equal('/ownerId');
       expect(error.keyword).to.equal('minItems');
     });
 
@@ -250,7 +250,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/ownerId');
+      expect(error.instancePath).to.equal('/ownerId');
       expect(error.keyword).to.equal('maxItems');
     });
 
@@ -301,7 +301,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('transitions');
     });
@@ -317,7 +317,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/transitions');
+      expect(error.instancePath).to.equal('/transitions');
       expect(error.keyword).to.equal('type');
     });
 
@@ -332,7 +332,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/transitions');
+      expect(error.instancePath).to.equal('/transitions');
       expect(error.keyword).to.equal('minItems');
       expect(error.params.limit).to.equal(1);
     });
@@ -346,7 +346,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/transitions');
+      expect(error.instancePath).to.equal('/transitions');
       expect(error.keyword).to.equal('maxItems');
       expect(error.params.limit).to.equal(10);
     });
@@ -360,7 +360,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/transitions/0');
+      expect(error.instancePath).to.equal('/transitions/0');
       expect(error.keyword).to.equal('type');
     });
 
@@ -377,7 +377,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('');
+          expect(error.instancePath).to.equal('');
           expect(error.keyword).to.equal('required');
           expect(error.params.missingProperty).to.equal('$id');
         });
@@ -393,7 +393,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
           const [error, byteArrayError] = result.getErrors();
 
-          expect(error.dataPath).to.equal('/$id/0');
+          expect(error.instancePath).to.equal('/$id/0');
           expect(error.keyword).to.equal('type');
 
           expect(byteArrayError.keyword).to.equal('byteArray');
@@ -410,7 +410,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('/$id');
+          expect(error.instancePath).to.equal('/$id');
           expect(error.keyword).to.equal('minItems');
           expect(error.params.limit).to.equal(32);
         });
@@ -426,7 +426,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.dataPath).to.equal('/$id');
+          expect(error.instancePath).to.equal('/$id');
           expect(error.keyword).to.equal('maxItems');
           expect(error.params.limit).to.equal(32);
         });
@@ -685,7 +685,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('');
+            expect(error.instancePath).to.equal('');
             expect(error.keyword).to.equal('required');
             expect(error.params.missingProperty).to.equal('$entropy');
           });
@@ -701,7 +701,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             const [error, byteArrayError] = result.getErrors();
 
-            expect(error.dataPath).to.equal('/$entropy/0');
+            expect(error.instancePath).to.equal('/$entropy/0');
             expect(error.keyword).to.equal('type');
 
             expect(byteArrayError.keyword).to.equal('byteArray');
@@ -718,7 +718,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('/$entropy');
+            expect(error.instancePath).to.equal('/$entropy');
             expect(error.keyword).to.equal('minItems');
             expect(error.params.limit).to.equal(32);
           });
@@ -734,7 +734,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('/$entropy');
+            expect(error.instancePath).to.equal('/$entropy');
             expect(error.keyword).to.equal('maxItems');
             expect(error.params.limit).to.equal(32);
           });
@@ -787,7 +787,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('/$revision');
+            expect(error.instancePath).to.equal('/$revision');
             expect(error.keyword).to.equal('type');
           });
 
@@ -802,7 +802,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('/$revision');
+            expect(error.instancePath).to.equal('/$revision');
             expect(error.keyword).to.equal('type');
           });
 
@@ -817,7 +817,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.dataPath).to.equal('/$revision');
+            expect(error.instancePath).to.equal('/$revision');
             expect(error.keyword).to.equal('minimum');
           });
         });
@@ -862,7 +862,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('');
+      expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('required');
       expect(error.params.missingProperty).to.equal('signature');
     });
@@ -876,7 +876,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signature/0');
+      expect(error.instancePath).to.equal('/signature/0');
       expect(error.keyword).to.equal('type');
 
       expect(byteArrayError.keyword).to.equal('byteArray');
@@ -891,7 +891,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signature');
+      expect(error.instancePath).to.equal('/signature');
       expect(error.keyword).to.equal('minItems');
       expect(error.params.limit).to.equal(65);
     });
@@ -905,7 +905,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signature');
+      expect(error.instancePath).to.equal('/signature');
       expect(error.keyword).to.equal('maxItems');
       expect(error.params.limit).to.equal(65);
     });
@@ -966,7 +966,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signaturePublicKeyId');
+      expect(error.instancePath).to.equal('/signaturePublicKeyId');
       expect(error.keyword).to.equal('type');
     });
 
@@ -979,7 +979,7 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.dataPath).to.equal('/signaturePublicKeyId');
+      expect(error.instancePath).to.equal('/signaturePublicKeyId');
       expect(error.keyword).to.equal('minimum');
     });
   });

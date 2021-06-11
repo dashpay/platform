@@ -1,4 +1,4 @@
-const { default: Ajv } = require('ajv');
+const { default: Ajv } = require('ajv/dist/2020');
 
 const addFormats = require('ajv-formats');
 

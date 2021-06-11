@@ -188,9 +188,9 @@ module.exports = function validateDataContractFactory(
             }
 
             if (propertyType === 'array' && !isByteArray) {
-              const { items } = propertyDefinition;
+              const { items, prefixItems } = propertyDefinition;
 
-              if (Array.isArray(items) || items.type === 'object' || items.type === 'array') {
+              if (prefixItems || items.type === 'object' || items.type === 'array') {
                 invalidPropertyType = 'array';
               }
             }

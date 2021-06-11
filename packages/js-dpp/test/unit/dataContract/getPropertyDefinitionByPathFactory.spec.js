@@ -1,5 +1,3 @@
-const getRE2Class = require('@dashevo/re2-wasm').default;
-
 const getPropertyDefinitionByPathFactory = require(
   '../../../lib/dataContract/getPropertyDefinitionByPathFactory',
 );
@@ -7,14 +5,9 @@ const getPropertyDefinitionByPathFactory = require(
 describe('getPropertyDefinitionByPathFactory', () => {
   let schema;
   let getPropertyDefinitionByPath;
-  let RE2;
-
-  before(async () => {
-    RE2 = await getRE2Class();
-  });
 
   beforeEach(() => {
-    getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory(RE2);
+    getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory();
 
     schema = {
       properties: {
@@ -28,8 +21,8 @@ describe('getPropertyDefinitionByPathFactory', () => {
             properties: {
               inner: {
                 type: 'object',
-                patternProperties: {
-                  '[a-z]': {
+                properties: {
+                  abc: {
                     type: 'string',
                   },
                 },
@@ -78,14 +71,6 @@ describe('getPropertyDefinitionByPathFactory', () => {
     const definition = getPropertyDefinitionByPath(schema, 'c.inner');
 
     expect(definition).to.deep.equal(schema.properties.c.properties.inner);
-  });
-
-  it('should return definition that match a pattern', () => {
-    const definition = getPropertyDefinitionByPath(schema, 'c.inner.some');
-
-    expect(definition).to.deep.equal({
-      type: 'string',
-    });
   });
 
   it('should return `undefined` if path does not match a pattern', () => {

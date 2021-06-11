@@ -1,9 +1,7 @@
 /**
- *
- * @param {RE2} RE2
  * @returns {getPropertyDefinitionByPath}
  */
-function getPropertyDefinitionByPathFactory(RE2) {
+function getPropertyDefinitionByPathFactory() {
   /**
    * Get user property definition
    *
@@ -16,22 +14,11 @@ function getPropertyDefinitionByPathFactory(RE2) {
   function getPropertyDefinitionByPath(documentDefinition, path) {
     const [currentSegment, ...rest] = path.split('.');
 
-    let propertyDefinition;
-
-    ({ [currentSegment]: propertyDefinition } = (documentDefinition.properties || {}));
-
-    Object.keys((documentDefinition.patternProperties || {}))
-      .forEach((patternString) => {
-        const pattern = new RE2(patternString, 'u');
-
-        if (currentSegment.match(pattern)) {
-          ({ [patternString]: propertyDefinition } = documentDefinition.patternProperties);
-        }
-      });
+    const { [currentSegment]: propertyDefinition } = (documentDefinition.properties || {});
 
     // nothing found return nothing
     if (!propertyDefinition) {
-      return propertyDefinition;
+      return undefined;
     }
 
     // if there is nothing to lookup for next
