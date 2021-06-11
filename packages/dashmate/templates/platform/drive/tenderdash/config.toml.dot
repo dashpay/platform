@@ -77,9 +77,6 @@ priv_validator_core_rpc_username = "{{= it.core.rpc.user}}"
 # Local Dash Core RPC Password
 priv_validator_core_rpc_password = "{{= it.core.rpc.password}}"
 
-# LLMQ Type used
-llmq_type_used = 100
-
 # Path to the JSON file containing the private key to use for node authentication in the p2p protocol
 node_key_file = "config/node_key.json"
 
@@ -363,7 +360,7 @@ create_empty_blocks = {{? it.platform.drive.tenderdash.consensus.createEmptyBloc
 create_empty_blocks_interval = "{{= it.platform.drive.tenderdash.consensus.createEmptyBlocksInterval }}"
 
 # Set the Dash Core quorum type
-quorum_type = 100
+quorum_type = {{=it.platform.drive.abci.validatorSet.llmqType}}
 
 # Set the App hash size
 app_hash_size = 20
