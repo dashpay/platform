@@ -15,6 +15,13 @@ service Platform {
 message Proof {
   bytes root_tree_proof = 1;
   bytes store_tree_proof = 2;
+  bytes signature_llmq_hash = 3;
+  bytes signature = 4;
+}
+
+message ResponseMetadata {
+  uint32 height = 1;
+  uint32 chain_locked_core_height = 2;
 }
 
 message StateTransitionBroadcastError {
@@ -39,6 +46,7 @@ message GetIdentityRequest {
 message GetIdentityResponse {
   bytes identity = 1;
   Proof proof = 2;
+  ResponseMetadata metadata = 3;
 }
 
  message GetDataContractRequest {
@@ -49,6 +57,7 @@ message GetIdentityResponse {
 message GetDataContractResponse {
   bytes data_contract = 1;
   Proof proof = 2;
+  ResponseMetadata metadata = 3;
 }
 
 message GetDocumentsRequest {
@@ -71,6 +80,7 @@ message GetDocumentsRequest {
 message GetDocumentsResponse {
   repeated bytes documents = 1;
   Proof proof = 2;
+  ResponseMetadata metadata = 3;
 }
 
 message GetIdentitiesByPublicKeyHashesRequest {
@@ -81,6 +91,7 @@ message GetIdentitiesByPublicKeyHashesRequest {
 message GetIdentitiesByPublicKeyHashesResponse {
   repeated bytes identities = 1;
   Proof proof = 2;
+  ResponseMetadata metadata = 3;
 }
 
 message GetIdentityIdsByPublicKeyHashesRequest {
@@ -91,6 +102,7 @@ message GetIdentityIdsByPublicKeyHashesRequest {
 message GetIdentityIdsByPublicKeyHashesResponse {
   repeated bytes identity_ids = 1;
   Proof proof = 2;
+  ResponseMetadata metadata = 3;
 }
 
 message WaitForStateTransitionResultRequest {
