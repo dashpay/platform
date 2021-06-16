@@ -9,7 +9,7 @@ describe('Feature Flags contract', () => {
   let dataContract;
   let identityId;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const fetchContractStub = this.sinon.stub();
 
     dpp = new DashPlatformProtocol({
@@ -17,6 +17,8 @@ describe('Feature Flags contract', () => {
         fetchDataContract: fetchContractStub,
       },
     });
+
+    await dpp.initialize();
 
     identityId = generateRandomIdentifier();
 

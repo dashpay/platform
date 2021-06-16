@@ -1,5 +1,6 @@
 {
   "updateConsensusParams": {
+    "type": "object",
     "description": "Updates Tenderdash consensus params",
     "indices": [
       {
@@ -18,6 +19,7 @@
         "minimum": 1
       },
       "block": {
+        "type": "object",
         "description": "Parameters limiting the size of a block and time between consecutive blocks",
         "properties": {
           "maxBytes": {
@@ -35,6 +37,7 @@
         "additionalProperties": false
       },
       "evidence": {
+        "type": "object",
         "description": "Parameters limiting the validity of evidence of byzantine behaviour",
         "properties": {
           "maxAgeNumBlocks": {
@@ -68,6 +71,7 @@
         "additionalProperties": false
       },
       "version": {
+        "type": "object",
         "properties": {
           "appVersion": {
             "description": "The ABCI application version",
@@ -84,6 +88,7 @@
     "required": ["$createdAt", "enableAtHeight"]
   },
   "fixCumulativeFeesBug": {
+    "type": "object",
     "description": "Defines if cumulative fees should be processed in an old way or new one",
     "indices": [
       {
@@ -110,6 +115,7 @@
     "required": ["$createdAt", "enableAtHeight", "enabled"]
   },
   "verifyLLMQSignaturesWithCore": {
+    "type": "object",
     "description": "Defines if LLMQ sigantures should be validated though Dash Core",
     "indices": [
       {
