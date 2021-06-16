@@ -124,12 +124,12 @@ typedef struct Proof__storage_ {
 @implementation ResponseMetadata
 
 @dynamic height;
-@dynamic chainLockedCoreHeight;
+@dynamic coreChainLockedHeight;
 
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t height;
-  uint32_t chainLockedCoreHeight;
+  uint32_t coreChainLockedHeight;
 } ResponseMetadata__storage_;
 
 // This method is threadsafe because it is initially called
@@ -148,11 +148,11 @@ typedef struct ResponseMetadata__storage_ {
         .dataType = GPBDataTypeUInt32,
       },
       {
-        .name = "chainLockedCoreHeight",
+        .name = "coreChainLockedHeight",
         .dataTypeSpecific.className = NULL,
-        .number = ResponseMetadata_FieldNumber_ChainLockedCoreHeight,
+        .number = ResponseMetadata_FieldNumber_CoreChainLockedHeight,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, chainLockedCoreHeight),
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, coreChainLockedHeight),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
       },

@@ -73,14 +73,14 @@ typedef GPB_ENUM(Proof_FieldNumber) {
 
 typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
   ResponseMetadata_FieldNumber_Height = 1,
-  ResponseMetadata_FieldNumber_ChainLockedCoreHeight = 2,
+  ResponseMetadata_FieldNumber_CoreChainLockedHeight = 2,
 };
 
 @interface ResponseMetadata : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t height;
 
-@property(nonatomic, readwrite) uint32_t chainLockedCoreHeight;
+@property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
 
 @end
 
