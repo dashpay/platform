@@ -7,10 +7,11 @@ const addByteArrayKeyword = require('./keywords/byteArray/addByteArrayKeyword');
 const injectRE2 = require('./injectRE2');
 
 /**
- * @return {Promise<ajv.Ajv>}
+ * @param {Function} RE2
+ * @return {Ajv2020}
  */
-async function createAjv() {
-  await injectRE2();
+function createAjv(RE2) {
+  injectRE2(RE2);
 
   const ajv = new Ajv({
     strictTypes: true,

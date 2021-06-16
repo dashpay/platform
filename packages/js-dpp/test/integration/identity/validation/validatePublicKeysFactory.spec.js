@@ -1,3 +1,5 @@
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const createAjv = require('../../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require(
@@ -33,7 +35,10 @@ describe('validatePublicKeysFactory', () => {
   beforeEach(async () => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
-    const validator = new JsonSchemaValidator(await createAjv());
+    const RE2 = await getRE2Class();
+    const ajv = createAjv(RE2);
+
+    const validator = new JsonSchemaValidator(ajv);
 
     validatePublicKeys = validatePublicKeysFactory(
       validator,

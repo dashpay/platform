@@ -1,3 +1,5 @@
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const createAjv = require('../../../../../../lib/ajv/createAjv');
 
 const getChainAssetLockFixture = require('../../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
@@ -32,7 +34,10 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
     rawProof = assetLock.toObject();
 
-    jsonSchemaValidator = new JsonSchemaValidator(await createAjv());
+    const RE2 = await getRE2Class();
+    const ajv = createAjv(RE2);
+
+    jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 

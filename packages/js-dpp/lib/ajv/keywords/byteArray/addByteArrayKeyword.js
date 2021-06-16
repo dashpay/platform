@@ -1,7 +1,7 @@
 const byteArray = require('./byteArray');
 
 /**
- * @param {ajv.Ajv} ajv
+ * @param {Ajv2020} ajv
  */
 function addByteArrayKeyword(ajv) {
   ajv.addKeyword(byteArray);

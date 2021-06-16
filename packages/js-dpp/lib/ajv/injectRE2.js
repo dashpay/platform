@@ -1,11 +1,10 @@
-const { default: getRE2Class } = require('@dashevo/re2-wasm');
-
 const codegen = require('ajv/dist/compile/codegen');
 const code = require('ajv/dist/vocabularies/code');
 
-async function injectRE2() {
-  const RE2 = await getRE2Class();
-
+/**
+ * @param {Function} RE2
+ */
+function injectRE2(RE2) {
   global.RE2 = RE2;
 
   code.usePattern = function usePattern({ gen }, pattern) {

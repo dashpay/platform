@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const createAjv = require('../../../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require('../../../../../lib/validation/JsonSchemaValidator');
@@ -56,7 +58,9 @@ describe('validateDataContractCreateTransitionStructureFactory', () => {
       new ValidationResult(),
     );
 
-    const ajv = await createAjv();
+    const RE2 = await getRE2Class();
+    const ajv = createAjv(RE2);
+
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     // eslint-disable-next-line max-len

@@ -1,3 +1,5 @@
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const createAjv = require('../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require('../../../lib/validation/JsonSchemaValidator');
@@ -31,9 +33,11 @@ describe('validateDocumentFactory', () => {
   let validator;
 
   beforeEach(async function beforeEach() {
-    const ajv = await createAjv();
+    const RE2 = await getRE2Class();
+    const ajv = createAjv(RE2);
 
     validator = new JsonSchemaValidator(ajv);
+
     this.sinonSandbox.spy(validator, 'validate');
 
     dataContract = getDataContractFixture();

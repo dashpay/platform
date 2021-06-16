@@ -1,3 +1,5 @@
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const createAjv = require('../../../../../../lib/ajv/createAjv');
 
 const Document = require('../../../../../../lib/document/Document');
@@ -90,7 +92,10 @@ describe('validateDocumentsBatchTransitionStructureFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
-    validator = new JsonSchemaValidator(await createAjv());
+    const RE2 = await getRE2Class();
+    const ajv = createAjv(RE2);
+
+    validator = new JsonSchemaValidator(ajv);
 
     enrichSpy = this.sinonSandbox.spy(enrichDataContractWithBaseSchema);
 

@@ -1,3 +1,5 @@
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const createAjv = require('../../../../lib/ajv/createAjv');
 
 const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
@@ -27,7 +29,10 @@ describe('validateIdentityFactory', () => {
   let validatePublicKeysMock;
 
   beforeEach(async function beforeEach() {
-    const schemaValidator = new JsonSchemaValidator(await createAjv());
+    const RE2 = await getRE2Class();
+    const ajv = createAjv(RE2);
+
+    const schemaValidator = new JsonSchemaValidator(ajv);
 
     validatePublicKeysMock = this.sinonSandbox.stub().returns(new ValidationResult());
 

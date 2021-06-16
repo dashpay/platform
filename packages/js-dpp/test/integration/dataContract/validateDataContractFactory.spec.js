@@ -1,4 +1,5 @@
-const getRE2Class = require('@dashevo/re2-wasm').default;
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
 const createAjv = require('../../../lib/ajv/createAjv');
@@ -41,7 +42,8 @@ describe('validateDataContractFactory', function main() {
     dataContract = getDataContractFixture();
     rawDataContract = dataContract.toObject();
 
-    const jsonSchemaValidator = new JsonSchemaValidator(await createAjv());
+    const ajv = createAjv(RE2);
+    const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
 

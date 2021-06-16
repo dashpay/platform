@@ -1,3 +1,5 @@
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
+
 const rewiremock = require('rewiremock/node');
 
 const { Transaction } = require('@dashevo/dashcore-lib');
@@ -37,7 +39,10 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
     rawProof = assetLock.toObject();
 
-    jsonSchemaValidator = new JsonSchemaValidator(await createAjv());
+    const RE2 = await getRE2Class();
+    const ajv = createAjv(RE2);
+
+    jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.verifyInstantLock.resolves(true);

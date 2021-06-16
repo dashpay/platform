@@ -1,4 +1,4 @@
-const getRE2Class = require('@dashevo/re2-wasm').default;
+const { default: getRE2Class } = require('@dashevo/re2-wasm');
 const createAjv = require('./ajv/createAjv');
 
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
@@ -19,38 +19,57 @@ class DashPlatformProtocol {
    * @param {JsonSchemaValidator} [options.jsonSchemaValidator]
    */
   constructor(options = {}) {
-    this.stateRepository = options.stateRepository;
+    this.options = options;
 
-    this.jsonSchemaValidator = options.jsonSchemaValidator;
+    this.stateRepository = undefined;
+    this.jsonSchemaValidator = undefined;
+    this.initialized = undefined;
   }
 
+  /**
+   * Initialize
+   *
+   * @return {Promise<boolean>}
+   */
   async initialize() {
-    if (this.jsonSchemaValidator === undefined) {
-      const ajv = await createAjv();
-
-      this.jsonSchemaValidator = new JsonSchemaValidator(ajv);
+    if (this.initialized) {
+      return this.initialized;
     }
 
-    const RE2 = await getRE2Class();
-    this.dataContract = new DataContractFacade(
-      this.jsonSchemaValidator,
-      RE2,
-    );
+    this.initialized = getRE2Class().then((RE2) => {
+      this.stateRepository = this.options.stateRepository;
 
-    this.document = new DocumentFacade(
-      this.stateRepository,
-      this.jsonSchemaValidator,
-    );
+      this.jsonSchemaValidator = this.options.jsonSchemaValidator;
+      if (this.jsonSchemaValidator === undefined) {
+        const ajv = createAjv(RE2);
 
-    this.stateTransition = new StateTransitionFacade(
-      this.stateRepository,
-      this.jsonSchemaValidator,
-      RE2,
-    );
+        this.jsonSchemaValidator = new JsonSchemaValidator(ajv);
+      }
 
-    this.identity = new IdentityFacade(
-      this.jsonSchemaValidator,
-    );
+      this.dataContract = new DataContractFacade(
+        this.jsonSchemaValidator,
+        RE2,
+      );
+
+      this.document = new DocumentFacade(
+        this.stateRepository,
+        this.jsonSchemaValidator,
+      );
+
+      this.stateTransition = new StateTransitionFacade(
+        this.stateRepository,
+        this.jsonSchemaValidator,
+        RE2,
+      );
+
+      this.identity = new IdentityFacade(
+        this.jsonSchemaValidator,
+      );
+
+      return true;
+    });
+
+    return this.initialized;
   }
 
   /**
