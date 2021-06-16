@@ -366,6 +366,7 @@ typedef GPB_ENUM(WaitForStateTransitionResultRequest_FieldNumber) {
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_FieldNumber) {
   WaitForStateTransitionResultResponse_FieldNumber_Error = 1,
   WaitForStateTransitionResultResponse_FieldNumber_Proof = 2,
+  WaitForStateTransitionResultResponse_FieldNumber_Metadata = 3,
 };
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_Responses_OneOfCase) {
@@ -381,6 +382,10 @@ typedef GPB_ENUM(WaitForStateTransitionResultResponse_Responses_OneOfCase) {
 @property(nonatomic, readwrite, strong, null_resettable) StateTransitionBroadcastError *error;
 
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
 
 @end
 

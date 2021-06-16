@@ -115,4 +115,5 @@ message WaitForStateTransitionResultResponse {
     StateTransitionBroadcastError error = 1;
     Proof proof = 2;
   }
+  ResponseMetadata metadata = 3;
 }

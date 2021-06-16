@@ -1039,11 +1039,13 @@ typedef struct WaitForStateTransitionResultRequest__storage_ {
 @dynamic responsesOneOfCase;
 @dynamic error;
 @dynamic proof;
+@dynamic hasMetadata, metadata;
 
 typedef struct WaitForStateTransitionResultResponse__storage_ {
   uint32_t _has_storage_[2];
   StateTransitionBroadcastError *error;
   Proof *proof;
+  ResponseMetadata *metadata;
 } WaitForStateTransitionResultResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -1067,6 +1069,15 @@ typedef struct WaitForStateTransitionResultResponse__storage_ {
         .number = WaitForStateTransitionResultResponse_FieldNumber_Proof,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.className = GPBStringifySymbol(ResponseMetadata),
+        .number = WaitForStateTransitionResultResponse_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
