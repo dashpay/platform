@@ -69,7 +69,7 @@
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
     "@dashevo/dashcore-lib": "~0.19.24",
     "@dashevo/feature-flags-contract": "0.1.0",
-    "@dashevo/re2-wasm": "~1.0.3",
+    "@dashevo/re2-wasm": "~1.0.4",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.0",
     "bignumber.js": "^9.0.1",
