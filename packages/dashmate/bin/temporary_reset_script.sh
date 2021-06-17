@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 #COLLATERAL_KEY=
 #COLLATERAL_ADDRESS=
 
@@ -21,7 +23,8 @@ CONFIG_NAME="local"
 MASTERNODES_COUNT=3
 
 echo "Removing all docker containers and volumes..."
-docker rm -f -v $(docker ps -a -q); docker volume prune -f; rm -rf ~/.dashmate/
+docker rm -f -v $(docker ps -a -q) || true
+docker system prune -f; rm -rf ~/.dashmate/
 
 if [ $BUILD_DRIVE == true ]
 then
