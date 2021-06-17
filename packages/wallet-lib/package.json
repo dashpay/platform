@@ -39,7 +39,7 @@
   "dependencies": {
     "@dashevo/dapi-client": "~0.20.0-dev.1",
     "@dashevo/dashcore-lib": "~0.19.23",
-    "@dashevo/dpp": "~0.19.2",
+    "@dashevo/dpp": "~0.20.0-dev.2",
     "@dashevo/grpc-common": "~0.3.2",
     "cbor": "^7.0.5",
     "crypto-js": "^4.0.0",
