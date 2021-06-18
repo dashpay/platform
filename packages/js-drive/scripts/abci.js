@@ -8,7 +8,7 @@ const ZMQClient = require('../lib/core/ZmqClient');
 
 const createDIContainer = require('../lib/createDIContainer');
 
-const { version: driveVersion } = require('../package');
+const { version: driveVersion } = require('../package.json');
 
 const banner = '\n ____       ______      ____        __  __                 ____       ____        ______      __  __     ____      \n'
 + '/\\  _`\\    /\\  _  \\    /\\  _`\\     /\\ \\/\\ \\               /\\  _`\\    /\\  _`\\     /\\__  _\\    /\\ \\/\\ \\   /\\  _`\\    \n'
@@ -24,6 +24,8 @@ console.log(chalk.hex('#008de4')(banner));
 (async function main() {
   const container = createDIContainer(process.env);
   const logger = container.resolve('logger');
+  const dpp = container.resolve('dpp');
+  const transactionalDpp = container.resolve('transactionalDpp');
   const errorHandler = container.resolve('errorHandler');
   const protocolVersion = container.resolve('protocolVersion');
   const closeAbciServer = container.resolve('closeAbciServer');
@@ -47,6 +49,13 @@ console.log(chalk.hex('#008de4')(banner));
 
     await container.dispose();
   });
+
+  /**
+   * Initialize DPP
+   */
+
+  await dpp.initialize();
+  await transactionalDpp.initialize();
 
   /**
    * Make sure MongoDB is running

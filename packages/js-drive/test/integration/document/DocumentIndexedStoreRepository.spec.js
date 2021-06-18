@@ -23,7 +23,7 @@ describe('DocumentIndexedStoreRepository', () => {
   });
 
   beforeEach(async () => {
-    container = createTestDIContainer(mongoDb);
+    container = await createTestDIContainer(mongoDb);
 
     documentIndexedStoreRepository = container.resolve('documentRepository');
     documentStoreRepository = container.resolve('documentStoreRepository');

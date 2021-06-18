@@ -24,7 +24,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   beforeEach(async () => {
-    container = createTestDIContainer(mongoDb);
+    container = await createTestDIContainer(mongoDb);
 
     dataContractRepository = container.resolve('dataContractRepository');
     documentRepository = container.resolve('documentRepository');

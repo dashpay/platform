@@ -181,7 +181,7 @@ describe('validateQueryFactory', () => {
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
-        expect(result.errors[0].dataPath).to.be.equal('.where');
+        expect(result.errors[0].instancePath).to.be.equal('/where');
         expect(result.errors[0].keyword).to.be.equal('type');
         expect(result.errors[0].params.type).to.be.equal('array');
       });
@@ -192,7 +192,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.where');
+      expect(result.errors[0].instancePath).to.be.equal('/where');
       expect(result.errors[0].keyword).to.be.equal('minItems');
       expect(result.errors[0].params.limit).to.be.equal(1);
     });
@@ -204,7 +204,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.where');
+      expect(result.errors[0].instancePath).to.be.equal('/where');
       expect(result.errors[0].keyword).to.be.equal('maxItems');
       expect(result.errors[0].params.limit).to.be.equal(10);
     });
@@ -286,7 +286,7 @@ describe('validateQueryFactory', () => {
           expect(result).to.be.instanceOf(ValidationResult);
           expect(result.isValid()).to.be.false();
 
-          expect(result.errors[0].dataPath).to.be.equal('.where[0][0]');
+          expect(result.errors[0].instancePath).to.be.equal('/where/0/0');
           expect(result.errors[0].keyword).to.be.equal('maxLength');
           expect(result.errors[0].params.limit).to.be.equal(255);
         });
@@ -297,7 +297,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[0].dataPath).to.be.equal('.where[0][0]');
+            expect(result.errors[0].instancePath).to.be.equal('/where/0/0');
             expect(result.errors[0].keyword).to.be.equal('pattern');
             expect(result.errors[0].params.pattern).to.be.equal(
               '^(\\$id|\\$ownerId|[a-zA-Z0-9-_]|[a-zA-Z0-9-_]+(.[a-zA-Z0-9-_]+)+?)$',
@@ -312,7 +312,7 @@ describe('validateQueryFactory', () => {
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
 
-        expect(result.errors[0].dataPath).to.be.equal('.where[0]');
+        expect(result.errors[0].instancePath).to.be.equal('/where/0');
         expect(result.errors[0].keyword).to.be.equal('minItems');
         expect(result.errors[0].params.limit).to.be.equal(3);
       });
@@ -322,7 +322,7 @@ describe('validateQueryFactory', () => {
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
-        expect(result.errors[0].dataPath).to.be.equal('.where[0]');
+        expect(result.errors[0].instancePath).to.be.equal('/where/0');
         expect(result.errors[0].keyword).to.be.equal('maxItems');
         expect(result.errors[0].params.limit).to.be.equal(3);
       });
@@ -343,7 +343,7 @@ describe('validateQueryFactory', () => {
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
 
-            expect(result.errors[7].dataPath).to.be.equal('.where[0]');
+            expect(result.errors[7].instancePath).to.be.equal('/where/0');
             expect(result.errors[7].keyword).to.be.equal('oneOf');
           });
 
@@ -375,7 +375,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[0].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[0].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[0].keyword).to.be.equal('maxLength');
             expect(result.errors[0].params.limit).to.be.equal(1024);
           });
@@ -393,13 +393,13 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[0].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[0].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[0].keyword).to.be.equal('type');
               expect(result.errors[0].params.type).to.be.equal('string');
-              expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[1].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[1].keyword).to.be.equal('type');
               expect(result.errors[1].params.type).to.be.equal('number');
-              expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[2].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[2].keyword).to.be.equal('type');
               expect(result.errors[2].params.type).to.be.equal('boolean');
             });
@@ -458,7 +458,7 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[1].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[1].keyword).to.be.equal('type');
               expect(result.errors[1].params.type).to.be.equal('integer');
             });
@@ -470,7 +470,7 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[1].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[1].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[1].keyword).to.be.equal('type');
               expect(result.errors[1].params.type).to.be.equal('integer');
             });
@@ -505,7 +505,7 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[2].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[2].keyword).to.be.equal('type');
               expect(result.errors[2].params.type).to.be.equal('array');
             });
@@ -516,7 +516,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[2].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[2].keyword).to.be.equal('minItems');
             expect(result.errors[2].params.limit).to.be.equal(1);
           });
@@ -540,7 +540,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[2].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[2].keyword).to.be.equal('maxItems');
             expect(result.errors[2].params.limit).to.be.equal(100);
           });
@@ -551,9 +551,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[2].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[2].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[2].keyword).to.be.equal('uniqueItems');
-            expect(result.errors[2].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
+            expect(result.errors[2].message).to.be.equal('must NOT have duplicate items (items ## 0 and 1 are identical)');
           });
 
           it('should return invalid results if condition contains empty arrays', () => {
@@ -578,7 +578,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[3].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[3].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[3].keyword).to.be.equal('minLength');
             expect(result.errors[3].params.limit).to.be.equal(1);
           });
@@ -590,7 +590,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[3].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[3].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[3].keyword).to.be.equal('maxLength');
             expect(result.errors[3].params.limit).to.be.equal(255);
           });
@@ -601,7 +601,7 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[3].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[3].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[3].keyword).to.be.equal('type');
               expect(result.errors[3].params.type).to.be.equal('string');
             });
@@ -635,7 +635,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[11].dataPath).to.be.equal('.where[0][2][0]');
+            expect(result.errors[11].instancePath).to.be.equal('/where/0/2/0');
             expect(result.errors[11].keyword).to.be.equal('oneOf');
           });
 
@@ -651,7 +651,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[4].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[4].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[4].keyword).to.be.equal('minItems');
             expect(result.errors[4].params.limit).to.be.equal(2);
           });
@@ -761,7 +761,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[5].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[5].keyword).to.be.equal('multipleOf');
             expect(result.errors[5].params.multipleOf).to.be.equal(1);
           });
@@ -776,10 +776,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
-            expect(result.errors[5].keyword).to.be.equal('minimum');
-            expect(result.errors[5].params.comparison).to.be.equal('>=');
-            expect(result.errors[5].params.limit).to.be.equal(0);
+            expect(result.errors[5].instancePath).to.be.equal('/where/0/2');
+            expect(result.errors[5].keyword).to.be.equal('type');
+            expect(result.errors[5].params.type).to.be.equal('number');
           });
 
           it('should return invalid result if "length" operator used with a numeric value which is less than 0', () => {
@@ -792,7 +791,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[5].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[5].keyword).to.be.equal('minimum');
             expect(result.errors[5].params.comparison).to.be.equal('>=');
             expect(result.errors[5].params.limit).to.be.equal(0);
@@ -809,7 +808,7 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[5].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[5].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[5].keyword).to.be.equal('type');
               expect(result.errors[5].params.type).to.be.equal('number');
             });
@@ -873,7 +872,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[12].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[12].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[12].keyword).to.be.equal('maxItems');
             expect(result.errors[12].params.limit).to.be.equal(100);
           });
@@ -888,7 +887,7 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[12].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[12].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[12].keyword).to.be.equal('minItems');
             expect(result.errors[12].params.limit).to.be.equal(1);
           });
@@ -904,9 +903,9 @@ describe('validateQueryFactory', () => {
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
-            expect(result.errors[12].dataPath).to.be.equal('.where[0][2]');
+            expect(result.errors[12].instancePath).to.be.equal('/where/0/2');
             expect(result.errors[12].keyword).to.be.equal('uniqueItems');
-            expect(result.errors[12].message).to.be.equal('should NOT have duplicate items (items ## 0 and 1 are identical)');
+            expect(result.errors[12].message).to.be.equal('must NOT have duplicate items (items ## 0 and 1 are identical)');
           });
 
           nonScalarTestCases.forEach(({ type, value }) => {
@@ -920,13 +919,13 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[6].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[6].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[6].keyword).to.be.equal('type');
               expect(result.errors[6].params.type).to.be.equal('string');
-              expect(result.errors[7].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[7].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[7].keyword).to.be.equal('type');
               expect(result.errors[7].params.type).to.be.equal('number');
-              expect(result.errors[8].dataPath).to.be.equal('.where[0][2]');
+              expect(result.errors[8].instancePath).to.be.equal('/where/0/2');
               expect(result.errors[8].keyword).to.be.equal('type');
               expect(result.errors[8].params.type).to.be.equal('boolean');
             });
@@ -943,13 +942,13 @@ describe('validateQueryFactory', () => {
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
-              expect(result.errors[12].dataPath).to.be.equal('.where[0][2][0]');
+              expect(result.errors[12].instancePath).to.be.equal('/where/0/2/0');
               expect(result.errors[12].keyword).to.be.equal('type');
               expect(result.errors[12].params.type).to.be.equal('string');
-              expect(result.errors[13].dataPath).to.be.equal('.where[0][2][0]');
+              expect(result.errors[13].instancePath).to.be.equal('/where/0/2/0');
               expect(result.errors[13].keyword).to.be.equal('type');
               expect(result.errors[13].params.type).to.be.equal('number');
-              expect(result.errors[14].dataPath).to.be.equal('.where[0][2][0]');
+              expect(result.errors[14].instancePath).to.be.equal('/where/0/2/0');
               expect(result.errors[14].keyword).to.be.equal('type');
               expect(result.errors[14].params.type).to.be.equal('boolean');
             });
@@ -982,7 +981,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.limit');
+      expect(result.errors[0].instancePath).to.be.equal('/limit');
       expect(result.errors[0].keyword).to.be.equal('minimum');
       expect(result.errors[0].params.limit).to.be.equal(1);
 
@@ -990,7 +989,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.limit');
+      expect(result.errors[0].instancePath).to.be.equal('/limit');
       expect(result.errors[0].keyword).to.be.equal('minimum');
       expect(result.errors[0].params.comparison).to.be.equal('>=');
       expect(result.errors[0].params.limit).to.be.equal(1);
@@ -1010,7 +1009,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.limit');
+      expect(result.errors[0].instancePath).to.be.equal('/limit');
       expect(result.errors[0].keyword).to.be.equal('maximum');
       expect(result.errors[0].params.comparison).to.be.equal('<=');
       expect(result.errors[0].params.limit).to.be.equal(100);
@@ -1025,7 +1024,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.limit');
+      expect(result.errors[0].instancePath).to.be.equal('/limit');
       expect(result.errors[0].keyword).to.be.equal('multipleOf');
       expect(result.errors[0].params.multipleOf).to.be.equal(1);
     });
@@ -1043,7 +1042,7 @@ describe('validateQueryFactory', () => {
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
 
-        expect(result.errors[0].dataPath).to.be.equal('.limit');
+        expect(result.errors[0].instancePath).to.be.equal('/limit');
         expect(result.errors[0].keyword).to.be.equal('type');
         expect(result.errors[0].params.type).to.be.equal('number');
       });
@@ -1088,7 +1087,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.orderBy');
+      expect(result.errors[0].instancePath).to.be.equal('/orderBy');
       expect(result.errors[0].keyword).to.be.equal('minItems');
       expect(result.errors[0].params.limit).to.be.equal(1);
     });
@@ -1104,7 +1103,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.orderBy[0]');
+      expect(result.errors[0].instancePath).to.be.equal('/orderBy/0');
       expect(result.errors[0].keyword).to.be.equal('minItems');
       expect(result.errors[0].params.limit).to.be.equal(2);
     });
@@ -1120,7 +1119,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.orderBy');
+      expect(result.errors[0].instancePath).to.be.equal('/orderBy');
       expect(result.errors[0].keyword).to.be.equal('maxItems');
       expect(result.errors[0].params.limit).to.be.equal(2);
     });
@@ -1152,7 +1151,7 @@ describe('validateQueryFactory', () => {
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
-        expect(result.errors[0].dataPath).to.be.equal('.orderBy[0][0]');
+        expect(result.errors[0].instancePath).to.be.equal('/orderBy/0/0');
         expect(result.errors[0].keyword).to.be.equal('pattern');
         expect(result.errors[0].params.pattern).to.be.equal(
           '^(\\$id|\\$ownerId|\\$createdAt|\\$updatedAt|[a-zA-Z0-9-_]|[a-zA-Z0-9-_]+(.[a-zA-Z0-9-_]+)+?)$',
@@ -1171,7 +1170,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.orderBy[0][1]');
+      expect(result.errors[0].instancePath).to.be.equal('/orderBy/0/1');
       expect(result.errors[0].keyword).to.be.equal('enum');
     });
 
@@ -1186,7 +1185,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.orderBy[0]');
+      expect(result.errors[0].instancePath).to.be.equal('/orderBy/0');
       expect(result.errors[0].keyword).to.be.equal('minItems');
       expect(result.errors[0].params.limit).to.be.equal(2);
     });
@@ -1202,7 +1201,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.orderBy[0]');
+      expect(result.errors[0].instancePath).to.be.equal('/orderBy/0');
       expect(result.errors[0].keyword).to.be.equal('maxItems');
       expect(result.errors[0].params.limit).to.be.equal(2);
     });
@@ -1256,7 +1255,7 @@ describe('validateQueryFactory', () => {
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
-        expect(result.errors[0].dataPath).to.be.equal('.startAt');
+        expect(result.errors[0].instancePath).to.be.equal('/startAt');
         expect(result.errors[0].keyword).to.be.equal('type');
         expect(result.errors[0].params.type).to.be.equal('number');
       });
@@ -1280,7 +1279,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.startAt');
+      expect(result.errors[0].instancePath).to.be.equal('/startAt');
       expect(result.errors[0].keyword).to.be.equal('minimum');
       expect(result.errors[0].params.comparison).to.be.equal('>=');
       expect(result.errors[0].params.limit).to.be.equal(1);
@@ -1294,7 +1293,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.startAt');
+      expect(result.errors[0].instancePath).to.be.equal('/startAt');
       expect(result.errors[0].keyword).to.be.equal('maximum');
       expect(result.errors[0].params.comparison).to.be.equal('<=');
       expect(result.errors[0].params.limit).to.be.equal(20000);
@@ -1308,7 +1307,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.startAt');
+      expect(result.errors[0].instancePath).to.be.equal('/startAt');
       expect(result.errors[0].keyword).to.be.equal('multipleOf');
       expect(result.errors[0].params.multipleOf).to.be.equal(1);
     });
@@ -1324,14 +1323,12 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.getErrors()).to.have.lengthOf(4);
+      expect(result.getErrors()).to.have.lengthOf(1);
 
-      const [notError1, notError2, notError3, anyOfError] = result.getErrors();
+      const [error] = result.getErrors();
 
-      expect(notError1.schemaPath).to.equal('#/anyOf/0/not');
-      expect(notError2.schemaPath).to.equal('#/anyOf/1/not');
-      expect(notError3.schemaPath).to.equal('#/anyOf/2/not');
-      expect(anyOfError.schemaPath).to.equal('#/anyOf');
+      expect(error.schemaPath).to.equal('#/dependentSchemas/startAt/not');
+      expect(error.keyword).to.equal('not');
     });
 
     it('should return valid result if "startAfter" is a number', () => {
@@ -1353,7 +1350,7 @@ describe('validateQueryFactory', () => {
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
-        expect(result.errors[0].dataPath).to.be.equal('.startAfter');
+        expect(result.errors[0].instancePath).to.be.equal('/startAfter');
         expect(result.errors[0].keyword).to.be.equal('type');
         expect(result.errors[0].params.type).to.be.equal('number');
       });
@@ -1376,7 +1373,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.startAfter');
+      expect(result.errors[0].instancePath).to.be.equal('/startAfter');
       expect(result.errors[0].keyword).to.be.equal('minimum');
       expect(result.errors[0].params.comparison).to.be.equal('>=');
       expect(result.errors[0].params.limit).to.be.equal(1);
@@ -1390,7 +1387,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.startAfter');
+      expect(result.errors[0].instancePath).to.be.equal('/startAfter');
       expect(result.errors[0].keyword).to.be.equal('maximum');
       expect(result.errors[0].params.comparison).to.be.equal('<=');
       expect(result.errors[0].params.limit).to.be.equal(20000);
@@ -1404,7 +1401,7 @@ describe('validateQueryFactory', () => {
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-      expect(result.errors[0].dataPath).to.be.equal('.startAfter');
+      expect(result.errors[0].instancePath).to.be.equal('/startAfter');
       expect(result.errors[0].keyword).to.be.equal('multipleOf');
       expect(result.errors[0].params.multipleOf).to.be.equal(1);
     });

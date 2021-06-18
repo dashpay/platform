@@ -15,7 +15,7 @@ const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFac
 const ChainInfo = require('../../../../lib/chainInfo/ChainInfo');
 
 const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
-const packageJson = require('../../../../package');
+const packageJson = require('../../../../package.json');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 const CreditsDistributionPool = require('../../../../lib/creditsDistributionPool/CreditsDistributionPool');

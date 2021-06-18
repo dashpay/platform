@@ -37,11 +37,13 @@ describe('deliverTxHandlerFactory', () => {
   let unserializeStateTransitionMock;
   let blockExecutionContextMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const dataContractFixture = getDataContractFixture();
     const documentFixture = getDocumentFixture();
 
     dpp = new DashPlatformProtocol();
+    await dpp.initialize();
+
     documentsBatchTransitionFixture = dpp.document.createStateTransition({
       create: documentFixture,
     });

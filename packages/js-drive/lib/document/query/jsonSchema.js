@@ -1,6 +1,6 @@
 module.exports = {
   type: 'object',
-  definitions: {
+  $defs: {
     field: {
       $id: 'field',
       type: 'string',
@@ -38,7 +38,7 @@ module.exports = {
         oneOf: [
           // Comparisons
           {
-            items: [
+            prefixItems: [
               {
                 $ref: 'field',
               },
@@ -50,10 +50,12 @@ module.exports = {
                 $ref: 'scalarTypes',
               },
             ],
+            minItems: 3,
+            maxItems: 3,
           },
           // Timestamps
           {
-            items: [
+            prefixItems: [
               {
                 type: 'string',
                 enum: ['$createdAt', '$updatedAt'],
@@ -67,10 +69,12 @@ module.exports = {
                 minimum: 0,
               },
             ],
+            minItems: 3,
+            maxItems: 3,
           },
           // in
           {
-            items: [
+            prefixItems: [
               {
                 $ref: 'field',
               },
@@ -88,10 +92,12 @@ module.exports = {
                 maxItems: 100,
               },
             ],
+            minItems: 3,
+            maxItems: 3,
           },
           // startsWith
           {
-            items: [
+            prefixItems: [
               {
                 $ref: 'field',
               },
@@ -105,10 +111,12 @@ module.exports = {
                 maxLength: 255,
               },
             ],
+            minItems: 3,
+            maxItems: 3,
           },
           // elementMatch
           {
-            items: [
+            prefixItems: [
               {
                 $ref: 'field',
               },
@@ -128,10 +136,12 @@ module.exports = {
                 ],
               },
             ],
+            minItems: 3,
+            maxItems: 3,
           },
           // length
           {
-            items: [
+            prefixItems: [
               {
                 $ref: 'field',
               },
@@ -145,10 +155,12 @@ module.exports = {
                 multipleOf: 1.0,
               },
             ],
+            minItems: 3,
+            maxItems: 3,
           },
           // contains
           {
-            items: [
+            prefixItems: [
               {
                 $ref: 'field',
               },
@@ -173,11 +185,10 @@ module.exports = {
                 ],
               },
             ],
+            minItems: 3,
+            maxItems: 3,
           },
         ],
-        additionalItems: false,
-        minItems: 3,
-        maxItems: 3,
       },
       minItems: 1,
       maxItems: 10,
@@ -192,7 +203,7 @@ module.exports = {
       type: 'array',
       items: {
         type: 'array',
-        items: [
+        prefixItems: [
           {
             type: 'string',
             minLength: 1,
@@ -206,7 +217,7 @@ module.exports = {
         ],
         minItems: 2,
         maxItems: 2,
-        additionalItems: false,
+        items: false,
       },
       minItems: 1,
       maxItems: 2,
@@ -224,24 +235,23 @@ module.exports = {
       multipleOf: 1.0,
     },
   },
-  anyOf: [
-    {
-      required: ['startAt'],
+  dependentSchemas: {
+    startAt: {
       not: {
+        properties: {
+          startAfter: true,
+        },
         required: ['startAfter'],
       },
     },
-    {
-      required: ['startAfter'],
+    startAfter: {
       not: {
+        properties: {
+          startAt: true,
+        },
         required: ['startAt'],
       },
     },
-    {
-      not: {
-        required: ['startAt', 'startAfter'],
-      },
-    },
-  ],
+  },
   additionalProperties: false,
 };

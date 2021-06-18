@@ -45,7 +45,7 @@ describe('waitForCoreSyncFactory', function main() {
     secondDashCore = await startDashCore();
     await secondDashCore.connect(firstDashCore);
 
-    container = createTestDIContainer(mongoDB, secondDashCore);
+    container = await createTestDIContainer(mongoDB, secondDashCore);
     waitForCoreSync = container.resolve('waitForCoreSync');
 
     await waitForCoreSync(() => {});

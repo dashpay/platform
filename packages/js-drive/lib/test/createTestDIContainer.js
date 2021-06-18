@@ -1,6 +1,6 @@
 const createDIContainer = require('../createDIContainer');
 
-function createTestDIContainer(mongoDB, dashCore = undefined) {
+async function createTestDIContainer(mongoDB, dashCore = undefined) {
   const documentMongoDBUrl = `mongodb://127.0.0.1:${mongoDB.options.getMongoPort()}`
     + `/?replicaSet=${mongoDB.options.options.replicaSetName}`;
 
@@ -14,7 +14,7 @@ function createTestDIContainer(mongoDB, dashCore = undefined) {
     };
   }
 
-  return createDIContainer({
+  const container = createDIContainer({
     ...process.env,
     DOCUMENT_MONGODB_URL: documentMongoDBUrl,
     COMMON_STORE_MERK_DB_FILE: './db/common-merkdb-test',
@@ -31,6 +31,14 @@ function createTestDIContainer(mongoDB, dashCore = undefined) {
     PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE: './db/external-leveldb-previous-test',
     ...coreOptions,
   });
+
+  const dpp = container.resolve('dpp');
+  const transactionalDpp = container.resolve('transactionalDpp');
+
+  await dpp.initialize();
+  await transactionalDpp.initialize();
+
+  return container;
 }
 
 module.exports = createTestDIContainer;

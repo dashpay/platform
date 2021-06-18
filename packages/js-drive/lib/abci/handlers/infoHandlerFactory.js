@@ -8,7 +8,7 @@ const {
 
 const { asValue } = require('awilix');
 
-const { version: driveVersion } = require('../../../package');
+const { version: driveVersion } = require('../../../package.json');
 
 const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
 
