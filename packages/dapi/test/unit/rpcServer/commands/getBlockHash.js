@@ -39,17 +39,17 @@ describe('getBlockHash', () => {
   it('Should throw an error if arguments are not valid', async () => {
     const getBlockHash = getBlockHashFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({ height: -1 })).to.be.rejectedWith('params.height should be >= 0');
+    await expect(getBlockHash({ height: -1 })).to.be.rejectedWith('params/height must be >= 0');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({ height: 0.5 })).to.be.rejectedWith('params.height should be integer');
+    await expect(getBlockHash({ height: 0.5 })).to.be.rejectedWith('params/height must be integer');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({})).to.be.rejectedWith('should have required property');
+    await expect(getBlockHash({})).to.be.rejectedWith('must have required property');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash()).to.be.rejectedWith('params should be object');
+    await expect(getBlockHash()).to.be.rejectedWith('params must be object');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash({ height: 'string' })).to.be.rejectedWith('params.height should be integer');
+    await expect(getBlockHash({ height: 'string' })).to.be.rejectedWith('params/height must be integer');
     expect(spy.callCount).to.be.equal(0);
-    await expect(getBlockHash([-1])).to.be.rejectedWith('params should be object');
+    await expect(getBlockHash([-1])).to.be.rejectedWith('params must be object');
     expect(spy.callCount).to.be.equal(0);
   });
 });

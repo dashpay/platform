@@ -44,22 +44,22 @@ describe('generateToAddress', () => {
     const generateToAddress = generateToAddressFactory(coreAPIFixture);
     expect(spy.callCount).to.be.equal(0);
 
-    await expect(generateToAddress({ blocksNumber: -1, address: '123' })).to.be.rejectedWith('should be >= 1');
+    await expect(generateToAddress({ blocksNumber: -1, address: '123' })).to.be.rejectedWith('must be >= 1');
     expect(spy.callCount).to.be.equal(0);
 
-    await expect(generateToAddress({ blocksNumber: 0.5, address: '123' })).to.be.rejectedWith('should be integer');
+    await expect(generateToAddress({ blocksNumber: 0.5, address: '123' })).to.be.rejectedWith('must be integer');
     expect(spy.callCount).to.be.equal(0);
 
-    await expect(generateToAddress({})).to.be.rejectedWith('should have required property');
+    await expect(generateToAddress({})).to.be.rejectedWith('must have required property');
     expect(spy.callCount).to.be.equal(0);
 
-    await expect(generateToAddress()).to.be.rejectedWith('should be object');
+    await expect(generateToAddress()).to.be.rejectedWith('must be object');
     expect(spy.callCount).to.be.equal(0);
 
-    await expect(generateToAddress({ blocksNumber: 'string' })).to.be.rejectedWith('should be integer');
+    await expect(generateToAddress({ blocksNumber: 'string', address: '123' })).to.be.rejectedWith('must be integer');
     expect(spy.callCount).to.be.equal(0);
 
-    await expect(generateToAddress({ blocksNumber: 1, address: 1 })).to.be.rejectedWith('should be string');
+    await expect(generateToAddress({ blocksNumber: 1, address: 1 })).to.be.rejectedWith('must be string');
     expect(spy.callCount).to.be.equal(0);
   });
 });

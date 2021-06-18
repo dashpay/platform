@@ -33,6 +33,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
 
   beforeEach(async function beforeEach() {
     const dpp = new DashPlatformProtocol();
+    await dpp.initialize();
 
     const dataContractFixture = getDataContractFixture();
     stateTransitionFixture = dpp.dataContract.createStateTransition(dataContractFixture);

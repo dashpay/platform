@@ -66,6 +66,7 @@ async function main() {
   });
 
   const dppForParsingContracts = new DashPlatformProtocol();
+  await dppForParsingContracts.initialize();
   const driveStateRepository = new DriveStateRepository(driveClient, dppForParsingContracts);
 
   log.info(`Connecting to Tenderdash on ${config.tendermintCore.host}:${config.tendermintCore.port}`);
@@ -96,6 +97,7 @@ async function main() {
   const dpp = new DashPlatformProtocol({
     stateRepository: driveStateRepository,
   });
+  await dpp.initialize();
 
   // Start GRPC server
   log.info('Starting GRPC server');

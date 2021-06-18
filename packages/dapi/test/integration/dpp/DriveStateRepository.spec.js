@@ -22,10 +22,11 @@ describe('DriveStateRepository', () => {
   let stateRepository;
   let dataContractFixture;
 
-  beforeEach(function before() {
+  beforeEach(async function before() {
     dataContractFixture = getDataContractFixture();
 
     dpp = new DashPlatformProtocol();
+    await dpp.initialize();
     sinon.spy(dpp.dataContract, 'createFromBuffer');
 
     driveClientMock = sinon.stub();
