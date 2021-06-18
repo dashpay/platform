@@ -95,6 +95,8 @@ function convertIdentifierProperties(whereCondition: WhereCondition, binaryPrope
 export async function get(this: Platform, typeLocator: string, opts: fetchOpts): Promise<any> {
     if (!typeLocator.includes('.')) throw new Error('Accessing to field is done using format: appName.fieldName');
 
+    await this.initialize();
+
     // locator is of `dashpay.profile` with dashpay the app and profile the field.
     const [appName, fieldType] = typeLocator.split('.');
     // FIXME: we may later want a hashmap of schemas and contract IDs

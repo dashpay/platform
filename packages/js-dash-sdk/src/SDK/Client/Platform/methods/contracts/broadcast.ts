@@ -11,6 +11,8 @@ import { signStateTransition } from "../../signStateTransition";
  * @return dataContract
  */
 export default async function broadcast(this: Platform, dataContract: any, identity: any): Promise<any> {
+    await this.initialize();
+
     const { dpp } = this;
 
     const dataContractCreateTransition = dpp.dataContract.createStateTransition(dataContract);

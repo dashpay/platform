@@ -17,6 +17,7 @@ describe('Platform', () => {
                     documents: {
                         get: this.sinon.stub(),
                     },
+                    initialize:  this.sinon.stub(),
                 };
             });
 

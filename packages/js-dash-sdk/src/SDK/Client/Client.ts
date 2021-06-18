@@ -41,7 +41,7 @@ export class Client extends EventEmitter {
     public network: string = 'testnet';
     public wallet: Wallet | undefined;
     public account: Account | undefined;
-    public platform: Platform | undefined;
+    public platform: Platform;
     public walletAccountIndex: number | undefined = 0;
     private readonly dapiClient: DAPIClient;
     private readonly apps: ClientApps;

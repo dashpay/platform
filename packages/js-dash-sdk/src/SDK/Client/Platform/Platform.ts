@@ -73,6 +73,7 @@ interface Identities {
  */
 export class Platform {
     dpp: DashPlatformProtocol;
+    private readonly dppForParsingContracts: DashPlatformProtocol;
 
     public documents: Records;
     /**
@@ -132,12 +133,17 @@ export class Platform {
 
         this.client = options.client;
 
-        const dppForParsingContracts = new DashPlatformProtocol();
-        const stateRepository = new StateRepository(this.client, dppForParsingContracts);
+        this.dppForParsingContracts = new DashPlatformProtocol();
+        const stateRepository = new StateRepository(this.client, this.dppForParsingContracts);
 
         this.dpp = new DashPlatformProtocol({
             stateRepository,
             ...options,
         });
+    }
+
+    async initialize() {
+        await this.dpp.initialize();
+        await this.dppForParsingContracts.initialize();
     }
 }

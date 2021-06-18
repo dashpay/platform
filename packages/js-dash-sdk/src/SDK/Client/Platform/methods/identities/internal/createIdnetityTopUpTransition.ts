@@ -11,6 +11,8 @@ import { Platform } from "../../../Platform";
  * that can be used to sign registration/top-up state transition
  */
 export default async function createIdentityTopUpTransition(platform : Platform, assetLockProof: any, assetLockPrivateKey: PrivateKey, identityId: any): Promise<any> {
+    await platform.initialize();
+
     const { dpp } = platform;
 
     // @ts-ignore

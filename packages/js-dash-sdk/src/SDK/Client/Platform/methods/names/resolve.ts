@@ -6,6 +6,8 @@ import { Platform } from "../../Platform";
  * @returns {Document} document
  */
 export async function resolve(this: Platform, name: string): Promise<any> {
+    await this.initialize();
+
     // setting up variables in case of TLD registration
     let normalizedLabel = name.toLowerCase();
     let normalizedParentDomainName = '';

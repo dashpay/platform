@@ -14,6 +14,8 @@ export default async function register(
   this: Platform,
   fundingAmount : number = 10000
 ): Promise<any> {
+    await this.initialize();
+
     const { client } = this;
 
     const account = await client.getWalletAccount();

@@ -10,6 +10,8 @@ import { Platform } from "../../../Platform";
  * that can be used to sign registration/top-up state transition
  */
 export default async function createAssetLockProof(platform : Platform, assetLockTransaction: Transaction, outputIndex: number): Promise<any> {
+    await platform.initialize();
+
     const account = await platform.client.getWalletAccount();
     const { dpp } = platform;
 

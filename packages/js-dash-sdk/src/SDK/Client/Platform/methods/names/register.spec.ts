@@ -37,6 +37,7 @@ describe('Platform', () => {
                         create: this.sinon.stub(),
                         broadcast: this.sinon.stub(),
                     },
+                    initialize:  this.sinon.stub(),
                 };
 
                 identityMock = {

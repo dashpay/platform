@@ -23,9 +23,10 @@ const apps = new ClientApps({
 });
 let client;
 let askedFromDapi;
+let initialize;
 
 describe('Client - Platform - Contracts - .get()', () => {
-    before(()=>{
+    before(function before() {
         askedFromDapi = 0;
         const getDataContract = async (id) => {
             const fixtureIdentifier = Identifier.from(contractsFixtures.ratePlatform.$id);
@@ -50,18 +51,20 @@ describe('Client - Platform - Contracts - .get()', () => {
                 return apps
             }
         };
+
+        initialize = this.sinon.stub();
     })
     describe('get a contract from string', ()=>{
         it('should get from DAPIClient if there is none locally', async function () {
 
             // @ts-ignore
-            const contract = await get.call({apps, dpp, client}, contractsFixtures.ratePlatform.$id);
+            const contract = await get.call({apps, dpp, client, initialize}, contractsFixtures.ratePlatform.$id);
             expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
             expect(askedFromDapi).to.equal(1);
         });
         it('should get from local when already fetched once', async function () {
             // @ts-ignore
-            const contract = await get.call({apps, dpp, client}, contractsFixtures.ratePlatform.$id);
+            const contract = await get.call({apps, dpp, client, initialize}, contractsFixtures.ratePlatform.$id);
             expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
             expect(askedFromDapi).to.equal(1);
         });
@@ -70,7 +73,7 @@ describe('Client - Platform - Contracts - .get()', () => {
     describe('other conditions', ()=>{
         it('should deal when contract do not exist', async function () {
             // @ts-ignore
-            const contract = await get.call({apps, dpp, client}, identitiesFixtures.bob.id);
+            const contract = await get.call({apps, dpp, client, initialize}, identitiesFixtures.bob.id);
             expect(contract).to.equal(null);
         });
     })

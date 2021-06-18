@@ -11,6 +11,7 @@ describe('Client - Platform - Documents - .get()', () => {
   let appDefinition;
   let getDocumentsMock;
   let appsGetMock;
+  let initialize;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -36,6 +37,7 @@ describe('Client - Platform - Documents - .get()', () => {
           },
         })
       },
+      initialize: this.sinon.stub(),
     };
   });
 

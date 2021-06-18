@@ -10,6 +10,8 @@ import Identifier from "@dashevo/dpp/lib/Identifier";
  * @returns Identity
  */
 export async function get(this: Platform, id: Identifier|string): Promise<any> {
+    await this.initialize();
+
     const identifier = Identifier.from(id);
 
     // @ts-ignore

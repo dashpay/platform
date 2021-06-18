@@ -8,7 +8,9 @@ import {Platform} from "../../Platform";
  * @param identity - identity
  * @returns created contracts
  */
-export function create(this: Platform, contractDefinitions: any, identity: any): Promise<any> {
+export async function create(this: Platform, contractDefinitions: any, identity: any): Promise<any> {
+    await this.initialize();
+
     return this.dpp.dataContract.create(identity.getId(), contractDefinitions);
 }
 

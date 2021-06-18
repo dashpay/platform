@@ -14,6 +14,8 @@ import { signStateTransition } from "../../signStateTransition";
  * @param identity - identity
  */
 export default async function broadcast(this: Platform, documents: { create?: Document[], replace?: Document[], delete?: Document[]}, identity: any): Promise<any> {
+    await this.initialize();
+
     const { dpp } = this;
 
     const documentsBatchTransition = dpp.document.createStateTransition(documents);

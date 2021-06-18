@@ -27,7 +27,9 @@ export async function register(this: Platform,
                                    getPublicKeyById(number: number):any;
                                },
 ): Promise<any> {
-    if (records.dashUniqueIdentityId) {
+  await this.initialize();
+
+  if (records.dashUniqueIdentityId) {
         records.dashUniqueIdentityId = Identifier.from(records.dashUniqueIdentityId);
     }
 

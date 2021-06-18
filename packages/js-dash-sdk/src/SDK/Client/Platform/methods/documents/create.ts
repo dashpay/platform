@@ -13,6 +13,8 @@ declare interface createOpts {
  * @param {Object} [data] - options
  */
 export async function create(this: Platform, typeLocator: string, identity: any, data: createOpts = {}): Promise<any> {
+    await this.initialize();
+
     const { dpp } = this;
 
     const appNames = this.client.getApps().getNames();

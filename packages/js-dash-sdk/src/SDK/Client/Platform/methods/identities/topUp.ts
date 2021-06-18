@@ -16,6 +16,8 @@ import broadcastStateTransition from "../../broadcastStateTransition";
  * @returns {boolean}
  */
 export async function topUp(this: Platform, identityId: Identifier | string, amount: number): Promise<any> {
+    await this.initialize();
+
     const { client } = this;
 
     identityId = Identifier.from(identityId);
