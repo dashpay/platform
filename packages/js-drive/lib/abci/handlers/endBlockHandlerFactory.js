@@ -85,7 +85,7 @@ function endBlockHandlerFactory(
         {
           quorumHash,
         },
-        `Validator Set switched to ${quorumHash} quorum`,
+        `Validator set switched to ${quorumHash} quorum`,
       );
     }
 

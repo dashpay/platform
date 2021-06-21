@@ -49,10 +49,12 @@ function initChainHandlerFactory(
 
     const { quorumHash } = validatorSet.getQuorum();
 
-    contextLogger.trace(`Initial validator set selected: quorumHash ${quorumHash}`);
+    const validatorSetUpdate = createValidatorSetUpdate(validatorSet);
+
+    contextLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
     return new ResponseInitChain({
-      validatorSetUpdate: createValidatorSetUpdate(validatorSet),
+      validatorSetUpdate,
     });
   }
 

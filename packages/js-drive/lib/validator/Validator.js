@@ -1,7 +1,9 @@
+const PublicKeyShareIsNotPresentError = require('./errors/PublicKeyShareIsNotPresentError');
+
 class Validator {
   /**
    * @param {Buffer} proTxHash
-   * @param {Buffer} pubKeyShare
+   * @param {Buffer} [pubKeyShare]
    */
   constructor(proTxHash, pubKeyShare) {
     this.proTxHash = proTxHash;
@@ -36,14 +38,17 @@ class Validator {
 
   /**
    * @param {Object} member
+   * @param {boolean} [pubKeyShareRequired=false]
    * @return {Validator}
    */
-  static createFromQuorumMember(member) {
+  static createFromQuorumMember(member, pubKeyShareRequired = false) {
     const proTxHash = Buffer.from(member.proTxHash, 'hex');
 
-    let pubKeyShare = Buffer.alloc(96);
+    let pubKeyShare;
     if (member.pubKeyShare) {
       pubKeyShare = Buffer.from(member.pubKeyShare, 'hex');
+    } else if (pubKeyShareRequired) {
+      throw new PublicKeyShareIsNotPresentError(member);
     }
 
     return new Validator(proTxHash, pubKeyShare);

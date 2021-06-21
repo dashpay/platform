@@ -7,12 +7,20 @@ class ValidatorSet {
    * @param {getRandomQuorum} getRandomQuorum
    * @param {fetchQuorumMembers} fetchQuorumMembers
    * @param {number} validatorSetLLMQType
+   * @param {RpcClient} coreRpcClient
    */
-  constructor(simplifiedMasternodeList, getRandomQuorum, fetchQuorumMembers, validatorSetLLMQType) {
+  constructor(
+    simplifiedMasternodeList,
+    getRandomQuorum,
+    fetchQuorumMembers,
+    validatorSetLLMQType,
+    coreRpcClient,
+  ) {
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.getRandomQuorum = getRandomQuorum;
     this.fetchQuorumMembers = fetchQuorumMembers;
     this.validatorSetLLMQType = validatorSetLLMQType;
+    this.coreRpcClient = coreRpcClient;
 
     this.quorum = null;
     this.validators = [];
@@ -105,9 +113,29 @@ class ValidatorSet {
       this.quorum.quorumHash,
     );
 
+    // If the node is a quorum member and doesn't receive public key share for members
+    // it should throw an error
+    let proTxHash;
+
+    try {
+      ({
+        result: {
+          proTxHash,
+        },
+      } = await this.coreRpcClient.masternode('status'));
+    } catch (e) {
+      // This node is not a masternode
+      if (e.code !== -32603) {
+        throw e;
+      }
+    }
+
+    const isThisNodeMember = !!quorumMembers
+      .find((member) => member.valid && member.proTxHash === proTxHash);
+
     this.validators = quorumMembers
       .filter((member) => member.valid)
-      .map((member) => Validator.createFromQuorumMember(member));
+      .map((member) => Validator.createFromQuorumMember(member, isThisNodeMember));
   }
 }
 
