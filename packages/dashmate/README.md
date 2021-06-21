@@ -383,7 +383,7 @@ $ dashmate config:envs --config=testnet --output-file .env.testnet
 Then specify the created dotenv file as an option for the `docker-compose` command:
 
 ```bash
-$ docker-compose --env-file=.env.testnet
+$ docker-compose --env-file=.env.testnet up -d
 ```
 
 ## Contributing
