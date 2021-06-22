@@ -37,7 +37,7 @@ describe('SDK', function suite() {
   it('should init a Client', async () => {
     expect(clientInstance.network).to.equal(process.env.NETWORK);
 
-    expect(clientInstance.walletAccountIndex).to.equal(0);
+    expect(clientInstance.defaultAccountIndex).to.equal(0);
 
     expect(clientInstance.getApps().has('dpns')).to.be.true;
     expect(clientInstance.getApps().get('dpns')).to.deep.equal({

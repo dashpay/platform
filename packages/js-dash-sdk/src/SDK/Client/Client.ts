@@ -6,12 +6,15 @@ import { Network } from "@dashevo/dashcore-lib";
 import DAPIClient from "@dashevo/dapi-client";
 import { ClientApps, ClientAppsOptions } from "./ClientApps";
 
+export interface WalletOptions extends Wallet.IWalletOptions {
+    defaultAccountIndex?: number;
+}
+
 /**
  * Interface Client Options
  *
  * @param {ClientApps?} [apps] - applications
- * @param {Wallet.IWalletOptions} [wallet] - Wallet options
- * @param {number} [walletAccountIndex=0] - Wallet account index number
+ * @param {WalletOptions} [wallet] - Wallet options
  * @param {DAPIAddressProvider} [dapiAddressProvider] - DAPI Address Provider instance
  * @param {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddresses] - DAPI addresses
  * @param {string[]|RawDAPIAddress[]} [seeds] - DAPI seeds
@@ -22,8 +25,7 @@ import { ClientApps, ClientAppsOptions } from "./ClientApps";
  */
 export interface ClientOpts {
     apps?: ClientAppsOptions,
-    wallet?: Wallet.IWalletOptions,
-    walletAccountIndex?: number,
+    wallet?: WalletOptions,
     dapiAddressProvider?: any,
     dapiAddresses?: any[],
     seeds?: any[],
@@ -42,7 +44,7 @@ export class Client extends EventEmitter {
     public wallet: Wallet | undefined;
     public account: Account | undefined;
     public platform: Platform;
-    public walletAccountIndex: number | undefined = 0;
+    public defaultAccountIndex: number | undefined = 0;
     private readonly dapiClient: DAPIClient;
     private readonly apps: ClientApps;
     private options: ClientOpts;
@@ -55,10 +57,7 @@ export class Client extends EventEmitter {
     constructor(options: ClientOpts = {}) {
         super();
 
-        this.options = {
-            walletAccountIndex: 0,
-            ...options,
-        }
+        this.options = options;
 
         this.network = this.options.network ? this.options.network.toString() : 'testnet';
 
@@ -100,10 +99,10 @@ export class Client extends EventEmitter {
             this.wallet.on('error', (error, context) => (
                 this.emit('error', error, { wallet: context })
             ));
-
-            // @ts-ignore
-            this.walletAccountIndex = this.options.walletAccountIndex;
         }
+
+        // @ts-ignore
+        this.defaultAccountIndex = this.options.wallet?.defaultAccountIndex || 0;
 
         this.apps = new ClientApps(Object.assign({
             dpns: {
@@ -131,7 +130,7 @@ export class Client extends EventEmitter {
         }
 
         options = {
-            index: this.walletAccountIndex,
+            index: this.defaultAccountIndex,
             ...options,
         }
 
