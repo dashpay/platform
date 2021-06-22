@@ -16,6 +16,7 @@ const defaultOptions = {
   injectDefaultPlugins: true,
   allowSensitiveOperations: false,
   unsafeOptions: {},
+  waitForInstantLockTimeout: 60000,
 };
 
 const fromMnemonic = require('./methods/fromMnemonic');
@@ -62,6 +63,7 @@ class Wallet extends EventEmitter {
     this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.unsafeOptions = _.has(opts, 'unsafeOptions') ? opts.unsafeOptions : defaultOptions.unsafeOptions;
+    this.waitForInstantLockTimeout = _.has(opts, 'waitForInstantLockTimeout') ? opts.waitForInstantLockTimeout : defaultOptions.waitForInstantLockTimeout;
 
     // Validate network
     const networkName = _.has(opts, 'network') ? opts.network.toString() : defaultOptions.network;

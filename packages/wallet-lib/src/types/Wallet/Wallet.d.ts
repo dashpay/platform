@@ -60,6 +60,7 @@ export declare namespace Wallet {
         HDPrivateKey?: HDPrivateKey | string;
         HDPublicKey?: HDPublicKey | string;
         unsafeOptions?: IWalletUnsafeOptions;
+        waitForInstantLockTimeout?: number;
     }
 
     interface IWalletUnsafeOptions {

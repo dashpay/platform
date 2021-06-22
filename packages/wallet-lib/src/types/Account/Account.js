@@ -65,6 +65,8 @@ class Account extends EventEmitter {
     this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
     // if (this.debug) process.env.LOG_LEVEL = 'debug';
 
+    this.waitForInstantLockTimeout = wallet.waitForInstantLockTimeout;
+
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
 
@@ -213,7 +215,7 @@ class Account extends EventEmitter {
    * @param {number} timeout - in milliseconds before throwing an error if the lock didn't arrive
    * @return {Promise<InstantLock>}
    */
-  waitForInstantLock(transactionHash, timeout = 60000) {
+  waitForInstantLock(transactionHash, timeout = this.waitForInstantLockTimeout) {
     return Promise.race([
       new Promise((resolve) => {
         const instantLock = this.storage.getInstantLock(transactionHash);
