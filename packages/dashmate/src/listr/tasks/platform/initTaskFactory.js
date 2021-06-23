@@ -55,6 +55,7 @@ function initTaskFactory(
             ...clientOpts,
             wallet: {
               privateKey: ctx.fundingPrivateKeyString,
+              waitForInstantLockTimeout: ctx.nodeCount * 60000,
             },
           });
 
@@ -62,6 +63,7 @@ function initTaskFactory(
             ...clientOpts,
             wallet: {
               mnemonic: null,
+              waitForInstantLockTimeout: ctx.nodeCount * 60000,
             },
           });
 
