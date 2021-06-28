@@ -216,17 +216,24 @@ class Account extends EventEmitter {
    * @return {Promise<InstantLock>}
    */
   waitForInstantLock(transactionHash, timeout = this.waitForInstantLockTimeout) {
+    let rejectTimeout;
+
     return Promise.race([
       new Promise((resolve) => {
         const instantLock = this.storage.getInstantLock(transactionHash);
         if (instantLock != null) {
+          clearTimeout(rejectTimeout);
           resolve(instantLock);
           return;
         }
-        this.subscribeToTransactionInstantLock(transactionHash, resolve);
+
+        this.subscribeToTransactionInstantLock(transactionHash, (instantLockData) => {
+          clearTimeout(rejectTimeout);
+          resolve(instantLockData);
+        });
       }),
       new Promise((resolve, reject) => {
-        setTimeout(() => {
+        rejectTimeout = setTimeout(() => {
           reject(new Error(`InstantLock waiting period for transaction ${transactionHash} timed out`));
         }, timeout);
       }),
