@@ -3,35 +3,29 @@ const wait = require('../../util/wait');
 const { LLMQ_TYPE_TEST } = require('../../constants');
 
 /**
- * @param {RpcClient[]} rpcClients
+ * @param {RpcClient} rpcClient
  * @param {number} expectedConnectionsCount
  * @return {Promise<boolean>}
  */
-async function checkQuorumConnections(rpcClients, expectedConnectionsCount) {
-  for (const rpcClient of rpcClients) {
-    const { result: dkgStatus } = await rpcClient.quorum('dkgstatus');
+async function checkQuorumConnections(rpcClient, expectedConnectionsCount) {
+  const { result: dkgStatus } = await rpcClient.quorum('dkgstatus');
 
-    if (Object.keys(dkgStatus.session).length === 0) {
-      continue;
-    }
-
-    const noConnections = dkgStatus.quorumConnections == null;
-    const llmqConnections = dkgStatus.quorumConnections;
-
-    if (noConnections || llmqConnections[LLMQ_TYPE_TEST] == null) {
-      return false;
-    }
-
-    const connectionsCount = llmqConnections[LLMQ_TYPE_TEST]
-      .filter((connection) => connection.connected)
-      .length;
-
-    if (connectionsCount < expectedConnectionsCount) {
-      return false;
-    }
+  if (Object.keys(dkgStatus.session).length === 0) {
+    return false;
   }
 
-  return true;
+  const noConnections = dkgStatus.quorumConnections == null;
+  const llmqConnections = dkgStatus.quorumConnections;
+
+  if (noConnections || llmqConnections[LLMQ_TYPE_TEST] == null) {
+    return false;
+  }
+
+  const connectionsCount = llmqConnections[LLMQ_TYPE_TEST]
+    .filter((connection) => connection.connected)
+    .length;
+
+  return connectionsCount >= expectedConnectionsCount;
 }
 
 /**
@@ -49,15 +43,22 @@ async function waitForQuorumConnections(
   timeout = 300000,
 ) {
   const deadline = Date.now() + timeout;
-  let isReady = false;
+  const readyNodes = new Set();
+  const nodesToWait = 3;
 
-  while (!isReady) {
-    isReady = await checkQuorumConnections(
-      rpcClients,
-      expectedConnectionsCount,
-    );
+  while (readyNodes.size < nodesToWait) {
+    await Promise.all(rpcClients.map(async (rpcClient, i) => {
+      const isReady = await checkQuorumConnections(
+        rpcClient,
+        expectedConnectionsCount,
+      );
 
-    if (!isReady) {
+      if (isReady) {
+        readyNodes.add(i);
+      }
+    }));
+
+    if (readyNodes.size < nodesToWait) {
       await bumpMockTime();
 
       await wait(1000);
