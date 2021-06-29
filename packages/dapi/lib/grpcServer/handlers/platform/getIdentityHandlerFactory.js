@@ -9,7 +9,6 @@ const {
 const {
   v0: {
     GetIdentityResponse,
-    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -40,12 +39,11 @@ function getIdentityHandlerFactory(driveClient, handleAbciResponseError) {
 
     const prove = request.getProve();
 
-    let identityBuffer;
-    let proofObject;
+    let identityResponseBuffer;
 
     try {
-      ({ data: identityBuffer, proof: proofObject } = await driveClient
-        .fetchIdentity(id, prove));
+      identityResponseBuffer = await driveClient
+        .fetchIdentity(id, prove);
     } catch (e) {
       if (e instanceof AbciResponseError) {
         handleAbciResponseError(e);
@@ -53,19 +51,7 @@ function getIdentityHandlerFactory(driveClient, handleAbciResponseError) {
       throw e;
     }
 
-    const response = new GetIdentityResponse();
-
-    response.setIdentity(identityBuffer);
-
-    if (prove === true) {
-      const proof = new Proof();
-      proof.setRootTreeProof(proofObject.rootTreeProof);
-      proof.setStoreTreeProof(proofObject.storeTreeProof);
-
-      response.setProof(proof);
-    }
-
-    return response;
+    return GetIdentityResponse.deserializeBinary(identityResponseBuffer);
   }
 
   return getIdentityHandler;

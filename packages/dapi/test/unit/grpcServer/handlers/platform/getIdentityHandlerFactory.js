@@ -32,6 +32,8 @@ describe('getIdentityHandlerFactory', () => {
   let getIdentityHandler;
   let identity;
   let proofFixture;
+  let proofMock;
+  let response;
 
   beforeEach(function beforeEach() {
     id = generateRandomIdentifier();
@@ -47,15 +49,18 @@ describe('getIdentityHandlerFactory', () => {
       storeTreeProof: Buffer.alloc(1, 2),
     };
 
+    proofMock = new Proof();
+    proofMock.setRootTreeProof(proofFixture.rootTreeProof);
+    proofMock.setStoreTreeProof(proofFixture.storeTreeProof);
+
+    response = new GetIdentityResponse();
+    response.setProof(proofMock);
+    response.setIdentity(identity.toBuffer());
+
     handleAbciResponseErrorMock = this.sinon.stub();
 
-    const response = {
-      data: identity.toBuffer(),
-      proof: proofFixture,
-    };
-
     driveStateRepositoryMock = {
-      fetchIdentity: this.sinon.stub().resolves(response),
+      fetchIdentity: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     getIdentityHandler = getIdentityHandlerFactory(
@@ -65,6 +70,9 @@ describe('getIdentityHandlerFactory', () => {
   });
 
   it('should return valid result', async () => {
+    response.setProof(null);
+    driveStateRepositoryMock.fetchIdentity.resolves(response.serializeBinary());
+
     const result = await getIdentityHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);

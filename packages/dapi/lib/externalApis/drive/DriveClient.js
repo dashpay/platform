@@ -22,7 +22,7 @@ class DriveClient {
    * @param {Object} data
    * @param {boolean} prove
    *
-   * @return {Promise<{ data: Buffer, [proof]: {rootTreeProof: Buffer, storeTreeProof: Buffer}}>}
+   * @return {Promise<Buffer>}
    */
   async request(path, data = {}, prove = false) {
     const encodedData = cbor.encode(data);
@@ -53,12 +53,27 @@ class DriveClient {
 
     if (response.code === undefined || response.code === 0) {
       // no errors found return the serialized response value
-      return cbor.decode(Buffer.from(response.value, 'base64'));
+      return Buffer.from(response.value, 'base64');
     }
 
     const { error: abciError } = JSON.parse(response.log);
 
     throw new AbciResponseError(response.code, abciError);
+  }
+
+  /**
+   * Makes request to Drive and handle CBOR'ed response
+   *
+   * @param {string} path
+   * @param {Object} data
+   * @param {boolean} prove
+   *
+   * @return {Promise<{ data: Buffer, [proof]: {rootTreeProof: Buffer, storeTreeProof: Buffer}}>}
+   */
+  async requestCbor(path, data = {}, prove = false) {
+    const responseBuffer = await this.request(path, data, prove);
+
+    return cbor.decode(responseBuffer);
   }
 
   /**
@@ -170,7 +185,7 @@ class DriveClient {
    * @return {Promise<{data: Buffer}>}
    */
   async fetchProofs({ documentIds, identityIds, dataContractIds }) {
-    return this.request(
+    return this.requestCbor(
       '/proofs',
       {
         documentIds,

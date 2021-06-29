@@ -34,6 +34,8 @@ describe('getDataContractHandlerFactory', () => {
   let dataContractFixture;
   let handleAbciResponseErrorMock;
   let proofFixture;
+  let proofMock;
+  let response;
 
   beforeEach(function beforeEach() {
     id = generateRandomIdentifier();
@@ -50,13 +52,16 @@ describe('getDataContractHandlerFactory', () => {
       storeTreeProof: Buffer.alloc(1, 2),
     };
 
-    const response = {
-      data: dataContractFixture.toBuffer(),
-      proof: proofFixture,
-    };
+    proofMock = new Proof();
+    proofMock.setRootTreeProof(proofFixture.rootTreeProof);
+    proofMock.setStoreTreeProof(proofFixture.storeTreeProof);
+
+    response = new GetDataContractResponse();
+    response.setProof(proofMock);
+    response.setDataContract(dataContractFixture.toBuffer());
 
     driveStateRepositoryMock = {
-      fetchDataContract: this.sinon.stub().resolves(response),
+      fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     handleAbciResponseErrorMock = this.sinon.stub();
@@ -73,7 +78,7 @@ describe('getDataContractHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
 
     const contractBinary = result.getDataContract();
-    expect(contractBinary).to.be.an.instanceOf(Buffer);
+    expect(contractBinary).to.be.an.instanceOf(Uint8Array);
 
     expect(handleAbciResponseErrorMock).to.not.be.called();
 
@@ -93,6 +98,8 @@ describe('getDataContractHandlerFactory', () => {
 
   it('should not include proof', async () => {
     request.getProve.returns(false);
+    response.setProof(null);
+    driveStateRepositoryMock.fetchDataContract.resolves(response.serializeBinary());
 
     const result = await getDataContractHandler(call);
 

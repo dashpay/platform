@@ -12,21 +12,22 @@ function fetchProofForStateTransitionFactory(driveClient) {
     const modifiedIds = stateTransition.getModifiedDataIds();
 
     let proof;
+    let metadata;
     if (stateTransition.isDocumentStateTransition()) {
-      ({ documentsProof: proof } = await driveClient.fetchProofs(
+      ({ documentsProof: proof, metadata } = await driveClient.fetchProofs(
         { documentIds: modifiedIds },
       ));
     } else if (stateTransition.isIdentityStateTransition()) {
-      ({ identitiesProof: proof } = await driveClient.fetchProofs(
+      ({ identitiesProof: proof, metadata } = await driveClient.fetchProofs(
         { identityIds: modifiedIds },
       ));
     } else if (stateTransition.isDataContractStateTransition()) {
-      ({ dataContractsProof: proof } = await driveClient.fetchProofs(
+      ({ dataContractsProof: proof, metadata } = await driveClient.fetchProofs(
         { dataContractIds: modifiedIds },
       ));
     }
 
-    return proof;
+    return { proof, metadata };
   }
 
   return fetchProofForStateTransition;

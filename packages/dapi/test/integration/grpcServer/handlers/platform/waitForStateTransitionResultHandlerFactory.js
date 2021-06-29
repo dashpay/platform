@@ -124,7 +124,13 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     dppMock.stateTransition.createFromBuffer.resolves(stateTransitionFixture);
 
     driveClientMock = {
-      fetchProofs: this.sinon.stub().resolves({ identitiesProof: proofFixture }),
+      fetchProofs: this.sinon.stub().resolves({
+        identitiesProof: proofFixture,
+        metadata: {
+          height: 42,
+          coreChainLockedHeight: 41,
+        },
+      }),
     };
 
     blockchainListener = new BlockchainListener(tenderDashWsClientMock);

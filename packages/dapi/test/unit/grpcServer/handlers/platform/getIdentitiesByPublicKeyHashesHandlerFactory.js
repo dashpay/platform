@@ -31,6 +31,8 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   let identity;
   let publicKeyHash;
   let proofFixture;
+  let proofMock;
+  let response;
 
   beforeEach(function beforeEach() {
     publicKeyHash = '556c2910d46fda2b327ef9d9bda850cc84d30db0';
@@ -50,15 +52,16 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
       storeTreeProof: Buffer.alloc(1, 2),
     };
 
-    const response = {
-      data: [
-        identity.toBuffer(),
-      ],
-      proof: proofFixture,
-    };
+    proofMock = new Proof();
+    proofMock.setRootTreeProof(proofFixture.rootTreeProof);
+    proofMock.setStoreTreeProof(proofFixture.storeTreeProof);
+
+    response = new GetIdentitiesByPublicKeyHashesResponse();
+    response.setProof(proofMock);
+    response.setIdentitiesList([identity.toBuffer()]);
 
     driveStateRepositoryMock = {
-      fetchIdentitiesByPublicKeyHashes: this.sinon.stub().resolves(response),
+      fetchIdentitiesByPublicKeyHashes: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
@@ -68,6 +71,9 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   });
 
   it('should return valid result', async () => {
+    response.setProof(null);
+    driveStateRepositoryMock.fetchIdentitiesByPublicKeyHashes.resolves(response.serializeBinary());
+
     const result = await getIdentitiesByPublicKeyHashesHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentitiesByPublicKeyHashesResponse);

@@ -103,10 +103,7 @@ describe('DriveClient', () => {
         data: cbor.encode({ id: contractId }).toString('hex'), // cbor encoded empty object
         prove: 'true',
       });
-      expect(result).to.be.deep.equal({
-        data,
-        proof,
-      });
+      expect(result).to.be.deep.equal(buffer);
     });
   });
 
@@ -138,10 +135,7 @@ describe('DriveClient', () => {
         data: cbor.encode({ ...options, contractId, type }).toString('hex'), // cbor encoded empty object
         prove: 'true',
       });
-      expect(result).to.be.deep.equal({
-        data,
-        proof,
-      });
+      expect(result).to.be.deep.equal(buffer);
     });
   });
 
@@ -166,7 +160,7 @@ describe('DriveClient', () => {
         path: '/identities',
         data: cbor.encode({ id: identityId }).toString('hex'), // cbor encoded empty object
       });
-      expect(result).to.be.deep.equal({ data });
+      expect(result).to.be.deep.equal(buffer);
     });
   });
 
@@ -194,10 +188,7 @@ describe('DriveClient', () => {
         data: cbor.encode({ publicKeyHashes }).toString('hex'),
         prove: 'true',
       });
-      expect(result).to.be.deep.equal({
-        data: [identity],
-        proof,
-      });
+      expect(result).to.be.deep.equal(buffer);
     });
   });
 
@@ -224,10 +215,7 @@ describe('DriveClient', () => {
         data: cbor.encode({ publicKeyHashes }).toString('hex'),
         prove: 'true',
       });
-      expect(result).to.be.deep.equal({
-        data: [identityId],
-        proof,
-      });
+      expect(result).to.be.deep.equal(buffer);
     });
   });
 

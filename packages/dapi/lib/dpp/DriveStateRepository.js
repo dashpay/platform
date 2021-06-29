@@ -1,3 +1,9 @@
+const {
+  v0: {
+    GetDataContractResponse,
+  },
+} = require('@dashevo/dapi-grpc');
+
 /**
  * @implements StateRepository
  */
@@ -17,11 +23,17 @@ class DriveStateRepository {
    * @return {Promise<DataContract>}
    */
   async fetchDataContract(contractIdentifier) {
-    const driveResponse = await this.driveClient.fetchDataContract(
+    const dataContractProtoBuffer = await this.driveClient.fetchDataContract(
       contractIdentifier, false,
     );
 
-    return this.dpp.dataContract.createFromBuffer(driveResponse.data);
+    const dataContractResponse = GetDataContractResponse.deserializeBinary(
+      dataContractProtoBuffer,
+    );
+
+    return this.dpp.dataContract.createFromBuffer(
+      dataContractResponse.getDataContract(),
+    );
   }
 }
 

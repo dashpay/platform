@@ -43,6 +43,8 @@ describe('getDocumentsHandlerFactory', () => {
   let handleAbciResponseErrorMock;
   let documentsSerialized;
   let proofFixture;
+  let response;
+  let proofMock;
 
   beforeEach(function beforeEach() {
     dataContractId = generateRandomIdentifier();
@@ -76,13 +78,16 @@ describe('getDocumentsHandlerFactory', () => {
       storeTreeProof: Buffer.alloc(1, 2),
     };
 
-    const response = {
-      data: documentsSerialized,
-      proof: proofFixture,
-    };
+    proofMock = new Proof();
+    proofMock.setRootTreeProof(proofFixture.rootTreeProof);
+    proofMock.setStoreTreeProof(proofFixture.storeTreeProof);
+
+    response = new GetDocumentsResponse();
+    response.setProof(proofMock);
+    response.setDocumentsList(documentsSerialized);
 
     driveStateRepositoryMock = {
-      fetchDocuments: this.sinon.stub().resolves(response),
+      fetchDocuments: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     handleAbciResponseErrorMock = this.sinon.stub();
@@ -94,6 +99,10 @@ describe('getDocumentsHandlerFactory', () => {
   });
 
   it('should return valid result', async () => {
+    response.setProof(null);
+
+    driveStateRepositoryMock.fetchDocuments.resolves(response.serializeBinary());
+
     const result = await getDocumentsHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);

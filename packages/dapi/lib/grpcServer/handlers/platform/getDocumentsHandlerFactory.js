@@ -11,7 +11,6 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
-    Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -111,12 +110,11 @@ function getDocumentsHandlerFactory(driveClient, handleAbciResponseError) {
 
     const prove = request.getProve();
 
-    let documentBuffers;
-    let proofObject;
+    let documentResponseBuffer;
     try {
-      ({ data: documentBuffers, proof: proofObject } = await driveClient.fetchDocuments(
+      documentResponseBuffer = await driveClient.fetchDocuments(
         dataContractId, documentType, options, prove,
-      ));
+      );
     } catch (e) {
       if (e instanceof AbciResponseError) {
         handleAbciResponseError(e);
@@ -124,19 +122,7 @@ function getDocumentsHandlerFactory(driveClient, handleAbciResponseError) {
       throw e;
     }
 
-    const response = new GetDocumentsResponse();
-
-    response.setDocumentsList(documentBuffers);
-
-    if (prove === true) {
-      const proof = new Proof();
-      proof.setRootTreeProof(proofObject.rootTreeProof);
-      proof.setStoreTreeProof(proofObject.storeTreeProof);
-
-      response.setProof(proof);
-    }
-
-    return response;
+    return GetDocumentsResponse.deserializeBinary(documentResponseBuffer);
   }
 
   return getDocumentsHandler;
