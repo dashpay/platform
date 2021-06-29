@@ -1,13 +1,44 @@
+const {
+  tendermint: {
+    abci: {
+      LastCommitInfo,
+    },
+    types: {
+      Header,
+    },
+  },
+} = require('@dashevo/abci/types');
+
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const BlockExecutionContext = require('../../../lib/blockExecution/BlockExecutionContext');
+const getBlockExecutionContextObjectFixture = require('../../../lib/test/fixtures/getBlockExecutionContextObjectFixture');
 
 describe('BlockExecutionContext', () => {
   let blockExecutionContext;
   let dataContract;
+  let lastCommitInfo;
+  let header;
+  let logger;
+  let cumulativeFees;
+  let plainObject;
+  let validTxs;
+  let invalidTxs;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
     dataContract = getDataContractFixture();
+    delete dataContract.entropy;
+
+    plainObject = getBlockExecutionContextObjectFixture(dataContract);
+
+    lastCommitInfo = LastCommitInfo.fromObject(plainObject.lastCommitInfo);
+
+    header = Header.fromObject(plainObject.header);
+
+    logger = plainObject.consensusLogger;
+    cumulativeFees = plainObject.cumulativeFees;
+    validTxs = plainObject.validTxs;
+    invalidTxs = plainObject.invalidTxs;
   });
 
   describe('#addDataContract', () => {
@@ -57,11 +88,11 @@ describe('BlockExecutionContext', () => {
 
       expect(result).to.equal(0);
 
-      blockExecutionContext.cumulativeFees = 10;
+      blockExecutionContext.cumulativeFees = cumulativeFees;
 
       result = blockExecutionContext.getCumulativeFees();
 
-      expect(result).to.equal(10);
+      expect(result).to.equal(cumulativeFees);
     });
   });
 
@@ -95,13 +126,6 @@ describe('BlockExecutionContext', () => {
 
   describe('#setHeader', () => {
     it('should set header', async () => {
-      const header = {
-        height: 10,
-        time: {
-          seconds: Math.ceil(new Date().getTime() / 1000),
-        },
-      };
-
       const result = blockExecutionContext.setHeader(header);
 
       expect(result).to.equal(blockExecutionContext);
@@ -112,13 +136,6 @@ describe('BlockExecutionContext', () => {
 
   describe('#getHeader', () => {
     it('should get header', async () => {
-      const header = {
-        height: 10,
-        time: {
-          seconds: Math.ceil(new Date().getTime() / 1000),
-        },
-      };
-
       blockExecutionContext.header = header;
 
       expect(blockExecutionContext.getHeader()).to.deep.equal(header);
@@ -127,12 +144,6 @@ describe('BlockExecutionContext', () => {
 
   describe('#setLastCommitInfo', () => {
     it('should set lastCommitInfo', async () => {
-      const lastCommitInfo = {
-        quorumHash: Uint8Array.from('000003c60ecd9576a05a7e15d93baae18729cb4477d44246093bd2cf8d4f53d8'),
-        blockSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
-        stateSignature: Uint8Array.from('09c3e46f5bc1abcb7c130b8c36a168e1fbc471fa86445dfce49e151086a277216e7a5618a7554b823d995c5606d0642f18f9c4caa249605d2ab156e14728c82f58f9008d4bcc6e21e0a561e3185e2ae654605613e86af507ca49079595872532'),
-      };
-
       const result = blockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
       expect(result).to.equal(blockExecutionContext);
@@ -143,15 +154,91 @@ describe('BlockExecutionContext', () => {
 
   describe('#getLastCommitInfo', () => {
     it('should get lastCommitInfo', async () => {
-      const lastCommitInfo = {
-        quorumHash: Uint8Array.from('000003c60ecd9576a05a7e15d93baae18729cb4477d44246093bd2cf8d4f53d8'),
-        blockSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
-        stateSignature: Uint8Array.from('09c3e46f5bc1abcb7c130b8c36a168e1fbc471fa86445dfce49e151086a277216e7a5618a7554b823d995c5606d0642f18f9c4caa249605d2ab156e14728c82f58f9008d4bcc6e21e0a561e3185e2ae654605613e86af507ca49079595872532'),
-      };
-
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
 
       expect(blockExecutionContext.getLastCommitInfo()).to.deep.equal(lastCommitInfo);
+    });
+  });
+
+  describe('#populate', () => {
+    it('should populate instance from another instance', () => {
+      const anotherBlockExecutionContext = new BlockExecutionContext();
+
+      anotherBlockExecutionContext.dataContracts = [dataContract];
+      anotherBlockExecutionContext.lastCommitInfo = lastCommitInfo;
+      anotherBlockExecutionContext.cumulativeFees = cumulativeFees;
+      anotherBlockExecutionContext.header = header;
+      anotherBlockExecutionContext.validTxs = validTxs;
+      anotherBlockExecutionContext.invalidTxs = invalidTxs;
+      anotherBlockExecutionContext.consensusLogger = logger;
+
+      blockExecutionContext.populate(anotherBlockExecutionContext);
+
+      expect(blockExecutionContext.dataContracts).to.equal(
+        anotherBlockExecutionContext.dataContracts,
+      );
+      expect(blockExecutionContext.lastCommitInfo).to.equal(
+        anotherBlockExecutionContext.lastCommitInfo,
+      );
+      expect(blockExecutionContext.cumulativeFees).to.equal(
+        anotherBlockExecutionContext.cumulativeFees,
+      );
+      expect(blockExecutionContext.header).to.equal(
+        anotherBlockExecutionContext.header,
+      );
+      expect(blockExecutionContext.validTxs).to.equal(
+        anotherBlockExecutionContext.validTxs,
+      );
+      expect(blockExecutionContext.invalidTxs).to.equal(
+        anotherBlockExecutionContext.invalidTxs,
+      );
+      expect(blockExecutionContext.consensusLogger).to.equal(
+        anotherBlockExecutionContext.consensusLogger,
+      );
+    });
+  });
+
+  describe('#toObject', () => {
+    it('should return a plain object', () => {
+      blockExecutionContext.dataContracts = [dataContract];
+      blockExecutionContext.lastCommitInfo = lastCommitInfo;
+      blockExecutionContext.cumulativeFees = cumulativeFees;
+      blockExecutionContext.header = header;
+      blockExecutionContext.validTxs = validTxs;
+      blockExecutionContext.invalidTxs = invalidTxs;
+      blockExecutionContext.consensusLogger = logger;
+
+      expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
+    });
+
+    it('should skipConsensusLogger if the option passed', () => {
+      blockExecutionContext.dataContracts = [dataContract];
+      blockExecutionContext.lastCommitInfo = lastCommitInfo;
+      blockExecutionContext.cumulativeFees = cumulativeFees;
+      blockExecutionContext.header = header;
+      blockExecutionContext.validTxs = validTxs;
+      blockExecutionContext.invalidTxs = invalidTxs;
+      blockExecutionContext.consensusLogger = logger;
+
+      const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
+
+      delete plainObject.consensusLogger;
+
+      expect(result).to.deep.equal(plainObject);
+    });
+  });
+
+  describe('#fromObject', () => {
+    it('should populate instance from a plain object', () => {
+      blockExecutionContext.fromObject(plainObject);
+
+      expect(blockExecutionContext.dataContracts).to.deep.equal([dataContract]);
+      expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
+      expect(blockExecutionContext.cumulativeFees).to.equal(cumulativeFees);
+      expect(blockExecutionContext.header).to.deep.equal(header);
+      expect(blockExecutionContext.validTxs).to.equal(validTxs);
+      expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
+      expect(blockExecutionContext.consensusLogger).to.equal(logger);
     });
   });
 });

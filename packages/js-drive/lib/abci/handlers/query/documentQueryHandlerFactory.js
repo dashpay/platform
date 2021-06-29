@@ -6,7 +6,11 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const cbor = require('cbor');
+const {
+  v0: {
+    GetDocumentsResponse,
+  },
+} = require('@dashevo/dapi-grpc');
 
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
@@ -18,6 +22,7 @@ const UnavailableAbciError = require('../../errors/UnavailableAbciError');
  * @param {RootTree} previousRootTree
  * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
  * @param {AwilixContainer} container
+ * @param {createQueryResponse} createQueryResponse
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
@@ -25,6 +30,7 @@ function documentQueryHandlerFactory(
   previousRootTree,
   previousDocumentsStoreRootTreeLeaf,
   container,
+  createQueryResponse,
 ) {
   /**
    * @typedef documentQueryHandler
@@ -64,6 +70,10 @@ function documentQueryHandlerFactory(
       throw new UnavailableAbciError();
     }
 
+    const isProofRequested = request.prove === 'true';
+
+    const response = createQueryResponse(GetDocumentsResponse, isProofRequested);
+
     let documents;
 
     try {
@@ -85,22 +95,24 @@ function documentQueryHandlerFactory(
       throw e;
     }
 
-    const includeProof = request.prove === 'true';
-
-    const value = {
-      data: documents.map((document) => document.toBuffer()),
-    };
-
-    if (includeProof) {
+    if (isProofRequested) {
       const documentIds = documents.map((document) => document.getId());
 
-      value.proof = previousRootTree.getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds);
+      const proof = response.getProof();
+
+      const {
+        rootTreeProof,
+        storeTreeProof,
+      } = previousRootTree.getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds);
+
+      proof.setRootTreeProof(rootTreeProof);
+      proof.setStoreTreeProof(storeTreeProof);
+    } else {
+      response.setDocumentsList(documents.map((document) => document.toBuffer()));
     }
 
     return new ResponseQuery({
-      value: await cbor.encodeAsync(
-        value,
-      ),
+      value: response.serializeBinary(),
     });
   }
 

@@ -12,13 +12,11 @@ const NoPreviousBlockExecutionStoreTransactionsFoundError = require('../../../..
 
 const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFactory');
 
-const ChainInfo = require('../../../../lib/chainInfo/ChainInfo');
-
 const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
 const packageJson = require('../../../../package.json');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
-const CreditsDistributionPool = require('../../../../lib/creditsDistributionPool/CreditsDistributionPool');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('infoHandlerFactory', () => {
   let protocolVersion;
@@ -29,35 +27,16 @@ describe('infoHandlerFactory', () => {
   let updateSimplifiedMasternodeListMock;
   let lastCoreChainLockedHeight;
   let loggerMock;
-  let chainInfo;
-  let chainInfoRepositoryMock;
   let containerMock;
   let previousBlockExecutionStoreTransactionsRepositoryMock;
   let blockExecutionStoreTransactionsMock;
-  let creditsDistributionPoolRepositoryMock;
-  let creditsDistributionPool;
+  let blockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
     lastBlockAppHash = Buffer.alloc(0);
     protocolVersion = Long.fromInt(0);
     lastCoreChainLockedHeight = 0;
-
-    creditsDistributionPool = new CreditsDistributionPool();
-
-    creditsDistributionPoolRepositoryMock = {
-      fetch: this.sinon.stub().resolves(creditsDistributionPool),
-    };
-
-    chainInfo = new ChainInfo(
-      lastBlockHeight,
-      lastCoreChainLockedHeight,
-    );
-
-    chainInfoRepositoryMock = {
-      store: this.sinon.stub(),
-      fetch: this.sinon.stub().resolves(chainInfo),
-    };
 
     rootTreeMock = new RootTreeMock(this.sinon);
     rootTreeMock.getRootHash.returns(lastBlockAppHash);
@@ -77,11 +56,10 @@ describe('infoHandlerFactory', () => {
       fetch: this.sinon.stub().resolves(blockExecutionStoreTransactionsMock),
     };
 
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
     infoHandler = infoHandlerFactory(
-      chainInfo,
-      chainInfoRepositoryMock,
-      creditsDistributionPool,
-      creditsDistributionPoolRepositoryMock,
+      blockExecutionContextMock,
       protocolVersion,
       rootTreeMock,
       updateSimplifiedMasternodeListMock,
@@ -105,9 +83,6 @@ describe('infoHandlerFactory', () => {
 
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
 
-    expect(chainInfoRepositoryMock.fetch).to.be.calledOnceWithExactly();
-    expect(creditsDistributionPoolRepositoryMock.fetch).to.be.calledOnceWithExactly();
-
     expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.not.be.called();
     expect(containerMock.has).to.not.be.called();
   });
@@ -116,18 +91,21 @@ describe('infoHandlerFactory', () => {
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
 
-    chainInfo.setLastBlockHeight(lastBlockHeight);
-    chainInfo.setLastCoreChainLockedHeight(lastCoreChainLockedHeight);
+    blockExecutionContextMock.getHeader.returns({
+      height: lastBlockHeight,
+      coreChainLockedHeight: lastCoreChainLockedHeight,
+    });
 
     const response = await infoHandler();
 
     expect(response).to.be.an.instanceOf(ResponseInfo);
 
-    expect(response).to.deep.include({
+    expect(ResponseInfo.toObject(response)).to.deep.equal({
       version: packageJson.version,
       appVersion: protocolVersion,
       lastBlockHeight,
       lastBlockAppHash,
+      lastCoreChainLockedHeight,
     });
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
@@ -137,9 +115,6 @@ describe('infoHandlerFactory', () => {
       },
     );
 
-    expect(chainInfoRepositoryMock.fetch).to.be.calledOnceWithExactly();
-    expect(creditsDistributionPoolRepositoryMock.fetch).to.be.calledOnceWithExactly();
-
     expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.be.calledWithExactly();
     expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
   });
@@ -148,8 +123,10 @@ describe('infoHandlerFactory', () => {
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
 
-    chainInfo.setLastBlockHeight(lastBlockHeight);
-    chainInfo.setLastCoreChainLockedHeight(lastCoreChainLockedHeight);
+    blockExecutionContextMock.getHeader.returns({
+      height: lastBlockHeight,
+      coreChainLockedHeight: lastCoreChainLockedHeight,
+    });
 
     previousBlockExecutionStoreTransactionsRepositoryMock.fetch.resolves(null);
 

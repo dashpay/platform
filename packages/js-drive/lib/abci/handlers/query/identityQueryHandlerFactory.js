@@ -6,7 +6,11 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const cbor = require('cbor');
+const {
+  v0: {
+    GetIdentityResponse,
+  },
+} = require('@dashevo/dapi-grpc');
 
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 
@@ -15,12 +19,14 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
  * @param {IdentityStoreRepository} previousIdentityRepository
  * @param {RootTree} previousRootTree
  * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
+ * @param {createQueryResponse} createQueryResponse
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
   previousIdentityRepository,
   previousRootTree,
   previousIdentitiesStoreRootTreeLeaf,
+  createQueryResponse,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -32,7 +38,9 @@ function identityQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function identityQueryHandler(params, { id }, request) {
-    const includeProof = request.prove === 'true';
+    const isProofRequested = request.prove === 'true';
+
+    const response = createQueryResponse(GetIdentityResponse, isProofRequested);
 
     const identity = await previousIdentityRepository.fetch(id);
 
@@ -42,16 +50,25 @@ function identityQueryHandlerFactory(
 
     const identityBuffer = identity.toBuffer();
 
-    const value = {
-      data: identityBuffer,
-    };
+    if (isProofRequested) {
+      const proof = response.getProof();
 
-    if (includeProof) {
-      value.proof = previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, [id]);
+      const {
+        rootTreeProof,
+        storeTreeProof,
+      } = previousRootTree.getFullProof(
+        previousIdentitiesStoreRootTreeLeaf,
+        [id],
+      );
+
+      proof.setRootTreeProof(rootTreeProof);
+      proof.setStoreTreeProof(storeTreeProof);
+    } else {
+      response.setIdentity(identityBuffer);
     }
 
     return new ResponseQuery({
-      value: cbor.encode(value),
+      value: response.serializeBinary(),
     });
   }
 

@@ -11,9 +11,9 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
 /**
  * Begin Block ABCI Handler
  *
- * @param {ChainInfo} chainInfo
  * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} previousBlockExecutionContext
  * @param {Number} protocolVersion - Protocol version
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
@@ -22,9 +22,9 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
  * @return {beginBlockHandler}
  */
 function beginBlockHandlerFactory(
-  chainInfo,
   blockExecutionStoreTransactions,
   blockExecutionContext,
+  previousBlockExecutionContext,
   protocolVersion,
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
@@ -55,7 +55,11 @@ function beginBlockHandlerFactory(
 
     // in case previous block execution failed in process
     // and not committed. We need to make sure
-    // previous context is reset.
+    // previous context copied and reset.
+
+    previousBlockExecutionContext.reset();
+    previousBlockExecutionContext.populate(blockExecutionContext);
+
     blockExecutionContext.reset();
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
@@ -69,9 +73,6 @@ function beginBlockHandlerFactory(
     await updateSimplifiedMasternodeList(coreChainLockedHeight, {
       logger: consensusLogger,
     });
-
-    chainInfo.setLastBlockHeight(height);
-    chainInfo.setLastCoreChainLockedHeight(coreChainLockedHeight);
 
     if (version.app.gt(protocolVersion)) {
       throw new NotSupportedProtocolVersionError(

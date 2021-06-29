@@ -7,6 +7,7 @@ const {
 } = require('@dashevo/abci/types');
 
 const cbor = require('cbor');
+const UnavailableAbciError = require('../../errors/UnavailableAbciError');
 
 /**
  *
@@ -14,6 +15,8 @@ const cbor = require('cbor');
  * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
  * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
  * @param {DataContractsStoreRootTreeLeaf} previousDataContractsStoreRootTreeLeaf
+ * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} previousBlockExecutionContext,
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
@@ -21,6 +24,8 @@ function getProofsQueryHandlerFactory(
   previousDocumentsStoreRootTreeLeaf,
   previousIdentitiesStoreRootTreeLeaf,
   previousDataContractsStoreRootTreeLeaf,
+  blockExecutionContext,
+  previousBlockExecutionContext,
 ) {
   /**
    * @typedef getProofsQueryHandler
@@ -36,25 +41,52 @@ function getProofsQueryHandlerFactory(
     documentIds,
     dataContractIds,
   }) {
+    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+      throw new UnavailableAbciError();
+    }
+
+    const {
+      height: previousBlockHeight,
+      coreChainLockedHeight: previousCoreChainLockedHeight,
+    } = previousBlockExecutionContext.getHeader();
+
+    const {
+      quorumHash: signatureLlmqHash,
+      signature,
+    } = blockExecutionContext.getLastCommitInfo();
+
     const response = {
       documentsProof: null,
       identitiesProof: null,
       dataContractsProof: null,
+      metadata: {
+        height: previousBlockHeight.toNumber(),
+        coreChainLockedHeight: previousCoreChainLockedHeight,
+      },
     };
 
     if (documentIds && documentIds.length) {
-      response.documentsProof = previousRootTree
-        .getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds);
+      response.documentsProof = {
+        signatureLlmqHash,
+        signature,
+        ...previousRootTree.getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds),
+      };
     }
 
     if (identityIds && identityIds.length) {
-      response.identitiesProof = previousRootTree
-        .getFullProof(previousIdentitiesStoreRootTreeLeaf, identityIds);
+      response.identitiesProof = {
+        signatureLlmqHash,
+        signature,
+        ...previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, identityIds),
+      };
     }
 
     if (dataContractIds && dataContractIds.length) {
-      response.dataContractsProof = previousRootTree
-        .getFullProof(previousDataContractsStoreRootTreeLeaf, dataContractIds);
+      response.dataContractsProof = {
+        signatureLlmqHash,
+        signature,
+        ...previousRootTree.getFullProof(previousDataContractsStoreRootTreeLeaf, dataContractIds),
+      };
     }
 
     return new ResponseQuery({

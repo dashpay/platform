@@ -5,6 +5,8 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+
+const Long = require('long');
 const cbor = require('cbor');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
@@ -12,6 +14,8 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const getProofsQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/getProofsQueryHandlerFactory');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
+const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 
 describe('getProofsQueryHandlerFactory', () => {
   let getProofsQueryHandler;
@@ -26,6 +30,8 @@ describe('getProofsQueryHandlerFactory', () => {
   let previousDataContractsStoreRootTreeLeafMock;
   let previousIdentitiesStoreRootTreeLeafMock;
   let previousDocumentsStoreRootTreeLeafMock;
+  let blockExecutionContextMock;
+  let previousBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -44,11 +50,29 @@ describe('getProofsQueryHandlerFactory', () => {
     previousDocumentsStoreRootTreeLeafMock = this.sinon.stub();
     previousIdentitiesStoreRootTreeLeafMock = this.sinon.stub();
 
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    blockExecutionContextMock.isEmpty.returns(false);
+    previousBlockExecutionContextMock.isEmpty.returns(false);
+
+    previousBlockExecutionContextMock.getHeader.returns({
+      height: new Long(42),
+      coreChainLockedHeight: 41,
+    });
+
+    blockExecutionContextMock.getLastCommitInfo.returns({
+      quorumHash: Buffer.alloc(32, 1),
+      signature: Buffer.alloc(32, 1),
+    });
+
     getProofsQueryHandler = getProofsQueryHandlerFactory(
       previousRootTreeMock,
       previousDocumentsStoreRootTreeLeafMock,
       previousIdentitiesStoreRootTreeLeafMock,
       previousDataContractsStoreRootTreeLeafMock,
+      blockExecutionContextMock,
+      previousBlockExecutionContextMock,
     );
 
     dataContractData = {
@@ -64,6 +88,8 @@ describe('getProofsQueryHandlerFactory', () => {
 
   it('should return proof for passed data contract ids', async () => {
     const expectedProof = {
+      signatureLlmqHash: Buffer.alloc(32, 1),
+      signature: Buffer.alloc(32, 1),
       rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
       storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
     };
@@ -97,6 +123,10 @@ describe('getProofsQueryHandlerFactory', () => {
           documentsProof: expectedProof,
           identitiesProof: expectedProof,
           dataContractsProof: expectedProof,
+          metadata: {
+            height: 42,
+            coreChainLockedHeight: 41,
+          },
         },
       ),
     });
@@ -122,6 +152,10 @@ describe('getProofsQueryHandlerFactory', () => {
         documentsProof: null,
         identitiesProof: null,
         dataContractsProof: null,
+        metadata: {
+          height: 42,
+          coreChainLockedHeight: 41,
+        },
       }),
     }));
   });
@@ -148,7 +182,28 @@ describe('getProofsQueryHandlerFactory', () => {
         documentsProof: null,
         identitiesProof: null,
         dataContractsProof: null,
+        metadata: {
+          height: 42,
+          coreChainLockedHeight: 41,
+        },
       }),
     }));
+  });
+
+  it('should throw UnavailableAbciError if one of the context is empty', async () => {
+    blockExecutionContextMock.isEmpty.returns(true);
+
+    try {
+      await getProofsQueryHandler({}, {
+        dataContractIds: [],
+        identityIds: [],
+        documentIds: [],
+      });
+
+      expect.fail('should throw UnavailableAbciError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(UnavailableAbciError);
+      expect(previousBlockExecutionContextMock.getHeader).to.have.not.been.called();
+    }
   });
 });

@@ -1,5 +1,3 @@
-const cbor = require('cbor');
-
 const {
   tendermint: {
     abci: {
@@ -7,6 +5,12 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+
+const {
+  v0: {
+    GetIdentitiesByPublicKeyHashesResponse,
+  },
+} = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
@@ -17,6 +21,7 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  * @param {number} maxIdentitiesPerRequest
  * @param {RootTree} previousRootTree
  * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
+ * @param {createQueryResponse} createQueryResponse
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
@@ -25,6 +30,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
   maxIdentitiesPerRequest,
   previousRootTree,
   previousIdentitiesStoreRootTreeLeaf,
+  createQueryResponse,
 ) {
   /**
    * @typedef identitiesByPublicKeyHashesQueryHandler
@@ -44,9 +50,13 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       );
     }
 
+    const isProofRequested = request.prove === 'true';
+
+    const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, isProofRequested);
+
     const identityIds = [];
 
-    const identities = await Promise.all(
+    const identityBuffers = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => {
         const identityId = await previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash);
 
@@ -62,18 +72,22 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       }),
     );
 
-    const value = {
-      data: identities,
-    };
+    if (isProofRequested) {
+      const proof = response.getProof();
 
-    const includeProof = request.prove === 'true';
+      const {
+        rootTreeProof,
+        storeTreeProof,
+      } = previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, identityIds);
 
-    if (includeProof) {
-      value.proof = previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, identityIds);
+      proof.setRootTreeProof(rootTreeProof);
+      proof.setStoreTreeProof(storeTreeProof);
+    } else {
+      response.setIdentitiesList(identityBuffers);
     }
 
     return new ResponseQuery({
-      value: await cbor.encodeAsync(value),
+      value: response.serializeBinary(),
     });
   }
 

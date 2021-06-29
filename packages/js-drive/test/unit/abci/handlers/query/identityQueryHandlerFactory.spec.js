@@ -5,7 +5,13 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const cbor = require('cbor');
+
+const {
+  v0: {
+    GetIdentityResponse,
+    Proof,
+  },
+} = require('@dashevo/dapi-grpc');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
@@ -13,6 +19,7 @@ const identityQueryHandlerFactory = require('../../../../../lib/abci/handlers/qu
 
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
 const AbciError = require('../../../../../lib/abci/errors/AbciError');
+const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 
 describe('identityQueryHandlerFactory', () => {
   let identityQueryHandler;
@@ -22,6 +29,8 @@ describe('identityQueryHandlerFactory', () => {
   let data;
   let previousRootTreeMock;
   let previousIdentitiesStoreRootTreeLeafMock;
+  let createQueryResponseMock;
+  let responseMock;
 
   beforeEach(function beforeEach() {
     previousIdentityRepositoryMock = {
@@ -34,10 +43,18 @@ describe('identityQueryHandlerFactory', () => {
 
     previousIdentitiesStoreRootTreeLeafMock = this.sinon.stub();
 
+    createQueryResponseMock = this.sinon.stub();
+
+    responseMock = new GetIdentityResponse();
+    responseMock.setProof(new Proof());
+
+    createQueryResponseMock.returns(responseMock);
+
     identityQueryHandler = identityQueryHandlerFactory(
       previousIdentityRepositoryMock,
       previousRootTreeMock,
       previousIdentitiesStoreRootTreeLeafMock,
+      createQueryResponseMock,
     );
 
     identity = getIdentityFixture();
@@ -56,9 +73,7 @@ describe('identityQueryHandlerFactory', () => {
     expect(previousIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
-    expect(result.value).to.deep.equal(cbor.encode({
-      data: identity.toBuffer(),
-    }));
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
   it('should throw NotFoundAbciError if identity not found', async () => {
@@ -88,15 +103,23 @@ describe('identityQueryHandlerFactory', () => {
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
-    const value = {
-      data: identity.toBuffer(),
-      proof,
-    };
-
-    expect(result.value).to.deep.equal(cbor.encode(value));
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
     expect(previousRootTreeMock.getFullProof).to.be.calledOnceWith(
       previousIdentitiesStoreRootTreeLeafMock,
       [identity.getId()],
     );
+  });
+
+  it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
+    createQueryResponseMock.throws(new UnavailableAbciError());
+
+    try {
+      await identityQueryHandler(params, data, {});
+
+      expect.fail('should throw UnavailableAbciError');
+    } catch (e) {
+      expect(e).to.be.an.instanceof(UnavailableAbciError);
+      expect(previousIdentityRepositoryMock.fetch).to.have.not.been.called();
+    }
   });
 });

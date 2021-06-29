@@ -73,8 +73,6 @@ const waitReplicaSetInitializeFactory = require('./mongoDb/waitReplicaSetInitial
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 const CreditsDistributionPoolCommonStoreRepository = require('./creditsDistributionPool/CreditsDistributionPoolCommonStoreRepository');
 
-const ChainInfoExternalStoreRepository = require('./chainInfo/ChainInfoExternalStoreRepository');
-
 const BlockExecutionStoreTransactions = require('./blockExecution/BlockExecutionStoreTransactions');
 const PreviousBlockExecutionStoreTransactionsRepository = require('./blockExecution/PreviousBlockExecutionStoreTransactionsRepository');
 
@@ -120,7 +118,6 @@ const SpentAssetLockTransactionsStoreRootTreeLeaf = require('./identity/SpentAss
 const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneToPreviousStoreTransactionsFactory');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
 const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
-const ChainInfo = require('./chainInfo/ChainInfo');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
@@ -128,6 +125,8 @@ const ValidatorSet = require('./validator/ValidatorSet');
 const createValidatorSetUpdate = require('./abci/handlers/validator/createValidatorSetUpdate');
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
+const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
+const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 
 /**
  *
@@ -756,13 +755,6 @@ function createDIContainer(options) {
       level(previousExternalStoreLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
     )).disposer((levelDB) => levelDB.close())
       .singleton(),
-
-    chainInfoRepository: asClass(ChainInfoExternalStoreRepository).singleton(),
-
-    previousChainInfoRepository: asFunction((
-      previousExternalLevelDB,
-    ) => (new ChainInfoExternalStoreRepository(previousExternalLevelDB))).singleton(),
-    chainInfo: asValue(new ChainInfo()),
   });
 
   /**
@@ -829,6 +821,10 @@ function createDIContainer(options) {
     )).singleton(),
 
     blockExecutionContext: asClass(BlockExecutionContext).singleton(),
+
+    previousBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
+
+    blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
 
     cloneToPreviousStoreTransactions: asFunction(
       cloneToPreviousStoreTransactionsFactory,
@@ -1014,6 +1010,7 @@ function createDIContainer(options) {
    * Register ABCI handlers
    */
   container.register({
+    createQueryResponse: asFunction(createQueryResponseFactory).singleton(),
     createValidatorSetUpdate: asValue(createValidatorSetUpdate),
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
     dataContractQueryHandler: asFunction(dataContractQueryHandlerFactory).singleton(),

@@ -1,3 +1,18 @@
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+
+const {
+  tendermint: {
+    abci: {
+      LastCommitInfo,
+    },
+    types: {
+      Header,
+    },
+  },
+} = require('@dashevo/abci/types');
+
+const Long = require('long');
+
 class BlockExecutionContext {
   constructor() {
     this.dataContracts = [];
@@ -167,9 +182,86 @@ class BlockExecutionContext {
     this.dataContracts = [];
     this.cumulativeFees = 0;
     this.header = null;
+    this.lastCommitInfo = null;
     this.validTxs = 0;
     this.invalidTxs = 0;
     this.consensusLogger = null;
+  }
+
+  /**
+   * Check is the context is not set
+   *
+   * @return {boolean}
+   */
+  isEmpty() {
+    return !this.header;
+  }
+
+  /**
+   * Populate the current instance with data from another instance
+   *
+   * @param {BlockExecutionContext} blockExecutionContext
+   */
+  populate(blockExecutionContext) {
+    this.dataContracts = blockExecutionContext.dataContracts;
+    this.lastCommitInfo = blockExecutionContext.lastCommitInfo;
+    this.cumulativeFees = blockExecutionContext.cumulativeFees;
+    this.header = blockExecutionContext.header;
+    this.validTxs = blockExecutionContext.validTxs;
+    this.invalidTxs = blockExecutionContext.invalidTxs;
+    this.consensusLogger = blockExecutionContext.consensusLogger;
+  }
+
+  /**
+   * Populate the current instance with data
+   *
+   * @param object
+   */
+  fromObject(object) {
+    this.dataContracts = object.dataContracts
+      .map((rawDataContract) => new DataContract(rawDataContract));
+    this.lastCommitInfo = LastCommitInfo.fromObject(object.lastCommitInfo);
+    this.cumulativeFees = object.cumulativeFees;
+    this.header = Header.fromObject(object.header);
+    this.validTxs = object.validTxs;
+    this.invalidTxs = object.invalidTxs;
+    this.consensusLogger = object.consensusLogger;
+
+    this.header.time.seconds = Long.fromNumber(this.header.time.seconds);
+    this.header.height = Long.fromNumber(this.header.height);
+  }
+
+  /**
+   * @param {Object} options
+   * @param {boolean} [options.skipConsensusLogger=false]
+   * @return {{
+   *  dataContracts: Object[],
+   *  invalidTxs: number,
+   *  header: null,
+   *  validTxs: number,
+   *  cumulativeFees: number
+   * }}
+   */
+  toObject(options = {}) {
+    const header = Header.toObject(this.header);
+
+    header.time.seconds = header.time.seconds.toNumber();
+    header.height = header.height.toNumber();
+
+    const object = {
+      dataContracts: this.dataContracts.map((dataContract) => dataContract.toObject()),
+      cumulativeFees: this.cumulativeFees,
+      header,
+      lastCommitInfo: LastCommitInfo.toObject(this.lastCommitInfo),
+      validTxs: this.validTxs,
+      invalidTxs: this.invalidTxs,
+    };
+
+    if (!options.skipConsensusLogger) {
+      object.consensusLogger = this.consensusLogger;
+    }
+
+    return object;
   }
 }
 

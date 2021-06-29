@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const Long = require('long');
+
 const { asValue } = require('awilix');
 
 const { version: driveVersion } = require('../../../package.json');
@@ -13,10 +15,7 @@ const { version: driveVersion } = require('../../../package.json');
 const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
 
 /**
- * @param {ChainInfo} chainInfo
- * @param {ChainInfoExternalStoreRepository} chainInfoRepository
- * @param {CreditsDistributionPool} creditsDistributionPool
- * @param {CreditsDistributionPoolCommonStoreRepository} creditsDistributionPoolRepository
+ * @param {BlockExecutionContext} blockExecutionContext
  * @param {Number} protocolVersion
  * @param {RootTree} rootTree
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
@@ -28,10 +27,7 @@ const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/No
  * @return {infoHandler}
  */
 function infoHandlerFactory(
-  chainInfo,
-  chainInfoRepository,
-  creditsDistributionPool,
-  creditsDistributionPoolRepository,
+  blockExecutionContext,
   protocolVersion,
   rootTree,
   updateSimplifiedMasternodeList,
@@ -55,21 +51,22 @@ function infoHandlerFactory(
     contextLogger.debug('Info ABCI method requested');
     contextLogger.trace({ abciRequest: request });
 
-    // Update ChainInfo
-    const fetchedChainInfo = await chainInfoRepository.fetch();
-
-    chainInfo.populate(fetchedChainInfo.toJSON());
-
     // Update CreditsDistributionPool
-    const fetchedCreditsDistributionPool = await creditsDistributionPoolRepository.fetch();
 
-    creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
+    const lastHeader = blockExecutionContext.getHeader();
+
+    let lastHeight = Long.fromNumber(0);
+    let lastCoreChainLockedHeight = 0;
+    if (lastHeader) {
+      lastHeight = lastHeader.height;
+      lastCoreChainLockedHeight = lastHeader.coreChainLockedHeight;
+    }
 
     contextLogger = contextLogger.child({
-      height: chainInfo.getLastBlockHeight().toString(),
+      height: lastHeight.toString(),
     });
 
-    if (chainInfo.getLastBlockHeight().gt(0)) {
+    if (lastHeader) {
       // If the current block is higher than 1 we need to obtain previous block data
       if (!container.has('previousBlockExecutionStoreTransactions')) {
         // If container doesn't have previous transactions, load them from file (node cold start)
@@ -87,8 +84,7 @@ function infoHandlerFactory(
       }
 
       // Update SML store to latest saved core chain lock to make sure
-      // that verfy chain lock handler has updated SML Store to verify signatures
-      const lastCoreChainLockedHeight = chainInfo.getLastCoreChainLockedHeight();
+      // that verify chain lock handler has updated SML Store to verify signatures
 
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
@@ -99,17 +95,19 @@ function infoHandlerFactory(
 
     contextLogger.info(
       {
-        ...chainInfo.toJSON(),
+        lastHeight: lastHeight.toString(),
+        lastCoreChainLockedHeight,
         appHash: appHash.toString('hex').toUpperCase(),
       },
-      `Start processing from block #${chainInfo.getLastBlockHeight()} with appHash ${appHash.toString('hex').toUpperCase() || 'nil'}`,
+      `Start processing from block #${lastHeight} with appHash ${appHash.toString('hex').toUpperCase() || 'nil'}`,
     );
 
     return new ResponseInfo({
       version: driveVersion,
       appVersion: protocolVersion,
-      lastBlockHeight: chainInfo.getLastBlockHeight(),
+      lastBlockHeight: lastHeight,
       lastBlockAppHash: appHash,
+      lastCoreChainLockedHeight,
     });
   }
 

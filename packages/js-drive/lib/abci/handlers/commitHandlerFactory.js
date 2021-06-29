@@ -6,20 +6,20 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const Long = require('long');
 const { asValue } = require('awilix');
 
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
 const DataCorruptedError = require('./errors/DataCorruptedError');
+const BlockExecutionContextRepository = require('../../blockExecution/BlockExecutionContextRepository');
 
 /**
- * @param {ChainInfo} chainInfo
- * @param {ChainInfoExternalStoreRepository} chainInfoRepository
  * @param {CreditsDistributionPool} creditsDistributionPool
  * @param {CreditsDistributionPoolCommonStoreRepository} creditsDistributionPoolRepository
  * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextRepository} blockExecutionContextRepository
  * @param {DocumentDatabaseManager} documentDatabaseManager
  * @param {DocumentDatabaseManager} previousDocumentDatabaseManager
  * @param {DashPlatformProtocol} transactionalDpp
@@ -36,12 +36,12 @@ const DataCorruptedError = require('./errors/DataCorruptedError');
  * @return {commitHandler}
  */
 function commitHandlerFactory(
-  chainInfo,
-  chainInfoRepository,
   creditsDistributionPool,
   creditsDistributionPoolRepository,
   blockExecutionStoreTransactions,
   blockExecutionContext,
+  previousBlockExecutionContext,
+  blockExecutionContextRepository,
   documentDatabaseManager,
   previousDocumentDatabaseManager,
   transactionalDpp,
@@ -110,15 +110,25 @@ function commitHandlerFactory(
       // Commit the current block db transactions
       await blockExecutionStoreTransactions.commit();
 
-      // Store current block height to external storage (outside of state trees, otherwise it
+      // Store block execution contexts to external storage (outside of state trees, otherwise it
       // will change appHash even if we nave no transactions inside of the block)
-      await chainInfoRepository.store(
-        chainInfo,
+      await blockExecutionContextRepository.store(
+        BlockExecutionContextRepository.KEY_PREFIX_CURRENT,
+        blockExecutionContext,
       );
+
+      if (!previousBlockExecutionContext.isEmpty()) {
+        await blockExecutionContextRepository.store(
+          BlockExecutionContextRepository.KEY_PREFIX_PREVIOUS,
+          previousBlockExecutionContext,
+        );
+      }
     } catch (e) {
       // Abort DB transactions. It doesn't work since some of transaction may already be committed
       // and will produce "transaction in not started" error.
-      await blockExecutionStoreTransactions.abort();
+      if (blockExecutionStoreTransactions.isStarted()) {
+        await blockExecutionStoreTransactions.abort();
+      }
 
       for (const dataContract of blockExecutionContext.getDataContracts()) {
         await documentDatabaseManager.drop(dataContract);
@@ -180,10 +190,6 @@ function commitHandlerFactory(
         nextPreviousBlockExecutionStoreTransactions,
       );
     } catch (e) {
-      // Break syncing to force user to reset.
-      chainInfo.setLastBlockHeight(Long.fromInt(0));
-      await chainInfoRepository.store(chainInfo);
-
       throw new DataCorruptedError(e);
     }
 

@@ -7,6 +7,7 @@ const chalk = require('chalk');
 const ZMQClient = require('../lib/core/ZmqClient');
 
 const createDIContainer = require('../lib/createDIContainer');
+const BlockExecutionContextRepository = require('../lib/blockExecution/BlockExecutionContextRepository');
 
 const { version: driveVersion } = require('../package.json');
 
@@ -56,6 +57,34 @@ console.log(chalk.hex('#008de4')(banner));
 
   await dpp.initialize();
   await transactionalDpp.initialize();
+
+  /**
+   * Initialize Block Execution Contexts
+   */
+  const blockExecutionContext = container.resolve('blockExecutionContext');
+  const previousBlockExecutionContext = container.resolve('previousBlockExecutionContext');
+  const blockExecutionContextRepository = container.resolve('blockExecutionContextRepository');
+
+  const persistedBlockExecutionContext = await blockExecutionContextRepository.fetch(
+    BlockExecutionContextRepository.KEY_PREFIX_CURRENT,
+  );
+
+  const persistedPreviousBlockExecutionContext = await blockExecutionContextRepository.fetch(
+    BlockExecutionContextRepository.KEY_PREFIX_PREVIOUS,
+  );
+
+  blockExecutionContext.populate(persistedBlockExecutionContext);
+  previousBlockExecutionContext.populate(persistedPreviousBlockExecutionContext);
+
+  /**
+   * Initialize Credits Distribution Pool
+   */
+
+  const creditsDistributionPoolRepository = container.resolve('creditsDistributionPoolRepository');
+  const creditsDistributionPool = container.resolve('creditsDistributionPool');
+
+  const fetchedCreditsDistributionPool = await creditsDistributionPoolRepository.fetch();
+  creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
 
   /**
    * Make sure MongoDB is running
