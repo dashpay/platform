@@ -9,6 +9,7 @@ ProcessMediator.EVENTS = {
   CLIENT_DISCONNECTED: 'clientDisconnected',
   HISTORICAL_BLOCK_SENT: 'historicalBlockSent',
   INSTANT_LOCK: 'instantLock',
+  MEMPOOL_DATA_SENT: 'memPoolDataSent',
 };
 
 module.exports = ProcessMediator;

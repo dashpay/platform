@@ -105,6 +105,16 @@ const getMempoolInfo = () => new Promise((resolve, reject) => {
   });
 });
 
+const getRawMemPool = verbose => new Promise((resolve, reject) => {
+  client.getrawmempool(verbose, (err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
 const getMnListDiff = (baseBlockHash, blockHash) => new Promise((resolve, reject) => {
   client.protx(constants.DASHCORE_RPC_COMMANDS.protx.diff, baseBlockHash, blockHash, (err, r) => {
     if (err) {
@@ -329,4 +339,5 @@ module.exports = {
   getMerkleBlocks,
   getBlockchainInfo,
   getNetworkInfo,
+  getRawMemPool,
 };

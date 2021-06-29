@@ -3,6 +3,7 @@ const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
+const { Transaction } = require('@dashevo/dashcore-lib');
 
 const {
   server: {
@@ -58,6 +59,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let subscribeToNewTransactionsMock;
   let testTransactionAgainstFilterMock;
   let coreAPIMock;
+  let getMemPoolTransactionsMock;
 
   beforeEach(function beforeEach() {
     const bloomFilterMessage = new BloomFilter();
@@ -91,12 +93,15 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       getBlockHash: this.sinon.stub(),
     };
 
+    getMemPoolTransactionsMock = this.sinon.stub().returns([]);
+
     subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
       getHistoricalTransactionsIteratorMock,
       subscribeToNewTransactionsMock,
       bloomFilterEmitterCollectionMock,
       testTransactionAgainstFilterMock,
       coreAPIMock,
+      getMemPoolTransactionsMock,
     );
 
     this.sinon.spy(ProcessMediator.prototype, 'emit');
@@ -128,6 +133,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
 
@@ -154,6 +160,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
 
@@ -179,6 +186,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
 
@@ -195,6 +203,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
 
@@ -215,6 +224,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
 
@@ -243,6 +253,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       ],
     });
 
+    getMemPoolTransactionsMock.returns([new Transaction(Buffer.from('03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff1703f06a101299dbcd32279d9e01e508000000002f4e614effffffff0285464209000000001976a9146a341485a9444b35dc9cb90d24e7483de7d37e0088ac7f464209000000001976a914ad037df64c0d0ec5d0395eb9a543f93fcc26092388ac00000000260100f06a1000c69a125eeb5ce6fa55c48966174a90253a79ce3350ccc4918ba2cb1463513c88', 'hex'))]);
+
     await subscribeToTransactionsWithProofsHandler(call);
 
     const filter = new CoreBloomFilter({
@@ -258,9 +270,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
         Buffer.from('someBlockHash').toString('hex'),
         10,
       );
+    expect(getMemPoolTransactionsMock).to.have.been.calledOnceWith(filter);
 
     expect(subscribeToNewTransactionsMock).to.have.been.calledOnce();
-    expect(writableStub).to.have.been.calledTwice();
+    expect(writableStub).to.have.been.calledThrice();
 
     const firstResponse = new TransactionsWithProofsResponse();
     const rawTransactions = new RawTransactions();
@@ -291,11 +304,12 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.emit('cancelled');
 
     // Bloom filters was removed when client disconnects
-    expect(ProcessMediator.prototype.emit.getCall(1)).to.be.calledWith(
+    expect(ProcessMediator.prototype.emit.getCall(2)).to.be.calledWith(
       ProcessMediator.EVENTS.CLIENT_DISCONNECTED,
     );
 
     expect(call.write).to.not.have.been.called();
     expect(call.end).to.have.been.calledOnce();
+    expect(getMemPoolTransactionsMock).to.have.been.calledOnce();
   });
 });

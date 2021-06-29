@@ -80,6 +80,7 @@ async function sendInstantLockResponse(call, instantLock) {
  * @param {BloomFilterEmitterCollection} bloomFilterEmitterCollection
  * @param {testFunction} testTransactionAgainstFilter
  * @param {CoreRpcClient} coreAPI
+ * @param {getMemPoolTransactions} getMemPoolTransactions
  * @return {subscribeToTransactionsWithProofsHandler}
  */
 function subscribeToTransactionsWithProofsHandlerFactory(
@@ -88,6 +89,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
   bloomFilterEmitterCollection,
   testTransactionAgainstFilter,
   coreAPI,
+  getMemPoolTransactions,
 ) {
   /**
    * @typedef subscribeToTransactionsWithProofsHandler
@@ -191,7 +193,15 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       }
     }
 
+    // notify new txs listener that we've sent historical data
+    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+
     if (isNewTransactionsRequested) {
+      const memPoolTransactions = await getMemPoolTransactions(filter);
+      if (memPoolTransactions.length) {
+        await sendTransactionsResponse(acknowledgingCall, memPoolTransactions);
+      }
+
       // new txs listener will send us unsent cached data back
       mediator.on(
         ProcessMediator.EVENTS.TRANSACTION,
@@ -214,8 +224,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
         },
       );
 
-      // notify new txs listener that we've sent historical data
-      mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+      mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
     } else {
       // End stream if user asked only for historical data
       call.end();

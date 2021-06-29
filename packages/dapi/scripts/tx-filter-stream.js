@@ -48,6 +48,7 @@ const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServ
 
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
+const getMemPoolTransactionsFactory = require('../lib/transactionsFilter/getMemPoolTransactionsFactory');
 
 async function main() {
   // Validate config
@@ -117,12 +118,18 @@ async function main() {
     dashCoreRpcClient,
   );
 
+  const getMemPoolTransactions = getMemPoolTransactionsFactory(
+    dashCoreRpcClient,
+    testTransactionsAgainstFilter,
+  );
+
   const subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
     getHistoricalTransactionsIterator,
     subscribeToNewTransactions,
     bloomFilterEmitterCollection,
     testTransactionsAgainstFilter,
     dashCoreRpcClient,
+    getMemPoolTransactions,
   );
 
   const wrappedSubscribeToTransactionsWithProofs = jsonToProtobufHandlerWrapper(

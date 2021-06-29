@@ -162,7 +162,7 @@ describe('subscribeToNewTransactions', () => {
 
     bloomFilterEmitterCollection.emit('block', blocks[0]);
 
-    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+    mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
     expect(receivedTransactions).to.deep.equal([
@@ -210,7 +210,7 @@ describe('subscribeToNewTransactions', () => {
 
     bloomFilterEmitterCollection.emit('block', blocks[0]);
 
-    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+    mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
     expect(receivedTransactions).to.deep.equal([
@@ -267,7 +267,7 @@ describe('subscribeToNewTransactions', () => {
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_BLOCK_SENT, blocks[0].hash);
 
-    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+    mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
     expect(receivedTransactions).to.deep.equal([
@@ -331,7 +331,7 @@ describe('subscribeToNewTransactions', () => {
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_BLOCK_SENT, blocks[0].hash);
 
-    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+    mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
     expect(receivedTransactions).to.deep.equal([
@@ -413,7 +413,7 @@ describe('subscribeToNewTransactions', () => {
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_BLOCK_SENT, blocks[0].hash);
 
-    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+    mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
     expect(receivedTransactions).to.deep.equal([

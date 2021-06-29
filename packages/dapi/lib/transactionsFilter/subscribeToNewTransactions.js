@@ -66,7 +66,7 @@ function subscribeToNewTransactions(
   // as new data continuously after that.
   //
   // This loop works because cache is populated from ZMQ events.
-  mediator.once(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT, async () => {
+  mediator.once(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT, async () => {
     while (isClientConnected) {
       const unsentTransactions = transactionsAndBlocksCache.getUnretrievedTransactions();
       unsentTransactions

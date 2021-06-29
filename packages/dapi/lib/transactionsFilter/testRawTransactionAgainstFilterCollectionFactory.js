@@ -8,6 +8,7 @@ function testRawTransactionAgainstFilterCollectionFactory(bloomFilterEmitterColl
   /**
    * Test a raw transaction against bloom filter collection
    *
+   * @typedef testRawTransactionAgainstFilterCollection
    * @param {Buffer} rawTransaction
    */
   function testRawTransactionAgainstFilterCollection(rawTransaction) {
