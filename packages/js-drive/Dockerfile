@@ -1,3 +1,4 @@
+# syntax = docker/dockerfile:1.2
 FROM node:12-alpine as node_modules
 
 RUN apk update && \
@@ -15,18 +16,12 @@ RUN npm install -g node-gyp-cache@0.2.1 && \
     npm config set node_gyp node-gyp-cache && \
     git config --global url."https://github.com/".insteadOf ssh://git@github.com/
 
-# Copy node gyp cache
-COPY docker/cache/.cache /root/.cache
-
-# Copy NPM cache
-COPY docker/cache/.npm /root/.npm
-
 # Install npm modules
 ENV npm_config_zmq_external=true
 
 COPY package.json package-lock.json /
 
-RUN npm ci --production
+RUN --mount=type=cache,target=/root/.npm --mount=type=cache,target=/root/.cache npm ci --production
 
 FROM node:12-alpine
 

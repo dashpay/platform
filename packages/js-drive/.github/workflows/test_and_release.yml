@@ -2,6 +2,8 @@ name: Test and Release
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '43 */160 * * *'
   release:
     types:
       - published
@@ -29,7 +31,7 @@ jobs:
       # using `persist-credentials: false` and replacing github url solves
       # https://github.com/actions/setup-node/issues/214
 
-      - name: Reconfigure git to use HTTP authentication
+      - name: Reconfigure git to use HTTPS authentication
         run: >
           git config --global url."https://github.com/".insteadOf ssh://git@github.com/
 
@@ -81,7 +83,23 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: '12'
+      
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          install: true
+          driver-opts: image=moby/buildkit:buildx-stable-1
 
+      # Temporary fix until Docker Compose V2 is GA
+      - name: Set up Docker Compose V2
+        run: |
+          curl https://github.com/docker/compose-cli/releases/download/v2.0.0-beta.4/docker-compose-linux-amd64 --location --create-dirs -o $HOME/.docker/cli-plugins/docker-compose
+          chmod +x $HOME/.docker/cli-plugins/docker-compose
+          docker version
+          docker info
+
+      # Cache for dashmate and test suite
       - name: Enable NPM cache
         uses: actions/cache@v2
         with:
@@ -90,11 +108,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      # - name: Cache Docker layers
-      #   uses: satackey/action-docker-layer-caching@v0.0.11
-      #   continue-on-error: true
-      #   with:
-      #     concurrency: 8
+      - name: Enable buildkit cache
+        uses: actions/cache@v2
+        with:
+          path: buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
+
+      - name: Show containers debug
+        continue-on-error: true
+        run: |
+          docker ps -a
+          docker buildx inspect
+          ls -lha buildkit-cache
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: $(pwd)/buildkit-cache
+          cache-max-size: 2g
 
       - name: Load workflow dotenv file
         uses: c-py/action-dotenv-to-setenv@v3
@@ -109,11 +143,9 @@ jobs:
           override-testsuite-branch: ${{ env.TEST_SUITE_BRANCH }}
 
       - name: Start Dash local network
-        uses: dashevo/gh-action-start-local-network@v1
+        uses: dashevo/gh-action-start-local-network@buildkit-caching-support
         id: start-local-network
         with:
-          actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
-          actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
           drive-branch: ${{ steps.platform-branches.outputs.current-branch }}
           dapi-branch: ${{ env.DAPI_BRANCH }}
           dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
@@ -148,18 +180,30 @@ jobs:
           TAG_PREFIX: refs/tags/v
 
       - name: Set up Docker BuildX
+        id: buildx
         uses: docker/setup-buildx-action@v1
         with:
           install: true
-          driver-opts: image=moby/buildkit:latest
-
-      - name: Cache Docker layers
+          driver-opts: image=moby/buildkit:buildx-stable-1
+      
+      - name: Enable buildkit cache
         uses: actions/cache@v2
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+          path: buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-state
+
+      - name: Show containers debug
+        run: |
+          docker ps -a
+          docker buildx inspect
+          ls -lha buildkit-cache
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: $(pwd)/buildkit-cache
+          cache-max-size: 2g
 
       - name: Login to DockerHub
         uses: docker/login-action@v1
@@ -188,10 +232,6 @@ jobs:
             latest=${{ !contains(github.event.release.tag_name, '-dev') }}
             suffix=${{ steps.suffix.outputs.result }}
 
-      # BuildX cache temporary workaround
-      # https://github.com/docker/build-push-action/issues/252
-      # https://github.com/moby/buildkit/issues/1896
-
       - name: Build and push Docker image
         id: docker_build
         uses: docker/build-push-action@v2
@@ -201,14 +241,7 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          cache-from: type=local,src=/tmp/.buildx-cache # <---
-          cache-to: type=local,mode=max,dest=/tmp/.buildx-cache-new # <---
           # platforms: linux/amd64,linux/arm64,linux/arm/v7
-
-      - name: Temporary fix for Docker cache action
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Show Docker image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
