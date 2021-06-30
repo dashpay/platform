@@ -6,6 +6,7 @@ const Identifier = require('../../../lib/identifier/Identifier');
 const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const Metadata = require('../../../lib/Metadata');
 
 describe('DataContract', () => {
   let hashMock;
@@ -19,6 +20,7 @@ describe('DataContract', () => {
   let entropy;
   let contractId;
   let getBinaryPropertiesFromSchemaMock;
+  let metadataFixture;
 
   beforeEach(function beforeEach() {
     hashMock = this.sinonSandbox.stub();
@@ -66,6 +68,10 @@ describe('DataContract', () => {
       documents,
       $defs: {},
     });
+
+    metadataFixture = new Metadata(42, 0);
+
+    dataContract.setMetadata(metadataFixture);
   });
 
   describe('constructor', () => {
@@ -367,6 +373,22 @@ describe('DataContract', () => {
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidDocumentTypeError);
       }
+    });
+  });
+
+  describe('#setMetadata', () => {
+    it('should set metadata', () => {
+      const otherMetadata = new Metadata(43, 1);
+
+      dataContract.setMetadata(otherMetadata);
+
+      expect(dataContract.metadata).to.deep.equal(otherMetadata);
+    });
+  });
+
+  describe('#getMetadata', () => {
+    it('should get metadata', () => {
+      expect(dataContract.getMetadata()).to.deep.equal(metadataFixture);
     });
   });
 });

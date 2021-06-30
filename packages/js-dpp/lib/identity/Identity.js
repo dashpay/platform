@@ -203,6 +203,22 @@ class Identity {
 
     return this;
   }
+
+  /**
+   * Set metadata
+   * @param {Metadata} metadata
+   */
+  setMetadata(metadata) {
+    this.metadata = metadata;
+  }
+
+  /**
+   * Get metadata
+   * @returns {Metadata|null}
+   */
+  getMetadata() {
+    return this.metadata;
+  }
 }
 
 /**

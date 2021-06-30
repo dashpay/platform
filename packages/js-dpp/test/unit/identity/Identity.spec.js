@@ -3,6 +3,7 @@ const rewiremock = require('rewiremock/node');
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
+const Metadata = require('../../../lib/Metadata');
 
 describe('Identity', () => {
   let rawIdentity;
@@ -10,6 +11,7 @@ describe('Identity', () => {
   let Identity;
   let hashMock;
   let encodeMock;
+  let metadataFixture;
 
   beforeEach(function beforeEach() {
     hashMock = this.sinonSandbox.stub();
@@ -40,6 +42,10 @@ describe('Identity', () => {
     };
 
     identity = new Identity(rawIdentity);
+
+    metadataFixture = new Metadata(42, 0);
+
+    identity.setMetadata(metadataFixture);
   });
 
   describe('#constructor', () => {
@@ -170,6 +176,22 @@ describe('Identity', () => {
 
       expect(result).to.equal(40);
       expect(identity.balance).to.equal(40);
+    });
+  });
+
+  describe('#setMetadata', () => {
+    it('should set metadata', () => {
+      const otherMetadata = new Metadata(43, 1);
+
+      identity.setMetadata(otherMetadata);
+
+      expect(identity.metadata).to.deep.equal(otherMetadata);
+    });
+  });
+
+  describe('#getMetadata', () => {
+    it('should get metadata', () => {
+      expect(identity.getMetadata()).to.deep.equal(metadataFixture);
     });
   });
 });

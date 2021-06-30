@@ -274,6 +274,22 @@ class Document {
   }
 
   /**
+   * Set metadata
+   * @param {Metadata} metadata
+   */
+  setMetadata(metadata) {
+    this.metadata = metadata;
+  }
+
+  /**
+   * Get metadata
+   * @returns {Metadata|null}
+   */
+  getMetadata() {
+    return this.metadata;
+  }
+
+  /**
    * Return Document as plain object
    *
    * @param {Object} [options]
