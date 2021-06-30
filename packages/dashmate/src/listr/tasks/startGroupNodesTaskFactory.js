@@ -44,7 +44,6 @@ function startGroupNodesTaskFactory(
 
     return new Listr([
       {
-        title: 'Build services',
         enabled: () => platformBuildConfig,
         task: () => buildServicesTask(platformBuildConfig),
       },

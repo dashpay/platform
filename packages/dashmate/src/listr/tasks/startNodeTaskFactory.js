@@ -61,7 +61,6 @@ function startNodeTaskFactory(
         },
       },
       {
-        title: 'Build services',
         enabled: (ctx) => !ctx.skipBuildServices && config.has('platform')
           && (
             config.get('platform.dapi.api.docker.build.path') !== null

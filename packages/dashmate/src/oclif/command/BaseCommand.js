@@ -4,6 +4,8 @@ const { asValue } = require('awilix');
 
 const graceful = require('node-graceful');
 
+const dotenv = require('dotenv');
+
 const getFunctionParams = require('../../util/getFunctionParams');
 
 const createDIContainer = require('../../createDIContainer');
@@ -15,6 +17,9 @@ const ConfigFileNotFoundError = require('../../config/errors/ConfigFileNotFoundE
  */
 class BaseCommand extends Command {
   async init() {
+    // Read environment variables from .env file
+    dotenv.config();
+
     const { args, flags } = this.parse(this.constructor);
 
     this.parsedArgs = args;
