@@ -22,6 +22,8 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  * @param {RootTree} previousRootTree
  * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
  * @param {createQueryResponse} createQueryResponse
+ * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} previousBlockExecutionContext
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
@@ -31,6 +33,8 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
   previousRootTree,
   previousIdentitiesStoreRootTreeLeaf,
   createQueryResponse,
+  blockExecutionContext,
+  previousBlockExecutionContext,
 ) {
   /**
    * @typedef identitiesByPublicKeyHashesQueryHandler
@@ -50,26 +54,25 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       );
     }
 
+    // There is no signed state (current committed block height less then 2)
+    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+      const response = new GetIdentitiesByPublicKeyHashesResponse();
+
+      response.setIdentitiesList(publicKeyHashes.map(() => Buffer.alloc(0)));
+
+      return new ResponseQuery({
+        value: response.serializeBinary(),
+      });
+    }
+
     const isProofRequested = request.prove === 'true';
 
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, isProofRequested);
 
-    const identityIds = [];
-
-    const identityBuffers = await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => {
-        const identityId = await previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash);
-
-        if (!identityId) {
-          return Buffer.alloc(0);
-        }
-
-        identityIds.push(identityId);
-
-        const identity = await previousIdentityRepository.fetch(identityId);
-
-        return identity.toBuffer();
-      }),
+    const identityIds = await Promise.all(
+      publicKeyHashes.map((publicKeyHash) => (
+        previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash)
+      )),
     );
 
     if (isProofRequested) {
@@ -78,11 +81,26 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       const {
         rootTreeProof,
         storeTreeProof,
-      } = previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, identityIds);
+      } = previousRootTree.getFullProof(
+        previousIdentitiesStoreRootTreeLeaf,
+        identityIds.filter(Boolean).map((identityId) => identityId.toBuffer()),
+      );
 
       proof.setRootTreeProof(rootTreeProof);
       proof.setStoreTreeProof(storeTreeProof);
     } else {
+      const identityBuffers = await Promise.all(
+        identityIds.map(async (identityId) => {
+          if (!identityId) {
+            return Buffer.alloc(0);
+          }
+
+          const identity = await previousIdentityRepository.fetch(identityId);
+
+          return identity.toBuffer();
+        }),
+      );
+
       response.setIdentitiesList(identityBuffers);
     }
 

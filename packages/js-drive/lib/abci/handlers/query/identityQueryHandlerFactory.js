@@ -20,6 +20,8 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
  * @param {RootTree} previousRootTree
  * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
  * @param {createQueryResponse} createQueryResponse
+ * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} previousBlockExecutionContext
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
@@ -27,6 +29,8 @@ function identityQueryHandlerFactory(
   previousRootTree,
   previousIdentitiesStoreRootTreeLeaf,
   createQueryResponse,
+  blockExecutionContext,
+  previousBlockExecutionContext,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -38,6 +42,11 @@ function identityQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function identityQueryHandler(params, { id }, request) {
+    // There is no signed state (current committed block height less then 2)
+    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+      throw new NotFoundAbciError('Identity not found');
+    }
+
     const isProofRequested = request.prove === 'true';
 
     const response = createQueryResponse(GetIdentityResponse, isProofRequested);

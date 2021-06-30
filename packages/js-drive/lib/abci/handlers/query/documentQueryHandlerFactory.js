@@ -23,6 +23,8 @@ const UnavailableAbciError = require('../../errors/UnavailableAbciError');
  * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
  * @param {AwilixContainer} container
  * @param {createQueryResponse} createQueryResponse
+ * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} previousBlockExecutionContext
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
@@ -31,6 +33,8 @@ function documentQueryHandlerFactory(
   previousDocumentsStoreRootTreeLeaf,
   container,
   createQueryResponse,
+  blockExecutionContext,
+  previousBlockExecutionContext,
 ) {
   /**
    * @typedef documentQueryHandler
@@ -60,6 +64,15 @@ function documentQueryHandlerFactory(
     },
     request,
   ) {
+    // There is no signed state (current committed block height less then 2)
+    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+      const response = new GetDocumentsResponse();
+
+      return new ResponseQuery({
+        value: response.serializeBinary(),
+      });
+    }
+
     if (!container.has('previousBlockExecutionStoreTransactions')) {
       throw new UnavailableAbciError();
     }

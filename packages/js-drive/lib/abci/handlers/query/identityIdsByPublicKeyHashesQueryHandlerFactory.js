@@ -21,6 +21,8 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  * @param {RootTree} previousRootTree
  * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} previousPublicKeyToIdentityIdStoreRootTreeLeaf
  * @param {createQueryResponse} createQueryResponse
+ * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} previousBlockExecutionContext
  * @return {identityIdsByPublicKeyHashesQueryHandler}
  */
 function identityIdsByPublicKeyHashesQueryHandlerFactory(
@@ -29,6 +31,8 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
   previousRootTree,
   previousPublicKeyToIdentityIdStoreRootTreeLeaf,
   createQueryResponse,
+  blockExecutionContext,
+  previousBlockExecutionContext,
 ) {
   /**
    * @typedef identityIdsByPublicKeyHashesQueryHandler
@@ -48,20 +52,25 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
       );
     }
 
+    // There is no signed state (current committed block height less then 2)
+    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+      const response = new GetIdentityIdsByPublicKeyHashesResponse();
+
+      response.setIdentityIdsList(publicKeyHashes.map(() => Buffer.alloc(0)));
+
+      return new ResponseQuery({
+        value: response.serializeBinary(),
+      });
+    }
+
     const isProofRequested = request.prove === 'true';
 
     const response = createQueryResponse(GetIdentityIdsByPublicKeyHashesResponse, isProofRequested);
 
-    const identityIdBuffers = await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => {
-        const identityId = await previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash);
-
-        if (!identityId) {
-          return Buffer.alloc(0);
-        }
-
-        return identityId.toBuffer();
-      }),
+    const identityIds = await Promise.all(
+      publicKeyHashes.map(async (publicKeyHash) => (
+        previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash)
+      )),
     );
 
     if (isProofRequested) {
@@ -72,12 +81,20 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
         storeTreeProof,
       } = previousRootTree.getFullProof(
         previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-        identityIdBuffers,
+        identityIds.filter(Boolean).map((identityId) => identityId.toBuffer()),
       );
 
       proof.setRootTreeProof(rootTreeProof);
       proof.setStoreTreeProof(storeTreeProof);
     } else {
+      const identityIdBuffers = identityIds.map((identityId) => {
+        if (!identityId) {
+          return Buffer.alloc(0);
+        }
+
+        return identityId.toBuffer();
+      });
+
       response.setIdentityIdsList(identityIdBuffers);
     }
 

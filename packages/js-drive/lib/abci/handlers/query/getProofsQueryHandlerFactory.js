@@ -7,7 +7,6 @@ const {
 } = require('@dashevo/abci/types');
 
 const cbor = require('cbor');
-const UnavailableAbciError = require('../../errors/UnavailableAbciError');
 
 /**
  *
@@ -42,7 +41,13 @@ function getProofsQueryHandlerFactory(
     dataContractIds,
   }) {
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
-      throw new UnavailableAbciError();
+      return new ResponseQuery({
+        value: await cbor.encodeAsync({
+          documentsProof: null,
+          identitiesProof: null,
+          dataContractsProof: null,
+        }),
+      });
     }
 
     const {

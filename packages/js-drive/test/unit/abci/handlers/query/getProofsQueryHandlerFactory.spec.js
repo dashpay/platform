@@ -15,7 +15,6 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 
 const getProofsQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/getProofsQueryHandlerFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
-const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 
 describe('getProofsQueryHandlerFactory', () => {
   let getProofsQueryHandler;
@@ -84,6 +83,46 @@ describe('getProofsQueryHandlerFactory', () => {
     documentsData = {
       ids: documents.map((doc) => doc.getId()),
     };
+  });
+
+  it('should return empty response if blockExecutionContext is empty', async () => {
+    blockExecutionContextMock.isEmpty.returns(true);
+
+    const result = await getProofsQueryHandler({}, {}, {});
+
+    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    const emptyValue = cbor.encode(
+      {
+        documentsProof: null,
+        identitiesProof: null,
+        dataContractsProof: null,
+      },
+    );
+
+    expect(result.value).to.deep.equal(emptyValue);
+  });
+
+  it('should return empty response if previousBlockExecutionContext is empty', async () => {
+    previousBlockExecutionContextMock.isEmpty.returns(true);
+
+    const result = await getProofsQueryHandler({}, {}, {});
+
+    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    const emptyValue = cbor.encode(
+      {
+        documentsProof: null,
+        identitiesProof: null,
+        dataContractsProof: null,
+      },
+    );
+
+    expect(result.value).to.deep.equal(emptyValue);
   });
 
   it('should return proof for passed data contract ids', async () => {
@@ -188,22 +227,5 @@ describe('getProofsQueryHandlerFactory', () => {
         },
       }),
     }));
-  });
-
-  it('should throw UnavailableAbciError if one of the context is empty', async () => {
-    blockExecutionContextMock.isEmpty.returns(true);
-
-    try {
-      await getProofsQueryHandler({}, {
-        dataContractIds: [],
-        identityIds: [],
-        documentIds: [],
-      });
-
-      expect.fail('should throw UnavailableAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(UnavailableAbciError);
-      expect(previousBlockExecutionContextMock.getHeader).to.have.not.been.called();
-    }
   });
 });

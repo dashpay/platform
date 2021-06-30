@@ -6,7 +6,6 @@ const {
 
 const BlockExecutionContextMock = require('../../../../../../lib/test/mock/BlockExecutionContextMock');
 const createQueryResponseFactory = require('../../../../../../lib/abci/handlers/query/response/createQueryResponseFactory');
-const UnavailableAbciError = require('../../../../../../lib/abci/errors/UnavailableAbciError');
 
 describe('createQueryResponseFactory', () => {
   let blockExecutionContextMock;
@@ -37,30 +36,6 @@ describe('createQueryResponseFactory', () => {
       blockExecutionContextMock,
       previousBlockExecutionContextMock,
     );
-  });
-
-  it('should throw UnavailableAbciError if blockExecutionContext is empty', () => {
-    blockExecutionContextMock.isEmpty.returns(true);
-
-    try {
-      createQueryResponse(GetDataContractResponse);
-
-      expect.fail('should throw UnavailableAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(UnavailableAbciError);
-    }
-  });
-
-  it('should throw UnavailableAbciError if previousBlockExecutionContext is empty', () => {
-    previousBlockExecutionContextMock.isEmpty.returns(true);
-
-    try {
-      createQueryResponse(GetDataContractResponse);
-
-      expect.fail('should throw UnavailableAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(UnavailableAbciError);
-    }
   });
 
   it('should create a response', () => {

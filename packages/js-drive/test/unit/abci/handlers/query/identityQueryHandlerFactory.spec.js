@@ -20,6 +20,7 @@ const identityQueryHandlerFactory = require('../../../../../lib/abci/handlers/qu
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
 const AbciError = require('../../../../../lib/abci/errors/AbciError');
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('identityQueryHandlerFactory', () => {
   let identityQueryHandler;
@@ -31,6 +32,8 @@ describe('identityQueryHandlerFactory', () => {
   let previousIdentitiesStoreRootTreeLeafMock;
   let createQueryResponseMock;
   let responseMock;
+  let blockExecutionContextMock;
+  let previousBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     previousIdentityRepositoryMock = {
@@ -50,11 +53,16 @@ describe('identityQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
     identityQueryHandler = identityQueryHandlerFactory(
       previousIdentityRepositoryMock,
       previousRootTreeMock,
       previousIdentitiesStoreRootTreeLeafMock,
       createQueryResponseMock,
+      blockExecutionContextMock,
+      previousBlockExecutionContextMock,
     );
 
     identity = getIdentityFixture();
@@ -63,6 +71,30 @@ describe('identityQueryHandlerFactory', () => {
     data = {
       id: identity.getId(),
     };
+  });
+
+  it('should throw NotFoundAbciError if blockExecutionContext is empty', async () => {
+    blockExecutionContextMock.isEmpty.returns(true);
+
+    try {
+      await identityQueryHandler(params, data, {});
+
+      expect.fail('should throw NotFoundAbciError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(NotFoundAbciError);
+    }
+  });
+
+  it('should throw NotFoundAbciError if previousBlockExecutionContext is empty', async () => {
+    previousBlockExecutionContextMock.isEmpty.returns(true);
+
+    try {
+      await identityQueryHandler(params, data, {});
+
+      expect.fail('should throw NotFoundAbciError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(NotFoundAbciError);
+    }
   });
 
   it('should return serialized identity', async () => {

@@ -22,6 +22,7 @@ const InvalidArgumentAbciError = require(
   '../../../../../lib/abci/errors/InvalidArgumentAbciError',
 );
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let identitiesByPublicKeyHashesQueryHandler;
@@ -34,6 +35,10 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let previousIdentitiesStoreRootTreeLeafMock;
   let createQueryResponseMock;
   let responseMock;
+  let blockExecutionContextMock;
+  let previousBlockExecutionContextMock;
+  let params;
+  let data;
 
   beforeEach(function beforeEach() {
     previousPublicKeyIdentityIdRepositoryMock = {
@@ -59,6 +64,9 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
       previousPublicKeyIdentityIdRepositoryMock,
       previousIdentityRepositoryMock,
@@ -66,6 +74,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       previousRootTreeMock,
       previousIdentitiesStoreRootTreeLeafMock,
       createQueryResponseMock,
+      blockExecutionContextMock,
+      previousBlockExecutionContextMock,
     );
 
     publicKeyHashes = [
@@ -96,18 +106,57 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     previousIdentityRepositoryMock.fetch
       .withArgs(identities[0].getId())
       .resolves(identities[1]);
+
+    params = {};
+    data = { publicKeyHashes };
+  });
+
+  it('should return empty response if blockExecutionContext is empty', async () => {
+    previousBlockExecutionContextMock.isEmpty.returns(true);
+
+    responseMock = new GetIdentitiesByPublicKeyHashesResponse();
+    responseMock.setIdentitiesList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+
+    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
+
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch).to.have.not.been.called();
+    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+  });
+
+  it('should return empty response if previousBlockExecutionContext is empty', async () => {
+    previousBlockExecutionContextMock.isEmpty.returns(true);
+
+    responseMock = new GetIdentitiesByPublicKeyHashesResponse();
+    responseMock.setIdentitiesList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+
+    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
+
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetch).to.have.not.been.called();
+    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
   });
 
   it('should throw an error if maximum requested items exceeded', async () => {
-    const params = {};
-    const data = { publicKeyHashes };
-
     maxIdentitiesPerRequest = 1;
 
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
       previousPublicKeyIdentityIdRepositoryMock,
       previousIdentityRepositoryMock,
       maxIdentitiesPerRequest,
+      previousRootTreeMock,
+      previousIdentitiesStoreRootTreeLeafMock,
+      createQueryResponseMock,
+      blockExecutionContextMock,
+      previousBlockExecutionContextMock,
     );
 
     try {
@@ -122,9 +171,6 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   });
 
   it('should return identity id map', async () => {
-    const params = {};
-    const data = { publicKeyHashes };
-
     const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
 
     expect(previousPublicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
@@ -160,9 +206,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
-  it('should return identity id map with proof', async () => {
-    const params = {};
-    const data = { publicKeyHashes };
+  it('should return identity ids proof', async () => {
     const proof = {
       rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
       storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
@@ -186,18 +230,6 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
       publicKeyHashes[2],
-    ]);
-
-    expect(previousIdentityRepositoryMock.fetch.callCount).to.equal(
-      identities.length,
-    );
-
-    expect(previousIdentityRepositoryMock.fetch.getCall(0).args).to.deep.equal([
-      identities[0].getId(),
-    ]);
-
-    expect(previousIdentityRepositoryMock.fetch.getCall(1).args).to.deep.equal([
-      identities[1].getId(),
     ]);
 
     const identityIds = identities.map((identity) => identity.getId());

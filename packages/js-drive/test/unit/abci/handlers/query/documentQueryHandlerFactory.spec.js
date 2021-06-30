@@ -23,6 +23,7 @@ const ValidationError = require('../../../../../lib/document/query/errors/Valida
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const AbciError = require('../../../../../lib/abci/errors/AbciError');
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
@@ -38,6 +39,8 @@ describe('documentQueryHandlerFactory', () => {
   let transactionMock;
   let createQueryResponseMock;
   let responseMock;
+  let blockExecutionContextMock;
+  let previousBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
@@ -70,12 +73,17 @@ describe('documentQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
     documentQueryHandler = documentQueryHandlerFactory(
       fetchPreviousDocumentsMock,
       previousRootTreeMock,
       previousDocumentsStoreRootTreeLeafMock,
       containerMock,
       createQueryResponseMock,
+      blockExecutionContextMock,
+      previousBlockExecutionContextMock,
     );
 
     params = {};
@@ -95,6 +103,36 @@ describe('documentQueryHandlerFactory', () => {
       startAfter: data.startAfter,
       where: data.where,
     };
+  });
+
+  it('should return empty response if blockExecutionContext is empty', async () => {
+    previousBlockExecutionContextMock.isEmpty.returns(true);
+
+    responseMock = new GetDocumentsResponse();
+
+    const result = await documentQueryHandler(params, data, {});
+
+    expect(fetchPreviousDocumentsMock).to.have.not.been.called();
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
+    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+  });
+
+  it('should return empty response if previousBlockExecutionContext is empty', async () => {
+    previousBlockExecutionContextMock.isEmpty.returns(true);
+
+    responseMock = new GetDocumentsResponse();
+
+    const result = await documentQueryHandler(params, data, {});
+
+    expect(fetchPreviousDocumentsMock).to.have.not.been.called();
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
+    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
   });
 
   it('should return serialized documents', async () => {
