@@ -1,10 +1,11 @@
-FROM node:12-alpine as node_modules
+# syntax = docker/dockerfile:1.2
+FROM node:12-alpine3.12 as node_modules
 
 RUN apk update && \
     apk --no-cache upgrade && \
     apk add --no-cache git \
                        openssh-client \
-                       python \
+                       python3 \
                        alpine-sdk \
                        zeromq-dev
 
@@ -12,20 +13,14 @@ RUN apk update && \
 RUN npm install -g node-gyp-cache@0.2.1 && \
     npm config set node_gyp node-gyp-cache
 
-# Copy node gyp cache
-COPY docker/cache/.cache /root/.cache
-
-# Copy NPM cache
-COPY docker/cache/.npm /root/.npm
-
 # Install npm modules
 ENV npm_config_zmq_external=true
 
 COPY package.json package-lock.json /
 
-RUN npm ci --production
+RUN --mount=type=cache,target=/root/.npm --mount=type=cache,target=/root/.cache npm ci --production
 
-FROM node:12-alpine
+FROM node:12-alpine3.12
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
