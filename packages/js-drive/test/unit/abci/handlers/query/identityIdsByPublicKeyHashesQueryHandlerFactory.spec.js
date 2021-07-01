@@ -10,6 +10,7 @@ const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
     Proof,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -102,6 +103,7 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
     responseMock = new GetIdentityIdsByPublicKeyHashesResponse();
     responseMock.setIdentityIdsList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+    responseMock.setMetadata(new ResponseMetadata());
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
 
@@ -119,6 +121,7 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
     responseMock = new GetIdentityIdsByPublicKeyHashesResponse();
     responseMock.setIdentityIdsList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+    responseMock.setMetadata(new ResponseMetadata());
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
 

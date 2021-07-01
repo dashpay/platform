@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -59,6 +60,8 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       const response = new GetIdentitiesByPublicKeyHashesResponse();
 
       response.setIdentitiesList(publicKeyHashes.map(() => Buffer.alloc(0)));
+
+      response.setMetadata(new ResponseMetadata());
 
       return new ResponseQuery({
         value: response.serializeBinary(),

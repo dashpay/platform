@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
+    ResponseMetadata,
     Proof,
   },
 } = require('@dashevo/dapi-grpc');
@@ -110,6 +111,8 @@ describe('documentQueryHandlerFactory', () => {
 
     responseMock = new GetDocumentsResponse();
 
+    responseMock.setMetadata(new ResponseMetadata());
+
     const result = await documentQueryHandler(params, data, {});
 
     expect(fetchPreviousDocumentsMock).to.have.not.been.called();
@@ -124,6 +127,8 @@ describe('documentQueryHandlerFactory', () => {
     previousBlockExecutionContextMock.isEmpty.returns(true);
 
     responseMock = new GetDocumentsResponse();
+
+    responseMock.setMetadata(new ResponseMetadata());
 
     const result = await documentQueryHandler(params, data, {});
 

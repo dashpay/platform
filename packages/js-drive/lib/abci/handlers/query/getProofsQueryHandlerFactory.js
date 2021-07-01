@@ -46,6 +46,10 @@ function getProofsQueryHandlerFactory(
           documentsProof: null,
           identitiesProof: null,
           dataContractsProof: null,
+          metadata: {
+            height: 0,
+            coreChainLockedHeight: 0,
+          },
         }),
       });
     }

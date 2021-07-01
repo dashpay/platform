@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -67,6 +68,8 @@ function documentQueryHandlerFactory(
     // There is no signed state (current committed block height less then 2)
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
       const response = new GetDocumentsResponse();
+
+      response.setMetadata(new ResponseMetadata());
 
       return new ResponseQuery({
         value: response.serializeBinary(),
