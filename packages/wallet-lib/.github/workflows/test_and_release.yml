@@ -2,6 +2,8 @@ name: Test and Release
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '44 */160 * * *'
   release:
     types: [published]
   pull_request:
