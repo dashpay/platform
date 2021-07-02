@@ -1004,10 +1004,18 @@ typedef struct GetTransactionRequest__storage_ {
 @implementation GetTransactionResponse
 
 @dynamic transaction;
+@dynamic bockHash;
+@dynamic height;
+@dynamic confirmations;
+@dynamic isInstantLocked;
+@dynamic isChainLocked;
 
 typedef struct GetTransactionResponse__storage_ {
   uint32_t _has_storage_[1];
+  uint32_t height;
+  uint32_t confirmations;
   NSData *transaction;
+  NSData *bockHash;
 } GetTransactionResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -1024,6 +1032,51 @@ typedef struct GetTransactionResponse__storage_ {
         .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, transaction),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "bockHash",
+        .dataTypeSpecific.className = NULL,
+        .number = GetTransactionResponse_FieldNumber_BockHash,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, bockHash),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "height",
+        .dataTypeSpecific.className = NULL,
+        .number = GetTransactionResponse_FieldNumber_Height,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, height),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "confirmations",
+        .dataTypeSpecific.className = NULL,
+        .number = GetTransactionResponse_FieldNumber_Confirmations,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, confirmations),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "isInstantLocked",
+        .dataTypeSpecific.className = NULL,
+        .number = GetTransactionResponse_FieldNumber_IsInstantLocked,
+        .hasIndex = 4,
+        .offset = 5,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "isChainLocked",
+        .dataTypeSpecific.className = NULL,
+        .number = GetTransactionResponse_FieldNumber_IsChainLocked,
+        .hasIndex = 6,
+        .offset = 7,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =

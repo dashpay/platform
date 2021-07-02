@@ -387,11 +387,26 @@ typedef GPB_ENUM(GetTransactionRequest_FieldNumber) {
 
 typedef GPB_ENUM(GetTransactionResponse_FieldNumber) {
   GetTransactionResponse_FieldNumber_Transaction = 1,
+  GetTransactionResponse_FieldNumber_BockHash = 2,
+  GetTransactionResponse_FieldNumber_Height = 3,
+  GetTransactionResponse_FieldNumber_Confirmations = 4,
+  GetTransactionResponse_FieldNumber_IsInstantLocked = 5,
+  GetTransactionResponse_FieldNumber_IsChainLocked = 6,
 };
 
 @interface GetTransactionResponse : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *transaction;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *bockHash;
+
+@property(nonatomic, readwrite) uint32_t height;
+
+@property(nonatomic, readwrite) uint32_t confirmations;
+
+@property(nonatomic, readwrite) BOOL isInstantLocked;
+
+@property(nonatomic, readwrite) BOOL isChainLocked;
 
 @end
 
