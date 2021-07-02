@@ -129,7 +129,7 @@ jobs:
           override-testsuite-branch: ${{ env.TEST_SUITE_BRANCH }}
 
       - name: Start Dash local network
-        uses: dashevo/gh-action-start-local-network@buildkit-caching-support
+        uses: dashevo/gh-action-start-local-network@v1
         id: start-local-network
         with:
           drive-branch: ${{ env.DRIVE_BRANCH }}
