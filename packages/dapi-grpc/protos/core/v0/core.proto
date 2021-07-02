@@ -112,7 +112,7 @@ message GetTransactionRequest {
 
 message GetTransactionResponse {
   bytes transaction = 1;
-  bytes bock_hash = 2;
+  bytes block_hash = 2;
   uint32 height = 3;
   uint32 confirmations = 4;
   bool is_instant_locked = 5;

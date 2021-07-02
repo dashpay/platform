@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='core.proto',
   package='org.dash.platform.dapi.v0',
   syntax='proto3',
-  serialized_pb=_b('\n\ncore.proto\x12\x19org.dash.platform.dapi.v0\"\x12\n\x10GetStatusRequest\"\x8e\n\n\x11GetStatusResponse\x12\x45\n\x07version\x18\x01 \x01(\x0b\x32\x34.org.dash.platform.dapi.v0.GetStatusResponse.Version\x12?\n\x04time\x18\x02 \x01(\x0b\x32\x31.org.dash.platform.dapi.v0.GetStatusResponse.Time\x12\x43\n\x06status\x18\x03 \x01(\x0e\x32\x33.org.dash.platform.dapi.v0.GetStatusResponse.Status\x12\x15\n\rsync_progress\x18\x04 \x01(\x01\x12\x41\n\x05\x63hain\x18\x05 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.GetStatusResponse.Chain\x12K\n\nmasternode\x18\x06 \x01(\x0b\x32\x37.org.dash.platform.dapi.v0.GetStatusResponse.Masternode\x12\x45\n\x07network\x18\x07 \x01(\x0b\x32\x34.org.dash.platform.dapi.v0.GetStatusResponse.Network\x1a<\n\x07Version\x12\x10\n\x08protocol\x18\x01 \x01(\r\x12\x10\n\x08software\x18\x02 \x01(\r\x12\r\n\x05\x61gent\x18\x03 \x01(\t\x1a\x33\n\x04Time\x12\x0b\n\x03now\x18\x01 \x01(\r\x12\x0e\n\x06offset\x18\x02 \x01(\x05\x12\x0e\n\x06median\x18\x03 \x01(\r\x1a\xad\x01\n\x05\x43hain\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x15\n\rheaders_count\x18\x02 \x01(\r\x12\x14\n\x0c\x62locks_count\x18\x03 \x01(\r\x12\x17\n\x0f\x62\x65st_block_hash\x18\x04 \x01(\x0c\x12\x12\n\ndifficulty\x18\x05 \x01(\x01\x12\x12\n\nchain_work\x18\x06 \x01(\x0c\x12\x11\n\tis_synced\x18\x07 \x01(\x08\x12\x15\n\rsync_progress\x18\x08 \x01(\x01\x1a\xc4\x02\n\nMasternode\x12N\n\x06status\x18\x01 \x01(\x0e\x32>.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status\x12\x13\n\x0bpro_tx_hash\x18\x02 \x01(\x0c\x12\x14\n\x0cpose_penalty\x18\x03 \x01(\r\x12\x11\n\tis_synced\x18\x04 \x01(\x08\x12\x15\n\rsync_progress\x18\x05 \x01(\x01\"\x90\x01\n\x06Status\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x15\n\x11WAITING_FOR_PROTX\x10\x01\x12\x0f\n\x0bPOSE_BANNED\x10\x02\x12\x0b\n\x07REMOVED\x10\x03\x12\x18\n\x14OPERATOR_KEY_CHANGED\x10\x04\x12\x14\n\x10PROTX_IP_CHANGED\x10\x05\x12\t\n\x05READY\x10\x06\x12\t\n\x05\x45RROR\x10\x07\x1a\x30\n\nNetworkFee\x12\r\n\x05relay\x18\x01 \x01(\x01\x12\x13\n\x0bincremental\x18\x02 \x01(\x01\x1a\x64\n\x07Network\x12\x13\n\x0bpeers_count\x18\x01 \x01(\r\x12\x44\n\x03\x66\x65\x65\x18\x02 \x01(\x0b\x32\x37.org.dash.platform.dapi.v0.GetStatusResponse.NetworkFee\"<\n\x06Status\x12\x0f\n\x0bNOT_STARTED\x10\x00\x12\x0b\n\x07SYNCING\x10\x01\x12\t\n\x05READY\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"<\n\x0fGetBlockRequest\x12\x10\n\x06height\x18\x01 \x01(\rH\x00\x12\x0e\n\x04hash\x18\x02 \x01(\tH\x00\x42\x07\n\x05\x62lock\"!\n\x10GetBlockResponse\x12\r\n\x05\x62lock\x18\x01 \x01(\x0c\"b\n\x1b\x42roadcastTransactionRequest\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x17\n\x0f\x61llow_high_fees\x18\x02 \x01(\x08\x12\x15\n\rbypass_limits\x18\x03 \x01(\x08\"6\n\x1c\x42roadcastTransactionResponse\x12\x16\n\x0etransaction_id\x18\x01 \x01(\t\"#\n\x15GetTransactionRequest\x12\n\n\x02id\x18\x01 \x01(\t\"\x9b\x01\n\x16GetTransactionResponse\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x11\n\tbock_hash\x18\x02 \x01(\x0c\x12\x0e\n\x06height\x18\x03 \x01(\r\x12\x15\n\rconfirmations\x18\x04 \x01(\r\x12\x19\n\x11is_instant_locked\x18\x05 \x01(\x08\x12\x17\n\x0fis_chain_locked\x18\x06 \x01(\x08\"x\n!BlockHeadersWithChainLocksRequest\x12\x19\n\x0f\x66rom_block_hash\x18\x01 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x02 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x03 \x01(\rB\x0c\n\nfrom_block\"\xd3\x01\n\"BlockHeadersWithChainLocksResponse\x12@\n\rblock_headers\x18\x01 \x01(\x0b\x32\'.org.dash.platform.dapi.v0.BlockHeadersH\x00\x12^\n\x1d\x63hain_lock_signature_messages\x18\x02 \x01(\x0b\x32\x35.org.dash.platform.dapi.v0.ChainLockSignatureMessagesH\x00\x42\x0b\n\tresponses\"\x1f\n\x0c\x42lockHeaders\x12\x0f\n\x07headers\x18\x01 \x03(\x0c\".\n\x1a\x43hainLockSignatureMessages\x12\x10\n\x08messages\x18\x01 \x03(\x0c\"3\n!GetEstimatedTransactionFeeRequest\x12\x0e\n\x06\x62locks\x18\x01 \x01(\r\"1\n\"GetEstimatedTransactionFeeResponse\x12\x0b\n\x03\x66\x65\x65\x18\x01 \x01(\x01\"\xd3\x01\n\x1dTransactionsWithProofsRequest\x12<\n\x0c\x62loom_filter\x18\x01 \x01(\x0b\x32&.org.dash.platform.dapi.v0.BloomFilter\x12\x19\n\x0f\x66rom_block_hash\x18\x02 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x03 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x04 \x01(\r\x12\x1f\n\x17send_transaction_hashes\x18\x05 \x01(\x08\x42\x0c\n\nfrom_block\"U\n\x0b\x42loomFilter\x12\x0e\n\x06v_data\x18\x01 \x01(\x0c\x12\x14\n\x0cn_hash_funcs\x18\x02 \x01(\r\x12\x0f\n\x07n_tweak\x18\x03 \x01(\r\x12\x0f\n\x07n_flags\x18\x04 \x01(\r\"\xeb\x01\n\x1eTransactionsWithProofsResponse\x12\x46\n\x10raw_transactions\x18\x01 \x01(\x0b\x32*.org.dash.platform.dapi.v0.RawTransactionsH\x00\x12X\n\x1ainstant_send_lock_messages\x18\x02 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.InstantSendLockMessagesH\x00\x12\x1a\n\x10raw_merkle_block\x18\x03 \x01(\x0cH\x00\x42\x0b\n\tresponses\"\'\n\x0fRawTransactions\x12\x14\n\x0ctransactions\x18\x01 \x03(\x0c\"+\n\x17InstantSendLockMessages\x12\x10\n\x08messages\x18\x01 \x03(\x0c\x32\xb6\x07\n\x04\x43ore\x12\x66\n\tgetStatus\x12+.org.dash.platform.dapi.v0.GetStatusRequest\x1a,.org.dash.platform.dapi.v0.GetStatusResponse\x12\x63\n\x08getBlock\x12*.org.dash.platform.dapi.v0.GetBlockRequest\x1a+.org.dash.platform.dapi.v0.GetBlockResponse\x12\x87\x01\n\x14\x62roadcastTransaction\x12\x36.org.dash.platform.dapi.v0.BroadcastTransactionRequest\x1a\x37.org.dash.platform.dapi.v0.BroadcastTransactionResponse\x12u\n\x0egetTransaction\x12\x30.org.dash.platform.dapi.v0.GetTransactionRequest\x1a\x31.org.dash.platform.dapi.v0.GetTransactionResponse\x12\x99\x01\n\x1agetEstimatedTransactionFee\x12<.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest\x1a=.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse\x12\xa6\x01\n%subscribeToBlockHeadersWithChainLocks\x12<.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest\x1a=.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse0\x01\x12\x9a\x01\n!subscribeToTransactionsWithProofs\x12\x38.org.dash.platform.dapi.v0.TransactionsWithProofsRequest\x1a\x39.org.dash.platform.dapi.v0.TransactionsWithProofsResponse0\x01\x62\x06proto3')
+  serialized_pb=_b('\n\ncore.proto\x12\x19org.dash.platform.dapi.v0\"\x12\n\x10GetStatusRequest\"\x8e\n\n\x11GetStatusResponse\x12\x45\n\x07version\x18\x01 \x01(\x0b\x32\x34.org.dash.platform.dapi.v0.GetStatusResponse.Version\x12?\n\x04time\x18\x02 \x01(\x0b\x32\x31.org.dash.platform.dapi.v0.GetStatusResponse.Time\x12\x43\n\x06status\x18\x03 \x01(\x0e\x32\x33.org.dash.platform.dapi.v0.GetStatusResponse.Status\x12\x15\n\rsync_progress\x18\x04 \x01(\x01\x12\x41\n\x05\x63hain\x18\x05 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.GetStatusResponse.Chain\x12K\n\nmasternode\x18\x06 \x01(\x0b\x32\x37.org.dash.platform.dapi.v0.GetStatusResponse.Masternode\x12\x45\n\x07network\x18\x07 \x01(\x0b\x32\x34.org.dash.platform.dapi.v0.GetStatusResponse.Network\x1a<\n\x07Version\x12\x10\n\x08protocol\x18\x01 \x01(\r\x12\x10\n\x08software\x18\x02 \x01(\r\x12\r\n\x05\x61gent\x18\x03 \x01(\t\x1a\x33\n\x04Time\x12\x0b\n\x03now\x18\x01 \x01(\r\x12\x0e\n\x06offset\x18\x02 \x01(\x05\x12\x0e\n\x06median\x18\x03 \x01(\r\x1a\xad\x01\n\x05\x43hain\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x15\n\rheaders_count\x18\x02 \x01(\r\x12\x14\n\x0c\x62locks_count\x18\x03 \x01(\r\x12\x17\n\x0f\x62\x65st_block_hash\x18\x04 \x01(\x0c\x12\x12\n\ndifficulty\x18\x05 \x01(\x01\x12\x12\n\nchain_work\x18\x06 \x01(\x0c\x12\x11\n\tis_synced\x18\x07 \x01(\x08\x12\x15\n\rsync_progress\x18\x08 \x01(\x01\x1a\xc4\x02\n\nMasternode\x12N\n\x06status\x18\x01 \x01(\x0e\x32>.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status\x12\x13\n\x0bpro_tx_hash\x18\x02 \x01(\x0c\x12\x14\n\x0cpose_penalty\x18\x03 \x01(\r\x12\x11\n\tis_synced\x18\x04 \x01(\x08\x12\x15\n\rsync_progress\x18\x05 \x01(\x01\"\x90\x01\n\x06Status\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x15\n\x11WAITING_FOR_PROTX\x10\x01\x12\x0f\n\x0bPOSE_BANNED\x10\x02\x12\x0b\n\x07REMOVED\x10\x03\x12\x18\n\x14OPERATOR_KEY_CHANGED\x10\x04\x12\x14\n\x10PROTX_IP_CHANGED\x10\x05\x12\t\n\x05READY\x10\x06\x12\t\n\x05\x45RROR\x10\x07\x1a\x30\n\nNetworkFee\x12\r\n\x05relay\x18\x01 \x01(\x01\x12\x13\n\x0bincremental\x18\x02 \x01(\x01\x1a\x64\n\x07Network\x12\x13\n\x0bpeers_count\x18\x01 \x01(\r\x12\x44\n\x03\x66\x65\x65\x18\x02 \x01(\x0b\x32\x37.org.dash.platform.dapi.v0.GetStatusResponse.NetworkFee\"<\n\x06Status\x12\x0f\n\x0bNOT_STARTED\x10\x00\x12\x0b\n\x07SYNCING\x10\x01\x12\t\n\x05READY\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"<\n\x0fGetBlockRequest\x12\x10\n\x06height\x18\x01 \x01(\rH\x00\x12\x0e\n\x04hash\x18\x02 \x01(\tH\x00\x42\x07\n\x05\x62lock\"!\n\x10GetBlockResponse\x12\r\n\x05\x62lock\x18\x01 \x01(\x0c\"b\n\x1b\x42roadcastTransactionRequest\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x17\n\x0f\x61llow_high_fees\x18\x02 \x01(\x08\x12\x15\n\rbypass_limits\x18\x03 \x01(\x08\"6\n\x1c\x42roadcastTransactionResponse\x12\x16\n\x0etransaction_id\x18\x01 \x01(\t\"#\n\x15GetTransactionRequest\x12\n\n\x02id\x18\x01 \x01(\t\"\x9c\x01\n\x16GetTransactionResponse\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x12\n\nblock_hash\x18\x02 \x01(\x0c\x12\x0e\n\x06height\x18\x03 \x01(\r\x12\x15\n\rconfirmations\x18\x04 \x01(\r\x12\x19\n\x11is_instant_locked\x18\x05 \x01(\x08\x12\x17\n\x0fis_chain_locked\x18\x06 \x01(\x08\"x\n!BlockHeadersWithChainLocksRequest\x12\x19\n\x0f\x66rom_block_hash\x18\x01 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x02 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x03 \x01(\rB\x0c\n\nfrom_block\"\xd3\x01\n\"BlockHeadersWithChainLocksResponse\x12@\n\rblock_headers\x18\x01 \x01(\x0b\x32\'.org.dash.platform.dapi.v0.BlockHeadersH\x00\x12^\n\x1d\x63hain_lock_signature_messages\x18\x02 \x01(\x0b\x32\x35.org.dash.platform.dapi.v0.ChainLockSignatureMessagesH\x00\x42\x0b\n\tresponses\"\x1f\n\x0c\x42lockHeaders\x12\x0f\n\x07headers\x18\x01 \x03(\x0c\".\n\x1a\x43hainLockSignatureMessages\x12\x10\n\x08messages\x18\x01 \x03(\x0c\"3\n!GetEstimatedTransactionFeeRequest\x12\x0e\n\x06\x62locks\x18\x01 \x01(\r\"1\n\"GetEstimatedTransactionFeeResponse\x12\x0b\n\x03\x66\x65\x65\x18\x01 \x01(\x01\"\xd3\x01\n\x1dTransactionsWithProofsRequest\x12<\n\x0c\x62loom_filter\x18\x01 \x01(\x0b\x32&.org.dash.platform.dapi.v0.BloomFilter\x12\x19\n\x0f\x66rom_block_hash\x18\x02 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x03 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x04 \x01(\r\x12\x1f\n\x17send_transaction_hashes\x18\x05 \x01(\x08\x42\x0c\n\nfrom_block\"U\n\x0b\x42loomFilter\x12\x0e\n\x06v_data\x18\x01 \x01(\x0c\x12\x14\n\x0cn_hash_funcs\x18\x02 \x01(\r\x12\x0f\n\x07n_tweak\x18\x03 \x01(\r\x12\x0f\n\x07n_flags\x18\x04 \x01(\r\"\xeb\x01\n\x1eTransactionsWithProofsResponse\x12\x46\n\x10raw_transactions\x18\x01 \x01(\x0b\x32*.org.dash.platform.dapi.v0.RawTransactionsH\x00\x12X\n\x1ainstant_send_lock_messages\x18\x02 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.InstantSendLockMessagesH\x00\x12\x1a\n\x10raw_merkle_block\x18\x03 \x01(\x0cH\x00\x42\x0b\n\tresponses\"\'\n\x0fRawTransactions\x12\x14\n\x0ctransactions\x18\x01 \x03(\x0c\"+\n\x17InstantSendLockMessages\x12\x10\n\x08messages\x18\x01 \x03(\x0c\x32\xb6\x07\n\x04\x43ore\x12\x66\n\tgetStatus\x12+.org.dash.platform.dapi.v0.GetStatusRequest\x1a,.org.dash.platform.dapi.v0.GetStatusResponse\x12\x63\n\x08getBlock\x12*.org.dash.platform.dapi.v0.GetBlockRequest\x1a+.org.dash.platform.dapi.v0.GetBlockResponse\x12\x87\x01\n\x14\x62roadcastTransaction\x12\x36.org.dash.platform.dapi.v0.BroadcastTransactionRequest\x1a\x37.org.dash.platform.dapi.v0.BroadcastTransactionResponse\x12u\n\x0egetTransaction\x12\x30.org.dash.platform.dapi.v0.GetTransactionRequest\x1a\x31.org.dash.platform.dapi.v0.GetTransactionResponse\x12\x99\x01\n\x1agetEstimatedTransactionFee\x12<.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest\x1a=.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse\x12\xa6\x01\n%subscribeToBlockHeadersWithChainLocks\x12<.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest\x1a=.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse0\x01\x12\x9a\x01\n!subscribeToTransactionsWithProofs\x12\x38.org.dash.platform.dapi.v0.TransactionsWithProofsRequest\x1a\x39.org.dash.platform.dapi.v0.TransactionsWithProofsResponse0\x01\x62\x06proto3')
 )
 
 
@@ -693,7 +693,7 @@ _GETTRANSACTIONRESPONSE = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       options=None),
     _descriptor.FieldDescriptor(
-      name='bock_hash', full_name='org.dash.platform.dapi.v0.GetTransactionResponse.bock_hash', index=1,
+      name='block_hash', full_name='org.dash.platform.dapi.v0.GetTransactionResponse.block_hash', index=1,
       number=2, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=_b(""),
       message_type=None, enum_type=None, containing_type=None,
@@ -740,7 +740,7 @@ _GETTRANSACTIONRESPONSE = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=1649,
-  serialized_end=1804,
+  serialized_end=1805,
 )
 
 
@@ -787,8 +787,8 @@ _BLOCKHEADERSWITHCHAINLOCKSREQUEST = _descriptor.Descriptor(
       name='from_block', full_name='org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest.from_block',
       index=0, containing_type=None, fields=[]),
   ],
-  serialized_start=1806,
-  serialized_end=1926,
+  serialized_start=1807,
+  serialized_end=1927,
 )
 
 
@@ -828,8 +828,8 @@ _BLOCKHEADERSWITHCHAINLOCKSRESPONSE = _descriptor.Descriptor(
       name='responses', full_name='org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse.responses',
       index=0, containing_type=None, fields=[]),
   ],
-  serialized_start=1929,
-  serialized_end=2140,
+  serialized_start=1930,
+  serialized_end=2141,
 )
 
 
@@ -859,8 +859,8 @@ _BLOCKHEADERS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2142,
-  serialized_end=2173,
+  serialized_start=2143,
+  serialized_end=2174,
 )
 
 
@@ -890,8 +890,8 @@ _CHAINLOCKSIGNATUREMESSAGES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2175,
-  serialized_end=2221,
+  serialized_start=2176,
+  serialized_end=2222,
 )
 
 
@@ -921,8 +921,8 @@ _GETESTIMATEDTRANSACTIONFEEREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2223,
-  serialized_end=2274,
+  serialized_start=2224,
+  serialized_end=2275,
 )
 
 
@@ -952,8 +952,8 @@ _GETESTIMATEDTRANSACTIONFEERESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2276,
-  serialized_end=2325,
+  serialized_start=2277,
+  serialized_end=2326,
 )
 
 
@@ -1014,8 +1014,8 @@ _TRANSACTIONSWITHPROOFSREQUEST = _descriptor.Descriptor(
       name='from_block', full_name='org.dash.platform.dapi.v0.TransactionsWithProofsRequest.from_block',
       index=0, containing_type=None, fields=[]),
   ],
-  serialized_start=2328,
-  serialized_end=2539,
+  serialized_start=2329,
+  serialized_end=2540,
 )
 
 
@@ -1066,8 +1066,8 @@ _BLOOMFILTER = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2541,
-  serialized_end=2626,
+  serialized_start=2542,
+  serialized_end=2627,
 )
 
 
@@ -1114,8 +1114,8 @@ _TRANSACTIONSWITHPROOFSRESPONSE = _descriptor.Descriptor(
       name='responses', full_name='org.dash.platform.dapi.v0.TransactionsWithProofsResponse.responses',
       index=0, containing_type=None, fields=[]),
   ],
-  serialized_start=2629,
-  serialized_end=2864,
+  serialized_start=2630,
+  serialized_end=2865,
 )
 
 
@@ -1145,8 +1145,8 @@ _RAWTRANSACTIONS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2866,
-  serialized_end=2905,
+  serialized_start=2867,
+  serialized_end=2906,
 )
 
 
@@ -1176,8 +1176,8 @@ _INSTANTSENDLOCKMESSAGES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2907,
-  serialized_end=2950,
+  serialized_start=2908,
+  serialized_end=2951,
 )
 
 _GETSTATUSRESPONSE_VERSION.containing_type = _GETSTATUSRESPONSE
@@ -1444,8 +1444,8 @@ _CORE = _descriptor.ServiceDescriptor(
   file=DESCRIPTOR,
   index=0,
   options=None,
-  serialized_start=2953,
-  serialized_end=3903,
+  serialized_start=2954,
+  serialized_end=3904,
   methods=[
   _descriptor.MethodDescriptor(
     name='getStatus',

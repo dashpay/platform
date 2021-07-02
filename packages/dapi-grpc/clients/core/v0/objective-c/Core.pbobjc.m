@@ -1004,7 +1004,7 @@ typedef struct GetTransactionRequest__storage_ {
 @implementation GetTransactionResponse
 
 @dynamic transaction;
-@dynamic bockHash;
+@dynamic blockHash;
 @dynamic height;
 @dynamic confirmations;
 @dynamic isInstantLocked;
@@ -1015,7 +1015,7 @@ typedef struct GetTransactionResponse__storage_ {
   uint32_t height;
   uint32_t confirmations;
   NSData *transaction;
-  NSData *bockHash;
+  NSData *blockHash;
 } GetTransactionResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -1034,11 +1034,11 @@ typedef struct GetTransactionResponse__storage_ {
         .dataType = GPBDataTypeBytes,
       },
       {
-        .name = "bockHash",
+        .name = "blockHash",
         .dataTypeSpecific.className = NULL,
-        .number = GetTransactionResponse_FieldNumber_BockHash,
+        .number = GetTransactionResponse_FieldNumber_BlockHash,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, bockHash),
+        .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, blockHash),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
       },
