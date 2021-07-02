@@ -12,6 +12,7 @@ const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 
 const getIdentityFactory = require('../../../../../lib/methods/platform/getIdentity/getIdentityFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
+const NotFoundError = require('../../../../../lib/methods/errors/NotFoundError');
 
 describe('getIdentityFactory', () => {
   let grpcTransportMock;
@@ -63,13 +64,18 @@ describe('getIdentityFactory', () => {
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
   });
 
-  it('should return null if identity not found', async () => {
+  it('should throw NotFoundError if identity not found', async () => {
     const error = new Error('Nothing found');
     error.code = grpcErrorCodes.NOT_FOUND;
 
     grpcTransportMock.request.throws(error);
+    try {
+      await getIdentity(identityId, options);
 
-    const result = await getIdentity(identityId, options);
+      expect.fail('should throw NotFoundError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(NotFoundError);
+    }
 
     const request = new GetIdentityRequest();
     request.setId(identityId.toBuffer());
@@ -80,8 +86,6 @@ describe('getIdentityFactory', () => {
       request,
       options,
     );
-    expect(result.getIdentity()).to.equal(null);
-    expect(result.getMetadata()).to.deep.equal({ height: 0, coreChainLockedHeight: 0 });
   });
 
   it('should throw unknown error', async () => {

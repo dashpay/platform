@@ -12,6 +12,7 @@ const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 
 const getDataContractFactory = require('../../../../../lib/methods/platform/getDataContract/getDataContractFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
+const NotFoundError = require('../../../../../lib/methods/errors/NotFoundError');
 
 describe('getDataContractFactory', () => {
   let grpcTransportMock;
@@ -67,7 +68,7 @@ describe('getDataContractFactory', () => {
     );
   });
 
-  it('should return null if data contract not found', async () => {
+  it('should throw NotFoundError if data contract not found', async () => {
     const error = new Error('Nothing found');
     error.code = grpcErrorCodes.NOT_FOUND;
 
@@ -75,7 +76,13 @@ describe('getDataContractFactory', () => {
 
     const contractId = dataContractFixture.getId();
 
-    const result = await getDataContract(contractId, options);
+    try {
+      await getDataContract(contractId, options);
+
+      expect.fail('should throw NotFoundError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(NotFoundError);
+    }
 
     const request = new GetDataContractRequest();
     request.setId(contractId);
@@ -86,8 +93,6 @@ describe('getDataContractFactory', () => {
       request,
       options,
     ]);
-    expect(result.getDataContract()).to.equal(null);
-    expect(result.getMetadata()).to.deep.equal({ height: 0, coreChainLockedHeight: 0 });
   });
 
   it('should throw unknown error', async () => {
