@@ -7,6 +7,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const GetDocumentsResponse = require('./GetDocumentsResponse');
+
 /**
  * @param {GrpcTransport} grpcTransport
  * @returns {getDocuments}
@@ -19,7 +21,7 @@ function getDocumentsFactory(grpcTransport) {
    * @param {Buffer} contractId - Data Contract ID
    * @param {string} type - Document type
    * @param {DAPIClientOptions & getDocumentsOptions} [options]
-   * @returns {Promise<Buffer[]>}
+   * @returns {Promise<GetDocumentsResponse>}
    */
   async function getDocuments(contractId, type, options = {}) {
     const {
@@ -67,8 +69,7 @@ function getDocumentsFactory(grpcTransport) {
       options,
     );
 
-    return getDocumentsResponse.getDocumentsList()
-      .map((document) => Buffer.from(document));
+    return GetDocumentsResponse.createFromProto(getDocumentsResponse);
   }
 
   return getDocuments;

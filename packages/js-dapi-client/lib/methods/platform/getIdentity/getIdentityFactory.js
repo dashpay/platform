@@ -6,6 +6,8 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const GetIdentityResponse = require('./GetIdentityResponse');
+const Metadata = require('../response/Metadata');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -18,7 +20,7 @@ function getIdentityFactory(grpcTransport) {
    * @typedef {getIdentity}
    * @param {Buffer} id
    * @param {DAPIClientOptions} [options]
-   * @returns {Promise<!Buffer|null>}
+   * @returns {Promise<GetIdentityResponse>}
    */
   async function getIdentity(id, options = {}) {
     const getIdentityRequest = new GetIdentityRequest();
@@ -42,20 +44,13 @@ function getIdentityFactory(grpcTransport) {
       );
     } catch (e) {
       if (e.code === grpcErrorCodes.NOT_FOUND) {
-        return null;
+        return new GetIdentityResponse(null, new Metadata({ height: 0, coreChainLockedHeight: 0 }));
       }
 
       throw e;
     }
 
-    const serializedIdentityBinaryArray = getIdentityResponse.getIdentity();
-    let identity = null;
-
-    if (serializedIdentityBinaryArray) {
-      identity = Buffer.from(serializedIdentityBinaryArray);
-    }
-
-    return identity;
+    return GetIdentityResponse.createFromProto(getIdentityResponse);
   }
 
   return getIdentity;

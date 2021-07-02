@@ -3,13 +3,15 @@ const {
     PlatformPromiseClient,
     GetIdentitiesByPublicKeyHashesRequest,
     GetIdentitiesByPublicKeyHashesResponse,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 
 const getIdentitiesByPublicKeyHashesFactory = require(
-  '../../../../lib/methods/platform/getIdentitiesByPublicKeyHashesFactory',
+  '../../../../../lib/methods/platform/getIdentitiesByPublicKeyHashes/getIdentitiesByPublicKeyHashesFactory',
 );
 
 describe('getIdentitiesByPublicKeyHashesFactory', () => {
@@ -19,14 +21,21 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
   let response;
   let identityFixture;
   let publicKeyHash;
+  let metadataFixture;
 
   beforeEach(function beforeEach() {
     identityFixture = getIdentityFixture();
+    metadataFixture = getMetadataFixture();
+
+    const metadata = new ResponseMetadata();
+    metadata.setHeight(metadataFixture.height);
+    metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
     response = new GetIdentitiesByPublicKeyHashesResponse();
     response.setIdentitiesList(
       [identityFixture.toBuffer()],
     );
+    response.setMetadata(metadata);
 
     publicKeyHash = identityFixture.getPublicKeyById(1).hash();
 
@@ -53,7 +62,8 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
       request,
       options,
     );
-    expect(result).to.have.deep.members([identityFixture.toBuffer()]);
+    expect(result.getIdentities()).to.have.deep.members([identityFixture.toBuffer()]);
+    expect(result.getMetadata()).to.deep.equal(metadataFixture);
   });
 
   it('should throw unknown error', async () => {

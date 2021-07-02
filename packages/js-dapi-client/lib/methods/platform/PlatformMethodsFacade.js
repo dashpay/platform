@@ -1,10 +1,10 @@
-const broadcastStateTransitionFactory = require('./broadcastStateTransitionFactory');
-const getDataContractFactory = require('./getDataContractFactory');
-const getDocumentsFactory = require('./getDocumentsFactory');
-const getIdentityFactory = require('./getIdentityFactory');
-const getIdentityIdsByPublicKeyHashesFactory = require('./getIdentityIdsByPublicKeyHashesFactory');
-const getIdentitiesByPublicKeyHashesFactory = require('./getIdentitiesByPublicKeyHashesFactory');
-const waitForStateTransitionResultFactory = require('./waitForStateTransitionResultFactory');
+const broadcastStateTransitionFactory = require('./broadcastStateTransition/broadcastStateTransitionFactory');
+const getDataContractFactory = require('./getDataContract/getDataContractFactory');
+const getDocumentsFactory = require('./getDocuments/getDocumentsFactory');
+const getIdentityFactory = require('./getIdentity/getIdentityFactory');
+const getIdentityIdsByPublicKeyHashesFactory = require('./getIdentityIdsByPublicKeyHashes/getIdentityIdsByPublicKeyHashesFactory');
+const getIdentitiesByPublicKeyHashesFactory = require('./getIdentitiesByPublicKeyHashes/getIdentitiesByPublicKeyHashesFactory');
+const waitForStateTransitionResultFactory = require('./waitForStateTransitionResult/waitForStateTransitionResultFactory');
 
 class PlatformMethodsFacade {
   /**

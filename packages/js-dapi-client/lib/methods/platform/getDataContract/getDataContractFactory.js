@@ -7,6 +7,9 @@ const {
 
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
+const GetDataContractResponse = require('./GetDataContractResponse');
+const Metadata = require('../response/Metadata');
+
 /**
  * @param {GrpcTransport} grpcTransport
  * @returns {getDataContract}
@@ -18,7 +21,7 @@ function getDataContractFactory(grpcTransport) {
    * @typedef {getDataContract}
    * @param {Buffer} contractId
    * @param {DAPIClientOptions} [options]
-   * @returns {Promise<Buffer>}
+   * @returns {Promise<GetDataContractResponse>}
    */
   async function getDataContract(contractId, options = {}) {
     const getDataContractRequest = new GetDataContractRequest();
@@ -43,21 +46,16 @@ function getDataContractFactory(grpcTransport) {
       );
     } catch (e) {
       if (e.code === grpcErrorCodes.NOT_FOUND) {
-        return null;
+        return new GetDataContractResponse(
+          null,
+          new Metadata({ height: 0, coreChainLockedHeight: 0 }),
+        );
       }
 
       throw e;
     }
 
-    const serializedDataContractBinaryArray = getDataContractResponse.getDataContract();
-
-    let dataContract = null;
-
-    if (serializedDataContractBinaryArray) {
-      dataContract = Buffer.from(serializedDataContractBinaryArray);
-    }
-
-    return dataContract;
+    return GetDataContractResponse.createFromProto(getDataContractResponse);
   }
 
   return getDataContract;

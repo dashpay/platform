@@ -26,16 +26,16 @@
     }
   ],
   "dependencies": {
-    "@dashevo/dapi-grpc": "~0.19.0",
-    "@dashevo/dashcore-lib": "~0.19.23",
+    "@dashevo/dapi-grpc": "~0.20.0-dev.2",
+    "@dashevo/dashcore-lib": "~0.19.25",
     "axios": "^0.21.1",
-    "cbor": "7.0.5",
-    "node-inspect-extracted": "1.0.7",
+    "cbor": "^7.0.5",
+    "node-inspect-extracted": "^1.0.7",
     "lodash.sample": "^4.2.1"
   },
   "devDependencies": {
     "@babel/core": "^7.10.2",
-    "@dashevo/dpp": "~0.19.2",
+    "@dashevo/dpp": "~0.20.0-dev.2",
     "babel-loader": "^8.0.6",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
@@ -60,7 +60,7 @@
     "webpack-cli": "^3.3.11"
   },
   "peerDependencies": {
-    "@dashevo/grpc-common": "^0.3.0"
+    "@dashevo/grpc-common": "~0.3.4"
   },
   "files": [
     "docs",

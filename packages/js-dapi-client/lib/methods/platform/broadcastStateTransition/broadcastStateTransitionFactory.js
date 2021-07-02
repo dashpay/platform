@@ -4,6 +4,7 @@ const {
     PlatformPromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
+const BroadcastStateTransitionResponse = require('./BroadcastStateTransitionResponse');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -22,12 +23,14 @@ function broadcastStateTransitionFactory(grpcTransport) {
     const broadcastStateTransitionRequest = new BroadcastStateTransitionRequest();
     broadcastStateTransitionRequest.setStateTransition(stateTransition);
 
-    return grpcTransport.request(
+    const broadcastStateTransitionResponse = await grpcTransport.request(
       PlatformPromiseClient,
       'broadcastStateTransition',
       broadcastStateTransitionRequest,
       options,
     );
+
+    return BroadcastStateTransitionResponse.createFromProto(broadcastStateTransitionResponse);
   }
 
   return broadcastStateTransition;

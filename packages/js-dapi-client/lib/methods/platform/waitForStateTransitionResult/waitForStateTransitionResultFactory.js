@@ -5,7 +5,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const cbor = require('cbor');
+const WaitForStateTransitionResultResponse = require('./WaitForStateTransitionResultResponse');
 
 /**
  *
@@ -42,33 +42,9 @@ function waitForStateTransitionResultFactory(grpcTransport) {
       options,
     );
 
-    const error = waitForStateTransitionResultResponse.getError();
-    const proof = waitForStateTransitionResultResponse.getProof();
-
-    const result = {};
-
-    if (proof) {
-      result.proof = {
-        rootTreeProof: Buffer.from(proof.getRootTreeProof()),
-        storeTreeProof: Buffer.from(proof.getStoreTreeProof()),
-      };
-    }
-
-    if (error) {
-      let data;
-      const rawData = error.getData();
-      if (rawData) {
-        data = cbor.decode(Buffer.from(rawData));
-      }
-
-      result.error = {
-        code: error.getCode(),
-        message: error.getMessage(),
-        data,
-      };
-    }
-
-    return result;
+    return WaitForStateTransitionResultResponse.createFromProto(
+      waitForStateTransitionResultResponse,
+    );
   }
 
   return waitForStateTransitionResult;

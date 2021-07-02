@@ -3,13 +3,15 @@ const {
     PlatformPromiseClient,
     GetDataContractRequest,
     GetDataContractResponse,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
-const getDataContractFactory = require('../../../../lib/methods/platform/getDataContractFactory');
+const getDataContractFactory = require('../../../../../lib/methods/platform/getDataContract/getDataContractFactory');
+const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 
 describe('getDataContractFactory', () => {
   let grpcTransportMock;
@@ -17,12 +19,21 @@ describe('getDataContractFactory', () => {
   let options;
   let response;
   let dataContractFixture;
+  let metadataFixture;
 
   beforeEach(function beforeEach() {
     dataContractFixture = getDataContractFixture();
 
     response = new GetDataContractResponse();
     response.setDataContract(dataContractFixture.toBuffer());
+
+    metadataFixture = getMetadataFixture();
+
+    const metadata = new ResponseMetadata();
+    metadata.setHeight(metadataFixture.height);
+    metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+
+    response.setMetadata(metadata);
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -48,7 +59,12 @@ describe('getDataContractFactory', () => {
       request,
       options,
     ]);
-    expect(result).to.deep.equal(dataContractFixture.toBuffer());
+    expect(result.getDataContract()).to.deep.equal(dataContractFixture.toBuffer());
+    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
+    expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
+      metadataFixture.coreChainLockedHeight,
+    );
   });
 
   it('should return null if data contract not found', async () => {
@@ -70,7 +86,8 @@ describe('getDataContractFactory', () => {
       request,
       options,
     ]);
-    expect(result).to.equal(null);
+    expect(result.getDataContract()).to.equal(null);
+    expect(result.getMetadata()).to.deep.equal({ height: 0, coreChainLockedHeight: 0 });
   });
 
   it('should throw unknown error', async () => {

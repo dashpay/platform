@@ -3,13 +3,15 @@ const {
     PlatformPromiseClient,
     GetIdentityRequest,
     GetIdentityResponse,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
-const getIdentityFactory = require('../../../../lib/methods/platform/getIdentityFactory');
+const getIdentityFactory = require('../../../../../lib/methods/platform/getIdentity/getIdentityFactory');
+const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 
 describe('getIdentityFactory', () => {
   let grpcTransportMock;
@@ -18,13 +20,21 @@ describe('getIdentityFactory', () => {
   let response;
   let identityFixture;
   let identityId;
+  let metadataFixture;
 
   beforeEach(function beforeEach() {
     identityFixture = getIdentityFixture();
     identityId = identityFixture.getId();
 
+    metadataFixture = getMetadataFixture();
+
+    const metadata = new ResponseMetadata();
+    metadata.setHeight(metadataFixture.height);
+    metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+
     response = new GetIdentityResponse();
     response.setIdentity(identityFixture.toBuffer());
+    response.setMetadata(metadata);
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -49,7 +59,8 @@ describe('getIdentityFactory', () => {
       request,
       options,
     );
-    expect(result).to.deep.equal(identityFixture.toBuffer());
+    expect(result.getIdentity()).to.deep.equal(identityFixture.toBuffer());
+    expect(result.getMetadata()).to.deep.equal(metadataFixture);
   });
 
   it('should return null if identity not found', async () => {
@@ -69,7 +80,8 @@ describe('getIdentityFactory', () => {
       request,
       options,
     );
-    expect(result).to.equal(null);
+    expect(result.getIdentity()).to.equal(null);
+    expect(result.getMetadata()).to.deep.equal({ height: 0, coreChainLockedHeight: 0 });
   });
 
   it('should throw unknown error', async () => {

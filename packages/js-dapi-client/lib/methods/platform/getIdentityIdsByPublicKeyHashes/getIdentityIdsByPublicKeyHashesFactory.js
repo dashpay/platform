@@ -5,7 +5,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const GetIdentityIdsByPublicKeyHashesResponse = require('./GetIdentityIdsByPublicKeyHashesResponse');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -18,7 +18,7 @@ function getIdentityIdsByPublicKeyHashesFactory(grpcTransport) {
    * @typedef {getIdentityIdsByPublicKeyHashes}
    * @param {Buffer[]} publicKeyHashes
    * @param {DAPIClientOptions} [options]
-   * @returns {Promise<!Array<Buffer|null>>}
+   * @returns {Promise<GetIdentityIdsByPublicKeyHashesResponse>}
    */
   async function getIdentityIdsByPublicKeyHashes(publicKeyHashes, options = {}) {
     const getIdentityIdsByPublicKeyHashesRequest = new GetIdentityIdsByPublicKeyHashesRequest();
@@ -26,24 +26,15 @@ function getIdentityIdsByPublicKeyHashesFactory(grpcTransport) {
       publicKeyHashes,
     );
 
-    let getIdentityIdsByPublicKeyHashesResponse;
-    try {
-      getIdentityIdsByPublicKeyHashesResponse = await grpcTransport.request(
-        PlatformPromiseClient,
-        'getIdentityIdsByPublicKeyHashes',
-        getIdentityIdsByPublicKeyHashesRequest,
-        options,
-      );
-    } catch (e) {
-      if (e.code === grpcErrorCodes.NOT_FOUND) {
-        return null;
-      }
+    const getIdentityIdsByPublicKeyHashesResponse = await grpcTransport.request(
+      PlatformPromiseClient,
+      'getIdentityIdsByPublicKeyHashes',
+      getIdentityIdsByPublicKeyHashesRequest,
+      options,
+    );
 
-      throw e;
-    }
-
-    return getIdentityIdsByPublicKeyHashesResponse.getIdentityIdsList()
-      .map((identityId) => (identityId.length > 0 ? Buffer.from(identityId) : null));
+    return GetIdentityIdsByPublicKeyHashesResponse
+      .createFromProto(getIdentityIdsByPublicKeyHashesResponse);
   }
 
   return getIdentityIdsByPublicKeyHashes;

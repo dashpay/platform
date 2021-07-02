@@ -6,12 +6,14 @@ const {
     PlatformPromiseClient,
     GetDocumentsRequest,
     GetDocumentsResponse,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
-const getDocumentsFactory = require('../../../../lib/methods/platform/getDocumentsFactory');
+const getDocumentsFactory = require('../../../../../lib/methods/platform/getDocuments/getDocumentsFactory');
+const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 
 describe('getDocumentsFactory', () => {
   let grpcTransportMock;
@@ -22,11 +24,14 @@ describe('getDocumentsFactory', () => {
   let type;
   let documentsFixture;
   let serializedDocuments;
+  let metadataFixture;
 
   beforeEach(function beforeEach() {
     type = 'niceDocument';
     contractIdBuffer = Buffer.from('11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c', 'hex');
     contractIdIdentifier = Identifier.from(contractIdBuffer);
+
+    metadataFixture = getMetadataFixture();
 
     options = {
       limit: 10,
@@ -42,8 +47,13 @@ describe('getDocumentsFactory', () => {
     serializedDocuments = documentsFixture
       .map((document) => Buffer.from(JSON.stringify(document)));
 
+    const metadata = new ResponseMetadata();
+    metadata.setHeight(metadataFixture.height);
+    metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+
     const response = new GetDocumentsResponse();
     response.setDocumentsList(serializedDocuments);
+    response.setMetadata(metadata);
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -70,7 +80,8 @@ describe('getDocumentsFactory', () => {
       request,
       options,
     );
-    expect(result).to.deep.equal(serializedDocuments);
+    expect(result.getDocuments()).to.deep.equal(serializedDocuments);
+    expect(result.getMetadata()).to.deep.equal(metadataFixture);
   });
 
   it('should return documents when contract id is identifier', async () => {
@@ -91,6 +102,7 @@ describe('getDocumentsFactory', () => {
       request,
       options,
     );
-    expect(result).to.deep.equal(serializedDocuments);
+    expect(result.getDocuments()).to.deep.equal(serializedDocuments);
+    expect(result.getMetadata()).to.deep.equal(metadataFixture);
   });
 });
