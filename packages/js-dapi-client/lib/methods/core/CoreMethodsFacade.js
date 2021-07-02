@@ -6,7 +6,7 @@ const getBlockByHeightFactory = require('./getBlockByHeightFactory');
 const getBlockHashFactory = require('./getBlockHashFactory');
 const getMnListDiffFactory = require('./getMnListDiffFactory');
 const getStatusFactory = require('./getStatusFactory');
-const getTransactionFactory = require('./getTransactionFactory');
+const getTransactionFactory = require('./getTransaction/getTransactionFactory');
 const subscribeToTransactionsWithProofsFactory = require('./subscribeToTransactionsWithProofsFactory');
 
 class CoreMethodsFacade {
