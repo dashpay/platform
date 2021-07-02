@@ -24,6 +24,14 @@ jobs:
 
       - uses: actions/checkout@v2
 
+      # Temporary fix until Docker Compose V2 is GA
+      - name: Set up Docker Compose V2
+        run: |
+          curl https://github.com/docker/compose-cli/releases/download/v2.0.0-beta.4/docker-compose-linux-amd64 --location --create-dirs -o $HOME/.docker/cli-plugins/docker-compose
+          chmod +x $HOME/.docker/cli-plugins/docker-compose
+          docker version
+          docker info
+
       - uses: actions/setup-node@v2
         with:
           node-version: '12'
@@ -65,8 +73,6 @@ jobs:
         uses: dashevo/gh-action-start-local-network@v1
         id: start-local-network
         with:
-          actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
-          actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
           drive-branch: ${{ env.DRIVE_BRANCH }}
           dapi-branch: ${{ env.DAPI_BRANCH }}
           dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
