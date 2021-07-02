@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "0.20.0-dev.2",
+  "version": "0.20.0-dev.3",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "browser.js",
   "main": "node.js",
@@ -33,7 +33,7 @@
   },
   "homepage": "https://github.com/dashevo/dapi-grpc#readme",
   "dependencies": {
-    "@dashevo/grpc-common": "^0.3.0",
+    "@dashevo/grpc-common": "^0.3.3",
     "google-protobuf": "^3.12.2",
     "grpc": "^1.24.3",
     "grpc-web": "^1.2.0",
