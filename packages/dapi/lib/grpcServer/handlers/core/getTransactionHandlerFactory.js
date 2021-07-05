@@ -34,9 +34,10 @@ function getTransactionHandlerFactory(coreRPCClient) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
-    let serializedTransaction;
+    let rawTransaction;
+    const verboseMode = 1;
     try {
-      serializedTransaction = await coreRPCClient.getRawTransaction(id);
+      rawTransaction = await coreRPCClient.getRawTransaction(id, verboseMode);
     } catch (e) {
       if (e.code === -5) {
         throw new NotFoundGrpcError('Transaction not found');
@@ -45,10 +46,18 @@ function getTransactionHandlerFactory(coreRPCClient) {
       throw e;
     }
 
-    const transaction = new Transaction(serializedTransaction);
+    const transaction = new Transaction(rawTransaction.hex);
 
     const response = new GetTransactionResponse();
+
+    const blockHash = rawTransaction.blockhash ? Buffer.from(rawTransaction.blockhash, 'hex') : Buffer.alloc(0);
+
     response.setTransaction(transaction.toBuffer());
+    response.setBlockHash(blockHash);
+    response.setHeight(rawTransaction.height);
+    response.setConfirmations(rawTransaction.confirmations);
+    response.setIsInstantLocked(rawTransaction.instantlock_internal);
+    response.setIsChainLocked(rawTransaction.chainlock);
 
     return response;
   }

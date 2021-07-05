@@ -38,7 +38,14 @@ describe('getTransactionHandlerFactory', () => {
     call = new GrpcCallMock(this.sinon, request);
 
     coreRPCClientMock = {
-      getRawTransaction: this.sinon.stub().resolves(rawTransactionFixture),
+      getRawTransaction: this.sinon.stub().resolves({
+        hex: rawTransactionFixture,
+        blockhash: Buffer.alloc(1, 32).toString('hex'),
+        height: 42,
+        confirmations: 3,
+        instantlock_internal: true,
+        chainlock: false,
+      }),
     };
 
     getTransactionHandler = getTransactionHandlerFactory(coreRPCClientMock);
@@ -56,8 +63,12 @@ describe('getTransactionHandlerFactory', () => {
     const returnedTransaction = new Transaction(transactionSerialized);
 
     expect(returnedTransaction.toString()).to.deep.equal(rawTransactionFixture);
-
     expect(coreRPCClientMock.getRawTransaction).to.be.calledOnceWith(id);
+    expect(result.getBlockHash()).to.deep.equal(Buffer.alloc(1, 32));
+    expect(result.getHeight()).to.equal(42);
+    expect(result.getConfirmations()).to.equal(3);
+    expect(result.getIsInstantLocked()).to.be.true();
+    expect(result.getIsChainLocked()).to.be.false();
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {

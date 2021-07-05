@@ -145,8 +145,8 @@ const getMasternode = command => new Promise((resolve, reject) => {
   });
 });
 
-const getRawTransaction = txid => new Promise((resolve, reject) => {
-  client.getrawtransaction(txid, (err, r) => {
+const getRawTransaction = (txid, verboseMode = 0) => new Promise((resolve, reject) => {
+  client.getrawtransaction(txid, verboseMode, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
