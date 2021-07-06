@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const Wallet = require('../Wallet/Wallet.js');
+const Wallet = require('../Wallet/Wallet');
 
 class Identities {
   constructor(wallet) {

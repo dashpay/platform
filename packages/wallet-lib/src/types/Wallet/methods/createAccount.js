@@ -11,7 +11,7 @@ async function createAccount(accountOpts) {
    *   disable eslint global require for next line
    */
   // eslint-disable-next-line global-require
-  const Account = require('../../Account/Account.js');
+  const Account = require('../../Account/Account');
 
   const {
     injectDefaultPlugins, debug, plugins, allowSensitiveOperations,

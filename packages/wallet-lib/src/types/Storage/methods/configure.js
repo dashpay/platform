@@ -1,6 +1,6 @@
 const { has } = require('lodash');
-const configureAdapter = require('../_configureAdapter.js');
-const getDefaultAdapter = require('../_getDefaultAdapter.js');
+const configureAdapter = require('../_configureAdapter');
+const getDefaultAdapter = require('../_getDefaultAdapter');
 const { CONFIGURED } = require('../../../EVENTS');
 
 /**

@@ -4,7 +4,7 @@ const logger = require('../../logger');
 const { WALLET_TYPES } = require('../../CONSTANTS');
 const { is } = require('../../utils');
 const EVENTS = require('../../EVENTS');
-const Wallet = require('../Wallet/Wallet.js');
+const Wallet = require('../Wallet/Wallet');
 const { simpleDescendingAccumulator } = require('../../utils/coinSelections/strategies');
 
 function getNextUnusedAccountIndexForWallet(wallet) {

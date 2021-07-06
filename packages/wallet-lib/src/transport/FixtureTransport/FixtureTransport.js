@@ -1,4 +1,4 @@
-const blocksData = require('./data/blocks/blocks.js');
+const blocksData = require('./data/blocks/blocks');
 const AbstractTransport = require('../AbstractTransport');
 
 const bestBlockDataHeight = 21546;

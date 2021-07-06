@@ -47,7 +47,7 @@ class IdentitySyncWorker extends Worker {
 
       // check unused indices in the middle of list first
       if (unusedIndex) {
-        // if we go through unused indices and thay are not
+        // if we go through unused indices and they are not
         // sequential we need to reset gap count
         if (unusedIndex !== index + 1) {
           gapCount = 0;

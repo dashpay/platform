@@ -13,7 +13,7 @@ let wallet;
 let account;
 let faucetWallet;
 
-describe('Wallet-lib - functional ', function suite() {
+describe('Wallet-lib - functional', function suite() {
   this.timeout(700000);
 
   before(() => {

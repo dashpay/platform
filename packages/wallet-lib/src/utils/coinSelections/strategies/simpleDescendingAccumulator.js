@@ -1,5 +1,5 @@
 const { sortBy } = require('lodash');
-const TransactionEstimator = require('../TransactionEstimator.js');
+const TransactionEstimator = require('../TransactionEstimator');
 
 /**
  * Given a utxos list and a threesholdSatoshis, will add them

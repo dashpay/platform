@@ -48,7 +48,7 @@ export declare class Account {
     decrypt(method: string, data: any, secret: string, encoding?: "hex"|string): string;
     encrypt(method: string, data: any, secret: string): string;
     disconnect(): Promise<Boolean>;
-    fetchAddressInfo(addresObj: AddressObj, fetchUtxo: boolean): Promise<AddressInfo | false>;
+    fetchAddressInfo(addressObj: AddressObj, fetchUtxo: boolean): Promise<AddressInfo | false>;
     fetchStatus(): Promise<StatusInfo>;
     forceRefreshAccount(): boolean;
     generateAddress(path: string): AddressObj;

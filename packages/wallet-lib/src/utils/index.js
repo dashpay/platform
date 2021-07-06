@@ -12,7 +12,7 @@ const {
   mnemonicToWalletId,
   seedToHDPrivateKey,
   mnemonicToSeed,
-} = require('./mnemonic.js');
+} = require('./mnemonic');
 const is = require('./is');
 const coinSelection = require('./coinSelection');
 const feeCalculation = require('./feeCalculation');
