@@ -116,13 +116,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildkit-
 
-      - name: Show containers debug
-        continue-on-error: true
-        run: |
-          docker ps -a
-          docker buildx inspect
-          ls -lha buildkit-cache
-
       - name: Load buildkit state from cache
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
@@ -191,12 +184,6 @@ jobs:
         with:
           path: buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-state
-
-      - name: Show containers debug
-        run: |
-          docker ps -a
-          docker buildx inspect
-          ls -lha buildkit-cache
 
       - name: Load buildkit state from cache
         uses: dashevo/gh-action-cache-buildkit-state@v1
