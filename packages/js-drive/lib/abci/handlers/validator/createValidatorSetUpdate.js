@@ -17,15 +17,20 @@ const {
  */
 function createValidatorSetUpdate(validatorSet) {
   const validatorUpdates = validatorSet.getValidators()
-    .map((validator) => (
-      new ValidatorUpdate({
-        pubKey: new PublicKey({
-          bls12381: validator.getPublicKeyShare(),
-        }),
+    .map((validator) => {
+      const validatorUpdate = new ValidatorUpdate({
         power: validator.getVotingPower(),
         proTxHash: validator.getProTxHash(),
-      })
-    ));
+      });
+
+      if (validator.getPublicKeyShare()) {
+        validatorUpdate.pubKey = new PublicKey({
+          bls12381: validator.getPublicKeyShare(),
+        });
+      }
+
+      return validatorUpdate;
+    });
 
   const { quorumPublicKey, quorumHash } = validatorSet.getQuorum();
 

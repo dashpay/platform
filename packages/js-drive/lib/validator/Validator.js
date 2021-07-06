@@ -5,7 +5,7 @@ class Validator {
    * @param {Buffer} proTxHash
    * @param {Buffer} [pubKeyShare]
    */
-  constructor(proTxHash, pubKeyShare) {
+  constructor(proTxHash, pubKeyShare = undefined) {
     this.proTxHash = proTxHash;
     this.pubKeyShare = pubKeyShare;
   }
