@@ -183,7 +183,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-state
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
 
       - name: Load buildkit state from cache
         uses: dashevo/gh-action-cache-buildkit-state@v1
