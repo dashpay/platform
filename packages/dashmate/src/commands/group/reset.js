@@ -59,7 +59,6 @@ class GroupResetCommand extends GroupBaseCommand {
 
                 // TODO: Should stay the same
                 config.set('platform.drive.tenderdash.nodeId', baseConfig.platform.drive.tenderdash.nodeId);
-                config.set('platform.drive.tenderdash.validatorKey', baseConfig.platform.drive.tenderdash.validatorKey);
                 config.set('platform.drive.tenderdash.nodeKey', baseConfig.platform.drive.tenderdash.nodeKey);
                 config.set('platform.drive.tenderdash.genesis', baseConfig.platform.drive.tenderdash.genesis);
               }

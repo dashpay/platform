@@ -433,9 +433,6 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
-                validatorKey: {
-                  type: 'object',
-                },
                 nodeKey: {
                   type: 'object',
                 },
@@ -446,7 +443,7 @@ module.exports = {
                   type: ['string', 'null'],
                 },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus', 'validatorKey', 'nodeKey', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus', 'nodeKey', 'genesis', 'nodeId'],
               additionalProperties: false,
             },
           },

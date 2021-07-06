@@ -101,7 +101,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.4.2',
+          image: 'dashpay/tenderdash:0.5.2',
         },
         p2p: {
           port: 26656,
@@ -123,9 +123,6 @@ module.exports = {
             '*': 'error',
           },
           format: 'plain',
-        },
-        validatorKey: {
-
         },
         nodeKey: {
 

@@ -1,1 +1,0 @@
-{{=JSON.stringify(it.platform.drive.tenderdash.validatorKey,null,2)}}

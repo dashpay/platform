@@ -20,9 +20,9 @@ function configureTenderdashTaskFactory(
     return new Listr([
       {
         task: async (ctx) => {
-          const masternodeConfigs = configGroup.filter((config) => config.get('core.masternode.enable'));
+          const platformConfigs = configGroup.filter((config) => config.has('platform'));
 
-          const subTasks = masternodeConfigs.map((config) => ({
+          const subTasks = platformConfigs.map((config) => ({
             title: `Initialize ${config.getName()} Tenderdash`,
             task: () => tenderdashInitTask(config),
           }));
@@ -33,9 +33,9 @@ function configureTenderdashTaskFactory(
               const randomChainIdPart = Math.floor(Math.random() * 60) + 1;
               const chainId = `dash_masternode_local_${randomChainIdPart}`;
 
-              const genesisTime = masternodeConfigs[0].get('platform.drive.tenderdash.genesis.genesis_time');
+              const genesisTime = platformConfigs[0].get('platform.drive.tenderdash.genesis.genesis_time');
 
-              masternodeConfigs.forEach((config, index) => {
+              platformConfigs.forEach((config, index) => {
                 config.set('platform.drive.tenderdash.genesis.genesis_time', genesisTime);
                 config.set('platform.drive.tenderdash.genesis.chain_id', chainId);
                 config.set(
@@ -43,7 +43,7 @@ function configureTenderdashTaskFactory(
                   ctx.initialCoreChainLockedHeight,
                 );
 
-                const p2pPeers = masternodeConfigs
+                const p2pPeers = platformConfigs
                   .filter((_, i) => i !== index)
                   .map((innerConfig) => {
                     const nodeId = innerConfig.get('platform.drive.tenderdash.nodeId');
@@ -63,7 +63,7 @@ function configureTenderdashTaskFactory(
                   config.get('platform.drive.abci.validatorSet.llmqType').toString(),
                 );
 
-                config.set('platform.drive.tenderdash.genesis.quorum_hash', ctx.quorumHash);
+                config.set('platform.drive.tenderdash.genesis.quorum_hash', null);
 
                 const configFiles = renderServiceTemplates(config);
                 writeServiceConfigs(config.getName(), configFiles);

@@ -33,7 +33,6 @@ function renderServiceTemplatesFactory() {
           const skipEmpty = {
             genesis: 'genesis',
             node_key: 'nodeKey',
-            priv_validator_key: 'validatorKey',
           };
 
           for (const [configName, optionName] of Object.entries(skipEmpty)) {

@@ -215,7 +215,7 @@ function registerMasternodeTaskFactory(
       {
         title: 'Broadcast masternode registration transaction',
         task: async (ctx, task) => {
-          const proRegTx = await registerMasternode(
+          ctx.proTxHash = await registerMasternode(
             ctx.coreService,
             ctx.collateralTxId,
             ctx.owner.address,
@@ -225,7 +225,7 @@ function registerMasternodeTaskFactory(
           );
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `ProRegTx transaction ID: ${proRegTx}`;
+          task.output = `ProRegTx transaction ID: ${ctx.proTxHash}`;
         },
         options: { persistentOutput: true },
       },

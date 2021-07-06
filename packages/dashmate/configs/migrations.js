@@ -196,6 +196,11 @@ module.exports = {
             config.platform.drive.tenderdash.log = systemConfigs.base.platform.drive.tenderdash.log;
           }
 
+          // Remove validator set
+          if (typeof config.platform.drive.tenderdash.validatorKey === 'undefined') {
+            delete config.platform.drive.tenderdash.validatorKey;
+          }
+
           // Update images
           config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
             .drive.tenderdash.docker.image;

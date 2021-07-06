@@ -51,8 +51,6 @@ function initializeTenderdashNodeFactory(dockerCompose, docker, dockerPull) {
     const command = [
       '/usr/bin/tenderdash init > /dev/null',
       'echo "["',
-      'cat $TMHOME/config/priv_validator_key.json',
-      'echo ","',
       'cat $TMHOME/config/node_key.json',
       'echo ","',
       'cat $TMHOME/config/genesis.json',

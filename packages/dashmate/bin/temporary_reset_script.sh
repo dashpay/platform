@@ -11,8 +11,8 @@ FAUCET_ADDRESS=
 MINING_INTERVAL_IN_SECONDS=20
 
 # PLEASE SET THIS VARIABLES TO YOUR LOCAL DIRECTORIES WITH THE CODE IF YOU WISH TO COMPILE DAPI AND DRIVE
-DAPI_REPO_PATH=/dash/dapi
-DRIVE_REPO_PATH=/dash/drive
+DAPI_REPO_PATH=
+DRIVE_REPO_PATH=
 
 BUILD_DAPI_BEFORE_SETUP=false
 BUILD_DAPI_AFTER_SETUP=false
@@ -24,7 +24,11 @@ MASTERNODES_COUNT=3
 
 echo "Removing all docker containers and volumes..."
 docker rm -f -v $(docker ps -a -q) || true
-docker system prune -f; rm -rf ~/.dashmate/
+
+docker system prune -f --volumes
+
+echo "Remove dashmate configuration..."
+rm -rf ~/.dashmate/
 
 if [ $BUILD_DRIVE == true ]
 then
@@ -41,7 +45,7 @@ fi
 ./bin/dashmate setup ${CONFIG_NAME} --verbose --debug-logs --miner-interval="${MINING_INTERVAL_IN_SECONDS}s" --node-count=${MASTERNODES_COUNT}
 
 echo "Sending 1000 tDash to the ${FAUCET_ADDRESS} for tests"
-./bin/dashmate wallet:mint 1000 --config=${CONFIG_NAME}_seed --address=${FAUCET_ADDRESS}
+./bin/dashmate wallet:mint 1000 --config=${CONFIG_NAME}_seed --address=${FAUCET_ADDRESS} --verbose
 
 if [ $BUILD_DAPI_AFTER_SETUP == true ]
 then
@@ -52,6 +56,6 @@ then
   done
 fi
 
-./bin/dashmate group:start --wait-for-readiness
+./bin/dashmate group:start --wait-for-readiness --verbose
 
 echo "Funding key is ${FAUCET_PRIVATE_KEY}"

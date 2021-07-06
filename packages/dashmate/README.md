@@ -88,6 +88,7 @@ ARGUMENTS
   NODE-TYPE  (masternode|fullnode) Node type
 
 OPTIONS
+  -d, --[no-]debug-logs                                    enable debug logs
   -i, --external-ip=external-ip                            external ip
   -k, --operator-bls-private-key=operator-bls-private-key  operator bls private key
   -m, --miner-interval=miner-interval                      interval between blocks
