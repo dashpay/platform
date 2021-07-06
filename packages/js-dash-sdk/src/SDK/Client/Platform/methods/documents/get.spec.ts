@@ -1,6 +1,8 @@
 import getDataContractFixture from '@dashevo/dpp/lib/test/fixtures/getDataContractFixture';
 import generateRandomIdentifier from '@dashevo/dpp/lib/test/utils/generateRandomIdentifier';
 import createDPPMock from '@dashevo/dpp/lib/test/mocks/createDPPMock';
+import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
+const GetDocumentsResponse = require("@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse");
 
 import get from './get';
 import { expect } from 'chai';
@@ -11,7 +13,6 @@ describe('Client - Platform - Documents - .get()', () => {
   let appDefinition;
   let getDocumentsMock;
   let appsGetMock;
-  let initialize;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -21,7 +22,7 @@ describe('Client - Platform - Documents - .get()', () => {
       contract: dataContract,
     };
 
-    getDocumentsMock = this.sinon.stub().resolves([]);
+    getDocumentsMock = this.sinon.stub().resolves(new GetDocumentsResponse([], getResponseMetadataFixture()));
     appsGetMock = this.sinon.stub().returns(appDefinition);
 
     platform = {

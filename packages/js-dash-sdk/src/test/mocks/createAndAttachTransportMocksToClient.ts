@@ -3,9 +3,11 @@ import stateTransitionTypes from "@dashevo/dpp/lib/stateTransition/stateTransiti
 import Identity from "@dashevo/dpp/lib/identity/Identity";
 
 import { createFakeInstantLock } from "../../utils/createFakeIntantLock";
+import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
 import { createDapiClientMock } from "./createDapiClientMock";
 
 import { wait } from "../../utils/wait";
+const GetIdentityResponse = require("@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse");
 
 // @ts-ignore
 const TxStreamMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamMock');
@@ -56,7 +58,7 @@ function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
                 balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
                 revision: 0,
             });
-            dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId()).resolves(identityToResolve.toBuffer());
+            dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId()).resolves(new GetIdentityResponse(identityToResolve.toBuffer(), getResponseMetadataFixture()));
         }
     });
 }

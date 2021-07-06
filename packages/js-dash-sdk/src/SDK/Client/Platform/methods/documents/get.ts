@@ -1,4 +1,5 @@
 import Identifier from '@dashevo/dpp/lib/Identifier';
+import Metadata from "@dashevo/dpp/lib/Metadata";
 
 import {Platform} from "../../Platform";
 
@@ -121,14 +122,30 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
     }
 
     // @ts-ignore
-    const rawDocuments = await this.client.getDAPIClient().platform.getDocuments(
+    const documentsResponse = await this.client.getDAPIClient().platform.getDocuments(
         appDefinition.contractId,
         fieldType,
         opts
     );
 
+    const rawDocuments = documentsResponse.getDocuments();
+
     return Promise.all(
-        rawDocuments.map((rawDocument) => this.dpp.document.createFromBuffer(rawDocument)),
+        rawDocuments.map(async (rawDocument) => {
+            const document = await this.dpp.document.createFromBuffer(rawDocument);
+
+            let metadata = null;
+            const responseMetadata = documentsResponse.getMetadata();
+            if (responseMetadata) {
+                metadata = new Metadata({
+                    blockHeight: responseMetadata.getHeight(),
+                    coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
+                });
+            }
+            document.setMetadata(metadata);
+
+            return document;
+        }),
     );
 }
 

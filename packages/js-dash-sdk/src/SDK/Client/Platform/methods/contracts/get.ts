@@ -2,6 +2,8 @@ import {Platform} from "../../Platform";
 
 // @ts-ignore
 import Identifier from "@dashevo/dpp/lib/Identifier";
+import Metadata from "@dashevo/dpp/lib/Metadata";
+const NotFoundError = require('@dashevo/dapi-client/lib/methods/errors/NotFoundError');
 
 declare type ContractIdentifier = string | Identifier;
 
@@ -26,15 +28,28 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     }
 
     // Fetch contract otherwise
+    let dataContractResponse;
+    try {
+        dataContractResponse = await this.client.getDAPIClient().platform.getDataContract(contractId);
+    } catch (e) {
+        if (e instanceof NotFoundError) {
+            return null;
+        }
 
-    // @ts-ignore
-    const rawContract = await this.client.getDAPIClient().platform.getDataContract(contractId);
-
-    if (!rawContract) {
-        return null;
+        throw e;
     }
 
-    const contract = await this.dpp.dataContract.createFromBuffer(rawContract);
+    const contract = await this.dpp.dataContract.createFromBuffer(dataContractResponse.getDataContract());
+
+    let metadata = null;
+    const responseMetadata = dataContractResponse.getMetadata();
+    if (responseMetadata) {
+        metadata = new Metadata({
+            blockHeight: responseMetadata.getHeight(),
+            coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
+        });
+    }
+    contract.setMetadata(metadata);
 
     // Store contract to the cache
 

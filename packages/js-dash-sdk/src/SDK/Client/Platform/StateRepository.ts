@@ -1,4 +1,3 @@
-import DashPlatformProtocol from "@dashevo/dpp";
 import DataContract from "@dashevo/dpp/lib/dataContract/DataContract";
 import Identity from "@dashevo/dpp/lib/identity/Identity";
 import Identifier from "@dashevo/dpp/lib/Identifier";
@@ -6,54 +5,17 @@ import Client from '../Client';
 
 class StateRepository {
   private readonly client: Client;
-  private readonly dpp: DashPlatformProtocol;
 
-  constructor(client: Client, dpp: DashPlatformProtocol) {
+  constructor(client: Client) {
     this.client = client;
-    this.dpp = dpp;
   }
 
   async fetchIdentity(id: Identifier|string): Promise<Identity|null> {
-    const identifier = Identifier.from(id);
-
-    const identityBuffer = await this.client.getDAPIClient().platform.getIdentity(identifier);
-
-    if (identityBuffer === null) {
-      return null;
-    }
-
-    return this.dpp.identity.createFromBuffer(identityBuffer);
+    return this.client.platform.identities.get(id);
   }
 
   async fetchDataContract(identifier: Identifier|string): Promise<DataContract|null> {
-    const contractId: Identifier = Identifier.from(identifier);
-
-    // Try to get contract from the cache
-    for (const appName of this.client.getApps().getNames()) {
-      const appDefinition = this.client.getApps().get(appName);
-      if (appDefinition.contractId.equals(contractId) && appDefinition.contract) {
-        return appDefinition.contract;
-      }
-    }
-
-    // Fetch contract otherwise
-    const rawContract = await this.client.getDAPIClient().platform.getDataContract(contractId);
-
-    if (!rawContract) {
-      return null;
-    }
-
-    const contract = await this.dpp.dataContract.createFromBuffer(rawContract);
-
-    // Store contract to the cache
-    for (const appName of this.client.getApps().getNames()) {
-      const appDefinition = this.client.getApps().get(appName);
-      if (appDefinition.contractId.equals(contractId)) {
-        appDefinition.contract = contract;
-      }
-    }
-
-    return contract;
+    return this.client.platform.contracts.get(identifier);
   }
 
   async isAssetLockTransactionOutPointAlreadyUsed(): Promise<boolean> {
