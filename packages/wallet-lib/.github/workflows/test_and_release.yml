@@ -28,6 +28,14 @@ jobs:
         with:
           node-version: '12'
 
+      # Temporary fix until Docker Compose V2 is GA
+      - name: Set up Docker Compose V2
+        run: |
+          curl https://github.com/docker/compose-cli/releases/download/v2.0.0-beta.4/docker-compose-linux-amd64 --location --create-dirs -o $HOME/.docker/cli-plugins/docker-compose
+          chmod +x $HOME/.docker/cli-plugins/docker-compose
+          docker version
+          docker info
+
       - name: Enable NPM cache
         uses: actions/cache@v2
         with:
