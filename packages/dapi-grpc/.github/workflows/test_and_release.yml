@@ -32,12 +32,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - name: Cache Docker layers # Tests run in Docker
-        uses: satackey/action-docker-layer-caching@v0.0.11
-        continue-on-error: true
-        with:
-          concurrency: 8
-
       - name: Check NPM package lock version is updated
         uses: dashevo/gh-action-check-package-lock@v1
 
