@@ -1,3 +1,13 @@
+# [0.20.0](https://github.com/dashevo/dapi-grpc/compare/v0.19.0...v0.20.0) (2021-07-08)
+
+
+### Features
+
+* add additional information to `GetTransactionResponse` ([#118](https://github.com/dashevo/dapi-grpc/issues/118), [#120](https://github.com/dashevo/dapi-grpc/issues/120))
+* add metadata and additional info to platform proofs ([#115](https://github.com/dashevo/dapi-grpc/issues/115), [#114](https://github.com/dashevo/dapi-grpc/issues/114), [#112](https://github.com/dashevo/dapi-grpc/issues/112))
+
+
+
 # [0.19.0](https://github.com/dashevo/dapi-grpc/compare/v0.18.0...v0.19.0) (2021-04-30)
 
 
