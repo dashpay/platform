@@ -1,3 +1,27 @@
+# [0.20.0](https://github.com/dashevo/js-dpp/compare/v0.19.2...v0.20.0) (2021-07-08)
+
+
+### Features
+
+* add metadata to document, data contract and identity ([#318](https://github.com/dashevo/js-dpp/issues/318))
+* prevent possible ReDoS attacks for Data Contracts ([#311](https://github.com/dashevo/js-dpp/issues/311), [#317](https://github.com/dashevo/js-dpp/issues/317), [#315](https://github.com/dashevo/js-dpp/issues/315))
+* strcit data contract JSON schema validation ([#310](https://github.com/dashevo/js-dpp/issues/310), [#312](https://github.com/dashevo/js-dpp/issues/312))
+
+
+### BREAKING CHANGES
+
+* `dependencies` is not supported. Use `dependentRequired` and `dependentSchema` instead
+* `additionalitems` is not supported. Use `items: false` and `prefixItems` instead
+* `patternProperties` is prohibited for Data Contract
+* error messages and properties are changed according to the new JSON Schema spec
+* `pattern` keyword accept only RE2 compatible regular expressions
+* Document type and properties minimum length is 3 chars
+* `definitions` is now defined using `$defs` keyword
+* JSON Schema strict validation is enabled. Previous contract schemas invalid in case they are not respecting strict mode constraints (reference [this link](https://ajv.js.org/strict-mode.html) for more information)
+* usage of `if`, `then`, `else`, `allOf`, `anyOf`, `oneOf`, `patternProperties` in document properties is prohibited
+
+
+
 ## [0.19.2](https://github.com/dashevo/js-dpp/compare/v0.19.1...v0.19.2) (2021-05-20)
 
 
