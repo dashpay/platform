@@ -1,3 +1,29 @@
+# [0.20.0](https://github.com/dashevo/dapi-client/compare/v0.19.3...v0.20.0) (2021-07-09)
+
+
+### Features
+
+* provide metadata in responses ([#243](https://github.com/dashevo/dapi-client/issues/243), [#246](https://github.com/dashevo/dapi-client/issues/246))
+* throw `NotFoundError` if data is not found ([#247](https://github.com/dashevo/dapi-client/issues/247))
+
+
+### BREAKING CHANGES
+
+* platform methods respond with response classes instead of plain data
+* Core method `getTransaction` responds with response class instead of plain data
+* `getTransaction`, `getDataContract` and `getIdentity` methods throw `NotFoundError` if no data was found
+
+
+
+## [0.19.3](https://github.com/dashevo/dapi-client/compare/v0.19.2...v0.19.3) (2021-05-26)
+
+
+### Bug Fixes
+
+* update cbor to fix serialization of queries with buffers ([178943b](https://github.com/dashevo/dapi-client/commit/178943b465b30ed838cb03a5a10c6f939db92a39))
+
+
+
 ## [0.19.2](https://github.com/dashevo/dapi-client/compare/v0.19.1...v0.19.2) (2021-05-20)
 
 
