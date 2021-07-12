@@ -1,5 +1,6 @@
 const BufferWriter = require('@dashevo/dashcore-lib/lib/encoding/bufferwriter');
 const Hash = require('@dashevo/dashcore-lib/lib/crypto/hash');
+const QuorumsNotFoundError = require('./errors/QuorumsNotFoundError');
 
 /**
  * Calculates scores for validator quorum selection
@@ -32,6 +33,10 @@ function calculateQuorumHashScores(quorumHashes, modifier) {
  */
 function getRandomQuorum(sml, quorumType, entropy) {
   const validatorQuorums = sml.getQuorumsOfType(quorumType);
+
+  if (validatorQuorums.length === 0) {
+    throw new QuorumsNotFoundError(sml, quorumType);
+  }
 
   const validatorQuorumHashes = validatorQuorums
     .map((quorum) => Buffer.from(quorum.quorumHash, 'hex'));

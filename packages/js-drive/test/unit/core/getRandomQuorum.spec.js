@@ -11,6 +11,8 @@ describe('getRandomQuorum', () => {
     smlMock = {
       getQuorumsOfType: this.sinon.stub(),
       getQuorum: this.sinon.stub(),
+      quorumList: [],
+      blockHash: '0'.repeat(32),
     };
 
     quorumType = 1;
@@ -34,5 +36,22 @@ describe('getRandomQuorum', () => {
       quorumType, '20',
     );
     expect(result).to.equals(randomQuorum);
+  });
+
+  it('should throw an error if SML does not contain any quorums', () => {
+    smlMock.getQuorumsOfType.returns([]);
+
+    expect(() => {
+      getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+    }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of any type`);
+  });
+
+  it('should throw an error if SML contains quorums that differ from the specified quorum type', () => {
+    smlMock.getQuorumsOfType.returns([]);
+    smlMock.quorumList = [{ llmqType: 999 }];
+
+    expect(() => {
+      getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+    }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of type 1, but contains entries for types 999. Please check the Drive configuration`);
   });
 });
