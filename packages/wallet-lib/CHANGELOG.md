@@ -1,3 +1,17 @@
+# [7.20.0](https://github.com/dashevo/wallet-lib/compare/v7.19.2...v7.20.0) (2021-07-09)
+
+
+### Features
+
+* add `waitForInstantLockTimeout` Wallet Option ([#270](https://github.com/dashevo/wallet-lib/issues/270))
+
+
+### Bug Fixes
+
+* `waitForInstantLock` timeouts stuck in event loop ([#272](https://github.com/dashevo/wallet-lib/issues/272))
+
+
+
 ## [7.19.2](https://github.com/dashevo/wallet-lib/compare/v7.19.1...v7.19.2) (2021-05-28)
 
 
