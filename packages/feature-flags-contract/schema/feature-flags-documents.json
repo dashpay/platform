@@ -1,7 +1,7 @@
 {
   "updateConsensusParams": {
-    "type": "object",
     "description": "Updates Tenderdash consensus params",
+    "type": "object",
     "indices": [
       {
         "properties": [
@@ -19,8 +19,8 @@
         "minimum": 1
       },
       "block": {
-        "type": "object",
         "description": "Parameters limiting the size of a block and time between consecutive blocks",
+        "type": "object",
         "properties": {
           "maxBytes": {
             "description": "Max size of a block, in bytes",
@@ -37,8 +37,8 @@
         "additionalProperties": false
       },
       "evidence": {
-        "type": "object",
         "description": "Parameters limiting the validity of evidence of byzantine behaviour",
+        "type": "object",
         "properties": {
           "maxAgeNumBlocks": {
             "description": "Max age of evidence, in blocks",
@@ -88,8 +88,8 @@
     "required": ["$createdAt", "enableAtHeight"]
   },
   "fixCumulativeFeesBug": {
-    "type": "object",
     "description": "Defines if cumulative fees should be processed in an old way or new one",
+    "type": "object",
     "indices": [
       {
         "properties": [
@@ -115,8 +115,8 @@
     "required": ["$createdAt", "enableAtHeight", "enabled"]
   },
   "verifyLLMQSignaturesWithCore": {
-    "type": "object",
     "description": "Defines if LLMQ sigantures should be validated though Dash Core",
+    "type": "object",
     "indices": [
       {
         "properties": [
