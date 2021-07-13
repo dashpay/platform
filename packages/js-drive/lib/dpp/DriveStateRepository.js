@@ -1,5 +1,3 @@
-const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
-
 class DriveStateRepository {
   /**
    * @param {IdentityStoreRepository} identityRepository
@@ -249,44 +247,29 @@ class DriveStateRepository {
   async verifyInstantLock(instantLock) {
     const header = await this.blockExecutionContext.getHeader();
 
-    // Inital block is produced
-    if (header) {
-      const {
-        height: blockHeight,
-        coreChainLockedHeight,
-      } = header;
+    const {
+      coreChainLockedHeight,
+    } = header;
 
-      const verifyLLMQSignaturesWithCoreFeatureFlag = await this.getLatestFeatureFlag(
-        featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
-        blockHeight,
-        this.getDBTransaction('documents'),
+    try {
+      const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
+        instantLock.getRequestId().toString('hex'),
+        instantLock.txid,
+        instantLock.signature,
+        coreChainLockedHeight,
       );
 
-      // Use Core RPC to verify signatures
-      if (verifyLLMQSignaturesWithCoreFeatureFlag && verifyLLMQSignaturesWithCoreFeatureFlag.get('enabled')) {
-        try {
-          const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
-            instantLock.getRequestId().toString('hex'),
-            instantLock.txid,
-            instantLock.signature,
-            coreChainLockedHeight,
-          );
-
-          return isVerified;
-        } catch (e) {
-          // Invalid address or key error or
-          // Invalid, missing or duplicate parameter
-          // Parse error
-          if ([-8, -5, -32700].includes(e.code)) {
-            return false;
-          }
-
-          throw e;
-        }
+      return isVerified;
+    } catch (e) {
+      // Invalid address or key error or
+      // Invalid, missing or duplicate parameter
+      // Parse error
+      if ([-8, -5, -32700].includes(e.code)) {
+        return false;
       }
-    }
 
-    return instantLock.verify(this.simplifiedMasternodeList.getStore());
+      throw e;
+    }
   }
 
   /**

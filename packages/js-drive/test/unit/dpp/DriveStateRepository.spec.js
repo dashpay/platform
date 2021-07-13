@@ -347,22 +347,7 @@ describe('DriveStateRepository', () => {
       simplifiedMasternodeListMock.getStore.returns(smlStore);
     });
 
-    it('should verify instant lock using dashcore-lib', async () => {
-      instantLockMock.verify.resolves(true);
-
-      const result = await stateRepository.verifyInstantLock(instantLockMock);
-
-      expect(result).to.be.true();
-
-      expect(instantLockMock.verify).to.have.been.calledOnceWithExactly(smlStore);
-      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
-    });
-
-    it('it should verify instant lock using Core if feature flag is enabled', async () => {
-      getLatestFeatureFlagMock.resolves({
-        get: () => true,
-      });
-
+    it('it should verify instant lock using Core', async () => {
       coreRpcClientMock.verifyIsLock.resolves({ result: true });
 
       const result = await stateRepository.verifyInstantLock(instantLockMock);
@@ -378,10 +363,6 @@ describe('DriveStateRepository', () => {
     });
 
     it('should return false if core throws Invalid address or key error', async () => {
-      getLatestFeatureFlagMock.resolves({
-        get: () => true,
-      });
-
       const error = new Error('Some error');
       error.code = -5;
 
@@ -400,10 +381,6 @@ describe('DriveStateRepository', () => {
     });
 
     it('should return false if core throws Invalid parameter', async () => {
-      getLatestFeatureFlagMock.resolves({
-        get: () => true,
-      });
-
       const error = new Error('Some error');
       error.code = -8;
 
@@ -419,19 +396,6 @@ describe('DriveStateRepository', () => {
         42,
       );
       expect(instantLockMock.verify).to.have.not.been.called();
-    });
-
-    it('should verify instant lock using dashcore-lib if header is null', async () => {
-      instantLockMock.verify.resolves(true);
-
-      blockExecutionContextMock.getHeader.returns(null);
-
-      const result = await stateRepository.verifyInstantLock(instantLockMock);
-
-      expect(result).to.be.true();
-
-      expect(instantLockMock.verify).to.have.been.calledOnceWithExactly(smlStore);
-      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
     });
   });
 });
