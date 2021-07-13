@@ -87,7 +87,7 @@ describe('verifyChainLockQueryHandlerFactory', () => {
   });
 
   it('should throw InvalidArgumentAbciError if chainLock is not valid', async () => {
-    chainLockMock.verify.returns(false);
+    coreRpcClientMock.verifyChainLock.returns(false);
 
     try {
       await verifyChainLockQueryHandler(params, encodedChainLock);
@@ -100,23 +100,7 @@ describe('verifyChainLockQueryHandlerFactory', () => {
     }
   });
 
-  it('should throw an error if SML store is missing', async () => {
-    simplifiedMasternodeListMock.getStore.returns(undefined);
-
-    try {
-      await verifyChainLockQueryHandler(params, { chainLock: encodedChainLock });
-
-      expect.fail('error was not thrown');
-    } catch (e) {
-      expect(e.message).to.equal('SML Store is not defined for verify chain lock handler');
-    }
-  });
-
-  it('should verify chain lock though Core if flag is enabled', async () => {
-    getLatestFeatureFlagMock.resolves({
-      get: () => true,
-    });
-
+  it('should verify chain lock though Core', async () => {
     const result = await verifyChainLockQueryHandler(params, encodedChainLock);
 
     expect(result).to.be.an.instanceof(ResponseQuery);
@@ -131,10 +115,6 @@ describe('verifyChainLockQueryHandlerFactory', () => {
   });
 
   it('should return false if Core returns parse error', async () => {
-    getLatestFeatureFlagMock.resolves({
-      get: () => true,
-    });
-
     const error = new Error();
     error.code = -32700;
 
@@ -153,10 +133,6 @@ describe('verifyChainLockQueryHandlerFactory', () => {
   });
 
   it('should return false if Core returns invalid signature format error', async () => {
-    getLatestFeatureFlagMock.resolves({
-      get: () => true,
-    });
-
     const error = new Error();
     error.code = -8;
 
@@ -175,10 +151,6 @@ describe('verifyChainLockQueryHandlerFactory', () => {
   });
 
   it('should throw an error if Core throws error', async () => {
-    getLatestFeatureFlagMock.resolves({
-      get: () => true,
-    });
-
     const error = new Error();
 
     coreRpcClientMock.verifyChainLock.throws(error);
