@@ -3,6 +3,7 @@ Dockerfile
 .git
 .idea
 .eslintrc
+.nyc_output
 .travis.yml
 build_docker_image.sh
 npm-debug.log
