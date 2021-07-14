@@ -50,6 +50,8 @@ sporkaddr={{=it.core.spork.address}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnetName}}
+llmqchainlocks=llmq_devnet
+llmqinstantsend=llmq_devnet
 [devnet]
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
