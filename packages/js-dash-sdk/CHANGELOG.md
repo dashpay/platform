@@ -1,3 +1,18 @@
+# [3.20.0](https://github.com/dashevo/DashJS/compare/v3.19.4...v3.20.0) (2021-07-13)
+
+
+### Features
+
+* provide metadata for documents, identities and data contracts ([#231](https://github.com/dashevo/DashJS/issues/231))
+* update wallet options ([#229](https://github.com/dashevo/DashJS/issues/229))
+
+
+### BREAKING CHANGES
+
+* `wallet.defaultAccountIndex` should be used instead of `walletAccountIndex` option
+
+
+
 ## [3.19.4](https://github.com/dashevo/DashJS/compare/v3.19.3...v3.19.4) (2021-05-18)
 
 
