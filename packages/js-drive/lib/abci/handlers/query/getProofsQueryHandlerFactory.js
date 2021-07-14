@@ -61,7 +61,7 @@ function getProofsQueryHandlerFactory(
 
     const {
       quorumHash: signatureLlmqHash,
-      signature,
+      stateSignature: signature,
     } = blockExecutionContext.getLastCommitInfo();
 
     const response = {

@@ -27,7 +27,7 @@ describe('createQueryResponseFactory', () => {
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),
-      signature: Buffer.alloc(12).fill(2),
+      stateSignature: Buffer.alloc(12).fill(2),
     };
 
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
@@ -60,7 +60,7 @@ describe('createQueryResponseFactory', () => {
 
     expect(response.getProof().toObject()).to.deep.equal({
       signatureLlmqHash: lastCommitInfo.quorumHash.toString('base64'),
-      signature: lastCommitInfo.signature.toString('base64'),
+      signature: lastCommitInfo.stateSignature.toString('base64'),
       rootTreeProof: '',
       storeTreeProof: '',
     });

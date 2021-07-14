@@ -62,13 +62,13 @@
     "sinon-chai": "^3.5.0"
   },
   "dependencies": {
-    "@dashevo/abci": "github:dashevo/js-abci#integrate-tenderdash-5",
-    "@dashevo/dapi-grpc": "^0.20.0-dev.2",
+    "@dashevo/abci": "~0.20.0",
+    "@dashevo/dapi-grpc": "~0.20.0",
     "@dashevo/dashcore-lib": "~0.19.25",
     "@dashevo/dashd-rpc": "^2.3.0",
     "@dashevo/dashd-zmq": "^1.2.0",
-    "@dashevo/dpp": "~0.20.0-dev.2",
-    "@dashevo/feature-flags-contract": "github:dashevo/feature-flags-contract#update-dpp",
+    "@dashevo/dpp": "~0.20.0",
+    "@dashevo/feature-flags-contract": "~0.2.0",
     "@dashevo/merk": "github:dashevo/node-merk",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
