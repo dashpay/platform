@@ -132,25 +132,6 @@ function getDataTriggersFactory() {
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
     ),
-    new DataTrigger(
-      featureFlagsDataContractId,
-      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
-      AbstractDocumentTransition.ACTIONS.CREATE,
-      createFeatureFlagDataTrigger,
-      featureFlagsTopLevelIdentityId,
-    ),
-    new DataTrigger(
-      featureFlagsDataContractId,
-      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
-      AbstractDocumentTransition.ACTIONS.REPLACE,
-      rejectDataTrigger,
-    ),
-    new DataTrigger(
-      featureFlagsDataContractId,
-      featureFlagTypes.VERIFY_LLMQ_SIGS_WITH_CORE,
-      AbstractDocumentTransition.ACTIONS.DELETE,
-      rejectDataTrigger,
-    ),
   ];
 
   /**
