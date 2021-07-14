@@ -45,17 +45,8 @@ function initializePlatformTaskFactory(
             },
           );
 
-          const verifyLLMQDocument = await ctx.client.platform.documents.create(
-            'featureFlags.verifyLLMQSignaturesWithCore',
-            ctx.featureFlagsIdentity,
-            {
-              enabled: true,
-              enableAtHeight,
-            },
-          );
-
           await ctx.client.platform.documents.broadcast({
-            create: [cumulativeFeesDocument, verifyLLMQDocument],
+            create: [cumulativeFeesDocument],
           }, ctx.featureFlagsIdentity);
         },
       },
