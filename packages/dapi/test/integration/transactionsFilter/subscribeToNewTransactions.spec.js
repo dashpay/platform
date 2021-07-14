@@ -314,6 +314,8 @@ describe('subscribeToNewTransactions', () => {
       bloomFilterEmitterCollection,
     );
 
+    // Read historical data
+
     bloomFilterEmitterCollection.test(transactions[0]);
     bloomFilterEmitterCollection.test(transactions[1]);
     bloomFilterEmitterCollection.test(transactions[2]);
@@ -403,12 +405,18 @@ describe('subscribeToNewTransactions', () => {
     }
 
     bloomFilterEmitterCollection.test(transactions[3]);
+
+    // Not part of bloom filter
     bloomFilterEmitterCollection.test(transactions[4]);
 
+    // transaction 4. Not part of bloom filter
     emitInstantLockToFilterCollection(instantLockZmqMessagesMocks[0]);
+    // transaction 3
     emitInstantLockToFilterCollection(instantLockZmqMessagesMocks[1]);
+    // transaction 0
     emitInstantLockToFilterCollection(instantLockZmqMessagesMocks[2]);
 
+    // transaction 3 and 4
     bloomFilterEmitterCollection.emit('block', blocks[1]);
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_BLOCK_SENT, blocks[0].hash);
@@ -436,8 +444,12 @@ describe('subscribeToNewTransactions', () => {
 
     // Unlike in the test above, because we've emitted some blocks, the second
     // instant lock should be removed from the cache
+    // expected instant lock for transaction 3
     const expectedInstantLock = InstantLock.fromBuffer(instantLocks[1].toBuffer());
 
+    // Actual
+    // transaction 3
+    // transaction 0
     expect(receivedInstantLocks).to.have.length(1);
     expect(receivedInstantLocks[0]).to.be.deep.equal(expectedInstantLock);
     expect(receivedInstantLocks[0].txid).to.be.equal(receivedTransactions[0].hash);

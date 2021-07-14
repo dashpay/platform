@@ -43,16 +43,17 @@ function subscribeToNewTransactions(
     transactionsAndBlocksCache.addBlock(block);
   });
 
-  filterEmitter.on('instantLock', (instantLock) => {
-    const isTransactionInWaitingList = transactionsAndBlocksCache
-      .isInInstantLockCache(instantLock.txid);
-
-    if (isTransactionInWaitingList) {
-      transactionsAndBlocksCache
-        .removeTransactionHashFromInstantSendLockWaitingList(instantLock.txid);
-      mediator.emit(ProcessMediator.EVENTS.INSTANT_LOCK, instantLock);
+  // Collect instant locked transactions and locks
+  // while we sending historical and mempool data
+  const preMempoolSentInstantLockListener = ({ instantLock, transaction }) => {
+    if (!testTransactionAgainstFilter(filter, transaction)) {
+      return;
     }
-  });
+
+    transactionsAndBlocksCache.addInstantLock(instantLock);
+  };
+
+  filterEmitter.on('instantLock', preMempoolSentInstantLockListener);
 
   // Receive an event when a historical block is sent to user,
   // so we can update our cache to an actual state,
@@ -61,16 +62,39 @@ function subscribeToNewTransactions(
     transactionsAndBlocksCache.removeDataByBlockHash(blockHash);
   });
 
-  // Receive an event when all historical data (is any) is sent to the user,
-  // so we can run a loop until client is disconnected and send cached as well
-  // as new data continuously after that.
-  //
-  // This loop works because cache is populated from ZMQ events.
+  // Receive an event when all historical and mempool data (is any) is sent to the user.
   mediator.once(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT, async () => {
+    // When mempool transactions are sent we start to send
+    // instant locks right away instead of collecting them
+    filterEmitter.removeListener('instantLock', preMempoolSentInstantLockListener);
+
+    filterEmitter.on('instantLock', ({ instantLock }) => {
+      const isTransactionInWaitingList = transactionsAndBlocksCache
+        .isInInstantLockCache(instantLock.txid);
+
+      if (isTransactionInWaitingList) {
+        transactionsAndBlocksCache
+          .removeTransactionHashFromInstantSendLockWaitingList(instantLock.txid);
+        mediator.emit(ProcessMediator.EVENTS.INSTANT_LOCK, instantLock);
+      }
+    });
+
+    // Run a loop until client is disconnected and send cached as well
+    // as new data (through the cache) continuously after that.
+    // Cache is populated from ZMQ events.
     while (isClientConnected) {
+      // TODO We can send multiple items to optimize throughput
+      //  Proto messages already support that
       const unsentTransactions = transactionsAndBlocksCache.getUnretrievedTransactions();
       unsentTransactions
         .forEach(tx => mediator.emit(ProcessMediator.EVENTS.TRANSACTION, tx));
+
+      const unretrievedInstantLocks = transactionsAndBlocksCache.getUnretrievedInstantLocks();
+      unretrievedInstantLocks.forEach((instantLock) => {
+        if (transactionsAndBlocksCache.isInInstantLockCache(instantLock.txid)) {
+          mediator.emit(ProcessMediator.EVENTS.INSTANT_LOCK, instantLock);
+        }
+      });
 
       const unsentMerkleBlocks = transactionsAndBlocksCache.getUnretrievedMerkleBlocks();
       unsentMerkleBlocks

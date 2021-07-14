@@ -75,7 +75,9 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    bloomFilterEmitterCollectionMock = {};
+    bloomFilterEmitterCollectionMock = {
+      test: this.sinon.stub(),
+    };
 
     historicalTxData = [];
     getHistoricalTransactionsIteratorMock = this.sinon.spy(function* generator() {
@@ -190,23 +192,6 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     }
   });
 
-  it('should respond with error if fromBlockHeight exceeded blockchain length', async () => {
-    call.request.setFromBlockHeight(100);
-
-    coreAPIMock.getBestBlockHeight.resolves(10);
-
-    try {
-      await subscribeToTransactionsWithProofsHandler(call);
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('fromBlockHeight is bigger than block count');
-
-      expect(call.write).to.not.have.been.called();
-      expect(call.end).to.not.have.been.called();
-      expect(getMemPoolTransactionsMock).to.not.have.been.called();
-    }
-  });
-
   it('should respond with error if requested data length exceeded blockchain length', async () => {
     call.request.setFromBlockHash('someBlockHash');
     call.request.setCount(100);
@@ -253,7 +238,9 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       ],
     });
 
-    getMemPoolTransactionsMock.returns([new Transaction(Buffer.from('03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff1703f06a101299dbcd32279d9e01e508000000002f4e614effffffff0285464209000000001976a9146a341485a9444b35dc9cb90d24e7483de7d37e0088ac7f464209000000001976a914ad037df64c0d0ec5d0395eb9a543f93fcc26092388ac00000000260100f06a1000c69a125eeb5ce6fa55c48966174a90253a79ce3350ccc4918ba2cb1463513c88', 'hex'))]);
+    const memPoolTransaction = new Transaction(Buffer.from('03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff1703f06a101299dbcd32279d9e01e508000000002f4e614effffffff0285464209000000001976a9146a341485a9444b35dc9cb90d24e7483de7d37e0088ac7f464209000000001976a914ad037df64c0d0ec5d0395eb9a543f93fcc26092388ac00000000260100f06a1000c69a125eeb5ce6fa55c48966174a90253a79ce3350ccc4918ba2cb1463513c88', 'hex'));
+
+    getMemPoolTransactionsMock.returns([memPoolTransaction]);
 
     await subscribeToTransactionsWithProofsHandler(call);
 
@@ -270,10 +257,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
         Buffer.from('someBlockHash').toString('hex'),
         10,
       );
-    expect(getMemPoolTransactionsMock).to.have.been.calledOnceWith(filter);
+    expect(getMemPoolTransactionsMock).to.have.been.calledOnce();
 
     expect(subscribeToNewTransactionsMock).to.have.been.calledOnce();
-    expect(writableStub).to.have.been.calledThrice();
+    expect(writableStub).to.have.been.calledTwice();
 
     const firstResponse = new TransactionsWithProofsResponse();
     const rawTransactions = new RawTransactions();
@@ -292,6 +279,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     expect(writableStub.getCall(1).args).to.deep.equal(
       [secondResponse],
     );
+
+    expect(bloomFilterEmitterCollectionMock.test).to.be.calledOnceWith(memPoolTransaction);
   });
 
   it('should end call and emit CLIENT_DISCONNECTED event when client disconnects', async () => {
@@ -311,5 +300,73 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     expect(call.write).to.not.have.been.called();
     expect(call.end).to.have.been.calledOnce();
     expect(getMemPoolTransactionsMock).to.have.been.calledOnce();
+  });
+
+  it('should respond with error if fromBlockHeight is bigger than block count', async () => {
+    call.request.setFromBlockHash('someBlockHash');
+    call.request.setCount(0);
+
+    const error = new Error();
+    error.code = -8;
+
+    coreAPIMock.getBlockHash.throws(error);
+    coreAPIMock.getBlock.resolves({ height: 1 });
+
+    try {
+      await subscribeToTransactionsWithProofsHandler(call);
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getMessage()).to.equal(
+        'fromBlockHeight is bigger than block count',
+      );
+
+      expect(call.write).to.not.have.been.called();
+      expect(call.end).to.not.have.been.called();
+    }
+  });
+
+  it('should respond with error if fromBlockHash is not found', async () => {
+    call.request.setFromBlockHash('someBlockHash');
+    call.request.setCount(0);
+
+    const error = new Error();
+    error.code = -5;
+
+    coreAPIMock.getBlock.throws(error);
+
+    try {
+      await subscribeToTransactionsWithProofsHandler(call);
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getMessage()).to.equal(
+        'fromBlockHash is not found',
+      );
+
+      expect(call.write).to.not.have.been.called();
+      expect(call.end).to.not.have.been.called();
+    }
+  });
+
+  it('should respond with error if fromBlockHash is not part of the best block chain', async () => {
+    const blockHash = 'someBlockHash';
+    call.request.setFromBlockHash(blockHash);
+    call.request.setCount(0);
+
+    const error = new Error();
+    error.code = -5;
+
+    coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
+
+    try {
+      await subscribeToTransactionsWithProofsHandler(call);
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getMessage()).to.equal(
+        `block ${Buffer.from(blockHash).toString('hex')} is not part of the best block chain`,
+      );
+
+      expect(call.write).to.not.have.been.called();
+      expect(call.end).to.not.have.been.called();
+    }
   });
 });

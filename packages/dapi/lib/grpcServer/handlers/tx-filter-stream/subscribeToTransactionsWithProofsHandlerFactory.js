@@ -107,9 +107,9 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       nFlags: bloomFilterMessage.getNFlags(),
     };
 
-    const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
+    let fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
-    let count = request.getCount();
+    const count = request.getCount();
 
     // Create a new bloom filter emitter when client connects
     let filter;
@@ -121,39 +121,30 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     const isNewTransactionsRequested = count === 0;
 
-    let blockHash = fromBlockHash;
-
-    if (blockHash === '') {
-      if (fromBlockHeight === 0) {
-        throw new InvalidArgumentGrpcError('minimum value for `fromBlockHeight` is 1');
-      }
-
-      const bestHeight = await coreAPI.getBestBlockHeight();
-
-      if (fromBlockHeight > bestHeight) {
-        throw new InvalidArgumentGrpcError('fromBlockHeight is bigger than block count');
-      }
-
-      blockHash = await coreAPI.getBlockHash(fromBlockHeight);
-    }
-
-    if (count > 0) {
-      const block = await coreAPI.getBlock(blockHash);
-      const bestBlockHeight = await coreAPI.getBestBlockHeight();
-
-      if (block.height + count > bestBlockHeight + 1) {
-        // This code should throw an error 'count is too big',
-        // however at the time of writing height chain sync isn't yet implemented,
-        // so the client library doesn't know the exact height and
-        // mat pass count number larger than expected.
-        // This line should be converted to throwing an error once
-        // the header stream is implemented
-        count = bestBlockHeight - block.height;
-      }
-    }
-
     const acknowledgingCall = new AcknowledgingWritable(call);
+
     const mediator = new ProcessMediator();
+
+    mediator.on(
+      ProcessMediator.EVENTS.TRANSACTION,
+      async (tx) => {
+        await sendTransactionsResponse(acknowledgingCall, [tx]);
+      },
+    );
+
+    mediator.on(
+      ProcessMediator.EVENTS.MERKLE_BLOCK,
+      async (merkleBlock) => {
+        await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
+      },
+    );
+
+    mediator.on(
+      ProcessMediator.EVENTS.INSTANT_LOCK,
+      async (instantLock) => {
+        await sendInstantLockResponse(acknowledgingCall, instantLock);
+      },
+    );
 
     if (isNewTransactionsRequested) {
       subscribeToNewTransactions(
@@ -164,17 +155,66 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       );
     }
 
-    let historicalCount = count;
-    if (subscribeToNewTransactions) {
-      const block = await coreAPI.getBlock(blockHash);
-      const bestBlockHeight = await coreAPI.getBestBlockHeight();
+    // If block height is specified instead of block hash, we obtain block hash by block height
+    if (fromBlockHash === '') {
+      if (fromBlockHeight === 0) {
+        throw new InvalidArgumentGrpcError('minimum value for `fromBlockHeight` is 1');
+      }
 
-      historicalCount = bestBlockHeight - block.height + 1;
+      // we don't need to check bestBlockHeight because getBlockHash throws
+      // an error in case of wrong height
+      try {
+        fromBlockHash = await coreAPI.getBlockHash(fromBlockHeight);
+      } catch (e) {
+        if (e.code === -8) {
+          // Block height out of range
+          throw new InvalidArgumentGrpcError('fromBlockHeight is bigger than block count');
+        }
+
+        throw e;
+      }
+    }
+
+    // Send historical transactions
+    let fromBlock;
+
+    try {
+      fromBlock = await coreAPI.getBlock(fromBlockHash);
+    } catch (e) {
+      // Block not found
+      if (e.code === -5) {
+        throw new InvalidArgumentGrpcError('fromBlockHash is not found');
+      }
+
+      throw e;
+    }
+
+    if (fromBlock.confirmations === -1) {
+      throw new InvalidArgumentGrpcError(`block ${fromBlockHash} is not part of the best block chain`);
+    }
+
+    const bestBlockHeight = await coreAPI.getBestBlockHeight();
+
+    let historicalCount = count;
+
+    // if block 'count' is 0 (new transactions are requested)
+    // or 'count' is bigger than chain tip we need to read all blocks
+    // from specified block hash including the most recent one
+    //
+    // Theoretically, if count is bigger than chain tips,
+    // we should throw an error 'count is too big',
+    // however at the time of writing this logic, height chain sync isn't yet implemented,
+    // so the client library doesn't know the exact height and
+    // may pass count number larger than expected.
+    // This condition should be converted to throwing an error once
+    // the header stream is implemented
+    if (count === 0 || fromBlock.height + count > bestBlockHeight + 1) {
+      historicalCount = bestBlockHeight - fromBlock.height + 1;
     }
 
     const historicalDataIterator = getHistoricalTransactionsIterator(
       filter,
-      blockHash,
+      fromBlockHash,
       historicalCount,
     );
 
@@ -197,31 +237,10 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
     if (isNewTransactionsRequested) {
-      const memPoolTransactions = await getMemPoolTransactions(filter);
-      if (memPoolTransactions.length) {
-        await sendTransactionsResponse(acknowledgingCall, memPoolTransactions);
-      }
-
-      // new txs listener will send us unsent cached data back
-      mediator.on(
-        ProcessMediator.EVENTS.TRANSACTION,
-        async (tx) => {
-          await sendTransactionsResponse(acknowledgingCall, [tx]);
-        },
-      );
-
-      mediator.on(
-        ProcessMediator.EVENTS.MERKLE_BLOCK,
-        async (merkleBlock) => {
-          await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
-        },
-      );
-
-      mediator.on(
-        ProcessMediator.EVENTS.INSTANT_LOCK,
-        async (instantLock) => {
-          await sendInstantLockResponse(acknowledgingCall, instantLock);
-        },
+      // Read and test transactions from mempool
+      const memPoolTransactions = await getMemPoolTransactions();
+      memPoolTransactions.forEach(
+        bloomFilterEmitterCollection.test.bind(bloomFilterEmitterCollection),
       );
 
       mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);

@@ -21,6 +21,7 @@ class TransactionHashesCache {
     // Instant lock cache
     this.transactionHashesMap = Object.create(null);
     this.blocksProcessed = 0;
+    this.unretrievedInstantLocks = new Map();
   }
 
   isInInstantLockCache(transactionHash) {
@@ -32,7 +33,7 @@ class TransactionHashesCache {
    *
    * @param {Transaction} transaction
    *
-   * @returns {void}
+   * @returns {boolean} - false if already exists
    */
   addTransaction(transaction) {
     const isAdded = this.transactions
@@ -49,6 +50,8 @@ class TransactionHashesCache {
     if (!this.isInInstantLockCache(transaction.hash)) {
       this.transactionHashesMap[transaction.hash] = this.blocksProcessed;
     }
+
+    return !isAdded;
   }
 
   /**
@@ -228,6 +231,26 @@ class TransactionHashesCache {
     });
 
     return unretrievedMerkleBlocks.map(({ merkleBlock }) => merkleBlock);
+  }
+
+  /**
+   * Add Instant Lock
+   * @param {InstantLock} instantLock
+   */
+  addInstantLock(instantLock) {
+    this.unretrievedInstantLocks.set(instantLock.txid, instantLock);
+  }
+
+  /**
+   * Get unretrieved Instant Locks
+   * @returns {InstantLock[]}
+   */
+  getUnretrievedInstantLocks() {
+    const instantLocks = [...this.unretrievedInstantLocks.values()];
+
+    this.unretrievedInstantLocks.clear();
+
+    return instantLocks;
   }
 }
 
