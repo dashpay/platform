@@ -101,7 +101,7 @@ describe('DriveClient', () => {
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/dataContracts',
         data: cbor.encode({ id: contractId }).toString('hex'), // cbor encoded empty object
-        prove: 'true',
+        prove: true,
       });
       expect(result).to.be.deep.equal(buffer);
     });
@@ -133,7 +133,7 @@ describe('DriveClient', () => {
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/dataContracts/documents',
         data: cbor.encode({ ...options, contractId, type }).toString('hex'), // cbor encoded empty object
-        prove: 'true',
+        prove: true,
       });
       expect(result).to.be.deep.equal(buffer);
     });
@@ -158,7 +158,8 @@ describe('DriveClient', () => {
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities',
-        data: cbor.encode({ id: identityId }).toString('hex'), // cbor encoded empty object
+        data: cbor.encode({ id: identityId }).toString('hex'),
+        prove: false, // cbor encoded empty object
       });
       expect(result).to.be.deep.equal(buffer);
     });
@@ -186,7 +187,7 @@ describe('DriveClient', () => {
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities/by-public-key-hash',
         data: cbor.encode({ publicKeyHashes }).toString('hex'),
-        prove: 'true',
+        prove: true,
       });
       expect(result).to.be.deep.equal(buffer);
     });
@@ -213,7 +214,7 @@ describe('DriveClient', () => {
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities/by-public-key-hash/id',
         data: cbor.encode({ publicKeyHashes }).toString('hex'),
-        prove: 'true',
+        prove: true,
       });
       expect(result).to.be.deep.equal(buffer);
     });
@@ -246,6 +247,7 @@ describe('DriveClient', () => {
           identityIds,
           dataContractIds,
         }).toString('hex'),
+        prove: false,
       });
 
       expect(result).to.be.deep.equal({

@@ -32,9 +32,7 @@ class DriveClient {
       data: encodedData.toString('hex'),
     };
 
-    if (prove === true) {
-      requestOptions.prove = 'true';
-    }
+    requestOptions.prove = prove;
 
     const { result, error } = await this.client.request(
       'abci_query',
