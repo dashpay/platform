@@ -11,5 +11,4 @@
 module.exports = {
   FIX_CUMULATIVE_FEES: 'fixCumulativeFeesBug',
   UPDATE_CONSENSUS_PARAMS: 'updateConsensusParams',
-  VERIFY_LLMQ_SIGS_WITH_CORE: 'verifyLLMQSignaturesWithCore',
 };
