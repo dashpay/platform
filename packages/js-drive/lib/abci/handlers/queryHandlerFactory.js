@@ -13,7 +13,7 @@ function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
    *
    * @typedef queryHandler
    *
-   * @param {Object} request
+   * @param {RequestQuery} request
    * @return {Promise<Object>}
    */
   async function queryHandler(request) {

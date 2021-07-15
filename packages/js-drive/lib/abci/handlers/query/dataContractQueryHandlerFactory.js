@@ -37,8 +37,7 @@ function dataContractQueryHandlerFactory(
    * @param {Object} params
    * @param {Object} data
    * @param {Buffer} data.id
-   * @param {Object} request
-   * @param {boolean} [request.prove]
+   * @param {RequestQuery} request
    * @return {Promise<ResponseQuery>}
    */
   async function dataContractQueryHandler(params, { id }, request) {
@@ -47,9 +46,7 @@ function dataContractQueryHandlerFactory(
       throw new NotFoundAbciError('Data Contract not found');
     }
 
-    const isProofRequested = request.prove === 'true';
-
-    const response = createQueryResponse(GetDataContractResponse, isProofRequested);
+    const response = createQueryResponse(GetDataContractResponse, request.prove);
 
     const dataContract = await previousDataContractRepository.fetch(id);
 
@@ -57,7 +54,7 @@ function dataContractQueryHandlerFactory(
       throw new NotFoundAbciError('Data Contract not found');
     }
 
-    if (isProofRequested) {
+    if (request.prove) {
       const proof = response.getProof();
 
       const {

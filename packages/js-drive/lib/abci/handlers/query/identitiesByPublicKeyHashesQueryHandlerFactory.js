@@ -42,8 +42,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
    * @param {Object} params
    * @param {Object} data
    * @param {Buffer[]} data.publicKeyHashes
-   * @param {Object} request
-   * @param {boolean} [request.prove]
+   * @param {RequestQuery} request
    * @return {Promise<ResponseQuery>}
    */
   async function identitiesByPublicKeyHashesQueryHandler(params, { publicKeyHashes }, request) {
@@ -68,9 +67,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       });
     }
 
-    const isProofRequested = request.prove === 'true';
-
-    const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, isProofRequested);
+    const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
     const identityIds = await Promise.all(
       publicKeyHashes.map((publicKeyHash) => (
@@ -78,7 +75,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       )),
     );
 
-    if (isProofRequested) {
+    if (request.prove) {
       const proof = response.getProof();
 
       const {

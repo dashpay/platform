@@ -37,8 +37,7 @@ function identityQueryHandlerFactory(
    * @param {Object} params
    * @param {Object} options
    * @param {Buffer} options.id
-   * @param {Object} request
-   * @param {boolean} [request.prove]
+   * @param {RequestQuery} request
    * @return {Promise<ResponseQuery>}
    */
   async function identityQueryHandler(params, { id }, request) {
@@ -47,9 +46,7 @@ function identityQueryHandlerFactory(
       throw new NotFoundAbciError('Identity not found');
     }
 
-    const isProofRequested = request.prove === 'true';
-
-    const response = createQueryResponse(GetIdentityResponse, isProofRequested);
+    const response = createQueryResponse(GetIdentityResponse, request.prove);
 
     const identity = await previousIdentityRepository.fetch(id);
 
@@ -59,7 +56,7 @@ function identityQueryHandlerFactory(
 
     const identityBuffer = identity.toBuffer();
 
-    if (isProofRequested) {
+    if (request.prove) {
       const proof = response.getProof();
 
       const {

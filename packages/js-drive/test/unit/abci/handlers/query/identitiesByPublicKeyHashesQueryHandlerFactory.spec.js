@@ -217,7 +217,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     previousRootTreeMock.getFullProof.returns(proof);
 
-    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, { prove: 'true' });
+    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, { prove: true });
 
     expect(previousPublicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
       publicKeyHashes.length,

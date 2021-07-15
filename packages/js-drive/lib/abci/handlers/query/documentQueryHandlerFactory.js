@@ -48,8 +48,7 @@ function documentQueryHandlerFactory(
    * @param {string} [data.limit]
    * @param {string} [data.startAfter]
    * @param {string} [data.startAt]
-   * @param {Object} request
-   * @param {boolean} [request.prove]
+   * @param {RequestQuery} request
    * @return {Promise<ResponseQuery>}
    */
   async function documentQueryHandler(
@@ -86,9 +85,7 @@ function documentQueryHandlerFactory(
       throw new UnavailableAbciError();
     }
 
-    const isProofRequested = request.prove === 'true';
-
-    const response = createQueryResponse(GetDocumentsResponse, isProofRequested);
+    const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
     let documents;
 
@@ -111,7 +108,7 @@ function documentQueryHandlerFactory(
       throw e;
     }
 
-    if (isProofRequested) {
+    if (request.prove) {
       const documentIds = documents.map((document) => document.getId());
 
       const proof = response.getProof();

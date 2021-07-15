@@ -117,7 +117,7 @@ describe('dataContractQueryHandlerFactory', () => {
     previousDataContractRepositoryMock.fetch.resolves(dataContract);
     previousRootTreeMock.getFullProof.returns(proof);
 
-    const result = await dataContractQueryHandler(params, data, { prove: 'true' });
+    const result = await dataContractQueryHandler(params, data, { prove: true });
 
     expect(previousDataContractRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);

@@ -163,7 +163,7 @@ describe('documentQueryHandlerFactory', () => {
     fetchPreviousDocumentsMock.resolves(documents);
     previousRootTreeMock.getFullProof.returns(proof);
 
-    const result = await documentQueryHandler(params, data, { prove: 'true' });
+    const result = await documentQueryHandler(params, data, { prove: true });
 
     expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     expect(result).to.be.an.instanceof(ResponseQuery);

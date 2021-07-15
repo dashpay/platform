@@ -130,7 +130,7 @@ describe('identityQueryHandlerFactory', () => {
     previousIdentityRepositoryMock.fetch.resolves(identity);
     previousRootTreeMock.getFullProof.returns(proof);
 
-    const result = await identityQueryHandler(params, data, { prove: 'true' });
+    const result = await identityQueryHandler(params, data, { prove: true });
     expect(previousIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
