@@ -130,7 +130,10 @@ describe('IdentityFactory', () => {
 
       expect(factory.createFromObject).to.have.been.calledOnceWith(identity.toObject());
 
-      expect(decodeMock).to.have.been.calledOnceWith(serializedIdentity);
+      // cut version information
+      const dataToDecode = serializedIdentity.slice(4, serializedIdentity.length);
+
+      expect(decodeMock).to.have.been.calledOnceWith(dataToDecode);
     });
 
     it('should throw consensus error if `decode` fails', () => {

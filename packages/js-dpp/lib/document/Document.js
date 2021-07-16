@@ -365,7 +365,13 @@ class Document {
    * @return {Buffer}
    */
   toBuffer() {
-    return encode(this.toObject());
+    const serializedData = this.toObject();
+    delete serializedData.$protocolVersion;
+
+    const protocolVersionUInt32 = Buffer.alloc(4);
+    protocolVersionUInt32.writeUInt32BE(this.getProtocolVersion(), 0);
+
+    return Buffer.concat([protocolVersionUInt32, encode(serializedData)]);
   }
 
   /**

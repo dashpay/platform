@@ -96,11 +96,19 @@ describe('Identity', () => {
 
   describe('#toBuffer', () => {
     it('should return serialized Identity', () => {
-      encodeMock.returns(42); // for example
+      const encodeMockData = Buffer.from('42');
+      encodeMock.returns(encodeMockData); // for example
+
       const result = identity.toBuffer();
 
-      expect(encodeMock).to.have.been.calledOnceWith(identity.toObject());
-      expect(result).to.equal(42);
+      const identityDataToEncode = identity.toObject();
+      delete identityDataToEncode.protocolVersion;
+
+      const protocolVersionUInt32 = Buffer.alloc(4);
+      protocolVersionUInt32.writeUInt32BE(identity.getProtocolVersion(), 0);
+
+      expect(encodeMock).to.have.been.calledOnceWith(identityDataToEncode);
+      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, encodeMockData]));
     });
   });
 
@@ -113,8 +121,14 @@ describe('Identity', () => {
 
       const result = identity.hash();
 
-      expect(encodeMock).to.have.been.calledOnceWith(identity.toObject());
-      expect(hashMock).to.have.been.calledOnceWith(buffer);
+      const identityDataToEncode = identity.toObject();
+      delete identityDataToEncode.protocolVersion;
+
+      const protocolVersionUInt32 = Buffer.alloc(4);
+      protocolVersionUInt32.writeUInt32BE(identity.getProtocolVersion(), 0);
+
+      expect(encodeMock).to.have.been.calledOnceWith(identityDataToEncode);
+      expect(hashMock).to.have.been.calledOnceWith(Buffer.concat([protocolVersionUInt32, buffer]));
       expect(result).to.equal(buffer);
     });
   });

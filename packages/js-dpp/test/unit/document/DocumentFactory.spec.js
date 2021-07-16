@@ -257,7 +257,10 @@ describe('DocumentFactory', () => {
 
       expect(factory.createFromObject).to.have.been.calledOnceWith(document.toObject());
 
-      expect(decodeMock).to.have.been.calledOnceWith(serializedDocument);
+      // cut version information
+      const dataToDecode = serializedDocument.slice(4, serializedDocument.length);
+
+      expect(decodeMock).to.have.been.calledOnceWith(dataToDecode);
     });
 
     it('should throw consensus error if `decode` fails', async () => {

@@ -159,7 +159,9 @@ class DocumentFactory {
   async createFromBuffer(buffer, options = { }) {
     let rawDocument;
     try {
-      rawDocument = decode(buffer);
+      // first 4 bytes are protocol version
+      rawDocument = decode(buffer.slice(4, buffer.length));
+      rawDocument.$protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
     } catch (error) {
       throw new InvalidDocumentError([
         new SerializedObjectParsingError(

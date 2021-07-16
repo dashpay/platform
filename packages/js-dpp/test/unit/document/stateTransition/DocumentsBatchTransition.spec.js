@@ -82,21 +82,29 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#toBuffer', () => {
     it('should return serialized Documents State Transition', () => {
-      const serializedStateTransition = '123';
+      const serializedStateTransition = Buffer.from('123');
 
       encodeMock.returns(serializedStateTransition);
 
       const result = stateTransition.toBuffer();
 
-      expect(result).to.equal(serializedStateTransition);
+      const protocolVersionUInt32 = Buffer.alloc(4);
+      protocolVersionUInt32.writeUInt32BE(stateTransition.protocolVersion, 0);
 
-      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toObject());
+      expect(result).to.deep.equal(
+        Buffer.concat([protocolVersionUInt32, serializedStateTransition]),
+      );
+
+      const dataToEncode = stateTransition.toObject();
+      delete dataToEncode.protocolVersion;
+
+      expect(encodeMock).to.have.been.calledOnceWith(dataToEncode);
     });
   });
 
   describe('#hash', () => {
     it('should return Documents State Transition hash as hex', () => {
-      const serializedDocument = '123';
+      const serializedDocument = Buffer.from('123');
       const hashedDocument = '456';
 
       encodeMock.returns(serializedDocument);
@@ -106,8 +114,17 @@ describe('DocumentsBatchTransition', () => {
 
       expect(result).to.equal(hashedDocument);
 
-      expect(encodeMock).to.have.been.calledOnceWith(stateTransition.toObject());
-      expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
+      const dataToEncode = stateTransition.toObject();
+      delete dataToEncode.protocolVersion;
+
+      expect(encodeMock).to.have.been.calledOnceWith(dataToEncode);
+
+      const protocolVersionUInt32 = Buffer.alloc(4);
+      protocolVersionUInt32.writeUInt32BE(stateTransition.protocolVersion, 0);
+
+      expect(hashMock).to.have.been.calledOnceWith(
+        Buffer.concat([protocolVersionUInt32, serializedDocument]),
+      );
     });
   });
 

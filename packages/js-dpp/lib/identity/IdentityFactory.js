@@ -77,7 +77,9 @@ class IdentityFactory {
   createFromBuffer(buffer, options = {}) {
     let rawIdentity;
     try {
-      rawIdentity = decode(buffer);
+      // first 4 bytes are protocol version
+      rawIdentity = decode(buffer.slice(4, buffer.length));
+      rawIdentity.protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
     } catch (error) {
       throw new InvalidIdentityError([
         new SerializedObjectParsingError(

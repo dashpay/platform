@@ -52,7 +52,9 @@ class StateTransitionFactory {
   async createFromBuffer(buffer, options = { }) {
     let rawStateTransition;
     try {
-      rawStateTransition = decode(buffer);
+      // first 4 bytes are protocol version
+      rawStateTransition = decode(buffer.slice(4, buffer.length));
+      rawStateTransition.protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
     } catch (error) {
       throw new InvalidStateTransitionError([
         new SerializedObjectParsingError(

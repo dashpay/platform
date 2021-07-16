@@ -401,16 +401,22 @@ describe('Document', () => {
 
   describe('#toBuffer', () => {
     it('should return serialized Document', () => {
-      const serializedDocument = '123';
+      const serializedDocument = Buffer.from('123');
 
       encodeMock.returns(serializedDocument);
 
       const result = document.toBuffer();
 
-      expect(result).to.equal(serializedDocument);
+      const protocolVersionUInt32 = Buffer.alloc(4);
+      protocolVersionUInt32.writeUInt32BE(rawDocument.$protocolVersion, 0);
+
+      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDocument]));
+
+      const documentToEncode = { ...rawDocument };
+      delete documentToEncode.$protocolVersion;
 
       expect(encodeMock.getCall(0).args).to.have.deep.members([
-        rawDocument,
+        documentToEncode,
       ]);
     });
   });

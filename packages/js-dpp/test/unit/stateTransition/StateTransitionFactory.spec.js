@@ -115,7 +115,10 @@ describe('StateTransitionFactory', () => {
 
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawStateTransition);
 
-      expect(decodeMock).to.have.been.calledOnceWith(serializedStateTransition);
+      // cut version information
+      const dataToDecode = serializedStateTransition.slice(4, serializedStateTransition.length);
+
+      expect(decodeMock).to.have.been.calledOnceWith(dataToDecode);
     });
 
     it('should throw consensus error if `decode` fails', async () => {
