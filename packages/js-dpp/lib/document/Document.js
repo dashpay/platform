@@ -408,8 +408,6 @@ class Document {
  * @property {number} [$updatedAt]
  */
 
-Document.PROTOCOL_VERSION = 0;
-
 Document.SYSTEM_PREFIX = '$';
 
 module.exports = Document;

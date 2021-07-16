@@ -3,6 +3,7 @@ const rewiremock = require('rewiremock/node');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const DataContract = require('../../../lib/dataContract/DataContract');
+const { protocolVersion } = require('../../../lib/protocolVersion');
 
 const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition');
 
@@ -31,7 +32,6 @@ describe('DataContractFactory', () => {
 
     DataContractMock = this.sinonSandbox.stub().returns(dataContract);
     DataContractMock.DEFAULTS = DataContract.DEFAULTS;
-    DataContractMock.PROTOCOL_VERSION = DataContract.PROTOCOL_VERSION;
 
     generateEntropyMock = this.sinonSandbox.stub();
 
@@ -62,7 +62,7 @@ describe('DataContractFactory', () => {
       expect(result).to.equal(dataContract);
 
       expect(DataContractMock).to.have.been.calledOnceWith({
-        protocolVersion: DataContract.PROTOCOL_VERSION,
+        protocolVersion,
         $schema: DataContract.DEFAULTS.SCHEMA,
         $id: dataContract.id.toBuffer(),
         ownerId: dataContract.ownerId.toBuffer(),
@@ -171,7 +171,7 @@ describe('DataContractFactory', () => {
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
 
-      expect(result.getProtocolVersion()).to.equal(DataContract.PROTOCOL_VERSION);
+      expect(result.getProtocolVersion()).to.equal(protocolVersion);
       expect(result.getEntropy()).to.deep.equal(dataContract.getEntropy());
       expect(result.getDataContract().toObject()).to.deep.equal(dataContract.toObject());
     });

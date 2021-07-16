@@ -17,6 +17,8 @@ const DocumentNotProvidedError = require('../../../../lib/document/errors/Docume
 
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
+const { protocolVersion } = require('../../../../lib/protocolVersion');
+
 describe('applyDocumentsBatchTransitionFactory', () => {
   let documents;
   let dataContract;
@@ -49,7 +51,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     });
 
     stateTransition = new DocumentsBatchTransition({
-      protocolVersion: Document.PROTOCOL_VERSION,
+      protocolVersion,
       ownerId,
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);

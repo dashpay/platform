@@ -10,6 +10,8 @@ const DocumentCreateTransition = require(
 
 const Identifier = require('../../../lib/identifier/Identifier');
 
+const { protocolVersion } = require('../../../lib/protocolVersion');
+
 describe('Document', () => {
   let lodashGetMock;
   let lodashSetMock;
@@ -71,7 +73,7 @@ describe('Document', () => {
     });
 
     rawDocument = {
-      $protocolVersion: Document.PROTOCOL_VERSION,
+      $protocolVersion: protocolVersion,
       $id: generateRandomIdentifier(),
       $type: 'test',
       $dataContractId: dataContract.getId(),

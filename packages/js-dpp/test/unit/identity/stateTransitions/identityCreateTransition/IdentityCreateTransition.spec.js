@@ -4,7 +4,7 @@ const stateTransitionTypes = require(
   '../../../../../lib/stateTransition/stateTransitionTypes',
 );
 
-const Identity = require('../../../../../lib/identity/Identity');
+const { protocolVersion } = require('../../../../../lib/protocolVersion');
 const IdentityCreateTransition = require('../../../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
 const Identifier = require('../../../../../lib/identifier/Identifier');
 
@@ -116,7 +116,7 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: Identity.PROTOCOL_VERSION,
+        protocolVersion,
         type: stateTransitionTypes.IDENTITY_CREATE,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
@@ -128,7 +128,7 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: Identity.PROTOCOL_VERSION,
+        protocolVersion,
         type: stateTransitionTypes.IDENTITY_CREATE,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
@@ -141,7 +141,7 @@ describe('IdentityCreateTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: Identity.PROTOCOL_VERSION,
+        protocolVersion,
         type: stateTransitionTypes.IDENTITY_CREATE,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         publicKeys: stateTransition.getPublicKeys().map((k) => k.toJSON()),

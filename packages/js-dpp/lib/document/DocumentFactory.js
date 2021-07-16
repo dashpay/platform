@@ -19,6 +19,8 @@ const SerializedObjectParsingError = require('../errors/SerializedObjectParsingE
 
 const generateDocumentId = require('./generateDocumentId');
 
+const { protocolVersion } = require('../protocolVersion');
+
 class DocumentFactory {
   /**
    * @param {validateDocument} validateDocument
@@ -54,7 +56,7 @@ class DocumentFactory {
     );
 
     const rawDocument = {
-      $protocolVersion: Document.PROTOCOL_VERSION,
+      $protocolVersion: protocolVersion,
       $id: id,
       $type: type,
       $dataContractId: dataContractId,
@@ -307,7 +309,7 @@ class DocumentFactory {
       .map((document) => document.getDataContract());
 
     return new DocumentsBatchTransition({
-      protocolVersion: Document.PROTOCOL_VERSION,
+      protocolVersion,
       ownerId,
       transitions: rawDocumentTransitions,
     }, dataContracts);

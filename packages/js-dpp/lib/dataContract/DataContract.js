@@ -311,8 +311,6 @@ class DataContract {
  * @property {Object<string, Object>} [$defs]
  */
 
-DataContract.PROTOCOL_VERSION = 0;
-
 DataContract.DEFAULTS = {
   SCHEMA: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract',
 };

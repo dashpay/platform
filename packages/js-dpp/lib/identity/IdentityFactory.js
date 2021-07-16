@@ -11,6 +11,8 @@ const SerializedObjectParsingError = require('../errors/SerializedObjectParsingE
 const InstantAssetLockProof = require('./stateTransitions/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./stateTransitions/assetLockProof/chain/ChainAssetLockProof');
 
+const { protocolVersion } = require('../protocolVersion');
+
 class IdentityFactory {
   /**
    * @param {validateIdentity} validateIdentity
@@ -28,7 +30,7 @@ class IdentityFactory {
    */
   create(assetLockProof, publicKeys) {
     const identity = new Identity({
-      protocolVersion: Identity.PROTOCOL_VERSION,
+      protocolVersion,
       id: assetLockProof.createIdentifier(),
       balance: 0,
       publicKeys: publicKeys.map((publicKey, i) => ({
@@ -130,7 +132,7 @@ class IdentityFactory {
    */
   createIdentityCreateTransition(identity) {
     const stateTransition = new IdentityCreateTransition({
-      protocolVersion: Identity.PROTOCOL_VERSION,
+      protocolVersion,
       assetLockProof: identity.getAssetLockProof().toObject(),
     });
 
@@ -148,7 +150,7 @@ class IdentityFactory {
    */
   createIdentityTopUpTransition(identityId, assetLockProof) {
     return new IdentityTopUpTransition({
-      protocolVersion: Identity.PROTOCOL_VERSION,
+      protocolVersion,
       identityId,
       assetLockProof: assetLockProof.toObject(),
     });

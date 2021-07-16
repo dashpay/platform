@@ -10,6 +10,7 @@ const SerializedObjectParsingError = require('../errors/SerializedObjectParsingE
 const generateEntropy = require('../util/generateEntropy');
 
 const { decode } = require('../util/serializer');
+const { protocolVersion } = require('../protocolVersion');
 
 class DataContractFactory {
   /**
@@ -32,7 +33,7 @@ class DataContractFactory {
     const dataContractId = generateDataContractId(ownerId, dataContractEntropy);
 
     const dataContract = new DataContract({
-      protocolVersion: DataContract.PROTOCOL_VERSION,
+      protocolVersion,
       $schema: DataContract.DEFAULTS.SCHEMA,
       $id: dataContractId,
       ownerId,
@@ -99,7 +100,7 @@ class DataContractFactory {
    */
   createStateTransition(dataContract) {
     return new DataContractCreateTransition({
-      protocolVersion: DataContract.PROTOCOL_VERSION,
+      protocolVersion,
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });

@@ -245,6 +245,4 @@ class Identity {
  * @property {number} revision
  */
 
-Identity.PROTOCOL_VERSION = 0;
-
 module.exports = Identity;
