@@ -3,22 +3,29 @@ const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
     ResponseMetadata,
+    Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
 const GetIdentitiesByPublicKeyHashesResponseClass = require('../../../../../lib/methods/platform/getIdentitiesByPublicKeyHashes/GetIdentitiesByPublicKeyHashesResponse');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
+const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
+const Proof = require('../../../../../lib/methods/platform/response/Proof');
+const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
 
 describe('GetIdentitiesByPublicKeyHashesResponse', () => {
-  let getDataContractResponse;
+  let getIdentitiesResponse;
   let metadataFixture;
   let identityFixture;
   let proto;
+  let proofFixture;
 
   beforeEach(() => {
     metadataFixture = getMetadataFixture();
     identityFixture = getIdentityFixture();
+    proofFixture = getProofFixture();
+
     proto = new GetIdentitiesByPublicKeyHashesResponse();
 
     proto.setIdentitiesList(
@@ -31,32 +38,89 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
 
     proto.setMetadata(metadata);
 
-    getDataContractResponse = new GetIdentitiesByPublicKeyHashesResponseClass(
+    getIdentitiesResponse = new GetIdentitiesByPublicKeyHashesResponseClass(
       [identityFixture.toBuffer()],
-      metadataFixture,
+      new Metadata(metadataFixture),
     );
   });
 
   it('should return identities', () => {
-    const identities = getDataContractResponse.getIdentities();
+    const identities = getIdentitiesResponse.getIdentities();
+    const proof = getIdentitiesResponse.getProof();
 
-    expect(identities).to.deep.equal([identityFixture.toBuffer()]);
+    expect(identities).to.deep.members([identityFixture.toBuffer()]);
+    expect(proof).to.equal(undefined);
+  });
+
+  it('should return proof', () => {
+    getIdentitiesResponse = new GetIdentitiesByPublicKeyHashesResponseClass(
+      [],
+      new Metadata(metadataFixture),
+      new Proof(proofFixture),
+    );
+
+    const identities = getIdentitiesResponse.getIdentities();
+    const proof = getIdentitiesResponse.getProof();
+
+    expect(identities).to.deep.members([]);
+    expect(proof).to.be.an.instanceOf(Proof);
+    expect(proof.getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
+    expect(proof.getStoreTreeProof()).to.deep.equal(proofFixture.storeTreeProof);
+    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
 
   it('should create an instance from proto', () => {
-    getDataContractResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
-    expect(getDataContractResponse).to.be.an.instanceOf(
+    getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
+    expect(getIdentitiesResponse).to.be.an.instanceOf(
       GetIdentitiesByPublicKeyHashesResponseClass,
     );
-    expect(getDataContractResponse.getIdentities()).to.deep.equal([identityFixture.toBuffer()]);
-    expect(getDataContractResponse.getMetadata()).to.deep.equal(metadataFixture);
+    expect(getIdentitiesResponse.getIdentities()).to.deep.members([identityFixture.toBuffer()]);
+
+    expect(getIdentitiesResponse.getMetadata())
+      .to.be.an.instanceOf(Metadata);
+    expect(getIdentitiesResponse.getMetadata().getHeight())
+      .to.equal(metadataFixture.height);
+    expect(getIdentitiesResponse.getMetadata().getCoreChainLockedHeight())
+      .to.equal(metadataFixture.coreChainLockedHeight);
+
+    expect(getIdentitiesResponse.getProof()).to.equal(undefined);
+  });
+
+  it('should create an instance with proof from proto', () => {
+    const proofProto = new ProofResponse();
+    proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofProto.setSignature(proofFixture.signature);
+    proofProto.setRootTreeProof(proofFixture.rootTreeProof);
+    proofProto.setStoreTreeProof(proofFixture.storeTreeProof);
+
+    proto.setIdentitiesList([]);
+    proto.setProof(proofProto);
+
+    getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
+    expect(getIdentitiesResponse).to.be.an.instanceOf(
+      GetIdentitiesByPublicKeyHashesResponseClass,
+    );
+    expect(getIdentitiesResponse.getIdentities()).to.deep.members([]);
+    expect(getIdentitiesResponse.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getIdentitiesResponse.getProof())
+      .to.be.an.instanceOf(Proof);
+    expect(getIdentitiesResponse.getProof().getRootTreeProof())
+      .to.deep.equal(proofFixture.rootTreeProof);
+    expect(getIdentitiesResponse.getProof().getStoreTreeProof())
+      .to.deep.equal(proofFixture.storeTreeProof);
+    expect(getIdentitiesResponse.getProof().getSignatureLLMQHash())
+      .to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(getIdentitiesResponse.getProof().getSignature())
+      .to.deep.equal(proofFixture.signature);
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {
     proto.setMetadata(undefined);
 
     try {
-      getDataContractResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
+      getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {

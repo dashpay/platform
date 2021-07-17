@@ -1,14 +1,16 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const Metadata = require('../response/Metadata');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
+const Proof = require('../response/Proof');
 
 class GetDataContractResponse extends AbstractResponse {
   /**
    * @param {Buffer} dataContract
    * @param {Metadata} metadata
+   * @param {Proof} [proof]
    */
-  constructor(dataContract, metadata) {
-    super(metadata);
+  constructor(dataContract, metadata, proof = undefined) {
+    super(metadata, proof);
 
     this.dataContract = dataContract;
   }
@@ -26,8 +28,9 @@ class GetDataContractResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     const dataContract = proto.getDataContract();
+    const rawProof = proto.getProof();
 
-    if (!dataContract) {
+    if (!dataContract && !rawProof) {
       throw new InvalidResponseError('DataContract is not defined');
     }
 
@@ -37,9 +40,20 @@ class GetDataContractResponse extends AbstractResponse {
       throw new InvalidResponseError('Metadata is not defined');
     }
 
+    let proof;
+    if (rawProof) {
+      proof = new Proof({
+        rootTreeProof: Buffer.from(rawProof.getRootTreeProof()),
+        storeTreeProof: Buffer.from(rawProof.getStoreTreeProof()),
+        signatureLLMQHash: Buffer.from(rawProof.getSignatureLlmqHash()),
+        signature: Buffer.from(rawProof.getSignature()),
+      });
+    }
+
     return new GetDataContractResponse(
       Buffer.from(dataContract),
       new Metadata(metadata.toObject()),
+      proof,
     );
   }
 }

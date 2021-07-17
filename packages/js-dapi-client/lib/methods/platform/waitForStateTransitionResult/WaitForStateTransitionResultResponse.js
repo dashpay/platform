@@ -8,8 +8,8 @@ const ErrorResult = require('./ErrorResult');
 class WaitForStateTransitionResultResponse extends AbstractResponse {
   /**
    * @param {Metadata} metadata
-   * @param {Proof} proof
-   * @param {ErrorResult} error
+   * @param {Proof} [proof]
+   * @param {ErrorResult} [error]
    */
   constructor(metadata, proof = undefined, error = undefined) {
     super(metadata, proof);

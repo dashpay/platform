@@ -1,14 +1,16 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const Metadata = require('../response/Metadata');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
+const Proof = require('../response/Proof');
 
 class GetIdentityIdsByPublicKeyHashesResponse extends AbstractResponse {
   /**
    * @param {Buffer[]} identityIds
    * @param {Metadata} metadata
+   * @param {Proof} [proof]
    */
-  constructor(identityIds, metadata) {
-    super(metadata);
+  constructor(identityIds, metadata, proof = undefined) {
+    super(metadata, proof);
 
     this.identityIds = identityIds;
   }
@@ -31,10 +33,23 @@ class GetIdentityIdsByPublicKeyHashesResponse extends AbstractResponse {
       throw new InvalidResponseError('Metadata is not defined');
     }
 
+    const rawProof = proto.getProof();
+
+    let proof;
+    if (rawProof) {
+      proof = new Proof({
+        rootTreeProof: Buffer.from(rawProof.getRootTreeProof()),
+        storeTreeProof: Buffer.from(rawProof.getStoreTreeProof()),
+        signatureLLMQHash: Buffer.from(rawProof.getSignatureLlmqHash()),
+        signature: Buffer.from(rawProof.getSignature()),
+      });
+    }
+
     return new GetIdentityIdsByPublicKeyHashesResponse(
       proto.getIdentityIdsList()
         .map((identityId) => (identityId.length > 0 ? Buffer.from(identityId) : null)),
       new Metadata(metadata.toObject()),
+      proof,
     );
   }
 }

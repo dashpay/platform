@@ -21,7 +21,7 @@ function getDataContractFactory(grpcTransport) {
    *
    * @typedef {getDataContract}
    * @param {Buffer} contractId
-   * @param {DAPIClientOptions} [options]
+   * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetDataContractResponse>}
    */
   async function getDataContract(contractId, options = {}) {
@@ -36,6 +36,7 @@ function getDataContractFactory(grpcTransport) {
     }
 
     getDataContractRequest.setId(contractId);
+    getDataContractRequest.setProve(!!options.prove);
 
     let getDataContractResponse;
     try {

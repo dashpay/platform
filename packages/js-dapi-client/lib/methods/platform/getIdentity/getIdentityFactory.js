@@ -22,7 +22,7 @@ function getIdentityFactory(grpcTransport) {
    *
    * @typedef {getIdentity}
    * @param {Buffer} id
-   * @param {DAPIClientOptions} [options]
+   * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityResponse>}
    */
   async function getIdentity(id, options = {}) {
@@ -36,6 +36,7 @@ function getIdentityFactory(grpcTransport) {
     }
 
     getIdentityRequest.setId(id);
+    getIdentityRequest.setProve(!!options.prove);
 
     let getIdentityResponse;
     try {

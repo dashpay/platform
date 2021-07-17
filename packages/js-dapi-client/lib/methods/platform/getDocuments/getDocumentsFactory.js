@@ -20,7 +20,7 @@ function getDocumentsFactory(grpcTransport) {
    * @typedef {getDocuments}
    * @param {Buffer} contractId - Data Contract ID
    * @param {string} type - Document type
-   * @param {DAPIClientOptions & getDocumentsOptions} [options]
+   * @param {DAPIClientOptions & getDocumentsOptions & {prove: boolean}} [options]
    * @returns {Promise<GetDocumentsResponse>}
    */
   async function getDocuments(contractId, type, options = {}) {
@@ -61,6 +61,7 @@ function getDocumentsFactory(grpcTransport) {
     getDocumentsRequest.setLimit(limit);
     getDocumentsRequest.setStartAfter(startAfter);
     getDocumentsRequest.setStartAt(startAt);
+    getDocumentsRequest.setProve(!!options.prove);
 
     const getDocumentsResponse = await grpcTransport.request(
       PlatformPromiseClient,

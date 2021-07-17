@@ -7,6 +7,7 @@ const {
     GetDocumentsRequest,
     GetDocumentsResponse,
     ResponseMetadata,
+    Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -14,6 +15,8 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 
 const getDocumentsFactory = require('../../../../../lib/methods/platform/getDocuments/getDocumentsFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
+const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
+const Proof = require('../../../../../lib/methods/platform/response/Proof');
 
 describe('getDocumentsFactory', () => {
   let grpcTransportMock;
@@ -25,6 +28,9 @@ describe('getDocumentsFactory', () => {
   let documentsFixture;
   let serializedDocuments;
   let metadataFixture;
+  let proofFixture;
+  let proofResponse;
+  let response;
 
   beforeEach(function beforeEach() {
     type = 'niceDocument';
@@ -32,6 +38,7 @@ describe('getDocumentsFactory', () => {
     contractIdIdentifier = Identifier.from(contractIdBuffer);
 
     metadataFixture = getMetadataFixture();
+    proofFixture = getProofFixture();
 
     options = {
       limit: 10,
@@ -51,7 +58,7 @@ describe('getDocumentsFactory', () => {
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    const response = new GetDocumentsResponse();
+    response = new GetDocumentsResponse();
     response.setDocumentsList(serializedDocuments);
     response.setMetadata(metadata);
 
@@ -60,6 +67,12 @@ describe('getDocumentsFactory', () => {
     };
 
     getDocuments = getDocumentsFactory(grpcTransportMock);
+
+    proofResponse = new ProofResponse();
+    proofResponse.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofResponse.setSignature(proofFixture.signature);
+    proofResponse.setRootTreeProof(proofFixture.rootTreeProof);
+    proofResponse.setStoreTreeProof(proofFixture.storeTreeProof);
   });
 
   it('should return documents when contract id is buffer', async () => {
@@ -73,6 +86,7 @@ describe('getDocumentsFactory', () => {
     request.setOrderBy(cbor.encode(options.orderBy));
     request.setStartAfter(options.startAfter);
     request.setStartAt(options.startAt);
+    request.setProve(false);
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -82,6 +96,47 @@ describe('getDocumentsFactory', () => {
     );
     expect(result.getDocuments()).to.deep.equal(serializedDocuments);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getProof()).to.equal(undefined);
+  });
+
+  it('should return proof', async () => {
+    options.prove = true;
+    response.setDocumentsList([]);
+    response.setProof(proofResponse);
+
+    const result = await getDocuments(contractIdBuffer, type, options);
+
+    const request = new GetDocumentsRequest();
+    request.setDataContractId(contractIdBuffer);
+    request.setDocumentType(type);
+    request.setLimit(options.limit);
+    request.setWhere(cbor.encode(options.where));
+    request.setOrderBy(cbor.encode(options.orderBy));
+    request.setStartAfter(options.startAfter);
+    request.setStartAt(options.startAt);
+    request.setProve(true);
+
+    expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
+      PlatformPromiseClient,
+      'getDocuments',
+      request,
+      options,
+    );
+
+    expect(result.getDocuments()).to.deep.members([]);
+
+    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(result.getProof()).to.be.an.instanceOf(Proof);
+    expect(result.getProof().getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
+    expect(result.getProof().getStoreTreeProof()).to.deep.equal(proofFixture.storeTreeProof);
+    expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
+    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
+    expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
+      metadataFixture.coreChainLockedHeight,
+    );
   });
 
   it('should return documents when contract id is identifier', async () => {
@@ -95,6 +150,7 @@ describe('getDocumentsFactory', () => {
     request.setOrderBy(cbor.encode(options.orderBy));
     request.setStartAfter(options.startAfter);
     request.setStartAt(options.startAt);
+    request.setProve(false);
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -104,5 +160,6 @@ describe('getDocumentsFactory', () => {
     );
     expect(result.getDocuments()).to.deep.equal(serializedDocuments);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getProof()).to.equal(undefined);
   });
 });

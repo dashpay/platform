@@ -17,7 +17,7 @@ function getIdentitiesByPublicKeyHashesFactory(grpcTransport) {
    *
    * @typedef {getIdentitiesByPublicKeyHashes}
    * @param {Buffer[]} publicKeyHashes
-   * @param {DAPIClientOptions} [options]
+   * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentitiesByPublicKeyHashesResponse>}
    */
   async function getIdentitiesByPublicKeyHashes(publicKeyHashes, options = {}) {
@@ -25,6 +25,7 @@ function getIdentitiesByPublicKeyHashesFactory(grpcTransport) {
     getIdentitiesByPublicKeyHashesRequest.setPublicKeyHashesList(
       publicKeyHashes,
     );
+    getIdentitiesByPublicKeyHashesRequest.setProve(!!options.prove);
 
     const getIdentitiesByPublicKeyHashesResponse = await grpcTransport.request(
       PlatformPromiseClient,
