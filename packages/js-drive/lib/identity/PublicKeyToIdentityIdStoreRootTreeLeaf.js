@@ -18,6 +18,16 @@ class PublicKeyToIdentityIdStoreRootTreeLeaf extends AbstractRootTreeLeaf {
   getHash() {
     return this.publicKeyToIdentityIdStore.getRootHash();
   }
+
+  /**
+   * Get proof for leaf keys
+   *
+   * @param {Array<Buffer>} leafKeys
+   * @return {Buffer}
+   */
+  getProof(leafKeys) {
+    return this.publicKeyToIdentityIdStore.getProof(leafKeys);
+  }
 }
 
 PublicKeyToIdentityIdStoreRootTreeLeaf.INDEX = 2;
