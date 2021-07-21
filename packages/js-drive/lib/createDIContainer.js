@@ -13,7 +13,7 @@ const Long = require('long');
 // eslint-disable-next-line import/no-unresolved
 const level = require('level-rocksdb');
 
-const Merk = require('@dashevo/merk');
+const { Merk } = require('@dashevo/merk');
 
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
@@ -407,11 +407,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -424,11 +426,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -446,11 +450,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -461,11 +467,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -504,11 +512,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -523,11 +533,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -561,11 +573,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -576,11 +590,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -616,11 +632,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -631,11 +649,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -768,11 +788,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 
@@ -783,11 +805,13 @@ function createDIContainer(options) {
     }).disposer((merkDb) => {
       // Flush data on disk
       merkDb.db.flushSync();
-      merkDb.db.close();
 
       // Drop test database
       if (process.env.NODE_ENV === 'test') {
         merkDb.db.destroy();
+      } else {
+        // or close in case of production
+        merkDb.db.close();
       }
     }).singleton(),
 

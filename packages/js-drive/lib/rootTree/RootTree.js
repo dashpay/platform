@@ -69,7 +69,9 @@ class RootTree {
    */
   rebuild() {
     this.leafHashes = this.leaves.map((leaf) => leaf.getHash());
-    this.tree = new MerkleTree(this.leafHashes, hashFunction);
+    this.tree = new MerkleTree(this.leafHashes, hashFunction, {
+      isBitcoinTree: true,
+    });
   }
 }
 

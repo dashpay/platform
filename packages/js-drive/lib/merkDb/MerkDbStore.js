@@ -57,7 +57,7 @@ class MerkDbStore {
     try {
       return db.getSync(key);
     } catch (e) {
-      if (e.message.startsWith('key not found')) {
+      if (e.message.indexOf('no value found for key') !== -1 || e.message.indexOf('key not found') !== -1) {
         return null;
       }
 

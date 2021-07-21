@@ -1,4 +1,4 @@
-const Merk = require('@dashevo/merk');
+const { Merk } = require('@dashevo/merk');
 
 const MerkDbStore = require('../../../lib/merkDb/MerkDbStore');
 
@@ -20,7 +20,6 @@ describe('MerkDbStore', () => {
   });
 
   afterEach(async () => {
-    merkDb.close();
     merkDb.destroy();
   });
 
@@ -51,7 +50,7 @@ describe('MerkDbStore', () => {
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.startsWith('key not found')).to.be.true();
+        expect(e.message.indexOf('no value found for key') !== -1).to.be.true();
       }
 
       // check we can't fetch data without transaction
@@ -118,9 +117,9 @@ describe('MerkDbStore', () => {
       try {
         merkDb.getSync(key);
 
-        expect.fail('should throw key not found error');
+        expect.fail('should throw no value found for key error');
       } catch (e) {
-        expect(e.message).to.startsWith('key not found');
+        expect(e.message.indexOf('no value found for key')).to.not.equal(-1);
       }
     });
 
@@ -154,7 +153,7 @@ describe('MerkDbStore', () => {
     it('should return a empty hash for empty store', () => {
       const result = store.getRootHash();
 
-      expect(result).to.deep.equal(Buffer.alloc(20));
+      expect(result).to.deep.equal(Buffer.alloc(32));
     });
 
     it('should return a root hash for store with value', () => {
@@ -162,7 +161,7 @@ describe('MerkDbStore', () => {
         .put(key, value)
         .commitSync();
 
-      const valueHash = Buffer.from('8431f62d3d7b7f16ec98321019d0e65ad191bea1', 'hex');
+      const valueHash = Buffer.from('40dfb8fbd7835bcade7e87420b58fe835b8f6e1ba35e92e087f1b2b433c3c418', 'hex');
 
       const result = store.getRootHash();
 
@@ -190,7 +189,7 @@ describe('MerkDbStore', () => {
       const result = store.getProof([key]);
 
       expect(result).to.be.deep.equal(
-        Buffer.from('0119fa9955a06bc5cd46918709596e488ba2e8d96d032001010101010101010101010101010101010101010101010101010101010101012000020202020202020202020202020202020202020202020202020202020202020210', 'hex'),
+        Buffer.from('01ca443bcadc98a2e8b40586306c53be0329042f1af46b70a51ae0738ae666dfe6032001010101010101010101010101010101010101010101010101010101010101010020020202020202020202020202020202020202020202020202020202020202020210', 'hex'),
       );
     });
   });

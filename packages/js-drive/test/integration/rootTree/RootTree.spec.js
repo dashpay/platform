@@ -13,7 +13,7 @@ describe('RootTree', () => {
   beforeEach(() => {
     const leafOneRootHash = Buffer.alloc(32).fill(1);
     const leafTwoRootHash = Buffer.alloc(32).fill(2);
-    rootHash = Buffer.from('e1cea2a83f3686b0183922ba4baf0e0d2f3e0622', 'hex');
+    rootHash = Buffer.from('a9220603765eb43567e1ee316409e107e131c97daa7c488463998032458333aa', 'hex');
 
     leafOneMock = {
       getIndex() {
@@ -72,7 +72,7 @@ describe('RootTree', () => {
       const proof = rootTree.getProof(leafOneMock);
 
       expect(proof).to.deep.equal(
-        Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
+        Buffer.from('0100000001e4d60b4531b114100aab5f9907d1718c613e603482a15bee8ccda17e5c9bb3ea0101', 'hex'),
       );
     });
 
@@ -80,7 +80,7 @@ describe('RootTree', () => {
       const proof = rootTree.getProof(leafTwoMock);
 
       expect(proof).to.deep.equal(
-        Buffer.from('0100000001fa5c47912cc22dce628071b48d2386bd511656e30100', 'hex'),
+        Buffer.from('01000000019515049071ed913149a80d3bb7891fcd4c6c1e3d14ad878939a80f9b9a91e08c0100', 'hex'),
       );
     });
   });
@@ -94,7 +94,7 @@ describe('RootTree', () => {
       const fullProof = rootTree.getFullProof(leafOneMock, leafKeys);
 
       expect(fullProof).to.be.deep.equal({
-        rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
+        rootTreeProof: Buffer.from('0100000001e4d60b4531b114100aab5f9907d1718c613e603482a15bee8ccda17e5c9bb3ea0101', 'hex'),
         storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
       });
     });

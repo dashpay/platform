@@ -1,13 +1,11 @@
-const blake2b = require('blake2b');
+const blake3 = require('blake3');
 
 /**
  * @param {Buffer} data
  * @return {Buffer}
  */
 function hashFunction(data) {
-  const hashArray = blake2b(20).update(data).digest();
-
-  return Buffer.from(hashArray);
+  return blake3.hash(data);
 }
 
 module.exports = hashFunction;
