@@ -366,7 +366,7 @@ create_empty_blocks_interval = "{{= it.platform.drive.tenderdash.consensus.creat
 quorum_type = {{=it.platform.drive.abci.validatorSet.llmqType}}
 
 # Set the App hash size
-app_hash_size = 20
+app_hash_size = 32
 
 # Reactor sleep duration parameters
 peer_gossip_sleep_duration = "100ms"
