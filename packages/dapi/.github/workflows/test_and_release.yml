@@ -219,7 +219,7 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64
 
       - name: Show Docker image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
