@@ -22,6 +22,7 @@ describe('e2e', () => {
     before(() => {
       dataContractDocumentSchemas = {
         profile: {
+          type: 'object',
           indices: [
             { properties: [{ $ownerId: 'asc' }], unique: true },
           ],
@@ -40,6 +41,7 @@ describe('e2e', () => {
           additionalProperties: false,
         },
         contact: {
+          type: 'object',
           indices: [
             { properties: [{ $ownerId: 'asc' }, { toUserId: 'asc' }], unique: true },
           ],

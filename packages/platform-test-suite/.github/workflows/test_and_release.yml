@@ -2,6 +2,8 @@ name: Test and Release
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '42 */160 * * *'
   release:
     types:
       - published
@@ -27,6 +29,22 @@ jobs:
         with:
           node-version: '12'
 
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          install: true
+          driver-opts: image=moby/buildkit:buildx-stable-1
+
+      # Temporary fix until Docker Compose V2 is GA
+      - name: Set up Docker Compose V2
+        run: |
+          curl https://github.com/docker/compose-cli/releases/download/v2.0.0-beta.4/docker-compose-linux-amd64 --location --create-dirs -o $HOME/.docker/cli-plugins/docker-compose
+          chmod +x $HOME/.docker/cli-plugins/docker-compose
+          docker version
+          docker info
+
+      # Cache for dashmate and test suite
       - name: Enable NPM cache
         uses: actions/cache@v2
         with:
@@ -34,6 +52,21 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
+
+      - name: Enable buildkit cache
+        uses: actions/cache@v2
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 2g
 
       - name: Check NPM package lock version is updated
         uses: dashevo/gh-action-check-package-lock@v1
@@ -43,12 +76,6 @@ jobs:
 
       - name: Run ESLinter
         run: npm run lint
-
-      - name: Cache Docker layers
-        uses: satackey/action-docker-layer-caching@v0.0.11
-        continue-on-error: true
-        with:
-          concurrency: 8
 
       - name: Load workflow dotenv file
         uses: c-py/action-dotenv-to-setenv@v3
@@ -65,8 +92,6 @@ jobs:
         uses: dashevo/gh-action-start-local-network@v1
         id: start-local-network
         with:
-          actions-cache-url: ${{ steps.platform-branches.outputs.cache-url }}
-          actions-cache-token: ${{ steps.platform-branches.outputs.cache-token }}
           drive-branch: ${{ env.DRIVE_BRANCH }}
           dapi-branch: ${{ env.DAPI_BRANCH }}
           dashmate-branch: ${{ steps.platform-branches.outputs.dashmate-branch }}
@@ -78,7 +103,13 @@ jobs:
           npm install github:dashevo/js-dash-sdk#${{ env.SDK_BRANCH }}
 
       - name: Build Platform Test Suite Docker image
-        run: docker build -t platform-test-suite:local .
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: platform-test-suite:local
 
       - name: Run Platform Test Suite
         run: |
@@ -103,18 +134,26 @@ jobs:
           TAG_PREFIX: refs/tags/v
 
       - name: Set up Docker BuildX
+        id: buildx
         uses: docker/setup-buildx-action@v1
         with:
           install: true
-          driver-opts: image=moby/buildkit:latest
+          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Cache Docker layers
+      - name: Enable buildkit cache
         uses: actions/cache@v2
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildx-
+            ${{ runner.os }}-buildkit-
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 2g
 
       - name: Login to DockerHub
         uses: docker/login-action@v1
@@ -131,7 +170,7 @@ jobs:
 
       - name: Set Docker tags and labels
         id: docker_meta
-        uses: crazy-max/ghaction-docker-meta@v2
+        uses: docker/metadata-action@v3
         with:
           images: dashpay/platform-test-suite
           tags: |
@@ -152,17 +191,6 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,mode=max,dest=/tmp/.buildx-cache-new
-          # platforms: linux/amd64,linux/arm64,linux/arm/v7
-
-      # https://github.com/docker/build-push-action/issues/252
-      # https://github.com/moby/buildkit/issues/1896
-
-      - name: Run temporary fix for Docker cache action
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Output Docker image digest
         run: echo ${{ steps.docker_build.outputs.digest }}

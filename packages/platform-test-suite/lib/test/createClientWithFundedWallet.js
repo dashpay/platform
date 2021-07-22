@@ -27,7 +27,9 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
 
   const faucetClient = createFaucetClient();
 
-  const walletOptions = {};
+  const walletOptions = {
+    waitForInstantLockTimeout: 120000,
+  };
 
   if (HDPrivateKey) {
     walletOptions.HDPrivateKey = HDPrivateKey;

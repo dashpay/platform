@@ -34,6 +34,7 @@ describe('e2e', () => {
         network: process.env.NETWORK,
         wallet: {
           mnemonic,
+          waitForInstantLockTimeout: 120000,
         },
       });
     });
@@ -96,6 +97,7 @@ describe('e2e', () => {
         restoredWallet = new Dash.Client({
           wallet: {
             mnemonic,
+            waitForInstantLockTimeout: 120000,
           },
           seeds: getDAPISeeds(),
           network: process.env.NETWORK,

@@ -90,8 +90,8 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
       expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });
@@ -108,8 +108,8 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
       expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });
@@ -136,8 +136,8 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Can\'t create top level domain for this identity');
+      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
       expect(broadcastError.data.errors[0].message).to.equal('Can\'t create top level domain for this identity');
     });
@@ -215,8 +215,8 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
       expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });
@@ -233,8 +233,8 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.message).to.be.equal('Invalid state transition: DataTriggerConditionError: Action is not allowed');
+      expect(broadcastError.code).to.equal(2);
       expect(broadcastError.data.errors[0].name).to.equal('DataTriggerConditionError');
       expect(broadcastError.data.errors[0].message).to.equal('Action is not allowed');
     });

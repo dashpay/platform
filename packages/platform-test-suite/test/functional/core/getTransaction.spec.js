@@ -3,6 +3,8 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
+const NotFoundError = require('@dashevo/dapi-client/lib/methods/errors/NotFoundError');
+
 const createFaucetClient = require('../../../lib/test/createFaucetClient');
 const wait = require('../../../lib/wait');
 
@@ -27,17 +29,21 @@ describe('Core', () => {
       await faucetWalletAccount.broadcastTransaction(transaction);
 
       const result = await faucetClient.getDAPIClient().core.getTransaction(transaction.id);
-      const receivedTx = new Transaction(Buffer.from(result));
+      const receivedTx = new Transaction(result.getTransaction());
 
       expect(receivedTx.hash).to.deep.equal(transaction.id);
     });
 
-    it('should respond with null if transaction was not found', async () => {
+    it('should throw NotFound error if transaction was not found', async () => {
       const nonExistentId = Buffer.alloc(32).toString('hex');
 
-      const result = await faucetClient.getDAPIClient().core.getTransaction(nonExistentId);
+      try {
+        await faucetClient.getDAPIClient().core.getTransaction(nonExistentId);
 
-      expect(result).to.equal(null);
+        expect.fail('should throw NotFound');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(NotFoundError);
+      }
     });
   });
 });

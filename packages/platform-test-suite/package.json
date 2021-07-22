@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform-test-suite",
-  "version": "0.19.1",
+  "version": "0.20.0",
   "description": "Dash Network end-to-end tests",
   "private": true,
   "scripts": {
@@ -19,14 +19,14 @@
   },
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.23",
-    "@dashevo/dpns-contract": "~0.3.0",
-    "@dashevo/dpp": "~0.19.2",
+    "@dashevo/dashcore-lib": "~0.19.25",
+    "@dashevo/dpns-contract": "github:dashevo/dpns-contract#update-dpp",
+    "@dashevo/dpp": "~0.20.0",
     "@dashevo/grpc-common": "~0.3.4",
-    "@dashevo/wallet-lib": "~7.19.2",
+    "@dashevo/wallet-lib": "~7.20.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
-    "dash": "~3.19.4",
+    "dash": "~3.20.0",
     "dirty-chai": "^2.0.1",
     "dotenv-safe": "^8.2.0",
     "github-api": "^3.3.0",
