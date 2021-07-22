@@ -1,3 +1,26 @@
+# [0.20.0](https://github.com/dashevo/dapi/compare/v0.19.0...v0.20.0) (2021-07-22)
+
+
+### Features
+
+* add more information to proofs ([#373](https://github.com/dashevo/dapi/issues/373))
+* strict data contract schema validation ([#372](https://github.com/dashevo/dapi/issues/372))
+
+
+### Bug Fixes
+
+* `prove` options was set as a string ([#387](https://github.com/dashevo/dapi/issues/387))
+* `EAI_AGAIN` error code was not handled ([#381](https://github.com/dashevo/dapi/issues/381))
+* `subscribeToNewTransactionsWithProofs` doesn't emit transactions and instant lock in some cases ([#384](https://github.com/dashevo/dapi/issues/384), [#375](https://github.com/dashevo/dapi/issues/375))
+
+
+### BREAKING CHANGES
+
+* data will be `null` in case proof is requested from platform endpoints
+* not compatible with contracts created using `dpp` older than v0.20
+
+
+
 # [0.19.0](https://github.com/dashevo/dapi/compare/v0.18.1...v0.19.0) (2021-05-05)
 
 
