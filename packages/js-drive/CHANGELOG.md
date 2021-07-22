@@ -13,7 +13,6 @@
 
 ### Bug Fixes
 
-* documents secondary indices weren't deleted ([#514](https://github.com/dashevo/js-drive/issues/514))
 * invalid instant lock if no blocks are produced ([#513](https://github.com/dashevo/js-drive/issues/513))
 * `getProofs` method was missing from `PublicKeyToIdentityIdStoreRootTreeLeaf` class ([#544](https://github.com/dashevo/js-drive/issues/544))
 * typo in trace output ([#516](https://github.com/dashevo/js-drive/issues/516))
