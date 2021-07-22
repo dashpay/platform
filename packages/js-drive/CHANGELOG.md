@@ -1,3 +1,35 @@
+# [0.20.0](https://github.com/dashevo/js-drive/compare/v0.19.3...v0.20.0) (2021-07-22)
+
+
+### Features
+
+* use latest version of Merk storage ([#546](https://github.com/dashevo/js-drive/issues/546))
+* remove chainlock SML verification in favor of more robust core verification ([#536](https://github.com/dashevo/js-drive/issues/536))
+* remove SML instant lock verification in favor of more robust core verification [#533](https://github.com/dashevo/js-drive/issues/533))
+* make compatible with Tenderdash v0.5 ([#527](https://github.com/dashevo/js-drive/issues/527))
+* add additional info to proofs ([#518](https://github.com/dashevo/js-drive/issues/518), [#523](https://github.com/dashevo/js-drive/issues/523), [#525](https://github.com/dashevo/js-drive/issues/525), [#540](https://github.com/dashevo/js-drive/issues/540), [#542](https://github.com/dashevo/js-drive/issues/542))
+* validator set rotation ([#446](https://github.com/dashevo/js-drive/issues/446), [#515](https://github.com/dashevo/js-drive/issues/515), [#517](https://github.com/dashevo/js-drive/issues/517), [#530](https://github.com/dashevo/js-drive/issues/530), [#531](https://github.com/dashevo/js-drive/issues/531), )
+
+
+### Bug Fixes
+
+* documents secondary indices weren't deleted ([#514](https://github.com/dashevo/js-drive/issues/514))
+* invalid instant lock if no blocks are produced ([#513](https://github.com/dashevo/js-drive/issues/513))
+* `getProofs` method was missing from `PublicKeyToIdentityIdStoreRootTreeLeaf` class ([#544](https://github.com/dashevo/js-drive/issues/544))
+* typo in trace output ([#516](https://github.com/dashevo/js-drive/issues/516))
+
+
+### BREAKING CHANGES
+
+* `document`, `dataContract`, `identity`, `identityIdsByPublicKeyHashes` and `identitiesByPublicKeyHashes` query handlers now returns Protobuf messages instead of cbor'ed data. data is not sent if a proof is requested
+* `VALIDATOR_SET_LLMQ_TYPE` env is required
+* due to changes in hashing algorithm `appHash` is no longer same and not reproducible for old blocks hence new nodes would not be able to sync
+* removing SML IS lock verification make some previously invalid transactions valid
+* not compatible with Tenderdash v0.4
+* new ABCI messages and types not compatible with previous ones
+
+
+
 ## [0.19.3](https://github.com/dashevo/js-drive/compare/v0.19.2...v0.19.3) (2021-06-04)
 
 
