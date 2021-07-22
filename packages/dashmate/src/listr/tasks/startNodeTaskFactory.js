@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
@@ -41,12 +42,14 @@ function startNodeTaskFactory(
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
 
       if (!fs.existsSync(prettyFilePath)) {
+        fs.mkdirSync(path.dirname(prettyFilePath), { recursive: true });
         fs.writeFileSync(prettyFilePath, '');
       }
 
       const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
 
       if (!fs.existsSync(jsonFilePath)) {
+        fs.mkdirSync(path.dirname(jsonFilePath), { recursive: true });
         fs.writeFileSync(jsonFilePath, '');
       }
     }

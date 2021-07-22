@@ -1,4 +1,6 @@
 const lodashMerge = require('lodash.merge');
+const os = require('os');
+const path = require('path');
 
 const {
   NETWORK_TESTNET,
@@ -41,10 +43,10 @@ module.exports = lodashMerge({}, baseConfig, {
       abci: {
         log: {
           prettyFile: {
-            path: '/tmp/testnet-drive-pretty.log',
+            path: path.join(os.tmpdir(), `/testnet-drive-pretty.log`),
           },
           jsonFile: {
-            path: '/tmp/testnet-drive-json.log',
+            path: path.join(os.tmpdir(), `/testnet-drive-json.log`),
           },
         },
       },

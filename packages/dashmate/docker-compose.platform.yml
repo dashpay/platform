@@ -19,12 +19,8 @@ services:
       - core
     volumes:
       - drive_abci_data:/usr/src/app/db
-      - type: bind
-        source: ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_PATH:?err}
-        target: /var/log/drive-pretty.log
-      - type: bind
-        source: ${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_PATH:?err}
-        target: /var/log/drive-json.log
+      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_PATH:?err}:/var/log/drive-pretty.log
+      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_PATH:?err}:/var/log/drive-json.log
     environment:
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
