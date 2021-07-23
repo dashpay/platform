@@ -20,7 +20,7 @@ message Proof {
 }
 
 message ResponseMetadata {
-  uint32 height = 1;
+  int64 height = 1;
   uint32 core_chain_locked_height = 2;
 }
 
