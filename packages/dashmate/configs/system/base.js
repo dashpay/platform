@@ -1,8 +1,9 @@
+const os = require('os');
+const path = require('path');
+
 const {
   NETWORK_TESTNET,
 } = require('../../src/constants');
-const os = require('os');
-const path = require('path');
 
 module.exports = {
   description: 'base config for use as template',
@@ -64,7 +65,7 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.20-dev',
+          image: 'dashpay/dapi:0.20',
           build: {
             path: null,
           },
@@ -79,7 +80,7 @@ module.exports = {
       },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.20-dev',
+          image: 'dashpay/drive:0.20',
           build: {
             path: null,
           },
@@ -90,11 +91,11 @@ module.exports = {
           },
           prettyFile: {
             level: 'silent',
-            path: path.join(os.tmpdir(), `/base-drive-pretty.log`),
+            path: path.join(os.tmpdir(), '/base-drive-pretty.log'),
           },
           jsonFile: {
             level: 'silent',
-            path: path.join(os.tmpdir(), `/base-drive-json.log`),
+            path: path.join(os.tmpdir(), '/base-drive-json.log'),
           },
         },
         validatorSet: {
@@ -103,7 +104,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.5.5',
+          image: 'dashpay/tenderdash:0.5.9',
         },
         p2p: {
           port: 26656,

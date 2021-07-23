@@ -63,7 +63,7 @@
     "awilix": "^4.2.6",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.0.0",
-    "dash": "~3.20.0",
+    "dash": "~3.20.1",
     "docker-compose": "0.23.3",
     "dockerode": "^3.2.0",
     "dot": "^1.1.3",

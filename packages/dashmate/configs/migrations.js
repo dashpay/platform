@@ -177,7 +177,7 @@ module.exports = {
 
     return configFile;
   },
-  '0.20.0-dev': (configFile) => {
+  '0.20.0': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         // Core debug
@@ -207,6 +207,13 @@ module.exports = {
 
           config.platform.drive.abci.docker.image = systemConfigs.base.platform
             .drive.abci.docker.image;
+
+          config.platform.dapi.api.docker.image = systemConfigs.base.platform
+            .drive.tenderdash.docker.image;
+
+          config.core.docker.image = systemConfigs.base.core.docker.image;
+
+          config.core.sentinel.image = systemConfigs.base.sentinel.docker.image;
         }
       });
 
@@ -223,6 +230,16 @@ module.exports = {
         config.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
           .platform.drive.abci.validatorSet.llmqType;
       });
+
+    // Update testnet seeds, genesis and contracts
+    configFile.configs.testnet.platform.drive.tenderdash.p2p.seeds = systemConfigs.testnet.platform
+      .drive.tenderdash.p2p.seeds;
+    configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
+      .drive.tenderdash.genesis;
+
+    configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
+    configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
+    configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
 
     return configFile;
   },
