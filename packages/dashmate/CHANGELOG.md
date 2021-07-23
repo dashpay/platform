@@ -1,3 +1,43 @@
+# [0.20.0](https://github.com/dashevo/dashmate/compare/v0.19.1...v0.20.0) (2021-07-22)
+
+
+### Bug Fixes
+
+* bad-txns-premature-spend-of-coinbase error ([#357](https://github.com/dashevo/dashmate/issues/400))
+* setup local command stuck in some envs ([#351](https://github.com/dashevo/dashmate/issues/351), [#352](https://github.com/dashevo/dashmate/issues/352), [#367](https://github.com/dashevo/dashmate/issues/367), [#370](https://github.com/dashevo/dashmate/issues/370))
+* setup local command stuck with more than 3 nodes ([#390](https://github.com/dashevo/dashmate/issues/390))
+* missing llmq conf for devnets ([#400](https://github.com/dashevo/dashmate/issues/400))
+* windows tmp directory install error ([#393](https://github.com/dashevo/dashmate/issues/393), thanks to @ICJR)
+* set quorum type in tenderdash config ([a6ccf5c](https://github.com/dashevo/dashmate/commit/a6ccf5cf84f4a3d28ea71192b6ad9287215a0538))
+* failed wallet sync from time to time ([258691c](https://github.com/dashevo/dashmate/commit/258691c1ca3bf1a294b375ee39d75fd91b7b3237))
+* tenderdash local connectivity issues ([#363](https://github.com/dashevo/dashmate/issues/363))
+
+
+### Features
+
+* wait nodes to be ready ([#369](https://github.com/dashevo/dashmate/issues/369))
+* add a temporary reset script for the local network ([#361](https://github.com/dashevo/dashmate/issues/380), [#371](https://github.com/dashevo/dashmate/issues/380), [#380](https://github.com/dashevo/dashmate/issues/380))
+* add an option to enable debug logs ([#349](https://github.com/dashevo/dashmate/issues/349))
+* enable debug logs option for setup local command ([#362](https://github.com/dashevo/dashmate/issues/362))
+* enable and request miner interval for setup local ([#360](https://github.com/dashevo/dashmate/pull/360))
+* configure tenderdash log level ([#364](https://github.com/dashevo/dashmate/pull/364))
+* migrate Drive state tree to blake3 ([#402](https://github.com/dashevo/dashmate/issues/402))
+* support minor Core updates ([#379](https://github.com/dashevo/dashmate/issues/379))
+* configure validator set LLMQ type ([#376](https://github.com/dashevo/dashmate/issues/376))
+* update DPP to 0.20.0 ([#381](https://github.com/dashevo/dashmate/issues/381))
+* update to Tenderdash v0.5.0  ([#358](https://github.com/dashevo/dashmate/issues/358), [#395](https://github.com/dashevo/dashmate/issues/395), [#399](https://github.com/dashevo/dashmate/issues/399))
+* efficient service build cache ([#389](https://github.com/dashevo/dashmate/issues/389))
+
+
+### BREAKING CHANGES:
+
+* setup local command requests miner interval and debug logs
+* Tenderdash v0.4.0 is not supported anymore
+* building services from path required compose v2 installed and `DOCKER_COMPOSE_V2` env to be set
+* platform services 0.19 and lower not supported
+
+
+
 ## [0.19.1](https://github.com/dashevo/dashmate/compare/v0.19.0...v0.19.1) (2021-05-18)
 
 
