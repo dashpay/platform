@@ -1,3 +1,12 @@
+## [3.20.2](https://github.com/dashevo/DashJS/compare/v3.20.1...v3.20.2) (2021-07-28)
+
+
+### Bug Fixes
+
+* InvalidResponse error when connecting to older versions of dapi ([#241](https://github.com/dashevo/DashJS/issues/241))
+
+
+
 ## [3.20.1](https://github.com/dashevo/DashJS/compare/v3.20.0...v3.20.1) (2021-07-22)
 
 
