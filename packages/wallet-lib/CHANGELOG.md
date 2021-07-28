@@ -1,3 +1,12 @@
+## [7.20.1](https://github.com/dashevo/wallet-lib/compare/v7.20.0...v7.20.1) (2021-07-28)
+
+
+### Bug Fixes
+
+* `InvalidResponse` error when connecting to older networks with newer client ([#284](https://github.com/dashevo/wallet-lib/issues/284))
+
+
+
 # [7.20.0](https://github.com/dashevo/wallet-lib/compare/v7.19.2...v7.20.0) (2021-07-09)
 
 
