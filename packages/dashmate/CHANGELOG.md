@@ -1,3 +1,12 @@
+## [0.20.1](https://github.com/dashevo/dashmate/compare/v0.20.0...v0.20.1) (2021-07-28)
+
+
+### Bug Fixes
+
+* InvalidResponse error when connecting to older versions of dapi ([#406](https://github.com/dashevo/dashmate/issues/406))
+
+
+
 # [0.20.0](https://github.com/dashevo/dashmate/compare/v0.19.1...v0.20.0) (2021-07-22)
 
 
