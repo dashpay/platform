@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
+const createDPPMock = require('../mocks/createDPPMock');
 
 const ownerId = generateRandomIdentifier();
 const dataContract = getDpnsContractFixture();
@@ -11,6 +12,7 @@ const dataContract = getDpnsContractFixture();
  */
 function getTopDocumentFixture(options = {}) {
   const factory = new DocumentFactory(
+    createDPPMock(),
     () => ({
       isValid: () => true,
     }),
@@ -41,6 +43,7 @@ function getTopDocumentFixture(options = {}) {
  */
 function getParentDocumentFixture(options = {}) {
   const factory = new DocumentFactory(
+    createDPPMock(),
     () => ({
       isValid: () => true,
     }),
@@ -71,6 +74,7 @@ function getParentDocumentFixture(options = {}) {
  */
 function getChildDocumentFixture(options = {}) {
   const factory = new DocumentFactory(
+    createDPPMock(),
     () => ({
       isValid: () => true,
     }),

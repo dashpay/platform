@@ -1,9 +1,20 @@
+const { protocolVersion } = require('../../protocolVersion');
+
 /**
- * @param {Sandbox} sinonSandbox
+ * @param {Sandbox} [sinonSandbox]
  *
  * @returns {DashPlatformProtocol}
  */
-module.exports = function createDPPMock(sinonSandbox) {
+module.exports = function createDPPMock(sinonSandbox = undefined) {
+  // in simplier cases when you do not have acccess
+  // to Sinon sandbox return a simplified version of DPP
+  // with some predefined behaviour
+  if (!sinonSandbox) {
+    return {
+      getProtocolVersion: () => protocolVersion,
+    };
+  }
+
   const dataContract = {
     create: sinonSandbox.stub(),
     createFromObject: sinonSandbox.stub(),
@@ -44,5 +55,6 @@ module.exports = function createDPPMock(sinonSandbox) {
     getDataContract: sinonSandbox.stub(),
     setDataContract: sinonSandbox.stub(),
     getStateRepository: sinonSandbox.stub(),
+    getProtocolVersion: sinonSandbox.stub().returns(protocolVersion),
   };
 };

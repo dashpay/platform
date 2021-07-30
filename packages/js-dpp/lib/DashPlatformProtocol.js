@@ -1,6 +1,8 @@
 const { default: getRE2Class } = require('@dashevo/re2-wasm');
 const createAjv = require('./ajv/createAjv');
 
+const { protocolVersion } = require('./protocolVersion');
+
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
 const DataContractFacade = require('./dataContract/DataContractFacade');
@@ -17,9 +19,14 @@ class DashPlatformProtocol {
    * @param {Object} options
    * @param {StateRepository} [options.stateRepository]
    * @param {JsonSchemaValidator} [options.jsonSchemaValidator]
+   * @param {number} [options.protocolVersion]
    */
   constructor(options = {}) {
     this.options = options;
+
+    this.protocolVersion = this.options.protocolVersion !== undefined
+      ? this.options.protocolVersion
+      : protocolVersion;
 
     this.stateRepository = undefined;
     this.jsonSchemaValidator = undefined;
@@ -47,23 +54,21 @@ class DashPlatformProtocol {
       }
 
       this.dataContract = new DataContractFacade(
-        this.jsonSchemaValidator,
+        this,
         RE2,
       );
 
       this.document = new DocumentFacade(
-        this.stateRepository,
-        this.jsonSchemaValidator,
+        this,
       );
 
       this.stateTransition = new StateTransitionFacade(
-        this.stateRepository,
-        this.jsonSchemaValidator,
+        this,
         RE2,
       );
 
       this.identity = new IdentityFacade(
-        this.jsonSchemaValidator,
+        this,
       );
 
       return true;
@@ -86,6 +91,24 @@ class DashPlatformProtocol {
    */
   getStateRepository() {
     return this.stateRepository;
+  }
+
+  /**
+   * Get protocol version
+   *
+   * @return {number}
+   */
+  getProtocolVersion() {
+    return this.protocolVersion;
+  }
+
+  /**
+   * Set protocol version
+   *
+   * @param {number} version
+   */
+  setProtocolVersion(version) {
+    this.protocolVersion = version;
   }
 }
 

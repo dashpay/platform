@@ -3,6 +3,7 @@ const DocumentFactory = require('../../document/DocumentFactory');
 const generateEntropy = require('../../util/generateEntropy');
 
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
+const createDPPMock = require('../mocks/createDPPMock');
 
 const ownerId = generateRandomIdentifier();
 
@@ -13,6 +14,7 @@ function getPreorderDocumentFixture(options = {}) {
   const dataContract = getDpnsContractFixture();
 
   const factory = new DocumentFactory(
+    createDPPMock(),
     () => ({
       isValid: () => true,
     }),

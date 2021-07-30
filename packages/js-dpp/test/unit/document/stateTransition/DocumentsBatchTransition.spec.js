@@ -3,6 +3,7 @@ const rewiremock = require('rewiremock/node');
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
+const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
 
 describe('DocumentsBatchTransition', () => {
   let stateTransition;
@@ -24,7 +25,7 @@ describe('DocumentsBatchTransition', () => {
       '../../../../lib/util/serializer': serializerMock,
     });
 
-    const factory = new DocumentFactory(undefined, undefined);
+    const factory = new DocumentFactory(createDPPMock(), undefined, undefined);
     stateTransition = factory.createStateTransition({
       create: documents,
     });

@@ -17,6 +17,7 @@ const DocumentFactory = require('../../../lib/document/DocumentFactory');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
+const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('StateTransitionFacade', () => {
   let dpp;
@@ -39,12 +40,12 @@ describe('StateTransitionFacade', () => {
 
     dataContract = getDataContractFixture();
 
-    const dataContractFactory = new DataContractFactory(undefined);
+    const dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
     dataContractCreateTransition = dataContractFactory.createStateTransition(dataContract);
     dataContractCreateTransition.sign(identityPublicKey, privateKey);
 
-    const documentFactory = new DocumentFactory(undefined, undefined);
+    const documentFactory = new DocumentFactory(createDPPMock(), undefined, undefined);
 
     documentsBatchTransition = documentFactory.createStateTransition({
       create: getDocumentsFixture(dataContract),

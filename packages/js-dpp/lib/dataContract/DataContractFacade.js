@@ -9,16 +9,16 @@ const validateDataContractPatternsFactory = require('./validateDataContractPatte
 
 class DataContractFacade {
   /**
-   * @param {JsonSchemaValidator} jsonSchemaValidator
+   * @param {DashPlatformProtocol} dpp
    * @param {RE2} RE2
    */
-  constructor(jsonSchemaValidator, RE2) {
+  constructor(dpp, RE2) {
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
 
     const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
 
     this.validateDataContract = validateDataContractFactory(
-      jsonSchemaValidator,
+      dpp.getJsonSchemaValidator(),
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
@@ -26,6 +26,7 @@ class DataContractFacade {
     );
 
     this.factory = new DataContractFactory(
+      dpp,
       this.validateDataContract,
     );
   }

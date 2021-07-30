@@ -68,13 +68,13 @@ const validateAssetLockTransactionFactory = require('../identity/stateTransition
 
 class StateTransitionFacade {
   /**
-   * @param {StateRepository} stateRepository
-   * @param {JsonSchemaValidator} validator
+   * @param {DashPlatformProtocol} dpp
    * @param {RE2} RE2
    */
-  constructor(stateRepository, validator, RE2) {
-    this.stateRepository = stateRepository;
-    this.validator = validator;
+  constructor(dpp, RE2) {
+    this.stateRepository = dpp.getStateRepository();
+
+    const validator = dpp.getJsonSchemaValidator();
 
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
     const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
@@ -88,10 +88,10 @@ class StateTransitionFacade {
     );
 
     const validateStateTransitionSignature = validateStateTransitionSignatureFactory(
-      stateRepository,
+      this.stateRepository,
     );
 
-    const validateIdentityExistence = validateIdentityExistenceFactory(stateRepository);
+    const validateIdentityExistence = validateIdentityExistenceFactory(this.stateRepository);
 
     // eslint-disable-next-line max-len
     const validateDataContractCreateTransitionStructure = validateDataContractCreateTransitionStructureFactory(
@@ -101,7 +101,7 @@ class StateTransitionFacade {
       validateIdentityExistence,
     );
 
-    this.createStateTransition = createStateTransitionFactory(stateRepository);
+    this.createStateTransition = createStateTransitionFactory(this.stateRepository);
 
     const validateDocumentsBatchTransitionStructure = (
       validateDocumentsBatchTransitionStructureFactory(
@@ -109,23 +109,23 @@ class StateTransitionFacade {
         findDuplicatesByIndices,
         validateStateTransitionSignature,
         validateIdentityExistence,
-        stateRepository,
+        this.stateRepository,
         validator,
         enrichDataContractWithBaseSchema,
       )
     );
 
-    const validateAssetLockTransaction = validateAssetLockTransactionFactory(stateRepository);
+    const validateAssetLockTransaction = validateAssetLockTransactionFactory(this.stateRepository);
 
     const validateInstantAssetLockProofStructure = validateInstantAssetLockProofStructureFactory(
       validator,
-      stateRepository,
+      this.stateRepository,
       validateAssetLockTransaction,
     );
 
     const validateChainAssetLockProofStructure = validateChainAssetLockProofStructureFactory(
       validator,
-      stateRepository,
+      this.stateRepository,
       validateAssetLockTransaction,
     );
 
@@ -177,27 +177,27 @@ class StateTransitionFacade {
 
     const validateDataContractCreateTransitionData = (
       validateDataContractCreateTransitionDataFactory(
-        stateRepository,
+        this.stateRepository,
       )
     );
 
     const validateIdentityPublicKeysUniqueness = validateIdentityPublicKeysUniquenessFactory(
-      stateRepository,
+      this.stateRepository,
     );
 
     const validateIdentityCreateTransitionData = validateIdentityCreateTransitionDataFactory(
-      stateRepository,
+      this.stateRepository,
       validateIdentityPublicKeysUniqueness,
     );
 
     const validateIdentityTopUpTransitionData = validateIdentityTopUpTransitionDataFactory();
 
     const fetchDocuments = fetchDocumentsFactory(
-      stateRepository,
+      this.stateRepository,
     );
 
     const validateDocumentsUniquenessByIndices = validateDocumentsUniquenessByIndicesFactory(
-      stateRepository,
+      this.stateRepository,
     );
 
     const getDataTriggers = getDataTriggersFactory();
@@ -207,7 +207,7 @@ class StateTransitionFacade {
     );
 
     const validateDocumentsBatchTransitionData = validateDocumentsBatchTransitionDataFactory(
-      stateRepository,
+      this.stateRepository,
       fetchDocuments,
       validateDocumentsUniquenessByIndices,
       validatePartialCompoundIndices,
@@ -221,10 +221,12 @@ class StateTransitionFacade {
       [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionData,
     });
 
-    const fetchAssetLockTransactionOutput = fetchAssetLockTransactionOutputFactory(stateRepository);
+    const fetchAssetLockTransactionOutput = fetchAssetLockTransactionOutputFactory(
+      this.stateRepository,
+    );
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
-      stateRepository,
+      this.stateRepository,
       calculateStateTransitionFee,
       fetchAssetLockTransactionOutput,
     );
@@ -235,21 +237,21 @@ class StateTransitionFacade {
     );
 
     const applyDataContractCreateTransition = applyDataContractCreateTransitionFactory(
-      stateRepository,
+      this.stateRepository,
     );
 
     const applyDocumentsBatchTransition = applyDocumentsBatchTransitionFactory(
-      stateRepository,
+      this.stateRepository,
       fetchDocuments,
     );
 
     const applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
-      stateRepository,
+      this.stateRepository,
       fetchAssetLockTransactionOutput,
     );
 
     const applyIdentityTopUpTransition = applyIdentityTopUpTransitionFactory(
-      stateRepository,
+      this.stateRepository,
       fetchAssetLockTransactionOutput,
     );
 

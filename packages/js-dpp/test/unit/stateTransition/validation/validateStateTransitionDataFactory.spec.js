@@ -12,6 +12,7 @@ const DataContractFactory = require('../../../../lib/dataContract/DataContractFa
 
 const InvalidStateTransitionTypeError = require('../../../../lib/errors/InvalidStateTransitionTypeError');
 const ConsensusError = require('../../../../lib/errors/ConsensusError');
+const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
 
 describe('validateStateTransitionDataFactory', () => {
   let validateDataContractSTDataMock;
@@ -21,7 +22,7 @@ describe('validateStateTransitionDataFactory', () => {
   beforeEach(function beforeEach() {
     validateDataContractSTDataMock = this.sinonSandbox.stub();
 
-    const dataContractFactory = new DataContractFactory(undefined);
+    const dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
     const dataContract = getDataContractFixture();
     stateTransition = dataContractFactory.createStateTransition(dataContract);

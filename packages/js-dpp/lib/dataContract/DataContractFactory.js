@@ -10,13 +10,14 @@ const SerializedObjectParsingError = require('../errors/SerializedObjectParsingE
 const generateEntropy = require('../util/generateEntropy');
 
 const { decode } = require('../util/serializer');
-const { protocolVersion } = require('../protocolVersion');
 
 class DataContractFactory {
   /**
+   * @param {DashPlatformProtocol} dpp
    * @param {validateDataContract} validateDataContract
    */
-  constructor(validateDataContract) {
+  constructor(dpp, validateDataContract) {
+    this.dpp = dpp;
     this.validateDataContract = validateDataContract;
   }
 
@@ -33,7 +34,7 @@ class DataContractFactory {
     const dataContractId = generateDataContractId(ownerId, dataContractEntropy);
 
     const dataContract = new DataContract({
-      protocolVersion,
+      protocolVersion: this.dpp.getProtocolVersion(),
       $schema: DataContract.DEFAULTS.SCHEMA,
       $id: dataContractId,
       ownerId,
@@ -100,7 +101,7 @@ class DataContractFactory {
    */
   createStateTransition(dataContract) {
     return new DataContractCreateTransition({
-      protocolVersion,
+      protocolVersion: this.dpp.getProtocolVersion(),
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });

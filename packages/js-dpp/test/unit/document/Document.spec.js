@@ -11,6 +11,7 @@ const DocumentCreateTransition = require(
 const Identifier = require('../../../lib/identifier/Identifier');
 
 const { protocolVersion } = require('../../../lib/protocolVersion');
+const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('Document', () => {
   let lodashGetMock;
@@ -43,7 +44,7 @@ describe('Document', () => {
 
     const ownerId = generateRandomIdentifier().toBuffer();
 
-    const dataContractFactory = new DataContractFactory(() => {});
+    const dataContractFactory = new DataContractFactory(createDPPMock(), () => {});
 
     dataContract = dataContractFactory.create(ownerId, {
       test: {

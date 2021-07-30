@@ -19,14 +19,14 @@ const SerializedObjectParsingError = require('../errors/SerializedObjectParsingE
 
 const generateDocumentId = require('./generateDocumentId');
 
-const { protocolVersion } = require('../protocolVersion');
-
 class DocumentFactory {
   /**
+   * @param {DashPlatformProtocol} dpp
    * @param {validateDocument} validateDocument
    * @param {fetchAndValidateDataContract} fetchAndValidateDataContract
    */
-  constructor(validateDocument, fetchAndValidateDataContract) {
+  constructor(dpp, validateDocument, fetchAndValidateDataContract) {
+    this.dpp = dpp;
     this.validateDocument = validateDocument;
     this.fetchAndValidateDataContract = fetchAndValidateDataContract;
   }
@@ -56,7 +56,7 @@ class DocumentFactory {
     );
 
     const rawDocument = {
-      $protocolVersion: protocolVersion,
+      $protocolVersion: this.dpp.getProtocolVersion(),
       $id: id,
       $type: type,
       $dataContractId: dataContractId,
@@ -309,7 +309,7 @@ class DocumentFactory {
       .map((document) => document.getDataContract());
 
     return new DocumentsBatchTransition({
-      protocolVersion,
+      protocolVersion: this.dpp.getProtocolVersion(),
       ownerId,
       transitions: rawDocumentTransitions,
     }, dataContracts);

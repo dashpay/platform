@@ -24,6 +24,7 @@ const ConsensusError = require('../../../lib/errors/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('DocumentFactory', () => {
   let decodeMock;
@@ -72,6 +73,7 @@ describe('DocumentFactory', () => {
     });
 
     factory = new DocumentFactory(
+      createDPPMock(),
       validateDocumentMock,
       fetchAndValidateDataContractMock,
     );

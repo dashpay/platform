@@ -1,5 +1,7 @@
 const { default: Ajv } = require('ajv/dist/2020');
 
+const { protocolVersion } = require('../../lib/protocolVersion');
+
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
 const JsonSchemaValidator = require('../../lib/validation/JsonSchemaValidator');
 
@@ -31,6 +33,12 @@ describe('DashPlatformProtocol', () => {
       expect(jsonSchemaValidator).to.be.instanceOf(JsonSchemaValidator);
       expect(jsonSchemaValidator.ajv).to.be.instanceOf(Ajv);
     });
+
+    it('should set default protocol version', () => {
+      dpp = new DashPlatformProtocol();
+
+      expect(dpp.protocolVersion).to.equal(protocolVersion);
+    });
   });
 
   describe('getStateRepository', () => {
@@ -46,6 +54,26 @@ describe('DashPlatformProtocol', () => {
       const result = dpp.getJsonSchemaValidator();
 
       expect(result).to.equal(jsonSchemaValidatorMock);
+    });
+  });
+
+  describe('setProtocolVersion', () => {
+    it('should set protocol version', () => {
+      expect(dpp.protocolVersion).to.equal(protocolVersion);
+
+      dpp.setProtocolVersion(42);
+
+      expect(dpp.protocolVersion).to.equal(42);
+    });
+  });
+
+  describe('getProtocolVersion', () => {
+    it('should get protocol version', () => {
+      expect(dpp.getProtocolVersion()).to.equal(protocolVersion);
+
+      dpp.setProtocolVersion(42);
+
+      expect(dpp.getProtocolVersion()).to.equal(42);
     });
   });
 });

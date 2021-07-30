@@ -10,17 +10,17 @@ const validatePublicKeysFactory = require('./validation/validatePublicKeysFactor
  */
 class IdentityFacade {
   /**
-   * @param {JsonSchemaValidator} validator
+   * @param {DashPlatformProtocol} dpp
    */
-  constructor(validator) {
+  constructor(dpp) {
     const validatePublicKeys = validatePublicKeysFactory(
-      validator,
+      dpp.getJsonSchemaValidator(),
     );
     this.validateIdentity = validateIdentityFactory(
-      validator,
+      dpp.getJsonSchemaValidator(),
       validatePublicKeys,
     );
-    this.factory = new IdentityFactory(this.validateIdentity);
+    this.factory = new IdentityFactory(dpp, this.validateIdentity);
   }
 
   /**

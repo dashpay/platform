@@ -5,6 +5,7 @@ const getDataContractFixture = require('./getDataContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
 
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
+const createDPPMock = require('../mocks/createDPPMock');
 
 const ownerId = generateRandomIdentifier();
 
@@ -14,6 +15,7 @@ const ownerId = generateRandomIdentifier();
  */
 module.exports = function getDocumentsFixture(dataContract = getDataContractFixture()) {
   const factory = new DocumentFactory(
+    createDPPMock(),
     () => ({
       isValid: () => true,
     }),

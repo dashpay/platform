@@ -1,4 +1,5 @@
 const DocumentFactory = require('../../document/DocumentFactory');
+const createDPPMock = require('../mocks/createDPPMock');
 
 const getDocumentsFixture = require('./getDocumentsFixture');
 
@@ -11,7 +12,11 @@ function getDocumentTransitionsFixture(documents = {}) {
 
   const fixtureDocuments = getDocumentsFixture();
 
-  const factory = new DocumentFactory(() => {}, () => {});
+  const factory = new DocumentFactory(
+    createDPPMock(),
+    () => {},
+    () => {},
+  );
 
   const stateTransition = factory.createStateTransition({
     create: (createDocuments || fixtureDocuments),

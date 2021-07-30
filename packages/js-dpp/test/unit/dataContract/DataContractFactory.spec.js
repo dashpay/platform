@@ -12,6 +12,7 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 const InvalidDataContractError = require('../../../lib/dataContract/errors/InvalidDataContractError');
 const ConsensusError = require('../../../lib/errors/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
+const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('DataContractFactory', () => {
   let DataContractFactory;
@@ -47,6 +48,7 @@ describe('DataContractFactory', () => {
     });
 
     factory = new DataContractFactory(
+      createDPPMock(),
       validateDataContractMock,
     );
   });

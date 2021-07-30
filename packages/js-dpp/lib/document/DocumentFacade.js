@@ -9,22 +9,22 @@ const MissingOptionError = require('../errors/MissingOptionError');
 
 class DocumentFacade {
   /**
-   * @param {StateRepository} stateRepository
-   * @param {JsonSchemaValidator} validator
+   * @param {DashPlatformProtocol} dpp
    */
-  constructor(stateRepository, validator) {
-    this.stateRepository = stateRepository;
+  constructor(dpp) {
+    this.stateRepository = dpp.getStateRepository();
 
     this.validateDocument = validateDocumentFactory(
-      validator,
+      dpp.getJsonSchemaValidator(),
       enrichDataContractWithBaseSchema,
     );
 
     this.fetchAndValidateDataContract = fetchAndValidateDataContractFactory(
-      stateRepository,
+      this.stateRepository,
     );
 
     this.factory = new DocumentFactory(
+      dpp,
       this.validateDocument,
       this.fetchAndValidateDataContract,
     );

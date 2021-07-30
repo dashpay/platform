@@ -11,13 +11,13 @@ const SerializedObjectParsingError = require('../errors/SerializedObjectParsingE
 const InstantAssetLockProof = require('./stateTransitions/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./stateTransitions/assetLockProof/chain/ChainAssetLockProof');
 
-const { protocolVersion } = require('../protocolVersion');
-
 class IdentityFactory {
   /**
+   * @param {DashPlatformProtocol} dpp
    * @param {validateIdentity} validateIdentity
    */
-  constructor(validateIdentity) {
+  constructor(dpp, validateIdentity) {
+    this.dpp = dpp;
     this.validateIdentity = validateIdentity;
   }
 
@@ -30,7 +30,7 @@ class IdentityFactory {
    */
   create(assetLockProof, publicKeys) {
     const identity = new Identity({
-      protocolVersion,
+      protocolVersion: this.dpp.getProtocolVersion(),
       id: assetLockProof.createIdentifier(),
       balance: 0,
       publicKeys: publicKeys.map((publicKey, i) => ({
@@ -132,7 +132,7 @@ class IdentityFactory {
    */
   createIdentityCreateTransition(identity) {
     const stateTransition = new IdentityCreateTransition({
-      protocolVersion,
+      protocolVersion: this.dpp.getProtocolVersion(),
       assetLockProof: identity.getAssetLockProof().toObject(),
     });
 
@@ -150,7 +150,7 @@ class IdentityFactory {
    */
   createIdentityTopUpTransition(identityId, assetLockProof) {
     return new IdentityTopUpTransition({
-      protocolVersion,
+      protocolVersion: this.dpp.getProtocolVersion(),
       identityId,
       assetLockProof: assetLockProof.toObject(),
     });

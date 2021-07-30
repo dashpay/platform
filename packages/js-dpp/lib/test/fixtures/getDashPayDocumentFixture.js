@@ -1,6 +1,7 @@
 const getDashPayContractFixture = require('./getDashPayContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
+const createDPPMock = require('../mocks/createDPPMock');
 
 const ownerId = generateRandomIdentifier();
 const dataContract = getDashPayContractFixture();
@@ -10,6 +11,7 @@ const dataContract = getDashPayContractFixture();
  */
 function getContactRequestDocumentFixture(options = {}) {
   const factory = new DocumentFactory(
+    createDPPMock(),
     () => ({
       isValid: () => true,
     }),

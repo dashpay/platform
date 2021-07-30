@@ -5,6 +5,7 @@ const DataContractFactory = require('../../dataContract/DataContractFactory');
 const randomOwnerId = generateRandomIdentifier();
 
 const Identifier = require('../../identifier/Identifier');
+const createDPPMock = require('../mocks/createDPPMock');
 
 /**
  *
@@ -192,9 +193,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
     },
   };
 
-  const factory = new DataContractFactory(
-    () => {},
-  );
+  const factory = new DataContractFactory(createDPPMock(), () => {});
 
   const dataContract = factory.create(ownerId, documents);
 
