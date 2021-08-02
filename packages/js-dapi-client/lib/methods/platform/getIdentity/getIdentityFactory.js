@@ -11,6 +11,7 @@ const bs58 = require('bs58');
 
 const GetIdentityResponse = require('./GetIdentityResponse');
 const NotFoundError = require('../../errors/NotFoundError');
+const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -38,23 +39,35 @@ function getIdentityFactory(grpcTransport) {
     getIdentityRequest.setId(id);
     getIdentityRequest.setProve(!!options.prove);
 
-    let getIdentityResponse;
-    try {
-      getIdentityResponse = await grpcTransport.request(
-        PlatformPromiseClient,
-        'getIdentity',
-        getIdentityRequest,
-        options,
-      );
-    } catch (e) {
-      if (e.code === grpcErrorCodes.NOT_FOUND) {
-        throw new NotFoundError(`Identity ${bs58.encode(id)} is not found`);
-      }
+    let lastError;
 
-      throw e;
+    // TODO: simple retry before the dapi versioning is properly implemented
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const getIdentityResponse = await grpcTransport.request(
+          PlatformPromiseClient,
+          'getIdentity',
+          getIdentityRequest,
+          options,
+        );
+
+        return GetIdentityResponse.createFromProto(getIdentityResponse);
+      } catch (e) {
+        if (e.code === grpcErrorCodes.NOT_FOUND) {
+          throw new NotFoundError(`Identity ${bs58.encode(id)} is not found`);
+        }
+        if (e instanceof InvalidResponseError) {
+          lastError = e;
+        } else {
+          throw e;
+        }
+      }
     }
 
-    return GetIdentityResponse.createFromProto(getIdentityResponse);
+    // If we made it past the cycle it means that the retry didn't work,
+    // and we're throwing the last error encountered
+    throw lastError;
   }
 
   return getIdentity;

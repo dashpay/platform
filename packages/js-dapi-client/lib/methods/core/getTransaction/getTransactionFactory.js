@@ -8,6 +8,7 @@ const {
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const GetTransactionResponse = require('./GetTransactionResponse');
 const NotFoundError = require('../../errors/NotFoundError');
+const InvalidResponseError = require('../../platform/response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -26,23 +27,35 @@ function getTransactionFactory(grpcTransport) {
     const getTransactionRequest = new GetTransactionRequest();
     getTransactionRequest.setId(id);
 
-    let response;
-    try {
-      response = await grpcTransport.request(
-        CorePromiseClient,
-        'getTransaction',
-        getTransactionRequest,
-        options,
-      );
-    } catch (e) {
-      if (e.code === grpcErrorCodes.NOT_FOUND) {
-        throw new NotFoundError(`Transaction ${id} is not found`);
-      }
+    let lastError;
 
-      throw e;
+    // TODO: simple retry before the dapi versioning is properly implemented
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await grpcTransport.request(
+          CorePromiseClient,
+          'getTransaction',
+          getTransactionRequest,
+          options,
+        );
+
+        return GetTransactionResponse.createFromProto(response);
+      } catch (e) {
+        if (e.code === grpcErrorCodes.NOT_FOUND) {
+          throw new NotFoundError(`Transaction ${id} is not found`);
+        }
+        if (e instanceof InvalidResponseError) {
+          lastError = e;
+        } else {
+          throw e;
+        }
+      }
     }
 
-    return GetTransactionResponse.createFromProto(response);
+    // If we made it past the cycle it means that the retry didn't work,
+    // and we're throwing the last error encountered
+    throw lastError;
   }
 
   return getTransaction;

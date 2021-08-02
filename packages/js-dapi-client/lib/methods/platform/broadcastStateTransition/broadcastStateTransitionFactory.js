@@ -5,6 +5,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 const BroadcastStateTransitionResponse = require('./BroadcastStateTransitionResponse');
+const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -23,14 +24,31 @@ function broadcastStateTransitionFactory(grpcTransport) {
     const broadcastStateTransitionRequest = new BroadcastStateTransitionRequest();
     broadcastStateTransitionRequest.setStateTransition(stateTransition);
 
-    const broadcastStateTransitionResponse = await grpcTransport.request(
-      PlatformPromiseClient,
-      'broadcastStateTransition',
-      broadcastStateTransitionRequest,
-      options,
-    );
+    let lastError;
 
-    return BroadcastStateTransitionResponse.createFromProto(broadcastStateTransitionResponse);
+    // TODO: simple retry before the dapi versioning is properly implemented
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const broadcastStateTransitionResponse = await grpcTransport.request(
+          PlatformPromiseClient,
+          'broadcastStateTransition',
+          broadcastStateTransitionRequest,
+          options,
+        );
+        return BroadcastStateTransitionResponse.createFromProto(broadcastStateTransitionResponse);
+      } catch (e) {
+        if (e instanceof InvalidResponseError) {
+          lastError = e;
+        } else {
+          throw e;
+        }
+      }
+    }
+
+    // If we made it past the cycle it means that the retry didn't work,
+    // and we're throwing the last error encountered
+    throw lastError;
   }
 
   return broadcastStateTransition;

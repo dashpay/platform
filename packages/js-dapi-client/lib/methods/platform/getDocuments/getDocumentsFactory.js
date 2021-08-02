@@ -8,6 +8,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const GetDocumentsResponse = require('./GetDocumentsResponse');
+const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -63,14 +64,32 @@ function getDocumentsFactory(grpcTransport) {
     getDocumentsRequest.setStartAt(startAt);
     getDocumentsRequest.setProve(!!options.prove);
 
-    const getDocumentsResponse = await grpcTransport.request(
-      PlatformPromiseClient,
-      'getDocuments',
-      getDocumentsRequest,
-      options,
-    );
+    let lastError;
 
-    return GetDocumentsResponse.createFromProto(getDocumentsResponse);
+    // TODO: simple retry before the dapi versioning is properly implemented
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const getDocumentsResponse = await grpcTransport.request(
+          PlatformPromiseClient,
+          'getDocuments',
+          getDocumentsRequest,
+          options,
+        );
+
+        return GetDocumentsResponse.createFromProto(getDocumentsResponse);
+      } catch (e) {
+        if (e instanceof InvalidResponseError) {
+          lastError = e;
+        } else {
+          throw e;
+        }
+      }
+    }
+
+    // If we made it past the cycle it means that the retry didn't work,
+    // and we're throwing the last error encountered
+    throw lastError;
   }
 
   return getDocuments;

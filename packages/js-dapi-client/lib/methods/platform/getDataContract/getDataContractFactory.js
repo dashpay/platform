@@ -10,6 +10,7 @@ const bs58 = require('bs58');
 
 const GetDataContractResponse = require('./GetDataContractResponse');
 const NotFoundError = require('../../errors/NotFoundError');
+const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -38,23 +39,36 @@ function getDataContractFactory(grpcTransport) {
     getDataContractRequest.setId(contractId);
     getDataContractRequest.setProve(!!options.prove);
 
-    let getDataContractResponse;
-    try {
-      getDataContractResponse = await grpcTransport.request(
-        PlatformPromiseClient,
-        'getDataContract',
-        getDataContractRequest,
-        options,
-      );
-    } catch (e) {
-      if (e.code === grpcErrorCodes.NOT_FOUND) {
-        throw new NotFoundError(`DataContract ${bs58.encode(contractId)} is not found`);
-      }
+    let lastError;
 
-      throw e;
+    // TODO: simple retry before the dapi versioning is properly implemented
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const getDataContractResponse = await grpcTransport.request(
+          PlatformPromiseClient,
+          'getDataContract',
+          getDataContractRequest,
+          options,
+        );
+
+        return GetDataContractResponse.createFromProto(getDataContractResponse);
+      } catch (e) {
+        if (e.code === grpcErrorCodes.NOT_FOUND) {
+          throw new NotFoundError(`DataContract ${bs58.encode(contractId)} is not found`);
+        }
+
+        if (e instanceof InvalidResponseError) {
+          lastError = e;
+        } else {
+          throw e;
+        }
+      }
     }
 
-    return GetDataContractResponse.createFromProto(getDataContractResponse);
+    // If we made it past the cycle it means that the retry didn't work,
+    // and we're throwing the last error encountered
+    throw lastError;
   }
 
   return getDataContract;
