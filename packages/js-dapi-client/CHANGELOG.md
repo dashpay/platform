@@ -1,3 +1,12 @@
+## [0.20.1](https://github.com/dashevo/dapi-client/compare/v0.20.0...v0.20.1) (2021-05-26)
+
+
+### Bug Fixes
+
+* crash when connecting to an older version of dapi ([#252](https://github.com/dashevo/dapi-client/issues/252), [#253](https://github.com/dashevo/dapi-client/issues/253))
+
+
+
 # [0.20.0](https://github.com/dashevo/dapi-client/compare/v0.19.3...v0.20.0) (2021-07-09)
 
 
