@@ -142,7 +142,10 @@ describe('DataContractFactory', () => {
 
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawDataContract);
 
-      expect(decodeMock).to.have.been.calledOnceWith(serializedDataContract);
+      // cut version information
+      const dataToDecode = serializedDataContract.slice(4, serializedDataContract.length);
+
+      expect(decodeMock).to.have.been.calledOnceWith(dataToDecode);
     });
 
     it('should throw consensus error if `decode` fails', async () => {

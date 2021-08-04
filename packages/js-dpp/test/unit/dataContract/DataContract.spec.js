@@ -284,15 +284,20 @@ describe('DataContract', () => {
 
   describe('#toBuffer', () => {
     it('should return DataContract as a Buffer', () => {
-      const serializedDocument = '123';
+      const serializedDataContract = Buffer.from('123');
 
-      encodeMock.returns(serializedDocument);
+      encodeMock.returns(serializedDataContract);
 
       const result = dataContract.toBuffer();
 
-      expect(result).to.equal(serializedDocument);
+      const dataContractToEncode = dataContract.toObject();
+      delete dataContractToEncode.protocolVersion;
 
-      expect(encodeMock).to.have.been.calledOnceWith(dataContract.toObject());
+      const protocolVersionUInt32 = Buffer.alloc(4);
+      protocolVersionUInt32.writeUInt32BE(dataContract.getProtocolVersion(), 0);
+
+      expect(encodeMock).to.have.been.calledOnceWith(dataContractToEncode);
+      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDataContract]));
     });
   });
 

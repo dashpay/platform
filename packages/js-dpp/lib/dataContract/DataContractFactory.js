@@ -80,7 +80,9 @@ class DataContractFactory {
   async createFromBuffer(buffer, options = { }) {
     let rawDataContract;
     try {
-      rawDataContract = decode(buffer);
+      // first 4 bytes are protocol version
+      rawDataContract = decode(buffer.slice(4, buffer.length));
+      rawDataContract.protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
     } catch (error) {
       throw new InvalidDataContractError([
         new SerializedObjectParsingError(
