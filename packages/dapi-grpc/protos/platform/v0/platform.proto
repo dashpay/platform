@@ -12,9 +12,16 @@ service Platform {
   rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
 }
 
+message StoreTreeProofs {
+  bytes identities_proof = 1;
+  bytes public_key_hashes_to_identity_ids_proof = 2;
+  bytes data_contracts_proof = 3;
+  bytes documents_proof = 4;
+}
+
 message Proof {
   bytes root_tree_proof = 1;
-  bytes store_tree_proof = 2;
+  StoreTreeProofs store_tree_proofs = 2;
   bytes signature_llmq_hash = 3;
   bytes signature = 4;
 }

@@ -30,6 +30,7 @@ CF_EXTERN_C_BEGIN
 @class Proof;
 @class ResponseMetadata;
 @class StateTransitionBroadcastError;
+@class StoreTreeProofs;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -48,11 +49,32 @@ NS_ASSUME_NONNULL_BEGIN
 @interface PlatformRoot : GPBRootObject
 @end
 
+#pragma mark - StoreTreeProofs
+
+typedef GPB_ENUM(StoreTreeProofs_FieldNumber) {
+  StoreTreeProofs_FieldNumber_IdentitiesProof = 1,
+  StoreTreeProofs_FieldNumber_PublicKeyHashesToIdentityIdsProof = 2,
+  StoreTreeProofs_FieldNumber_DataContractsProof = 3,
+  StoreTreeProofs_FieldNumber_DocumentsProof = 4,
+};
+
+@interface StoreTreeProofs : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identitiesProof;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHashesToIdentityIdsProof;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractsProof;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentsProof;
+
+@end
+
 #pragma mark - Proof
 
 typedef GPB_ENUM(Proof_FieldNumber) {
   Proof_FieldNumber_RootTreeProof = 1,
-  Proof_FieldNumber_StoreTreeProof = 2,
+  Proof_FieldNumber_StoreTreeProofs = 2,
   Proof_FieldNumber_SignatureLlmqHash = 3,
   Proof_FieldNumber_Signature = 4,
 };
@@ -61,7 +83,9 @@ typedef GPB_ENUM(Proof_FieldNumber) {
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *rootTreeProof;
 
-@property(nonatomic, readwrite, copy, null_resettable) NSData *storeTreeProof;
+@property(nonatomic, readwrite, strong, null_resettable) StoreTreeProofs *storeTreeProofs;
+/** Test to see if @c storeTreeProofs has been set. */
+@property(nonatomic, readwrite) BOOL hasStoreTreeProofs;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *signatureLlmqHash;
 
