@@ -133,11 +133,14 @@ message ConsensusParamsBlock {
 }
 
 message ConsensusParamsEvidence {
-  string max_age = 1;
+  string max_age_num_blocks = 1;
+  string max_age_duration = 2;
+  string max_bytes = 3;
 }
 
 message GetConsensusParamsRequest {
-  bool prove = 1;
+  int64 height = 1;
+  bool prove = 2;
 }
 
 message GetConsensusParamsResponse {

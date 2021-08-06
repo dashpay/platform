@@ -441,22 +441,31 @@ typedef GPB_ENUM(ConsensusParamsBlock_FieldNumber) {
 #pragma mark - ConsensusParamsEvidence
 
 typedef GPB_ENUM(ConsensusParamsEvidence_FieldNumber) {
-  ConsensusParamsEvidence_FieldNumber_MaxAge = 1,
+  ConsensusParamsEvidence_FieldNumber_MaxAgeNumBlocks = 1,
+  ConsensusParamsEvidence_FieldNumber_MaxAgeDuration = 2,
+  ConsensusParamsEvidence_FieldNumber_MaxBytes = 3,
 };
 
 @interface ConsensusParamsEvidence : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *maxAge;
+@property(nonatomic, readwrite, copy, null_resettable) NSString *maxAgeNumBlocks;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *maxAgeDuration;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *maxBytes;
 
 @end
 
 #pragma mark - GetConsensusParamsRequest
 
 typedef GPB_ENUM(GetConsensusParamsRequest_FieldNumber) {
-  GetConsensusParamsRequest_FieldNumber_Prove = 1,
+  GetConsensusParamsRequest_FieldNumber_Height = 1,
+  GetConsensusParamsRequest_FieldNumber_Prove = 2,
 };
 
 @interface GetConsensusParamsRequest : GPBMessage
+
+@property(nonatomic, readwrite) int64_t height;
 
 @property(nonatomic, readwrite) BOOL prove;
 
