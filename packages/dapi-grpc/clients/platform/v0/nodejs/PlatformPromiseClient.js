@@ -37,6 +37,8 @@ const {
             GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
             WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
             WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
+            GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
+            GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
           },
         },
       },
@@ -52,6 +54,7 @@ const {
   GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
   GetIdentityIdsByPublicKeyHashesResponse: ProtocGetIdentityIdsByPublicKeyHashesResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
+  GetConsensusParamsResponse: ProtocGetConsensusParamsResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -96,6 +99,10 @@ class PlatformPromiseClient {
 
     this.client.waitForStateTransitionResult = promisify(
       this.client.waitForStateTransitionResult.bind(this.client),
+    );
+
+    this.client.getConsensusParams = promisify(
+      this.client.getConsensusParams.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -318,6 +325,39 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSWaitForStateTransitionResultRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetConsensusParamsRequest} getConsensusParamsRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetConsensusParamsResponse>}
+   */
+  getConsensusParams(
+    getConsensusParamsRequest, metadata = {}, options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getConsensusParams(
+      getConsensusParamsRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetConsensusParamsResponse,
+              PBJSGetConsensusParamsResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetConsensusParamsRequest,
             ),
           ),
         ],

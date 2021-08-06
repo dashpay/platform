@@ -27,6 +27,8 @@
 
 CF_EXTERN_C_BEGIN
 
+@class ConsensusParamsBlock;
+@class ConsensusParamsEvidence;
 @class Proof;
 @class ResponseMetadata;
 @class StateTransitionBroadcastError;
@@ -417,6 +419,67 @@ typedef GPB_ENUM(WaitForStateTransitionResultResponse_Responses_OneOfCase) {
  * Clears whatever value was set for the oneof 'responses'.
  **/
 void WaitForStateTransitionResultResponse_ClearResponsesOneOfCase(WaitForStateTransitionResultResponse *message);
+
+#pragma mark - ConsensusParamsBlock
+
+typedef GPB_ENUM(ConsensusParamsBlock_FieldNumber) {
+  ConsensusParamsBlock_FieldNumber_MaxBytes = 1,
+  ConsensusParamsBlock_FieldNumber_MaxGas = 2,
+  ConsensusParamsBlock_FieldNumber_TimeIotaMs = 3,
+};
+
+@interface ConsensusParamsBlock : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *maxBytes;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *maxGas;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *timeIotaMs;
+
+@end
+
+#pragma mark - ConsensusParamsEvidence
+
+typedef GPB_ENUM(ConsensusParamsEvidence_FieldNumber) {
+  ConsensusParamsEvidence_FieldNumber_MaxAge = 1,
+};
+
+@interface ConsensusParamsEvidence : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *maxAge;
+
+@end
+
+#pragma mark - GetConsensusParamsRequest
+
+typedef GPB_ENUM(GetConsensusParamsRequest_FieldNumber) {
+  GetConsensusParamsRequest_FieldNumber_Prove = 1,
+};
+
+@interface GetConsensusParamsRequest : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetConsensusParamsResponse
+
+typedef GPB_ENUM(GetConsensusParamsResponse_FieldNumber) {
+  GetConsensusParamsResponse_FieldNumber_Block = 1,
+  GetConsensusParamsResponse_FieldNumber_Evidence = 2,
+};
+
+@interface GetConsensusParamsResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) ConsensusParamsBlock *block;
+/** Test to see if @c block has been set. */
+@property(nonatomic, readwrite) BOOL hasBlock;
+
+@property(nonatomic, readwrite, strong, null_resettable) ConsensusParamsEvidence *evidence;
+/** Test to see if @c evidence has been set. */
+@property(nonatomic, readwrite) BOOL hasEvidence;
+
+@end
 
 NS_ASSUME_NONNULL_END
 

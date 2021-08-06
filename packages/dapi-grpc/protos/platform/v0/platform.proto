@@ -10,6 +10,7 @@ service Platform {
   rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
   rpc getIdentityIdsByPublicKeyHashes (GetIdentityIdsByPublicKeyHashesRequest) returns (GetIdentityIdsByPublicKeyHashesResponse);
   rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
+  rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
 }
 
 message StoreTreeProofs {
@@ -123,4 +124,23 @@ message WaitForStateTransitionResultResponse {
     Proof proof = 2;
   }
   ResponseMetadata metadata = 3;
+}
+
+message ConsensusParamsBlock {
+  string max_bytes = 1;
+  string max_gas = 2;
+  string time_iota_ms = 3;
+}
+
+message ConsensusParamsEvidence {
+  string max_age = 1;
+}
+
+message GetConsensusParamsRequest {
+  bool prove = 1;
+}
+
+message GetConsensusParamsResponse {
+  ConsensusParamsBlock block = 1;
+  ConsensusParamsEvidence evidence = 2;
 }

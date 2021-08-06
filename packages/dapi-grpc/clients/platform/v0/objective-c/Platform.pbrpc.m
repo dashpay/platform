@@ -106,4 +106,16 @@
              responseClass:[WaitForStateTransitionResultResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
+#pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
+
+- (void)getConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetConsensusParamsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getConsensusParams"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetConsensusParamsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
 @end

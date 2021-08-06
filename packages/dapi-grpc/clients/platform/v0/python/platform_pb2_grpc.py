@@ -49,6 +49,11 @@ class PlatformStub(object):
         request_serializer=platform__pb2.WaitForStateTransitionResultRequest.SerializeToString,
         response_deserializer=platform__pb2.WaitForStateTransitionResultResponse.FromString,
         )
+    self.getConsensusParams = channel.unary_unary(
+        '/org.dash.platform.dapi.v0.Platform/getConsensusParams',
+        request_serializer=platform__pb2.GetConsensusParamsRequest.SerializeToString,
+        response_deserializer=platform__pb2.GetConsensusParamsResponse.FromString,
+        )
 
 
 class PlatformServicer(object):
@@ -104,6 +109,13 @@ class PlatformServicer(object):
     context.set_details('Method not implemented!')
     raise NotImplementedError('Method not implemented!')
 
+  def getConsensusParams(self, request, context):
+    # missing associated documentation comment in .proto file
+    pass
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
   rpc_method_handlers = {
@@ -141,6 +153,11 @@ def add_PlatformServicer_to_server(servicer, server):
           servicer.waitForStateTransitionResult,
           request_deserializer=platform__pb2.WaitForStateTransitionResultRequest.FromString,
           response_serializer=platform__pb2.WaitForStateTransitionResultResponse.SerializeToString,
+      ),
+      'getConsensusParams': grpc.unary_unary_rpc_method_handler(
+          servicer.getConsensusParams,
+          request_deserializer=platform__pb2.GetConsensusParamsRequest.FromString,
+          response_serializer=platform__pb2.GetConsensusParamsResponse.SerializeToString,
       ),
   }
   generic_handler = grpc.method_handlers_generic_handler(
