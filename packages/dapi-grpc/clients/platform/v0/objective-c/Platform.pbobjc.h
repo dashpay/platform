@@ -467,6 +467,8 @@ typedef GPB_ENUM(GetConsensusParamsRequest_FieldNumber) {
 typedef GPB_ENUM(GetConsensusParamsResponse_FieldNumber) {
   GetConsensusParamsResponse_FieldNumber_Block = 1,
   GetConsensusParamsResponse_FieldNumber_Evidence = 2,
+  GetConsensusParamsResponse_FieldNumber_Proof = 3,
+  GetConsensusParamsResponse_FieldNumber_Metadata = 4,
 };
 
 @interface GetConsensusParamsResponse : GPBMessage
@@ -478,6 +480,14 @@ typedef GPB_ENUM(GetConsensusParamsResponse_FieldNumber) {
 @property(nonatomic, readwrite, strong, null_resettable) ConsensusParamsEvidence *evidence;
 /** Test to see if @c evidence has been set. */
 @property(nonatomic, readwrite) BOOL hasEvidence;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
 
 @end
 
