@@ -1341,15 +1341,11 @@ typedef struct GetConsensusParamsRequest__storage_ {
 
 @dynamic hasBlock, block;
 @dynamic hasEvidence, evidence;
-@dynamic hasProof, proof;
-@dynamic hasMetadata, metadata;
 
 typedef struct GetConsensusParamsResponse__storage_ {
   uint32_t _has_storage_[1];
   ConsensusParamsBlock *block;
   ConsensusParamsEvidence *evidence;
-  Proof *proof;
-  ResponseMetadata *metadata;
 } GetConsensusParamsResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -1373,24 +1369,6 @@ typedef struct GetConsensusParamsResponse__storage_ {
         .number = GetConsensusParamsResponse_FieldNumber_Evidence,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetConsensusParamsResponse__storage_, evidence),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "proof",
-        .dataTypeSpecific.className = GPBStringifySymbol(Proof),
-        .number = GetConsensusParamsResponse_FieldNumber_Proof,
-        .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetConsensusParamsResponse__storage_, proof),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "metadata",
-        .dataTypeSpecific.className = GPBStringifySymbol(ResponseMetadata),
-        .number = GetConsensusParamsResponse_FieldNumber_Metadata,
-        .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetConsensusParamsResponse__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },

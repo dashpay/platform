@@ -143,6 +143,4 @@ message GetConsensusParamsRequest {
 message GetConsensusParamsResponse {
   ConsensusParamsBlock block = 1;
   ConsensusParamsEvidence evidence = 2;
-  Proof proof = 3;
-  ResponseMetadata metadata = 4;
 }
