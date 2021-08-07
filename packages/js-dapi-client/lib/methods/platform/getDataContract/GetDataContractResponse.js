@@ -1,7 +1,7 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const Metadata = require('../response/Metadata');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const Proof = require('../response/Proof');
+const createProofFromRawProof = require('../response/createProofFromRawProof');
 
 class GetDataContractResponse extends AbstractResponse {
   /**
@@ -24,7 +24,7 @@ class GetDataContractResponse extends AbstractResponse {
 
   /**
    * @param proto
-   * @return {GetDataContractResponse}
+   * @returns {GetDataContractResponse}
    */
   static createFromProto(proto) {
     const dataContract = proto.getDataContract();
@@ -42,12 +42,7 @@ class GetDataContractResponse extends AbstractResponse {
 
     let proof;
     if (rawProof) {
-      proof = new Proof({
-        rootTreeProof: Buffer.from(rawProof.getRootTreeProof()),
-        storeTreeProof: Buffer.from(rawProof.getStoreTreeProof()),
-        signatureLLMQHash: Buffer.from(rawProof.getSignatureLlmqHash()),
-        signature: Buffer.from(rawProof.getSignature()),
-      });
+      proof = createProofFromRawProof(rawProof);
     }
 
     return new GetDataContractResponse(

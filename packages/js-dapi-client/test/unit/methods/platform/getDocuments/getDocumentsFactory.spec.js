@@ -8,6 +8,7 @@ const {
     GetDocumentsResponse,
     ResponseMetadata,
     Proof: ProofResponse,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -31,6 +32,7 @@ describe('getDocumentsFactory', () => {
   let proofFixture;
   let proofResponse;
   let response;
+  let storeTreeProofsProto;
 
   beforeEach(function beforeEach() {
     type = 'niceDocument';
@@ -69,10 +71,17 @@ describe('getDocumentsFactory', () => {
     getDocuments = getDocumentsFactory(grpcTransportMock);
 
     proofResponse = new ProofResponse();
+    storeTreeProofsProto = new StoreTreeProofs();
+    storeTreeProofsProto.setIdentitiesProof(proofFixture.storeTreeProofs.identitiesProof);
+    storeTreeProofsProto.setPublicKeyHashesToIdentityIdsProof(
+      proofFixture.storeTreeProofs.publicKeyHashesToIdentityIdsProof,
+    );
+    storeTreeProofsProto.setDataContractsProof(proofFixture.storeTreeProofs.dataContractsProof);
+    storeTreeProofsProto.setDocumentsProof(proofFixture.storeTreeProofs.documentsProof);
     proofResponse.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proofResponse.setSignature(proofFixture.signature);
     proofResponse.setRootTreeProof(proofFixture.rootTreeProof);
-    proofResponse.setStoreTreeProof(proofFixture.storeTreeProof);
+    proofResponse.setStoreTreeProofs(storeTreeProofsProto);
   });
 
   it('should return documents when contract id is buffer', async () => {
@@ -129,7 +138,7 @@ describe('getDocumentsFactory', () => {
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
     expect(result.getProof().getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
-    expect(result.getProof().getStoreTreeProof()).to.deep.equal(proofFixture.storeTreeProof);
+    expect(result.getProof().getStoreTreeProofs()).to.deep.equal(proofFixture.storeTreeProofs);
     expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);

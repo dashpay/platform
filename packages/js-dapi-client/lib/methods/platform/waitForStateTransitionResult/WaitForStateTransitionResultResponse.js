@@ -2,8 +2,8 @@ const cbor = require('cbor');
 
 const AbstractResponse = require('../response/AbstractResponse');
 const Metadata = require('../response/Metadata');
-const Proof = require('../response/Proof');
 const ErrorResult = require('./ErrorResult');
+const createProofFromRawProof = require('../response/createProofFromRawProof');
 
 class WaitForStateTransitionResultResponse extends AbstractResponse {
   /**
@@ -33,12 +33,7 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
     let proof;
 
     if (proto.getProof()) {
-      proof = new Proof({
-        rootTreeProof: Buffer.from(proto.getProof().getRootTreeProof()),
-        storeTreeProof: Buffer.from(proto.getProof().getStoreTreeProof()),
-        signatureLLMQHash: Buffer.from(proto.getProof().getSignatureLlmqHash()),
-        signature: Buffer.from(proto.getProof().getSignature()),
-      });
+      proof = createProofFromRawProof(proto.getProof());
     }
 
     if (proto.getError()) {

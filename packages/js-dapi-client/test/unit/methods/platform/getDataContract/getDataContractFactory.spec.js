@@ -5,6 +5,7 @@ const {
     GetDataContractResponse,
     ResponseMetadata,
     Proof,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -53,10 +54,19 @@ describe('getDataContractFactory', () => {
     getDataContract = getDataContractFactory(grpcTransportMock);
 
     proof = new Proof();
+    const storeTreeProofsProto = new StoreTreeProofs();
+
+    storeTreeProofsProto.setIdentitiesProof(proofFixture.storeTreeProofs.identitiesProof);
+    storeTreeProofsProto.setPublicKeyHashesToIdentityIdsProof(
+      proofFixture.storeTreeProofs.publicKeyHashesToIdentityIdsProof,
+    );
+    storeTreeProofsProto.setDataContractsProof(proofFixture.storeTreeProofs.dataContractsProof);
+    storeTreeProofsProto.setDocumentsProof(proofFixture.storeTreeProofs.documentsProof);
+
     proof.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proof.setSignature(proofFixture.signature);
     proof.setRootTreeProof(proofFixture.rootTreeProof);
-    proof.setStoreTreeProof(proofFixture.storeTreeProof);
+    proof.setStoreTreeProofs(storeTreeProofsProto);
   });
 
   it('should return data contract', async () => {
@@ -104,7 +114,7 @@ describe('getDataContractFactory', () => {
     expect(result.getDataContract()).to.deep.equal(Buffer.alloc(0));
     expect(result.getProof()).to.be.an.instanceOf(ProofClass);
     expect(result.getProof().getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
-    expect(result.getProof().getStoreTreeProof()).to.deep.equal(proofFixture.storeTreeProof);
+    expect(result.getProof().getStoreTreeProofs()).to.deep.equal(proofFixture.storeTreeProofs);
     expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);

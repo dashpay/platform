@@ -2,13 +2,13 @@ class Proof {
   /**
    * @param {Object} properties
    * @param {Buffer} properties.rootTreeProof
-   * @param {Buffer} properties.storeTreeProof
+   * @param {StoreTreeProofs} properties.storeTreeProofs
    * @param {Buffer} properties.signatureLLMQHash
    * @param {Buffer} properties.signature
    */
   constructor(properties) {
     this.rootTreeProof = properties.rootTreeProof;
-    this.storeTreeProof = properties.storeTreeProof;
+    this.storeTreeProofs = properties.storeTreeProofs;
     this.signatureLLMQHash = properties.signatureLLMQHash;
     this.signature = properties.signature;
   }
@@ -21,10 +21,10 @@ class Proof {
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {StoreTreeProofs}
    */
-  getStoreTreeProof() {
-    return this.storeTreeProof;
+  getStoreTreeProofs() {
+    return this.storeTreeProofs;
   }
 
   /**
