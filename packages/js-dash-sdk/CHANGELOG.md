@@ -1,3 +1,11 @@
+## [3.20.3](https://github.com/dashevo/DashJS/compare/v3.20.2...v3.20.3) (2021-08-08)
+
+### Chores
+
+* update DashPay and DPNS contracts ([#240](https://github.com/dashevo/DashJS/issues/240))
+
+
+
 ## [3.20.2](https://github.com/dashevo/DashJS/compare/v3.20.1...v3.20.2) (2021-07-28)
 
 
