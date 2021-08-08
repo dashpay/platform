@@ -106,10 +106,10 @@ export class Client extends EventEmitter {
 
         this.apps = new ClientApps(Object.assign({
             dpns: {
-                contractId: '6Atad7WNCeXAnavaKTRkpS2dipgVtfWFa67YmYFVgxNA'
+                contractId: 'H2P7t8e3z2Naf55RiUrEK63fLfeGzaza5x5etm9J1ppG'
             },
             dashpay: {
-                contractId: 'D1SaMNTArb9mM7XiKsubdLyC5UsMDnbkwiUhrHEPXxm2',
+                contractId: 'HpJZGdjnHjUucndek2kc1P9RBhTQZxjHFeQKnanxVVJp',
             },
         }, this.options.apps));
 
