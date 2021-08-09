@@ -1,7 +1,5 @@
 const AbstractResponse = require('../response/AbstractResponse');
-const Metadata = require('../response/Metadata');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const createProofFromRawProof = require('../response/createProofFromRawProof');
 
 class GetIdentityResponse extends AbstractResponse {
   /**
@@ -28,26 +26,15 @@ class GetIdentityResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     const identity = proto.getIdentity();
-    const rawProof = proto.getProof();
+    const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
-    if (!identity && !rawProof) {
+    if (!identity && !proof) {
       throw new InvalidResponseError('Identity is not defined');
-    }
-
-    const metadata = proto.getMetadata();
-
-    if (metadata === undefined) {
-      throw new InvalidResponseError('Metadata is not defined');
-    }
-
-    let proof;
-    if (rawProof) {
-      proof = createProofFromRawProof(rawProof);
     }
 
     return new GetIdentityResponse(
       Buffer.from(proto.getIdentity()),
-      new Metadata(metadata.toObject()),
+      metadata,
       proof,
     );
   }

@@ -1,6 +1,8 @@
+const StoreTreeProofs = require('./StoreTreeProofs');
+
 class Proof {
   /**
-   * @param {Object} properties
+   * @param {object} properties
    * @param {Buffer} properties.rootTreeProof
    * @param {StoreTreeProofs} properties.storeTreeProofs
    * @param {Buffer} properties.signatureLLMQHash
@@ -39,6 +41,33 @@ class Proof {
    */
   getSignature() {
     return this.signature;
+  }
+
+  /**
+   * @param proofProto
+   *
+   * @returns {Proof}
+   */
+  static createFromProto(proofProto) {
+    const rawStoreProofs = proofProto.getStoreTreeProofs();
+
+    const storeTreeProofs = new StoreTreeProofs({
+      dataContractsProof: rawStoreProofs.getDataContractsProof()
+        ? Buffer.from(rawStoreProofs.getDataContractsProof()) : null,
+      publicKeyHashesToIdentityIdsProof: rawStoreProofs.getPublicKeyHashesToIdentityIdsProof()
+        ? Buffer.from(rawStoreProofs.getPublicKeyHashesToIdentityIdsProof()) : null,
+      identitiesProof: rawStoreProofs.getIdentitiesProof()
+        ? Buffer.from(rawStoreProofs.getIdentitiesProof()) : null,
+      documentsProof: rawStoreProofs.getDocumentsProof()
+        ? Buffer.from(rawStoreProofs.getDocumentsProof()) : null,
+    });
+
+    return new Proof({
+      rootTreeProof: Buffer.from(proofProto.getRootTreeProof()),
+      storeTreeProofs,
+      signatureLLMQHash: Buffer.from(proofProto.getSignatureLlmqHash()),
+      signature: Buffer.from(proofProto.getSignature()),
+    });
   }
 }
 

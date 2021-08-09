@@ -1,3 +1,7 @@
+const InvalidResponseError = require('./errors/InvalidResponseError');
+const Metadata = require('./Metadata');
+const Proof = require('./Proof');
+
 /**
  * @abstract
  */
@@ -23,6 +27,33 @@ class AbstractResponse {
    */
   getProof() {
     return this.proof;
+  }
+
+  /**
+   *
+   * @param proto
+   *
+   * @returns{{metadata: Metadata, proof: Proof|undefined}}
+   * @throws {InvalidResponseError}
+   */
+  static createMetadataAndProofFromProto(proto) {
+    const metadata = proto.getMetadata();
+
+    if (metadata === undefined) {
+      throw new InvalidResponseError('Metadata is not defined');
+    }
+
+    const rawProof = proto.getProof();
+
+    let proof;
+    if (rawProof) {
+      proof = Proof.createFromProto(rawProof);
+    }
+
+    return {
+      metadata: new Metadata(metadata.toObject()),
+      proof,
+    };
   }
 }
 

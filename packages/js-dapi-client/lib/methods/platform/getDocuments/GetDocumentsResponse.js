@@ -1,7 +1,4 @@
 const AbstractResponse = require('../response/AbstractResponse');
-const Metadata = require('../response/Metadata');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const createProofFromRawProof = require('../response/createProofFromRawProof');
 
 class GetDocumentsResponse extends AbstractResponse {
   /**
@@ -27,22 +24,11 @@ class GetDocumentsResponse extends AbstractResponse {
    * @returns {GetDocumentsResponse}
    */
   static createFromProto(proto) {
-    const metadata = proto.getMetadata();
-
-    if (metadata === undefined) {
-      throw new InvalidResponseError('Metadata is not defined');
-    }
-
-    const rawProof = proto.getProof();
-
-    let proof;
-    if (rawProof) {
-      proof = createProofFromRawProof(rawProof);
-    }
+    const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
     return new GetDocumentsResponse(
       proto.getDocumentsList().map((document) => Buffer.from(document)),
-      new Metadata(metadata.toObject()),
+      metadata,
       proof,
     );
   }

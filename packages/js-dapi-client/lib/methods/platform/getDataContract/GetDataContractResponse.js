@@ -1,7 +1,5 @@
 const AbstractResponse = require('../response/AbstractResponse');
-const Metadata = require('../response/Metadata');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const createProofFromRawProof = require('../response/createProofFromRawProof');
 
 class GetDataContractResponse extends AbstractResponse {
   /**
@@ -28,26 +26,15 @@ class GetDataContractResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     const dataContract = proto.getDataContract();
-    const rawProof = proto.getProof();
+    const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
-    if (!dataContract && !rawProof) {
+    if (!dataContract && !proof) {
       throw new InvalidResponseError('DataContract is not defined');
-    }
-
-    const metadata = proto.getMetadata();
-
-    if (metadata === undefined) {
-      throw new InvalidResponseError('Metadata is not defined');
-    }
-
-    let proof;
-    if (rawProof) {
-      proof = createProofFromRawProof(rawProof);
     }
 
     return new GetDataContractResponse(
       Buffer.from(dataContract),
-      new Metadata(metadata.toObject()),
+      metadata,
       proof,
     );
   }
