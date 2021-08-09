@@ -10,6 +10,7 @@ const {
   v0: {
     GetDataContractResponse,
     Proof,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -36,6 +37,7 @@ describe('getDataContractHandlerFactory', () => {
   let proofFixture;
   let proofMock;
   let response;
+  let storeTreeProofs;
 
   beforeEach(function beforeEach() {
     id = generateRandomIdentifier();
@@ -52,9 +54,12 @@ describe('getDataContractHandlerFactory', () => {
       storeTreeProof: Buffer.alloc(1, 2),
     };
 
+    storeTreeProofs = new StoreTreeProofs();
+    storeTreeProofs.setDataContractsProof(proofFixture.storeTreeProof);
+
     proofMock = new Proof();
     proofMock.setRootTreeProof(proofFixture.rootTreeProof);
-    proofMock.setStoreTreeProof(proofFixture.storeTreeProof);
+    proofMock.setStoreTreeProofs(storeTreeProofs);
 
     response = new GetDataContractResponse();
     response.setProof(proofMock);
@@ -88,10 +93,10 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(proof).to.be.an.instanceOf(Proof);
     const rootTreeProof = proof.getRootTreeProof();
-    const storeTreeProof = proof.getStoreTreeProof();
+    const resultStoreTreeProofs = proof.getStoreTreeProofs();
 
     expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
-    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
+    expect(resultStoreTreeProofs).to.deep.equal(storeTreeProofs);
 
     expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id, true);
   });

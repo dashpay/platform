@@ -12,6 +12,7 @@ const {
   v0: {
     GetDocumentsResponse,
     Proof,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -45,6 +46,7 @@ describe('getDocumentsHandlerFactory', () => {
   let proofFixture;
   let response;
   let proofMock;
+  let storeTreeProofs;
 
   beforeEach(function beforeEach() {
     dataContractId = generateRandomIdentifier();
@@ -78,9 +80,12 @@ describe('getDocumentsHandlerFactory', () => {
       storeTreeProof: Buffer.alloc(1, 2),
     };
 
+    storeTreeProofs = new StoreTreeProofs();
+    storeTreeProofs.setDataContractsProof(proofFixture.storeTreeProof);
+
     proofMock = new Proof();
     proofMock.setRootTreeProof(proofFixture.rootTreeProof);
-    proofMock.setStoreTreeProof(proofFixture.storeTreeProof);
+    proofMock.setStoreTreeProofs(storeTreeProofs);
 
     response = new GetDocumentsResponse();
     response.setProof(proofMock);
@@ -158,10 +163,10 @@ describe('getDocumentsHandlerFactory', () => {
 
     expect(proof).to.be.an.instanceOf(Proof);
     const rootTreeProof = proof.getRootTreeProof();
-    const storeTreeProof = proof.getStoreTreeProof();
+    const resultStoreTreeProofs = proof.getStoreTreeProofs();
 
     expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
-    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
+    expect(resultStoreTreeProofs).to.deep.equal(storeTreeProofs);
   });
 
   it('should throw InvalidArgumentGrpcError if dataContractId is not specified', async () => {

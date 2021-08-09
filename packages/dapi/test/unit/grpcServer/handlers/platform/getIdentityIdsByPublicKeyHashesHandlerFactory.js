@@ -10,6 +10,7 @@ const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
     Proof,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -33,6 +34,7 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
   let proofFixture;
   let proofMock;
   let response;
+  let storeTreeProofs;
 
   beforeEach(function beforeEach() {
     publicKeyHash = '556c2910d46fda2b327ef9d9bda850cc84d30db0';
@@ -53,9 +55,12 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
       storeTreeProof: Buffer.alloc(1, 2),
     };
 
+    storeTreeProofs = new StoreTreeProofs();
+    storeTreeProofs.setDataContractsProof(proofFixture.storeTreeProof);
+
     proofMock = new Proof();
     proofMock.setRootTreeProof(proofFixture.rootTreeProof);
-    proofMock.setStoreTreeProof(proofFixture.storeTreeProof);
+    proofMock.setStoreTreeProofs(storeTreeProofs);
 
     response = new GetIdentityIdsByPublicKeyHashesResponse();
     response.setProof(proofMock);
@@ -105,10 +110,10 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
 
     expect(proof).to.be.an.instanceOf(Proof);
     const rootTreeProof = proof.getRootTreeProof();
-    const storeTreeProof = proof.getStoreTreeProof();
+    const resultStoreTreeProof = proof.getStoreTreeProofs();
 
     expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
-    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
+    expect(resultStoreTreeProof).to.deep.equal(storeTreeProofs);
   });
 
   it('should throw an InvalidArgumentGrpcError if no hashes were submitted', async () => {

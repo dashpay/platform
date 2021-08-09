@@ -13,6 +13,7 @@ const {
     WaitForStateTransitionResultRequest,
     StateTransitionBroadcastError,
     Proof,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
@@ -46,6 +47,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let fetchProofForStateTransition;
   let waitForTransactionToBeProvable;
   let transactionNotFoundError;
+  let storeTreeProofs;
 
   beforeEach(function beforeEach() {
     const hashString = '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E';
@@ -109,6 +111,9 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       rootTreeProof: Buffer.alloc(1, 1),
       storeTreeProof: Buffer.alloc(1, 2),
     };
+
+    storeTreeProofs = new StoreTreeProofs();
+    storeTreeProofs.setIdentitiesProof(proofFixture.storeTreeProof);
 
     call = new GrpcCallMock(this.sinon, {
       getStateTransitionHash: this.sinon.stub().returns(hash),
@@ -215,10 +220,10 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     expect(proof).to.be.an.instanceOf(Proof);
     const rootTreeProof = proof.getRootTreeProof();
-    const storeTreeProof = proof.getStoreTreeProof();
+    const resultStoreTreeProof = proof.getStoreTreeProofs();
 
     expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
-    expect(storeTreeProof).to.deep.equal(proofFixture.storeTreeProof);
+    expect(resultStoreTreeProof).to.deep.equal(storeTreeProofs);
 
     expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly({
       identityIds: stateTransitionFixture.getModifiedDataIds(),
