@@ -23,7 +23,7 @@
     "@dashevo/dpns-contract": "github:dashevo/dpns-contract#update-dpp",
     "@dashevo/dpp": "~0.20.0",
     "@dashevo/grpc-common": "~0.3.4",
-    "@dashevo/wallet-lib": "~7.20.0",
+    "@dashevo/wallet-lib": "~7.20.1",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "dash": "~3.20.0",

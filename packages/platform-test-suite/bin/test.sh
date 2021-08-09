@@ -87,6 +87,7 @@ fi
 if [ -n "$npm_package_to_install" ]
 then
   npm install "$npm_package_to_install"
+  npm dedupe
 fi
 
 if [ -n "$scope" ]
