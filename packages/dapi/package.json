@@ -27,11 +27,11 @@
     "all": true
   },
   "dependencies": {
-    "@dashevo/dapi-grpc": "~0.21.0-dev.2",
+    "@dashevo/dapi-grpc": "~0.21.0-dev.3",
     "@dashevo/dashcore-lib": "~0.19.25",
     "@dashevo/dashd-rpc": "^2.0.2",
     "@dashevo/dpp": "~0.20.0",
-    "@dashevo/grpc-common": "~0.3.3",
+    "@dashevo/grpc-common": "~0.3.5",
     "ajv": "^8.6.0",
     "bs58": "^4.0.1",
     "cbor": "^4.1.5",
@@ -43,7 +43,7 @@
     "lodash": "^4.17.19",
     "request": "^2.87.0",
     "request-promise-native": "^1.0.5",
-    "ws": "^7.4.2",
+    "ws": "^7.5.3",
     "zeromq": "5.2.0"
   },
   "devDependencies": {

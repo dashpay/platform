@@ -2,7 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
-      FailedPreconditionGrpcError,
+      AlreadyExistsGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -117,19 +117,17 @@ describe('broadcastStateTransitionHandlerFactory', () => {
   });
 
   it('should throw FailedPreconditionGrpcError if transaction was broadcasted twice', async () => {
-    const error = {
+    response.error = {
       code: -32603,
       message: 'Internal error',
       data: 'tx already exists in cache',
     };
 
-    response.error = error;
-
     try {
       await broadcastStateTransitionHandler(call);
     } catch (e) {
-      expect(e).to.be.an.instanceOf(FailedPreconditionGrpcError);
-      expect(e.getMessage()).to.equal(`Failed precondition: ${error.data}`);
+      expect(e).to.be.an.instanceOf(AlreadyExistsGrpcError);
+      expect(e.getMessage()).to.equal('State transition already in chain');
     }
   });
 });

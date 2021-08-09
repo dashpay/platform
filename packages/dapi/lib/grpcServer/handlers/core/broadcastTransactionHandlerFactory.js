@@ -8,6 +8,7 @@ const {
 const {
   server: {
     error: {
+      AlreadyExistsGrpcError,
       InvalidArgumentGrpcError,
     },
   },
@@ -61,7 +62,7 @@ function broadcastTransactionHandlerFactory(coreRPCClient) {
 
       if (e.code === -27) {
         // RPC_VERIFY_ALREADY_IN_CHAIN
-        throw new InvalidArgumentGrpcError(`Cannot broadcast transaction: ${e.message}`);
+        throw new AlreadyExistsGrpcError(`Transaction already in chain: ${e.message}`);
       }
 
       throw e;

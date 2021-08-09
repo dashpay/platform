@@ -2,7 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
-      FailedPreconditionGrpcError,
+      AlreadyExistsGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -43,7 +43,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseErr
 
     if (jsonRpcError) {
       if (jsonRpcError.data === 'tx already exists in cache') {
-        throw new FailedPreconditionGrpcError(jsonRpcError.data, jsonRpcError);
+        throw new AlreadyExistsGrpcError('State transition already in chain', jsonRpcError);
       }
 
       const error = new Error();

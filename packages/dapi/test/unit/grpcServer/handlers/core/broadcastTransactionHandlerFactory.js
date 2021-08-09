@@ -2,6 +2,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      AlreadyExistsGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -96,6 +97,23 @@ describe('broadcastTransactionHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('invalid transaction:'));
       expect(coreRPCClientMock.sendRawTransaction).to.be.not.called();
+    }
+  });
+
+  it('should throw AlreadyExistsGrpcError error if transaction already in chain', async () => {
+    const error = new Error();
+    error.code = -27;
+    error.message = 'dup-tx-something';
+
+    coreRPCClientMock.sendRawTransaction.throws(error);
+
+    try {
+      await broadcastTransactionHandler(call);
+
+      expect.fail('should thrown AlreadyExistsGrpcError error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(AlreadyExistsGrpcError);
+      expect(e.getMessage()).to.equal(`Transaction already in chain: ${error.message}`);
     }
   });
 });
