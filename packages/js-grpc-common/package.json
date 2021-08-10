@@ -25,9 +25,8 @@
     "sinon-chai": "^3.3.0"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.3.6",
     "@grpc/proto-loader": "^0.5.2",
-    "grpc": "^1.24.0",
-    "grpc-health-check": "^1.7.0",
     "lodash.get": "^4.4.2",
     "protobufjs": "github:jawid-h/protobuf.js#8b91c72dca68fd6c418078fd2358c4969425dcdc",
     "semver": "^7.3.2"

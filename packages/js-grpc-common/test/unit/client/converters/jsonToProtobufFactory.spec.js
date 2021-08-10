@@ -1,4 +1,3 @@
-
 const jsonToProtobufFactory = require(
   '../../../../lib/client/converters/jsonToProtobufFactory',
 );
