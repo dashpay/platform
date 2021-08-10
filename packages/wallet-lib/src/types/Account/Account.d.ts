@@ -69,7 +69,7 @@ export declare class Account {
     hasPlugins([Plugin]): {found:Boolean, results:[{name: string}]};
     injectPlugin(unsafePlugin: Plugins, allowSensitiveOperation?: boolean, awaitOnInjection?: boolean): Promise<any>;
     sign(object: Transaction, privateKeys: [PrivateKey], sigType?: number): Transaction;
-    waitForInstantLock(string: transactionHash): Promise<InstantLock>;
+    waitForInstantLock(transactionHash: string): Promise<InstantLock>;
 }
 
 export declare interface RecipientOptions {
