@@ -122,7 +122,7 @@ describe('getBlockHandlerFactory', () => {
     }
   });
 
-  it('should throw an InvalidArgumentGrpcError if getRawBlock throws error with code -8', async () => {
+  it('should throw an NotFoundGrpcError if block with specified height is not found', async () => {
     const error = new Error('Block height out of range');
     error.code = -8;
 
@@ -134,9 +134,9 @@ describe('getBlockHandlerFactory', () => {
     try {
       await getBlockHandler(call);
 
-      expect.fail('should thrown InvalidArgumentGrpcError error');
+      expect.fail('should thrown NotFoundGrpcError error');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
       expect(e.getMessage()).to.equal('Invalid block height');
       expect(coreRPCClientMock.getBlockHash).to.be.calledOnceWith(height);
     }

@@ -41,7 +41,7 @@ function getBlockHandlerFactory(coreRPCClient) {
       } catch (e) {
         if (e.code === -8) {
           // Block height out of range
-          throw new InvalidArgumentGrpcError('Invalid block height');
+          throw new NotFoundGrpcError('Invalid block height');
         }
         if (e.code === -1) {
           // Invalid argument (not integer or integer out of range)

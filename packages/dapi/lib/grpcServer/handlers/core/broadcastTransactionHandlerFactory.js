@@ -10,6 +10,7 @@ const {
     error: {
       AlreadyExistsGrpcError,
       InvalidArgumentGrpcError,
+      FailedPreconditionGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -56,8 +57,15 @@ function broadcastTransactionHandlerFactory(coreRPCClient) {
     try {
       transactionId = await coreRPCClient.sendRawTransaction(serializedTransaction.toString('hex'));
     } catch (e) {
+      // RPC_DESERIALIZATION_ERROR
+      // RPC_VERIFY_ERROR
       if ([-22, -25].includes(e.code)) {
         throw new InvalidArgumentGrpcError(`invalid transaction: ${e.message}`);
+      }
+
+      // RPC_VERIFY_REJECTED
+      if (e.code === -26) {
+        throw new FailedPreconditionGrpcError(`Transaction is rejected: ${e.message}`);
       }
 
       if (e.code === -27) {

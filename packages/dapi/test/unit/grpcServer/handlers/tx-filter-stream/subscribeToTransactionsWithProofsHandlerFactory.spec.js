@@ -9,6 +9,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
     stream: {
       AcknowledgingWritable,
@@ -156,7 +157,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
-      expect.fail('Error was not thrown');
+
+      expect.fail('should fail with InvalidArgumentGrpcError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
@@ -182,7 +184,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
-      expect.fail('Error was not thrown');
+
+      expect.fail('should fail with InvalidArgumentGrpcError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
@@ -302,20 +305,22 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     expect(getMemPoolTransactionsMock).to.have.been.calledOnce();
   });
 
-  it('should respond with error if fromBlockHeight is bigger than block count', async () => {
-    call.request.setFromBlockHash('someBlockHash');
+  it('should respond with Not Found error if fromBlockHeight is bigger than block count', async () => {
+    call.request.setFromBlockHeight(100);
     call.request.setCount(0);
 
     const error = new Error();
     error.code = -8;
 
     coreAPIMock.getBlockHash.throws(error);
-    coreAPIMock.getBlock.resolves({ height: 1 });
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
+
+      expect.fail('should fail with NotFoundGrpcError');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
+
       expect(e.getMessage()).to.equal(
         'fromBlockHeight is bigger than block count',
       );
@@ -325,7 +330,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     }
   });
 
-  it('should respond with error if fromBlockHash is not found', async () => {
+  it('should respond with not found error if fromBlockHash is not found', async () => {
     call.request.setFromBlockHash('someBlockHash');
     call.request.setCount(0);
 
@@ -336,8 +341,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
+
+      expect.fail('should fail with NotFoundGrpcError');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
       expect(e.getMessage()).to.equal(
         'fromBlockHash is not found',
       );
@@ -347,7 +354,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     }
   });
 
-  it('should respond with error if fromBlockHash is not part of the best block chain', async () => {
+  it('should respond with Not Found error if fromBlockHash is not part of the best block chain', async () => {
     const blockHash = 'someBlockHash';
     call.request.setFromBlockHash(blockHash);
     call.request.setCount(0);
@@ -359,8 +366,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
+
+      expect.fail('should throw NotFoundGrpcError');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
       expect(e.getMessage()).to.equal(
         `block ${Buffer.from(blockHash).toString('hex')} is not part of the best block chain`,
       );

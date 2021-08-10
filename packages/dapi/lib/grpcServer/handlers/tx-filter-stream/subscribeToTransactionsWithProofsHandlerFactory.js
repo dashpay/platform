@@ -4,6 +4,7 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
+      NotFoundGrpcError,
     },
     stream: {
       AcknowledgingWritable,
@@ -168,7 +169,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       } catch (e) {
         if (e.code === -8) {
           // Block height out of range
-          throw new InvalidArgumentGrpcError('fromBlockHeight is bigger than block count');
+          throw new NotFoundGrpcError('fromBlockHeight is bigger than block count');
         }
 
         throw e;
@@ -183,14 +184,14 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     } catch (e) {
       // Block not found
       if (e.code === -5) {
-        throw new InvalidArgumentGrpcError('fromBlockHash is not found');
+        throw new NotFoundGrpcError('fromBlockHash is not found');
       }
 
       throw e;
     }
 
     if (fromBlock.confirmations === -1) {
-      throw new InvalidArgumentGrpcError(`block ${fromBlockHash} is not part of the best block chain`);
+      throw new NotFoundGrpcError(`block ${fromBlockHash} is not part of the best block chain`);
     }
 
     const bestBlockHeight = await coreAPI.getBestBlockHeight();
