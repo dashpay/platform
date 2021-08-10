@@ -40,7 +40,6 @@
     "@babel/preset-env": "^7.9.0",
     "@dashevo/dashpay-contract": "^1.0.0",
     "@dashevo/dpns-contract": "~0.3.0-dev.6",
-    "@dashevo/drive-grpc": "~0.3.0",
     "babel-loader": "^8.1.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
@@ -79,7 +78,6 @@
     "lodash.clonedeep": "^4.5.0",
     "lodash.clonedeepwith": "^4.5.0",
     "lodash.get": "^4.4.2",
-    "lodash.mergewith": "^4.6.2",
     "lodash.set": "^4.3.2",
     "long": "^4.0.0"
   }
