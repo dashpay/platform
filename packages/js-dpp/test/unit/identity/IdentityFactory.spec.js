@@ -3,8 +3,8 @@ const rewiremock = require('rewiremock/node');
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
 const Identity = require('../../../lib/identity/Identity');
-const IdentityCreateTransition = require('../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
-const IdentityTopUpTransition = require('../../../lib/identity/stateTransitions/identityTopUpTransition/IdentityTopUpTransition');
+const IdentityCreateTransition = require('../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
+const IdentityTopUpTransition = require('../../../lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
@@ -16,7 +16,7 @@ const InvalidIdentityError = require(
   '../../../lib/identity/errors/InvalidIdentityError',
 );
 const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
-const InstantAssetLockProof = require('../../../lib/identity/stateTransitions/assetLockProof/instant/InstantAssetLockProof');
+const InstantAssetLockProof = require('../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
@@ -43,8 +43,8 @@ describe('IdentityFactory', () => {
           decode: decodeMock,
         },
         '../../../lib/identity/Identity': Identity,
-        '../../../lib/identity/stateTransitions/identityCreateTransition/IdentityCreateTransition': IdentityCreateTransition,
-        '../../../lib/identity/stateTransitions/identityTopUpTransition/IdentityTopUpTransition': IdentityTopUpTransition,
+        '../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition': IdentityCreateTransition,
+        '../../../lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition': IdentityTopUpTransition,
       },
     );
 

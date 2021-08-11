@@ -6,8 +6,8 @@ class StateTransitionMock extends AbstractStateTransitionIdentitySigned {
     return stateTransitionTypes.DATA_CONTRACT_CREATE;
   }
 
-  toJSON(options = {}) {
-    return super.toJSON(options);
+  getModifiedDataIds() {
+    return [];
   }
 }
 

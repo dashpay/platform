@@ -1,6 +1,6 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 
-const fetchAssetLockTransactionOutputFactory = require('../../../../../lib/identity/stateTransitions/assetLockProof/fetchAssetLockTransactionOutputFactory');
+const fetchAssetLockTransactionOutputFactory = require('../../../../../lib/identity/stateTransition/assetLockProof/fetchAssetLockTransactionOutputFactory');
 const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');

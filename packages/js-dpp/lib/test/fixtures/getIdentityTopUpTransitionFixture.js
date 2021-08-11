@@ -1,4 +1,4 @@
-const IdentityTopUpTransition = require('../../identity/stateTransitions/identityTopUpTransition/IdentityTopUpTransition');
+const IdentityTopUpTransition = require('../../identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
 const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes');
 

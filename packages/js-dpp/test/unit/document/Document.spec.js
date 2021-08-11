@@ -5,7 +5,7 @@ const DataContractFactory = require('../../../lib/dataContract/DataContractFacto
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const DocumentCreateTransition = require(
-  '../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition',
+  '../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition',
 );
 
 const Identifier = require('../../../lib/identifier/Identifier');

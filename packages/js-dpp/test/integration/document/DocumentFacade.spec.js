@@ -2,7 +2,7 @@ const generateRandomIdentifier = require('../../../lib/test/utils/generateRandom
 const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const Document = require('../../../lib/document/Document');
-const DocumentsBatchTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition');
+const DocumentsBatchTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 

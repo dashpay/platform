@@ -2,10 +2,10 @@ const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
 const DataContract = require('./DataContract');
 const DataContractFactory = require('./DataContractFactory');
-const validateDataContractFactory = require('./validateDataContractFactory');
+const validateDataContractFactory = require('./validation/validateDataContractFactory');
 const enrichDataContractWithBaseSchema = require('./enrichDataContractWithBaseSchema');
-const validateDataContractMaxDepthFactory = require('./stateTransition/validation/validateDataContractMaxDepthFactory');
-const validateDataContractPatternsFactory = require('./validateDataContractPatternsFactory');
+const validateDataContractMaxDepthFactory = require('./validation/validateDataContractMaxDepthFactory');
+const validateDataContractPatternsFactory = require('./validation/validateDataContractPatternsFactory');
 
 class DataContractFacade {
   /**

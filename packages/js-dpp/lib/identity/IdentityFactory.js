@@ -3,13 +3,13 @@ const Identity = require('./Identity');
 const { decode } = require('../util/serializer');
 
 const IdentityPublicKey = require('./IdentityPublicKey');
-const IdentityCreateTransition = require('./stateTransitions/identityCreateTransition/IdentityCreateTransition');
-const IdentityTopUpTransition = require('./stateTransitions/identityTopUpTransition/IdentityTopUpTransition');
+const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
+const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
-const InstantAssetLockProof = require('./stateTransitions/assetLockProof/instant/InstantAssetLockProof');
-const ChainAssetLockProof = require('./stateTransitions/assetLockProof/chain/ChainAssetLockProof');
+const InstantAssetLockProof = require('./stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const ChainAssetLockProof = require('./stateTransition/assetLockProof/chain/ChainAssetLockProof');
 
 class IdentityFactory {
   /**

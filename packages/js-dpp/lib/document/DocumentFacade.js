@@ -1,5 +1,5 @@
 const enrichDataContractWithBaseSchema = require('../dataContract/enrichDataContractWithBaseSchema');
-const validateDocumentFactory = require('./validateDocumentFactory');
+const validateDocumentFactory = require('./validation/validateDocumentFactory');
 const fetchAndValidateDataContractFactory = require('./fetchAndValidateDataContractFactory');
 
 const Document = require('./Document');
@@ -103,7 +103,7 @@ class DocumentFacade {
    * Validate document
    *
    * @param {Document|RawDocument} document
-   * @return {<ValidationResult>}
+   * @return {Promise<ValidationResult>}
    */
   async validate(document) {
     if (!this.stateRepository) {

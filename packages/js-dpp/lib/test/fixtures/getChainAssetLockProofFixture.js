@@ -1,4 +1,4 @@
-const ChainAssetLockProof = require('../../identity/stateTransitions/assetLockProof/chain/ChainAssetLockProof');
+const ChainAssetLockProof = require('../../identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 
 function getChainAssetLockProofFixture() {
   const outPoint = {

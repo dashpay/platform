@@ -1,5 +1,5 @@
 const InvalidStateTransitionError = require('../../../../lib/stateTransition/errors/InvalidStateTransitionError');
-const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
 describe('InvalidStateTransitionError', () => {

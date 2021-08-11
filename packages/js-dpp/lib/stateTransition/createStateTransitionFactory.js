@@ -1,9 +1,9 @@
 const types = require('./stateTransitionTypes');
 
-const DocumentsBatchTransition = require('../document/stateTransition/DocumentsBatchTransition');
-const DataContractCreateTransition = require('../dataContract/stateTransition/DataContractCreateTransition');
-const IdentityCreateTransition = require('../identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
-const IdentityTopUpTransition = require('../identity/stateTransitions/identityTopUpTransition/IdentityTopUpTransition');
+const DocumentsBatchTransition = require('../document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
+const DataContractCreateTransition = require('../dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const IdentityCreateTransition = require('../identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
+const IdentityTopUpTransition = require('../identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
 const InvalidStateTransitionTypeError = require('../errors/InvalidStateTransitionTypeError');
 const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
@@ -20,15 +20,12 @@ const typesToClasses = {
 
 /**
  * @param {StateRepository} stateRepository
- *
  * @return {createStateTransition}
  */
 function createStateTransitionFactory(stateRepository) {
   /**
-   * @typedef createStateTransition
-   *
+   * @typedef {createStateTransition}
    * @param {RawStateTransition} rawStateTransition
-   *
    * @return {Promise<AbstractStateTransition>}
    */
   async function createStateTransition(rawStateTransition) {

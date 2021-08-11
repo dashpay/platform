@@ -3,7 +3,7 @@ const InvalidDataContractError = require('./errors/InvalidDataContractError');
 const DataContract = require('./DataContract');
 const generateDataContractId = require('./generateDataContractId');
 
-const DataContractCreateTransition = require('./stateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('./stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
 const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
 

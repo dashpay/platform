@@ -2,7 +2,7 @@ const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const DataContract = require('../../../lib/dataContract/DataContract');
 
-const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 

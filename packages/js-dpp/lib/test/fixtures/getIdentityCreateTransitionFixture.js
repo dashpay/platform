@@ -1,5 +1,5 @@
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
-const IdentityCreateTransition = require('../../identity/stateTransitions/identityCreateTransition/IdentityCreateTransition');
+const IdentityCreateTransition = require('../../identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 
 const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 

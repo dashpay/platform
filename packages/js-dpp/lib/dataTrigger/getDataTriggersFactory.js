@@ -2,7 +2,7 @@ const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFla
 
 const Identifier = require('../identifier/Identifier');
 
-const AbstractDocumentTransition = require('../document/stateTransition/documentTransition/AbstractDocumentTransition');
+const AbstractDocumentTransition = require('../document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 
 const DataTrigger = require('./DataTrigger');
 

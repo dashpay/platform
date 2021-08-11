@@ -1,4 +1,4 @@
-const AbstractDocumentTransition = require('../../../lib/document/stateTransition/documentTransition/AbstractDocumentTransition');
+const AbstractDocumentTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 
 const getDataTriggersFactory = require('../../../lib/dataTrigger/getDataTriggersFactory');
 

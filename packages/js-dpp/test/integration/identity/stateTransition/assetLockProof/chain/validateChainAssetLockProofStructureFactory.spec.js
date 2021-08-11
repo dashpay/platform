@@ -10,7 +10,7 @@ const { expectValidationError, expectJsonSchemaError } = require(
   '../../../../../../lib/test/expect/expectError',
 );
 
-const validateChainAssetLockProofStructureFactory = require('../../../../../../lib/identity/stateTransitions/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
+const validateChainAssetLockProofStructureFactory = require('../../../../../../lib/identity/stateTransition/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
 const ValidationResult = require('../../../../../../lib/validation/ValidationResult');
 const IdentityAssetLockTransactionIsNotFoundError = require('../../../../../../lib/errors/IdentityAssetLockTransactionIsNotFoundError');
 const ConsensusError = require('../../../../../../lib/errors/ConsensusError');

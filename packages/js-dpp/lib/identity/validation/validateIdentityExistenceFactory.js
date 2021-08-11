@@ -7,19 +7,20 @@ const IdentityNotFoundError = require('../../errors/IdentityNotFoundError');
  */
 function validateIdentityExistenceFactory(stateRepository) {
   /**
-   * @typedef validateIdentityExistence
+   * @typedef {validateIdentityExistence}
    * @param {Identifier} identityId
    * @return {Promise<ValidationResult>}
    */
   async function validateIdentityExistence(identityId) {
     const result = new ValidationResult();
 
-    const rawIdentity = await stateRepository.fetchIdentity(identityId);
+    const identity = await stateRepository.fetchIdentity(identityId);
 
-    if (!rawIdentity) {
+    if (!identity) {
       result.addError(new IdentityNotFoundError(identityId));
-      return result;
     }
+
+    result.setData(identity);
 
     return result;
   }

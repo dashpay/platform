@@ -52,9 +52,9 @@ Returns : {RawDataContractCreateTransition|DocumentsBatchTransition}
 
 Returns : {ValidationResult}
 
-## dpp.stateTransition.validateStructure(stateTransition)
+## dpp.stateTransition.validateBasic(stateTransition)
 
-**Description**: Validate State Transition Structure
+**Description**: Validate State Transition structure and data
 
 **Parameters**:
 
@@ -64,9 +64,9 @@ Returns : {ValidationResult}
 
 Returns : {ValidationResult}
 
-## dpp.stateTransition.validateDate(stateTransition)
+## dpp.stateTransition.validateSignature(stateTransition)
 
-**Description**: Validate State Transition Date
+**Description**: Validate State Transition signature and ownership
 
 **Parameters**:
 
@@ -78,13 +78,25 @@ Returns : {ValidationResult}
 
 ## dpp.stateTransition.validateFee(stateTransition)
 
-**Description**: Validate State Transition Fee
+**Description**: Validate State Transition fee
 
 **Parameters**:
 
 | parameters                   | type                    | required | Description                                             |  
 |------------------------------|-------------------------|----------| --------------------------------------------------------|
 | **stateTransition**          | AbstractStateTransition | yes      |                                                         |
+
+Returns : {ValidationResult}
+
+## dpp.stateTransition.validateState(stateTransition)
+
+**Description**: Validate State Transition against existing state
+
+**Parameters**:
+
+| parameters                   | type                      | required | Description                                             |  
+|------------------------------|---------------------------|----------| --------------------------------------------------------|
+| **stateTransition**          | AbstractStateTransition   | yes      |                                                         |
 
 Returns : {ValidationResult}
 

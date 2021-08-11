@@ -1,7 +1,7 @@
 const rewiremock = require('rewiremock/node');
 
 const { Transaction } = require('@dashevo/dashcore-lib');
-const validateAssetLockTransactionFactory = require('../../../../../lib/identity/stateTransitions/assetLockProof/validateAssetLockTransactionFactory');
+const validateAssetLockTransactionFactory = require('../../../../../lib/identity/stateTransition/assetLockProof/validateAssetLockTransactionFactory');
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 const ValidationResult = require('../../../../../lib/validation/ValidationResult');
 const InvalidIdentityAssetLockTransactionError = require('../../../../../lib/errors/InvalidIdentityAssetLockTransactionError');
@@ -11,7 +11,7 @@ const InvalidIdentityAssetLockTransactionOutputError = require('../../../../../l
 
 function getValidateAssetLockTransactionFactoryMock(TransactionClassMock) {
   return rewiremock.proxy(
-    '../../../../../lib/identity/stateTransitions/assetLockProof/validateAssetLockTransactionFactory',
+    '../../../../../lib/identity/stateTransition/assetLockProof/validateAssetLockTransactionFactory',
     {
       '../../../../../node_modules/@dashevo/dashcore-lib': {
         Transaction: TransactionClassMock,

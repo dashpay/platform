@@ -1,6 +1,6 @@
 const ConsensusError = require('./ConsensusError');
 
-const AbstractDocumentTransition = require('../document/stateTransition/documentTransition/AbstractDocumentTransition');
+const AbstractDocumentTransition = require('../document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 
 class DocumentNotFoundError extends ConsensusError {
   /**

@@ -5,14 +5,14 @@ const SerializedObjectParsingError = require('../errors/SerializedObjectParsingE
 
 class StateTransitionFactory {
   /**
-   * @param {validateStateTransitionStructure} validateStateTransitionStructure
+   * @param {validateStateTransitionBasic} validateStateTransitionBasic
    * @param {createStateTransition} createStateTransition
    */
   constructor(
-    validateStateTransitionStructure,
+    validateStateTransitionBasic,
     createStateTransition,
   ) {
-    this.validateStateTransitionStructure = validateStateTransitionStructure;
+    this.validateStateTransitionBasic = validateStateTransitionBasic;
     this.createStateTransition = createStateTransition;
   }
 
@@ -28,7 +28,7 @@ class StateTransitionFactory {
     const opts = { skipValidation: false, ...options };
 
     if (!opts.skipValidation) {
-      const result = await this.validateStateTransitionStructure(rawStateTransition);
+      const result = await this.validateStateTransitionBasic(rawStateTransition);
 
       if (!result.isValid()) {
         throw new InvalidStateTransitionError(result.getErrors(), rawStateTransition);

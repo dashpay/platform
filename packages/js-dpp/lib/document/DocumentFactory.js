@@ -3,10 +3,10 @@ const Document = require('./Document');
 const { decode } = require('../util/serializer');
 const generateEntropy = require('../util/generateEntropy');
 
-const DocumentsBatchTransition = require('./stateTransition/DocumentsBatchTransition');
+const DocumentsBatchTransition = require('./stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
-const AbstractDocumentTransition = require('./stateTransition/documentTransition/AbstractDocumentTransition');
-const DocumentCreateTransition = require('./stateTransition/documentTransition/DocumentCreateTransition');
+const AbstractDocumentTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
+const DocumentCreateTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
 const InvalidActionNameError = require('./errors/InvalidActionNameError');
 const NoDocumentsSuppliedError = require('./errors/NoDocumentsSuppliedError');

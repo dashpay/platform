@@ -5,7 +5,7 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 const DataContract = require('../../../lib/dataContract/DataContract');
 const { protocolVersion } = require('../../../lib/protocolVersion');
 
-const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
@@ -43,7 +43,7 @@ describe('DataContractFactory', () => {
     DataContractFactory = rewiremock.proxy('../../../lib/dataContract/DataContractFactory', {
       '../../../lib/util/serializer': { decode: decodeMock },
       '../../../lib/util/generateEntropy': generateEntropyMock,
-      '../../../lib/dataContract/stateTransition/DataContractCreateTransition': DataContractCreateTransition,
+      '../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition': DataContractCreateTransition,
       '../../../lib/dataContract/DataContract': DataContractMock,
     });
 

@@ -2,9 +2,9 @@ const rewiremock = require('rewiremock/node');
 const bs58 = require('bs58');
 
 const Document = require('../../../lib/document/Document');
-const DocumentsBatchTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition');
+const DocumentsBatchTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
-const DocumentCreateTransition = require('../../../lib/document/stateTransition/documentTransition/DocumentCreateTransition');
+const DocumentCreateTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
@@ -69,7 +69,7 @@ describe('DocumentFactory', () => {
       '../../../lib/util/serializer': { decode: decodeMock },
       '../../../lib/util/generateEntropy': generateEntropyMock,
       '../../../lib/document/Document': Document,
-      '../../../lib/document/stateTransition/DocumentsBatchTransition': DocumentsBatchTransition,
+      '../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition': DocumentsBatchTransition,
     });
 
     factory = new DocumentFactory(

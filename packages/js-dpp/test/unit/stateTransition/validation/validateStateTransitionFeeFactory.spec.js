@@ -9,8 +9,8 @@ const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixture
 const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const getIdentityTopUpTransitionFixture = require('../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition');
-const DocumentsBatchTransition = require('../../../../lib/document/stateTransition/DocumentsBatchTransition');
+const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const DocumentsBatchTransition = require('../../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 

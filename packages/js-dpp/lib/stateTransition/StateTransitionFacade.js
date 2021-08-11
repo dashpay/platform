@@ -11,60 +11,64 @@ const stateTransitionTypes = require('./stateTransitionTypes');
 
 const createStateTransitionFactory = require('./createStateTransitionFactory');
 
-const validateDataContractFactory = require('../dataContract/validateDataContractFactory');
-const validateDataContractPatternsFactory = require('../dataContract/validateDataContractPatternsFactory');
-const validateDataContractCreateTransitionStructureFactory = require('../dataContract/stateTransition/validation/validateDataContractCreateTransitionStructureFactory');
-const validateStateTransitionStructureFactory = require('./validation/validateStateTransitionStructureFactory');
-const validateDataContractCreateTransitionDataFactory = require('../dataContract/stateTransition/validation/validateDataContractCreateTransitionDataFactory');
-const validateStateTransitionDataFactory = require('./validation/validateStateTransitionDataFactory');
-const validateDocumentsBatchTransitionStructureFactory = require('../document/stateTransition/validation/structure/validateDocumentsBatchTransitionStructureFactory');
-const validateIdentityCreateTransitionDataFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateTransitionDataFactory');
-const validateIdentityTopUpTransitionDataFactory = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionDataFactory');
-const validateIdentityCreateTransitionStructureFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityCreateTransitionStructureFactory');
-const validateIdentityTopUpTransitionStructureFactory = require('../identity/stateTransitions/identityTopUpTransition/validateIdentityTopUpTransitionStructureFactory');
-const validateIdentityPublicKeysUniquenessFactory = require('../identity/stateTransitions/identityCreateTransition/validateIdentityPublicKeysUniquenessFactory');
-const validateStateTransitionSignatureFactory = require('./validation/validateStateTransitionSignatureFactory');
+const validateDataContractFactory = require('../dataContract/validation/validateDataContractFactory');
+const validateDataContractPatternsFactory = require('../dataContract/validation/validateDataContractPatternsFactory');
+const validateDataContractCreateTransitionBasicFactory = require('../dataContract/stateTransition/DataContractCreateTransition/validation/basic/validateDataContractCreateTransitionBasicFactory');
+const validateStateTransitionBasicFactory = require('./validation/validateStateTransitionBasicFactory');
+const validateDataContractCreateTransitionStateFactory = require('../dataContract/stateTransition/DataContractCreateTransition/validation/state/validateDataContractCreateTransitionStateFactory');
+const validateStateTransitionStateFactory = require('./validation/validateStateTransitionStateFactory');
+const validateDocumentsBatchTransitionBasicFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/basic/validateDocumentsBatchTransitionBasicFactory');
+const validateIdentityCreateTransitionStateFactory = require('../identity/stateTransition/IdentityCreateTransition/validation/state/validateIdentityCreateTransitionStateFactory');
+const validateIdentityTopUpTransitionStateFactory = require('../identity/stateTransition/IdentityTopUpTransition/validation/state/validateIdentityTopUpTransitionStateFactory');
+const validateIdentityCreateTransitionBasicFactory = require('../identity/stateTransition/IdentityCreateTransition/validation/basic/validateIdentityCreateTransitionBasicFactory');
+const validateIdentityTopUpTransitionBasicFactory = require('../identity/stateTransition/IdentityTopUpTransition/validation/basic/validateIdentityTopUpTransitionBasicFactory');
+const validateIdentityPublicKeysUniquenessFactory = require('../identity/stateTransition/IdentityCreateTransition/validation/state/validateIdentityPublicKeysUniquenessFactory');
+const validateStateTransitionIdentitySignatureFactory = require('./validation/validateStateTransitionIdentitySignatureFactory');
 const validateStateTransitionFeeFactory = require('./validation/validateStateTransitionFeeFactory');
 
 const enrichDataContractWithBaseSchema = require('../dataContract/enrichDataContractWithBaseSchema');
-const findDuplicatesById = require('../document/stateTransition/validation/structure/findDuplicatesById');
-const findDuplicatesByIndices = require('../document/stateTransition/validation/structure/findDuplicatesByIndices');
+const findDuplicatesById = require('../document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesById');
+const findDuplicatesByIndices = require('../document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesByIndices');
 
-const validateDocumentsBatchTransitionDataFactory = require('../document/stateTransition/validation/data/validateDocumentsBatchTransitionDataFactory');
-const fetchDocumentsFactory = require('../document/stateTransition/validation/data/fetchDocumentsFactory');
-const validateDocumentsUniquenessByIndicesFactory = require('../document/stateTransition/validation/data/validateDocumentsUniquenessByIndicesFactory');
-const validatePartialCompoundIndices = require('../document/stateTransition/validation/data/validatePartialCompoundIndices');
+const validateDocumentsBatchTransitionStateFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsBatchTransitionStateFactory');
+const fetchDocumentsFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/fetchDocumentsFactory');
+const validateDocumentsUniquenessByIndicesFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsUniquenessByIndicesFactory');
+const validatePartialCompoundIndices = require('../document/stateTransition/DocumentsBatchTransition/validation/basic/validatePartialCompoundIndices');
 const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
-const executeDataTriggersFactory = require('../document/stateTransition/validation/data/executeDataTriggersFactory');
+const executeDataTriggersFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
 const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
-const validateDataContractMaxDepthFactory = require('../dataContract/stateTransition/validation/validateDataContractMaxDepthFactory');
+const validateDataContractMaxDepthFactory = require('../dataContract/validation/validateDataContractMaxDepthFactory');
 
 const applyStateTransitionFactory = require('./applyStateTransitionFactory');
 
 const applyDataContractCreateTransitionFactory = require(
-  '../dataContract/stateTransition/applyDataContractCreateTransitionFactory',
+  '../dataContract/stateTransition/DataContractCreateTransition/applyDataContractCreateTransitionFactory',
 );
 
 const applyDocumentsBatchTransitionFactory = require(
-  '../document/stateTransition/applyDocumentsBatchTransitionFactory',
+  '../document/stateTransition/DocumentsBatchTransition/applyDocumentsBatchTransitionFactory',
 );
 
 const applyIdentityCreateTransitionFactory = require(
-  '../identity/stateTransitions/identityCreateTransition/applyIdentityCreateTransitionFactory',
+  '../identity/stateTransition/IdentityCreateTransition/applyIdentityCreateTransitionFactory',
 );
 
 const applyIdentityTopUpTransitionFactory = require(
-  '../identity/stateTransitions/identityTopUpTransition/applyIdentityTopUpTransitionFactory',
+  '../identity/stateTransition/IdentityTopUpTransition/applyIdentityTopUpTransitionFactory',
 );
-const validateSignatureAgainstAssetLockPublicKeyFactory = require('../identity/stateTransitions/validateSignatureAgainstAssetLockPublicKeyFactory');
-const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransitions/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
+const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
 const calculateStateTransitionFee = require('./calculateStateTransitionFee');
-const InstantAssetLockProof = require('../identity/stateTransitions/assetLockProof/instant/InstantAssetLockProof');
-const ChainAssetLockProof = require('../identity/stateTransitions/assetLockProof/chain/ChainAssetLockProof');
-const validateChainAssetLockProofStructureFactory = require('../identity/stateTransitions/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
-const fetchAssetLockTransactionOutputFactory = require('../identity/stateTransitions/assetLockProof/fetchAssetLockTransactionOutputFactory');
-const validateAssetLockTransactionFactory = require('../identity/stateTransitions/assetLockProof/validateAssetLockTransactionFactory');
+const InstantAssetLockProof = require('../identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const ChainAssetLockProof = require('../identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
+const validateChainAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
+const fetchAssetLockTransactionOutputFactory = require('../identity/stateTransition/assetLockProof/fetchAssetLockTransactionOutputFactory');
+const validateAssetLockTransactionFactory = require('../identity/stateTransition/assetLockProof/validateAssetLockTransactionFactory');
+
+const ValidationResult = require('../validation/ValidationResult');
+const AbstractStateTransitionIdentitySigned = require('./AbstractStateTransitionIdentitySigned');
+const validateStateTransitionKeySignatureFactory = require('./validation/validateStateTransitionKeySignatureFactory');
+const fetchAssetLockPublicKeyHashFactory = require('../identity/stateTransition/assetLockProof/fetchAssetLockPublicKeyHashFactory');
 
 class StateTransitionFacade {
   /**
@@ -87,31 +91,41 @@ class StateTransitionFacade {
       RE2,
     );
 
-    const validateStateTransitionSignature = validateStateTransitionSignatureFactory(
+    const validateIdentityExistence = validateIdentityExistenceFactory(this.stateRepository);
+
+    this.validateStateTransitionIdentitySignature = validateStateTransitionIdentitySignatureFactory(
+      validateIdentityExistence,
+    );
+
+    const fetchAssetLockTransactionOutput = fetchAssetLockTransactionOutputFactory(
       this.stateRepository,
     );
 
-    const validateIdentityExistence = validateIdentityExistenceFactory(this.stateRepository);
+    const fetchAssetLockPublicKeyHash = fetchAssetLockPublicKeyHashFactory(
+      fetchAssetLockTransactionOutput,
+    );
+
+    this.validateStateTransitionKeySignature = validateStateTransitionKeySignatureFactory(
+      verifyHashSignature,
+      fetchAssetLockPublicKeyHash,
+    );
 
     // eslint-disable-next-line max-len
-    const validateDataContractCreateTransitionStructure = validateDataContractCreateTransitionStructureFactory(
+    const validateDataContractCreateTransitionBasic = validateDataContractCreateTransitionBasicFactory(
       validator,
       validateDataContract,
-      validateStateTransitionSignature,
-      validateIdentityExistence,
     );
 
     this.createStateTransition = createStateTransitionFactory(this.stateRepository);
 
-    const validateDocumentsBatchTransitionStructure = (
-      validateDocumentsBatchTransitionStructureFactory(
+    const validateDocumentsBatchTransitionBasic = (
+      validateDocumentsBatchTransitionBasicFactory(
         findDuplicatesById,
         findDuplicatesByIndices,
-        validateStateTransitionSignature,
-        validateIdentityExistence,
         this.stateRepository,
         validator,
         enrichDataContractWithBaseSchema,
+        validatePartialCompoundIndices,
       )
     );
 
@@ -134,49 +148,40 @@ class StateTransitionFacade {
       [ChainAssetLockProof.type]: validateChainAssetLockProofStructure,
     };
 
-    const validateSignatureAgainstAssetLockPublicKey = (
-      validateSignatureAgainstAssetLockPublicKeyFactory(
-        this.createStateTransition,
-        verifyHashSignature,
-      )
-    );
-
     const validatePublicKeys = validatePublicKeysFactory(
       validator,
     );
 
-    const validateIdentityCreateTransitionStructure = (
-      validateIdentityCreateTransitionStructureFactory(
+    const validateIdentityCreateTransitionBasic = (
+      validateIdentityCreateTransitionBasicFactory(
         validator,
         validatePublicKeys,
-        validateSignatureAgainstAssetLockPublicKey,
         proofValidationFunctionsByType,
       )
     );
 
-    const validateIdentityTopUpTransitionStructure = (
-      validateIdentityTopUpTransitionStructureFactory(
+    const validateIdentityTopUpTransitionBasic = (
+      validateIdentityTopUpTransitionBasicFactory(
         validator,
         validateIdentityExistence,
-        validateSignatureAgainstAssetLockPublicKey,
         proofValidationFunctionsByType,
       )
     );
 
     const validationFunctionsByType = {
-      [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractCreateTransitionStructure,
-      [stateTransitionTypes.DOCUMENTS_BATCH]: validateDocumentsBatchTransitionStructure,
-      [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateTransitionStructure,
-      [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionStructure,
+      [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractCreateTransitionBasic,
+      [stateTransitionTypes.DOCUMENTS_BATCH]: validateDocumentsBatchTransitionBasic,
+      [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateTransitionBasic,
+      [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionBasic,
     };
 
-    this.validateStateTransitionStructure = validateStateTransitionStructureFactory(
+    this.validateStateTransitionBasic = validateStateTransitionBasicFactory(
       validationFunctionsByType,
       this.createStateTransition,
     );
 
-    const validateDataContractCreateTransitionData = (
-      validateDataContractCreateTransitionDataFactory(
+    const validateDataContractCreateTransitionState = (
+      validateDataContractCreateTransitionStateFactory(
         this.stateRepository,
       )
     );
@@ -185,12 +190,12 @@ class StateTransitionFacade {
       this.stateRepository,
     );
 
-    const validateIdentityCreateTransitionData = validateIdentityCreateTransitionDataFactory(
+    const validateIdentityCreateTransitionState = validateIdentityCreateTransitionStateFactory(
       this.stateRepository,
       validateIdentityPublicKeysUniqueness,
     );
 
-    const validateIdentityTopUpTransitionData = validateIdentityTopUpTransitionDataFactory();
+    const validateIdentityTopUpTransitionState = validateIdentityTopUpTransitionStateFactory();
 
     const fetchDocuments = fetchDocumentsFactory(
       this.stateRepository,
@@ -206,24 +211,19 @@ class StateTransitionFacade {
       getDataTriggers,
     );
 
-    const validateDocumentsBatchTransitionData = validateDocumentsBatchTransitionDataFactory(
+    const validateDocumentsBatchTransitionState = validateDocumentsBatchTransitionStateFactory(
       this.stateRepository,
       fetchDocuments,
       validateDocumentsUniquenessByIndices,
-      validatePartialCompoundIndices,
       executeDataTriggers,
     );
 
-    this.validateStateTransitionData = validateStateTransitionDataFactory({
-      [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractCreateTransitionData,
-      [stateTransitionTypes.DOCUMENTS_BATCH]: validateDocumentsBatchTransitionData,
-      [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateTransitionData,
-      [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionData,
+    this.validateStateTransitionState = validateStateTransitionStateFactory({
+      [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractCreateTransitionState,
+      [stateTransitionTypes.DOCUMENTS_BATCH]: validateDocumentsBatchTransitionState,
+      [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateTransitionState,
+      [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionState,
     });
-
-    const fetchAssetLockTransactionOutput = fetchAssetLockTransactionOutputFactory(
-      this.stateRepository,
-    );
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
       this.stateRepository,
@@ -232,7 +232,7 @@ class StateTransitionFacade {
     );
 
     this.factory = new StateTransitionFactory(
-      this.validateStateTransitionStructure,
+      this.validateStateTransitionBasic,
       this.createStateTransition,
     );
 
@@ -307,31 +307,89 @@ class StateTransitionFacade {
    * Validate State Transition
    *
    * @param {RawStateTransition|AbstractStateTransition} stateTransition
-   * @return {ValidationResult}
+   * @param {Object} [options]
+   * @param {boolean} [options.basic=true]
+   * @param {boolean} [options.signature=true]
+   * @param {boolean} [options.fee=true]
+   * @param {boolean} [options.state=true]
+   * @return {Promise<ValidationResult>}
    */
-  async validate(stateTransition) {
-    const result = await this.validateStructure(stateTransition);
+  async validate(stateTransition, options = {}) {
+    // eslint-disable-next-line no-param-reassign
+    options = {
+      basic: true,
+      signature: true,
+      fee: true,
+      state: true,
+      ...options,
+    };
 
-    if (!result.isValid()) {
-      return result;
+    if (!this.stateRepository) {
+      throw new MissingOptionError(
+        'stateRepository',
+        'Can\'t validate State Transition because State Repository is not set, use'
+        + ' setStateRepository method',
+      );
     }
 
     let stateTransitionModel = stateTransition;
 
     if (!(stateTransition instanceof AbstractStateTransition)) {
-      stateTransitionModel = this.createStateTransition(stateTransition);
+      stateTransitionModel = await this.createStateTransition(stateTransition);
     }
 
-    return this.validateData(stateTransitionModel);
+    const result = new ValidationResult();
+
+    // Basic validation
+    if (options.basic) {
+      result.merge(
+        await this.validateBasic(stateTransition),
+      );
+    }
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    // Signature validation
+    if (options.signature) {
+      result.merge(
+        await this.validateSignature(stateTransitionModel),
+      );
+    }
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    // Fee validation
+    if (options.fee) {
+      result.merge(
+        await this.validateFee(stateTransitionModel),
+      );
+    }
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    // Validate against existing state
+    if (options.state) {
+      result.merge(
+        await this.validateState(stateTransitionModel),
+      );
+    }
+
+    return result;
   }
 
   /**
-   * Validate State Transition Structure
+   * Validate State Transition structure and data
    *
    * @param {AbstractStateTransition|RawStateTransition} stateTransition
-   * @return {ValidationResult}
+   * @return {Promise<ValidationResult>}
    */
-  async validateStructure(stateTransition) {
+  async validateBasic(stateTransition) {
     if (!this.stateRepository) {
       throw new MissingOptionError(
         'stateRepository',
@@ -347,16 +405,16 @@ class StateTransitionFacade {
       rawStateTransition = stateTransition;
     }
 
-    return this.validateStateTransitionStructure(rawStateTransition);
+    return this.validateStateTransitionBasic(rawStateTransition);
   }
 
   /**
-   * Validate State Transition Data
+   * Validate State Transition signature and ownership
    *
    * @param {AbstractStateTransition} stateTransition
-   * @return {ValidationResult}
+   * @return {Promise<ValidationResult>}
    */
-  async validateData(stateTransition) {
+  async validateSignature(stateTransition) {
     if (!this.stateRepository) {
       throw new MissingOptionError(
         'stateRepository',
@@ -365,15 +423,18 @@ class StateTransitionFacade {
       );
     }
 
-    return this.validateStateTransitionData(stateTransition);
+    if (stateTransition instanceof AbstractStateTransitionIdentitySigned) {
+      return this.validateStateTransitionIdentitySignature(stateTransition);
+    }
+
+    return this.validateStateTransitionKeySignature(stateTransition);
   }
 
   /**
-   * Validate State Transition Fee
+   * Validate State Transition fee
    *
    * @param {AbstractStateTransition} stateTransition
-   *
-   * @return {ValidationResult}
+   * @return {Promise<ValidationResult>}
    */
   async validateFee(stateTransition) {
     if (!this.stateRepository) {
@@ -385,6 +446,24 @@ class StateTransitionFacade {
     }
 
     return this.validateStateTransitionFee(stateTransition);
+  }
+
+  /**
+   * Validate State Transition against existing state
+   *
+   * @param {AbstractStateTransition} stateTransition
+   * @return {Promise<ValidationResult>}
+   */
+  async validateState(stateTransition) {
+    if (!this.stateRepository) {
+      throw new MissingOptionError(
+        'stateRepository',
+        'Can\'t validate State Transition because State Repository is not set, use'
+        + ' setStateRepository method',
+      );
+    }
+
+    return this.validateStateTransitionState(stateTransition);
   }
 
   /**
