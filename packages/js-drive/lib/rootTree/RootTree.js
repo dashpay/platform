@@ -1,6 +1,6 @@
 const { MerkleTree } = require('merkletreejs');
 
-const hashFunction = require('./hashFunction');
+const { hashFunction } = require('./hashFunction');
 const convertRootTreeProofToBuffer = require('./convertRootTreeProofToBuffer');
 
 const InvalidLeafIndexError = require('./errors/InvalidLeafIndexError');

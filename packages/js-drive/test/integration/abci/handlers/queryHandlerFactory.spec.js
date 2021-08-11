@@ -11,6 +11,7 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
+const { init: initializeHashFunction } = require('../../../../lib/rootTree/hashFunction');
 
 const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
 
@@ -29,6 +30,7 @@ describe('queryHandlerFactory', function main() {
   let proof;
 
   before(async () => {
+    await initializeHashFunction();
     mongoDB = await startMongoDb();
   });
 

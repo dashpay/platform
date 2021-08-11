@@ -1,6 +1,7 @@
 const { startMongoDb } = require('@dashevo/dp-services-ctl');
 const { expect } = require('chai');
 
+const { init: initHashFunction } = require('../../lib/rootTree/hashFunction');
 const createTestDIContainer = require('../../lib/test/createTestDIContainer');
 
 describe('createDIContainer', function describeContainer() {
@@ -10,6 +11,7 @@ describe('createDIContainer', function describeContainer() {
   let mongoDB;
 
   before(async () => {
+    await initHashFunction();
     mongoDB = await startMongoDb();
   });
 

@@ -1,6 +1,6 @@
 const RootTree = require('../../../lib/rootTree/RootTree');
 
-const hashFunction = require('../../../lib/rootTree/hashFunction');
+const { init: initHashFunction, hashFunction } = require('../../../lib/rootTree/hashFunction');
 
 const InvalidLeafIndexError = require('../../../lib/rootTree/errors/InvalidLeafIndexError');
 
@@ -9,6 +9,10 @@ describe('RootTree', () => {
   let leafTwoMock;
   let rootTree;
   let rootHash;
+
+  before(async () => {
+    await initHashFunction();
+  });
 
   beforeEach(() => {
     const leafOneRootHash = Buffer.alloc(32).fill(1);
