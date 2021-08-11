@@ -1,5 +1,5 @@
 const Validator = require('../../utils/Validator');
-const argsSchema = require('../schemas/generateToAddress');
+const argsSchema = require('../schemas/generateToAddress.json');
 
 const validator = new Validator(argsSchema);
 /**

@@ -1,6 +1,6 @@
 // Entry point for DAPI.
 const dotenv = require('dotenv');
-const grpc = require('grpc');
+const grpc = require('@grpc/grpc-js');
 
 const {
   server: {
@@ -118,12 +118,13 @@ async function main() {
 
   grpcApiServer.addService(getPlatformDefinition(0).service, platformHandlers);
 
-  grpcApiServer.bind(
+  grpcApiServer.bindAsync(
     `0.0.0.0:${config.grpcServer.port}`,
     grpc.ServerCredentials.createInsecure(),
+    () => {
+      grpcApiServer.start();
+    },
   );
-
-  grpcApiServer.start();
 
   log.info(`GRPC API RPC server is listening on port ${config.grpcServer.port}`);
 

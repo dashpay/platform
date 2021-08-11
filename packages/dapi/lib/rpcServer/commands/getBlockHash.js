@@ -1,5 +1,5 @@
 const Validator = require('../../utils/Validator');
-const argsSchema = require('../schemas/getBlockHash');
+const argsSchema = require('../schemas/getBlockHash.json');
 
 const validator = new Validator(argsSchema);
 

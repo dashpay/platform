@@ -1,5 +1,5 @@
 const Validator = require('../../utils/Validator');
-const argsSchema = require('../schemas/getMnListDiff');
+const argsSchema = require('../schemas/getMnListDiff.json');
 
 const validator = new Validator(argsSchema);
 /**
