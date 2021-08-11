@@ -1,13 +1,13 @@
 const ConsensusError = require('./ConsensusError');
 
-class SerializedObjectParsingError extends ConsensusError {
+class ProtocolVersionParsingError extends ConsensusError {
   /**
    * @param {Buffer} payload
    * @param {Error} parsingError
    */
   constructor(payload, parsingError) {
     super(
-      `Parsing of a serialized object failed due to: ${parsingError.message}`,
+      `Can't read protocol version from serialized object: ${parsingError.message}`,
     );
 
     this.payload = payload;
@@ -15,7 +15,7 @@ class SerializedObjectParsingError extends ConsensusError {
   }
 
   /**
-   * Get payload
+   * Get object payload
    *
    * @return {Buffer}
    */
@@ -33,4 +33,4 @@ class SerializedObjectParsingError extends ConsensusError {
   }
 }
 
-module.exports = SerializedObjectParsingError;
+module.exports = ProtocolVersionParsingError;

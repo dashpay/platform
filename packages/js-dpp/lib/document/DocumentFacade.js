@@ -6,6 +6,9 @@ const Document = require('./Document');
 const DocumentFactory = require('./DocumentFactory');
 
 const MissingOptionError = require('../errors/MissingOptionError');
+const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
+
+const protocolVersion = require('../protocolVersion');
 
 class DocumentFacade {
   /**
@@ -23,10 +26,13 @@ class DocumentFacade {
       this.stateRepository,
     );
 
+    const decodeProtocolEntity = decodeProtocolEntityFactory(protocolVersion.compatibility);
+
     this.factory = new DocumentFactory(
       dpp,
       this.validateDocument,
       this.fetchAndValidateDataContract,
+      decodeProtocolEntity,
     );
   }
 

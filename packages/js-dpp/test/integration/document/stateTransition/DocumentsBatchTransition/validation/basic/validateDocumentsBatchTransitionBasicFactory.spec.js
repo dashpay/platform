@@ -2,7 +2,7 @@ const { default: getRE2Class } = require('@dashevo/re2-wasm');
 
 const createAjv = require('../../../../../../../lib/ajv/createAjv');
 
-const { protocolVersion } = require('../../../../../../../lib/protocolVersion');
+const protocolVersion = require('../../../../../../../lib/protocolVersion');
 
 const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
 
@@ -62,7 +62,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     });
 
     stateTransition = new DocumentsBatchTransition({
-      protocolVersion,
+      protocolVersion: protocolVersion.latestVersion,
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toObject()),
@@ -694,7 +694,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           });
 
           stateTransition = new DocumentsBatchTransition({
-            protocolVersion,
+            protocolVersion: protocolVersion.latestVersion,
             ownerId,
             contractId: dataContract.getId(),
             transitions: documentTransitions.map((t) => t.toObject()),

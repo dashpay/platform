@@ -10,7 +10,7 @@ const DocumentCreateTransition = require(
 
 const Identifier = require('../../../lib/identifier/Identifier');
 
-const { protocolVersion } = require('../../../lib/protocolVersion');
+const protocolVersion = require('../../../lib/protocolVersion');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('Document', () => {
@@ -74,7 +74,7 @@ describe('Document', () => {
     });
 
     rawDocument = {
-      $protocolVersion: protocolVersion,
+      $protocolVersion: protocolVersion.latestVersion,
       $id: generateRandomIdentifier(),
       $type: 'test',
       $dataContractId: dataContract.getId(),

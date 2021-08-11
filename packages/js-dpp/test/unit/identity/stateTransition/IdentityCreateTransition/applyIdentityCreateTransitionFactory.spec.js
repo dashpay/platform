@@ -10,7 +10,7 @@ const { convertSatoshiToCredits } = require('../../../../../lib/identity/credits
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
-const { protocolVersion } = require('../../../../../lib/protocolVersion');
+const protocolVersion = require('../../../../../lib/protocolVersion');
 
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
@@ -42,7 +42,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
     );
 
     const identity = new Identity({
-      protocolVersion,
+      protocolVersion: protocolVersion.latestVersion,
       id: stateTransition.getIdentityId(),
       publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
       balance,

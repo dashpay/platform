@@ -27,7 +27,7 @@ const generateRandomIdentifier = require('../../../lib/test/utils/generateRandom
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('DocumentFactory', () => {
-  let decodeMock;
+  let decodeProtocolEntityMock;
   let generateEntropyMock;
   let validateDocumentMock;
   let fetchAndValidateDataContractMock;
@@ -41,6 +41,7 @@ describe('DocumentFactory', () => {
   let fakeTime;
   let fakeTimeDate;
   let entropy;
+  let dppMock;
 
   beforeEach(function beforeEach() {
     ({ ownerId } = getDocumentsFixture);
@@ -50,7 +51,7 @@ describe('DocumentFactory', () => {
     ([,,, document] = documents);
     rawDocument = document.toObject();
 
-    decodeMock = this.sinonSandbox.stub();
+    decodeProtocolEntityMock = this.sinonSandbox.stub();
     generateEntropyMock = this.sinonSandbox.stub();
     validateDocumentMock = this.sinonSandbox.stub();
 
@@ -66,16 +67,18 @@ describe('DocumentFactory', () => {
     fetchAndValidateDataContractMock = this.sinonSandbox.stub().returns(fetchContractResult);
 
     DocumentFactory = rewiremock.proxy('../../../lib/document/DocumentFactory', {
-      '../../../lib/util/serializer': { decode: decodeMock },
       '../../../lib/util/generateEntropy': generateEntropyMock,
       '../../../lib/document/Document': Document,
       '../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition': DocumentsBatchTransition,
     });
 
+    dppMock = createDPPMock();
+
     factory = new DocumentFactory(
-      createDPPMock(),
+      dppMock,
       validateDocumentMock,
       fetchAndValidateDataContractMock,
+      decodeProtocolEntityMock,
     );
 
     fakeTimeDate = new Date();
@@ -240,16 +243,19 @@ describe('DocumentFactory', () => {
   });
 
   describe('createFromBuffer', () => {
+    let serializedDocument;
+
     beforeEach(function beforeEach() {
       this.sinonSandbox.stub(factory, 'createFromObject');
       // eslint-disable-next-line prefer-destructuring
       document = documents[8]; // document with binary fields
+
+      serializedDocument = document.toBuffer();
+      rawDocument = document.toObject();
     });
 
     it('should return new Document from serialized one', async () => {
-      const serializedDocument = document.toBuffer();
-
-      decodeMock.returns(document.toObject());
+      decodeProtocolEntityMock.returns([rawDocument.$protocolVersion, rawDocument]);
 
       factory.createFromObject.returns(document);
 
@@ -257,32 +263,45 @@ describe('DocumentFactory', () => {
 
       expect(result).to.equal(document);
 
-      expect(factory.createFromObject).to.have.been.calledOnceWith(document.toObject());
+      expect(factory.createFromObject).to.have.been.calledOnceWith(rawDocument);
 
-      // cut version information
-      const dataToDecode = serializedDocument.slice(4, serializedDocument.length);
-
-      expect(decodeMock).to.have.been.calledOnceWith(dataToDecode);
+      expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
+        serializedDocument,
+        dppMock.getProtocolVersion(),
+      );
     });
 
-    it('should throw consensus error if `decode` fails', async () => {
-      const parsingError = new Error('Something failed during parsing');
+    it('should throw InvalidDocumentError if the decoding fails with consensus error', async () => {
+      const parsingError = new SerializedObjectParsingError(
+        serializedDocument,
+        new Error(),
+      );
 
-      const serializedDocument = document.toBuffer();
-
-      decodeMock.throws(parsingError);
+      decodeProtocolEntityMock.throws(parsingError);
 
       try {
         await factory.createFromBuffer(serializedDocument);
-        expect.fail('Error was not thrown');
+
+        expect.fail('should throw InvalidDocumentError');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidDocumentError);
 
         const [innerError] = e.getErrors();
+        expect(innerError).to.equal(parsingError);
+      }
+    });
 
-        expect(innerError).to.be.an.instanceOf(SerializedObjectParsingError);
-        expect(innerError.getPayload()).to.deep.equal(serializedDocument);
-        expect(innerError.getParsingError()).to.deep.equal(parsingError);
+    it('should throw an error if decoding fails with any other error', async () => {
+      const parsingError = new Error('Something failed during parsing');
+
+      decodeProtocolEntityMock.throws(parsingError);
+
+      try {
+        await factory.createFromBuffer(serializedDocument);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).to.equal(parsingError);
       }
     });
   });

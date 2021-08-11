@@ -1,5 +1,3 @@
-const rewiremock = require('rewiremock/node');
-
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
@@ -11,14 +9,17 @@ const InvalidStateTransitionError = require('../../../lib/stateTransition/errors
 const ConsensusError = require('../../../lib/errors/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
 
+const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
+const StateTransitionFactory = require('../../../lib/stateTransition/StateTransitionFactory');
+
 describe('StateTransitionFactory', () => {
-  let StateTransitionFactory;
-  let decodeMock;
   let validateStateTransitionBasicMock;
   let createStateTransitionMock;
   let factory;
   let stateTransition;
   let rawStateTransition;
+  let decodeProtocolEntityMock;
+  let dppMock;
 
   beforeEach(function beforeEach() {
     const dataContract = getDataContractFixture();
@@ -29,22 +30,18 @@ describe('StateTransitionFactory', () => {
     });
     rawStateTransition = stateTransition.toObject();
 
-    decodeMock = this.sinonSandbox.stub();
+    decodeProtocolEntityMock = this.sinonSandbox.stub();
 
     validateStateTransitionBasicMock = this.sinonSandbox.stub();
     createStateTransitionMock = this.sinonSandbox.stub().returns(stateTransition);
 
-    // Require Factory module for webpack
-    // eslint-disable-next-line global-require
-    require('../../../lib/stateTransition/StateTransitionFactory');
-
-    StateTransitionFactory = rewiremock.proxy('../../../lib/stateTransition/StateTransitionFactory', {
-      '../../../lib/util/serializer': { decode: decodeMock },
-    });
+    dppMock = createDPPMock();
 
     factory = new StateTransitionFactory(
       validateStateTransitionBasicMock,
       createStateTransitionMock,
+      dppMock,
+      decodeProtocolEntityMock,
     );
   });
 
@@ -98,14 +95,16 @@ describe('StateTransitionFactory', () => {
   });
 
   describe('createFromBuffer', () => {
+    let serializedStateTransition;
+
     beforeEach(function beforeEach() {
       this.sinonSandbox.stub(factory, 'createFromObject');
+
+      serializedStateTransition = stateTransition.toBuffer();
     });
 
     it('should return new State Transition from serialized contract', async () => {
-      const serializedStateTransition = stateTransition.toBuffer();
-
-      decodeMock.returns(rawStateTransition);
+      decodeProtocolEntityMock.returns([rawStateTransition.protocolVersion, rawStateTransition]);
 
       factory.createFromObject.resolves(stateTransition);
 
@@ -115,29 +114,43 @@ describe('StateTransitionFactory', () => {
 
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawStateTransition);
 
-      // cut version information
-      const dataToDecode = serializedStateTransition.slice(4, serializedStateTransition.length);
-
-      expect(decodeMock).to.have.been.calledOnceWith(dataToDecode);
+      expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
+        serializedStateTransition,
+        dppMock.getProtocolVersion(),
+      );
     });
 
-    it('should throw consensus error if `decode` fails', async () => {
-      const parsingError = new Error('Something failed during parsing');
+    it('should throw InvalidStateTransitionError if the decoding fails with consensus error', async () => {
+      const parsingError = new SerializedObjectParsingError(
+        serializedStateTransition,
+        new Error(),
+      );
 
-      const serializedStateTransition = stateTransition.toBuffer();
-
-      decodeMock.throws(parsingError);
+      decodeProtocolEntityMock.throws(parsingError);
 
       try {
         await factory.createFromBuffer(serializedStateTransition);
-        expect.fail('Error was not thrown');
+
+        expect.fail('should throw InvalidStateTransitionError');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidStateTransitionError);
 
         const [innerError] = e.getErrors();
-        expect(innerError).to.be.an.instanceOf(SerializedObjectParsingError);
-        expect(innerError.getPayload()).to.deep.equal(serializedStateTransition);
-        expect(innerError.getParsingError()).to.deep.equal(parsingError);
+        expect(innerError).to.be.equal(parsingError);
+      }
+    });
+
+    it('should throw an error if decoding fails with any other error', async () => {
+      const otherParsingError = new Error();
+
+      decodeProtocolEntityMock.throws(otherParsingError);
+
+      try {
+        await factory.createFromBuffer(serializedStateTransition);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).to.be.equal(otherParsingError);
       }
     });
   });

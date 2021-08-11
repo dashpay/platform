@@ -1,19 +1,23 @@
-const { decode } = require('../util/serializer');
-
 const InvalidStateTransitionError = require('./errors/InvalidStateTransitionError');
-const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
+const ConsensusError = require('../errors/ConsensusError');
 
 class StateTransitionFactory {
   /**
    * @param {validateStateTransitionBasic} validateStateTransitionBasic
    * @param {createStateTransition} createStateTransition
+   * @param {DashPlatformProtocol} dpp
+   * @param {decodeProtocolEntity} decodeProtocolEntity
    */
   constructor(
     validateStateTransitionBasic,
     createStateTransition,
+    dpp,
+    decodeProtocolEntity,
   ) {
     this.validateStateTransitionBasic = validateStateTransitionBasic;
     this.createStateTransition = createStateTransition;
+    this.dpp = dpp;
+    this.decodeProtocolEntity = decodeProtocolEntity;
   }
 
   /**
@@ -51,17 +55,21 @@ class StateTransitionFactory {
    */
   async createFromBuffer(buffer, options = { }) {
     let rawStateTransition;
+    let protocolVersion;
+
     try {
-      // first 4 bytes are protocol version
-      rawStateTransition = decode(buffer.slice(4, buffer.length));
-      rawStateTransition.protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
+      [protocolVersion, rawStateTransition] = this.decodeProtocolEntity(
+        buffer,
+        this.dpp.getProtocolVersion(),
+      );
+
+      rawStateTransition.protocolVersion = protocolVersion;
     } catch (error) {
-      throw new InvalidStateTransitionError([
-        new SerializedObjectParsingError(
-          buffer,
-          error,
-        ),
-      ]);
+      if (error instanceof ConsensusError) {
+        throw new InvalidStateTransitionError([error]);
+      }
+
+      throw error;
     }
 
     return this.createFromObject(rawStateTransition, options);

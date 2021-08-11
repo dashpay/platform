@@ -1,6 +1,6 @@
 const { default: Ajv } = require('ajv/dist/2020');
 
-const { protocolVersion } = require('../../lib/protocolVersion');
+const protocolVersion = require('../../lib/protocolVersion');
 
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
 const JsonSchemaValidator = require('../../lib/validation/JsonSchemaValidator');
@@ -37,7 +37,7 @@ describe('DashPlatformProtocol', () => {
     it('should set default protocol version', () => {
       dpp = new DashPlatformProtocol();
 
-      expect(dpp.protocolVersion).to.equal(protocolVersion);
+      expect(dpp.protocolVersion).to.equal(protocolVersion.latestVersion);
     });
   });
 
@@ -59,7 +59,7 @@ describe('DashPlatformProtocol', () => {
 
   describe('setProtocolVersion', () => {
     it('should set protocol version', () => {
-      expect(dpp.protocolVersion).to.equal(protocolVersion);
+      expect(dpp.protocolVersion).to.equal(protocolVersion.latestVersion);
 
       dpp.setProtocolVersion(42);
 
@@ -69,7 +69,7 @@ describe('DashPlatformProtocol', () => {
 
   describe('getProtocolVersion', () => {
     it('should get protocol version', () => {
-      expect(dpp.getProtocolVersion()).to.equal(protocolVersion);
+      expect(dpp.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
 
       dpp.setProtocolVersion(42);
 

@@ -4,7 +4,7 @@ const generateRandomIdentifier = require('../../../lib/test/utils/generateRandom
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 const Metadata = require('../../../lib/Metadata');
-const { protocolVersion } = require('../../../lib/protocolVersion');
+const protocolVersion = require('../../../lib/protocolVersion');
 
 describe('Identity', () => {
   let rawIdentity;
@@ -29,7 +29,7 @@ describe('Identity', () => {
     );
 
     rawIdentity = {
-      protocolVersion,
+      protocolVersion: protocolVersion.latestVersion,
       id: generateRandomIdentifier(),
       publicKeys: [
         {
@@ -145,7 +145,7 @@ describe('Identity', () => {
       const jsonIdentity = identity.toJSON();
 
       expect(jsonIdentity).to.deep.equal({
-        protocolVersion,
+        protocolVersion: protocolVersion.latestVersion,
         id: rawIdentity.id.toString(),
         publicKeys: [
           {

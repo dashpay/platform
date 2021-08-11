@@ -3,6 +3,9 @@ const IdentityFactory = require('./IdentityFactory');
 
 const validateIdentityFactory = require('./validation/validateIdentityFactory');
 const validatePublicKeysFactory = require('./validation/validatePublicKeysFactory');
+const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
+
+const protocolVersion = require('../protocolVersion');
 
 /**
  * @class IdentityFacade
@@ -16,11 +19,19 @@ class IdentityFacade {
     const validatePublicKeys = validatePublicKeysFactory(
       dpp.getJsonSchemaValidator(),
     );
+
     this.validateIdentity = validateIdentityFactory(
       dpp.getJsonSchemaValidator(),
       validatePublicKeys,
     );
-    this.factory = new IdentityFactory(dpp, this.validateIdentity);
+
+    const decodeProtocolEntity = decodeProtocolEntityFactory(protocolVersion.compatibility);
+
+    this.factory = new IdentityFactory(
+      dpp,
+      this.validateIdentity,
+      decodeProtocolEntity,
+    );
   }
 
   /**

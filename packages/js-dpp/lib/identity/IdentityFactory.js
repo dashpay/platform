@@ -1,24 +1,28 @@
 const Identity = require('./Identity');
 
-const { decode } = require('../util/serializer');
-
 const IdentityPublicKey = require('./IdentityPublicKey');
 const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
-const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
 const InstantAssetLockProof = require('./stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./stateTransition/assetLockProof/chain/ChainAssetLockProof');
+const ConsensusError = require('../errors/ConsensusError');
 
 class IdentityFactory {
   /**
    * @param {DashPlatformProtocol} dpp
    * @param {validateIdentity} validateIdentity
+   * @param {decodeProtocolEntity} decodeProtocolEntity
    */
-  constructor(dpp, validateIdentity) {
+  constructor(
+    dpp,
+    validateIdentity,
+    decodeProtocolEntity,
+  ) {
     this.dpp = dpp;
     this.validateIdentity = validateIdentity;
+    this.decodeProtocolEntity = decodeProtocolEntity;
   }
 
   /**
@@ -78,17 +82,21 @@ class IdentityFactory {
    */
   createFromBuffer(buffer, options = {}) {
     let rawIdentity;
+    let protocolVersion;
+
     try {
-      // first 4 bytes are protocol version
-      rawIdentity = decode(buffer.slice(4, buffer.length));
-      rawIdentity.protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
+      [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
+        buffer,
+        this.dpp.getProtocolVersion(),
+      );
+
+      rawIdentity.protocolVersion = protocolVersion;
     } catch (error) {
-      throw new InvalidIdentityError([
-        new SerializedObjectParsingError(
-          buffer,
-          error,
-        ),
-      ]);
+      if (error instanceof ConsensusError) {
+        throw new InvalidIdentityError([error]);
+      }
+
+      throw error;
     }
 
     return this.createFromObject(rawIdentity, options);

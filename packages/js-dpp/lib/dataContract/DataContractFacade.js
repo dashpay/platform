@@ -6,6 +6,9 @@ const validateDataContractFactory = require('./validation/validateDataContractFa
 const enrichDataContractWithBaseSchema = require('./enrichDataContractWithBaseSchema');
 const validateDataContractMaxDepthFactory = require('./validation/validateDataContractMaxDepthFactory');
 const validateDataContractPatternsFactory = require('./validation/validateDataContractPatternsFactory');
+const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
+
+const protocolVersion = require('../protocolVersion');
 
 class DataContractFacade {
   /**
@@ -25,9 +28,12 @@ class DataContractFacade {
       RE2,
     );
 
+    const decodeProtocolEntity = decodeProtocolEntityFactory(protocolVersion.compatibility);
+
     this.factory = new DataContractFactory(
       dpp,
       this.validateDataContract,
+      decodeProtocolEntity,
     );
   }
 

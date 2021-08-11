@@ -1,4 +1,4 @@
-const { protocolVersion } = require('../../protocolVersion');
+const protocolVersion = require('../../protocolVersion');
 
 /**
  * @param {Sandbox} [sinonSandbox]
@@ -11,7 +11,7 @@ module.exports = function createDPPMock(sinonSandbox = undefined) {
   // with some predefined behaviour
   if (!sinonSandbox) {
     return {
-      getProtocolVersion: () => protocolVersion,
+      getProtocolVersion: () => protocolVersion.latestVersion,
     };
   }
 

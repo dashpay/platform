@@ -1,34 +1,38 @@
 const Document = require('./Document');
 
-const { decode } = require('../util/serializer');
 const generateEntropy = require('../util/generateEntropy');
+const generateDocumentId = require('./generateDocumentId');
 
 const DocumentsBatchTransition = require('./stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
 const AbstractDocumentTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 const DocumentCreateTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
+const ConsensusError = require('../errors/ConsensusError');
 const InvalidActionNameError = require('./errors/InvalidActionNameError');
 const NoDocumentsSuppliedError = require('./errors/NoDocumentsSuppliedError');
 const MismatchOwnerIdsError = require('./errors/MismatchOwnerIdsError');
 const InvalidInitialRevisionError = require('./errors/InvalidInitialRevisionError');
-
 const InvalidDocumentError = require('./errors/InvalidDocumentError');
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
-const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
-
-const generateDocumentId = require('./generateDocumentId');
 
 class DocumentFactory {
   /**
    * @param {DashPlatformProtocol} dpp
    * @param {validateDocument} validateDocument
    * @param {fetchAndValidateDataContract} fetchAndValidateDataContract
+   * @param {decodeProtocolEntity} decodeProtocolEntity
    */
-  constructor(dpp, validateDocument, fetchAndValidateDataContract) {
+  constructor(
+    dpp,
+    validateDocument,
+    fetchAndValidateDataContract,
+    decodeProtocolEntity,
+  ) {
     this.dpp = dpp;
     this.validateDocument = validateDocument;
     this.fetchAndValidateDataContract = fetchAndValidateDataContract;
+    this.decodeProtocolEntity = decodeProtocolEntity;
   }
 
   /**
@@ -160,17 +164,21 @@ class DocumentFactory {
    */
   async createFromBuffer(buffer, options = { }) {
     let rawDocument;
+    let protocolVersion;
+
     try {
-      // first 4 bytes are protocol version
-      rawDocument = decode(buffer.slice(4, buffer.length));
-      rawDocument.$protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
+      [protocolVersion, rawDocument] = this.decodeProtocolEntity(
+        buffer,
+        this.dpp.getProtocolVersion(),
+      );
+
+      rawDocument.$protocolVersion = protocolVersion;
     } catch (error) {
-      throw new InvalidDocumentError([
-        new SerializedObjectParsingError(
-          buffer,
-          error,
-        ),
-      ]);
+      if (error instanceof ConsensusError) {
+        throw new InvalidDocumentError([error]);
+      }
+
+      throw error;
     }
 
     return this.createFromObject(rawDocument, options);

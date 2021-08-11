@@ -68,7 +68,11 @@ const validateAssetLockTransactionFactory = require('../identity/stateTransition
 const ValidationResult = require('../validation/ValidationResult');
 const AbstractStateTransitionIdentitySigned = require('./AbstractStateTransitionIdentitySigned');
 const validateStateTransitionKeySignatureFactory = require('./validation/validateStateTransitionKeySignatureFactory');
+
 const fetchAssetLockPublicKeyHashFactory = require('../identity/stateTransition/assetLockProof/fetchAssetLockPublicKeyHashFactory');
+
+const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
+const protocolVersion = require('../protocolVersion');
 
 class StateTransitionFacade {
   /**
@@ -231,9 +235,13 @@ class StateTransitionFacade {
       fetchAssetLockTransactionOutput,
     );
 
+    const decodeProtocolEntity = decodeProtocolEntityFactory(protocolVersion.compatibility);
+
     this.factory = new StateTransitionFactory(
       this.validateStateTransitionBasic,
       this.createStateTransition,
+      dpp,
+      decodeProtocolEntity,
     );
 
     const applyDataContractCreateTransition = applyDataContractCreateTransitionFactory(

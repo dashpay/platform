@@ -5,20 +5,19 @@ const generateDataContractId = require('./generateDataContractId');
 
 const DataContractCreateTransition = require('./stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const SerializedObjectParsingError = require('../errors/SerializedObjectParsingError');
-
 const generateEntropy = require('../util/generateEntropy');
-
-const { decode } = require('../util/serializer');
+const ConsensusError = require('../errors/ConsensusError');
 
 class DataContractFactory {
   /**
    * @param {DashPlatformProtocol} dpp
    * @param {validateDataContract} validateDataContract
+   * @param {decodeProtocolEntity} decodeProtocolEntity
    */
-  constructor(dpp, validateDataContract) {
+  constructor(dpp, validateDataContract, decodeProtocolEntity) {
     this.dpp = dpp;
     this.validateDataContract = validateDataContract;
+    this.decodeProtocolEntity = decodeProtocolEntity;
   }
 
   /**
@@ -79,17 +78,21 @@ class DataContractFactory {
    */
   async createFromBuffer(buffer, options = { }) {
     let rawDataContract;
+    let protocolVersion;
+
     try {
-      // first 4 bytes are protocol version
-      rawDataContract = decode(buffer.slice(4, buffer.length));
-      rawDataContract.protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
+      [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
+        buffer,
+        this.dpp.getProtocolVersion(),
+      );
+
+      rawDataContract.protocolVersion = protocolVersion;
     } catch (error) {
-      throw new InvalidDataContractError([
-        new SerializedObjectParsingError(
-          buffer,
-          error,
-        ),
-      ]);
+      if (error instanceof ConsensusError) {
+        throw new InvalidDataContractError([error]);
+      }
+
+      throw error;
     }
 
     return this.createFromObject(rawDataContract, options);

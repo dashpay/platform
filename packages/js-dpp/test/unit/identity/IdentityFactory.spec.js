@@ -23,15 +23,16 @@ const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 describe('IdentityFactory', () => {
   let factory;
   let validateIdentityMock;
-  let decodeMock;
+  let decodeProtocolEntityMock;
   let IdentityFactory;
   let identity;
   let instantAssetLockProof;
   let chainAssetLockProof;
+  let dppMock;
 
   beforeEach(function beforeEach() {
     validateIdentityMock = this.sinonSandbox.stub();
-    decodeMock = this.sinonSandbox.stub();
+    decodeProtocolEntityMock = this.sinonSandbox.stub();
 
     instantAssetLockProof = getInstantAssetLockProofFixture();
     chainAssetLockProof = getChainAssetLockProofFixture();
@@ -39,16 +40,19 @@ describe('IdentityFactory', () => {
     IdentityFactory = rewiremock.proxy(
       '../../../lib/identity/IdentityFactory',
       {
-        '../../../lib/util/serializer': {
-          decode: decodeMock,
-        },
         '../../../lib/identity/Identity': Identity,
         '../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition': IdentityCreateTransition,
         '../../../lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition': IdentityTopUpTransition,
       },
     );
 
-    factory = new IdentityFactory(createDPPMock(), validateIdentityMock);
+    dppMock = createDPPMock();
+
+    factory = new IdentityFactory(
+      dppMock,
+      validateIdentityMock,
+      decodeProtocolEntityMock,
+    );
 
     identity = getIdentityFixture();
     identity.id = instantAssetLockProof.createIdentifier();
@@ -114,14 +118,18 @@ describe('IdentityFactory', () => {
   });
 
   describe('#createFromBuffer', () => {
+    let serializedIdentity;
+    let rawIdentity;
+
     beforeEach(function beforeEach() {
       this.sinonSandbox.stub(factory, 'createFromObject');
+
+      serializedIdentity = identity.toBuffer();
+      rawIdentity = identity.toObject();
     });
 
     it('should return new Identity from serialized one', () => {
-      const serializedIdentity = identity.toBuffer();
-
-      decodeMock.returns(identity.toObject());
+      decodeProtocolEntityMock.returns([rawIdentity.protocolVersion, rawIdentity]);
 
       factory.createFromObject.returns(identity);
 
@@ -129,31 +137,45 @@ describe('IdentityFactory', () => {
 
       expect(result).to.equal(identity);
 
-      expect(factory.createFromObject).to.have.been.calledOnceWith(identity.toObject());
+      expect(factory.createFromObject).to.have.been.calledOnceWith(rawIdentity);
 
-      // cut version information
-      const dataToDecode = serializedIdentity.slice(4, serializedIdentity.length);
-
-      expect(decodeMock).to.have.been.calledOnceWith(dataToDecode);
+      expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
+        serializedIdentity,
+        dppMock.getProtocolVersion(),
+      );
     });
 
-    it('should throw consensus error if `decode` fails', () => {
-      const parsingError = new Error('Something failed during parsing');
+    it('should throw InvalidIdentityError if the decoding fails with consensus error', () => {
+      const parsingError = new SerializedObjectParsingError(
+        serializedIdentity,
+        new Error(),
+      );
 
-      const serializedIdentity = identity.toBuffer();
-
-      decodeMock.throws(parsingError);
+      decodeProtocolEntityMock.throws(parsingError);
 
       try {
         factory.createFromBuffer(serializedIdentity);
-        expect.fail('Error was not thrown');
+
+        expect.fail('should throw InvalidIdentityError');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidIdentityError);
 
         const [innerError] = e.getErrors();
-        expect(innerError).to.be.an.instanceOf(SerializedObjectParsingError);
-        expect(innerError.getPayload()).to.deep.equal(serializedIdentity);
-        expect(innerError.getParsingError()).to.deep.equal(parsingError);
+        expect(innerError).to.equal(parsingError);
+      }
+    });
+
+    it('should throw an error if decoding fails with any other error', () => {
+      const parsingError = new Error('Something failed during parsing');
+
+      decodeProtocolEntityMock.throws(parsingError);
+
+      try {
+        factory.createFromBuffer(serializedIdentity);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).to.equal(parsingError);
       }
     });
   });

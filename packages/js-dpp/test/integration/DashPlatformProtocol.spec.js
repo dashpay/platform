@@ -1,5 +1,5 @@
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
-const { protocolVersion } = require('../../lib/protocolVersion');
+const protocolVersion = require('../../lib/protocolVersion');
 const getChainAssetLockProofFixture = require('../../lib/test/fixtures/getChainAssetLockProofFixture');
 const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
 
@@ -27,9 +27,9 @@ describe('DashPlatformProtocol', () => {
     const document = dpp.document.create(dataContract, generateRandomIdentifier(), 'niceDocument', {});
     let identity = dpp.identity.create(getChainAssetLockProofFixture(), []);
 
-    expect(dataContract.protocolVersion).to.equal(protocolVersion);
-    expect(document.protocolVersion).to.equal(protocolVersion);
-    expect(identity.protocolVersion).to.equal(protocolVersion);
+    expect(dataContract.protocolVersion).to.equal(protocolVersion.latestVersion);
+    expect(document.protocolVersion).to.equal(protocolVersion.latestVersion);
+    expect(identity.protocolVersion).to.equal(protocolVersion.latestVersion);
 
     dpp.setProtocolVersion(42);
 

@@ -4,7 +4,7 @@ const getDataContractFixture = require('../../../../../lib/test/fixtures/getData
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 
 const Identifier = require('../../../../../lib/identifier/Identifier');
-const { protocolVersion } = require('../../../../../lib/protocolVersion');
+const protocolVersion = require('../../../../../lib/protocolVersion');
 
 describe('DataContractCreateTransition', () => {
   let stateTransition;
@@ -24,7 +24,7 @@ describe('DataContractCreateTransition', () => {
 
     dataContract = getDataContractFixture();
     stateTransition = new DataContractCreateTransition({
-      protocolVersion,
+      protocolVersion: protocolVersion.latestVersion,
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
@@ -57,7 +57,7 @@ describe('DataContractCreateTransition', () => {
   describe('#toJSON', () => {
     it('should return State Transition as plain JS object', () => {
       expect(stateTransition.toJSON()).to.deep.equal({
-        protocolVersion,
+        protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DATA_CONTRACT_CREATE,
         dataContract: dataContract.toJSON(),
         signaturePublicKeyId: undefined,

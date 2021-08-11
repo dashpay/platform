@@ -1,7 +1,7 @@
 const { default: getRE2Class } = require('@dashevo/re2-wasm');
 const createAjv = require('./ajv/createAjv');
 
-const { protocolVersion } = require('./protocolVersion');
+const protocolVersion = require('./protocolVersion');
 
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 
@@ -26,7 +26,7 @@ class DashPlatformProtocol {
 
     this.protocolVersion = this.options.protocolVersion !== undefined
       ? this.options.protocolVersion
-      : protocolVersion;
+      : protocolVersion.latestVersion;
 
     this.stateRepository = undefined;
     this.jsonSchemaValidator = undefined;
