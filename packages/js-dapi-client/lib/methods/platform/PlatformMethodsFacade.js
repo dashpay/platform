@@ -5,6 +5,7 @@ const getIdentityFactory = require('./getIdentity/getIdentityFactory');
 const getIdentityIdsByPublicKeyHashesFactory = require('./getIdentityIdsByPublicKeyHashes/getIdentityIdsByPublicKeyHashesFactory');
 const getIdentitiesByPublicKeyHashesFactory = require('./getIdentitiesByPublicKeyHashes/getIdentitiesByPublicKeyHashesFactory');
 const waitForStateTransitionResultFactory = require('./waitForStateTransitionResult/waitForStateTransitionResultFactory');
+const getConsensusParamsFactory = require('./getConsensusParams/getConsensusParamsFactory');
 
 class PlatformMethodsFacade {
   /**
@@ -18,6 +19,7 @@ class PlatformMethodsFacade {
     this.getIdentityIdsByPublicKeyHashes = getIdentityIdsByPublicKeyHashesFactory(grpcTransport);
     this.getIdentitiesByPublicKeyHashes = getIdentitiesByPublicKeyHashesFactory(grpcTransport);
     this.waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransport);
+    this.getConsensusParams = getConsensusParamsFactory(grpcTransport);
   }
 }
 
