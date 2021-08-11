@@ -187,8 +187,8 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v1
         with:
-          username: ${{ secrets.DOCKERHUB_CACHE_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_CACHE_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set suffix to Docker tags
         uses: actions/github-script@v3
