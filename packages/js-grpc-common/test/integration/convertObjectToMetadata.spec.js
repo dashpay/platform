@@ -1,4 +1,4 @@
-const { Metadata } = require('grpc');
+const { Metadata } = require('@grpc/grpc-js');
 
 const convertObjectToMetadata = require('../../lib/convertObjectToMetadata');
 
@@ -14,10 +14,10 @@ describe('convertObjectToMerata', () => {
 
     expect(result).to.be.an.instanceOf(Metadata);
     // eslint-disable-next-line no-underscore-dangle
-    expect(result._internal_repr.some).to.deep.equal(['42']);
+    expect(result.internalRepr.get('some')).to.deep.equal(['42']);
     // eslint-disable-next-line no-underscore-dangle
-    expect(result._internal_repr.string).to.deep.equal(['"someString"']);
+    expect(result.internalRepr.get('string')).to.deep.equal(['"someString"']);
     // eslint-disable-next-line no-underscore-dangle
-    expect(result._internal_repr.buffer).to.deep.equal(['{"type":"Buffer","data":[115,111,109,101]}']);
+    expect(result.internalRepr.get('buffer')).to.deep.equal(['{"type":"Buffer","data":[115,111,109,101]}']);
   });
 });

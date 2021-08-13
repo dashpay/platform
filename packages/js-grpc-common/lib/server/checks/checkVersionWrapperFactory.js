@@ -1,6 +1,6 @@
 const semver = require('semver');
 
-const { Metadata } = require('grpc');
+const { Metadata } = require('@grpc/grpc-js');
 
 const VersionMismatchGrpcError = require('../error/VersionMismatchGrpcError');
 
