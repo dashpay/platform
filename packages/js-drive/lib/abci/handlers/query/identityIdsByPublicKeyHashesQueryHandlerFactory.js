@@ -10,6 +10,7 @@ const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
     ResponseMetadata,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -75,17 +76,20 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
 
     if (request.prove) {
       const proof = response.getProof();
+      const storeTreeProofs = new StoreTreeProofs();
 
       const {
         rootTreeProof,
         storeTreeProof,
       } = previousRootTree.getFullProof(
         previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-        identityIds.filter(Boolean).map((identityId) => identityId.toBuffer()),
+        publicKeyHashes,
       );
 
+      storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(storeTreeProof);
+
       proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProof(storeTreeProof);
+      proof.setStoreTreeProofs(storeTreeProofs);
     } else {
       const identityIdBuffers = identityIds.map((identityId) => {
         if (!identityId) {

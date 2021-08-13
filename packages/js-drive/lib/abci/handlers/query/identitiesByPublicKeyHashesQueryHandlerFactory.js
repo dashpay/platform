@@ -10,6 +10,7 @@ const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
     ResponseMetadata,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -22,6 +23,7 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  * @param {number} maxIdentitiesPerRequest
  * @param {RootTree} previousRootTree
  * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
+ * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} previousPublicKeyToIdentityIdStoreRootTreeLeaf
  * @param {createQueryResponse} createQueryResponse
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContext} previousBlockExecutionContext
@@ -33,6 +35,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
   maxIdentitiesPerRequest,
   previousRootTree,
   previousIdentitiesStoreRootTreeLeaf,
+  previousPublicKeyToIdentityIdStoreRootTreeLeaf,
   createQueryResponse,
   blockExecutionContext,
   previousBlockExecutionContext,
@@ -75,19 +78,49 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       )),
     );
 
+    const notFoundIdentityPublicKeyHashes = [];
+    const foundIdentityIds = [];
+
+    for (let i = 0; i < identityIds.length; i++) {
+      // If identity id was not found, we need to request non-inclusion proof by public key hash
+      if (!identityIds[i]) {
+        notFoundIdentityPublicKeyHashes.push(publicKeyHashes[i]);
+      } else {
+        // If identity was found, we need to request ordinary identity proof by id
+        foundIdentityIds.push(identityIds[i]);
+      }
+    }
+
     if (request.prove) {
       const proof = response.getProof();
+      const storeTreeProofs = new StoreTreeProofs();
 
       const {
         rootTreeProof,
         storeTreeProof,
       } = previousRootTree.getFullProof(
         previousIdentitiesStoreRootTreeLeaf,
-        identityIds.filter(Boolean).map((identityId) => identityId.toBuffer()),
+        foundIdentityIds.map((identityId) => {
+          if (identityId) {
+            return identityId.toBuffer();
+          }
+
+          return null;
+        }),
       );
 
+      const {
+        storeTreeProof: publicKeyStoreTreeProof,
+      } = previousRootTree.getFullProof(
+        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
+        notFoundIdentityPublicKeyHashes,
+      );
+
+      storeTreeProofs.setIdentitiesProof(storeTreeProof);
+      storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(publicKeyStoreTreeProof);
+
       proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProof(storeTreeProof);
+      proof.setStoreTreeProofs(storeTreeProofs);
     } else {
       const identityBuffers = await Promise.all(
         identityIds.map(async (identityId) => {

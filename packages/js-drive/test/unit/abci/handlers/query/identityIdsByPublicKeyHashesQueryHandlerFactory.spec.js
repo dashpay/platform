@@ -214,7 +214,7 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     expect(previousRootTreeMock.getFullProof).to.be.calledOnce();
     expect(previousRootTreeMock.getFullProof.getCall(0).args).to.have.deep.members([
       previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
-      identityIds.map((identityId) => identityId.toBuffer()),
+      publicKeyHashes,
     ]);
   });
 

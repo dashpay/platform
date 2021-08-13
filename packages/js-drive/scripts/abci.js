@@ -25,6 +25,16 @@ const banner = '\n ____       ______      ____        __  __                 ___
 console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
+  /**
+   * Initialize hashFunction module
+   *
+   * It needs to be initialized prior to anything else - createDIContainer uses hashFunction,
+   * and it won't work if left uninitialized. This is workaround to blake3 causing a segfault
+   * on node14, and init function initializes WASM build instead of NEON, which is default behaviour
+   */
+
+  await initHashFunction();
+
   const container = createDIContainer(process.env);
   const logger = container.resolve('logger');
   const dpp = container.resolve('dpp');
@@ -52,12 +62,6 @@ console.log(chalk.hex('#008de4')(banner));
 
     await container.dispose();
   });
-
-  /**
-   * Initialize hashFunction
-   */
-
-  await initHashFunction();
 
   /**
    * Initialize DPP

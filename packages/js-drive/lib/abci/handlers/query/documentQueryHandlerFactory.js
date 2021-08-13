@@ -10,6 +10,7 @@ const {
   v0: {
     GetDocumentsResponse,
     ResponseMetadata,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -112,14 +113,17 @@ function documentQueryHandlerFactory(
       const documentIds = documents.map((document) => document.getId());
 
       const proof = response.getProof();
+      const storeTreeProofs = new StoreTreeProofs();
 
       const {
         rootTreeProof,
         storeTreeProof,
       } = previousRootTree.getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds);
 
+      storeTreeProofs.setDocumentsProof(storeTreeProof);
+
       proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProof(storeTreeProof);
+      proof.setStoreTreeProofs(storeTreeProofs);
     } else {
       response.setDocumentsList(documents.map((document) => document.toBuffer()));
     }

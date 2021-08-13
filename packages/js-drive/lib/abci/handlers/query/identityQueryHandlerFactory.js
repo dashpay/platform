@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetIdentityResponse,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -50,14 +51,16 @@ function identityQueryHandlerFactory(
 
     const identity = await previousIdentityRepository.fetch(id);
 
-    if (!identity) {
+    let identityBuffer;
+    if (!identity && !request.prove) {
       throw new NotFoundAbciError('Identity not found');
+    } else {
+      identityBuffer = identity.toBuffer();
     }
-
-    const identityBuffer = identity.toBuffer();
 
     if (request.prove) {
       const proof = response.getProof();
+      const storeTreeProofs = new StoreTreeProofs();
 
       const {
         rootTreeProof,
@@ -67,8 +70,10 @@ function identityQueryHandlerFactory(
         [id],
       );
 
+      storeTreeProofs.setIdentitiesProof(storeTreeProof);
+
       proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProof(storeTreeProof);
+      proof.setStoreTreeProofs(storeTreeProofs);
     } else {
       response.setIdentity(identityBuffer);
     }

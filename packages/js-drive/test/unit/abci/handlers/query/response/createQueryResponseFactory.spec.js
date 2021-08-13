@@ -62,7 +62,7 @@ describe('createQueryResponseFactory', () => {
       signatureLlmqHash: lastCommitInfo.quorumHash.toString('base64'),
       signature: lastCommitInfo.stateSignature.toString('base64'),
       rootTreeProof: '',
-      storeTreeProof: '',
+      storeTreeProofs: undefined,
     });
   });
 });

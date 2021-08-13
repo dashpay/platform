@@ -34,6 +34,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let maxIdentitiesPerRequest;
   let previousRootTreeMock;
   let previousIdentitiesStoreRootTreeLeafMock;
+  let previousPublicKeyToIdentityIdStoreRootTreeLeafMock;
   let createQueryResponseMock;
   let responseMock;
   let blockExecutionContextMock;
@@ -55,6 +56,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     };
 
     previousIdentitiesStoreRootTreeLeafMock = this.sinon.stub();
+    previousPublicKeyToIdentityIdStoreRootTreeLeafMock = this.sinon.stub();
 
     maxIdentitiesPerRequest = 5;
 
@@ -74,6 +76,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       maxIdentitiesPerRequest,
       previousRootTreeMock,
       previousIdentitiesStoreRootTreeLeafMock,
+      previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
       createQueryResponseMock,
       blockExecutionContextMock,
       previousBlockExecutionContextMock,
@@ -240,10 +243,23 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
-    expect(previousRootTreeMock.getFullProof).to.be.calledOnce();
+    expect(previousRootTreeMock.getFullProof).to.be.calledTwice();
     expect(previousRootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
       previousIdentitiesStoreRootTreeLeafMock,
-      identityIds,
+      // Fetch only found identity ids to optimize proof size
+      identityIds.map((identityId) => {
+        if (identityId) {
+          return identityId.toBuffer();
+        }
+
+        return null;
+      }),
+    ]);
+
+    expect(previousRootTreeMock.getFullProof.getCall(1).args).to.deep.equal([
+      previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
+      // Fetch proof only for not found identities to optimize proof size
+      [publicKeyHashes[2]],
     ]);
   });
 

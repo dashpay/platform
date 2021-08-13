@@ -9,6 +9,7 @@ const {
 const {
   v0: {
     GetDataContractResponse,
+    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -50,22 +51,28 @@ function dataContractQueryHandlerFactory(
 
     const dataContract = await previousDataContractRepository.fetch(id);
 
-    if (!dataContract) {
+    let dataContractBuffer;
+    if (!dataContract && !request.prove) {
       throw new NotFoundAbciError('Data Contract not found');
+    } else {
+      dataContractBuffer = dataContract.toBuffer();
     }
 
     if (request.prove) {
       const proof = response.getProof();
+      const storeTreeProofs = new StoreTreeProofs();
 
       const {
         rootTreeProof,
         storeTreeProof,
       } = previousRootTree.getFullProof(previousDataContractsStoreRootTreeLeaf, [id]);
 
+      storeTreeProofs.setDataContractsProof(storeTreeProof);
+
       proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProof(storeTreeProof);
+      proof.setStoreTreeProofs(storeTreeProofs);
     } else {
-      response.setDataContract(dataContract.toBuffer());
+      response.setDataContract(dataContractBuffer);
     }
 
     return new ResponseQuery({
