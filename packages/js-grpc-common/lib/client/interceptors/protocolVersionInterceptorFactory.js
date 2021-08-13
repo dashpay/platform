@@ -1,6 +1,6 @@
 const semver = require('semver');
 
-const { InterceptingCall } = require('@grpc/grpc-js');
+const { InterceptingCall } = require('grpc');
 
 const VersionMismatchGrpcError = require('../../server/error/VersionMismatchGrpcError');
 

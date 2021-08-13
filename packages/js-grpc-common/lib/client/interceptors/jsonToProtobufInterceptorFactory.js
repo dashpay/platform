@@ -1,4 +1,4 @@
-const grpc = require('@grpc/grpc-js');
+const grpc = require('grpc');
 
 const { InterceptingCall } = grpc;
 

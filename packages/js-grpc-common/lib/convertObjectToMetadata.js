@@ -1,4 +1,4 @@
-const { Metadata } = require('@grpc/grpc-js');
+const { Metadata } = require('grpc');
 
 /**
  * Converts any JavaScript object to grpc metadata
