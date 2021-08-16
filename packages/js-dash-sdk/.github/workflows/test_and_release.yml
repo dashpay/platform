@@ -114,6 +114,8 @@ jobs:
           dpns-contract-id: ${{ steps.start-local-network.outputs.dpns-contract-id }}
           dpns-top-level-identity-id: ${{ steps.start-local-network.outputs.dpns-top-level-identity-id }}
           dpns-top-level-identity-private-key: ${{ steps.start-local-network.outputs.dpns-top-level-identity-private-key }}
+          feature-flags-identity-id: ${{ steps.start-local-network.outputs.feature-flags-identity-id }}
+          feature-flags-contract-id: ${{ steps.start-local-network.outputs.feature-flags-contract-id }}
           platform-test-suite-branch: ${{ steps.platform-branches.outputs.testsuite-branch }}
 
       - name: Show Docker logs
