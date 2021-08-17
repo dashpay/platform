@@ -22,7 +22,7 @@ describe('decodeProtocolEntityFactory', () => {
     parsedProtocolVersion = 0;
 
     protocolVersionBuffer = Buffer.alloc(4);
-    protocolVersionBuffer.writeUInt32BE(parsedProtocolVersion, 0);
+    protocolVersionBuffer.writeUInt32LE(parsedProtocolVersion, 0);
 
     rawEntity = { test: 'successful' };
     entityBuffer = encode(rawEntity);
@@ -56,7 +56,7 @@ describe('decodeProtocolEntityFactory', () => {
     parsedProtocolVersion = 2;
 
     protocolVersionBuffer = Buffer.alloc(4);
-    protocolVersionBuffer.writeUInt32BE(parsedProtocolVersion, 0);
+    protocolVersionBuffer.writeUInt32LE(parsedProtocolVersion, 0);
 
     buffer = Buffer.concat([protocolVersionBuffer, entityBuffer]);
 
@@ -91,7 +91,7 @@ describe('decodeProtocolEntityFactory', () => {
     versionCompatibilityMap[currentProtocolVersion.toString()] = minimalProtocolVersion;
 
     protocolVersionBuffer = Buffer.alloc(4);
-    protocolVersionBuffer.writeUInt32BE(parsedProtocolVersion, 0);
+    protocolVersionBuffer.writeUInt32LE(parsedProtocolVersion, 0);
 
     buffer = Buffer.concat([protocolVersionBuffer, entityBuffer]);
 

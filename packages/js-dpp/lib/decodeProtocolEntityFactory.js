@@ -17,7 +17,7 @@ function decodeProtocolEntityFactory(versionCompatibilityMap) {
     // Parse protocol version from the first 4 bytes
     let protocolVersion;
     try {
-      protocolVersion = buffer.slice(0, 4).readUInt32BE(0);
+      protocolVersion = buffer.slice(0, 4).readUInt32LE(0);
     } catch (error) {
       throw new ProtocolVersionParsingError(
         buffer,

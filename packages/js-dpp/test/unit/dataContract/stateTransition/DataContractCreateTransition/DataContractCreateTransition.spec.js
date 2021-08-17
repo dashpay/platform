@@ -74,7 +74,7 @@ describe('DataContractCreateTransition', () => {
       encodeMock.returns(serializedStateTransition);
 
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32BE(stateTransition.protocolVersion, 0);
+      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
 
       const result = stateTransition.toBuffer();
 
@@ -111,7 +111,7 @@ describe('DataContractCreateTransition', () => {
       ]);
 
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32BE(stateTransition.protocolVersion, 0);
+      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
 
       expect(hashMock).to.have.been.calledOnceWith(
         Buffer.concat([protocolVersionUInt32, serializedDocument]),

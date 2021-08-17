@@ -133,7 +133,7 @@ class AbstractStateTransition {
     delete serializedData.protocolVersion;
 
     const protocolVersionUInt32 = Buffer.alloc(4);
-    protocolVersionUInt32.writeUInt32BE(this.getProtocolVersion(), 0);
+    protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
 
     return Buffer.concat([protocolVersionUInt32, encode(serializedData)]);
   }

@@ -106,7 +106,7 @@ describe('Identity', () => {
       delete identityDataToEncode.protocolVersion;
 
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32BE(identity.getProtocolVersion(), 0);
+      protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
 
       expect(encodeMock).to.have.been.calledOnceWith(identityDataToEncode);
       expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, encodeMockData]));
@@ -126,7 +126,7 @@ describe('Identity', () => {
       delete identityDataToEncode.protocolVersion;
 
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32BE(identity.getProtocolVersion(), 0);
+      protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
 
       expect(encodeMock).to.have.been.calledOnceWith(identityDataToEncode);
       expect(hashMock).to.have.been.calledOnceWith(Buffer.concat([protocolVersionUInt32, buffer]));

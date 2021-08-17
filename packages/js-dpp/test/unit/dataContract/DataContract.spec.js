@@ -294,7 +294,7 @@ describe('DataContract', () => {
       delete dataContractToEncode.protocolVersion;
 
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32BE(dataContract.getProtocolVersion(), 0);
+      protocolVersionUInt32.writeUInt32LE(dataContract.getProtocolVersion(), 0);
 
       expect(encodeMock).to.have.been.calledOnceWith(dataContractToEncode);
       expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDataContract]));

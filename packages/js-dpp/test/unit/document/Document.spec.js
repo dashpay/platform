@@ -411,7 +411,7 @@ describe('Document', () => {
       const result = document.toBuffer();
 
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32BE(rawDocument.$protocolVersion, 0);
+      protocolVersionUInt32.writeUInt32LE(rawDocument.$protocolVersion, 0);
 
       expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDocument]));
 
