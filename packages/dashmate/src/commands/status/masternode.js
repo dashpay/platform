@@ -61,7 +61,8 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
 
     const {
       result: {
-        dmnState: masternodeState,
+        dmnState: masternodeDmnState,
+        state: masternodeState,
         status: masternodeStatus,
         proTxHash: masternodeProTxHash,
       },
@@ -92,10 +93,18 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
 
     // Determine payment queue position
     let paymentQueuePosition;
-    if (masternodeStatus === 'Ready' && masternodeState.PoSeRevivedHeight > 0) {
+    let lastPaidTime;
+    if (masternodeState === 'READY') {
       paymentQueuePosition = getPaymentQueuePosition(
-        masternodeState, masternodeEnabledCount, coreBlocks,
+        masternodeDmnState, masternodeEnabledCount, coreBlocks,
       );
+
+      // Determine last paid time
+      if (masternodeDmnState.lastPaidHeight === 0) {
+        lastPaidTime = 'Never';
+      } else {
+        lastPaidTime = `${blocksToTime(coreBlocks - masternodeDmnState.lastPaidHeight)} ago`;
+      }
     }
 
     // Apply colors
@@ -115,23 +124,23 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
 
     let masternodePoSePenalty;
     if (masternodeStatus === 'Ready') {
-      if (masternodeState.PoSePenalty === 0) {
-        masternodePoSePenalty = chalk.green(masternodeState.PoSePenalty);
-      } else if (masternodeState.PoSePenalty < masternodeEnabledCount) {
-        masternodePoSePenalty = chalk.yellow(masternodeState.PoSePenalty);
+      if (masternodeDmnState.PoSePenalty === 0) {
+        masternodePoSePenalty = chalk.green(masternodeDmnState.PoSePenalty);
+      } else if (masternodeDmnState.PoSePenalty < masternodeEnabledCount) {
+        masternodePoSePenalty = chalk.yellow(masternodeDmnState.PoSePenalty);
       } else {
-        masternodePoSePenalty = chalk.red(masternodeState.PoSePenalty);
+        masternodePoSePenalty = chalk.red(masternodeDmnState.PoSePenalty);
       }
     }
 
     // Build table
-    rows.push(['Masternode status', (masternodeStatus === 'Ready' ? chalk.green : chalk.red)(masternodeStatus)]);
+    rows.push(['Masternode status', (masternodeState === 'READY' ? chalk.green : chalk.red)(masternodeStatus)]);
     rows.push(['Sentinel status', (sentinelState !== '' ? sentinelState : 'No errors')]);
-    if (masternodeStatus === 'Ready') {
+    if (masternodeState === 'READY') {
       rows.push(['ProTx Hash', masternodeProTxHash]);
       rows.push(['PoSe Penalty', masternodePoSePenalty]);
-      rows.push(['Last paid block', masternodeState.lastPaidHeight]);
-      rows.push(['Last paid time', `${blocksToTime(coreBlocks - masternodeState.lastPaidHeight)} ago`]);
+      rows.push(['Last paid block', masternodeDmnState.lastPaidHeight]);
+      rows.push(['Last paid time', lastPaidTime]);
       rows.push(['Payment queue position', `${paymentQueuePosition}/${masternodeEnabledCount}`]);
       rows.push(['Next payment time', `in ${blocksToTime(paymentQueuePosition)}`]);
     }
