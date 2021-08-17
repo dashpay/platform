@@ -22,6 +22,7 @@ const {
     GetIdentitiesByPublicKeyHashesRequest,
     GetIdentityIdsByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
+    GetConsensusParamsRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -37,6 +38,8 @@ const {
       GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
       WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
+      GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
+      GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -66,12 +69,16 @@ const getIdentityIdsByPublicKeyHashesHandlerFactory = require(
 const waitForStateTransitionResultHandlerFactory = require(
   './waitForStateTransitionResultHandlerFactory',
 );
+const getConsensusParamsHandlerFactory = require(
+  './getConsensusParamsHandlerFactory',
+);
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
 const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
 const waitForTransactionResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
 const waitForHeightFactory = require('../../../externalApis/tenderdash/waitForHeightFactory');
 const getExistingTransactionResultFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/getExistingTransactionResult');
+const getConsensusParamsFactory = require('../../../externalApis/tenderdash/getConsensusParamsFactory');
 
 /**
  * @param {jaysonClient} rpcClient
@@ -220,6 +227,21 @@ function platformHandlersFactory(
     wrapInErrorHandler(waitForStateTransitionResultHandler),
   );
 
+  // get Consensus Params
+  const getConsensusParams = getConsensusParamsFactory(rpcClient);
+  const getConsensusParamsHandler = getConsensusParamsHandlerFactory(getConsensusParams);
+
+  const wrappedGetConsensusParams = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetConsensusParamsRequest,
+      PBJSGetConsensusParamsRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetConsensusParamsResponse,
+    ),
+    wrapInErrorHandler(getConsensusParamsHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -228,6 +250,7 @@ function platformHandlersFactory(
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     getIdentityIdsByPublicKeyHashes: wrappedGetIdentityIdsByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
+    getConsensusParams: wrappedGetConsensusParams,
   };
 }
 

@@ -11,3 +11,4 @@ test/rpc
 coverage/
 dapidb/
 /.env
+docker/cache
