@@ -243,4 +243,14 @@ module.exports = {
 
     return configFile;
   },
+  '0.20.2': (configFile) => {
+    // Update contracts
+    configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
+      .drive.tenderdash.genesis;
+    configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
+    configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
+    configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
+
+    return configFile;
+  },
 };

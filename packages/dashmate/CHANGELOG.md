@@ -1,3 +1,17 @@
+## [0.20.2](https://github.com/dashevo/dashmate/compare/v0.20.1...v0.20.2) (2021-08-04)
+
+
+### Features
+
+* update network parameters and migrations for `testnet-5` ([#408](https://github.com/dashevo/dashmate/pull/408))
+
+
+### BREAKING CHANGES:
+
+* cannot connect to networks prior to `testnet-5`
+
+
+
 ## [0.20.1](https://github.com/dashevo/dashmate/compare/v0.20.0...v0.20.1) (2021-07-28)
 
 
