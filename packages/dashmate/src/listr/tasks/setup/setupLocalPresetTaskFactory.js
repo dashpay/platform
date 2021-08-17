@@ -1,7 +1,9 @@
 const { Listr } = require('listr2');
-const { PRESET_LOCAL } = require('../../../constants');
+
 const os = require('os');
 const path = require('path');
+
+const { PRESET_LOCAL } = require('../../../constants');
 
 /**
  * @param {ConfigFile} configFile
