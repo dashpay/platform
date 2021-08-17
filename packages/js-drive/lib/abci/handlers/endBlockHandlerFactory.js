@@ -2,12 +2,15 @@ const {
   tendermint: {
     abci: {
       ResponseEndBlock,
+      ConsensusParams,
     },
     types: {
       CoreChainLock,
     },
   },
 } = require('@dashevo/abci/types');
+
+const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
 const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
 const NoDashpayContractFoundError = require('./errors/NoDashpayContractFoundError');
@@ -24,6 +27,8 @@ const NoDashpayContractFoundError = require('./errors/NoDashpayContractFoundErro
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
+ * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
+ * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  *
  * @return {endBlockHandler}
  */
@@ -37,6 +42,8 @@ function endBlockHandlerFactory(
   validatorSet,
   createValidatorSetUpdate,
   logger,
+  getFeatureFlagForHeight,
+  blockExecutionStoreTransactions,
 ) {
   /**
    * @typedef endBlockHandler
@@ -107,6 +114,22 @@ function endBlockHandlerFactory(
       );
     }
 
+    // Update consensus params feature flag
+    const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
+
+    const updateConsensusParamsFeatureFlag = await getFeatureFlagForHeight(
+      featureFlagTypes.UPDATE_CONSENSUS_PARAMS, height, documentsTransaction,
+    );
+
+    let consensusParamUpdates;
+    if (updateConsensusParamsFeatureFlag) {
+      consensusParamUpdates = new ConsensusParams({
+        block: updateConsensusParamsFeatureFlag.get('block'),
+        evidence: updateConsensusParamsFeatureFlag.get('evidence'),
+        version: updateConsensusParamsFeatureFlag.get('version'),
+      });
+    }
+
     const validTxCount = blockExecutionContext.getValidTxCount();
     const invalidTxCount = blockExecutionContext.getInvalidTxCount();
 
@@ -119,6 +142,7 @@ function endBlockHandlerFactory(
     );
 
     return new ResponseEndBlock({
+      consensusParamUpdates,
       validatorSetUpdate,
       nextCoreChainLockUpdate,
     });
