@@ -33,8 +33,8 @@ module.exports = function createDPPMock(sinonSandbox = undefined) {
     createFromObject: sinonSandbox.stub(),
     createFromBuffer: sinonSandbox.stub(),
     validate: sinonSandbox.stub(),
-    validateStructure: sinonSandbox.stub(),
-    validateData: sinonSandbox.stub(),
+    validateBasic: sinonSandbox.stub(),
+    validateState: sinonSandbox.stub(),
     apply: sinonSandbox.stub(),
   };
 
