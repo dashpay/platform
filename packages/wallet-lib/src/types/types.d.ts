@@ -1,5 +1,11 @@
 import {Account} from "./Account/Account";
 
+export declare type TransactionMetaData<T extends object = object> = T & {
+    blockHash: string,
+    height: number,
+    instantLocked: boolean,
+    chainLocked: boolean
+}
 export declare type transactionId<T extends string = string> = T;
 export declare type Mnemonic<T extends object = object> = T & {
     toString(): string;
@@ -19,6 +25,13 @@ export declare type Seed<T extends object = object> = T & {
 export declare type Transaction<T extends object = object> = T & {
     toString(): string;
 };
+export declare type TransactionWithMetaData<T extends object = object> = T & {
+    transaction: Transaction,
+    metadata: TransactionMetaData
+}
+
+export declare type TransactionsWithMetaData = [TransactionWithMetaData];
+
 export declare type RawTransaction = string;
 export declare type TransactionInfo<T extends object = object> = T & {
     txid:string;

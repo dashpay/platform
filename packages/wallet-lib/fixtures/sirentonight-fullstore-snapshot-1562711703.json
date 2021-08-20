@@ -892,6 +892,15 @@
       "spendable": false
     }
   },
+  "transactionsMetadata": {
+    "92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5": {
+      "hash": "92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5",
+      "blockHash": "000000c5d6ca463ebbfddffe9a0a135312b6d8fc4eae2787b82b0fca9de7a554",
+      "height": 29197,
+      "instantLocked": false,
+      "chainLocked": false
+    }
+  },
   "chains": {
     "testnet": {
       "name": "testnet",

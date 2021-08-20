@@ -11,6 +11,7 @@ class TransportMock {
     this.subscribeToBlocks = sinonSandbox.stub();
     this.getIdentityIdsByPublicKeyHash = sinonSandbox.stub().returns([null]);
     this.sendTransaction = sinonSandbox.stub();
+    this.getTransaction = sinonSandbox.stub();
     this.getStatus = sinonSandbox.stub().resolves(getStatus());
   }
 }

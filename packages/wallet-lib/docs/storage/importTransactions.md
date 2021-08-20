@@ -6,7 +6,7 @@ Parameters:
 
 | parameters             | type              | required       | Description                                                             |  
 |------------------------|-------------------|----------------| ------------------------------------------------------------------------|
-| **transactions**       | Array[Transaction/Object]/Object | yes            | The set of transactions to import to the store (can be a single element)|
+| **transactions**       | Array[TransactionWithMetadata]/Array[Transaction/Object]/Object | yes            | The set of transactions to import to the store (can be a single element)|
 
 
 Returns: Boolean   

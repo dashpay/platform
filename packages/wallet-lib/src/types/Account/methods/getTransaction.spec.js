@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const mockedStore = require('../../../../fixtures/sirentonight-fullstore-snapshot-1562711703');
 const getTransaction = require('./getTransaction');
 const searchTransaction = require('../../Storage/methods/searchTransaction');
+const searchTransactionMetadata = require('../../Storage/methods/searchTransactionMetadata');
 
 let mockedWallet;
 let fetchTransactionInfoCalledNb = 0;
@@ -13,6 +14,7 @@ describe('Account - getTransaction', function suite() {
       getStore: () => mockedStore,
       mappedAddress: {},
       searchTransaction,
+      searchTransactionMetadata,
       importTransactions: () => null,
     };
     const walletId = Object.keys(mockedStore.wallets)[0];
@@ -21,19 +23,26 @@ describe('Account - getTransaction', function suite() {
       index: 0,
       storage: storageHDW,
       transport: {
-        getTransaction: () => fetchTransactionInfoCalledNb += 1,
+        getTransaction: () => {fetchTransactionInfoCalledNb += 1; return null},
       },
     };
   });
   it('should correctly get a existing transaction', async () => {
     const tx = await getTransaction.call(mockedWallet, '92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5');
-    expect(tx).to.deep.equal(expectedTx);
+    expect(tx.transaction).to.deep.equal(expectedTx);
+    expect(tx.metadata).to.deep.equal({
+      hash: "92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5",
+      blockHash: '000000c5d6ca463ebbfddffe9a0a135312b6d8fc4eae2787b82b0fca9de7a554',
+      height: 29197,
+      instantLocked: false,
+      chainLocked: false
+    });
   });
   it('should correctly try to fetch un unexisting transaction', async () => {
     expect(fetchTransactionInfoCalledNb).to.equal(0);
     const tx = await getTransaction.call(mockedWallet, '92151f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5');
     expect(fetchTransactionInfoCalledNb).to.equal(1);
-    expect(tx).to.equal(1);
+    expect(tx).to.equal(null);
   });
 });
 

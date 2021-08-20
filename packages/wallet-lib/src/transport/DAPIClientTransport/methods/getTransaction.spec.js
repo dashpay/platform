@@ -36,8 +36,11 @@ describe('transports - DAPIClientTransport .getTransaction', function suite() {
 
   it('should work', async () => {
     const res = await transport.getTransaction('2c0ee853b91b23d881f96f0128bbb5ebb90c9ef7e7bdb4eda360b0e5abf97239');
-
-    expect(res.hash).to.equal('2c0ee853b91b23d881f96f0128bbb5ebb90c9ef7e7bdb4eda360b0e5abf97239');
+    expect(res.transaction.hash).to.equal('2c0ee853b91b23d881f96f0128bbb5ebb90c9ef7e7bdb4eda360b0e5abf97239');
+    expect(res.blockHash).to.equal('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176');
+    expect(res.height).to.equal(42);
+    expect(res.instantLocked).to.equal(true);
+    expect(res.chainLocked).to.equal(false);
   });
 
   it('should return null if transaction if not found', async () => {

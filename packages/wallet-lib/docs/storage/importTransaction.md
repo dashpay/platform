@@ -1,12 +1,13 @@
-**Usage**: `storage.importTransaction(transaction)`     
+**Usage**: `storage.importTransaction(transaction, metadata?)`     
 **Description**: Allow to import a transaction to the store.    
 **Notes**: TransactionObject needs to contains basic vin/vout information.
 
 Parameters: 
 
-| parameters             | type              | required       | Description                                                             |  
-|------------------------|-------------------|----------------| ------------------------------------------------------------------------|
-| **transaction**        | Object/Transaction| yes            | The transaction to import to the store                                  |
+| parameters             | type               | required       | Description                                                             |  
+|------------------------|--------------------|----------------| ------------------------------------------------------------------------|
+| **transaction**        | Object/Transaction | yes            | The transaction to import to the store                                  |
+| **metadata**           | TransactionMetaData| no             | The transaction metadata                                                |
 
 
 Returns: Boolean     

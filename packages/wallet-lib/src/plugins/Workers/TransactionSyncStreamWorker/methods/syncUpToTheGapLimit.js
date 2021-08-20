@@ -41,7 +41,8 @@ module.exports = async function syncUpToTheGapLimit({
   self.stream = stream;
   let reachedGapLimit = false;
 
-  return new Promise((resolve, reject) => {
+  // eslint-disable-next-line no-async-promise-executor
+  return new Promise(async (resolve, reject) => {
     stream
       .on('data', async (response) => {
         /* First check if any instant locks appeared */
@@ -57,8 +58,25 @@ module.exports = async function syncUpToTheGapLimit({
           .filterWalletTransactions(transactionsFromResponse, addresses, network);
 
         if (walletTransactions.transactions.length) {
+          const transactionsWithMetadata = [];
+          // As we require height information, we fetch transaction using client.
+          // eslint-disable-next-line no-restricted-syntax
+          for (const transaction of walletTransactions.transactions) {
+            // eslint-disable-next-line no-underscore-dangle
+            const transactionHash = transaction._getHash().reverse().toString('hex');
+            // eslint-disable-next-line no-await-in-loop
+            const getTransactionResponse = await this.transport.getTransaction(transactionHash);
+            const metadata = {
+              blockHash: getTransactionResponse.blockHash,
+              height: getTransactionResponse.height,
+              instantLocked: getTransactionResponse.instantLocked,
+              chainLocked: getTransactionResponse.chainLocked,
+            };
+            transactionsWithMetadata.push([getTransactionResponse.transaction, metadata]);
+          }
+
           const addressesGeneratedCount = await self
-            .importTransactions(walletTransactions.transactions);
+            .importTransactions(transactionsWithMetadata);
 
           reachedGapLimit = reachedGapLimit || addressesGeneratedCount > 0;
 

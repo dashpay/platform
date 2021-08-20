@@ -1,6 +1,7 @@
 const {expect} = require('chai');
 const importTransaction = require('./importTransaction');
-const {fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e} = require('../../../../fixtures/transactions').valid.mainnet;
+const transactionFixtures = require('../../../../fixtures/transactions');
+const {fd7c727155ef67fd5c1d54b73dea869e9690c439570063d6e96fec1d3bba450e} = transactionFixtures.valid.mainnet
 const { Transaction, Script } = require('@dashevo/dashcore-lib');
 
 const faltyTx = '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0602cc0c028800ffffffff0200902f50090000001976a91446e502918c04a65a3830ce89cc364b0cd301793388ac00e40b54020000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac00000000460200cc0c0000be0c7d02ff51a9d30e39873ebb953d763595565fcbe0512a04bfa25ed0455e380000000000000000000000000000000000000000000000000000000000000000';
@@ -323,5 +324,84 @@ describe('Storage - importTransaction', function suite() {
     expect(mockedSelf.store.wallets['79fd90175d'].addresses.external["m/44'/1'/0'/0/1"]).to.deep.equal(expectedExternalStoreAfterTx2["m/44'/1'/0'/0/1"]);
     expect(mockedSelf.store.wallets['79fd90175d'].addresses.internal["m/44'/1'/0'/1/0"]).to.deep.equal(expectedExternalStoreAfterTx2["m/44'/1'/0'/1/0"]);
 
+  });
+  it('should import transaction metadata', function () {
+    let announceCalled = 0;
+
+    const mockedSelf = {
+      store: {
+        wallets: {
+          '60ee3a92b6': {
+            accounts:{
+              "m/44'/1'/0'": {
+                label: null,
+                path: "m/44'/1'/0'",
+                network: 'testnet',
+                blockHeight: 552160
+              }
+            },
+            network: 'testnet',
+            mnemonic: null,
+            type: null,
+            identityIds: [],
+            addresses: {
+              external: {
+                "m/44'/1'/0'/0/0": {
+                  path: "m/44'/1'/0'/0/0",
+                  index: 0,
+                  address: 'yd1ohc12LgCYp56CDuckTEHwoa6LbPghMd',
+                  transactions: [],
+                  balanceSat: 0,
+                  unconfirmedBalanceSat: 0,
+                  utxos: {},
+                  fetchedLast: 0,
+                  used: false
+                },
+              },
+            }
+          }
+        },
+        transactionsMetadata: {},
+        transactions: {},
+
+        chains: {testnet: {
+            mappedBlockHeaderHeights: {
+              '552160': '0000019156265f85695bf62285e32408d6057406b19374a57c009afa9116396f'
+            },
+            blockHeight: 552160
+        }},
+      },
+      mappedAddress: {
+        'yd1ohc12LgCYp56CDuckTEHwoa6LbPghMd': {walletId: '60ee3a92b6', type: 'external', path: "m/44'/1'/0'/0/0"},
+      },
+      mappedTransactionsHeight: {
+
+      },
+      network: 'testnet',
+      lastModified: 0,
+      announce: (annType) => {
+        announceCalled += 1;
+        expect(annType).to.equal('FETCHED/CONFIRMED_TRANSACTION');
+      },
+    };
+
+    importTransaction.call(mockedSelf, transactionFixtures.valid.testnet["1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6"], transactionFixtures.valid.testnet.metadata["1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6"]);
+
+    expect(mockedSelf.store.transactions['1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6']).to.exist;
+    const expectedTransaction = new Transaction(transactionFixtures.valid.testnet["1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6"]);
+    expect(mockedSelf.store.transactions['1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6'].toString()).to.equal(expectedTransaction.toString());
+
+    expect(mockedSelf.store.transactionsMetadata).to.exist;
+    expect(mockedSelf.store.transactionsMetadata['1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6']).to.deep.equal({
+      blockHash: '0000007a84abfe1d2b4201f4844bb1e59f24daf965c928281589269f281abc01',
+      height: 551438,
+      instantLocked: true,
+      chainLocked: true
+    })
+
+    expect(mockedSelf.mappedTransactionsHeight).to.exist;
+    const expectedMetadata = transactionFixtures.valid.testnet.metadata["1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6"];
+    expectedMetadata.hash = '1a74dc225b3336c4edb1f94c9ec2ed88fd0ef136866fda26f8a734924407b4d6';
+    expect(mockedSelf.mappedTransactionsHeight['551438']).to.deep.equal([expectedMetadata]);
   });
 });

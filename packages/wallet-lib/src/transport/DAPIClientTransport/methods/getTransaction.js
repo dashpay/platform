@@ -12,10 +12,21 @@ module.exports = async function getTransaction(txid) {
   if (!is.txid(txid)) {
     throw new Error(`Received an invalid txid to fetch : ${txid}`);
   }
-
   try {
     const response = await this.client.core.getTransaction(txid);
-    return new Transaction(response.getTransaction());
+    const {
+      height,
+      instantLocked,
+      chainLocked,
+    } = response;
+
+    return {
+      transaction: new Transaction(response.getTransaction()),
+      blockHash: response.getBlockHash().toString('hex'),
+      height,
+      instantLocked,
+      chainLocked,
+    };
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;

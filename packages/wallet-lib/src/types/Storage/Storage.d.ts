@@ -3,12 +3,13 @@ import {
     AddressType,
     Mnemonic,
     Network,
-    TransactionInfo,
+    TransactionInfo, TransactionMetaData, TransactionsWithMetaData,
     WalletObj, WalletType
 } from "../types";
 import { BlockHeader } from "@dashevo/dashcore-lib";
 import { Account } from "../..";
 import { Transaction } from "@dashevo/dashcore-lib/typings/transaction/Transaction";
+
 
 export declare namespace Storage {
     interface IStorageOptions {
@@ -53,13 +54,14 @@ export declare class Storage {
     getIndexedIdentityIds(walletId: string): Array<string|undefined>;
     getStore(): Storage.store;
     getTransaction(txid: string): Transaction;
+    getTransactionMetadata(txid: string): TransactionMetaData;
     importAccounts(accounts: Account|[Account], walletId: string): boolean;
     importAddress(address: AddressObj, walletId: string): boolean;
     importAddresses(addresses: [AddressObj], walletId: string): boolean;
     importBlockHeader(blockHeader: BlockHeader, height: number): void;
     importSingleAddress(singleAddress: AddressObj, walletId: string): boolean;
-    importTransaction(transaction: Transaction): void;
-    importTransactions(transactions: [Transaction]): boolean;
+    importTransaction(transaction: Transaction, metadata?: TransactionMetaData): void;
+    importTransactions(transactions: Transaction|[Transaction]|[TransactionsWithMetaData]): boolean;
     insertIdentityIdAtIndex(walletId: string, identityId: string, identityIndex: number): void;
     rehydrateState(): Promise<void>;
     saveState(): Promise<boolean>;
@@ -67,6 +69,7 @@ export declare class Storage {
     searchAddressesWithTx(txid: string): AddressesSearchResult;
     searchBlockHeader(identifier: string|number): BlockHeaderSearchResult;
     searchTransaction(hash: string): TransactionSearchResult;
+    searchTransactionMetadata(hash: string): TransactionMetadataSearchResult;
     searchWallet(walletId: string): WalletSearchResult;
     startWorker(): void;
     stopWorker(): boolean;
@@ -93,9 +96,14 @@ interface WalletSearchResult {
 }
 
 interface TransactionSearchResult {
-    txid: number,
+    hash: number,
     found: boolean,
     result?: TransactionInfo
+}
+interface TransactionMetadataSearchResult {
+    hash: number,
+    found: boolean,
+    result?: TransactionMetaData
 }
 
 interface AddressSearchResult {

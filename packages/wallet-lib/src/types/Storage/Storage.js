@@ -6,6 +6,7 @@ const CONSTANTS = require('../../CONSTANTS');
 const initialStore = {
   wallets: {},
   transactions: {},
+  transactionsMetadata: {},
   chains: {},
   instantLocks: {},
 };
@@ -38,8 +39,10 @@ class Storage extends EventEmitter {
     this.lastModified = null;
     this.network = has(opts, 'network') ? opts.network.toString() : defaultOpts.network;
 
-    // // Map an address to it's walletid/path/type schema (used by searchAddress for speedup)
+    // Map an address to it's walletid/path/type schema (used by searchAddress for speedup)
     this.mappedAddress = {};
+    // Map height to transaction ids to facilitate search.
+    this.mappedTransactionsHeight = {};
   }
 }
 Storage.prototype.addNewTxToAddress = require('./methods/addNewTxToAddress');

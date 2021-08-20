@@ -7,9 +7,10 @@ const parseStringifiedTransaction = (stringified) => new Transaction(stringified
 /**
  * This method is used to import a transaction in Store.
  * @param {Transaction/String} transaction - A valid Transaction
+ * @param {TransactionMetaData} transactionMetadata - Transaction Metadata
  * @return void
  */
-const importTransaction = function importTransaction(transaction) {
+const importTransaction = function importTransaction(transaction, transactionMetadata) {
   if (!(transaction instanceof Transaction)) {
     try {
       // eslint-disable-next-line no-param-reassign
@@ -21,8 +22,10 @@ const importTransaction = function importTransaction(transaction) {
       throw new InvalidDashcoreTransaction(transaction);
     }
   }
-  const { store, network, mappedAddress } = this;
-  const { transactions } = store;
+  const {
+    store, network, mappedAddress, mappedTransactionsHeight,
+  } = this;
+  const { transactions, transactionsMetadata } = store;
   const { inputs, outputs } = transaction;
 
   let hasUpdateStorage = false;
@@ -34,6 +37,15 @@ const importTransaction = function importTransaction(transaction) {
   // address generated (on BIP44 wallets) since the first checkup.
   if (!transactions[transaction.hash]) {
     transactions[transaction.hash] = transaction;
+    if (transactionMetadata) {
+      transactionsMetadata[transaction.hash] = transactionMetadata;
+      const { height } = transactionMetadata;
+      if (mappedTransactionsHeight[height]) {
+        mappedTransactionsHeight[height].push({ hash: transaction.hash, ...transactionMetadata });
+      } else {
+        mappedTransactionsHeight[height] = ([{ hash: transaction.hash, ...transactionMetadata }]);
+      }
+    }
   }
 
   [...inputs, ...outputs].forEach((element) => {

@@ -87,7 +87,15 @@ describe('TransactionSyncStreamWorker', function suite() {
 
           for (let i = lastSavedBlockHeight; i <= bestBlockHeight; i++) {
             const transaction = new Transaction().to(address, i);
-
+            account.transport.getTransaction
+                .returns({
+                  transaction:transaction,
+                  blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+                  height: 42,
+                  confirmations: 10,
+                  isInstantLocked: true,
+                  isChainLocked: false,
+                });
             transactionsSent.push(transaction);
             txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
               rawTransactions: [transaction.toBuffer()]
@@ -131,7 +139,15 @@ describe('TransactionSyncStreamWorker', function suite() {
           expect(worker.stream).is.not.null;
 
           let transaction = new Transaction().to(addressAtIndex19, 10000);
-
+          account.transport.getTransaction
+              .returns({
+                transaction:transaction,
+                blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+                height: 42,
+                confirmations: 10,
+                isInstantLocked: true,
+                isChainLocked: false,
+              });
           transactionsSent.push(transaction);
           txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
             rawTransactions: [transaction.toBuffer()]
@@ -147,7 +163,15 @@ describe('TransactionSyncStreamWorker', function suite() {
           await wait(10);
 
           transaction = new Transaction().to(account.getAddress(10).address, 10000);
-
+          account.transport.getTransaction
+              .returns({
+                transaction:transaction,
+                blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+                height: 42,
+                confirmations: 10,
+                isInstantLocked: true,
+                isChainLocked: false,
+              });
           transactionsSent.push(transaction);
           txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
             rawTransactions: [transaction.toBuffer()]
@@ -281,7 +305,15 @@ describe('TransactionSyncStreamWorker', function suite() {
       try {
         for (let i = lastSavedBlockHeight; i <= bestBlockHeight; i++) {
           const transaction = new Transaction().to(address, i);
-
+          account.transport.getTransaction
+              .returns({
+                transaction:transaction,
+                blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+                height: 42,
+                confirmations: 10,
+                isInstantLocked: true,
+                isChainLocked: false,
+              });
           transactionsSent.push(transaction);
           txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
             rawTransactions: [transaction.toBuffer()]
@@ -324,7 +356,15 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       try {
         let transaction = new Transaction().to(addressAtIndex19, 10000);
-
+        account.transport.getTransaction
+            .returns({
+              transaction:transaction,
+              blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+              height: 42,
+              confirmations: 10,
+              isInstantLocked: true,
+              isChainLocked: false,
+            });
         transactionsSent.push(transaction);
         txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
           rawTransactions: [transaction.toBuffer()]
@@ -340,7 +380,15 @@ describe('TransactionSyncStreamWorker', function suite() {
         await wait(10);
 
         transaction = transaction = new Transaction().to(account.getAddress(10).address, 10000);
-
+        account.transport.getTransaction
+            .returns({
+              transaction:transaction,
+              blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+              height: 42,
+              confirmations: 10,
+              isInstantLocked: true,
+              isChainLocked: false,
+            });
         transactionsSent.push(transaction);
         txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
           rawTransactions: [transaction.toBuffer()]
@@ -537,6 +585,15 @@ describe('TransactionSyncStreamWorker', function suite() {
 
     try {
       let transaction = transactions[0];
+      account.transport.getTransaction
+          .returns({
+            transaction:transactions[0],
+            blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+            height: 42,
+            confirmations: 10,
+            isInstantLocked: true,
+            isChainLocked: false,
+          });
 
       transactionsSent.push(transaction);
       txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
@@ -560,6 +617,15 @@ describe('TransactionSyncStreamWorker', function suite() {
       await wait(10);
 
       transaction = transactions[1];
+      account.transport.getTransaction
+          .returns({
+            transaction:transactions[1],
+            blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+            height: 42,
+            confirmations: 10,
+            isInstantLocked: true,
+            isChainLocked: false,
+          });
 
       transactionsSent.push(transaction);
       txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
