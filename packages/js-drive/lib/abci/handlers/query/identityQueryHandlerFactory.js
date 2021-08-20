@@ -54,7 +54,7 @@ function identityQueryHandlerFactory(
     let identityBuffer;
     if (!identity && !request.prove) {
       throw new NotFoundAbciError('Identity not found');
-    } else {
+    } else if (identity) {
       identityBuffer = identity.toBuffer();
     }
 

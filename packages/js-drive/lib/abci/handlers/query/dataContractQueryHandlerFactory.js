@@ -54,7 +54,7 @@ function dataContractQueryHandlerFactory(
     let dataContractBuffer;
     if (!dataContract && !request.prove) {
       throw new NotFoundAbciError('Data Contract not found');
-    } else {
+    } else if (dataContract) {
       dataContractBuffer = dataContract.toBuffer();
     }
 
