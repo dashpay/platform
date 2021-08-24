@@ -32,7 +32,7 @@ class DriveStateRepository {
     );
 
     return this.dpp.dataContract.createFromBuffer(
-      dataContractResponse.getDataContract(),
+      Buffer.from(dataContractResponse.getDataContract()),
     );
   }
 }
