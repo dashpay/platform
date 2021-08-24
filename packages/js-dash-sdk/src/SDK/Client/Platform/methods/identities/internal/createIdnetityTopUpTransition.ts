@@ -22,7 +22,7 @@ export default async function createIdentityTopUpTransition(platform : Platform,
 
     identityTopUpTransition.signByPrivateKey(assetLockPrivateKey);
 
-    const result = await dpp.stateTransition.validateStructure(identityTopUpTransition);
+    const result = await dpp.stateTransition.validateBasic(identityTopUpTransition);
 
     if (!result.isValid()) {
         throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);

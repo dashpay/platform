@@ -48,11 +48,21 @@ describe('Dash - Client', function suite() {
     account = await client.getWalletAccount();
 
     // add fake tx to the wallet so it will be able to create transactions
-    walletTransaction = createTransactionInAccount(account);
+    walletTransaction = await createTransactionInAccount(account);
     // create an identity in the account so we can sign state transitions
     identityFixture = createIdentityFixtureInAccount(account);
     dataContractFixture = getDataContractFixture();
     documentsFixture = getDocumentsFixture(dataContractFixture);
+
+    // TODO uncomment this code after wallet-lib update
+    // transportMock.getTransaction.resolves({
+    //   transaction: new Transaction('03000000019ecd68f367aba679209b9c912ff1d2ef9147f90eba2a47b5fb0158e27fb15476000000006b483045022100af2ca966eaeef8f5493fd8bcf2248d60b3f6b8236c137e2d099c8ba35878bf9402204f653232768eb8b06969b13f0aa3579d653163f757009e0c261c9ffd32332ffb0121034244016aa525c632408bc627923590cf136b47035cd57aa6f1fa8b696d717304ffffffff021027000000000000166a140f177a991f37fe6cbb08fb3f21b9629fa47330e3a85b0100000000001976a914535c005bfef672162aa2c53f0f6630a57ade344588ac00000000'),
+    //   blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+    //   height: 42,
+    //   confirmations: 10,
+    //   isInstantLocked: true,
+    //   isChainLocked: false,
+    // });
 
     dapiClientMock.platform.getIdentity.resolves(new GetIdentityResponse(identityFixture.toBuffer(), getResponseMetadataFixture()));
     dapiClientMock.platform.getDataContract.resolves(new GetDataContractResponse(dataContractFixture.toBuffer(), getResponseMetadataFixture()));

@@ -32,7 +32,7 @@ export default async function createIdentityCreateTransition(platform : Platform
 
     identityCreateTransition.signByPrivateKey(assetLockPrivateKey);
 
-    const result = await dpp.stateTransition.validateStructure(identityCreateTransition);
+    const result = await dpp.stateTransition.validateBasic(identityCreateTransition);
 
     if (!result.isValid()) {
         throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);

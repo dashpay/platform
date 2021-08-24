@@ -11,7 +11,7 @@ import { IPlatformStateProof } from "./IPlatformStateProof";
 export default async function broadcastStateTransition(platform: Platform, stateTransition: any): Promise<IPlatformStateProof|void> {
     const { client, dpp } = platform;
 
-    const result = await dpp.stateTransition.validateStructure(stateTransition);
+    const result = await dpp.stateTransition.validateBasic(stateTransition);
 
     if (!result.isValid()) {
         throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);

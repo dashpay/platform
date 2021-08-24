@@ -12,12 +12,16 @@ const GetDataContractResponse = require("@dashevo/dapi-client/lib/methods/platfo
 const NotFoundError = require('@dashevo/dapi-client/lib/methods/errors/NotFoundError');
 
 const factory = new DataContractFactory(
+    undefined,
     () => {
         return new ValidationResult();
-    });
+    },
+    () => [42, contractsFixtures.ratePlatform]);
 const dpp = {
-    dataContract: factory
+    dataContract: factory,
+    getProtocolVersion: () => 42,
 }
+factory.dpp = dpp;
 
 const apps = new ClientApps({
     ratePlatform: {

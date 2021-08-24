@@ -22,6 +22,7 @@ import searchName from "./methods/names/search";
 import broadcastStateTransition from "./broadcastStateTransition";
 import { IPlatformStateProof } from "./IPlatformStateProof";
 import StateRepository from './StateRepository';
+import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/protocolVersion";
 
 /**
  * Interface for PlatformOpts
@@ -31,6 +32,8 @@ import StateRepository from './StateRepository';
  */
 export interface PlatformOpts {
     client: Client,
+    network: string,
+    driveProtocolVersion?: number,
 }
 
 /**
@@ -102,6 +105,11 @@ export class Platform {
 
     client: Client;
 
+    private static readonly networkToProtocolVersion: Map<string, number> = new Map([
+        ['testnet', 0],
+        ['regtest', 0],
+    ]);
+
     /**
      * Construct some instance of Platform
      *
@@ -132,10 +140,22 @@ export class Platform {
 
         this.client = options.client;
 
+        const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
+            options.network,
+        );
+
+        // use protocol version from options if set
+        // use mapped one otherwise
+        // fallback to one that set in dpp as the last option
+        const driveProtocolVersion = options.driveProtocolVersion !== undefined
+          ? options.driveProtocolVersion
+          : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);
+
         const stateRepository = new StateRepository(this.client);
 
         this.dpp = new DashPlatformProtocol({
             stateRepository,
+            protocolVersion: driveProtocolVersion,
             ...options,
         });
     }

@@ -33,6 +33,7 @@ export interface ClientOpts {
     timeout?: number,
     retries?: number,
     baseBanTime?: number,
+    driveProtocolVersion?: number,
 }
 
 /**
@@ -115,6 +116,8 @@ export class Client extends EventEmitter {
 
         this.platform = new Platform({
             client: this,
+            network: this.network,
+            driveProtocolVersion: this.options.driveProtocolVersion,
         });
     }
 
