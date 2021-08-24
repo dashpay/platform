@@ -26,8 +26,11 @@ describe('unserializeStateTransitionFactory', () => {
       stateTransition: {
         createFromBuffer: this.sinon.stub(),
         validateFee: this.sinon.stub(),
+        validateSignature: this.sinon.stub(),
       },
     };
+
+    dppMock.stateTransition.validateSignature.resolves(new ValidatorResult());
 
     noopLoggerMock = new LoggerMock(this.sinon);
 
@@ -108,6 +111,26 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
       expect(dppMock.stateTransition.validateFee).to.be.calledOnce();
+    }
+  });
+
+  it('should return invalid result if validateSignature failed', async () => {
+    const error = new Error('identity was not found');
+
+    dppMock.stateTransition.validateSignature.resolves(
+      new ValidatorResult([error]),
+    );
+
+    try {
+      await unserializeStateTransition(stateTransitionFixture);
+
+      expect.fail('should throw an InsufficientFundsError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidArgumentAbciError);
+      expect(e.getData().errors[0]).to.equal(error);
+
+      expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
+      expect(dppMock.stateTransition.validateFee).to.have.not.been.called();
     }
   });
 

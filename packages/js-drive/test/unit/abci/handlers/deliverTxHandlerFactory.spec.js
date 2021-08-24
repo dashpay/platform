@@ -63,7 +63,7 @@ describe('deliverTxHandlerFactory', () => {
 
     dppMock
       .stateTransition
-      .validateData
+      .validateState
       .resolves({
         isValid: this.sinon.stub().returns(true),
       });
@@ -104,7 +104,7 @@ describe('deliverTxHandlerFactory', () => {
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
       documentsBatchTransitionFixture.toBuffer(),
     );
-    expect(dppMock.stateTransition.validateData).to.be.calledOnceWith(
+    expect(dppMock.stateTransition.validateState).to.be.calledOnceWith(
       documentsBatchTransitionFixture,
     );
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
@@ -138,7 +138,7 @@ describe('deliverTxHandlerFactory', () => {
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.toBuffer(),
     );
-    expect(dppMock.stateTransition.validateData).to.be.calledOnceWith(
+    expect(dppMock.stateTransition.validateState).to.be.calledOnceWith(
       dataContractCreateTransitionFixture,
     );
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
@@ -159,7 +159,7 @@ describe('deliverTxHandlerFactory', () => {
     const error = new ValidationError('Some error');
     const invalidResult = new ValidationResult([error]);
 
-    dppMock.stateTransition.validateData.resolves(invalidResult);
+    dppMock.stateTransition.validateState.resolves(invalidResult);
 
     try {
       await deliverTxHandler(documentRequest);
@@ -189,7 +189,7 @@ describe('deliverTxHandlerFactory', () => {
       expect(e.getMessage()).to.equal(errorMessage);
       expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
       expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();
-      expect(dppMock.stateTransition.validateData).to.not.be.called();
+      expect(dppMock.stateTransition.validate).to.not.be.called();
     }
   });
 });

@@ -51,7 +51,23 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
       throw e;
     }
 
-    const result = await dpp.stateTransition.validateFee(stateTransition);
+    let result = await dpp.stateTransition.validateSignature(stateTransition);
+
+    if (!result.isValid()) {
+      const consensusErrors = result.getErrors();
+
+      const error = new InvalidArgumentAbciError('State Transition is invalid', { errors: consensusErrors });
+
+      logger.info('State transition signature is invalid');
+
+      logger.debug({
+        consensusErrors,
+      });
+
+      throw error;
+    }
+
+    result = await dpp.stateTransition.validateFee(stateTransition);
 
     if (!result.isValid()) {
       const consensusErrors = result.getErrors();

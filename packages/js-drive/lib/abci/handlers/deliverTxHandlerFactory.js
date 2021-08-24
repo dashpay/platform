@@ -10,7 +10,7 @@ const crypto = require('crypto');
 
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const AbstractDocumentTransition = require(
-  '@dashevo/dpp/lib/document/stateTransition/documentTransition/AbstractDocumentTransition',
+  '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition',
 );
 
 const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
@@ -77,7 +77,7 @@ function deliverTxHandlerFactory(
       throw e;
     }
 
-    const result = await transactionalDpp.stateTransition.validateData(stateTransition);
+    const result = await transactionalDpp.stateTransition.validateState(stateTransition);
 
     if (!result.isValid()) {
       consensusLogger.info('State transition data is invalid');
