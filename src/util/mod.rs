@@ -1,8 +1,1 @@
-pub mod util {
-    pub mod serializer {
-        fn encode() {}
-        fn decode() {}
-    }
-
-    fn hash() {}
-}
+pub mod string_encoding;
