@@ -1,7 +1,7 @@
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
 const IdentityPublicKeyAlreadyExistsError = require(
-  '../../../../../errors/IdentityPublicKeyAlreadyExistsError',
+  '../../../../../errors/consensus/state/identity/IdentityPublicKeyAlreadyExistsError',
 );
 
 /**

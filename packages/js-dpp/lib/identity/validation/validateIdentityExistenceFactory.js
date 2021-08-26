@@ -1,5 +1,5 @@
 const ValidationResult = require('../../validation/ValidationResult');
-const IdentityNotFoundError = require('../../errors/IdentityNotFoundError');
+const IdentityNotFoundError = require('../../errors/consensus/signature/IdentityNotFoundError');
 
 /**
  * @param {StateRepository} stateRepository

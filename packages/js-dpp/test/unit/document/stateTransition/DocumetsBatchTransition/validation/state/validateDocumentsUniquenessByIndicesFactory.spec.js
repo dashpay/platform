@@ -9,7 +9,7 @@ const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/c
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
-const DuplicateDocumentError = require('../../../../../../../lib/errors/DuplicateDocumentError');
+const DuplicateDocumentError = require('../../../../../../../lib/errors/consensus/state/document/DuplicateDocumentError');
 
 describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMock;

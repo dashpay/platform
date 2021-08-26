@@ -1,4 +1,4 @@
-const InvalidDataContractIdError = require('../../../../../errors/InvalidDataContractIdError');
+const InvalidDataContractIdError = require('../../../../../errors/consensus/basic/dataContract/InvalidDataContractIdError');
 
 const generateDataContractId = require('../../../../generateDataContractId');
 
@@ -48,7 +48,7 @@ function validateDataContractCreateTransitionBasicFactory(
 
     if (!generatedId.equals(rawDataContract.$id)) {
       result.addError(
-        new InvalidDataContractIdError(rawDataContract),
+        new InvalidDataContractIdError(generatedId, rawDataContract.$id),
       );
     }
 

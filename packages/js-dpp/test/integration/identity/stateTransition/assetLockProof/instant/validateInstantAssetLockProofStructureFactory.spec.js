@@ -9,16 +9,16 @@ const createAjv = require('../../../../../../lib/ajv/createAjv');
 const getInstantAssetLockFixture = require('../../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const JsonSchemaValidator = require('../../../../../../lib/validation/JsonSchemaValidator');
 const createStateRepositoryMock = require('../../../../../../lib/test/mocks/createStateRepositoryMock');
-const InvalidIdentityAssetLockProofError = require('../../../../../../lib/errors/InvalidIdentityAssetLockProofError');
-const IdentityAssetLockProofMismatchError = require('../../../../../../lib/errors/IdentityAssetLockProofMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('../../../../../../lib/errors/InvalidIdentityAssetLockProofSignatureError');
+const InvalidIdentityAssetLockProofError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockProofError');
+const IdentityAssetLockProofMismatchError = require('../../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockProofMismatchError');
+const InvalidIdentityAssetLockProofSignatureError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockProofSignatureError');
 
 const { expectValidationError, expectJsonSchemaError } = require(
   '../../../../../../lib/test/expect/expectError',
 );
 
 const ValidationResult = require('../../../../../../lib/validation/ValidationResult');
-const InvalidIdentityAssetLockTransactionError = require('../../../../../../lib/errors/InvalidIdentityAssetLockTransactionError');
+const InvalidIdentityAssetLockTransactionError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
 
 describe('validateInstantAssetLockProofStructureFactory', () => {
   let rawProof;

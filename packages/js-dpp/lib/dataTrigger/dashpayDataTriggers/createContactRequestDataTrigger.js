@@ -1,5 +1,5 @@
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
-const DataTriggerConditionError = require('../../errors/DataTriggerConditionError');
+const DataTriggerConditionError = require('../../errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 
 const BLOCKS_WINDOW_SIZE = 8;
 

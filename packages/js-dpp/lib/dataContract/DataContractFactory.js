@@ -6,7 +6,7 @@ const generateDataContractId = require('./generateDataContractId');
 const DataContractCreateTransition = require('./stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
 const generateEntropy = require('../util/generateEntropy');
-const ConsensusError = require('../errors/ConsensusError');
+const ConsensusError = require('../errors/consensus/ConsensusError');
 
 class DataContractFactory {
   /**

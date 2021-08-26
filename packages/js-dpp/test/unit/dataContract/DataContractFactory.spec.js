@@ -10,8 +10,8 @@ const DataContractCreateTransition = require('../../../lib/dataContract/stateTra
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const InvalidDataContractError = require('../../../lib/dataContract/errors/InvalidDataContractError');
-const ConsensusError = require('../../../lib/errors/ConsensusError');
-const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
+const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
+const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('DataContractFactory', () => {

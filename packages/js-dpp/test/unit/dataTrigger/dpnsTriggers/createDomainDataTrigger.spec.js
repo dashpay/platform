@@ -11,7 +11,7 @@ const createStateRepositoryMock = require('../../../../lib/test/mocks/createStat
 
 const hash = require('../../../../lib/util/hash');
 
-const DataTriggerConditionError = require('../../../../lib/errors/DataTriggerConditionError');
+const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 
 describe('createDomainDataTrigger', () => {
   let parentDocumentTransition;

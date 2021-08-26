@@ -7,7 +7,7 @@ const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransiti
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const InstantAssetLockProof = require('./stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./stateTransition/assetLockProof/chain/ChainAssetLockProof');
-const ConsensusError = require('../errors/ConsensusError');
+const ConsensusError = require('../errors/consensus/ConsensusError');
 
 class IdentityFactory {
   /**

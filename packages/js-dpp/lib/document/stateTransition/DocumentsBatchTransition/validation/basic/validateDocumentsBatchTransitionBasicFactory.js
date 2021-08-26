@@ -2,14 +2,14 @@ const ValidationResult = require('../../../../../validation/ValidationResult');
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
-const DataContractNotPresentError = require('../../../../../errors/DataContractNotPresentError');
-const InvalidDocumentTransitionIdError = require('../../../../../errors/InvalidDocumentTransitionIdError');
-const DuplicateDocumentTransitionsError = require('../../../../../errors/DuplicateDocumentTransitionsError');
-const MissingDocumentTypeError = require('../../../../../errors/MissingDocumentTypeError');
-const InvalidDocumentTypeError = require('../../../../../errors/InvalidDocumentTypeError');
-const InvalidDocumentTransitionActionError = require('../../../../../errors/InvalidDocumentTransitionActionError');
-const MissingDocumentTransitionActionError = require('../../../../../errors/MissingDocumentTransitionActionError');
-const MissingDataContractIdError = require('../../../../../errors/MissingDataContractIdError');
+const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
+const InvalidDocumentTransitionIdError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTransitionIdError');
+const DuplicateDocumentTransitionsError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsError');
+const MissingDocumentTransitionTypeError = require('../../../../../errors/consensus/basic/document/MissingDocumentTransitionTypeError');
+const InvalidDocumentTypeError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTypeError');
+const InvalidDocumentTransitionActionError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTransitionActionError');
+const MissingDocumentTransitionActionError = require('../../../../../errors/consensus/basic/document/MissingDocumentTransitionActionError');
+const MissingDataContractIdError = require('../../../../../errors/consensus/basic/document/MissingDataContractIdError');
 const Identifier = require('../../../../../identifier/Identifier');
 
 const baseTransitionSchema = require('../../../../../../schema/document/stateTransition/documentTransition/base.json');
@@ -84,7 +84,7 @@ function validateDocumentsBatchTransitionBasicFactory(
       // Validate $type
       if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$type')) {
         result.addError(
-          new MissingDocumentTypeError(rawDocumentTransition),
+          new MissingDocumentTransitionTypeError(rawDocumentTransition),
         );
 
         return;
@@ -164,11 +164,9 @@ function validateDocumentsBatchTransitionBasicFactory(
 
           break;
         default:
-          result.addError(
-            new InvalidDocumentTransitionActionError(
-              rawDocumentTransition.$action,
-              rawDocumentTransition,
-            ),
+          throw new InvalidDocumentTransitionActionError(
+            rawDocumentTransition.$action,
+            rawDocumentTransition,
           );
       }
     });

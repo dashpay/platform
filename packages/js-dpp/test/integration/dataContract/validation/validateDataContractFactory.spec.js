@@ -17,13 +17,13 @@ const getDataContractFixture = require('../../../../lib/test/fixtures/getDataCon
 
 const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError');
 
-const DuplicateIndexError = require('../../../../lib/errors/DuplicateIndexError');
-const UndefinedIndexPropertyError = require('../../../../lib/errors/UndefinedIndexPropertyError');
-const InvalidIndexPropertyTypeError = require('../../../../lib/errors/InvalidIndexPropertyTypeError');
-const SystemPropertyIndexAlreadyPresentError = require('../../../../lib/errors/SystemPropertyIndexAlreadyPresentError');
-const UniqueIndicesLimitReachedError = require('../../../../lib/errors/UniqueIndicesLimitReachedError');
-const InvalidIndexedPropertyConstraintError = require('../../../../lib/errors/InvalidIndexedPropertyConstraintError');
-const InvalidCompoundIndexError = require('../../../../lib/errors/InvalidCompoundIndexError');
+const DuplicateIndexError = require('../../../../lib/errors/consensus/basic/dataContract/DuplicateIndexError');
+const UndefinedIndexPropertyError = require('../../../../lib/errors/consensus/basic/dataContract/UndefinedIndexPropertyError');
+const InvalidIndexPropertyTypeError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidIndexPropertyTypeError');
+const SystemPropertyIndexAlreadyPresentError = require('../../../../lib/errors/consensus/basic/dataContract/SystemPropertyIndexAlreadyPresentError');
+const UniqueIndicesLimitReachedError = require('../../../../lib/errors/consensus/basic/dataContract/UniqueIndicesLimitReachedError');
+const InvalidIndexedPropertyConstraintError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
+const InvalidCompoundIndexError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidCompoundIndexError');
 const IncompatibleRe2PatternError = require('../../../../lib/document/errors/IncompatibleRe2PatternError');
 
 describe('validateDataContractFactory', function main() {

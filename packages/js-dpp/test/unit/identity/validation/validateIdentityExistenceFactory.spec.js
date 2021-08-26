@@ -8,7 +8,7 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
-const IdentityNotFoundError = require('../../../../lib/errors/IdentityNotFoundError');
+const IdentityNotFoundError = require('../../../../lib/errors/consensus/signature/IdentityNotFoundError');
 
 describe('validateIdentityExistence', () => {
   let validateIdentityExistence;

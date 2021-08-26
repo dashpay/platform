@@ -1,10 +1,10 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 
-const InvalidIdentityAssetLockTransactionError = require('../../../errors/InvalidIdentityAssetLockTransactionError');
-const IdentityAssetLockTransactionOutputNotFoundError = require('../../../errors/IdentityAssetLockTransactionOutputNotFoundError');
-const InvalidIdentityAssetLockTransactionOutputError = require('../../../errors/InvalidIdentityAssetLockTransactionOutputError');
+const InvalidIdentityAssetLockTransactionError = require('../../../errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
+const IdentityAssetLockTransactionOutputNotFoundError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionOutputNotFoundError');
+const InvalidIdentityAssetLockTransactionOutputError = require('../../../errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionOutputError');
 const ValidationResult = require('../../../validation/ValidationResult');
-const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../errors/IdentityAssetLockTransactionOutPointAlreadyExistsError');
+const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 
 /**
  *

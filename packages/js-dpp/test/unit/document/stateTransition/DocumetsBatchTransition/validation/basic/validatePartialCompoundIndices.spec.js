@@ -1,5 +1,5 @@
 const validatePartialCompoundIndices = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/basic/validatePartialCompoundIndices');
-const InconsistentCompoundIndexDataError = require('../../../../../../../lib/errors/InconsistentCompoundIndexDataError');
+const InconsistentCompoundIndexDataError = require('../../../../../../../lib/errors/consensus/basic/document/InconsistentCompoundIndexDataError');
 
 const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
 const getContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');

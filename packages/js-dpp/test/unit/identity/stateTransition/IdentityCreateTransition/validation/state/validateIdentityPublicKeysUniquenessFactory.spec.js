@@ -3,7 +3,7 @@ const validateIdentityPublicKeyUniquenessFactory = require(
 );
 
 const IdentityPublicKeyAlreadyExistsError = require(
-  '../../../../../../../lib/errors/IdentityPublicKeyAlreadyExistsError',
+  '../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyAlreadyExistsError',
 );
 
 const getIdentityFixture = require('../../../../../../../lib/test/fixtures/getIdentityFixture');

@@ -24,16 +24,16 @@ const { expectValidationError, expectJsonSchemaError } = require('../../../../..
 
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
-const ConsensusError = require('../../../../../../../lib/errors/ConsensusError');
-const DuplicateDocumentTransitionsError = require('../../../../../../../lib/errors/DuplicateDocumentTransitionsError');
-const InvalidDocumentTransitionIdError = require('../../../../../../../lib/errors/InvalidDocumentTransitionIdError');
-const DataContractNotPresentError = require('../../../../../../../lib/errors/DataContractNotPresentError');
-const MissingDataContractIdError = require('../../../../../../../lib/errors/MissingDataContractIdError');
-const MissingDocumentTypeError = require('../../../../../../../lib/errors/MissingDocumentTypeError');
-const InvalidDocumentTypeError = require('../../../../../../../lib/errors/InvalidDocumentTypeError');
-const MissingDocumentTransitionActionError = require('../../../../../../../lib/errors/MissingDocumentTransitionActionError');
-const InvalidDocumentTransitionActionError = require('../../../../../../../lib/errors/InvalidDocumentTransitionActionError');
-const InvalidIdentifierError = require('../../../../../../../lib/errors/InvalidIdentifierError');
+const ConsensusError = require('../../../../../../../lib/errors/consensus/ConsensusError');
+const DuplicateDocumentTransitionsError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsError');
+const InvalidDocumentTransitionIdError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTransitionIdError');
+const DataContractNotPresentError = require('../../../../../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
+const MissingDataContractIdError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDataContractIdError');
+const MissingDocumentTransitionTypeError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDocumentTransitionTypeError');
+const InvalidDocumentTypeError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTypeError');
+const MissingDocumentTransitionActionError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDocumentTransitionActionError');
+const InvalidDocumentTransitionActionError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTransitionActionError');
+const InvalidIdentifierError = require('../../../../../../../lib/errors/consensus/basic/InvalidIdentifierError');
 const IdentifierError = require('../../../../../../../lib/identifier/errors/IdentifierError');
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
@@ -506,7 +506,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
 
-          expectValidationError(result, MissingDocumentTypeError);
+          expectValidationError(result, MissingDocumentTransitionTypeError);
 
           const [error] = result.getErrors();
 
@@ -568,27 +568,26 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(findDuplicatesByIndicesMock).to.have.not.been.called();
         });
 
-        it('should be create, replace or delete', async () => {
+        it('should throw InvalidDocumentTransitionActionError if action is not valid', async () => {
           const [firstDocumentTransition] = rawStateTransition.transitions;
 
           firstDocumentTransition.$action = 4;
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          try {
+            await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          } catch (e) {
+            expect(e).to.be.instanceOf(InvalidDocumentTransitionActionError);
+            expect(e.getAction()).to.equal(firstDocumentTransition.$action);
+            expect(e.getRawDocumentTransition()).to.deep.equal(firstDocumentTransition);
 
-          expectValidationError(result, InvalidDocumentTransitionActionError);
+            expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
+              dataContract.getId(),
+            );
 
-          const [error] = result.getErrors();
-
-          expect(error.getAction()).to.equal(firstDocumentTransition.$action);
-          expect(error.getRawDocumentTransition()).to.deep.equal(firstDocumentTransition);
-
-          expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-            dataContract.getId(),
-          );
-
-          expect(enrichSpy).to.have.been.calledThrice();
-          expect(findDuplicatesByIdMock).to.have.not.been.called();
-          expect(findDuplicatesByIndicesMock).to.have.not.been.called();
+            expect(enrichSpy).to.have.been.calledThrice();
+            expect(findDuplicatesByIdMock).to.have.not.been.called();
+            expect(findDuplicatesByIndicesMock).to.have.not.been.called();
+          }
         });
       });
 

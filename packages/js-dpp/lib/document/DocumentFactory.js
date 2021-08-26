@@ -8,7 +8,7 @@ const DocumentsBatchTransition = require('./stateTransition/DocumentsBatchTransi
 const AbstractDocumentTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 const DocumentCreateTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
-const ConsensusError = require('../errors/ConsensusError');
+const ConsensusError = require('../errors/consensus/ConsensusError');
 const InvalidActionNameError = require('./errors/InvalidActionNameError');
 const NoDocumentsSuppliedError = require('./errors/NoDocumentsSuppliedError');
 const MismatchOwnerIdsError = require('./errors/MismatchOwnerIdsError');

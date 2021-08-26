@@ -20,8 +20,8 @@ const InvalidActionNameError = require('../../../lib/document/errors/InvalidActi
 const NoDocumentsSuppliedError = require('../../../lib/document/errors/NoDocumentsSuppliedError');
 const MismatchOwnerIdsError = require('../../../lib/document/errors/MismatchOwnerIdsError');
 const InvalidInitialRevisionError = require('../../../lib/document/errors/InvalidInitialRevisionError');
-const ConsensusError = require('../../../lib/errors/ConsensusError');
-const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
+const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
+const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');

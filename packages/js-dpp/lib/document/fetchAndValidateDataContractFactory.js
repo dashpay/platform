@@ -1,5 +1,5 @@
-const MissingDataContractIdError = require('../errors/MissingDataContractIdError');
-const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
+const MissingDataContractIdError = require('../errors/consensus/basic/document/MissingDataContractIdError');
+const DataContractNotPresentError = require('../errors/consensus/basic/document/DataContractNotPresentError');
 
 const createAndValidateIdentifier = require('../identifier/createAndValidateIdentifier');
 

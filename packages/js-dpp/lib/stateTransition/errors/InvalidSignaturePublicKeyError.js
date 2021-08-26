@@ -1,13 +1,13 @@
-class InvalidSignaturePublicKeyError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class InvalidSignaturePublicKeyError extends DPPError {
   /**
    *
    * @param {Buffer} signaturePublicKey
    */
   constructor(signaturePublicKey) {
-    super();
+    super('Invalid signature public key');
 
-    this.name = this.constructor.name;
-    this.message = 'Invalid signature public key';
     this.publicKey = signaturePublicKey;
   }
 

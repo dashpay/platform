@@ -167,7 +167,6 @@ class StateTransitionFacade {
     const validateIdentityTopUpTransitionBasic = (
       validateIdentityTopUpTransitionBasicFactory(
         validator,
-        validateIdentityExistence,
         proofValidationFunctionsByType,
       )
     );

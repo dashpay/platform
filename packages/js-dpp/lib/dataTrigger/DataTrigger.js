@@ -1,6 +1,6 @@
 const DataTriggerExecutionResult = require('./DataTriggerExecutionResult');
-const DataTriggerExecutionError = require('../errors/DataTriggerExecutionError');
-const DataTriggerInvalidResultError = require('../errors/DataTriggerInvalidResultError');
+const DataTriggerExecutionError = require('../errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
+const DataTriggerInvalidResultError = require('../errors/consensus/state/dataContract/dataTrigger/DataTriggerInvalidResultError');
 
 class DataTrigger {
   /**

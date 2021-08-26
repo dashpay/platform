@@ -4,7 +4,7 @@ const calculateStateTransitionFee = require('../../../lib/stateTransition/calcul
 
 const StateTransitionMock = require('../../../lib/test/mocks/StateTransitionMock');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
-const InvalidSignatureTypeError = require('../../../lib/stateTransition/errors/InvalidSignatureTypeError');
+const InvalidSignatureTypeError = require('../../../lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
 const InvalidSignaturePublicKeyError = require('../../../lib/stateTransition/errors/InvalidSignaturePublicKeyError');
 const StateTransitionIsNotSignedError = require('../../../lib/stateTransition/errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('../../../lib/stateTransition/errors/PublicKeyMismatchError');
@@ -149,7 +149,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect.fail('Should throw InvalidSignatureTypeError');
       } catch (e) {
         expect(e).to.be.instanceOf(InvalidSignatureTypeError);
-        expect(e.getSignatureType()).to.be.equal(identityPublicKey.getType());
+        expect(e.getPublicKeyType()).to.be.equal(identityPublicKey.getType());
       }
     });
   });

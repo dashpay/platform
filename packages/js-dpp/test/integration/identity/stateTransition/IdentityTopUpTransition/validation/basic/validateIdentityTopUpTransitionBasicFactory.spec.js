@@ -17,9 +17,7 @@ const {
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
-const ConsensusError = require('../../../../../../../lib/errors/ConsensusError');
-const IdentityNotFoundError = require('../../../../../../../lib/errors/IdentityNotFoundError');
-const Identifier = require('../../../../../../../lib/identifier/Identifier');
+const ConsensusError = require('../../../../../../../lib/errors/consensus/ConsensusError');
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 
@@ -28,12 +26,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let stateTransition;
   let assetLockPublicKeyHash;
   let validateIdentityTopUpTransitionBasic;
-  let validateIdentityExistenceMock;
   let proofValidationFunctionsByTypeMock;
 
   beforeEach(async function beforeEach() {
-    validateIdentityExistenceMock = this.sinonSandbox.stub().resolves(new ValidationResult());
-
     assetLockPublicKeyHash = Buffer.alloc(20, 1);
 
     const assetLockValidationResult = new ValidationResult();
@@ -51,7 +46,6 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
     validateIdentityTopUpTransitionBasic = validateIdentityTopUpTransitionBasicFactory(
       jsonSchemaValidator,
-      validateIdentityExistenceMock,
       proofValidationFunctionsByTypeMock,
     );
 
@@ -266,31 +260,6 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       expect(error.instancePath).to.equal('/identityId');
       expect(error.keyword).to.equal('maxItems');
-    });
-
-    it('should exist', async () => {
-      const identityNotFoundResult = new ValidationResult([
-        new IdentityNotFoundError(stateTransition.getIdentityId()),
-      ]);
-
-      validateIdentityExistenceMock.resolves(identityNotFoundResult);
-
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
-
-      expectValidationError(result, IdentityNotFoundError);
-
-      const [error] = result.getErrors();
-
-      expect(error.getIdentityId()).to.be.equal(stateTransition.getIdentityId());
-
-      expect(validateIdentityExistenceMock).to.be.calledOnce();
-
-      expect(validateIdentityExistenceMock.getCall(0).args).to.have.lengthOf(1);
-
-      const [identityId] = validateIdentityExistenceMock.getCall(0).args;
-
-      expect(identityId).to.be.instanceOf(Identifier);
-      expect(identityId).to.deep.equal(stateTransition.getIdentityId());
     });
   });
 

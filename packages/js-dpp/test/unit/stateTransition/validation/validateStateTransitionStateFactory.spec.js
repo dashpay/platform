@@ -10,8 +10,8 @@ const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
 const DataContractFactory = require('../../../../lib/dataContract/DataContractFactory');
 
-const InvalidStateTransitionTypeError = require('../../../../lib/errors/InvalidStateTransitionTypeError');
-const ConsensusError = require('../../../../lib/errors/ConsensusError');
+const InvalidStateTransitionTypeError = require('../../../../lib/stateTransition/errors/InvalidStateTransitionTypeError');
+const ConsensusError = require('../../../../lib/errors/consensus/ConsensusError');
 const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
 
 describe('validateStateTransitionStateFactory', () => {
@@ -43,15 +43,16 @@ describe('validateStateTransitionStateFactory', () => {
       },
     };
 
-    const result = await validateStateTransitionState(stateTransition);
+    try {
+      await validateStateTransitionState(stateTransition);
 
-    expectValidationError(result, InvalidStateTransitionTypeError);
+      expect.fail('should throw InvalidStateTransitionTypeError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidStateTransitionTypeError);
+      expect(e.getType()).to.equal(stateTransition.getType());
 
-    const [error] = result.getErrors();
-
-    expect(error.getRawStateTransition()).to.equal(rawStateTransition);
-
-    expect(validateDataContractSTDataMock).to.not.be.called();
+      expect(validateDataContractSTDataMock).to.not.be.called();
+    }
   });
 
   it('should return invalid result if Data Contract State Transition is not valid', async () => {

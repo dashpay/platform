@@ -1,7 +1,7 @@
 const IdentityPublicKey = require('../../identity/IdentityPublicKey');
-const InvalidIdentityPublicKeyTypeError = require('../../errors/InvalidIdentityPublicKeyTypeError');
-const InvalidStateTransitionSignatureError = require('../../errors/InvalidStateTransitionSignatureError');
-const MissingPublicKeyError = require('../../errors/MissingPublicKeyError');
+const InvalidIdentityPublicKeyTypeError = require('../../errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
+const InvalidStateTransitionSignatureError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
+const MissingPublicKeyError = require('../../errors/consensus/signature/MissingPublicKeyError');
 
 /**
  * Validate state transition signature

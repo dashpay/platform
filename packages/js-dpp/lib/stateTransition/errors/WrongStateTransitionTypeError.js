@@ -1,18 +1,13 @@
-class WrongStateTransitionTypeError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class WrongStateTransitionTypeError extends DPPError {
   /**
    * @param {AbstractStateTransition} stateTransition
    */
   constructor(stateTransition) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'Can\'t apply a state transition to a model, wrong state transition type';
+    super('Can\'t apply a state transition to a model, wrong state transition type');
 
     this.stateTransition = stateTransition;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

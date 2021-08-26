@@ -7,7 +7,7 @@ const getFeatureFlagsDocumentsFixture = require('../../../../lib/test/fixtures/g
 const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
-const DataTriggerConditionError = require('../../../../lib/errors/DataTriggerConditionError');
+const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const Identifier = require('../../../../lib/identifier/Identifier');
 
 describe('createFeatureFlagDataTrigger', () => {

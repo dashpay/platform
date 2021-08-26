@@ -1,8 +1,8 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 const InstantAssetLockProof = require('./instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./chain/ChainAssetLockProof');
-const IdentityAssetLockTransactionIsNotFoundError = require('../../../errors/IdentityAssetLockTransactionIsNotFoundError');
-const UnknownAssetLockProofError = require('../../../errors/UnknownAssetLockProofError');
+const IdentityAssetLockTransactionIsNotFoundError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionIsNotFoundError');
+const UnknownAssetLockProofError = require('../../errors/UnknownAssetLockProofTypeError');
 
 /**
  * @param {StateRepository} stateRepository

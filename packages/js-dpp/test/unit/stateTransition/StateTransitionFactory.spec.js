@@ -6,8 +6,8 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const InvalidStateTransitionError = require('../../../lib/stateTransition/errors/InvalidStateTransitionError');
 
-const ConsensusError = require('../../../lib/errors/ConsensusError');
-const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
+const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
+const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 const StateTransitionFactory = require('../../../lib/stateTransition/StateTransitionFactory');

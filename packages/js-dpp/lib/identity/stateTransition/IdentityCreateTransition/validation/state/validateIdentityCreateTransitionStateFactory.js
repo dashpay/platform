@@ -1,6 +1,6 @@
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
-const IdentityAlreadyExistsError = require('../../../../../errors/IdentityAlreadyExistsError');
+const IdentityAlreadyExistsError = require('../../../../../errors/consensus/state/identity/IdentityAlreadyExistsError');
 
 /**
  * @param {StateRepository} stateRepository

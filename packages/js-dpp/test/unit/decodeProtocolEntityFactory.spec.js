@@ -1,9 +1,9 @@
 const decodeProtocolEntityFactory = require('../../lib/decodeProtocolEntityFactory');
-const ProtocolVersionParsingError = require('../../lib/errors/ProtocolVersionParsingError');
-const UnsupportedProtocolVersionError = require('../../lib/errors/UnsupportedProtocolVersionError');
+const ProtocolVersionParsingError = require('../../lib/errors/consensus/basic/decode/ProtocolVersionParsingError');
+const UnsupportedProtocolVersionError = require('../../lib/errors/consensus/basic/decode/UnsupportedProtocolVersionError');
 const CompatibleProtocolVersionIsNotDefinedError = require('../../lib/errors/CompatibleProtocolVersionIsNotDefinedError');
-const IncompatibleProtocolVersionError = require('../../lib/errors/IncompatibleProtocolVersionError');
-const SerializedObjectParsingError = require('../../lib/errors/SerializedObjectParsingError');
+const IncompatibleProtocolVersionError = require('../../lib/errors/consensus/basic/decode/IncompatibleProtocolVersionError');
+const SerializedObjectParsingError = require('../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const { encode } = require('../../lib/util/serializer');
 
@@ -49,6 +49,7 @@ describe('decodeProtocolEntityFactory', () => {
 
       expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsingError()).to.be.instanceOf(Error);
+      expect(e.getCode()).to.equal(1000);
     }
   });
 
@@ -68,6 +69,7 @@ describe('decodeProtocolEntityFactory', () => {
       expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsedProtocolVersion()).to.equal(parsedProtocolVersion);
       expect(e.getCurrentProtocolVersion()).to.equal(currentProtocolVersion);
+      expect(e.getCode()).to.equal(1001);
     }
   });
 
@@ -103,6 +105,7 @@ describe('decodeProtocolEntityFactory', () => {
       expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsedProtocolVersion()).to.equal(parsedProtocolVersion);
       expect(e.getMinimalProtocolVersion()).to.equal(minimalProtocolVersion);
+      expect(e.getCode()).to.equal(1002);
     }
   });
 
@@ -118,6 +121,7 @@ describe('decodeProtocolEntityFactory', () => {
 
       expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsingError()).to.be.an.instanceOf(Error);
+      expect(e.getCode()).to.equal(1003);
     }
   });
 

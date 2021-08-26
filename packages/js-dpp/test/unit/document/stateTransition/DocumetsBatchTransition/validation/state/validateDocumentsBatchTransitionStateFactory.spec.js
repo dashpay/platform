@@ -4,7 +4,7 @@ const Document = require('../../../../../../../lib/document/Document');
 const DocumentsBatchTransition = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
 const DataTriggerExecutionContext = require('../../../../../../../lib/dataTrigger/DataTriggerExecutionContext');
-const DataTriggerExecutionError = require('../../../../../../../lib/errors/DataTriggerExecutionError');
+const DataTriggerExecutionError = require('../../../../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
 const DataTriggerExecutionResult = require('../../../../../../../lib/dataTrigger/DataTriggerExecutionResult');
 
 const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
@@ -17,14 +17,15 @@ const ValidationResult = require('../../../../../../../lib/validation/Validation
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 const DataContractNotPresentError = require('../../../../../../../lib/errors/DataContractNotPresentError');
-const DocumentAlreadyPresentError = require('../../../../../../../lib/errors/DocumentAlreadyPresentError');
-const DocumentNotFoundError = require('../../../../../../../lib/errors/DocumentNotFoundError');
-const InvalidDocumentRevisionError = require('../../../../../../../lib/errors/InvalidDocumentRevisionError');
-const ConsensusError = require('../../../../../../../lib/errors/ConsensusError');
+
+const DocumentAlreadyPresentError = require('../../../../../../../lib/errors/consensus/state/document/DocumentAlreadyPresentError');
+const DocumentNotFoundError = require('../../../../../../../lib/errors/consensus/state/document/DocumentNotFoundError');
+const InvalidDocumentRevisionError = require('../../../../../../../lib/errors/consensus/state/document/InvalidDocumentRevisionError');
+const ConsensusError = require('../../../../../../../lib/errors/consensus/ConsensusError');
 const InvalidDocumentActionError = require('../../../../../../../lib/document/errors/InvalidDocumentActionError');
-const DocumentOwnerIdMismatchError = require('../../../../../../../lib/errors/DocumentOwnerIdMismatchError');
-const DocumentTimestampsMismatchError = require('../../../../../../../lib/errors/DocumentTimestampsMismatchError');
-const DocumentTimestampWindowViolationError = require('../../../../../../../lib/errors/DocumentTimestampWindowViolationError');
+const DocumentOwnerIdMismatchError = require('../../../../../../../lib/errors/consensus/state/document/DocumentOwnerIdMismatchError');
+const DocumentTimestampsMismatchError = require('../../../../../../../lib/errors/consensus/state/document/DocumentTimestampsMismatchError');
+const DocumentTimestampWindowViolationError = require('../../../../../../../lib/errors/consensus/state/document/DocumentTimestampWindowViolationError');
 
 const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifier');
 
@@ -95,24 +96,26 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     fakeTime.reset();
   });
 
-  it('should return invalid result if data contract was not found', async () => {
+  it('should throw DataContractNotPresentError if data contract was not found', async () => {
     stateRepositoryMock.fetchDataContract.resolves(null);
 
-    const result = await validateDocumentsBatchTransitionState(stateTransition);
+    try {
+      await validateDocumentsBatchTransitionState(stateTransition);
 
-    expectValidationError(result, DataContractNotPresentError);
+      expect.fail('should throw DataContractNotPresentError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(DataContractNotPresentError);
 
-    const [error] = result.getErrors();
+      expect(e.getDataContractId()).to.deep.equal(dataContract.getId());
 
-    expect(error.getDataContractId()).to.deep.equal(dataContract.getId());
+      expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
+        dataContract.getId(),
+      );
 
-    expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-      dataContract.getId(),
-    );
-
-    expect(fetchDocumentsMock).to.have.not.been.called();
-    expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
-    expect(executeDataTriggersMock).to.have.not.been.called();
+      expect(fetchDocumentsMock).to.have.not.been.called();
+      expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
+      expect(executeDataTriggersMock).to.have.not.been.called();
+    }
   });
 
   it('should return invalid result if document transition with action "create" is already present', async () => {

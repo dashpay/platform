@@ -1,17 +1,7 @@
-class IdentifierError extends Error {
-  /**
-   * @param {string} message
-   */
-  constructor(message) {
-    super();
+const DPPError = require('../../errors/DPPError');
 
-    this.name = this.constructor.name;
-    this.message = message;
+class IdentifierError extends DPPError {
 
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
-  }
 }
 
 module.exports = IdentifierError;

@@ -8,7 +8,7 @@ function fetchDocumentsFactory(stateRepository) {
    * @param {DocumentCreateTransition[]
    *        |DocumentReplaceTransition[]
    *        |DocumentDeleteTransition[]} documentTransitions
-   * @return {Document[]}
+   * @return {Promise<Document[]>}
    */
   async function fetchDocuments(documentTransitions) {
     // Group document transitions by contracts and types

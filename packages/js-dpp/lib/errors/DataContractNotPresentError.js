@@ -1,11 +1,11 @@
-const ConsensusError = require('./ConsensusError');
+const DPPError = require('./DPPError');
 
-class DataContractNotPresentError extends ConsensusError {
+class DataContractNotPresentError extends DPPError {
   /**
-   * @param {Identifier|Buffer} dataContractId
+   * @param {Identifier} dataContractId
    */
   constructor(dataContractId) {
-    super('Data Contract is not present with Data Contract ID specified in ST Packet');
+    super('Data Contract is not present');
 
     this.dataContractId = dataContractId;
   }
@@ -13,7 +13,7 @@ class DataContractNotPresentError extends ConsensusError {
   /**
    * Get Data Contract ID
    *
-   * @return {Buffer}
+   * @return {Identifier}
    */
   getDataContractId() {
     return this.dataContractId;

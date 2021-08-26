@@ -9,7 +9,7 @@ const validateIdentityCreateTransitionStateFactory = require(
 const getIdentityCreateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const IdentityAlreadyExistsError = require(
-  '../../../../../../../lib/errors/IdentityAlreadyExistsError',
+  '../../../../../../../lib/errors/consensus/state/identity/IdentityAlreadyExistsError',
 );
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');

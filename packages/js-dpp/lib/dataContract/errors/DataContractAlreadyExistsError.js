@@ -1,18 +1,13 @@
-class DataContractAlreadyExistsError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class DataContractAlreadyExistsError extends DPPError {
   /**
    * @param {AbstractStateTransition} stateTransition
    */
   constructor(stateTransition) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'Data contract already exists';
+    super('Data contract already exists');
 
     this.stateTransition = stateTransition;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

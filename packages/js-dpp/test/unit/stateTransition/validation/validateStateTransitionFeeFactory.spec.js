@@ -14,8 +14,8 @@ const DocumentsBatchTransition = require('../../../../lib/document/stateTransiti
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
-const IdentityBalanceIsNotEnoughError = require('../../../../lib/errors/BalanceIsNotEnoughError');
-const InvalidStateTransitionTypeError = require('../../../../lib/errors/InvalidStateTransitionTypeError');
+const IdentityBalanceIsNotEnoughError = require('../../../../lib/errors/consensus/fee/BalanceIsNotEnoughError');
+const InvalidStateTransitionTypeError = require('../../../../lib/stateTransition/errors/InvalidStateTransitionTypeError');
 
 const { RATIO } = require('../../../../lib/identity/creditsConverter');
 
@@ -277,10 +277,11 @@ describe('validateStateTransitionFeeFactory', () => {
   it('should throw InvalidStateTransitionTypeError on invalid State Transition', async function it() {
     const rawStateTransitionMock = {
       data: 'sample data',
+      type: -1,
     };
 
     const stateTransitionMock = {
-      getType: this.sinonSandbox.stub().returns(-1),
+      getType: this.sinonSandbox.stub().returns(rawStateTransitionMock.type),
       toBuffer: this.sinonSandbox.stub().returns(Buffer.alloc(0)),
       toObject: this.sinonSandbox.stub().returns(rawStateTransitionMock),
     };
@@ -291,7 +292,7 @@ describe('validateStateTransitionFeeFactory', () => {
       expect.fail('should throw InvalidStateTransitionTypeError');
     } catch (error) {
       expect(error).to.be.an.instanceOf(InvalidStateTransitionTypeError);
-      expect(error.getRawStateTransition()).to.equal(rawStateTransitionMock);
+      expect(error.getType()).to.equal(rawStateTransitionMock.type);
 
       expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(stateTransitionMock);
       expect(stateRepositoryMock.fetchIdentity).to.not.be.called();

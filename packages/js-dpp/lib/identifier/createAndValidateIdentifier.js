@@ -1,5 +1,5 @@
 const Identifier = require('./Identifier');
-const InvalidIdentifierError = require('../errors/InvalidIdentifierError');
+const InvalidIdentifierError = require('../errors/consensus/basic/InvalidIdentifierError');
 const IdentifierError = require('./errors/IdentifierError');
 
 /**
@@ -14,7 +14,7 @@ function createAndValidateIdentifier(name, buffer, result) {
   } catch (e) {
     if (e instanceof IdentifierError) {
       result.addError(
-        new InvalidIdentifierError('$dataContractId', e),
+        new InvalidIdentifierError(name, e),
       );
 
       return undefined;

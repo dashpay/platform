@@ -1,8 +1,8 @@
 const validateDataContractMaxDepthFactory = require('../../../../lib/dataContract/validation/validateDataContractMaxDepthFactory');
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
-const DataContractMaxDepthExceedError = require('../../../../lib/errors/DataContractMaxDepthExceedError');
-const JsonSchemaError = require('../../../../lib/errors/JsonSchemaError');
+const DataContractMaxDepthExceedError = require('../../../../lib/errors/consensus/basic/dataContract/DataContractMaxDepthExceedError');
+const JsonSchemaError = require('../../../../lib/errors/consensus/basic/JsonSchemaError');
 const generateDeepJson = require('../../../../lib/test/utils/generateDeepJson');
 
 describe('validateDataContractMaxDepthFactory', () => {

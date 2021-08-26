@@ -1,8 +1,8 @@
 const ValidationResult = require('../../validation/ValidationResult');
 
-const MissingStateTransitionTypeError = require('../../errors/MissingStateTransitionTypeError');
-const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransitionTypeError');
-const StateTransitionMaxSizeExceededError = require('../../errors/StateTransitionMaxSizeExceededError');
+const MissingStateTransitionTypeError = require('../../errors/consensus/basic/stateTransition/MissingStateTransitionTypeError');
+const InvalidStateTransitionTypeError = require('../../errors/consensus/basic/stateTransition/InvalidStateTransitionTypeError');
+const StateTransitionMaxSizeExceededError = require('../../errors/consensus/basic/stateTransition/StateTransitionMaxSizeExceededError');
 const MaxEncodedBytesReachedError = require('../../util/errors/MaxEncodedBytesReachedError');
 
 /**

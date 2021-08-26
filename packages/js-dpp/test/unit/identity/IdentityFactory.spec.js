@@ -9,8 +9,8 @@ const IdentityTopUpTransition = require('../../../lib/identity/stateTransition/I
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
-const ConsensusError = require('../../../lib/errors/ConsensusError');
-const SerializedObjectParsingError = require('../../../lib/errors/SerializedObjectParsingError');
+const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
+const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const InvalidIdentityError = require(
   '../../../lib/identity/errors/InvalidIdentityError',

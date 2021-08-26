@@ -1,18 +1,14 @@
-class MissingOptionError extends Error {
+const DPPError = require('./DPPError');
+
+class MissingOptionError extends DPPError {
   /**
    * @param {string} optionName
    * @param {string} message
    */
   constructor(optionName, message) {
-    super();
+    super(message);
 
-    this.name = this.constructor.name;
     this.optionName = optionName;
-    this.message = message;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

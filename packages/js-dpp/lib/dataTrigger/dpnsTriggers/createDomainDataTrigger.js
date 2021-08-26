@@ -1,7 +1,7 @@
 const hash = require('../../util/hash');
 
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
-const DataTriggerConditionError = require('../../errors/DataTriggerConditionError');
+const DataTriggerConditionError = require('../../errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 
 const MAX_PRINTABLE_DOMAIN_NAME_LENGTH = 253;
 

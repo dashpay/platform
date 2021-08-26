@@ -4,9 +4,8 @@ const ValidationResult = require('../../validation/ValidationResult');
 
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 
-const InvalidDocumentTypeError = require('../../errors/InvalidDocumentTypeError');
-const MissingDocumentTypeError = require('../../errors/MissingDocumentTypeError');
-const MismatchDocumentContractIdAndDataContractError = require('../../errors/MismatchDocumentContractIdAndDataContractError');
+const InvalidDocumentTypeError = require('../../errors/consensus/basic/document/InvalidDocumentTypeError');
+const MissingDocumentTypeError = require('../../errors/consensus/basic/document/MissingDocumentTypeError');
 
 /**
  * @param {JsonSchemaValidator} validator
@@ -63,16 +62,6 @@ module.exports = function validateDocumentFactory(
         additionalSchemas,
       ),
     );
-
-    if (!result.isValid()) {
-      return result;
-    }
-
-    if (!rawDocument.$dataContractId.equals(dataContract.getId())) {
-      result.addError(
-        new MismatchDocumentContractIdAndDataContractError(rawDocument, dataContract),
-      );
-    }
 
     return result;
   }

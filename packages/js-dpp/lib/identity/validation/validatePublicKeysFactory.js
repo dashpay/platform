@@ -7,14 +7,14 @@ const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 const publicKeySchema = require('../../../schema/identity/publicKey.json');
 
 const InvalidIdentityPublicKeyDataError = require(
-  '../../errors/InvalidIdentityPublicKeyDataError',
+  '../../errors/consensus/basic/identity/InvalidIdentityPublicKeyDataError',
 );
 
 const DuplicatedIdentityPublicKeyError = require(
-  '../../errors/DuplicatedIdentityPublicKeyError',
+  '../../errors/consensus/basic/identity/DuplicatedIdentityPublicKeyError',
 );
 const DuplicatedIdentityPublicKeyIdError = require(
-  '../../errors/DuplicatedIdentityPublicKeyIdError',
+  '../../errors/consensus/basic/identity/DuplicatedIdentityPublicKeyIdError',
 );
 
 /**

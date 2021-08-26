@@ -1,18 +1,13 @@
-class CompatibleProtocolVersionIsNotDefinedError extends Error {
+const DPPError = require('./DPPError');
+
+class CompatibleProtocolVersionIsNotDefinedError extends DPPError {
   /**
    * @param {number} currentProtocolVersion
    */
   constructor(currentProtocolVersion) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = `Compatible version is not defined for protocol version ${currentProtocolVersion}`;
+    super(`Compatible version is not defined for protocol version ${currentProtocolVersion}`);
 
     this.currentProtocolVersion = currentProtocolVersion;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

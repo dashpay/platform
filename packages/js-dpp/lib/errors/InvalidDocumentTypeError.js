@@ -1,21 +1,15 @@
-const ConsensusError = require('./ConsensusError');
+const DPPError = require('./DPPError');
 
-class InvalidDocumentTypeError extends ConsensusError {
+class InvalidDocumentTypeError extends DPPError {
   /**
    * @param {string} type
    * @param {DataContract} dataContract
    */
   constructor(type, dataContract) {
-    super(`Contract doesn't contain type ${type}`);
-
-    this.name = this.constructor.name;
+    super(`Data Contract doesn't define document with type ${type}`);
 
     this.type = type;
     this.dataContract = dataContract;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

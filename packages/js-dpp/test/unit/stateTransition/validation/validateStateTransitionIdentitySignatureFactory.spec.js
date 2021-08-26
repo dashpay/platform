@@ -1,11 +1,11 @@
 const validateStateTransitionSignatureFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionIdentitySignatureFactory');
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
-const InvalidIdentityPublicKeyTypeError = require('../../../../lib/errors/InvalidIdentityPublicKeyTypeError');
-const InvalidStateTransitionSignatureError = require('../../../../lib/errors/InvalidStateTransitionSignatureError');
-const MissingPublicKeyError = require('../../../../lib/errors/MissingPublicKeyError');
+const InvalidIdentityPublicKeyTypeError = require('../../../../lib/errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
+const InvalidStateTransitionSignatureError = require('../../../../lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
+const MissingPublicKeyError = require('../../../../lib/errors/consensus/signature/MissingPublicKeyError');
 const generateRandomIdentifier = require('../../../../lib/test/utils/generateRandomIdentifier');
-const ConsensusError = require('../../../../lib/errors/ConsensusError');
+const ConsensusError = require('../../../../lib/errors/consensus/ConsensusError');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 

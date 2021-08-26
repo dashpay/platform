@@ -1,5 +1,5 @@
 const InvalidStateTransitionError = require('./errors/InvalidStateTransitionError');
-const ConsensusError = require('../errors/ConsensusError');
+const ConsensusError = require('../errors/consensus/ConsensusError');
 
 class StateTransitionFactory {
   /**

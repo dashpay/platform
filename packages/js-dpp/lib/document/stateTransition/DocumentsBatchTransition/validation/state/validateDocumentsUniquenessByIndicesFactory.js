@@ -1,5 +1,5 @@
 const ValidationResult = require('../../../../../validation/ValidationResult');
-const DuplicateDocumentError = require('../../../../../errors/DuplicateDocumentError');
+const DuplicateDocumentError = require('../../../../../errors/consensus/state/document/DuplicateDocumentError');
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
 /**

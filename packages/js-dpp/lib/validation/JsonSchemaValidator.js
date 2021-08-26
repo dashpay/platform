@@ -1,7 +1,7 @@
 const dataContractMetaSchema = require('../../schema/dataContract/dataContractMeta');
 
 const ValidationResult = require('./ValidationResult');
-const JsonSchemaError = require('../errors/JsonSchemaError');
+const JsonSchemaError = require('../errors/consensus/basic/JsonSchemaError');
 
 class JsonSchemaValidator {
   constructor(ajv) {

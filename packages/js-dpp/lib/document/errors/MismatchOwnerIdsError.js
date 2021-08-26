@@ -1,12 +1,11 @@
-class MismatchOwnerIdsError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class MismatchOwnerIdsError extends DPPError {
   /**
    * @param {Document[]} documents
    */
   constructor(documents) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'Documents have mixed owner ids';
+    super('Documents have mixed owner ids');
 
     this.documents = documents;
   }

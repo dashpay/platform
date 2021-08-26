@@ -1,12 +1,8 @@
-class AssetLockOutputNotFoundError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class AssetLockOutputNotFoundError extends DPPError {
   constructor() {
-    super();
-
-    this.message = 'Asset Lock transaction output not found';
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
+    super('Asset Lock transaction output not found');
   }
 }
 

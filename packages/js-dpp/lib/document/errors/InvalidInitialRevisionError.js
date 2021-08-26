@@ -1,17 +1,13 @@
-class InvalidInitialRevisionError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class InvalidInitialRevisionError extends DPPError {
   /**
    * @param {Document} document
    */
   constructor(document) {
-    super();
+    super(`Invalid Document initial revision ${document.getRevision()}`);
 
-    this.name = this.constructor.name;
-    this.message = `Invalid Document initial revision ${document.getRevision()}`;
     this.document = document;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

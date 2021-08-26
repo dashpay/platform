@@ -1,4 +1,4 @@
-const ConsensusError = require('../../errors/ConsensusError');
+const ConsensusError = require('../../errors/consensus/ConsensusError');
 
 class IncompatibleRe2PatternError extends ConsensusError {
   /**

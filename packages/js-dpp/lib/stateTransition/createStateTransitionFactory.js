@@ -5,9 +5,9 @@ const DataContractCreateTransition = require('../dataContract/stateTransition/Da
 const IdentityCreateTransition = require('../identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('../identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
-const InvalidStateTransitionTypeError = require('../errors/InvalidStateTransitionTypeError');
+const InvalidStateTransitionTypeError = require('./errors/InvalidStateTransitionTypeError');
 const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
-const MissingDataContractIdError = require('../errors/MissingDataContractIdError');
+const MissingDataContractIdError = require('./errors/MissingDataContractIdError');
 
 const Identifier = require('../identifier/Identifier');
 
@@ -30,7 +30,7 @@ function createStateTransitionFactory(stateRepository) {
    */
   async function createStateTransition(rawStateTransition) {
     if (!typesToClasses[rawStateTransition.type]) {
-      throw new InvalidStateTransitionTypeError(rawStateTransition);
+      throw new InvalidStateTransitionTypeError(rawStateTransition.type);
     }
 
     if (rawStateTransition.type === types.DOCUMENTS_BATCH) {
@@ -45,7 +45,7 @@ function createStateTransitionFactory(stateRepository) {
           const dataContract = await stateRepository.fetchDataContract(dataContractId);
 
           if (!dataContract) {
-            throw new DataContractNotPresentError(rawStateTransition.$dataContractId);
+            throw new DataContractNotPresentError(dataContractId);
           }
 
           return dataContract;

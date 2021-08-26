@@ -1,19 +1,14 @@
-class PublicKeyMismatchError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class PublicKeyMismatchError extends DPPError {
   /**
    *
    * @param {IdentityPublicKey} publicKey
    */
   constructor(publicKey) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'Public key mismatched';
+    super('Public key mismatched');
 
     this.publicKey = publicKey;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

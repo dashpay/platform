@@ -2,9 +2,9 @@ const { Transaction } = require('@dashevo/dashcore-lib');
 const chainAssetLockProofSchema = require('../../../../../schema/identity/stateTransition/assetLockProof/chainAssetLockProof.json');
 
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
-const InvalidAssetLockProofCoreChainHeightError = require('../../../../errors/InvalidAssetLockProofCoreChainHeightError');
-const IdentityAssetLockTransactionIsNotFoundError = require('../../../../errors/IdentityAssetLockTransactionIsNotFoundError');
-const InvalidAssetLockProofTransactionHeightError = require('../../../../errors/InvalidAssetLockProofTransactionHeightError');
+const InvalidAssetLockProofCoreChainHeightError = require('../../../../errors/consensus/basic/identity/InvalidAssetLockProofCoreChainHeightError');
+const IdentityAssetLockTransactionIsNotFoundError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockTransactionIsNotFoundError');
+const InvalidAssetLockProofTransactionHeightError = require('../../../../errors/consensus/basic/identity/InvalidAssetLockProofTransactionHeightError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator

@@ -5,13 +5,13 @@ const DataContract = require('../DataContract');
 
 const baseDocumentSchema = require('../../../schema/document/documentBase.json');
 
-const DuplicateIndexError = require('../../errors/DuplicateIndexError');
-const UndefinedIndexPropertyError = require('../../errors/UndefinedIndexPropertyError');
-const InvalidIndexPropertyTypeError = require('../../errors/InvalidIndexPropertyTypeError');
-const SystemPropertyIndexAlreadyPresentError = require('../../errors/SystemPropertyIndexAlreadyPresentError');
-const UniqueIndicesLimitReachedError = require('../../errors/UniqueIndicesLimitReachedError');
-const InvalidIndexedPropertyConstraintError = require('../../errors/InvalidIndexedPropertyConstraintError');
-const InvalidCompoundIndexError = require('../../errors/InvalidCompoundIndexError');
+const DuplicateIndexError = require('../../errors/consensus/basic/dataContract/DuplicateIndexError');
+const UndefinedIndexPropertyError = require('../../errors/consensus/basic/dataContract/UndefinedIndexPropertyError');
+const InvalidIndexPropertyTypeError = require('../../errors/consensus/basic/dataContract/InvalidIndexPropertyTypeError');
+const SystemPropertyIndexAlreadyPresentError = require('../../errors/consensus/basic/dataContract/SystemPropertyIndexAlreadyPresentError');
+const UniqueIndicesLimitReachedError = require('../../errors/consensus/basic/dataContract/UniqueIndicesLimitReachedError');
+const InvalidIndexedPropertyConstraintError = require('../../errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
+const InvalidCompoundIndexError = require('../../errors/consensus/basic/dataContract/InvalidCompoundIndexError');
 
 const getPropertyDefinitionByPathFactory = require('../getPropertyDefinitionByPathFactory');
 
@@ -246,7 +246,7 @@ module.exports = function validateDataContractFactory(
 
             if (!allAreRequired && !allAreNotRequired) {
               result.addError(
-                new InvalidCompoundIndexError(documentType, indexDefinition),
+                new InvalidCompoundIndexError(rawDataContract, documentType, indexDefinition),
               );
             }
           }

@@ -1,9 +1,8 @@
-class NoDocumentsSuppliedError extends Error {
-  constructor() {
-    super();
+const DPPError = require('../../errors/DPPError');
 
-    this.name = this.constructor.name;
-    this.message = 'No documents were supplied to state transition';
+class NoDocumentsSuppliedError extends DPPError {
+  constructor() {
+    super('No documents were supplied to state transition');
   }
 }
 

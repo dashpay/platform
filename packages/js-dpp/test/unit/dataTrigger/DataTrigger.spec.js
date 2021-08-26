@@ -5,8 +5,8 @@ const DataTriggerExecutionContext = require('../../../lib/dataTrigger/DataTrigge
 const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
 const DataTriggerExecutionResult = require('../../../lib/dataTrigger/DataTriggerExecutionResult');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const DataTriggerExecutionError = require('../../../lib/errors/DataTriggerExecutionError');
-const DataTriggerInvalidResultError = require('../../../lib/errors/DataTriggerInvalidResultError');
+const DataTriggerExecutionError = require('../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
+const DataTriggerInvalidResultError = require('../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerInvalidResultError');
 
 describe('DataTrigger', () => {
   let dataContractMock;

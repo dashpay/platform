@@ -9,7 +9,7 @@ const getDocumentTranstionsFixture = require('../../../lib/test/fixtures/getDocu
 
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
-const InvalidStateTransitionTypeError = require('../../../lib/errors/InvalidStateTransitionTypeError');
+const InvalidStateTransitionTypeError = require('../../../lib/stateTransition/errors/InvalidStateTransitionTypeError');
 
 describe('createStateTransitionFactory', () => {
   let createStateTransition;
@@ -66,7 +66,7 @@ describe('createStateTransitionFactory', () => {
       expect.fail('InvalidStateTransitionTypeError is not thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidStateTransitionTypeError);
-      expect(e.getRawStateTransition()).to.equal(rawStateTransition);
+      expect(e.getType()).to.equal(rawStateTransition.type);
     }
   });
 });

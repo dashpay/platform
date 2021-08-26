@@ -1,4 +1,4 @@
-const InvalidStateTransitionSignatureError = require('../../errors/InvalidStateTransitionSignatureError');
+const InvalidStateTransitionSignatureError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
 
 const ValidationResult = require('../../validation/ValidationResult');
 

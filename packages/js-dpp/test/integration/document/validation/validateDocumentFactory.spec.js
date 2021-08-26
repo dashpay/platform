@@ -13,16 +13,13 @@ const enrichDataContractWithBaseSchema = require('../../../../lib/dataContract/e
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
-const MissingDocumentTypeError = require('../../../../lib/errors/MissingDocumentTypeError');
-const InvalidDocumentTypeError = require('../../../../lib/errors/InvalidDocumentTypeError');
-const MismatchDocumentContractIdAndDataContractError = require('../../../../lib/errors/MismatchDocumentContractIdAndDataContractError');
+const MissingDocumentTypeError = require('../../../../lib/errors/consensus/basic/document/MissingDocumentTypeError');
+const InvalidDocumentTypeError = require('../../../../lib/errors/consensus/basic/document/InvalidDocumentTypeError');
 
 const {
   expectValidationError,
   expectJsonSchemaError,
 } = require('../../../../lib/test/expect/expectError');
-
-const generateRandomIdentifier = require('../../../../lib/test/utils/generateRandomIdentifier');
 
 describe('validateDocumentFactory', () => {
   let dataContract;
@@ -412,19 +409,6 @@ describe('validateDocumentFactory', () => {
       expect(error.instancePath).to.equal('');
       expect(error.keyword).to.equal('additionalProperties');
     });
-  });
-
-  it('should return invalid result if a document contractId is not equal to Data Contract ID', () => {
-    rawDocument.$dataContractId = generateRandomIdentifier();
-
-    const result = validateDocument(rawDocument, dataContract);
-
-    expectValidationError(result, MismatchDocumentContractIdAndDataContractError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getDataContract()).to.equal(dataContract);
-    expect(error.getRawDocument()).to.equal(rawDocument);
   });
 
   it('return invalid result if a byte array exceeds `maxItems`', () => {

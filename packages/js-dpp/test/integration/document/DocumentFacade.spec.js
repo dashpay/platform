@@ -12,7 +12,7 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const DataContractNotPresentError = require('../../../lib/errors/DataContractNotPresentError');
+const DataContractNotPresentError = require('../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 
 describe('DocumentFacade', () => {

@@ -1,17 +1,14 @@
 const identityTopUpTransitionSchema = require('../../../../../../schema/identity/stateTransition/identityTopUp.json');
 
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
-const Identifier = require('../../../../../identifier/Identifier');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
- * @param {validateIdentityExistence} validateIdentityExistence
  * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @return {validateIdentityTopUpTransitionBasic}
  */
 function validateIdentityTopUpTransitionBasicFactory(
   jsonSchemaValidator,
-  validateIdentityExistence,
   proofValidationFunctionsByType,
 ) {
   /**
@@ -23,16 +20,6 @@ function validateIdentityTopUpTransitionBasicFactory(
     const result = jsonSchemaValidator.validate(
       identityTopUpTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
-    );
-
-    if (!result.isValid()) {
-      return result;
-    }
-
-    result.merge(
-      await validateIdentityExistence(
-        new Identifier(rawStateTransition.identityId),
-      ),
     );
 
     if (!result.isValid()) {

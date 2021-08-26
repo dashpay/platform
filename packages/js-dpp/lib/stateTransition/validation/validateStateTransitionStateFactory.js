@@ -1,6 +1,4 @@
-const ValidationResult = require('../../validation/ValidationResult');
-
-const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransitionTypeError');
+const InvalidStateTransitionTypeError = require('../errors/InvalidStateTransitionTypeError');
 
 /**
  * @param {Object<number, Function>} validationFunctions
@@ -13,16 +11,10 @@ function validateStateTransitionStateFactory(validationFunctions) {
    * @return {ValidationResult}
    */
   async function validateStateTransitionState(stateTransition) {
-    const result = new ValidationResult();
-
     const validationFunction = validationFunctions[stateTransition.getType()];
 
     if (!validationFunction) {
-      result.addError(
-        new InvalidStateTransitionTypeError(stateTransition.toObject()),
-      );
-
-      return result;
+      throw new InvalidStateTransitionTypeError(stateTransition.getType());
     }
 
     return validationFunction(stateTransition);

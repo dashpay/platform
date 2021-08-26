@@ -1,19 +1,14 @@
-class StateTransitionIsNotSignedError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class StateTransitionIsNotSignedError extends DPPError {
   /**
    *
    * @param {AbstractStateTransition} stateTransition
    */
   constructor(stateTransition) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'State Transition is not signed';
+    super('State Transition is not signed');
 
     this.stateTransition = stateTransition;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

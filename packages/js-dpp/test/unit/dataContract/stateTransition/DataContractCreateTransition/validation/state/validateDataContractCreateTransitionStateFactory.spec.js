@@ -8,7 +8,7 @@ const { expectValidationError } = require('../../../../../../../lib/test/expect/
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
-const DataContractAlreadyPresentError = require('../../../../../../../lib/errors/DataContractAlreadyPresentError');
+const DataContractAlreadyPresentError = require('../../../../../../../lib/errors/consensus/state/dataContract/DataContractAlreadyPresentError');
 
 describe('validateDataContractCreateTransitionStateFactory', () => {
   let validateDataContractCreateTransitionState;

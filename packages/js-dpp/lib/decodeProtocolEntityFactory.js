@@ -1,7 +1,7 @@
-const ProtocolVersionParsingError = require('./errors/ProtocolVersionParsingError');
-const SerializedObjectParsingError = require('./errors/SerializedObjectParsingError');
-const UnsupportedProtocolVersionError = require('./errors/UnsupportedProtocolVersionError');
-const IncompatibleProtocolVersionError = require('./errors/IncompatibleProtocolVersionError');
+const ProtocolVersionParsingError = require('./errors/consensus/basic/decode/ProtocolVersionParsingError');
+const SerializedObjectParsingError = require('./errors/consensus/basic/decode/SerializedObjectParsingError');
+const UnsupportedProtocolVersionError = require('./errors/consensus/basic/decode/UnsupportedProtocolVersionError');
+const IncompatibleProtocolVersionError = require('./errors/consensus/basic/decode/IncompatibleProtocolVersionError');
 const CompatibleProtocolVersionIsNotDefinedError = require('./errors/CompatibleProtocolVersionIsNotDefinedError');
 
 const { decode } = require('./util/serializer');

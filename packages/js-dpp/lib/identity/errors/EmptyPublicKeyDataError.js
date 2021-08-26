@@ -1,12 +1,8 @@
-class EmptyPublicKeyDataError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class EmptyPublicKeyDataError extends DPPError {
   constructor() {
-    super();
-
-    this.message = 'Public key data is not set';
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
+    super('Public key data is not set');
   }
 }
 

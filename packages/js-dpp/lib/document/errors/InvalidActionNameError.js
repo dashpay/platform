@@ -1,12 +1,11 @@
-class InvalidActionNameError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class InvalidActionNameError extends DPPError {
   /**
    * @param {string[]} actions
    */
   constructor(actions) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'Invalid document action submitted';
+    super('Invalid document action submitted');
 
     this.actions = actions;
   }

@@ -1,7 +1,7 @@
 const lodashCloneDeep = require('lodash.clonedeep');
 const ValidationResult = require('../../validation/ValidationResult');
-const JsonSchemaError = require('../../errors/JsonSchemaError');
-const DataContractMaxDepthExceedError = require('../../errors/DataContractMaxDepthExceedError');
+const JsonSchemaError = require('../../errors/consensus/basic/JsonSchemaError');
+const DataContractMaxDepthExceedError = require('../../errors/consensus/basic/dataContract/DataContractMaxDepthExceedError');
 
 /**
  * Check that JSON Schema max depth is less than max value

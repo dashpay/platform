@@ -1,0 +1,38 @@
+const AbstractStateError = require('../../AbstractStateError');
+
+/**
+ * @abstract
+ */
+class AbstractDataTriggerError extends AbstractStateError {
+  /**
+   * @param {string} message
+   * @param {DataContract} dataContract
+   * @param {Identifier|Buffer} ownerId
+   */
+  constructor(message, dataContract, ownerId) {
+    super(message);
+
+    this.dataContract = dataContract;
+    this.ownerId = ownerId;
+  }
+
+  /**
+   * Get data trigger data contract
+   *
+   * @return {DataContract}
+   */
+  getDataContract() {
+    return this.dataContract;
+  }
+
+  /**
+   * Get data trigger owner id
+   *
+   * @return {Identifier}
+   */
+  getOwnerId() {
+    return this.ownerId;
+  }
+}
+
+module.exports = AbstractDataTriggerError;

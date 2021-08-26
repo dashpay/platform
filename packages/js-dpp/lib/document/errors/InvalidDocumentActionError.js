@@ -1,19 +1,15 @@
-class InvalidDocumentActionError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class InvalidDocumentActionError extends DPPError {
   /**
    * @param {
    *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
    * } documentTransition
    */
   constructor(documentTransition) {
-    super();
+    super(`Invalid Document action ${documentTransition.getAction()}`);
 
-    this.name = this.constructor.name;
-    this.message = `Invalid Document action ${documentTransition.getAction()}`;
     this.documentTransition = documentTransition;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

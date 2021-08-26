@@ -1,18 +1,13 @@
-class DocumentAlreadyExistsError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class DocumentAlreadyExistsError extends DPPError {
   /**
    * @param {DocumentCreateTransition} documentTransition
    */
   constructor(documentTransition) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'Document already exists';
+    super('Document already exists');
 
     this.documentTransition = documentTransition;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

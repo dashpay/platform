@@ -21,9 +21,9 @@ const {
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
-const ConsensusError = require('../../../../../../../lib/errors/ConsensusError');
+const ConsensusError = require('../../../../../../../lib/errors/consensus/ConsensusError');
 
-const InvalidDataContractIdError = require('../../../../../../../lib/errors/InvalidDataContractIdError');
+const InvalidDataContractIdError = require('../../../../../../../lib/errors/consensus/basic/dataContract/InvalidDataContractIdError');
 
 describe('validateDataContractCreateTransitionBasicFactory', () => {
   let validateDataContractMock;
@@ -185,6 +185,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       validateDataContractMock.returns(dataContractResult);
 
+      const expectedId = rawStateTransition.dataContract.$id;
       rawStateTransition.dataContract.$id = crypto.randomBytes(34);
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
@@ -194,7 +195,8 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error).to.be.an.instanceOf(InvalidDataContractIdError);
-      expect(error.getRawDataContract()).to.equal(rawStateTransition.dataContract);
+      expect(error.getExpectedId()).to.deep.equal(expectedId);
+      expect(error.getInvalidId()).to.deep.equal(rawStateTransition.dataContract.$id);
     });
   });
 

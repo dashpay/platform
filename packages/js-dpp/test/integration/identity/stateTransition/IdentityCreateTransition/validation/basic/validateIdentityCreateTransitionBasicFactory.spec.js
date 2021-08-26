@@ -16,7 +16,7 @@ const {
 } = require('../../../../../../../lib/test/expect/expectError');
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
-const ConsensusError = require('../../../../../../../lib/errors/ConsensusError');
+const ConsensusError = require('../../../../../../../lib/errors/consensus/ConsensusError');
 const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 

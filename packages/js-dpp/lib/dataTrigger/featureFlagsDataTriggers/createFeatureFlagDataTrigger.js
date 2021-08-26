@@ -1,6 +1,6 @@
 const Long = require('long');
 
-const DataTriggerConditionError = require('../../errors/DataTriggerConditionError');
+const DataTriggerConditionError = require('../../errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
 
 /**

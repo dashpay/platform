@@ -1,7 +1,7 @@
 const ValidationResult = require('../../validation/ValidationResult');
 
-const InvalidStateTransitionTypeError = require('../../errors/InvalidStateTransitionTypeError');
-const BalanceIsNotEnoughError = require('../../errors/BalanceIsNotEnoughError');
+const InvalidStateTransitionTypeError = require('../errors/InvalidStateTransitionTypeError');
+const BalanceIsNotEnoughError = require('../../errors/consensus/fee/BalanceIsNotEnoughError');
 
 const stateTransitionTypes = require('../stateTransitionTypes');
 const { convertSatoshiToCredits } = require('../../identity/creditsConverter');
@@ -55,7 +55,7 @@ function validateStateTransitionFeeFactory(
         break;
       }
       default:
-        throw new InvalidStateTransitionTypeError(stateTransition.toObject());
+        throw new InvalidStateTransitionTypeError(stateTransition.getType());
     }
 
     if (balance < feeSize) {

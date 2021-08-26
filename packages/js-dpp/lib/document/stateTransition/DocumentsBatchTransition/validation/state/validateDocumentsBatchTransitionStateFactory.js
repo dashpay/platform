@@ -2,17 +2,17 @@ const DataTriggerExecutionContext = require('../../../../../dataTrigger/DataTrig
 
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
-const DocumentAlreadyPresentError = require('../../../../../errors/DocumentAlreadyPresentError');
-const DocumentNotFoundError = require('../../../../../errors/DocumentNotFoundError');
-const DocumentOwnerIdMismatchError = require('../../../../../errors/DocumentOwnerIdMismatchError');
-const InvalidDocumentRevisionError = require('../../../../../errors/InvalidDocumentRevisionError');
+const DocumentAlreadyPresentError = require('../../../../../errors/consensus/state/document/DocumentAlreadyPresentError');
+const DocumentNotFoundError = require('../../../../../errors/consensus/state/document/DocumentNotFoundError');
+const DocumentOwnerIdMismatchError = require('../../../../../errors/consensus/state/document/DocumentOwnerIdMismatchError');
+const InvalidDocumentRevisionError = require('../../../../../errors/consensus/state/document/InvalidDocumentRevisionError');
 const InvalidDocumentActionError = require('../../../../errors/InvalidDocumentActionError');
 const DataContractNotPresentError = require('../../../../../errors/DataContractNotPresentError');
 const DocumentTimestampWindowViolationError = require(
-  '../../../../../errors/DocumentTimestampWindowViolationError',
+  '../../../../../errors/consensus/state/document/DocumentTimestampWindowViolationError',
 );
 const DocumentTimestampsMismatchError = require(
-  '../../../../../errors/DocumentTimestampsMismatchError',
+  '../../../../../errors/consensus/state/document/DocumentTimestampsMismatchError',
 );
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
@@ -37,7 +37,9 @@ function validateDocumentsBatchTransitionStateFactory(
    *
    * @param {Identifier} dataContractId
    * @param {Identifier} ownerId
-   * @param {AbstractDocumentTransition} documentTransitions
+   * @param {DocumentCreateTransition[]
+   *        |DocumentReplaceTransition[]
+   *        |DocumentDeleteTransition[]} documentTransitions
    * @return {Promise<ValidationResult>}
    */
   async function validateDocumentTransitions(dataContractId, ownerId, documentTransitions) {
@@ -47,9 +49,7 @@ function validateDocumentsBatchTransitionStateFactory(
     const dataContract = await stateRepository.fetchDataContract(dataContractId);
 
     if (!dataContract) {
-      result.addError(
-        new DataContractNotPresentError(dataContractId),
-      );
+      throw new DataContractNotPresentError(dataContractId);
     }
 
     if (!result.isValid()) {

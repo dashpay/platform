@@ -3,9 +3,9 @@ const { InstantLock } = require('@dashevo/dashcore-lib');
 const instantAssetLockProofSchema = require('../../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json');
 
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
-const InvalidIdentityAssetLockProofError = require('../../../../errors/InvalidIdentityAssetLockProofError');
-const IdentityAssetLockProofMismatchError = require('../../../../errors/IdentityAssetLockProofMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('../../../../errors/InvalidIdentityAssetLockProofSignatureError');
+const InvalidIdentityAssetLockProofError = require('../../../../errors/consensus/basic/identity/InvalidIdentityAssetLockProofError');
+const IdentityAssetLockProofMismatchError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockProofMismatchError');
+const InvalidIdentityAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidIdentityAssetLockProofSignatureError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator

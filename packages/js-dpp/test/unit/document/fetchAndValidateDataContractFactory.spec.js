@@ -7,8 +7,8 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
-const MissingDataContractIdError = require('../../../lib/errors/MissingDataContractIdError');
-const DataContractNotPresentError = require('../../../lib/errors/DataContractNotPresentError');
+const MissingDataContractIdError = require('../../../lib/errors/consensus/basic/document/MissingDataContractIdError');
+const DataContractNotPresentError = require('../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
 
 const { expectValidationError } = require('../../../lib/test/expect/expectError');
 

@@ -1,23 +1,20 @@
-class InvalidDocumentError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class InvalidDocumentError extends DPPError {
   /**
    * @param {ConsensusError[]} errors
    * @param {RawDocument} rawDocument
    */
   constructor(errors, rawDocument) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = `Invalid Document: "${errors[0].message}"`;
+    let message = `Invalid Document: "${errors[0].message}"`;
     if (errors.length > 1) {
-      this.message = `${this.message} and ${errors.length - 1} more`;
+      message = `${message} and ${errors.length - 1} more`;
     }
+
+    super(message);
 
     this.errors = errors;
     this.rawDocument = rawDocument;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

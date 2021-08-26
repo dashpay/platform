@@ -4,8 +4,8 @@ const fetchAssetLockTransactionOutputFactory = require('../../../../../lib/ident
 const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
-const IdentityAssetLockTransactionIsNotFoundError = require('../../../../../lib/errors/IdentityAssetLockTransactionIsNotFoundError');
-const UnknownAssetLockProofError = require('../../../../../lib/errors/UnknownAssetLockProofError');
+const IdentityAssetLockTransactionIsNotFoundError = require('../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockTransactionIsNotFoundError');
+const UnknownAssetLockProofError = require('../../../../../lib/identity/errors/UnknownAssetLockProofTypeError');
 
 describe('fetchAssetLockTransactionOutputFactory', () => {
   let fetchAssetLockTransactionOutput;

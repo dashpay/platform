@@ -1,18 +1,13 @@
-class DocumentNotProvidedError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class DocumentNotProvidedError extends DPPError {
   /**
    * @param {DocumentCreateTransition} documentTransition
    */
   constructor(documentTransition) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = 'Document was not provided for apply of state transition';
+    super('Document was not provided for apply of state transition');
 
     this.documentTransition = documentTransition;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

@@ -18,14 +18,14 @@ const {
 } = require('../../../../lib/test/expect/expectError');
 
 const DuplicatedIdentityPublicKeyError = require(
-  '../../../../lib/errors/DuplicatedIdentityPublicKeyError',
+  '../../../../lib/errors/consensus/basic/identity/DuplicatedIdentityPublicKeyError',
 );
 const DuplicatedIdentityPublicKeyIdError = require(
-  '../../../../lib/errors/DuplicatedIdentityPublicKeyIdError',
+  '../../../../lib/errors/consensus/basic/identity/DuplicatedIdentityPublicKeyIdError',
 );
 
 const InvalidIdentityPublicKeyDataError = require(
-  '../../../../lib/errors/InvalidIdentityPublicKeyDataError',
+  '../../../../lib/errors/consensus/basic/identity/InvalidIdentityPublicKeyDataError',
 );
 
 describe('validatePublicKeysFactory', () => {

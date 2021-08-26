@@ -17,7 +17,7 @@ const validateIdentityFactory = require(
 );
 
 const JsonSchemaError = require(
-  '../../../../lib/errors/JsonSchemaError',
+  '../../../../lib/errors/consensus/basic/JsonSchemaError',
 );
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');

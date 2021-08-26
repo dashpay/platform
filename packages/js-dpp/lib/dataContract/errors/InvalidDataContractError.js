@@ -1,23 +1,20 @@
-class InvalidDataContractError extends Error {
+const DPPError = require('../../errors/DPPError');
+
+class InvalidDataContractError extends DPPError {
   /**
    * @param {ConsensusError[]} errors
    * @param {RawDataContract} rawDataContract
    */
   constructor(errors, rawDataContract) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = `Invalid Data Contract: "${errors[0].message}"`;
+    let message = `Invalid Data Contract: "${errors[0].message}"`;
     if (errors.length > 1) {
-      this.message = `${this.message} and ${errors.length - 1} more`;
+      message = `${message} and ${errors.length - 1} more`;
     }
+
+    super(message);
 
     this.errors = errors;
     this.rawDataContract = rawDataContract;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
   }
 
   /**

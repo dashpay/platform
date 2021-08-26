@@ -6,7 +6,7 @@ const stateTransitionTypes = require('../../../../lib/stateTransition/stateTrans
 
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
-const StateTransitionMaxSizeExceededError = require('../../../../lib/errors/StateTransitionMaxSizeExceededError');
+const StateTransitionMaxSizeExceededError = require('../../../../lib/errors/consensus/basic/stateTransition/StateTransitionMaxSizeExceededError');
 
 const {
   expectValidationError,
@@ -14,9 +14,9 @@ const {
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
-const ConsensusError = require('../../../../lib/errors/ConsensusError');
-const MissingStateTransitionTypeError = require('../../../../lib/errors/MissingStateTransitionTypeError');
-const InvalidStateTransitionTypeError = require('../../../../lib/errors/InvalidStateTransitionTypeError');
+const ConsensusError = require('../../../../lib/errors/consensus/ConsensusError');
+const MissingStateTransitionTypeError = require('../../../../lib/errors/consensus/basic/stateTransition/MissingStateTransitionTypeError');
+const InvalidStateTransitionTypeError = require('../../../../lib/errors/consensus/basic/stateTransition/InvalidStateTransitionTypeError');
 const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
 
 describe('validateStateTransitionBasicFactory', () => {

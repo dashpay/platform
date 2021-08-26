@@ -1,6 +1,6 @@
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
-const DataContractAlreadyPresentError = require('../../../../../errors/DataContractAlreadyPresentError');
+const DataContractAlreadyPresentError = require('../../../../../errors/consensus/state/dataContract/DataContractAlreadyPresentError');
 
 /**
  *

@@ -2,7 +2,7 @@ const lodashGet = require('lodash.get');
 
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
-const InconsistentCompoundIndexDataError = require('../../../../../errors/InconsistentCompoundIndexDataError');
+const InconsistentCompoundIndexDataError = require('../../../../../errors/consensus/basic/document/InconsistentCompoundIndexDataError');
 
 /**
  * @typedef validatePartialCompoundIndices
