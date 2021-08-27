@@ -53,17 +53,13 @@ impl Identifier {
         self.buffer
     }
 
-    pub fn to_string(&self, encoding: Encoding) -> Result<String, IdentifierError> {
-        Ok(string_encoding::encode(&self.buffer, encoding))
+    pub fn to_string(&self, encoding: Encoding) -> String {
+        string_encoding::encode(&self.buffer, encoding)
     }
 
-    pub fn to_string_with_encoding_string(&self, encoding_string: Option<&str>) -> Result<String, IdentifierError> {
+    pub fn to_string_with_encoding_string(&self, encoding_string: Option<&str>) -> String {
         let encoding = encoding_string_to_encoding(encoding_string);
 
         self.to_string(encoding)
     }
-
-    // pub fn from(source: &impl IdentifierSource, encoding: Encoding) -> Result<Identifier, IdentifierError> {
-    //
-    // }
 }
