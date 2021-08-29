@@ -31,7 +31,7 @@ impl Identifier {
     pub fn from_string(encoded_value: &str, encoding: Encoding) -> Result<Identifier, IdentifierError> {
         let vec = string_encoding::decode(encoded_value, encoding)?;
 
-        Identifier::from_vector(&vec)
+        Identifier::from_bytes(&vec)
     }
 
     pub fn from_string_with_encoding_string(encoded_value: &str, encoding_string: Option<&str>) -> Result<Identifier, IdentifierError> {
@@ -40,13 +40,13 @@ impl Identifier {
         Identifier::from_string(encoded_value, encoding)
     }
 
-    pub fn from_vector(vec: &[u8]) -> Result<Identifier, IdentifierError> {
-        if vec.len() != 32 {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, IdentifierError> {
+        if bytes.len() != 32 {
             return Err(IdentifierError { message: "Identifier must be 32 bytes long".to_string() });
         }
 
         // Since we checked that vector size is 32, we can use unwrap
-        Ok(Identifier::new(vec.try_into().unwrap()))
+        Ok(Identifier::new(bytes.try_into().unwrap()))
     }
 
     pub fn to_buffer(&self) -> [u8; 32] {
