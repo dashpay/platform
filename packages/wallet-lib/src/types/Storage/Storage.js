@@ -79,6 +79,7 @@ Storage.prototype.searchAddress = require('./methods/searchAddress');
 Storage.prototype.searchAddressesWithTx = require('./methods/searchAddressesWithTx');
 Storage.prototype.searchBlockHeader = require('./methods/searchBlockHeader');
 Storage.prototype.searchTransaction = require('./methods/searchTransaction');
+Storage.prototype.searchTransactionMetadata = require('./methods/searchTransactionMetadata');
 Storage.prototype.searchWallet = require('./methods/searchWallet');
 Storage.prototype.updateAddress = require('./methods/updateAddress');
 Storage.prototype.updateTransaction = require('./methods/updateTransaction');
