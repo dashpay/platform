@@ -190,7 +190,15 @@ module.exports = function validateDataContractFactory(
             if (propertyType === 'array' && !isByteArray) {
               const { items, prefixItems } = propertyDefinition;
 
-              if (prefixItems || items.type === 'object' || items.type === 'array') {
+              const isInvalidPrefixItems = prefixItems
+                && (
+                  prefixItems.some((prefixItem) => prefixItem.type === 'object' || prefixItem.type === 'array')
+                  || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
+                );
+
+              const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
+
+              if (isInvalidPrefixItems || isInvalidItemTypes) {
                 invalidPropertyType = 'array';
               }
             }

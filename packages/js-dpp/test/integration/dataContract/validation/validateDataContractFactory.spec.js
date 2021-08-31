@@ -62,7 +62,7 @@ describe('validateDataContractFactory', function main() {
     it('should be present', async () => {
       rawDataContract = {
         documents: {
-          zalupa: {
+          someDocument: {
             type: 'object',
           },
         },
@@ -1552,6 +1552,86 @@ describe('validateDataContractFactory', function main() {
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      });
+
+      it('should return invalid result if index property is an array of different types', async () => {
+        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+
+        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+          {
+            type: 'string',
+          },
+          {
+            type: 'number',
+          },
+        ];
+
+        rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
+
+        const result = await validateDataContract(rawDataContract);
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+
+        const [error] = result.getErrors();
+        expect(error.getPropertyName()).to.equal('mentions');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
+        expect(error.getDocumentType()).to.deep.equal('indexedArray');
+        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      });
+
+      it('should return invalid result if index property contained prefixItems array of arrays', async () => {
+        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+
+        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+          {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+          },
+        ];
+
+        const result = await validateDataContract(rawDataContract);
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+
+        const [error] = result.getErrors();
+        expect(error.getPropertyName()).to.equal('mentions');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
+        expect(error.getDocumentType()).to.deep.equal('indexedArray');
+        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      });
+
+      it('should return invalid result if index property contained prefixItems array of objects', async () => {
+        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+
+        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+          {
+            type: 'object',
+            properties: {
+              something: {
+                type: 'string',
+              },
+            },
+            additionalProperties: false,
+          },
+        ];
+
+        const result = await validateDataContract(rawDataContract);
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+
+        const [error] = result.getErrors();
+        expect(error.getPropertyName()).to.equal('mentions');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
+        expect(error.getDocumentType()).to.deep.equal('indexedArray');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
 
