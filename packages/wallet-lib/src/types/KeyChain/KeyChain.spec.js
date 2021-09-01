@@ -9,7 +9,7 @@ const pk = '4226d5e2fe8cbfe6f5beb7adf5a5b08b310f6c4a67fc27826779073be6f5699e';
 describe('Keychain', function suite() {
   this.timeout(10000);
   it('should create a keychain', () => {
-    const expectedException1 = 'Expect privateKey, HDPublicKey or HDPrivateKey';
+    const expectedException1 = 'Expect privateKey, publicKey, HDPublicKey, HDPrivateKey or Address';
     expect(() => new KeyChain()).to.throw(expectedException1);
     expect(() => new KeyChain(mnemonic)).to.throw(expectedException1);
 

@@ -23,6 +23,7 @@ module.exports = async function subscribeToTransactionWithProofs(
   const { client } = this;
   logger.silly(`DAPIClient.subscribeToTransactionWithProofs[${addressList}]`);
 
+  if (!addressList.length) throw new Error('Unable to subscribe to transaction without addresses');
   const bloomfilter = BloomFilter.create(addressList.length, BLOOM_FALSE_POSITIVE_RATE);
 
   addressList.forEach((address) => {

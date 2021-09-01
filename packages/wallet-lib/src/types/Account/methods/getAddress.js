@@ -14,6 +14,9 @@ const getTypePathFromWalletType = (walletType, addressType = 'external', index, 
       type = 'external';
       path = `${BIP44PATH}/${addressTypeIndex}/${index}`;
       break;
+    case WALLET_TYPES.PUBLICKEY:
+    case WALLET_TYPES.ADDRESS:
+    case WALLET_TYPES.PRIVATEKEY:
     case WALLET_TYPES.SINGLE_ADDRESS:
     default:
       type = 'misc';

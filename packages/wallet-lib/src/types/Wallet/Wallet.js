@@ -21,6 +21,8 @@ const defaultOptions = {
 
 const fromMnemonic = require('./methods/fromMnemonic');
 const fromPrivateKey = require('./methods/fromPrivateKey');
+const fromPublicKey = require('./methods/fromPublicKey');
+const fromAddress = require('./methods/fromAddress');
 const fromSeed = require('./methods/fromSeed');
 const fromHDPublicKey = require('./methods/fromHDPublicKey');
 const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
@@ -53,6 +55,8 @@ class Wallet extends EventEmitter {
       fromSeed,
       fromHDPrivateKey,
       fromPrivateKey,
+      fromPublicKey,
+      fromAddress,
       fromHDPublicKey,
       generateNewWalletId,
     });
@@ -85,8 +89,12 @@ class Wallet extends EventEmitter {
       this.fromPrivateKey((opts.privateKey === null)
         ? new PrivateKey(network).toString()
         : opts.privateKey);
+    } else if ('publicKey' in opts) {
+      this.fromPublicKey(opts.publicKey);
     } else if ('HDPublicKey' in opts) {
       this.fromHDPublicKey(opts.HDPublicKey);
+    } else if ('address' in opts) {
+      this.fromAddress(opts.address);
     } else {
       this.fromMnemonic(generateNewMnemonic());
     }

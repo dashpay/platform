@@ -10,9 +10,9 @@ module.exports = function setLastSyncedBlockHeight(blockHeight) {
   const { walletId } = this;
   const accountsStore = this.storage.store.wallets[walletId].accounts;
 
-  const accountStore = (this.walletType === WALLET_TYPES.SINGLE_ADDRESS)
-    ? accountsStore[this.index.toString()]
-    : accountsStore[this.BIP44PATH.toString()];
+  const accountStore = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
+    ? accountsStore[this.BIP44PATH.toString()]
+    : accountsStore[this.index.toString()];
 
   accountStore.blockHeight = blockHeight;
 

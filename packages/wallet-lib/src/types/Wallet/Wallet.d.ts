@@ -1,4 +1,4 @@
-import { Mnemonic, PrivateKey, HDPublicKey, Network, Plugins } from "../types";
+import { Mnemonic, PrivateKey, PublicKey, PublicAddress, Address, HDPublicKey, Network, Plugins } from "../types";
 import { Account } from "../Account/Account";
 import { Storage } from "../Storage/Storage";
 import { HDPrivateKey } from "@dashevo/dashcore-lib";
@@ -59,6 +59,8 @@ export declare namespace Wallet {
         privateKey?: PrivateKey | string;
         HDPrivateKey?: HDPrivateKey | string;
         HDPublicKey?: HDPublicKey | string;
+        publicKey?: PublicKey | string;
+        address?: Address | PublicAddress | string;
         unsafeOptions?: IWalletUnsafeOptions;
         waitForInstantLockTimeout?: number;
     }

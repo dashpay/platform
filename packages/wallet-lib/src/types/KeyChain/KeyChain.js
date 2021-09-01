@@ -24,8 +24,14 @@ class KeyChain {
     } else if (has(opts, 'privateKey')) {
       this.type = 'privateKey';
       this.privateKey = opts.privateKey;
+    } else if (has(opts, 'publicKey')) {
+      this.type = 'publicKey';
+      this.publicKey = opts.publicKey;
+    } else if (has(opts, 'address')) {
+      this.type = 'address';
+      this.address = opts.address.toString();
     } else {
-      throw new Error('Expect privateKey, HDPublicKey or HDPrivateKey');
+      throw new Error('Expect privateKey, publicKey, HDPublicKey, HDPrivateKey or Address');
     }
     if (opts.network) this.network = opts.network;
     if (opts.keys) this.keys = { ...opts.keys };

@@ -106,7 +106,7 @@ describe('Wallet - class', function suite() {
   });
   it('should create a wallet with PrivateKey', () => {
     const wallet1 = new Wallet({ privateKey: cR4t6ePrivateKey.privateKey, network: 'testnet', ...mocks });
-    expect(wallet1.walletType).to.be.equal(WALLET_TYPES.SINGLE_ADDRESS);
+    expect(wallet1.walletType).to.be.equal(WALLET_TYPES.PRIVATEKEY);
     expect(wallet1.mnemonic).to.be.equal(null);
 
     expect(wallet1.plugins).to.be.deep.equal({});
@@ -120,6 +120,43 @@ describe('Wallet - class', function suite() {
 
     wallet1.storage.on('CONFIGURED', () => {
       wallet1.disconnect();
+    });
+  });
+  it('should create a wallet with PublicKey', () => {
+    const publicKey = new Dashcore.PrivateKey(cR4t6ePrivateKey.privateKey).toPublicKey();
+    expect(publicKey.toString()).to.equal('03353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844');
+    const wallet1 = new Wallet({ publicKey: publicKey.toString(), network: 'testnet', ...mocks });
+    expect(wallet1.walletType).to.be.equal(WALLET_TYPES.PUBLICKEY);
+    expect(wallet1.mnemonic).to.be.equal(null);
+
+    expect(wallet1.plugins).to.be.deep.equal({});
+    expect(wallet1.accounts).to.be.deep.equal([]);
+    expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
+    expect(wallet1.keyChain.type).to.be.deep.equal('publicKey');
+    expect(wallet1.passphrase).to.be.deep.equal(null);
+    expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
+    expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
+    expect(wallet1.walletId).to.be.equal('9f1f6f37f7');
+
+    wallet1.storage.on('CONFIGURED', () => {
+      wallet1.disconnect();
+    });
+
+    const wallet2 = new Wallet({ publicKey, network: 'testnet', ...mocks });
+    expect(wallet2.walletType).to.be.equal(WALLET_TYPES.PUBLICKEY);
+    expect(wallet2.mnemonic).to.be.equal(null);
+
+    expect(wallet2.plugins).to.be.deep.equal({});
+    expect(wallet2.accounts).to.be.deep.equal([]);
+    expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
+    expect(wallet2.keyChain.type).to.be.deep.equal('publicKey');
+    expect(wallet2.passphrase).to.be.deep.equal(null);
+    expect(wallet2.allowSensitiveOperations).to.be.deep.equal(false);
+    expect(wallet2.injectDefaultPlugins).to.be.deep.equal(true);
+    expect(wallet2.walletId).to.be.equal('9f1f6f37f7');
+
+    wallet2.storage.on('CONFIGURED', () => {
+      wallet2.disconnect();
     });
   });
   it('should have an offline Mode', () => {

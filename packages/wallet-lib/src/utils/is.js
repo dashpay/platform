@@ -1,7 +1,13 @@
 /* eslint-disable max-len */
 // Todo : Some validators here are really proto type of methods, urgent impr is needed here.
 const {
-  PrivateKey, HDPrivateKey, HDPublicKey, Transaction, Mnemonic, Address,
+  PrivateKey,
+  PublicKey,
+  HDPrivateKey,
+  HDPublicKey,
+  Transaction,
+  Mnemonic,
+  Address,
 } = require('@dashevo/dashcore-lib');
 
 const is = {
@@ -26,6 +32,7 @@ const is = {
   stringified(val) { try { JSON.parse(val); return true; } catch (e) { return false; } },
   mnemonic: (mnemonic) => !is.undefOrNull(mnemonic) && (is.string(mnemonic) || mnemonic.constructor.name === Mnemonic.name),
   network: (network) => !is.undefOrNull(network) && (is.string(network)),
+  publicKey: (pKey) => !is.undefOrNull(pKey) && (pKey.constructor.name === PublicKey.name || (is.string(pKey) && PublicKey.isValid(pKey))),
   privateKey: (pKey) => !is.undefOrNull(pKey) && (pKey.constructor.name === PrivateKey.name || (is.string(pKey) && PrivateKey.isValid(pKey))),
   HDPrivateKey: (hdKey) => !is.undefOrNull(hdKey) && (hdKey.constructor.name === HDPrivateKey.name || (is.string(hdKey) && HDPrivateKey.isValidSerialized(hdKey))),
   HDPublicKey: (hdKey) => !is.undefOrNull(hdKey) && (hdKey.constructor.name === HDPublicKey.name || (is.string(hdKey) && HDPublicKey.isValidSerialized(hdKey))),

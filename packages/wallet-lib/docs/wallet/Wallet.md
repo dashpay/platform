@@ -20,12 +20,14 @@ Parameters:
 | **walletOpts.HDPrivateKey**              | string/HDPrivateKey| no                  | If you only have a HDPrivateKey representation, you can pass it instead of mnemonic to init the wallet from it  |
 | **walletOpts.HDPublicKey**               | string/HDPublicKey | no                  | If you only have a HDPublicKey representation, you can pass it instead of mnemonic to init the wallet from it  |
 | **walletOpts.privateKey**                | string/PrivateKey  | no                  | If you only have a PrivateKey representation, you can pass it instead of mnemonic to init the wallet from it  |
+| **walletOpts.publicKey**                 | string/PublicKey   | no                  | If you only have a PublicKey representation, you can pass it instead of mnemonic to init the wallet from it  |
 
 
 N.B 1 : If both mnemonic, seed and privateKey are filled, only mnemonic will be used. If none is entered, the wallet will create a mnemonic.
-N.B 2 : When initialized from a `privateKey` or an `HDPublicKey`, comportment of Wallet-lib differs slightly. 
+N.B 2 : When initialized from a `privateKey`, `publicKey` or an `HDPublicKey`, comportment of Wallet-lib differs slightly. 
 
 - PrivateKey : There is no path in this mode. It's a unique public address. 
+- PrivateKey : There is no path in this mode. It's a unique public address. Watch-only.
 - HDPublicKey : There is no signing in this mode. Watch-only.
 
 Returns : Wallet instance.
@@ -67,7 +69,7 @@ const wallet = new Wallet({
 })
 ```
 
-### Creation from HDPrivateKey 
+### Creation from HDPublicKey 
 
 ```js
 const wallet = new Wallet({
@@ -80,5 +82,21 @@ const wallet = new Wallet({
 ```js
 const wallet = new Wallet({
   seed: '436905e6756c24551bffaebe97d0ebd51b2fa027e838c18d45767bd833b02a80a1dd55728635b54f2b1dbed5963f4155e160ee1e96e2d67f7e8ac28557d87d96'
+})
+```
+
+### Creation from privateKey
+
+```js
+const wallet = new Wallet({
+  privateKey: 'cR4t6evwVZoCp1JsLk4wURK4UmBCZzZotNzn9T1mhBT19SH9JtNt'
+})
+```
+
+### Creation from publicKey
+
+```js
+const wallet = new Wallet({
+  HDPublicKey: 'tpubDEB6BgW9JvZRWVbFmwwGuJ2vifakABuxQWdY9yXbFC2rc3zagie1RkhwUEnahb1dzaapchEVeKqKcx99TzkjNvjXcmoQkLJwsYnA1J5bGNj'
 })
 ```

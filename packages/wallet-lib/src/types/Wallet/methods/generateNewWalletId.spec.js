@@ -10,7 +10,7 @@ describe('Wallet - generateNewWalletId', function suite() {
   it('should indicate on missing data', () => {
     const mockOpts1 = { };
     const mockOpts2 = { walletType: WALLET_TYPES.HDWALLET };
-    const mockOpts3 = { walletType: WALLET_TYPES.SINGLE_ADDRESS };
+    const mockOpts3 = { walletType: WALLET_TYPES.PRIVATEKEY };
 
     const exceptedException1 = 'Cannot generate a walletId : No HDPrivateKey found';
     const exceptedException3 = 'Cannot generate a walletId : No privateKey found';
@@ -42,7 +42,7 @@ describe('Wallet - generateNewWalletId', function suite() {
   });
   it('should generate a wallet id from single pk', () => {
     const mockOpts = {
-      walletType: WALLET_TYPES.SINGLE_ADDRESS,
+      walletType: WALLET_TYPES.PRIVATEKEY,
       privateKey: cR4t6ePrivateKey.privateKey,
     };
 

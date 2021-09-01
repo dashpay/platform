@@ -15,7 +15,7 @@ async function sweepWallet(opts = {}) {
   const self = this;
   // eslint-disable-next-line no-async-promise-executor,consistent-return
   return new Promise(async (resolve, reject) => {
-    if (self.walletType !== WALLET_TYPES.SINGLE_ADDRESS) {
+    if (self.walletType !== WALLET_TYPES.PRIVATEKEY) {
       return reject(new Error('Can only sweep wallet initialized from privateKey'));
     }
 

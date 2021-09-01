@@ -108,7 +108,7 @@ const mockedStore2 = {
 const mockSelfPrivateKeyType = {
   storage: { getStore:()=>mockedStore1 },
   walletId: '123456789',
-  walletType: 'single_address',
+  walletType: 'privateKey',
 }
 const mockSelfIndex0 = {
   storage: { getStore:()=>mockedStore2 },

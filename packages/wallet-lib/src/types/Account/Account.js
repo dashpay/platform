@@ -112,20 +112,28 @@ class Account extends EventEmitter {
         super.emit(...args);
       };
     }
-    if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType)) {
-      this.storage.createAccount(
-        this.walletId,
-        this.BIP44PATH,
-        this.network,
-        this.label,
-      );
-    }
-    if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
-      this.storage.createSingleAddress(
-        this.walletId,
-        this.network,
-        this.label,
-      );
+    switch (this.walletType) {
+      case WALLET_TYPES.HDWALLET:
+      case WALLET_TYPES.HDPUBLIC:
+        this.storage.createAccount(
+          this.walletId,
+          this.BIP44PATH,
+          this.network,
+          this.label,
+        );
+        break;
+      case WALLET_TYPES.PRIVATEKEY:
+      case WALLET_TYPES.PUBLICKEY:
+      case WALLET_TYPES.ADDRESS:
+      case WALLET_TYPES.SINGLE_ADDRESS:
+        this.storage.createSingleAddress(
+          this.walletId,
+          this.network,
+          this.label,
+        );
+        break;
+      default:
+        throw new Error(`Invalid wallet type ${this.walletType}`);
     }
 
     this.keyChain = wallet.keyChain;

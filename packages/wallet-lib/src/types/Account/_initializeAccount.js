@@ -31,11 +31,10 @@ async function _initializeAccount(account, userUnsafePlugins) {
             account.index,
             account.getAddress.bind(account),
           );
-        }
-
-        if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
+        } else {
           await account.getAddress('0'); // We force what is usually done by the BIP44Worker.
         }
+
         if (!account.offlineMode) {
           await account.injectPlugin(ChainPlugin, true);
 
@@ -89,10 +88,19 @@ async function _initializeAccount(account, userUnsafePlugins) {
           // while SyncWorker fetch'em on network
           clearInterval(self.readinessInterval);
 
-          if (account.walletType === WALLET_TYPES.SINGLE_ADDRESS) {
-            account.generateAddress(0);
-            sendReady();
-            return resolve(true);
+          switch (account.walletType) {
+            case WALLET_TYPES.PRIVATEKEY:
+            case WALLET_TYPES.SINGLE_ADDRESS:
+              account.generateAddress(0);
+              sendReady();
+              return resolve(true);
+            case WALLET_TYPES.PUBLICKEY:
+            case WALLET_TYPES.ADDRESS:
+              account.generateAddress(0);
+              sendReady();
+              return resolve(true);
+            default:
+              break;
           }
 
           if (!account.injectDefaultPlugins) {

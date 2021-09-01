@@ -172,9 +172,9 @@ class TransactionSyncStreamWorker extends Worker {
     const { walletId } = this;
     const accountsStore = this.storage.store.wallets[walletId].accounts;
 
-    const accountStore = (this.walletType === WALLET_TYPES.SINGLE_ADDRESS)
-      ? accountsStore[this.index.toString()]
-      : accountsStore[this.BIP44PATH.toString()];
+    const accountStore = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
+      ? accountsStore[this.BIP44PATH.toString()]
+      : accountsStore[this.index.toString()];
 
     accountStore.blockHash = hash;
 
@@ -185,9 +185,9 @@ class TransactionSyncStreamWorker extends Worker {
     const { walletId } = this;
     const accountsStore = this.storage.store.wallets[walletId].accounts;
 
-    const { blockHash } = (this.walletType === WALLET_TYPES.SINGLE_ADDRESS)
-      ? accountsStore[this.index.toString()]
-      : accountsStore[this.BIP44PATH.toString()];
+    const { blockHash } = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
+      ? accountsStore[this.BIP44PATH.toString()]
+      : accountsStore[this.index.toString()];
 
     return blockHash;
   }

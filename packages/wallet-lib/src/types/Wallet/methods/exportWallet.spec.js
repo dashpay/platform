@@ -1,9 +1,12 @@
 const { expect } = require('chai');
 const Wallet = require('../Wallet');
+const { PrivateKey, Networks } = require('@dashevo/dashcore-lib');
 const exportWallet = require('./exportWallet');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 const cR4t6ePrivateKey = require('../../../../fixtures/cR4t6e_pk');
 const knifeMnemonic = require('../../../../fixtures/knifeeasily');
+const cR4t6eFixture = require("../../../../fixtures/cR4t6e_pk");
+const cR4t6ePublicKey = new PrivateKey(cR4t6eFixture.privateKey).toPublicKey();
 
 describe('Wallet - export Wallet', function suite() {
   this.timeout(10000);
@@ -107,6 +110,30 @@ describe('Wallet - exportWallet - integration', function suite() {
       expect(() => wallet.exportWallet('seed')).to.throw(exceptedException2);
       expect(() => wallet.exportWallet('HDPrivateKey')).to.throw(exceptedException3);
       expect(wallet.exportWallet('HDPublicKey')).to.equal(knifeMnemonic.HDRootPublicKeyMainnet);
+    });
+    after(() => {
+      wallet.disconnect();
+    });
+  });
+  describe('fromPublicKey', () => {
+    const wallet = new Wallet({
+      offlineMode: true,
+      publicKey: cR4t6ePublicKey,
+    });
+    it('should work as expected', () => {
+      expect(wallet.exportWallet()).to.equal(cR4t6ePublicKey.toString());
+    });
+    after(() => {
+      wallet.disconnect();
+    });
+  });
+  describe('fromAddress', () => {
+    const wallet = new Wallet({
+      offlineMode: true,
+      address: cR4t6ePublicKey.toAddress(Networks.testnet),
+    });
+    it('should work as expected', () => {
+      expect(wallet.exportWallet()).to.equal(cR4t6ePublicKey.toAddress(Networks.testnet).toString());
     });
     after(() => {
       wallet.disconnect();

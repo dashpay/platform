@@ -40,6 +40,10 @@ const CONSTANTS = {
   },
   UNCONFIRMED_TRANSACTION_STATUS_CODE: -1,
   WALLET_TYPES: {
+    ADDRESS: 'address',
+    PUBLICKEY: 'publicKey',
+    PRIVATEKEY: 'privateKey',
+    // TODO: DEPRECATE.
     SINGLE_ADDRESS: 'single_address',
     HDWALLET: 'hdwallet',
     HDPUBLIC: 'hdpublic',
