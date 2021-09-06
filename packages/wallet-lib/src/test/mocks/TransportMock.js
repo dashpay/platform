@@ -12,6 +12,7 @@ class TransportMock {
     this.getIdentityIdsByPublicKeyHash = sinonSandbox.stub().returns([null]);
     this.sendTransaction = sinonSandbox.stub();
     this.getTransaction = sinonSandbox.stub();
+    this.getBlockHeaderByHash = sinonSandbox.stub();
     this.getStatus = sinonSandbox.stub().resolves(getStatus());
   }
 }

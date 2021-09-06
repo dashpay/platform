@@ -25,6 +25,7 @@
         - [`.getPrivateKeys()`](account/getPrivateKeys.md)
         - [`.getTotalBalance()`](account/getTotalBalance.md)
         - [`.getTransaction()`](account/getTransaction.md)
+        - [`.getTransactionHistory()`](account/getTransactionHistory.md)
         - [`.getTransactions()`](account/getTransactions.md)
         - [`.getUnconfirmedBalance()`](account/getUnconfirmedBalance.md)
         - [`.getUTXOS()`](account/getUTXOS.md)
@@ -81,13 +82,28 @@
         - [`.stopWorker()`](storage/stopWorker.md)
         - [`.stopWorker()`](storage/stopWorker.md)
         - [`.updateTransaction()`](storage/updateTransaction.md)
+    - Utils
+        - [`calculateTransactionFees()`](utils/calculateTransactionFees.md)
+        - [`categorizeTransactions()`](utils/categorizeTransactions.md)
+        - [`classifyAddresses()`](utils/classifyAddresses.md)
+        - [`coinSelection()`](utils/coinSelection.md)
+        - [`dashToDuffs()`](utils/dashToDuffs.md)
+        - [`duffsToDash()`](utils/duffsToDash.md)
+        - [`extendTransactionsWithMetadata()`](utils/extendTransactionsWithMetadata.md)
+        - [`filterTransactions()`](utils/filterTransactions.md)
+        - [`getBytesOf()`](utils/getBytesOf.md)
+        - Mnemonic
+            - [`generateNewMnemonic()`](utils/mnemonic/generateNewMnemonic.md)
+            - [`mnemonicToHDPrivateKey()`](utils/mnemonic/mnemonicToHDPrivateKey.md)
+            - [`mnemonicToSeed()`](utils/mnemonic/mnemonicToSeed.md)
+            - [`mnemonicToWalletId()`](utils/mnemonic/mnemonicToWalletId.md)
+            - [`seedToHDPrivateKey()`](utils/mnemonic/seedToHDPrivateKey.md)
     - Events
         - [`FETCHED/UNCONFIRMED_TRANSACTION`](events/fetched_unconfirmed_transaction.md)
         - [`FETCHED/CONFIRMED_TRANSACTION`](events/fetched_confirmed_transaction.md)
         - [`CONFIRMED_BALANCE_CHANGED`](events/confirmed_balance_changed.md)
         - [`UNCONFIRMED_BALANCE_CHANGED`](events/unconfirmed_balance_changed.md)
         - [`BLOCKHEIGHT_CHANGED`](events/blockheight_changed.md)
- 
     
 - Plugins 
     - [Using a plugin](plugins/using-a-plugin.md)

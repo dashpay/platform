@@ -1,4 +1,7 @@
-const { expect } = require('chai');
+const {expect} = require('chai');
+const {Transaction, BlockHeader} = require('@dashevo/dashcore-lib');
+const {WALLET_TYPES} = require('../../../CONSTANTS');
+const getTransactions = require('./getTransactions');
 const getTransactionHistory = require('./getTransactionHistory');
 const searchTransaction = require('../../Storage/methods/searchTransaction');
 const getTransaction = require('../../Storage/methods/getTransaction');
@@ -8,363 +11,359 @@ const searchAddress = require('../../Storage/methods/searchAddress');
 const mockedStoreHDWallet = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1548538361');
 const mockedStoreSingleAddress = require('../../../../fixtures/da07-fullstore-snapshot-1548533266');
 
+
+const normalizedHDStoreFixtures = require('../../../../fixtures/wallets/apart-trip-dignity/store.json');
+const normalizedPKStoreFixtures = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/store.json');
+const CONSTANTS = require("../../../CONSTANTS");
+const normalizedStoreToStore = (normalizedStore) => {
+  const store = {
+    ...normalizedStore
+  };
+
+  for (let walletId in store.wallets) {
+    for (let addressType in store.wallets[walletId].addresses) {
+      for (let path in store.wallets[walletId].addresses[addressType]) {
+        for (let utxo in store.wallets[walletId].addresses[addressType][path].utxos) {
+          store.wallets[walletId].addresses[addressType][path].utxos[utxo] = new Transaction.Output(store.wallets[walletId].addresses[addressType][path].utxos[utxo]);
+        }
+      }
+    }
+  }
+
+  for (let transactionHash in store.transactions) {
+    store.transactions[transactionHash] = new Transaction(store.transactions[transactionHash]);
+  }
+
+  for (let blockHeaderHash in store.chains['testnet'].blockHeaders) {
+    store.chains['testnet'].blockHeaders[blockHeaderHash] = new BlockHeader(store.chains['testnet'].blockHeaders[blockHeaderHash])
+  }
+  return store;
+}
+const mockedSelf = {
+  getTransactions,
+  network: 'testnet',
+  walletId: 'd6143ef4e6',
+  walletType: CONSTANTS.WALLET_TYPES.HDWALLET,
+  index: 0,
+  storage: {
+    store: {
+      transactions: {},
+      wallets: {
+        'd6143ef4e6': {
+          "addresses": {
+            "external": {},
+            "internal": {},
+            "misc": {}
+          }
+
+        }
+      },
+      "chains": {
+        "testnet": {
+          name: "testnet",
+          blockHeaders: {},
+          mappedBlockHeaderHeights: {},
+          blockHeight: 0
+        }
+      },
+    },
+    getStore: () => {
+      return mockedSelf.storage.store;
+    }
+  }
+}
 describe('Account - getTransactionHistory', () => {
-  console.error('We require tx association with height/hash to build this.');
-  return;
-  it('should return an empty array on no transaction history', async () => {
-
+  it('should return empty array on no transaction history', async function () {
+    const mockedHDSelf = {
+      ...mockedSelf
+    }
+    const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
+    const expectedTransactionHistoryHD = [];
+    expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
-  it('should return a valid transaction history for HDWallet', async () => {
-    const storageHDW = {
-      store: mockedStoreHDWallet,
-      getStore: () => mockedStoreHDWallet,
-      mappedAddress: {},
-    };
-    const walletIdHDW = Object.keys(mockedStoreHDWallet.wallets)[0];
-    const selfHDW = {
-      walletId: walletIdHDW,
-      index: 0,
-      storage: storageHDW,
-    };
-
-
-    selfHDW.storage.searchTransaction = searchTransaction.bind(storageHDW);
-    selfHDW.storage.searchAddress = searchAddress.bind(storageHDW);
-    selfHDW.storage.getBlockHeader = getBlockHeader.bind(storageHDW);
-    selfHDW.storage.searchBlockHeader = searchBlockHeader.bind(storageHDW);
-    selfHDW.getTransaction = getTransaction.bind(storageHDW);
-    const txHistoryHDW = await getTransactionHistory.call(selfHDW);
-    const selfHDWAccount2 = { ...selfHDW };
-    selfHDWAccount2.index = 1;
-
-    const expectedTxHistoryHDW = [
-      {
-        fees: 247,
-        from: [
-          {
-            address: 'yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT',
-            amount: '500',
-            valueSat: 50000000000,
-          },
-        ],
-        time: 1548538361,
-        to: [{
-          address: 'yd9o9jYkwB2Ba9aMtvm56YeHfCsTXyphhD',
-          amount: '150',
-          valueSat: 15000000000,
-
-        }],
-        type: 'moved_account',
-        txid: 'dd44373d55e6e8f3a0a0cf038de6a2c750f98a2088e074f3b6de249dad704abf',
-      }, {
-        fees: 247,
-        from: [
-          {
-            address: 'ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ',
-            amount: '1000',
-            valueSat: 100000000000,
-          },
-        ],
-        time: 1548506741,
-        to: [{
-          address: 'yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT',
-          amount: '500',
-          valueSat: 50000000000,
-        }],
-        type: 'receive',
-        txid: '4493e8a39bb97d6709ca69d391b0b99f573d3aed5ce50da5f8c7626fc1cb1a7d',
-      },
-      {
-        fees: 930,
-        from: [{ address: 'yQSVFizTKcPLz2V7zoZ3HkkJ7sQmb5jXAs', amount: '350', valueSat: 35000000000 },
-          {
-            address: 'yNY6spErvvm9C8at2KQpvAfd6TPumgyETh',
-            amount: '440.99997209',
-            valueSat: 44099997209,
-
-          },
-          { address: 'yhnTNo6tkmr8tA4SAL8gcci1z5rPHuaoxA', amount: '125', valueSat: 12500000000 },
-          {
-            address: 'ySVpgHLkgrrrsbaWJhW5GMHZjeSkADrsTJ',
-            amount: '49.99999753',
-            valueSat: 4999999753,
-
-          },
-          {
-            address: 'yeLbU1At3Cp4RD7Gunic6iy6orgnoNDhEb',
-            amount: '23.99999753',
-            valueSat: 2399999753,
-
-          }],
-        time: 1548410546,
-        to: [{
-          address: 'ycyFFyWCPSWbXLZBeYppJqgvBF7bnu8BWQ',
-          amount: '989.99995785',
-          valueSat: 98999995785,
-        }],
-        txid: 'bb0c341e970418422bb94eb20d3ddb00a350907e2ef9d6247324665f78467872',
-        type: 'sent',
-      },
-      {
-        fees: 247,
-        from: [{
-          address: 'yU7hmdDdi9RWem64hMz3GV3i9UWHNNK2FS',
-          amount: '189.99997456',
-          valueSat: 18999997456,
-        }],
-        time: 1548409108,
-        to: [{
-          address: 'yNY6spErvvm9C8at2KQpvAfd6TPumgyETh',
-          amount: '139.99997456',
-          valueSat: 13999997456,
-        }],
-        txid: '5fc934fc42534dca5bea8d4f5cc5afa721dc1ce092e854050b761e3d4b757cc7',
-        type: 'moved',
-      },
-      {
-        fees: 247,
-        from: [{
-          address: 'yfyTKf2PaxFvND6V5pEFWpnrbcSdy3igZQ',
-          amount: '324.99999753',
-          valueSat: 32499999753,
-        }],
-
-        time: 1548409108,
-        to: [{
-          address: 'yNY6spErvvm9C8at2KQpvAfd6TPumgyETh',
-          amount: '300.99999753',
-          valueSat: 30099999753,
-        }],
-        txid: 'f093df5d83371c2f2f167399b2b27bc79d3387c7fd41575ba44881bace228bbe',
-        type: 'moved',
-      },
-      {
-        fees: 247,
-        from: [
-          { address: 'yRf8x9bov39e2vHtibjeG35ZNF4BCpSZGe', amount: '450', valueSat: 45000000000 },
-        ],
-        time: 1548153589,
-        to: [{
-          address: 'yhnTNo6tkmr8tA4SAL8gcci1z5rPHuaoxA',
-          amount: '125',
-          valueSat: 12500000000,
-
-        }],
-        txid: '9a606bc71c4c87aa7735d55dc7f01047289b77945b9617615e9afc4643e14fdf',
-        type: 'moved',
-      },
-      {
-        fees: 247,
-        from: [{
-          address: 'yLVQ9bZBLZmmvNQk7pPCUAGaXADQ6Rhkqt',
-          amount: '539.99997703',
-          valueSat: 53999997703,
-        }],
-
-        time: 1548153208,
-        to: [{
-          address: 'yQSVFizTKcPLz2V7zoZ3HkkJ7sQmb5jXAs',
-          amount: '350',
-          valueSat: 35000000000,
-        }],
-        txid: '00131c6c3ab8fca20380c6766f414a78f05b2e1783ce2632c9469d7357305dcb',
-        type: 'moved',
-      },
-      {
-        fees: 247,
-        from: [{
-          address: 'ybTg1Xema7wsGHGxSMQUSNoxyYRkTMUWJd',
-          amount: '989.9999795',
-          valueSat: 98999997950,
-        }],
-        time: 1548152219,
-        to: [{
-          address: 'yRf8x9bov39e2vHtibjeG35ZNF4BCpSZGe',
-          amount: '450',
-          valueSat: 45000000000,
-
-        }],
-        txid: 'f4b0c5df91ce3bbbcf471cfbd4b024083ad66048126bd5d6732459a07e266059',
-        type: 'moved',
-      },
-      {
-        fees: 2050,
-        from: [{
-          address: 'yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT',
-          amount: '1000',
-          valueSat: 100000000000,
-        }],
-        time: 1548144723,
-        to: [{
-          address: 'yWNrA4srrAjC9DT6UCu8NgpcqwQWa35dFX',
-          amount: '10',
-          valueSat: 1000000000,
-        }],
-        txid: 'cdcf81b69629c3157f09878076bc4f544aa01477cf59915461343476772a4a84',
-        type: 'sent',
-      },
-      {
-        fees: 374,
-        from: [
-          {
-            address: 'yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5',
-            amount: '1100',
-            valueSat: 110000000000,
-
-          },
-        ],
-        time: 1548141724,
-        to: [{
-          address: 'yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT',
-          amount: '1000',
-          valueSat: 100000000000,
-        }],
-        type: 'receive',
-        txid: '507e56181d03ba75b133f93cd073703c5c514f623f30e4cc32144c62b5a697c4',
-      },
-    ];
-
-    expect(txHistoryHDW).to.be.deep.equal(expectedTxHistoryHDW);
-  });
-  it('should return a valid transaction history for HDWallet on secondary account', async () => {
-    const storageHDW = {
-      store: mockedStoreHDWallet,
-      getStore: () => mockedStoreHDWallet,
-      mappedAddress: {},
-    };
-    const walletIdHDW = Object.keys(mockedStoreHDWallet.wallets)[0];
-    const selfHDW = {
-      walletId: walletIdHDW,
-      index: 1,
-      storage: storageHDW,
-    };
-
-    selfHDW.storage.searchTransaction = searchTransaction.bind(storageHDW);
-    selfHDW.storage.searchAddress = searchAddress.bind(storageHDW);
-    selfHDW.getTransaction = getTransaction.bind(storageHDW);
-    selfHDW.getBlockHeader = getBlockHeader.bind(storageHDW);
-
-    const txHistoryHDW = await getTransactionHistory.call(selfHDW);
-
-
-    const expectedTxHistoryHDWAccount = [
-      {
-        fees: 247,
-        from: [
-          {
-            address: 'yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT',
-            amount: '500',
-            valueSat: 50000000000,
-          },
-        ],
-        time: 1548538361,
-        to: [{
-          address: 'yd9o9jYkwB2Ba9aMtvm56YeHfCsTXyphhD',
-          amount: '150',
-          valueSat: 15000000000,
-        }],
-        type: 'moved_account',
-        txid: 'dd44373d55e6e8f3a0a0cf038de6a2c750f98a2088e074f3b6de249dad704abf',
-      },
-    ];
-    expect(txHistoryHDW).to.be.deep.equal(expectedTxHistoryHDWAccount);
-  });
-  it('should return a valid transaction history for SingleAddress', async () => {
-    const storageSA = {
-      store: mockedStoreSingleAddress,
-      getStore: () => mockedStoreSingleAddress,
-      mappedAddress: {},
-    };
-    const walletIdSA = Object.keys(mockedStoreSingleAddress.wallets)[0];
-    const selfSA = {
-      walletId: walletIdSA,
-      accountId: 0,
-      storage: storageSA,
-    };
-    selfSA.storage.searchTransaction = searchTransaction.bind(storageSA);
-    selfSA.storage.searchAddress = searchAddress.bind(storageSA);
-    selfSA.getTransaction = getTransaction.bind(storageSA);
-    selfSA.getBlockHeader = getBlockHeader.bind(selfSA);
-    const txHistorySA = await getTransactionHistory.call(selfSA);
-    const expectedTxHistorySA = [
-      {
-        fees: 247,
-        from: [
-          {
-            address: 'ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ',
-            amount: '499.99999753',
-            valueSat: 49999999753,
-
-          },
-        ],
-        time: 1548533266,
-        to: [{
-          address: 'ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ',
-          amount: '499.99999506',
-          valueSat: 49999999506,
-        }],
-        type: 'moved',
-        txid: '2d1cce77517e8411c9c9548884029edabbbd11ca3d13d6e11acdd90a79bb4408',
-      },
-      {
-        fees: 247,
-        from: [
-          {
-            address: 'ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ',
-            amount: '1000',
-            valueSat: 100000000000,
-          },
-        ],
-        time: 1548506741,
-        to: [{
-          address: 'yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT',
-          amount: '500',
-          valueSat: 50000000000,
-        }],
-        type: 'sent',
-        txid: '4493e8a39bb97d6709ca69d391b0b99f573d3aed5ce50da5f8c7626fc1cb1a7d',
-      },
-      {
-        fees: 522,
-        from: [
-          { address: 'yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5', amount: '1000', valueSat: 100000000000 },
-          { address: 'yifmFokBdParjkfZp3Bu5oR9gTtHtPEU3b', amount: '2.99998582', valueSat: 299998582 },
-        ],
-        time: 1548505964,
-        to: [{
-          address: 'ygpAb9QawEwL6kej4u3r94gC4tfoLZpaLZ',
-          amount: '1000',
-          valueSat: 100000000000,
-        }],
-        type: 'receive',
-        txid: 'f59ea94b2edf9b42e97027cc528b10d4874ce9ff604f095072e924611463053e',
-      },
-    ];
-    expect(txHistorySA).to.be.deep.equal(expectedTxHistorySA);
-  });
-  it('should output in less than a second', async () => {
-    const storageHDW = {
-      store: mockedStoreHDWallet,
-      getStore: () => mockedStoreHDWallet,
-      mappedAddress: {},
-    };
-    const walletIdHDW = Object.keys(mockedStoreHDWallet.wallets)[0];
-    const selfHDW = {
-      walletId: walletIdHDW,
-      index: 0,
-      storage: storageHDW,
-    };
-
-
-    selfHDW.storage.searchTransaction = searchTransaction.bind(storageHDW);
-    selfHDW.storage.searchAddress = searchAddress.bind(storageHDW);
-    selfHDW.storage.getBlockHeader = getBlockHeader.bind(selfHDW);
-    selfHDW.getTransaction = getTransaction.bind(storageHDW);
-
+  it('should return valid transaction for HDWallet', async function () {
+    const mockedHDSelf = {
+      ...mockedSelf
+    }
+    mockedHDSelf.storage.store = normalizedStoreToStore(normalizedHDStoreFixtures)
     const timestartTs = +new Date();
-    const txHistoryHDW = await getTransactionHistory.call(selfHDW);
+    const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
     const timeendTs = +new Date();
     const calculationTime = timeendTs - timestartTs;
     expect(calculationTime).to.be.below(60 * 1000);
+
+    const expectedTransactionHistoryHD = [
+      {
+        from: [
+          {address: 'yirJaK8KCE5YAmwvLadizqFw3TCXqBuZXL'},
+          {address: 'yiXh4Yo5djG6QH8WzXkKm5EFzqLRJWakXz'}
+        ],
+        to: [
+          {
+            address: 'yMX3ycrLVF2k6YxWQbMoYgs39aeTfY4wrB',
+            satoshis: 1000000000
+          },
+          {
+            address: 'yhdRfg5gNr587dtEC4YYMcSHmLVEGqqtHc',
+            satoshis: 159999359
+          }
+        ],
+        type: 'sent',
+        time: 1629237076,
+        txId: 'e6b6f85a18d77974f376f05d6c96d0fdde990e733664248b1a00391565af6841',
+        blockHash: '000001f9c5de4d2b258a975bfbf7b9a3346890af6389512bea3cb6926b9be330',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [{address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY'}],
+        to: [
+          {
+            address: 'yiXh4Yo5djG6QH8WzXkKm5EFzqLRJWakXz',
+            satoshis: 1150000000
+          },
+          {
+            address: 'yh6Hcyipdvp6WJpQxjNbaXP4kzPQUJpY3n',
+            satoshis: 49999753
+          }
+        ],
+        type: 'account_transfer',
+        time: 1629236158,
+        txId: '6f76ca8038c6cb1b373bbbf80698afdc0d638e4a223be12a4feb5fd8e1801135',
+        blockHash: '000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [{address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv'}],
+        to: [
+          {
+            address: 'yYJmzWey5kNecAThet5BFxAga1F4b4DKQ2',
+            satoshis: 1260000000
+          },
+          {
+            address: 'yirJaK8KCE5YAmwvLadizqFw3TCXqBuZXL',
+            satoshis: 9999753
+          }
+        ],
+        type: 'account_transfer',
+        time: 1629234873,
+        txId: '6f37b0d6284aab627c31c50e1c9d7cce39912dd4f2393f91734f794bc6408533',
+        blockHash: '000000dffb05c071a8c05082a475b7ce9c1e403f3b89895a6c448fe08535a5f5',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [{address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv'}],
+        to: [
+          {
+            address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv',
+            satoshis: 1270000000
+          },
+          {
+            address: 'yhaAB6e8m3F8zmGX7WAVYa6eEfmSrrnY8x',
+            satoshis: 400000000
+          },
+          {
+            address: 'yLk4Hw3w4zDudrDVP6W8J9TggkY57zQUki',
+            satoshis: 107099720
+          }
+        ],
+        type: 'address_transfer',
+        time: 1629234474,
+        txId: 'c3fb3620ebd1c7678879b40df1495cc86a179b5a6f9e48ce0b687a5c6f5a1db5',
+        blockHash: '000001953ea0bbb8ad04a9a1a2a707fef207ad22a712d7d3c619f0f9b63fa98c',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [
+          {address: 'ygHAVkMtYSqoTWHebDv7qkhMV6dHyuRsp2'},
+          {address: 'ygk3GCSba2J3L9G665Snozhj9HSkh5ByVE'},
+          {address: 'yTwEca67QSkZ6axGdpNFzWPaCj8zqYybY7'},
+          {address: 'yercyhdN9oEkZcB9BsW5ktFaDxFEuK6qXN'},
+          {address: 'yMLhEsiP2ajSh8STmXnNmkWXtoHsmawZxd'}
+        ],
+        to: [
+          {
+            address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv',
+            satoshis: 1777100000
+          },
+          {
+            address: 'yNDpPsJqXKM36zHSNEW7c1zSvNnrZ699FY',
+            satoshis: 99170
+          }
+        ],
+        type: 'address_transfer',
+        time: 1629216608,
+        txId: 'f230a9414bf577d93d6f7f2515d9b549ede78cfba4168920892970fa8aa1eef8',
+        blockHash: '00000084b4d9e887a6ad3f37c576a17d79c35ec9301e55210eded519e8cdcd3a',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [{address: 'yP8A3cbdxRtLRduy5mXDsBnJtMzHWs6ZXr'}],
+        to: [
+          {
+            address: 'yY16qMW4TSiYGWUyANYWMSwgwGe36KUQsR',
+            satoshis: 46810176
+          },
+          {
+            address: 'ygHAVkMtYSqoTWHebDv7qkhMV6dHyuRsp2',
+            satoshis: 729210000
+          }
+        ],
+        type: 'received',
+        time: 1629207543,
+        txId: '1cbb35edc105918b956838570f122d6f3a1fba2b67467e643e901d09f5f8ac1b',
+        blockHash: '00000c1e4556add15119392ed36ec6af2640569409abfa23a9972bc3be1b3717',
+        isChainLocked: true,
+        isInstantLocked: true
+      }
+    ]
+    expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
+  it('should correctly deal with HDWallet accounts', async function () {
+    const mockedHDSelf = {
+      ...mockedSelf
+    }
+    mockedHDSelf.storage.store = normalizedStoreToStore(normalizedHDStoreFixtures)
+    mockedHDSelf.index = 1;
+    const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
+    const expectedTransactionHistoryHD = [
+      {
+        from: [ { address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY' } ],
+        to: [
+          {
+            address: 'yiXh4Yo5djG6QH8WzXkKm5EFzqLRJWakXz',
+            satoshis: 1150000000
+          },
+          {
+            address: 'yh6Hcyipdvp6WJpQxjNbaXP4kzPQUJpY3n',
+            satoshis: 49999753
+          }
+        ],
+        type: 'account_transfer',
+        time: 1629236158,
+        txId: '6f76ca8038c6cb1b373bbbf80698afdc0d638e4a223be12a4feb5fd8e1801135',
+        blockHash: '000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [ { address: 'yYJmzWey5kNecAThet5BFxAga1F4b4DKQ2' } ],
+        to: [
+          {
+            address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY',
+            satoshis: 1200000000
+          },
+          {
+            address: 'yXMrw79LPgu78EJsfGGYpm6fXKc1EMnQ49',
+            satoshis: 59999753
+          }
+        ],
+        type: 'address_transfer',
+        time: 1629235557,
+        txId: '9cd3d44a87a7f99a33aebc6957105d5fb41698ef642189a36bac59ec0b5cd840',
+        blockHash: '0000016fb685b4b1efed743d2263de34a9f8323ed75e732654b1b951c5cb4dde',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [ { address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv' } ],
+        to: [
+          {
+            address: 'yYJmzWey5kNecAThet5BFxAga1F4b4DKQ2',
+            satoshis: 1260000000
+          },
+          {
+            address: 'yirJaK8KCE5YAmwvLadizqFw3TCXqBuZXL',
+            satoshis: 9999753
+          }
+        ],
+        type: 'account_transfer',
+        time: 1629234873,
+        txId: '6f37b0d6284aab627c31c50e1c9d7cce39912dd4f2393f91734f794bc6408533',
+        blockHash: '000000dffb05c071a8c05082a475b7ce9c1e403f3b89895a6c448fe08535a5f5',
+        isChainLocked: true,
+        isInstantLocked: true
+      }
+    ]
+    expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
+  });
+  it('should correctly compute transaction history for private key based wallet', async function (){
+    const mockedPKSelf = {
+      ...mockedSelf
+    }
+    mockedPKSelf.storage.store = normalizedStoreToStore(normalizedPKStoreFixtures)
+    mockedPKSelf.walletType = 'single_address';
+    mockedPKSelf.walletId = '6101b44d50';
+
+    const transactionHistoryPK = await getTransactionHistory.call(mockedPKSelf);
+    const expectedTransactionHistoryPK = [
+      {
+        from: [ { address: 'ycDeuTfs4U77bTb5cq17dame28zdWHVYfk' } ],
+        to: [
+          {
+            address: 'yP8A3cbdxRtLRduy5mXDsBnJtMzHWs6ZXr',
+            satoshis: 450000
+          },
+          {
+            address: 'ycDeuTfs4U77bTb5cq17dame28zdWHVYfk',
+            satoshis: 8999753
+          }
+        ],
+        type: 'address_transfer',
+        time: 1629510092,
+        txId: '47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52',
+        blockHash: '0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [ { address: 'ycDeuTfs4U77bTb5cq17dame28zdWHVYfk' } ],
+        to: [
+          {
+            address: 'ycDeuTfs4U77bTb5cq17dame28zdWHVYfk',
+            satoshis: 9450000
+          },
+          {
+            address: 'ycDeuTfs4U77bTb5cq17dame28zdWHVYfk',
+            satoshis: 699999753
+          }
+        ],
+        type: 'address_transfer',
+        time: 1629509216,
+        txId: 'd48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af',
+        blockHash: '0000018b88fe43d07c3d63050aa82271698dc406dd08388529205dd837bf92dc',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [
+          { address: 'yXpVMRLKnH9e9Bdcd68e8iA3rxAerzwKop' },
+          { address: 'yeryenDBwJbe7rqdL5uv7iLiJAWSU1iTe2' }
+        ],
+        to: [
+          {
+            address: 'yanVwuG1csehvH7PoWHxmYmjtojXBLnoYP',
+            satoshis: 4840346
+          },
+          {
+            address: 'ycDeuTfs4U77bTb5cq17dame28zdWHVYfk',
+            satoshis: 709450000
+          }
+        ],
+        type: 'received',
+        time: 1629503698,
+        txId: '0dcdaa9bf5b3596be1bcf22113e39026fd49d24b47190e2c7423be936cb116a7',
+        blockHash: '000000299efeefa87dc15474fd0423c136798975b779a2bb8aa5bb2f50509afb',
+        isChainLocked: true,
+        isInstantLocked: true
+      }
+    ]
+
+    expect(transactionHistoryPK).to.deep.equal(expectedTransactionHistoryPK);
+
+  })
 });

@@ -1,4 +1,5 @@
 const logger = require('../../../../logger');
+const sleep = require('../../../../utils/sleep');
 
 function isAnyIntersection(arrayA, arrayB) {
   const intersection = arrayA.filter((e) => arrayB.indexOf(e) > -1);
@@ -62,10 +63,26 @@ module.exports = async function syncUpToTheGapLimit({
           // As we require height information, we fetch transaction using client.
           // eslint-disable-next-line no-restricted-syntax
           for (const transaction of walletTransactions.transactions) {
-            // eslint-disable-next-line no-underscore-dangle
-            const transactionHash = transaction._getHash().reverse().toString('hex');
+            const transactionHash = transaction.hash;
+
+            self.pendingRequest[transactionHash] = { isProcessing: true, type: 'transaction' };
             // eslint-disable-next-line no-await-in-loop
             const getTransactionResponse = await this.transport.getTransaction(transactionHash);
+
+            if (!getTransactionResponse.blockHash) {
+              // TODO: We should set-up a retry of fetching the tx and it's blockhash
+            }
+            if (getTransactionResponse.blockHash) {
+              self.pendingRequest[getTransactionResponse.blockHash.toString('hex')] = { isProcessing: true, type: 'blockheader' };
+              // eslint-disable-next-line no-await-in-loop
+              const getBlockHeaderResponse = await this
+                .transport
+                .getBlockHeaderByHash(getTransactionResponse.blockHash);
+              // eslint-disable-next-line no-await-in-loop
+              await this.importBlockHeader(getBlockHeaderResponse);
+              delete self.pendingRequest[getTransactionResponse.blockHash.toString('hex')];
+            }
+
             const metadata = {
               blockHash: getTransactionResponse.blockHash,
               height: getTransactionResponse.height,
@@ -73,6 +90,7 @@ module.exports = async function syncUpToTheGapLimit({
               chainLocked: getTransactionResponse.chainLocked,
             };
             transactionsWithMetadata.push([getTransactionResponse.transaction, metadata]);
+            delete self.pendingRequest[transactionHash];
           }
 
           const addressesGeneratedCount = await self
@@ -113,9 +131,21 @@ module.exports = async function syncUpToTheGapLimit({
         reject(err);
       })
       .on('end', () => {
-        logger.silly('TransactionSyncStreamWorker - end stream on request');
-        self.stream = null;
-        resolve(reachedGapLimit);
+        const endStream = () => {
+          logger.silly('TransactionSyncStreamWorker - end stream on request');
+          self.stream = null;
+          resolve(reachedGapLimit);
+        };
+
+        const tryEndStream = async () => {
+          if (Object.keys(self.pendingRequest).length !== 0) {
+            await sleep(200);
+            return tryEndStream();
+          }
+          return endStream();
+        };
+
+        tryEndStream();
       });
   });
 };

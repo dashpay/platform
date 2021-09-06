@@ -1,4 +1,5 @@
 const { expect } = require('chai');
+const { Networks } = require('@dashevo/dashcore-lib')
 const {
   generateNewMnemonic,
   seedToHDPrivateKey,
@@ -7,6 +8,7 @@ const {
   mnemonicToSeed,
 } = require('./mnemonic');
 const is = require('./is');
+const knifeEasilyFixture = require("../../fixtures/knifeeasily");
 
 const mnemonic1 = 'hole lesson insane entire dolphin scissors game dwarf polar ethics drip math';
 const mnemonic2 = 'woman forest output essay bleak satisfy era ordinary exotic source portion wire';
@@ -120,5 +122,20 @@ describe('Utils - mnemonic', function suite() {
 
     expect(mnemonicToSeed(mnemonic24Cz).toString()).to.equal(expectedSeed24Cz);
     expect(seedToHDPrivateKey(expectedSeed24Cz, 'mainnet').toString()).to.equal(expectedCzRootKey);
+  });
+  it('should generate a mnemonic', () => {
+    const mnemonic = generateNewMnemonic();
+    expect(mnemonic).to.be.a('object');
+    expect(mnemonic.toString()).to.be.a('string');
+  });
+  it('should convert mnemonic to seed', () => {
+    const network = Networks.testnet;
+    const seed = mnemonicToHDPrivateKey(knifeEasilyFixture.mnemonic, network);
+    expect(seed).to.be.a('object');
+    expect(seed.toString()).to.equal(knifeEasilyFixture.HDRootPrivateKeyTestnet);
+  });
+  it('should throw error when mnemonic is not provided in mnemonicToHDPrivateKey', () => {
+    const network = Networks.testnet;
+    expect(() => mnemonicToHDPrivateKey('', network)).to.throw('Expect mnemonic to be provide');
   });
 });

@@ -1,0 +1,16 @@
+{
+  "privateKey": "2a331817b9d6bf85100ef05503d16f9f57c8855dbf13766b2f26c382b716d396",
+  "network": "testnet",
+  "store": {
+    "accounts": {
+      "0": {
+        "label": null,
+        "network": "testnet",
+        "blockHeight": 560178,
+        "blockHash": "000000299efeefa87dc15474fd0423c136798975b779a2bb8aa5bb2f50509afb"
+      }
+    },
+    "identityIds": [],
+    "type": "single_address"
+  }
+}

@@ -1,0 +1,198 @@
+{
+  "wallets": {
+    "6101b44d50": {
+      "accounts": {
+        "0": {
+          "label": null,
+          "network": "testnet",
+          "blockHeight": 560182,
+          "blockHash": "0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117"
+        }
+      },
+      "network": "testnet",
+      "mnemonic": null,
+      "type": null,
+      "identityIds": [],
+      "addresses": {
+        "external": {},
+        "internal": {},
+        "misc": {
+          "0": {
+            "path": "0",
+            "index": 0,
+            "address": "ycDeuTfs4U77bTb5cq17dame28zdWHVYfk",
+            "transactions": [
+              "0dcdaa9bf5b3596be1bcf22113e39026fd49d24b47190e2c7423be936cb116a7",
+              "d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af",
+              "47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52"
+            ],
+            "balanceSat": 708999506,
+            "unconfirmedBalanceSat": 0,
+            "utxos": {
+              "d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af-1": {
+                "satoshis": 699999753,
+                "script": "76a914ae6994ac03281f1137b91a7e0f050dece040455388ac"
+              },
+              "47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52-1": {
+                "satoshis": 8999753,
+                "script": "76a914ae6994ac03281f1137b91a7e0f050dece040455388ac"
+              }
+            },
+            "fetchedLast": 0,
+            "used": true
+          }
+        }
+      }
+    }
+  },
+  "transactions": {
+    "0dcdaa9bf5b3596be1bcf22113e39026fd49d24b47190e2c7423be936cb116a7": {
+      "hash": "0dcdaa9bf5b3596be1bcf22113e39026fd49d24b47190e2c7423be936cb116a7",
+      "version": 2,
+      "inputs": [
+        {
+          "prevTxId": "339e9c76f525a42aa3e432fd0122de0dfcdb39d4debfdbe27de78547c08260e5",
+          "outputIndex": 1,
+          "sequenceNumber": 4294967294,
+          "script": "4730440220737fb319650cd5c5ff17a1ef0667ec4a2c9d337c25463b8eaa5018ec4ff41cf202201a3f82c7790e0fb07ceddbee7c2ffa1e6de999f5b42b9d3eb64dab2697625a830121038f7857ad3a707c2cb4fa5d7dc270b6e04050dff58613c3a0198a463923c89512",
+          "scriptString": "71 0x30440220737fb319650cd5c5ff17a1ef0667ec4a2c9d337c25463b8eaa5018ec4ff41cf202201a3f82c7790e0fb07ceddbee7c2ffa1e6de999f5b42b9d3eb64dab2697625a8301 33 0x038f7857ad3a707c2cb4fa5d7dc270b6e04050dff58613c3a0198a463923c89512"
+        },
+        {
+          "prevTxId": "78048db5918e74c43e4a7db0ddf94afbbbd83adcd16ce0595b4bda01dd14c8f9",
+          "outputIndex": 0,
+          "sequenceNumber": 4294967294,
+          "script": "473044022054b284413497f3d8a5909916c298a6585a27e0f20039dbe393634869896293d7022079d252b13434e9bb2bb347f7cb45750500439b652ab28e85573acc5e8c33a60c0121032996947342cd793585d9adc2dc007b89135c764c0c9d528723ad7031fdf2c5aa",
+          "scriptString": "71 0x3044022054b284413497f3d8a5909916c298a6585a27e0f20039dbe393634869896293d7022079d252b13434e9bb2bb347f7cb45750500439b652ab28e85573acc5e8c33a60c01 33 0x032996947342cd793585d9adc2dc007b89135c764c0c9d528723ad7031fdf2c5aa"
+        }
+      ],
+      "outputs": [
+        {
+          "satoshis": 4840346,
+          "script": "76a9149eaf940724ad809abdc1f8e32ad7fbd221c742af88ac"
+        },
+        {
+          "satoshis": 709450000,
+          "script": "76a914ae6994ac03281f1137b91a7e0f050dece040455388ac"
+        }
+      ],
+      "nLockTime": 560135
+    },
+    "d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af": {
+      "hash": "d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af",
+      "version": 3,
+      "inputs": [
+        {
+          "prevTxId": "0dcdaa9bf5b3596be1bcf22113e39026fd49d24b47190e2c7423be936cb116a7",
+          "outputIndex": 1,
+          "sequenceNumber": 4294967295,
+          "script": "47304402202c72746fafa9db3ef4ce3b16f2a05bccf2f72b5b2fb18208a10ac563b0e1edc602203371d81765942104bb05acacfe141f204223a1fa426052b55b780e804eb563780121021feafc962128b08d7ef46ce6e4507193d53d3d101d7ad7e6d889fea9b1d4faaa",
+          "scriptString": "71 0x304402202c72746fafa9db3ef4ce3b16f2a05bccf2f72b5b2fb18208a10ac563b0e1edc602203371d81765942104bb05acacfe141f204223a1fa426052b55b780e804eb5637801 33 0x021feafc962128b08d7ef46ce6e4507193d53d3d101d7ad7e6d889fea9b1d4faaa"
+        }
+      ],
+      "outputs": [
+        {
+          "satoshis": 9450000,
+          "script": "76a914ae6994ac03281f1137b91a7e0f050dece040455388ac"
+        },
+        {
+          "satoshis": 699999753,
+          "script": "76a914ae6994ac03281f1137b91a7e0f050dece040455388ac"
+        }
+      ],
+      "nLockTime": 0
+    },
+    "47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52": {
+      "hash": "47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52",
+      "version": 3,
+      "inputs": [
+        {
+          "prevTxId": "d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af",
+          "outputIndex": 0,
+          "sequenceNumber": 4294967295,
+          "script": "4830450221008d7a45a192df8e1b7d39e1465ddbed40f34793ecfc4c3bbc9c9116fd6d91e3cb0220304abf8405aee39ed7e66fae73f713db5868068990ea48b3865c1bba0ed569fe0121021feafc962128b08d7ef46ce6e4507193d53d3d101d7ad7e6d889fea9b1d4faaa",
+          "scriptString": "72 0x30450221008d7a45a192df8e1b7d39e1465ddbed40f34793ecfc4c3bbc9c9116fd6d91e3cb0220304abf8405aee39ed7e66fae73f713db5868068990ea48b3865c1bba0ed569fe01 33 0x021feafc962128b08d7ef46ce6e4507193d53d3d101d7ad7e6d889fea9b1d4faaa"
+        }
+      ],
+      "outputs": [
+        {
+          "satoshis": 450000,
+          "script": "76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac"
+        },
+        {
+          "satoshis": 8999753,
+          "script": "76a914ae6994ac03281f1137b91a7e0f050dece040455388ac"
+        }
+      ],
+      "nLockTime": 0
+    }
+  },
+  "transactionsMetadata": {
+    "0dcdaa9bf5b3596be1bcf22113e39026fd49d24b47190e2c7423be936cb116a7": {
+      "blockHash": "000000299efeefa87dc15474fd0423c136798975b779a2bb8aa5bb2f50509afb",
+      "height": 560136,
+      "instantLocked": true,
+      "chainLocked": true
+    },
+    "d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af": {
+      "blockHash": "0000018b88fe43d07c3d63050aa82271698dc406dd08388529205dd837bf92dc",
+      "height": 560169,
+      "instantLocked": true,
+      "chainLocked": true
+    },
+    "47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52": {
+      "blockHash": "0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117",
+      "height": 560179,
+      "instantLocked": true,
+      "chainLocked": true
+    }
+  },
+  "chains": {
+    "testnet": {
+      "name": "testnet",
+      "blockHeaders": {
+        "000000757a2488ae789e1e63786341f54790c1f4113e489a3458706bc4787212": {
+          "hash": "000000757a2488ae789e1e63786341f54790c1f4113e489a3458706bc4787212",
+          "version": 536870912,
+          "prevHash": "000000720499313fa45303fbe80436497579ba7e11458fe006cd9fb668e46869",
+          "merkleRoot": "a71f5b32c1380a6951a2566494bbbd19e8285cb44afe6d3f89d43716c49da281",
+          "time": 1629510646,
+          "bits": 503452142,
+          "nonce": 46932
+        },
+        "000000299efeefa87dc15474fd0423c136798975b779a2bb8aa5bb2f50509afb": {
+          "hash": "000000299efeefa87dc15474fd0423c136798975b779a2bb8aa5bb2f50509afb",
+          "version": 536870912,
+          "prevHash": "000000ec7e84c3e6fe8a07d91f8e1e1d45fff1147f68564dd710fbb0546dd816",
+          "merkleRoot": "aab7498bf364ecb1ca186cbab6a5bbf91ebe9bb536eb32ab063bb0b7e1c2c3a4",
+          "time": 1629503698,
+          "bits": 503446460,
+          "nonce": 14972
+        },
+        "0000018b88fe43d07c3d63050aa82271698dc406dd08388529205dd837bf92dc": {
+          "hash": "0000018b88fe43d07c3d63050aa82271698dc406dd08388529205dd837bf92dc",
+          "version": 536870912,
+          "prevHash": "0000015aa1cfc7eb016d9c2586eb70d1548013a9cf83daa273ad56f303b18ba7",
+          "merkleRoot": "b44b157cdf71c1d0230d23547399d2ce3133451d119a458697a340f036610651",
+          "time": 1629509216,
+          "bits": 503439566,
+          "nonce": 33031
+        },
+        "0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117": {
+          "hash": "0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117",
+          "version": 536870912,
+          "prevHash": "000001183343e399808cfd8515e1efe299c8c75f05ea9961867b8c494312ec11",
+          "merkleRoot": "cb25865a2f971e399841b705aef807c77e0d753acaaa078ede1c1394e844b925",
+          "time": 1629510092,
+          "bits": 503440419,
+          "nonce": 52203
+        }
+      },
+      "mappedBlockHeaderHeights": {
+        "560182": "0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117"
+      },
+      "blockHeight": 560182
+    }
+  },
+  "instantLocks": {},
+  "syncOptions": { "skipSynchronizationBeforeHeight": 558030 }
+}

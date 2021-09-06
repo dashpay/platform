@@ -1,0 +1,17 @@
+{
+  "mnemonic": "apart trip dignity try point rocket damp reflect raw ten normal young",
+  "network": "testnet",
+  "store": {
+    "accounts": {
+      "m/44'/1'/0'": {
+        "label": null,
+        "path": "m/44'/1'/0'",
+        "network": "testnet",
+        "blockHeight": 558282,
+        "blockHash": "000001f9c5de4d2b258a975bfbf7b9a3346890af6389512bea3cb6926b9be330"
+      }
+    }
+  },
+  "identityIds": [],
+  "type": "hdwallet"
+}

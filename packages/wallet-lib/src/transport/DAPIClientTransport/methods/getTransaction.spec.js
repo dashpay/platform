@@ -46,7 +46,7 @@ describe('transports - DAPIClientTransport .getTransaction', function suite() {
   it('should return null if transaction if not found', async () => {
     clientMock.core.getTransaction = () => { throw new NotFoundError(); };
 
-    const res = await transport.getTransaction('2c0ee853b91b23d881f96f0128bbb5ebb90c9ef7e7bdb4eda360b0e5abf97239');
+    const res = await transport.getTransaction('fb52d7ee453fa69b13ce5fca07ff9a61cd1056a2ad03d51b6eec8542b6db7d76');
     expect(res).to.equal(null);
   });
 });

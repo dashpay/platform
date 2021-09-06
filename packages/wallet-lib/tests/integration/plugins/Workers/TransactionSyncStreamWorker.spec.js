@@ -4,6 +4,7 @@ const chaiAsPromised = require('chai-as-promised');
 const {
   HDPrivateKey,
   Transaction,
+  BlockHeader,
   MerkleBlock,
   InstantLock
 } = require('@dashevo/dashcore-lib');
@@ -17,6 +18,7 @@ const createAndAttachTransportMocksToWallet = require('../../../../src/test/mock
 
 const { Wallet } = require('../../../../src');
 
+const blockHeaderFixture = '00000020e2bddfb998d7be4cc4c6b126f04d6e4bd201687523ded527987431707e0200005520320b4e263bec33e08944656f7ce17efbc2c60caab7c8ed8a73d413d02d3a169d555ecdd6021e56d000000203000500010000000000000000000000000000000000000000000000000000000000000000ffffffff050219250102ffffffff0240c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac40c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac0000000046020019250000476416132511031b71167f4bb7658eab5c3957d79636767f83e0e18e2b9ed7f8000000000000000000000000000000000000000000000000000000000000000003000600000000000000fd4901010019250000010001d02e9ee1b14c022ad6895450f3375a8e9a87f214912d4332fa997996d2000000320000000000000032000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
 chai.use(chaiAsPromised);
 const { expect } = chai;
 
@@ -56,6 +58,9 @@ describe('TransactionSyncStreamWorker', function suite() {
     });
 
     ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
+
+    transportMock.getBlockHeaderByHash
+        .returns(BlockHeader.fromString(blockHeaderFixture));
 
     account = await wallet.getAccount();
 
@@ -207,16 +212,15 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 2});
       // 20 more of each type, since the last address is used, but the height is the same, since Merkle Block not received yet
       expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[0].length).to.be.equal(80);
-      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 2});
+      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 2});
       // Block received
       expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[0].length).to.be.equal(80);
-      expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[1]).to.be.deep.equal({ fromBlockHash: '5e55b2ca5472098231965e87a80b35750554ad08d5a1357800b7cd0dfa153646', count: 2});
+      expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 2});
 
       expect(worker.stream).to.be.null;
       expect(transactionsInStorage.length).to.be.equal(2);
       expect(transactionsInStorage).to.have.deep.members(expectedTransactions);
     });
-
     it('should reconnect to the historical stream if stream is closed due to operational GRPC error', async function () {
       const lastSavedBlockHeight = 40;
       const bestBlockHeight = 42;
@@ -422,10 +426,10 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 0});
       // 20 more of each type, since the last address is used, but the height is the same, since Merkle Block not received yet
       expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[0].length).to.be.equal(80);
-      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 0});
+      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 0});
       // Block received
       expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[0].length).to.be.equal(80);
-      expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[1]).to.be.deep.equal({ fromBlockHash: '5e55b2ca5472098231965e87a80b35750554ad08d5a1357800b7cd0dfa153646', count: 0});
+      expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 0});
 
       expect(worker.stream).to.be.null;
       expect(transactionsInStorage.length).to.be.equal(2);
@@ -627,6 +631,10 @@ describe('TransactionSyncStreamWorker', function suite() {
             isChainLocked: false,
           });
 
+      account.transport.getBlockHeaderByHash
+      .returns(new Buffer.from(blockHeaderFixture, 'hex'));
+
+
       transactionsSent.push(transaction);
       txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
         rawTransactions: [transaction.toBuffer()]
@@ -650,6 +658,7 @@ describe('TransactionSyncStreamWorker', function suite() {
         .map((t) => t.toJSON());
 
     const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+
     // We send transaction to index 19, so wallet should generate additional 20 addresses to keep the gap between
     // the last used address
     expect(Object.keys(addressesInStorage).length).to.be.equal(40);
@@ -658,12 +667,9 @@ describe('TransactionSyncStreamWorker', function suite() {
     // 20 external and 20 internal
     expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 0});
     expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[0].length).to.be.equal(40);
-    // 20 more of each type, since the last address is used, but the height is the same, since Merkle Block not received yet
+    // 20 more of each type, since the last address is used, Merkle Block received
     expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[0].length).to.be.equal(80);
-    expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 0});
-    // Block received
-    expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[0].length).to.be.equal(80);
-    expect(account.transport.subscribeToTransactionsWithProofs.thirdCall.args[1]).to.be.deep.equal({ fromBlockHash: '5e55b2ca5472098231965e87a80b35750554ad08d5a1357800b7cd0dfa153646', count: 0});
+    expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 0});
 
     expect(worker.stream).to.be.null;
     expect(transactionsInStorage.length).to.be.equal(2);
@@ -713,6 +719,14 @@ describe('TransactionSyncStreamWorker', function suite() {
     account = await wallet.getAccount();
 
     account.transport.getBestBlockHeight.resolves(bestBlockHeight);
+    account.transport.getTransaction.returns({
+      transaction:new Transaction().to(account.getAddress(10).address, 10000),
+      blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+      height: 42,
+      confirmations: 10,
+      isInstantLocked: true,
+      isChainLocked: false,
+    })
 
     expect(account.transport.subscribeToTransactionsWithProofs.getCall(0).args[1]).to.be.deep.equal({ fromBlockHeight: 20, count: bestBlockHeight - 20 });
   });
