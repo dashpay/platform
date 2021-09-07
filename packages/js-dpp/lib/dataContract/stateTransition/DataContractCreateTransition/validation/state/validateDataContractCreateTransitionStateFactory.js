@@ -24,7 +24,7 @@ function validateDataContractCreateTransitionStateFactory(stateRepository) {
 
     if (existingDataContract) {
       result.addError(
-        new DataContractAlreadyPresentError(dataContract),
+        new DataContractAlreadyPresentError(dataContractId.toBuffer()),
       );
     }
 

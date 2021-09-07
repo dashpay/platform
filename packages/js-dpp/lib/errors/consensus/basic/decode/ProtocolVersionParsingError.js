@@ -1,26 +1,21 @@
-const ConsensusError = require('../../ConsensusError');
+const AbstractConsensusError = require('../../AbstractConsensusError');
 
-class ProtocolVersionParsingError extends ConsensusError {
+class ProtocolVersionParsingError extends AbstractConsensusError {
   /**
-   * @param {Buffer} payload
-   * @param {Error} parsingError
+   * @param {string} message
    */
-  constructor(payload, parsingError) {
-    super(
-      `Can't read protocol version from serialized object: ${parsingError.message}`,
-    );
+  constructor(message) {
+    super(`Can't read protocol version from serialized object: ${message}`);
 
-    this.payload = payload;
-    this.parsingError = parsingError;
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get object payload
-   *
-   * @return {Buffer}
+   * @param {Error} error
    */
-  getPayload() {
-    return this.payload;
+  setParsingError(error) {
+    this.parsingError = error;
   }
 
   /**

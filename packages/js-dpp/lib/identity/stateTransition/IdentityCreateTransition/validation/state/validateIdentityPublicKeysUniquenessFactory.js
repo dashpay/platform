@@ -34,7 +34,9 @@ function validateIdentityPublicKeysUniquenessFactory(stateRepository) {
       .forEach((publicKeyHash, index) => {
         if (identityIds[index]) {
           validationResult.addError(
-            new IdentityPublicKeyAlreadyExistsError(publicKeyHash),
+            new IdentityPublicKeyAlreadyExistsError(
+              publicKeyHash,
+            ),
           );
         }
       });

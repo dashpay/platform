@@ -1,9 +1,9 @@
-const ConsensusError = require('../ConsensusError');
+const AbstractConsensusError = require('../AbstractConsensusError');
 
 /**
  * @abstract
  */
-class AbstractBasicError extends ConsensusError {
+class AbstractBasicError extends AbstractConsensusError {
 
 }
 

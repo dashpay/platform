@@ -39,7 +39,11 @@ describe('rejectDataTrigger', () => {
     const result = await rejectDataTrigger(documentTransition, context);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(result.getErrors()[0].message).to.equal('Action is not allowed');
+
     expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error.message).to.equal('Action is not allowed');
   });
 });

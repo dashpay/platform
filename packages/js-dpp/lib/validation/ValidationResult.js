@@ -1,6 +1,6 @@
 class ValidationResult {
   /**
-   * @param {ConsensusError[]} [errors]
+   * @param {AbstractConsensusError[]} [errors]
    */
   constructor(errors = []) {
     this.errors = errors;
@@ -10,7 +10,7 @@ class ValidationResult {
   /**
    * Add consensus error
    *
-   * @param {...ConsensusError} error
+   * @param {...AbstractConsensusError} error
    */
   addError(...error) {
     this.errors.push(...error);
@@ -19,10 +19,19 @@ class ValidationResult {
   /**
    * Get consensus errors
    *
-   * @return {ConsensusError[]}
+   * @return {AbstractConsensusError[]}
    */
   getErrors() {
     return this.errors;
+  }
+
+  /**
+   * Get the first consensus error
+   *
+   * @returns {AbstractConsensusError}
+   */
+  getFirstError() {
+    return this.errors[0];
   }
 
   /**

@@ -7,25 +7,14 @@ const AbstractBasicError = require('../AbstractBasicError');
 class AbstractIndexError extends AbstractBasicError {
   /**
    * @param {string} message
-   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    */
-  constructor(message, rawDataContract, documentType, indexDefinition) {
+  constructor(message, documentType, indexDefinition) {
     super(message);
 
-    this.rawDataContract = rawDataContract;
     this.documentType = documentType;
     this.indexDefintion = indexDefinition;
-  }
-
-  /**
-   * Get raw Data Contract
-   *
-   * @return {RawDataContract}
-   */
-  getRawDataContract() {
-    return this.rawDataContract;
   }
 
   /**

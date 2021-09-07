@@ -20,11 +20,11 @@ const InvalidActionNameError = require('../../../lib/document/errors/InvalidActi
 const NoDocumentsSuppliedError = require('../../../lib/document/errors/NoDocumentsSuppliedError');
 const MismatchOwnerIdsError = require('../../../lib/document/errors/MismatchOwnerIdsError');
 const InvalidInitialRevisionError = require('../../../lib/document/errors/InvalidInitialRevisionError');
-const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
 
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;
@@ -191,7 +191,7 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw InvalidDocumentError if passed object is not valid', async () => {
-      const validationError = new ConsensusError('test');
+      const validationError = new SomeConsensusError('test');
 
       validateDocumentMock.returns(
         new ValidationResult([validationError]),
@@ -216,7 +216,7 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
-      const fetchContractError = new ConsensusError('error');
+      const fetchContractError = new SomeConsensusError('error');
 
       fetchAndValidateDataContractMock.returns(
         new ValidationResult([fetchContractError]),

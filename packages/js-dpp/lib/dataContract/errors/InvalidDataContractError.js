@@ -2,7 +2,7 @@ const DPPError = require('../../errors/DPPError');
 
 class InvalidDataContractError extends DPPError {
   /**
-   * @param {ConsensusError[]} errors
+   * @param {AbstractConsensusError[]} errors
    * @param {RawDataContract} rawDataContract
    */
   constructor(errors, rawDataContract) {
@@ -20,7 +20,7 @@ class InvalidDataContractError extends DPPError {
   /**
    * Get validation errors
    *
-   * @return {ConsensusError[]}
+   * @return {AbstractConsensusError[]}
    */
   getErrors() {
     return this.errors;

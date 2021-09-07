@@ -5,6 +5,7 @@ const IdentityAssetLockTransactionOutputNotFoundError = require('../../../errors
 const InvalidIdentityAssetLockTransactionOutputError = require('../../../errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionOutputError');
 const ValidationResult = require('../../../validation/ValidationResult');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
+const InvalidAssetLockTransactionOutputReturnSize = require('../../../errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSize');
 
 /**
  *
@@ -27,10 +28,12 @@ function validateAssetLockTransactionFactory(stateRepository) {
     let transaction;
     try {
       transaction = new Transaction(rawTransaction);
-    } catch (e) {
-      const error = new InvalidIdentityAssetLockTransactionError(e.message);
+    } catch (error) {
+      const consensusError = new InvalidIdentityAssetLockTransactionError(error.message);
 
-      result.addError(error);
+      consensusError.setValidationError(error);
+
+      result.addError(consensusError);
 
       return result;
     }
@@ -47,7 +50,7 @@ function validateAssetLockTransactionFactory(stateRepository) {
 
     if (!output.script.isDataOut()) {
       result.addError(
-        new InvalidIdentityAssetLockTransactionOutputError('Output is not a valid standard OP_RETURN output', output),
+        new InvalidIdentityAssetLockTransactionOutputError(outputIndex),
       );
 
       return result;
@@ -57,7 +60,7 @@ function validateAssetLockTransactionFactory(stateRepository) {
 
     if (publicKeyHash.length !== 20) {
       result.addError(
-        new InvalidIdentityAssetLockTransactionOutputError('Output has invalid public key hash', output),
+        new InvalidAssetLockTransactionOutputReturnSize(outputIndex),
       );
 
       return result;
@@ -70,7 +73,10 @@ function validateAssetLockTransactionFactory(stateRepository) {
 
     if (outPointIsUsed) {
       result.addError(
-        new IdentityAssetLockTransactionOutPointAlreadyExistsError(outPointBuffer),
+        new IdentityAssetLockTransactionOutPointAlreadyExistsError(
+          Buffer.from(transaction.id, 'hex'),
+          outputIndex,
+        ),
       );
 
       return result;

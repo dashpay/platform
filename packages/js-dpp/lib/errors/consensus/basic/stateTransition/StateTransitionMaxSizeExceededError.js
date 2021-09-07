@@ -2,22 +2,35 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class StateTransitionMaxSizeExceededError extends AbstractBasicError {
   /**
-   * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
+   * @param {number} actualSizeKBytes
    * @param {number} maxSizeKBytes
    */
-  constructor(rawStateTransition, maxSizeKBytes) {
-    super(`State transition size is more than ${maxSizeKBytes}kb`);
+  constructor(actualSizeKBytes, maxSizeKBytes) {
+    super(`State transition size ${actualSizeKBytes} Kb is more than maximum ${maxSizeKBytes} Kb`);
 
-    this.rawStateTransition = rawStateTransition;
+    this.actualSizeKBytes = actualSizeKBytes;
+    this.maxSizeKBytes = maxSizeKBytes;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get raw State Transition
+   * Get actual state transition size in Kb
    *
-   * @return {RawDataContractCreateTransition|RawDocumentsBatchTransition}
+   * @return {number}
    */
-  getRawStateTransition() {
-    return this.rawStateTransition;
+  getActualSizeKBytes() {
+    return this.actualSizeKBytes;
+  }
+
+  /**
+   * Get max state transition size in Kb
+   *
+   * @return {number}
+   */
+  getMaxSizeKBytes() {
+    return this.maxSizeKBytes;
   }
 }
 

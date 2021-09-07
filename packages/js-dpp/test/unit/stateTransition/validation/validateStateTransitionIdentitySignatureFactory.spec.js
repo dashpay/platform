@@ -5,9 +5,9 @@ const InvalidIdentityPublicKeyTypeError = require('../../../../lib/errors/consen
 const InvalidStateTransitionSignatureError = require('../../../../lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
 const MissingPublicKeyError = require('../../../../lib/errors/consensus/signature/MissingPublicKeyError');
 const generateRandomIdentifier = require('../../../../lib/test/utils/generateRandomIdentifier');
-const ConsensusError = require('../../../../lib/errors/consensus/ConsensusError');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
+const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;
@@ -71,7 +71,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   });
 
   it('should return invalid result if owner id doesn\'t exist', async () => {
-    const consensusError = new ConsensusError('error');
+    const consensusError = new SomeConsensusError('error');
 
     validateIdentityExistenceResult.addError(consensusError);
 
@@ -159,7 +159,6 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.instanceOf(InvalidStateTransitionSignatureError);
-    expect(error.getRawStateTransition()).to.equal(stateTransition);
 
     expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);

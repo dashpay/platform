@@ -1,33 +1,26 @@
 const AbstractStateError = require('../AbstractStateError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class DocumentAlreadyPresentError extends AbstractStateError {
   /**
-   * @param {DocumentCreateTransition} documentTransition
-   * @param {Document} fetchedDocument
+   * @param {Buffer} documentId
    */
-  constructor(documentTransition, fetchedDocument) {
-    super('Document with the same ID is already present');
+  constructor(documentId) {
+    super(`Document ${Identifier.from(documentId)} is already present`);
 
-    this.documentTransition = documentTransition;
-    this.fetchedDocument = fetchedDocument;
+    this.documentId = documentId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get document create transition
+   * Get document ID
    *
-   * @return {DocumentCreateTransition}
+   * @return {Buffer}
    */
-  getDocumentTransition() {
-    return this.documentTransition;
-  }
-
-  /**
-   * Get fetched Document
-   *
-   * @return {Document}
-   */
-  getFetchedDocument() {
-    return this.fetchedDocument;
+  getDocumentId() {
+    return this.documentId;
   }
 }
 

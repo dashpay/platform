@@ -32,7 +32,9 @@ describe('validateIdentityExistence', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getIdentityId()).to.equal(identity.getId());
+    expect(error.getCode()).to.equal(2000);
+    expect(Buffer.isBuffer(error.getIdentityId())).to.be.true();
+    expect(error.getIdentityId()).to.deep.equal(identity.getId().toBuffer());
   });
 
   it('should return valid result', async () => {

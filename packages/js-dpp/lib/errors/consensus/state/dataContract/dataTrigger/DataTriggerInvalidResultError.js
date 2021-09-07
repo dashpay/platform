@@ -2,23 +2,14 @@ const AbstractDataTriggerError = require('./AbstractDataTriggerError');
 
 class DataTriggerInvalidResultError extends AbstractDataTriggerError {
   /**
-   * @param {DataTrigger} dataTrigger
-   * @param {DataContract} dataContract
-   * @param {Identifier|Buffer} ownerId
+   * @param {Buffer} dataContractId
+   * @param {Buffer} documentTransitionId
    */
-  constructor(dataTrigger, dataContract, ownerId) {
-    super('Data trigger have not returned any result', dataContract, ownerId);
+  constructor(dataContractId, documentTransitionId) {
+    super(dataContractId, documentTransitionId, 'Data trigger have not returned any result');
 
-    this.dataTrigger = dataTrigger;
-  }
-
-  /**
-   * Get data trigger
-   *
-   * @returns {DataTrigger}
-   */
-  getDataTrigger() {
-    return this.dataTrigger;
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 }
 

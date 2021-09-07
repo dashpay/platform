@@ -24,8 +24,6 @@ const { expectValidationError, expectJsonSchemaError } = require('../../../../..
 
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
-const ConsensusError = require('../../../../../../../lib/errors/consensus/ConsensusError');
-const DuplicateDocumentTransitionsError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsError');
 const InvalidDocumentTransitionIdError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTransitionIdError');
 const DataContractNotPresentError = require('../../../../../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
 const MissingDataContractIdError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDataContractIdError');
@@ -34,7 +32,9 @@ const InvalidDocumentTypeError = require('../../../../../../../lib/errors/consen
 const MissingDocumentTransitionActionError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDocumentTransitionActionError');
 const InvalidDocumentTransitionActionError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTransitionActionError');
 const InvalidIdentifierError = require('../../../../../../../lib/errors/consensus/basic/InvalidIdentifierError');
-const IdentifierError = require('../../../../../../../lib/identifier/errors/IdentifierError');
+const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
+const DuplicateDocumentTransitionsWithIdsError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIdsError');
+const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContract;
@@ -112,9 +112,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('protocolVersion');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
 
     it('should be an integer', async () => {
@@ -126,8 +126,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/protocolVersion');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should not be less than 0', async () => {
@@ -139,8 +139,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minimum');
-      expect(error.instancePath).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('minimum');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
     });
 
     it('should not be greater than current version (0)', async () => {
@@ -152,8 +152,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maximum');
-      expect(error.instancePath).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('maximum');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
     });
   });
 
@@ -167,9 +167,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('type');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('type');
     });
 
     it('should be equal 1', async () => {
@@ -181,9 +181,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/type');
-      expect(error.keyword).to.equal('const');
-      expect(error.params.allowedValue).to.equal(1);
+      expect(error.getInstancePath()).to.equal('/type');
+      expect(error.getKeyword()).to.equal('const');
+      expect(error.getParams().allowedValue).to.equal(1);
     });
   });
 
@@ -199,9 +199,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('ownerId');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('ownerId');
     });
 
     it('should be a byte array', async () => {
@@ -215,10 +215,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/ownerId/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/ownerId/0');
+      expect(error.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.keyword).to.equal('byteArray');
+      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -233,7 +233,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/ownerId');
-      expect(error.keyword).to.equal('minItems');
+      expect(error.getKeyword()).to.equal('minItems');
     });
 
     it('should be no longer than 32 bytes', async () => {
@@ -248,7 +248,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/ownerId');
-      expect(error.keyword).to.equal('maxItems');
+      expect(error.getKeyword()).to.equal('maxItems');
     });
   });
 
@@ -265,8 +265,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('transitions');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('transitions');
     });
 
     it('should be an array', async () => {
@@ -281,7 +281,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/transitions');
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should have at least one element', async () => {
@@ -296,8 +296,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/transitions');
-      expect(error.keyword).to.equal('minItems');
-      expect(error.params.limit).to.equal(1);
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getParams().limit).to.equal(1);
     });
 
     it('should have no more than 10 elements', async () => {
@@ -310,8 +310,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/transitions');
-      expect(error.keyword).to.equal('maxItems');
-      expect(error.params.limit).to.equal(10);
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getParams().limit).to.equal(10);
     });
 
     it('should have objects as elements', async () => {
@@ -324,7 +324,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/transitions/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     describe('document transition', () => {
@@ -341,8 +341,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.instancePath).to.equal('');
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('$id');
+          expect(error.getKeyword()).to.equal('required');
+          expect(error.getParams().missingProperty).to.equal('$id');
         });
 
         it('should be a byte array', async () => {
@@ -357,9 +357,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           const [error, byteArrayError] = result.getErrors();
 
           expect(error.instancePath).to.equal('/$id/0');
-          expect(error.keyword).to.equal('type');
+          expect(error.getKeyword()).to.equal('type');
 
-          expect(byteArrayError.keyword).to.equal('byteArray');
+          expect(byteArrayError.getKeyword()).to.equal('byteArray');
         });
 
         it('should be no less than 32 bytes', async () => {
@@ -374,8 +374,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.instancePath).to.equal('/$id');
-          expect(error.keyword).to.equal('minItems');
-          expect(error.params.limit).to.equal(32);
+          expect(error.getKeyword()).to.equal('minItems');
+          expect(error.getParams().limit).to.equal(32);
         });
 
         it('should be no longer than 32 bytes', async () => {
@@ -390,8 +390,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.instancePath).to.equal('/$id');
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.params.limit).to.equal(32);
+          expect(error.getKeyword()).to.equal('maxItems');
+          expect(error.getParams().limit).to.equal(32);
         });
 
         it('should no have duplicate IDs in the state transition', async () => {
@@ -401,11 +401,14 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
 
-          expectValidationError(result, DuplicateDocumentTransitionsError);
+          expectValidationError(result, DuplicateDocumentTransitionsWithIdsError);
 
           const [error] = result.getErrors();
 
-          expect(error.getRawDocumentTransitions()).to.deep.equal(duplicates);
+          expect(error.getCode()).to.equal(1019);
+          expect(error.getDocumentTransitionReferences()).to.deep.equal(
+            duplicates.map((d) => [d.$type, d.$id]),
+          );
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
@@ -432,7 +435,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.getRawDocument()).to.equal(firstDocumentTransition);
+          expect(error.getCode()).to.equal(1025);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
@@ -459,8 +462,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const [error] = result.getErrors();
 
+          expect(error.getCode()).to.equal(1006);
+
           expect(error.getIdentifierName()).to.equal('$dataContractId');
-          expect(error.getIdentifierError()).to.be.instanceOf(IdentifierError);
+
+          expect(error.getIdentifierError()).to.be.instanceOf(Error);
           expect(error.getIdentifierError().message).to.equal('Identifier expects Buffer');
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
@@ -486,6 +492,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const [error] = result.getErrors();
 
+          expect(error.getCode()).to.equal(1018);
           expect(error.getDataContractId()).to.deep.equal(dataContract.getId());
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
@@ -510,7 +517,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.getRawDocument()).to.equal(firstDocumentTransition);
+          expect(error.getCode()).to.equal(1027);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
@@ -532,8 +539,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const [error] = result.getErrors();
 
+          expect(error.getCode()).to.equal(1024);
           expect(error.getType()).to.equal(firstDocumentTransition.$type);
-          expect(error.getDataContract()).to.equal(dataContract);
+
+          expect(Buffer.isBuffer(error.getDataContractId())).to.be.true();
+          expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
@@ -557,7 +567,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           const [error] = result.getErrors();
 
-          expect(error.getRawDocumentTransition()).to.equal(firstDocumentTransition);
+          expect(error.getCode()).to.equal(1026);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
@@ -596,6 +606,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           it('should be valid generated ID', async () => {
             const [firstTransition] = rawStateTransition.transitions;
 
+            const expectedId = firstTransition.$id;
             firstTransition.$id = generateRandomIdentifier();
 
             const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
@@ -604,7 +615,13 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.getRawDocumentTransition()).to.deep.equal(firstTransition);
+            expect(error.getCode()).to.equal(1023);
+
+            expect(Buffer.isBuffer(error.getExpectedId())).to.be.true();
+            expect(error.getExpectedId()).to.deep.equal(expectedId);
+
+            expect(Buffer.isBuffer(error.getInvalidId())).to.be.true();
+            expect(error.getInvalidId()).to.deep.equal(firstTransition.$id);
 
             expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
               dataContract.getId(),
@@ -630,8 +647,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('$entropy');
+            expect(error.getKeyword()).to.equal('required');
+            expect(error.getParams().missingProperty).to.equal('$entropy');
           });
 
           it('should be a byte array', async () => {
@@ -646,9 +663,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [error, byteArrayError] = result.getErrors();
 
             expect(error.instancePath).to.equal('/$entropy/0');
-            expect(error.keyword).to.equal('type');
+            expect(error.getKeyword()).to.equal('type');
 
-            expect(byteArrayError.keyword).to.equal('byteArray');
+            expect(byteArrayError.getKeyword()).to.equal('byteArray');
           });
 
           it('should be no less than 32 bytes', async () => {
@@ -663,8 +680,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/$entropy');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.params.limit).to.equal(32);
+            expect(error.getKeyword()).to.equal('minItems');
+            expect(error.getParams().limit).to.equal(32);
           });
 
           it('should be no longer than 32 bytes', async () => {
@@ -679,8 +696,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/$entropy');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.params.limit).to.equal(32);
+            expect(error.getKeyword()).to.equal('maxItems');
+            expect(error.getParams().limit).to.equal(32);
           });
         });
       });
@@ -716,8 +733,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             const [error] = result.getErrors();
 
-            expect(error.params.missingProperty).to.equal('$revision');
-            expect(error.keyword).to.equal('required');
+            expect(error.getParams().missingProperty).to.equal('$revision');
+            expect(error.getKeyword()).to.equal('required');
           });
 
           it('should be a number', async () => {
@@ -732,7 +749,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/$revision');
-            expect(error.keyword).to.equal('type');
+            expect(error.getKeyword()).to.equal('type');
           });
 
           it('should be multiple of 1.0', async () => {
@@ -747,7 +764,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/$revision');
-            expect(error.keyword).to.equal('type');
+            expect(error.getKeyword()).to.equal('type');
           });
 
           it('should have a minimum value of 1', async () => {
@@ -762,8 +779,44 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/$revision');
-            expect(error.keyword).to.equal('minimum');
+            expect(error.getKeyword()).to.equal('minimum');
           });
+        });
+      });
+
+      describe('delete', () => {
+        beforeEach(() => {
+          documentTransitions = getDocumentTransitionsFixture({
+            create: [],
+            replace: [],
+            delete: documents,
+          });
+
+          stateTransition = new DocumentsBatchTransition({
+            protocolVersion: protocolVersion.latestVersion,
+            ownerId,
+            contractId: dataContract.getId(),
+            transitions: documentTransitions.map((t) => t.toObject()),
+            signature: Buffer.alloc(65),
+            signaturePublicKeyId: 0,
+          }, [dataContract]);
+
+          rawStateTransition = stateTransition.toObject();
+        });
+
+        it('should return invalid result if delete transaction is not valid', async () => {
+          const [documentTransition] = rawStateTransition.transitions;
+
+          delete documentTransition.$id;
+
+          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+
+          expectJsonSchemaError(result);
+
+          const [error] = result.getErrors();
+
+          expect(error.getParams().missingProperty).to.equal('$id');
+          expect(error.getKeyword()).to.equal('required');
         });
       });
 
@@ -774,11 +827,15 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
         const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
 
-        expectValidationError(result, DuplicateDocumentTransitionsError);
+        expectValidationError(result, DuplicateDocumentTransitionsWithIndicesError);
 
         const [error] = result.getErrors();
 
-        expect(error.getRawDocumentTransitions()).to.deep.equal(duplicates);
+        expect(error.getCode()).to.equal(1020);
+
+        expect(error.getDocumentTransitionReferences()).to.deep.equal(
+          duplicates.map((d) => [d.$type, d.$id]),
+        );
 
         expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
           dataContract.getId(),
@@ -793,7 +850,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       });
 
       it('should return invalid result if compound index doesn\'t contain all fields', async () => {
-        const consensusError = new ConsensusError('error');
+        const consensusError = new SomeConsensusError('error');
 
         validatePartialCompoundIndicesMock.returns(
           new ValidationResult([consensusError]),
@@ -832,8 +889,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('signature');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('signature');
     });
 
     it('should be a byte array', async () => {
@@ -846,9 +903,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error, byteArrayError] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signature/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.keyword).to.equal('byteArray');
+      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be not less than 65 bytes', async () => {
@@ -861,8 +918,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signature');
-      expect(error.keyword).to.equal('minItems');
-      expect(error.params.limit).to.equal(65);
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getParams().limit).to.equal(65);
     });
 
     it('should be not longer than 65 bytes', async () => {
@@ -875,8 +932,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signature');
-      expect(error.keyword).to.equal('maxItems');
-      expect(error.params.limit).to.equal(65);
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getParams().limit).to.equal(65);
     });
   });
 
@@ -891,7 +948,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signaturePublicKeyId');
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should not be < 0', async () => {
@@ -904,7 +961,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signaturePublicKeyId');
-      expect(error.keyword).to.equal('minimum');
+      expect(error.getKeyword()).to.equal('minimum');
     });
   });
 

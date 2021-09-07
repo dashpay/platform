@@ -14,9 +14,8 @@ async function rejectDataTrigger(documentTransition, context) {
 
   result.addError(
     new DataTriggerConditionError(
-      documentTransition,
-      context.getDataContract(),
-      context.getOwnerId(),
+      documentTransition.getId().toBuffer(),
+      context.getDataContract().getId().toBuffer(),
       'Action is not allowed',
     ),
   );

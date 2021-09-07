@@ -1,18 +1,25 @@
 const AbstractStateError = require('../AbstractStateError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class DocumentTimestampWindowViolationError extends AbstractStateError {
   /**
    * @param {string} timestampName
-   * @param {DocumentCreateTransition
-   *        |DocumentReplaceTransition} documentTransition
-   * @param {Document} fetchedDocument
+   * @param {Buffer} documentId
+   * @param {Date} timestamp
+   * @param {Date} timeWindowStart
+   * @param {Date} timeWindowEnd
    */
-  constructor(timestampName, documentTransition, fetchedDocument) {
-    super(`Document ${timestampName} timestamp are out of block time window`);
+  constructor(timestampName, documentId, timestamp, timeWindowStart, timeWindowEnd) {
+    super(`Document ${Identifier.from(documentId)} ${timestampName} timestamp (${timestamp}) are out of block time window from ${timeWindowStart} and ${timeWindowEnd}`);
 
-    this.documentTransition = documentTransition;
-    this.fetchedDocument = fetchedDocument;
     this.timestampName = timestampName;
+    this.documentId = documentId;
+    this.timestamp = timestamp;
+    this.timeWindowStart = timeWindowStart;
+    this.timeWindowEnd = timeWindowEnd;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
@@ -25,21 +32,35 @@ class DocumentTimestampWindowViolationError extends AbstractStateError {
   }
 
   /**
-   * Get Document Action Transition
+   * Get Document ID
    *
-   * @return {DocumentReplaceTransition|DocumentDeleteTransition}
+   * @return {Buffer}
    */
-  getDocumentTransition() {
-    return this.documentTransition;
+  getDocumentId() {
+    return this.documentId;
   }
 
   /**
-   * Get fetched Document
+   * Get timestamp
    *
-   * @return {Document}
+   * @return {Date}
    */
-  getFetchedDocument() {
-    return this.fetchedDocument;
+  getTimestamp() {
+    return this.timestamp;
+  }
+
+  /**
+   * @returns {Date}
+   */
+  getTimeWindowStart() {
+    return this.timeWindowStart;
+  }
+
+  /**
+   * @returns {Date}
+   */
+  getTimeWindowEnd() {
+    return this.timeWindowEnd;
   }
 }
 

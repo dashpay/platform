@@ -5,24 +5,36 @@ const AbstractStateError = require('../../AbstractStateError');
  */
 class AbstractDataTriggerError extends AbstractStateError {
   /**
+   * @param {Buffer} dataContractId
+   * @param {Buffer} documentTransitionId
    * @param {string} message
-   * @param {DataContract} dataContract
-   * @param {Identifier|Buffer} ownerId
    */
-  constructor(message, dataContract, ownerId) {
+  constructor(dataContractId, documentTransitionId, message) {
     super(message);
 
-    this.dataContract = dataContract;
-    this.ownerId = ownerId;
+    this.dataContractId = dataContractId;
+    this.documentTransitionId = documentTransitionId;
   }
 
   /**
-   * Get data trigger data contract
-   *
-   * @return {DataContract}
+   * @returns {Buffer}
    */
-  getDataContract() {
-    return this.dataContract;
+  getDocumentTransitionId() {
+    return this.documentTransitionId;
+  }
+
+  /**
+   * @returns {Buffer}
+   */
+  getDataContractId() {
+    return this.dataContractId;
+  }
+
+  /**
+   * @param {Identifier} ownerId
+   */
+  setOwnerId(ownerId) {
+    this.ownerId = ownerId;
   }
 
   /**
@@ -32,6 +44,26 @@ class AbstractDataTriggerError extends AbstractStateError {
    */
   getOwnerId() {
     return this.ownerId;
+  }
+
+  /**
+   * @param {
+   *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
+   * } documentTransition
+   */
+  setDocumentTransition(documentTransition) {
+    this.documentTransition = documentTransition;
+  }
+
+  /**
+   * Get document transition
+   *
+   * @returns {
+   *   DocumentCreateTransition|DocumentReplaceTransition|DocumentDeleteTransition
+   * }
+   */
+  getDocumentTransition() {
+    return this.documentTransition;
   }
 }
 

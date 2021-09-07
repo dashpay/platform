@@ -31,7 +31,7 @@ function executeDataTriggersFactory(getDataTriggers) {
   /**
    * Execute data trigger for a document with a context
    *
-   * @typedef executeDataTriggers
+   * @typedef {executeDataTriggers}
    *
    * @param {DocumentCreateTransition[]
    *        |DocumentReplaceTransition[]

@@ -12,6 +12,7 @@ const createStateRepositoryMock = require('../../../../lib/test/mocks/createStat
 const hash = require('../../../../lib/util/hash');
 
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
+const Identifier = require('../../../../lib/identifier/Identifier');
 
 describe('createDomainDataTrigger', () => {
   let parentDocumentTransition;
@@ -177,9 +178,13 @@ describe('createDomainDataTrigger', () => {
   });
 
   it('should fail with invalid dashUniqueIdentityId', async () => {
+    const dashUniqueIdentityId = Identifier.from(
+      Buffer.alloc(32, 5),
+    );
+
     childDocument = getChildDocumentFixture({
       records: {
-        dashUniqueIdentityId: Buffer.alloc(32, 5),
+        dashUniqueIdentityId: dashUniqueIdentityId.toBuffer(),
       },
     });
 
@@ -197,13 +202,17 @@ describe('createDomainDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('ownerId doesn\'t match dashUniqueIdentityId');
+    expect(error.message).to.equal(`ownerId ${childDocument.getOwnerId()} doesn't match dashUniqueIdentityId ${dashUniqueIdentityId}`);
   });
 
   it('should fail with invalid dashAliasIdentityId', async () => {
+    const dashUniqueIdentityId = Identifier.from(
+      Buffer.alloc(32, 2),
+    );
+
     childDocument = getChildDocumentFixture({
       records: {
-        dashAliasIdentityId: Buffer.alloc(32, 2),
+        dashAliasIdentityId: dashUniqueIdentityId.toBuffer(),
       },
     });
 
@@ -221,7 +230,7 @@ describe('createDomainDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('ownerId doesn\'t match dashAliasIdentityId');
+    expect(error.message).to.equal(`ownerId ${childDocument.getOwnerId()} doesn't match dashAliasIdentityId ${dashUniqueIdentityId}`);
   });
 
   it('should fail with preorder document was not found', async () => {
@@ -266,7 +275,7 @@ describe('createDomainDataTrigger', () => {
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
     expect(error.message).to.equal(
-      'Full domain name length can not be more than 253 characters long',
+      'Full domain name length can not be more than 253 characters long but got 518',
     );
   });
 

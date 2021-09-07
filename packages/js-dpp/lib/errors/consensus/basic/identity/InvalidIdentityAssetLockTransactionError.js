@@ -6,6 +6,23 @@ class InvalidIdentityAssetLockTransactionError extends AbstractBasicError {
    */
   constructor(message) {
     super(`Invalid asset lock transaction: ${message}`);
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
+  }
+
+  /**
+   * @param {Error} error
+   */
+  setValidationError(error) {
+    this.validationError = error;
+  }
+
+  /**
+   * @returns {Error}
+   */
+  getValidationError() {
+    return this.validationError;
   }
 }
 

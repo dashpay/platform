@@ -1,13 +1,19 @@
 const rewiremock = require('rewiremock/node');
 
 const { Transaction } = require('@dashevo/dashcore-lib');
+
 const validateAssetLockTransactionFactory = require('../../../../../lib/identity/stateTransition/assetLockProof/validateAssetLockTransactionFactory');
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+
 const ValidationResult = require('../../../../../lib/validation/ValidationResult');
+
+const { expectValidationError } = require('../../../../../lib/test/expect/expectError');
+
 const InvalidIdentityAssetLockTransactionError = require('../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
 const IdentityAssetLockTransactionOutputNotFoundError = require('../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutputNotFoundError');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const InvalidIdentityAssetLockTransactionOutputError = require('../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionOutputError');
+const InvalidAssetLockTransactionOutputReturnSize = require('../../../../../lib/errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSize');
 
 function getValidateAssetLockTransactionFactoryMock(TransactionClassMock) {
   return rewiremock.proxy(
@@ -55,14 +61,12 @@ describe('validateAssetLockTransactionFactory', () => {
 
     const result = await validateAssetLockTransaction(rawTransaction, outputIndex);
 
-    expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.false();
-    expect(result.getErrors()).to.be.an('array');
-    expect(result.getErrors()).to.have.lengthOf(1);
+    expectValidationError(result, InvalidIdentityAssetLockTransactionError);
 
     const [error] = result.getErrors();
 
-    expect(error).to.be.an.instanceOf(InvalidIdentityAssetLockTransactionError);
+    expect(error.getCode()).to.equal(1038);
+    expect(error.getValidationError()).to.be.instanceOf(Error);
 
     expect(result.getData()).to.be.undefined();
     expect(stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed).to.not.be.called();
@@ -72,14 +76,11 @@ describe('validateAssetLockTransactionFactory', () => {
     outputIndex = 42;
     const result = await validateAssetLockTransaction(rawTransaction, outputIndex);
 
-    expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.false();
-    expect(result.getErrors()).to.be.an('array');
-    expect(result.getErrors()).to.have.lengthOf(1);
+    expectValidationError(result, IdentityAssetLockTransactionOutputNotFoundError);
 
     const [error] = result.getErrors();
 
-    expect(error).to.be.an.instanceOf(IdentityAssetLockTransactionOutputNotFoundError);
+    expect(error.getCode()).to.equal(1034);
     expect(error.getOutputIndex()).to.equal(outputIndex);
 
     expect(result.getData()).to.be.undefined();
@@ -103,18 +104,18 @@ describe('validateAssetLockTransactionFactory', () => {
     validateAssetLockTransaction = validateAssetLockTransactionFactoryMocked(stateRepositoryMock);
 
     const result = await validateAssetLockTransaction(rawTransaction, outputIndex);
-    expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.false();
-    expect(result.getErrors()).to.be.an('array');
-    expect(result.getErrors()).to.have.lengthOf(1);
+
+    expectValidationError(result, InvalidIdentityAssetLockTransactionOutputError);
 
     const [error] = result.getErrors();
-    expect(error).to.be.an.instanceOf(InvalidIdentityAssetLockTransactionOutputError);
+
+    expect(error.getCode()).to.equal(1039);
+    expect(error.getOutputIndex()).to.equal(outputIndex);
   });
 
   it('should contain valid public key hash', async function it() {
     const isDataOut = this.sinonSandbox.stub().returns(true);
-    const getData = this.sinonSandbox.stub().returns('');
+    const getData = this.sinonSandbox.stub().returns(Buffer.alloc(0));
 
     TransactionClassMock = function transactionClassMock() {
       this.outputs = [{
@@ -131,13 +132,13 @@ describe('validateAssetLockTransactionFactory', () => {
     validateAssetLockTransaction = validateAssetLockTransactionFactoryMocked(stateRepositoryMock);
 
     const result = await validateAssetLockTransaction(rawTransaction, outputIndex);
-    expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.false();
-    expect(result.getErrors()).to.be.an('array');
-    expect(result.getErrors()).to.have.lengthOf(1);
+
+    expectValidationError(result, InvalidAssetLockTransactionOutputReturnSize);
 
     const [error] = result.getErrors();
-    expect(error).to.be.an.instanceOf(InvalidIdentityAssetLockTransactionOutputError);
+
+    expect(error.getCode()).to.equal(1037);
+    expect(error.getOutputIndex()).to.equal(outputIndex);
   });
 
   it('should return IdentityAssetLockTransactionOutPointAlreadyExistsError if outPoint was already used', async () => {
@@ -145,18 +146,17 @@ describe('validateAssetLockTransactionFactory', () => {
 
     const result = await validateAssetLockTransaction(rawTransaction, outputIndex);
 
-    expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.false();
-    expect(result.getErrors()).to.be.an('array');
-    expect(result.getErrors()).to.have.lengthOf(1);
+    expectValidationError(result, IdentityAssetLockTransactionOutPointAlreadyExistsError);
 
     const [error] = result.getErrors();
 
-    expect(error).to.be.an.instanceOf(IdentityAssetLockTransactionOutPointAlreadyExistsError);
+    expect(error.getCode()).to.equal(1033);
 
     const transaction = new Transaction(rawTransaction);
 
-    expect(error.getOutPoint()).to.deep.equal(transaction.getOutPointBuffer(outputIndex));
+    expect(Buffer.isBuffer(error.getTransactionId())).to.be.true();
+    expect(error.getTransactionId()).to.deep.equal(Buffer.from(transaction.id, 'hex'));
+    expect(error.getOutputIndex()).to.deep.equal(outputIndex);
 
     expect(result.getData()).to.be.undefined();
     expect(stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed)

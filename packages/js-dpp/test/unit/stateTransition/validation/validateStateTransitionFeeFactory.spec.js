@@ -66,6 +66,7 @@ describe('validateStateTransitionFeeFactory', () => {
 
       const [error] = result.getErrors();
 
+      expect(error.getCode()).to.equal(3000);
       expect(error.getBalance()).to.equal(identity.balance);
 
       expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
@@ -124,6 +125,7 @@ describe('validateStateTransitionFeeFactory', () => {
 
       const [error] = result.getErrors();
 
+      expect(error.getCode()).to.equal(3000);
       expect(error.getBalance()).to.equal(identity.balance);
 
       expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
@@ -179,6 +181,7 @@ describe('validateStateTransitionFeeFactory', () => {
 
       const [error] = result.getErrors();
 
+      expect(error.getCode()).to.equal(3000);
       expect(error.getBalance()).to.equal(outputAmount);
 
       expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
@@ -236,6 +239,7 @@ describe('validateStateTransitionFeeFactory', () => {
 
       const [error] = result.getErrors();
 
+      expect(error.getCode()).to.equal(3000);
       expect(error.getBalance()).to.equal(outputAmount + identity.balance);
 
       expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(

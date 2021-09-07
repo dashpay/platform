@@ -3,13 +3,15 @@ const AbstractBasicError = require('./AbstractBasicError');
 class InvalidIdentifierError extends AbstractBasicError {
   /**
    * @param {string} identifierName
-   * @param {IdentifierError} error
+   * @param {string} message
    */
-  constructor(identifierName, error) {
-    super(`Invalid ${identifierName}: ${error.message}`);
+  constructor(identifierName, message) {
+    super(`Invalid ${identifierName}: ${message}`);
 
     this.identifierName = identifierName;
-    this.error = error;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
@@ -22,12 +24,21 @@ class InvalidIdentifierError extends AbstractBasicError {
   }
 
   /**
+   * Set identifier error
+   *
+   * @param {Error} error
+   */
+  setIdentifierError(error) {
+    this.identifierError = error;
+  }
+
+  /**
    * Get identifier error
    *
-   * @return {IdentifierError}
+   * @return {Error}
    */
   getIdentifierError() {
-    return this.error;
+    return this.identifierError;
   }
 }
 

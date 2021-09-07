@@ -2,7 +2,6 @@ const AbstractIndexError = require('./AbstractIndexError');
 
 class InvalidIndexedPropertyConstraintError extends AbstractIndexError {
   /**
-   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    * @param {string} propertyName
@@ -10,19 +9,17 @@ class InvalidIndexedPropertyConstraintError extends AbstractIndexError {
    * @param {string} reason
    */
   constructor(
-    rawDataContract,
     documentType,
     indexDefinition,
     propertyName,
     constraintName,
     reason,
   ) {
-    const message = `Indexed property '${propertyName}' have invalid constraint '${constraintName}',`
+    const message = `Indexed property '${propertyName}' for ${documentType} document have invalid constraint '${constraintName}',`
       + ` reason '${reason}'`;
 
     super(
       message,
-      rawDataContract,
       documentType,
       indexDefinition,
     );
@@ -30,6 +27,9 @@ class InvalidIndexedPropertyConstraintError extends AbstractIndexError {
     this.propertyName = propertyName;
     this.constraintName = constraintName;
     this.reason = reason;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**

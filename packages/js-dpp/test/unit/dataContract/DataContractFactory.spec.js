@@ -10,9 +10,9 @@ const DataContractCreateTransition = require('../../../lib/dataContract/stateTra
 const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const InvalidDataContractError = require('../../../lib/dataContract/errors/InvalidDataContractError');
-const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
 
 describe('DataContractFactory', () => {
   let DataContractFactory;
@@ -101,7 +101,7 @@ describe('DataContractFactory', () => {
     });
 
     it('should throw an error if passed object is not valid', async () => {
-      const validationError = new ConsensusError('test');
+      const validationError = new SomeConsensusError('test');
 
       validateDataContractMock.returns(new ValidationResult([validationError]));
 

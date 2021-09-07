@@ -2,21 +2,23 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class IdentityAssetLockTransactionIsNotFoundError extends AbstractBasicError {
   /**
-   *
-   * @param {Buffer} outPoint
+   * @param {Buffer} transactionId
    */
-  constructor(outPoint) {
-    super('Asset Lock transaction with specified outPoint was not found');
+  constructor(transactionId) {
+    super(`Asset Lock transaction ${transactionId.toString('hex')} is not found`);
 
-    this.outPoint = outPoint;
+    this.transactionId = transactionId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
    *
    * @returns {Buffer}
    */
-  getOutPoint() {
-    return this.outPoint;
+  getTransactionId() {
+    return this.transactionId;
   }
 }
 

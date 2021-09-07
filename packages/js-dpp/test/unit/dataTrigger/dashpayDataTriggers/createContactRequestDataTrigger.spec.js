@@ -83,6 +83,6 @@ describe('createContactRequestDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('Core height is out of block height window');
+    expect(error.message).to.equal('Core height 10 is out of block height window from 34 to 50');
   });
 });

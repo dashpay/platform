@@ -8,7 +8,7 @@ const DocumentsBatchTransition = require('./stateTransition/DocumentsBatchTransi
 const AbstractDocumentTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 const DocumentCreateTransition = require('./stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
-const ConsensusError = require('../errors/consensus/ConsensusError');
+const AbstractConsensusError = require('../errors/consensus/AbstractConsensusError');
 const InvalidActionNameError = require('./errors/InvalidActionNameError');
 const NoDocumentsSuppliedError = require('./errors/NoDocumentsSuppliedError');
 const MismatchOwnerIdsError = require('./errors/MismatchOwnerIdsError');
@@ -39,7 +39,7 @@ class DocumentFactory {
    * Create Document
    *
    * @param {DataContract} dataContract
-   * @param {Buffer} ownerId
+   * @param {Identifier|Buffer} ownerId
    * @param {string} type
    * @param {Object} [data]
    * @return {Document}
@@ -174,7 +174,7 @@ class DocumentFactory {
 
       rawDocument.$protocolVersion = protocolVersion;
     } catch (error) {
-      if (error instanceof ConsensusError) {
+      if (error instanceof AbstractConsensusError) {
         throw new InvalidDocumentError([error]);
       }
 

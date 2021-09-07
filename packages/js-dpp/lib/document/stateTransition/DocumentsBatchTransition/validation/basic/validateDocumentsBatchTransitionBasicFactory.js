@@ -4,7 +4,7 @@ const AbstractDocumentTransition = require('../../documentTransition/AbstractDoc
 
 const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
 const InvalidDocumentTransitionIdError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTransitionIdError');
-const DuplicateDocumentTransitionsError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsError');
+const DuplicateDocumentTransitionsWithIdsError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsWithIdsError');
 const MissingDocumentTransitionTypeError = require('../../../../../errors/consensus/basic/document/MissingDocumentTransitionTypeError');
 const InvalidDocumentTypeError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTypeError');
 const InvalidDocumentTransitionActionError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTransitionActionError');
@@ -21,6 +21,7 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
 
 const documentsBatchTransitionSchema = require('../../../../../../schema/document/stateTransition/documentsBatch.json');
 const createAndValidateIdentifier = require('../../../../../identifier/createAndValidateIdentifier');
+const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
 
 /**
  * @param {findDuplicatesById} findDuplicatesById
@@ -84,7 +85,7 @@ function validateDocumentsBatchTransitionBasicFactory(
       // Validate $type
       if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$type')) {
         result.addError(
-          new MissingDocumentTransitionTypeError(rawDocumentTransition),
+          new MissingDocumentTransitionTypeError(),
         );
 
         return;
@@ -92,7 +93,10 @@ function validateDocumentsBatchTransitionBasicFactory(
 
       if (!dataContract.isDocumentDefined(rawDocumentTransition.$type)) {
         result.addError(
-          new InvalidDocumentTypeError(rawDocumentTransition.$type, dataContract),
+          new InvalidDocumentTypeError(
+            rawDocumentTransition.$type,
+            dataContract.getId().toBuffer(),
+          ),
         );
 
         return;
@@ -101,7 +105,7 @@ function validateDocumentsBatchTransitionBasicFactory(
       // Validate $action
       if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$action')) {
         result.addError(
-          new MissingDocumentTransitionActionError(rawDocumentTransition),
+          new MissingDocumentTransitionActionError(),
         );
 
         return;
@@ -147,7 +151,10 @@ function validateDocumentsBatchTransitionBasicFactory(
 
             if (!rawDocumentTransition.$id.equals(documentId)) {
               result.addError(
-                new InvalidDocumentTransitionIdError(rawDocumentTransition),
+                new InvalidDocumentTransitionIdError(
+                  documentId,
+                  rawDocumentTransition.$id,
+                ),
               );
             }
           }
@@ -164,9 +171,10 @@ function validateDocumentsBatchTransitionBasicFactory(
 
           break;
         default:
-          throw new InvalidDocumentTransitionActionError(
-            rawDocumentTransition.$action,
-            rawDocumentTransition,
+          result.addError(
+            new InvalidDocumentTransitionActionError(
+              rawDocumentTransition.$action,
+            ),
           );
       }
     });
@@ -179,7 +187,11 @@ function validateDocumentsBatchTransitionBasicFactory(
     const duplicateTransitions = findDuplicatesById(rawDocumentTransitions);
     if (duplicateTransitions.length > 0) {
       result.addError(
-        new DuplicateDocumentTransitionsError(duplicateTransitions),
+        new DuplicateDocumentTransitionsWithIdsError(
+          duplicateTransitions.map(
+            (documentTransition) => [documentTransition.$type, documentTransition.$id],
+          ),
+        ),
       );
     }
 
@@ -191,7 +203,11 @@ function validateDocumentsBatchTransitionBasicFactory(
 
     if (duplicateTransitionsByIndices.length > 0) {
       result.addError(
-        new DuplicateDocumentTransitionsError(duplicateTransitionsByIndices),
+        new DuplicateDocumentTransitionsWithIndicesError(
+          duplicateTransitionsByIndices.map(
+            (documentTransition) => [documentTransition.$type, documentTransition.$id],
+          ),
+        ),
       );
     }
 
@@ -232,7 +248,7 @@ function validateDocumentsBatchTransitionBasicFactory(
       .reduce((obj, rawDocumentTransition) => {
         if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$dataContractId')) {
           result.addError(
-            new MissingDataContractIdError(rawDocumentTransition),
+            new MissingDataContractIdError(),
           );
 
           return obj;

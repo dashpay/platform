@@ -51,10 +51,12 @@ function validatePartialCompoundIndices(
         const isOk = allAreDefined || allAreUndefined;
 
         if (!isOk) {
-          result.addError(new InconsistentCompoundIndexDataError(
-            rawDocumentTransition.$type,
-            indexDefinition,
-          ));
+          result.addError(
+            new InconsistentCompoundIndexDataError(
+              rawDocumentTransition.$type,
+              indexDefinition.properties.map((i) => Object.keys(i)[0]),
+            ),
+          );
         }
       });
   });

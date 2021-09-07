@@ -2,19 +2,31 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class IdentityAssetLockTransactionOutPointAlreadyExistsError extends AbstractBasicError {
   /**
-   * @param {Buffer} outPoint
+   * @param {Buffer} transactionId
+   * @param {number} outputIndex
    */
-  constructor(outPoint) {
-    super('Asset lock transaction outPoint already exists');
+  constructor(transactionId, outputIndex) {
+    super(`Asset lock transaction ${transactionId.toString('hex')} output ${outputIndex} already used`);
 
-    this.outPoint = outPoint;
+    this.transactionId = transactionId;
+    this.outputIndex = outputIndex;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
    * @return {Buffer}
    */
-  getOutPoint() {
-    return this.outPoint;
+  getTransactionId() {
+    return this.transactionId;
+  }
+
+  /**
+   * @return {number}
+   */
+  getOutputIndex() {
+    return this.outputIndex;
   }
 }
 

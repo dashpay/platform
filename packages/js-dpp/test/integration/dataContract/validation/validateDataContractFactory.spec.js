@@ -24,7 +24,9 @@ const SystemPropertyIndexAlreadyPresentError = require('../../../../lib/errors/c
 const UniqueIndicesLimitReachedError = require('../../../../lib/errors/consensus/basic/dataContract/UniqueIndicesLimitReachedError');
 const InvalidIndexedPropertyConstraintError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
 const InvalidCompoundIndexError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidCompoundIndexError');
-const IncompatibleRe2PatternError = require('../../../../lib/document/errors/IncompatibleRe2PatternError');
+const IncompatibleRe2PatternError = require('../../../../lib/errors/consensus/basic/dataContract/IncompatibleRe2PatternError');
+const InvalidJsonSchemaRefError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
+const JsonSchemaCompilationError = require('../../../../lib/errors/consensus/basic/JsonSchemaCompilationError');
 
 describe('validateDataContractFactory', function main() {
   this.timeout(15000);
@@ -75,9 +77,9 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('protocolVersion');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
 
     it('should be an integer', async () => {
@@ -89,8 +91,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/protocolVersion');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should not be less than 0', async () => {
@@ -102,8 +104,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minimum');
-      expect(error.instancePath).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('minimum');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
     });
 
     it('should not be greater than current version (0)', async () => {
@@ -115,8 +117,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maximum');
-      expect(error.instancePath).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('maximum');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
     });
   });
 
@@ -130,9 +132,9 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('$schema');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('$schema');
     });
 
     it('should be a string', async () => {
@@ -144,8 +146,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/$schema');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/$schema');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should be a particular url', async () => {
@@ -157,8 +159,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('const');
-      expect(error.instancePath).to.equal('/$schema');
+      expect(error.getKeyword()).to.equal('const');
+      expect(error.getInstancePath()).to.equal('/$schema');
     });
   });
 
@@ -172,9 +174,9 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('ownerId');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('ownerId');
     });
 
     it('should be a byte array', async () => {
@@ -186,10 +188,10 @@ describe('validateDataContractFactory', function main() {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/ownerId/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/ownerId/0');
+      expect(error.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.keyword).to.equal('byteArray');
+      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -201,8 +203,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/ownerId');
-      expect(error.keyword).to.equal('minItems');
+      expect(error.getInstancePath()).to.equal('/ownerId');
+      expect(error.getKeyword()).to.equal('minItems');
     });
 
     it('should be no longer than 32 bytes', async () => {
@@ -214,8 +216,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/ownerId');
-      expect(error.keyword).to.equal('maxItems');
+      expect(error.getInstancePath()).to.equal('/ownerId');
+      expect(error.getKeyword()).to.equal('maxItems');
     });
   });
 
@@ -229,9 +231,9 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('$id');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('$id');
     });
 
     it('should be a byte array', async () => {
@@ -243,10 +245,10 @@ describe('validateDataContractFactory', function main() {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/$id/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/$id/0');
+      expect(error.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.keyword).to.equal('byteArray');
+      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -258,8 +260,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/$id');
-      expect(error.keyword).to.equal('minItems');
+      expect(error.getInstancePath()).to.equal('/$id');
+      expect(error.getKeyword()).to.equal('minItems');
     });
 
     it('should be no longer than 32 bytes', async () => {
@@ -271,8 +273,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/$id');
-      expect(error.keyword).to.equal('maxItems');
+      expect(error.getInstancePath()).to.equal('/$id');
+      expect(error.getKeyword()).to.equal('maxItems');
     });
   });
 
@@ -296,8 +298,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/$defs');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/$defs');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should not be empty', async () => {
@@ -309,8 +311,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/$defs');
-      expect(error.keyword).to.equal('minProperties');
+      expect(error.getInstancePath()).to.equal('/$defs');
+      expect(error.getKeyword()).to.equal('minProperties');
     });
 
     it('should have no non-alphanumeric properties', async () => {
@@ -324,11 +326,11 @@ describe('validateDataContractFactory', function main() {
 
       const [patternError, propertyNamesError] = result.getErrors();
 
-      expect(patternError.instancePath).to.equal('/$defs');
-      expect(patternError.keyword).to.equal('pattern');
+      expect(patternError.getInstancePath()).to.equal('/$defs');
+      expect(patternError.getKeyword()).to.equal('pattern');
 
-      expect(propertyNamesError.instancePath).to.equal('/$defs');
-      expect(propertyNamesError.keyword).to.equal('propertyNames');
+      expect(propertyNamesError.getInstancePath()).to.equal('/$defs');
+      expect(propertyNamesError.getKeyword()).to.equal('propertyNames');
     });
 
     it('should have no more than 100 properties', async () => {
@@ -344,8 +346,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/$defs');
-      expect(error.keyword).to.equal('maxProperties');
+      expect(error.getInstancePath()).to.equal('/$defs');
+      expect(error.getKeyword()).to.equal('maxProperties');
     });
 
     it('should have valid property names', async () => {
@@ -380,8 +382,8 @@ describe('validateDataContractFactory', function main() {
 
           const [error] = result.getErrors();
 
-          expect(error.instancePath).to.equal('/$defs');
-          expect(error.keyword).to.equal('pattern');
+          expect(error.getInstancePath()).to.equal('/$defs');
+          expect(error.getKeyword()).to.equal('pattern');
         }),
       );
     });
@@ -397,9 +399,9 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('documents');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('documents');
     });
 
     it('should be an object', async () => {
@@ -411,8 +413,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/documents');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/documents');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should not be empty', async () => {
@@ -424,8 +426,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/documents');
-      expect(error.keyword).to.equal('minProperties');
+      expect(error.getInstancePath()).to.equal('/documents');
+      expect(error.getKeyword()).to.equal('minProperties');
     });
 
     it('should have valid property names (document types)', async () => {
@@ -456,8 +458,8 @@ describe('validateDataContractFactory', function main() {
 
           const [error] = result.getErrors();
 
-          expect(error.instancePath).to.equal('/documents');
-          expect(error.keyword).to.equal('pattern');
+          expect(error.getInstancePath()).to.equal('/documents');
+          expect(error.getKeyword()).to.equal('pattern');
         }),
       );
     });
@@ -477,8 +479,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/documents');
-      expect(error.keyword).to.equal('maxProperties');
+      expect(error.getInstancePath()).to.equal('/documents');
+      expect(error.getKeyword()).to.equal('maxProperties');
     });
 
     describe('Document schema', () => {
@@ -492,7 +494,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument/properties');
-        expect(error.keyword).to.equal('minProperties');
+        expect(error.getKeyword()).to.equal('minProperties');
       });
 
       it('should have type "object"', async () => {
@@ -505,7 +507,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument/type');
-        expect(error.keyword).to.equal('const');
+        expect(error.getKeyword()).to.equal('const');
       });
 
       it('should have "properties"', async () => {
@@ -518,8 +520,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('properties');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('properties');
       });
 
       it('should have nested "properties"', async () => {
@@ -546,8 +548,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0/properties/something');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('properties');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('properties');
       });
 
       it('should have valid property names', async () => {
@@ -651,8 +653,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('additionalProperties');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('additionalProperties');
       });
 
       it('should have "additionalProperties" defined to false', async () => {
@@ -665,7 +667,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument/additionalProperties');
-        expect(error.keyword).to.equal('const');
+        expect(error.getKeyword()).to.equal('const');
       });
 
       it('should have nested "additionalProperties" defined', async () => {
@@ -691,8 +693,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('additionalProperties');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('additionalProperties');
       });
 
       it('should return invalid result if there are additional properties', async () => {
@@ -705,7 +707,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('');
-        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.getKeyword()).to.equal('additionalProperties');
       });
 
       it('should have no more than 100 properties', async () => {
@@ -724,7 +726,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/niceDocument/properties');
-        expect(error.keyword).to.equal('maxProperties');
+        expect(error.getKeyword()).to.equal('maxProperties');
       });
 
       it('should have defined items for arrays', async () => {
@@ -744,8 +746,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/new/properties/something');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('items');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('items');
       });
 
       it('should have sub schema in items for arrays', async () => {
@@ -773,8 +775,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/new/properties/something/items');
-        expect(error.keyword).to.equal('type');
-        expect(error.params.type).to.equal('object');
+        expect(error.getKeyword()).to.equal('type');
+        expect(error.getParams().type).to.equal('object');
       });
 
       it('should have items if prefixItems is used for arrays', async () => {
@@ -804,8 +806,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/new/properties/something');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('items');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('items');
       });
 
       it('should not have items disabled if prefixItems is used for arrays', async () => {
@@ -834,8 +836,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/new/properties/something/items');
-        expect(error.keyword).to.equal('const');
-        expect(error.params.allowedValue).to.equal(false);
+        expect(error.getKeyword()).to.equal('const');
+        expect(error.getParams().allowedValue).to.equal(false);
       });
 
       it('should return invalid result if "default" keyword is used', async () => {
@@ -848,7 +850,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/properties/firstName');
-        expect(error.keyword).to.equal('unevaluatedProperties');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
       });
 
       it('should return invalid result if remote `$ref` is used', async () => {
@@ -863,7 +865,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/$ref');
-        expect(error.keyword).to.equal('pattern');
+        expect(error.getKeyword()).to.equal('pattern');
       });
 
       it('should not have `propertyNames`', async () => {
@@ -887,8 +889,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument');
-        expect(error.keyword).to.equal('unevaluatedProperties');
-        expect(error.params.unevaluatedProperty).to.equal('propertyNames');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
+        expect(error.getParams().unevaluatedProperty).to.equal('propertyNames');
       });
 
       it('should have `maxItems` if `uniqueItems` is used', async () => {
@@ -910,8 +912,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('items');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('items');
       });
 
       it('should have `maxItems` no bigger than 100000 if `uniqueItems` is used', async () => {
@@ -943,7 +945,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxItems');
-        expect(error.keyword).to.equal('maximum');
+        expect(error.getKeyword()).to.equal('maximum');
       });
 
       it('should return invalid result if document JSON Schema is not valid', async () => {
@@ -961,9 +963,11 @@ describe('validateDataContractFactory', function main() {
 
         const result = await validateDataContract(rawDataContract);
 
-        expectJsonSchemaError(result);
+        expectValidationError(result, JsonSchemaCompilationError);
 
         const [error] = result.getErrors();
+
+        expect(error.getCode()).to.equal(1004);
 
         expect(error.message).to.be.a('string').and.satisfy((msg) => (
           msg.startsWith('unknown format "lalala" ignored in schema')
@@ -989,8 +993,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('maxLength');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('maxLength');
       });
 
       it('should have `maxLength` no bigger than 50000 if `pattern` is used', async () => {
@@ -1013,7 +1017,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
-        expect(error.keyword).to.equal('maximum');
+        expect(error.getKeyword()).to.equal('maximum');
       });
 
       it('should have `maxLength` if `format` is used', async () => {
@@ -1035,8 +1039,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('maxLength');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('maxLength');
       });
 
       it('should have `maxLength` no bigger than 50000 if `format` is used', async () => {
@@ -1059,7 +1063,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
-        expect(error.keyword).to.equal('maximum');
+        expect(error.getKeyword()).to.equal('maximum');
       });
 
       it('should not have incompatible patterns', async () => {
@@ -1081,11 +1085,10 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1009);
         expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
         expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
-        expect(error.getOriginalErrorMessage()).to.be.a('string').and.satisfy((msg) => (
-          msg.startsWith('Invalid regular expression')
-        ));
+        expect(error.getPatternError()).to.be.instanceOf(Error);
       });
 
       describe('byteArray', () => {
@@ -1099,8 +1102,8 @@ describe('validateDataContractFactory', function main() {
           const [error] = result.getErrors();
 
           expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('boolean');
+          expect(error.getKeyword()).to.equal('type');
+          expect(error.getParams().type).to.equal('boolean');
         });
 
         it('should equal to true', async () => {
@@ -1113,8 +1116,8 @@ describe('validateDataContractFactory', function main() {
           const [error] = result.getErrors();
 
           expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
-          expect(error.keyword).to.equal('const');
-          expect(error.params.allowedValue).to.equal(true);
+          expect(error.getKeyword()).to.equal('const');
+          expect(error.getParams().allowedValue).to.equal(true);
         });
 
         it('should be used with type `array`', async () => {
@@ -1127,7 +1130,7 @@ describe('validateDataContractFactory', function main() {
           const [error] = result.getErrors();
 
           expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
-          expect(error.keyword).to.equal('const');
+          expect(error.getKeyword()).to.equal('const');
         });
 
         it('should not be used with `items`', async () => {
@@ -1137,10 +1140,11 @@ describe('validateDataContractFactory', function main() {
 
           const result = await validateDataContract(rawDataContract);
 
-          expectJsonSchemaError(result, 1);
+          expectValidationError(result, JsonSchemaCompilationError);
 
           const [error] = result.getErrors();
 
+          expect(error.getCode()).to.equal(1004);
           expect(error.message).to.equal("'byteArray' should not be used with 'items'");
         });
       });
@@ -1157,7 +1161,7 @@ describe('validateDataContractFactory', function main() {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField');
-            expect(error.keyword).to.equal('required');
+            expect(error.getKeyword()).to.equal('required');
           });
 
           it('should be used with byte array not shorter than 32 bytes', async () => {
@@ -1170,7 +1174,7 @@ describe('validateDataContractFactory', function main() {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
-            expect(error.keyword).to.equal('const');
+            expect(error.getKeyword()).to.equal('const');
           });
 
           it('should be used with byte array not longer than 32 bytes', async () => {
@@ -1183,7 +1187,7 @@ describe('validateDataContractFactory', function main() {
             const [error] = result.getErrors();
 
             expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
-            expect(error.keyword).to.equal('const');
+            expect(error.getKeyword()).to.equal('const');
           });
         });
       });
@@ -1201,7 +1205,7 @@ describe('validateDataContractFactory', function main() {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/documents/indexedDocument/indices');
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should have at least one item', async () => {
@@ -1214,7 +1218,7 @@ describe('validateDataContractFactory', function main() {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/documents/indexedDocument/indices');
-      expect(error.keyword).to.equal('minItems');
+      expect(error.getKeyword()).to.equal('minItems');
     });
 
     it('should return invalid result if there are duplicated indices', async () => {
@@ -1228,8 +1232,8 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
+      expect(error.getCode()).to.equal(1008);
       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
     });
 
@@ -1244,7 +1248,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/indices/0');
-        expect(error.keyword).to.equal('type');
+        expect(error.getKeyword()).to.equal('type');
       });
 
       it('should have properties definition', async () => {
@@ -1257,8 +1261,8 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/indices/0');
-        expect(error.params.missingProperty).to.equal('properties');
-        expect(error.keyword).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('properties');
+        expect(error.getKeyword()).to.equal('required');
       });
 
       describe('properties definition', () => {
@@ -1275,7 +1279,7 @@ describe('validateDataContractFactory', function main() {
           expect(error.instancePath).to.equal(
             '/documents/indexedDocument/indices/0/properties',
           );
-          expect(error.keyword).to.equal('type');
+          expect(error.getKeyword()).to.equal('type');
         });
 
         it('should have at least one property defined', async () => {
@@ -1291,7 +1295,7 @@ describe('validateDataContractFactory', function main() {
           expect(error.instancePath).to.equal(
             '/documents/indexedDocument/indices/0/properties',
           );
-          expect(error.keyword).to.equal('minItems');
+          expect(error.getKeyword()).to.equal('minItems');
         });
 
         it('should have no more than 10 property $defs', async () => {
@@ -1309,7 +1313,7 @@ describe('validateDataContractFactory', function main() {
           expect(error.instancePath).to.equal(
             '/documents/indexedDocument/indices/0/properties',
           );
-          expect(error.keyword).to.equal('maxItems');
+          expect(error.getKeyword()).to.equal('maxItems');
         });
 
         describe('property definition', () => {
@@ -1326,7 +1330,7 @@ describe('validateDataContractFactory', function main() {
             expect(error.instancePath).to.equal(
               '/documents/indexedDocument/indices/0/properties/0',
             );
-            expect(error.keyword).to.equal('type');
+            expect(error.getKeyword()).to.equal('type');
           });
 
           it('should have at least one property', async () => {
@@ -1342,7 +1346,7 @@ describe('validateDataContractFactory', function main() {
             expect(error.instancePath).to.equal(
               '/documents/indexedDocument/indices/0/properties',
             );
-            expect(error.keyword).to.equal('minItems');
+            expect(error.getKeyword()).to.equal('minItems');
           });
 
           it('should have no more than one property', async () => {
@@ -1360,7 +1364,7 @@ describe('validateDataContractFactory', function main() {
             expect(error.instancePath).to.equal(
               '/documents/indexedDocument/indices/0/properties/0',
             );
-            expect(error.keyword).to.equal('maxProperties');
+            expect(error.getKeyword()).to.equal('maxProperties');
           });
 
           it('should have property values only "asc" or "desc"', async () => {
@@ -1376,7 +1380,7 @@ describe('validateDataContractFactory', function main() {
             expect(error.instancePath).to.equal(
               '/documents/indexedDocument/indices/0/properties/0/$ownerId',
             );
-            expect(error.keyword).to.equal('enum');
+            expect(error.getKeyword()).to.equal('enum');
           });
         });
       });
@@ -1391,7 +1395,7 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/documents/indexedDocument/indices/0/unique');
-        expect(error.keyword).to.equal('type');
+        expect(error.getKeyword()).to.equal('type');
       });
 
       it('should have no more than 10 indices', async () => {
@@ -1414,7 +1418,7 @@ describe('validateDataContractFactory', function main() {
         expect(error.instancePath).to.equal(
           '/documents/indexedDocument/indices',
         );
-        expect(error.keyword).to.equal('maxItems');
+        expect(error.getKeyword()).to.equal('maxItems');
       });
 
       it('should have no more than 3 unique indices', async () => {
@@ -1438,7 +1442,7 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
-        expect(error.getRawDataContract()).to.equal(rawDataContract);
+        expect(error.getCode()).to.equal(1017);
         expect(error.getDocumentType()).to.equal('indexedDocument');
       });
 
@@ -1459,8 +1463,8 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1015);
         expect(error.getPropertyName()).to.equal('$id');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1478,8 +1482,8 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1016);
         expect(error.getPropertyName()).to.equal('missingProperty');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1511,9 +1515,9 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('objectProperty');
         expect(error.getPropertyType()).to.equal('object');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1548,9 +1552,9 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('arrayProperty');
         expect(error.getPropertyType()).to.equal('array');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1574,10 +1578,11 @@ describe('validateDataContractFactory', function main() {
         const result = await validateDataContract(rawDataContract);
         expectValidationError(result, InvalidIndexPropertyTypeError);
 
-        const [error] = result.getErrors();
+        const error = result.getFirstError();
+
+        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('mentions');
         expect(error.getPropertyType()).to.equal('array');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedArray');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1599,10 +1604,11 @@ describe('validateDataContractFactory', function main() {
         const result = await validateDataContract(rawDataContract);
         expectValidationError(result, InvalidIndexPropertyTypeError);
 
-        const [error] = result.getErrors();
+        const error = result.getFirstError();
+
+        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('mentions');
         expect(error.getPropertyType()).to.equal('array');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedArray');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1627,10 +1633,11 @@ describe('validateDataContractFactory', function main() {
         const result = await validateDataContract(rawDataContract);
         expectValidationError(result, InvalidIndexPropertyTypeError);
 
-        const [error] = result.getErrors();
+        const error = result.getFirstError();
+
+        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('mentions');
         expect(error.getPropertyType()).to.equal('array');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedArray');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1662,9 +1669,9 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('arrayProperty');
         expect(error.getPropertyType()).to.equal('array');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1700,9 +1707,9 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('arrayProperty');
         expect(error.getPropertyType()).to.equal('array');
-        expect(error.getRawDataContract()).to.deep.equal(rawDataContract);
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
@@ -1716,6 +1723,7 @@ describe('validateDataContractFactory', function main() {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1010);
         expect(error.getIndexDefinition()).to.deep.equal(
           rawDataContract.documents.optionalUniqueIndexedDocument.indices[1],
         );
@@ -1743,7 +1751,7 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
       expect(error.instancePath).to.equal('/documents/niceDocument/dependentSchemas');
       expect(error.message).to.equal('must be object');
     });
@@ -1768,7 +1776,7 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
       expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired');
       expect(error.message).to.equal('must be object');
     });
@@ -1795,7 +1803,7 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
       expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired/zxy');
       expect(error.message).to.equal('must be array');
     });
@@ -1820,7 +1828,7 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
       expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired/zxy/0');
       expect(error.message).to.equal('must be string');
     });
@@ -1845,7 +1853,7 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('uniqueItems');
+      expect(error.getKeyword()).to.equal('uniqueItems');
       expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired/zxy');
       expect(error.message).to.equal('must NOT have duplicate items (items ## 2 and 1 are identical)');
     });
@@ -1856,13 +1864,13 @@ describe('validateDataContractFactory', function main() {
 
     const result = await validateDataContract(rawDataContract);
 
-    expectJsonSchemaError(result);
+    expectValidationError(result, InvalidJsonSchemaRefError);
 
     const [error] = result.getErrors();
 
-    expect(error.message).to.be.a('string').and.satisfy((msg) => (
-      msg.startsWith('Circular $ref pointer')
-    ));
+    expect(error.getCode()).to.equal(1014);
+
+    expect(error.message).to.startsWith('Invalid JSON Schema $ref: Circular $ref pointer found');
   });
 
   it('should return invalid result if indexed property missing maxLength constraint', async () => {
@@ -1874,6 +1882,7 @@ describe('validateDataContractFactory', function main() {
 
     const [error] = result.getErrors();
 
+    expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
     expect(error.getReason()).to.equal('should be set');
@@ -1888,6 +1897,7 @@ describe('validateDataContractFactory', function main() {
 
     const [error] = result.getErrors();
 
+    expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
     expect(error.getReason()).to.equal('should be less or equal 1024');

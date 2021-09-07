@@ -13,9 +13,11 @@ function createAndValidateIdentifier(name, buffer, result) {
     return new Identifier(buffer);
   } catch (e) {
     if (e instanceof IdentifierError) {
-      result.addError(
-        new InvalidIdentifierError(name, e),
-      );
+      const consensusError = new InvalidIdentifierError(name, e.message);
+
+      consensusError.setIdentifierError(e);
+
+      result.addError(consensusError);
 
       return undefined;
     }

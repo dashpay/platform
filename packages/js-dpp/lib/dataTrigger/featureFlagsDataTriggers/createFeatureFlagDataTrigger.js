@@ -17,27 +17,31 @@ async function createFeatureFlagDataTrigger(documentTransition, context, topLeve
   const { height: blockHeight } = await stateRepository.fetchLatestPlatformBlockHeader();
 
   if (Long.fromNumber(documentTransition.get('enableAtHeight')).lt(blockHeight)) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'Feature flag cannot be enabled in the past',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      `Feature flag cannot be enabled in the past on block ${documentTransition.get('enableAtHeight')}. Current block height is ${blockHeight}`,
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
 
     return result;
   }
 
   if (!context.getOwnerId().equals(topLevelIdentityId)) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'This identity can\'t activate selected feature flag',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      'This identity can\'t activate selected feature flag',
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   return result;

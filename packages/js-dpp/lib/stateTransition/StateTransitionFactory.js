@@ -1,5 +1,5 @@
 const InvalidStateTransitionError = require('./errors/InvalidStateTransitionError');
-const ConsensusError = require('../errors/consensus/ConsensusError');
+const AbstractConsensusError = require('../errors/consensus/AbstractConsensusError');
 
 class StateTransitionFactory {
   /**
@@ -65,7 +65,7 @@ class StateTransitionFactory {
 
       rawStateTransition.protocolVersion = protocolVersion;
     } catch (error) {
-      if (error instanceof ConsensusError) {
+      if (error instanceof AbstractConsensusError) {
         throw new InvalidStateTransitionError([error]);
       }
 

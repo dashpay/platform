@@ -1,22 +1,26 @@
 const AbstractStateError = require('../AbstractStateError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class DataContractAlreadyPresentError extends AbstractStateError {
   /**
-   * @param {DataContract} dataContract
+   * @param {Buffer} dataContractId
    */
-  constructor(dataContract) {
-    super('Data Contract is already present');
+  constructor(dataContractId) {
+    super(`Data Contract ${Identifier.from(dataContractId)} is already present`);
 
-    this.dataContract = dataContract;
+    this.dataContractId = dataContractId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get Data Contract
+   * Get Data Contract ID
    *
-   * @return {DataContract}
+   * @return {Buffer}
    */
-  getDataContract() {
-    return this.dataContract;
+  getDataContractId() {
+    return this.dataContractId;
   }
 }
 

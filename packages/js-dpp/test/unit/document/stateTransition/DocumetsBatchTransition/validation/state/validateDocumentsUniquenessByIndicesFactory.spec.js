@@ -9,7 +9,7 @@ const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/c
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
-const DuplicateDocumentError = require('../../../../../../../lib/errors/consensus/state/document/DuplicateDocumentError');
+const DuplicateUniqueIndexError = require('../../../../../../../lib/errors/consensus/state/document/DuplicateUniqueIndexError');
 
 describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMock;
@@ -149,22 +149,26 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ownerId, documentTransitions, dataContract,
     );
 
-    expectValidationError(result, DuplicateDocumentError, 4);
+    expectValidationError(result, DuplicateUniqueIndexError, 4);
 
     const errors = result.getErrors();
 
-    expect(errors.map((e) => e.getDocumentTransition())).to.have.deep.members([
-      documentTransitions[3],
-      documentTransitions[3],
-      documentTransitions[4],
-      documentTransitions[4],
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(4009);
+
+    expect(errors.map((e) => e.getDocumentId())).to.have.deep.members([
+      documentTransitions[3].getId().toBuffer(),
+      documentTransitions[3].getId().toBuffer(),
+      documentTransitions[4].getId().toBuffer(),
+      documentTransitions[4].getId().toBuffer(),
     ]);
 
-    expect(errors.map((e) => e.getIndexDefinition())).to.have.deep.members([
-      indicesDefinition[0],
-      indicesDefinition[1],
-      indicesDefinition[0],
-      indicesDefinition[1],
+    expect(errors.map((e) => e.getDuplicatingProperties())).to.have.deep.members([
+      indicesDefinition[0].properties.map((i) => Object.keys(i)[0]),
+      indicesDefinition[1].properties.map((i) => Object.keys(i)[0]),
+      indicesDefinition[0].properties.map((i) => Object.keys(i)[0]),
+      indicesDefinition[1].properties.map((i) => Object.keys(i)[0]),
     ]);
   });
 

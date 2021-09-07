@@ -47,7 +47,6 @@ describe('decodeProtocolEntityFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(ProtocolVersionParsingError);
 
-      expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsingError()).to.be.instanceOf(Error);
       expect(e.getCode()).to.equal(1000);
     }
@@ -66,7 +65,6 @@ describe('decodeProtocolEntityFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(UnsupportedProtocolVersionError);
 
-      expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsedProtocolVersion()).to.equal(parsedProtocolVersion);
       expect(e.getCurrentProtocolVersion()).to.equal(currentProtocolVersion);
       expect(e.getCode()).to.equal(1001);
@@ -102,7 +100,6 @@ describe('decodeProtocolEntityFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(IncompatibleProtocolVersionError);
 
-      expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsedProtocolVersion()).to.equal(parsedProtocolVersion);
       expect(e.getMinimalProtocolVersion()).to.equal(minimalProtocolVersion);
       expect(e.getCode()).to.equal(1002);
@@ -119,7 +116,6 @@ describe('decodeProtocolEntityFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(SerializedObjectParsingError);
 
-      expect(e.getPayload()).to.equal(buffer);
       expect(e.getParsingError()).to.be.an.instanceOf(Error);
       expect(e.getCode()).to.equal(1003);
     }

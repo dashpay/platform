@@ -3,17 +3,18 @@ const AbstractIndexError = require('./AbstractIndexError');
 class InvalidCompoundIndexError extends AbstractIndexError {
   /**
    *
-   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    */
-  constructor(rawDataContract, documentType, indexDefinition) {
+  constructor(documentType, indexDefinition) {
     super(
-      'All or none of unique compound index properties must be set',
-      rawDataContract,
+      `All or none of unique compound index properties must be set for "${documentType}" document`,
       documentType,
       indexDefinition,
     );
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 }
 

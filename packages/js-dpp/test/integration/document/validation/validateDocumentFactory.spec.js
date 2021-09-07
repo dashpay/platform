@@ -60,9 +60,9 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('$protocolVersion');
+        expect(error.getInstancePath()).to.equal('');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('$protocolVersion');
       });
 
       it('should be an integer', () => {
@@ -74,8 +74,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$protocolVersion');
-        expect(error.keyword).to.equal('type');
+        expect(error.getInstancePath()).to.equal('/$protocolVersion');
+        expect(error.getKeyword()).to.equal('type');
       });
 
       it('should not be less than 0', () => {
@@ -87,8 +87,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$protocolVersion');
-        expect(error.keyword).to.equal('minimum');
+        expect(error.getInstancePath()).to.equal('/$protocolVersion');
+        expect(error.getKeyword()).to.equal('minimum');
       });
 
       it('should not be greater than current Document protocol version (0)', () => {
@@ -100,8 +100,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$protocolVersion');
-        expect(error.keyword).to.equal('maximum');
+        expect(error.getInstancePath()).to.equal('/$protocolVersion');
+        expect(error.getKeyword()).to.equal('maximum');
       });
     });
 
@@ -115,9 +115,9 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('$id');
+        expect(error.getInstancePath()).to.equal('');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('$id');
       });
 
       it('should be a byte array', () => {
@@ -129,10 +129,10 @@ describe('validateDocumentFactory', () => {
 
         const [error, byteArrayError] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$id/0');
-        expect(error.keyword).to.equal('type');
+        expect(error.getInstancePath()).to.equal('/$id/0');
+        expect(error.getKeyword()).to.equal('type');
 
-        expect(byteArrayError.keyword).to.equal('byteArray');
+        expect(byteArrayError.getKeyword()).to.equal('byteArray');
       });
 
       it('should be no less than 32 bytes', () => {
@@ -144,8 +144,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$id');
-        expect(error.keyword).to.equal('minItems');
+        expect(error.getInstancePath()).to.equal('/$id');
+        expect(error.getKeyword()).to.equal('minItems');
       });
 
       it('should be no longer than 32 bytes', () => {
@@ -157,8 +157,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$id');
-        expect(error.keyword).to.equal('maxItems');
+        expect(error.getInstancePath()).to.equal('/$id');
+        expect(error.getKeyword()).to.equal('maxItems');
       });
     });
 
@@ -175,7 +175,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.getRawDocument()).to.equal(rawDocument);
+        expect(error.getCode()).to.equal(1028);
       });
 
       it('should be defined in Data Contract', () => {
@@ -190,6 +190,7 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
+        expect(error.getCode()).to.equal(1024);
         expect(error.getType()).to.equal('undefinedDocument');
       });
 
@@ -221,9 +222,9 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('$revision');
+        expect(error.getInstancePath()).to.equal('');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('$revision');
       });
 
       it('should be a number', () => {
@@ -235,8 +236,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$revision');
-        expect(error.keyword).to.equal('type');
+        expect(error.getInstancePath()).to.equal('/$revision');
+        expect(error.getKeyword()).to.equal('type');
       });
 
       it('should be an integer', () => {
@@ -248,8 +249,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$revision');
-        expect(error.keyword).to.equal('type');
+        expect(error.getInstancePath()).to.equal('/$revision');
+        expect(error.getKeyword()).to.equal('type');
       });
 
       it('should be greater or equal to one', () => {
@@ -261,8 +262,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$revision');
-        expect(error.keyword).to.equal('minimum');
+        expect(error.getInstancePath()).to.equal('/$revision');
+        expect(error.getKeyword()).to.equal('minimum');
       });
     });
 
@@ -276,9 +277,9 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('$dataContractId');
+        expect(error.getInstancePath()).to.equal('');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('$dataContractId');
       });
 
       it('should be a byte array', () => {
@@ -290,10 +291,10 @@ describe('validateDocumentFactory', () => {
 
         const [error, byteArrayError] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$dataContractId/0');
-        expect(error.keyword).to.equal('type');
+        expect(error.getInstancePath()).to.equal('/$dataContractId/0');
+        expect(error.getKeyword()).to.equal('type');
 
-        expect(byteArrayError.keyword).to.equal('byteArray');
+        expect(byteArrayError.getKeyword()).to.equal('byteArray');
       });
 
       it('should be no less than 32 bytes', () => {
@@ -305,8 +306,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$dataContractId');
-        expect(error.keyword).to.equal('minItems');
+        expect(error.getInstancePath()).to.equal('/$dataContractId');
+        expect(error.getKeyword()).to.equal('minItems');
       });
 
       it('should be no longer than 32 bytes', () => {
@@ -318,8 +319,8 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/$dataContractId');
-        expect(error.keyword).to.equal('maxItems');
+        expect(error.getInstancePath()).to.equal('/$dataContractId');
+        expect(error.getKeyword()).to.equal('maxItems');
       });
     });
 
@@ -333,9 +334,9 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('');
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('$ownerId');
+        expect(error.getInstancePath()).to.equal('');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('$ownerId');
       });
 
       it('should be a byte array', () => {
@@ -348,9 +349,9 @@ describe('validateDocumentFactory', () => {
         const [error, byteArrayError] = result.getErrors();
 
         expect(error.instancePath).to.equal('/$ownerId/0');
-        expect(error.keyword).to.equal('type');
+        expect(error.getKeyword()).to.equal('type');
 
-        expect(byteArrayError.keyword).to.equal('byteArray');
+        expect(byteArrayError.getKeyword()).to.equal('byteArray');
       });
 
       it('should be no less than 32 bytes', () => {
@@ -363,7 +364,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/$ownerId');
-        expect(error.keyword).to.equal('minItems');
+        expect(error.getKeyword()).to.equal('minItems');
       });
 
       it('should be no longer than 32 bytes', () => {
@@ -376,7 +377,7 @@ describe('validateDocumentFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.instancePath).to.equal('/$ownerId');
-        expect(error.keyword).to.equal('maxItems');
+        expect(error.getKeyword()).to.equal('maxItems');
       });
     });
   });
@@ -392,7 +393,7 @@ describe('validateDocumentFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/name');
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should return an error if the second document is not valid against Data Contract', () => {
@@ -407,7 +408,7 @@ describe('validateDocumentFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('additionalProperties');
+      expect(error.getKeyword()).to.equal('additionalProperties');
     });
   });
 
@@ -424,7 +425,7 @@ describe('validateDocumentFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.instancePath).to.equal('/byteArrayField');
-    expect(error.keyword).to.equal('maxItems');
+    expect(error.getKeyword()).to.equal('maxItems');
   });
 
   it('should return valid result is a document is valid', () => {

@@ -56,9 +56,9 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.params.missingProperty).to.equal('id');
-      expect(error.keyword).to.equal('required');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getParams().missingProperty).to.equal('id');
+      expect(error.getKeyword()).to.equal('required');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -72,10 +72,10 @@ describe('validateIdentityFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/id/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/id/0');
+      expect(error.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.keyword).to.equal('byteArray');
+      expect(byteArrayError.getKeyword()).to.equal('byteArray');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -89,8 +89,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minItems');
-      expect(error.instancePath).to.equal('/id');
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getInstancePath()).to.equal('/id');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -104,8 +104,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maxItems');
-      expect(error.instancePath).to.equal('/id');
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getInstancePath()).to.equal('/id');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -121,9 +121,9 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.params.missingProperty).to.equal('balance');
-      expect(error.keyword).to.equal('required');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getParams().missingProperty).to.equal('balance');
+      expect(error.getKeyword()).to.equal('required');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -137,8 +137,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('type');
-      expect(error.instancePath).to.equal('/balance');
+      expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/balance');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -152,8 +152,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minimum');
-      expect(error.instancePath).to.equal('/balance');
+      expect(error.getKeyword()).to.equal('minimum');
+      expect(error.getInstancePath()).to.equal('/balance');
 
       expect(validatePublicKeysMock).to.not.be.called();
 
@@ -175,9 +175,9 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.params.missingProperty).to.equal('publicKeys');
-      expect(error.keyword).to.equal('required');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getParams().missingProperty).to.equal('publicKeys');
+      expect(error.getKeyword()).to.equal('required');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -191,8 +191,9 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/publicKeys');
-      expect(error.keyword).to.equal('type');
+      expect(error.getCode()).to.equal(1005);
+      expect(error.getInstancePath()).to.equal('/publicKeys');
+      expect(error.getKeyword()).to.equal('type');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -206,8 +207,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minItems');
-      expect(error.instancePath).to.equal('/publicKeys');
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getInstancePath()).to.equal('/publicKeys');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -221,8 +222,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('uniqueItems');
-      expect(error.instancePath).to.equal('/publicKeys');
+      expect(error.getKeyword()).to.equal('uniqueItems');
+      expect(error.getInstancePath()).to.equal('/publicKeys');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -241,8 +242,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maxItems');
-      expect(error.instancePath).to.equal('/publicKeys');
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getInstancePath()).to.equal('/publicKeys');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -258,9 +259,9 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.params.missingProperty).to.equal('revision');
-      expect(error.keyword).to.equal('required');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getParams().missingProperty).to.equal('revision');
+      expect(error.getKeyword()).to.equal('required');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -274,8 +275,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('type');
-      expect(error.instancePath).to.equal('/revision');
+      expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/revision');
 
       expect(validatePublicKeysMock).to.not.be.called();
     });
@@ -289,8 +290,8 @@ describe('validateIdentityFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minimum');
-      expect(error.instancePath).to.equal('/revision');
+      expect(error.getKeyword()).to.equal('minimum');
+      expect(error.getInstancePath()).to.equal('/revision');
 
       expect(validatePublicKeysMock).to.not.be.called();
 

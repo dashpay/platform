@@ -1,26 +1,33 @@
 const AbstractBasicError = require('../AbstractBasicError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class InvalidDocumentTransitionIdError extends AbstractBasicError {
   /**
-   * @param {
-   *   RawDocumentCreateTransition|RawDocumentReplaceTransition|RawDocumentDeleteTransition
-   * } rawDocumentTransition
+   * @param {Buffer} expectedId
+   * @param {Buffer} invalidId
    */
-  constructor(rawDocumentTransition) {
-    super('Invalid document transition id');
+  constructor(expectedId, invalidId) {
+    super(`Invalid document transition id ${Identifier.from(invalidId)}, expected ${Identifier.from(expectedId)}`);
 
-    this.rawDocumentTransition = rawDocumentTransition;
+    this.expectedId = expectedId;
+    this.invalidId = invalidId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get raw document transition
-   *
-   * @return {
-   *   RawDocumentCreateTransition|RawDocumentReplaceTransition|RawDocumentDeleteTransition
-   * }
+   * @return {Buffer}
    */
-  getRawDocumentTransition() {
-    return this.rawDocumentTransition;
+  getExpectedId() {
+    return this.expectedId;
+  }
+
+  /**
+   * @return {Buffer}
+   */
+  getInvalidId() {
+    return this.invalidId;
   }
 }
 

@@ -1,22 +1,26 @@
 const AbstractStateError = require('../AbstractStateError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class IdentityAlreadyExistsError extends AbstractStateError {
   /**
-   * @param {IdentityCreateTransition} stateTransition
+   * @param {Buffer} identityId
    */
-  constructor(stateTransition) {
-    super(`Identity with id ${stateTransition.getIdentityId()} already exists`);
+  constructor(identityId) {
+    super(`Identity ${Identifier.from(identityId)} already exists`);
 
-    this.stateTransition = stateTransition;
+    this.identityId = identityId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get state transition
+   * Get identity id
    *
-   * @return {IdentityCreateTransition}
+   * @return {Buffer}
    */
-  getStateTransition() {
-    return this.stateTransition;
+  getIdentityId() {
+    return this.identityId;
   }
 }
 

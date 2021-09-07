@@ -32,62 +32,72 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
   }
 
   if (fullDomainName.length > MAX_PRINTABLE_DOMAIN_NAME_LENGTH) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'Full domain name length can not be more than 253 characters long',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      `Full domain name length can not be more than ${MAX_PRINTABLE_DOMAIN_NAME_LENGTH} characters long but got ${fullDomainName.length}`,
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   if (normalizedLabel !== label.toLowerCase()) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'Normalized label doesn\'t match label',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      'Normalized label doesn\'t match label',
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   if (records.dashUniqueIdentityId
     && !context.getOwnerId().equals(records.dashUniqueIdentityId)
   ) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'ownerId doesn\'t match dashUniqueIdentityId',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      `ownerId ${context.getOwnerId()} doesn't match dashUniqueIdentityId ${records.dashUniqueIdentityId}`,
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   if (records.dashAliasIdentityId
     && !context.getOwnerId().equals(records.dashAliasIdentityId)) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'ownerId doesn\'t match dashAliasIdentityId',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      `ownerId ${context.getOwnerId()} doesn't match dashAliasIdentityId ${records.dashAliasIdentityId}`,
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   if (normalizedParentDomainName.length === 0
     && !context.getOwnerId().equals(topLevelIdentity)) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'Can\'t create top level domain for this identity',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      'Can\'t create top level domain for this identity',
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   if (normalizedParentDomainName.length > 0) {
@@ -108,39 +118,45 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
 
     if (!parentDomain) {
-      result.addError(
-        new DataTriggerConditionError(
-          documentTransition,
-          context.getDataContract(),
-          context.getOwnerId(),
-          'Parent domain is not present',
-        ),
+      const error = new DataTriggerConditionError(
+        context.getDataContract().getId().toBuffer(),
+        documentTransition.getId().toBuffer(),
+        'Parent domain is not present',
       );
+
+      error.setOwnerId(context.getOwnerId());
+      error.setDocumentTransition(documentTransition);
+
+      result.addError(error);
 
       return result;
     }
 
     if (subdomainRules.allowSubdomains === true) {
-      result.addError(
-        new DataTriggerConditionError(
-          documentTransition,
-          context.getDataContract(),
-          context.getOwnerId(),
-          'Allowing subdomains registration is forbidden for non top level domains',
-        ),
+      const error = new DataTriggerConditionError(
+        context.getDataContract().getId().toBuffer(),
+        documentTransition.getId().toBuffer(),
+        'Allowing subdomains registration is forbidden for non top level domains',
       );
+
+      error.setOwnerId(context.getOwnerId());
+      error.setDocumentTransition(documentTransition);
+
+      result.addError(error);
     }
 
     if (parentDomain.getData().subdomainRules.allowSubdomains === false
       && !context.getOwnerId().equals(parentDomain.getOwnerId())) {
-      result.addError(
-        new DataTriggerConditionError(
-          documentTransition,
-          context.getDataContract(),
-          context.getOwnerId(),
-          'The subdomain can be created only by the parent domain owner',
-        ),
+      const error = new DataTriggerConditionError(
+        context.getDataContract().getId().toBuffer(),
+        documentTransition.getId().toBuffer(),
+        'The subdomain can be created only by the parent domain owner',
       );
+
+      error.setOwnerId(context.getOwnerId());
+      error.setDocumentTransition(documentTransition);
+
+      result.addError(error);
     }
   }
 
@@ -159,14 +175,16 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     );
 
   if (!preorderDocument) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'preorderDocument was not found',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      'preorderDocument was not found',
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   return result;

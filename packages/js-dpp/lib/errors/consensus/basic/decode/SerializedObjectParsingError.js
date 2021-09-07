@@ -1,26 +1,21 @@
-const ConsensusError = require('../../ConsensusError');
+const AbstractConsensusError = require('../../AbstractConsensusError');
 
-class SerializedObjectParsingError extends ConsensusError {
+class SerializedObjectParsingError extends AbstractConsensusError {
   /**
-   * @param {Buffer} payload
-   * @param {Error} parsingError
+   * @param {string} message
    */
-  constructor(payload, parsingError) {
-    super(
-      `Parsing of a serialized object failed due to: ${parsingError.message}`,
-    );
+  constructor(message) {
+    super(`Parsing of a serialized object failed due to: ${message}`);
 
-    this.payload = payload;
-    this.parsingError = parsingError;
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get payload
-   *
-   * @return {Buffer}
+   * @param {Error} error
    */
-  getPayload() {
-    return this.payload;
+  setParsingError(error) {
+    this.parsingError = error;
   }
 
   /**

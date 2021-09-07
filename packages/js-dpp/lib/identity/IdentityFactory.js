@@ -7,7 +7,7 @@ const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransiti
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const InstantAssetLockProof = require('./stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./stateTransition/assetLockProof/chain/ChainAssetLockProof');
-const ConsensusError = require('../errors/consensus/ConsensusError');
+const AbstractConsensusError = require('../errors/consensus/AbstractConsensusError');
 
 class IdentityFactory {
   /**
@@ -92,7 +92,7 @@ class IdentityFactory {
 
       rawIdentity.protocolVersion = protocolVersion;
     } catch (error) {
-      if (error instanceof ConsensusError) {
+      if (error instanceof AbstractConsensusError) {
         throw new InvalidIdentityError([error]);
       }
 

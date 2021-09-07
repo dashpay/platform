@@ -1,8 +1,8 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 const InstantAssetLockProof = require('./instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./chain/ChainAssetLockProof');
-const IdentityAssetLockTransactionIsNotFoundError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionIsNotFoundError');
-const UnknownAssetLockProofError = require('../../errors/UnknownAssetLockProofTypeError');
+const AssetLockTransactionIsNotFoundError = require('../../errors/AssetLockTransactionIsNotFoundError');
+const UnknownAssetLockProofTypeError = require('../../errors/UnknownAssetLockProofTypeError');
 
 /**
  * @param {StateRepository} stateRepository
@@ -29,14 +29,14 @@ function fetchAssetLockTransactionOutputFactory(
       const { outputIndex, transactionHash } = outPoint;
       const rawTransaction = await stateRepository.fetchTransaction(transactionHash);
       if (rawTransaction === null) {
-        throw new IdentityAssetLockTransactionIsNotFoundError(assetLockProof.getOutPoint());
+        throw new AssetLockTransactionIsNotFoundError(transactionHash);
       }
 
       const transaction = new Transaction(rawTransaction.data);
       return transaction.outputs[outputIndex];
     }
 
-    throw new UnknownAssetLockProofError(assetLockProof.getType());
+    throw new UnknownAssetLockProofTypeError(assetLockProof.getType());
   }
 
   return fetchAssetLockTransactionOutput;

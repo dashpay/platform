@@ -1,22 +1,8 @@
 const AbstractBasicError = require('../AbstractBasicError');
 
 class MissingDocumentTransitionActionError extends AbstractBasicError {
-  /**
-   * @param {AbstractDocumentTransition} rawDocumentTransition
-   */
-  constructor(rawDocumentTransition) {
+  constructor() {
     super('$action is not present');
-
-    this.rawDocumentTransition = rawDocumentTransition;
-  }
-
-  /**
-   * Get raw Document
-   *
-   * @return {Object}
-   */
-  getRawDocumentTransition() {
-    return this.rawDocumentTransition;
   }
 }
 

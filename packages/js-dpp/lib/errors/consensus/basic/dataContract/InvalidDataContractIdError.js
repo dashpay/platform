@@ -1,4 +1,8 @@
+const bs58 = require('bs58');
+
 const AbstractBasicError = require('../AbstractBasicError');
+
+const Identifier = require('../../../../identifier/Identifier');
 
 class InvalidDataContractIdError extends AbstractBasicError {
   /**
@@ -6,10 +10,16 @@ class InvalidDataContractIdError extends AbstractBasicError {
    * @param {Buffer} invalidId
    */
   constructor(expectedId, invalidId) {
-    super(`DataContract ID must be ${expectedId.toString('hex')}, got ${invalidId.toString('hex')}`);
+    const expectedIdentifier = Identifier.from(expectedId);
+    const invalidIdentifier = bs58.encode(invalidId);
+
+    super(`Data Contract ID must be ${expectedIdentifier}, got ${invalidIdentifier}`);
 
     this.expectedId = expectedId;
     this.invalidId = invalidId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**

@@ -48,28 +48,32 @@ class DataTrigger {
    * @returns {Promise<DataTriggerExecutionResult>}
    */
   async execute(documentTransition, context) {
-    let result = new DataTriggerExecutionResult();
+    let result;
 
     try {
       result = await this.trigger(documentTransition, context, this.topLevelIdentity);
     } catch (e) {
-      result.addError(
-        new DataTriggerExecutionError(
-          this,
-          context.getDataContract(),
-          context.getOwnerId(),
-          e,
-        ),
+      result = new DataTriggerExecutionResult();
+
+      const consensusError = new DataTriggerExecutionError(
+        context.getDataContract().getId().toBuffer(),
+        documentTransition.getId().toBuffer(),
+        e.message,
       );
+
+      consensusError.setExecutionError(e);
+
+      result.addError(consensusError);
+
+      return result;
     }
 
     if (!(result instanceof DataTriggerExecutionResult)) {
       result = new DataTriggerExecutionResult();
       result.addError(
         new DataTriggerInvalidResultError(
-          this,
-          context.getDataContract(),
-          context.getOwnerId(),
+          context.getDataContract().getId().toBuffer(),
+          documentTransition.getId().toBuffer(),
         ),
       );
     }

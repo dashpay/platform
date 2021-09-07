@@ -17,7 +17,7 @@ function validateIdentityExistenceFactory(stateRepository) {
     const identity = await stateRepository.fetchIdentity(identityId);
 
     if (!identity) {
-      result.addError(new IdentityNotFoundError(identityId));
+      result.addError(new IdentityNotFoundError(identityId.toBuffer()));
     }
 
     result.setData(identity);

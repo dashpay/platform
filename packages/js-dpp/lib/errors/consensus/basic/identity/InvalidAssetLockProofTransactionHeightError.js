@@ -2,7 +2,6 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class InvalidAssetLockProofTransactionHeightError extends AbstractBasicError {
   /**
-   *
    * @param {number} proofCoreChainLockedHeight
    * @param {number} transactionHeight
    */
@@ -11,6 +10,9 @@ class InvalidAssetLockProofTransactionHeightError extends AbstractBasicError {
 
     this.proofCoreChainLockedHeight = proofCoreChainLockedHeight;
     this.transactionHeight = transactionHeight;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**

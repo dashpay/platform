@@ -94,7 +94,11 @@ function validateDocumentsBatchTransitionStateFactory(
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
 
               if (createdAtTime !== updatedAtTime) {
-                result.addError(new DocumentTimestampsMismatchError(documentTransition));
+                result.addError(
+                  new DocumentTimestampsMismatchError(
+                    documentTransition.getId().toBuffer(),
+                  ),
+                );
               }
             }
 
@@ -102,10 +106,15 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getCreatedAt() !== undefined) {
               const createdAtTime = documentTransition.getCreatedAt().getTime();
 
+              // TODO: Why we comparing dates and numbers?
               if (createdAtTime < timeWindowStart || createdAtTime > timeWindowEnd) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
-                    'createdAt', documentTransition, fetchedDocument,
+                    'createdAt',
+                    documentTransition.getId().toBuffer(),
+                    documentTransition.getCreatedAt(),
+                    timeWindowStart,
+                    timeWindowEnd,
                   ),
                 );
               }
@@ -115,10 +124,15 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getUpdatedAt() !== undefined) {
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
 
+              // TODO: Why we comparing dates and numbers?
               if (updatedAtTime < timeWindowStart || updatedAtTime > timeWindowEnd) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
-                    'updatedAt', documentTransition, fetchedDocument,
+                    'updatedAt',
+                    documentTransition.getId().toBuffer(),
+                    documentTransition.getUpdatedAt(),
+                    timeWindowStart,
+                    timeWindowEnd,
                   ),
                 );
               }
@@ -126,7 +140,7 @@ function validateDocumentsBatchTransitionStateFactory(
 
             if (fetchedDocument) {
               result.addError(
-                new DocumentAlreadyPresentError(documentTransition, fetchedDocument),
+                new DocumentAlreadyPresentError(documentTransition.getId().toBuffer()),
               );
             }
             break;
@@ -138,7 +152,11 @@ function validateDocumentsBatchTransitionStateFactory(
               if (updatedAtTime < timeWindowStart || updatedAtTime > timeWindowEnd) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
-                    'updatedAt', documentTransition, fetchedDocument,
+                    'updatedAt',
+                    documentTransition.getId().toBuffer(),
+                    documentTransition.getUpdatedAt(),
+                    timeWindowStart,
+                    timeWindowEnd,
                   ),
                 );
               }
@@ -149,7 +167,10 @@ function validateDocumentsBatchTransitionStateFactory(
               && documentTransition.getRevision() !== fetchedDocument.getRevision() + 1
             ) {
               result.addError(
-                new InvalidDocumentRevisionError(documentTransition, fetchedDocument),
+                new InvalidDocumentRevisionError(
+                  documentTransition.getId().toBuffer(),
+                  fetchedDocument.getRevision(),
+                ),
               );
             }
           }
@@ -157,7 +178,7 @@ function validateDocumentsBatchTransitionStateFactory(
           case AbstractDocumentTransition.ACTIONS.DELETE: {
             if (!fetchedDocument) {
               result.addError(
-                new DocumentNotFoundError(documentTransition),
+                new DocumentNotFoundError(documentTransition.getId().toBuffer()),
               );
 
               break;
@@ -165,7 +186,11 @@ function validateDocumentsBatchTransitionStateFactory(
 
             if (!fetchedDocument.getOwnerId().equals(ownerId)) {
               result.addError(
-                new DocumentOwnerIdMismatchError(documentTransition, fetchedDocument),
+                new DocumentOwnerIdMismatchError(
+                  documentTransition.getId().toBuffer(),
+                  ownerId.toBuffer(),
+                  fetchedDocument.getOwnerId().toBuffer(),
+                ),
               );
             }
 

@@ -1,6 +1,6 @@
 const traverse = require('json-schema-traverse');
 const ValidationResult = require('../../validation/ValidationResult');
-const IncompatibleRe2PatternError = require('../../document/errors/IncompatibleRe2PatternError');
+const IncompatibleRe2PatternError = require('../../errors/consensus/basic/dataContract/IncompatibleRe2PatternError');
 
 /**
  *
@@ -27,7 +27,11 @@ function validateDataContractPatternsFactory(
               // eslint-disable-next-line no-new
               new RE2(value, 'u');
             } catch (e) {
-              result.addError(new IncompatibleRe2PatternError(value, path, e.message));
+              const consensusError = new IncompatibleRe2PatternError(value, path, e.message);
+
+              consensusError.setPatternError(e);
+
+              result.addError(consensusError);
             }
           }
         });

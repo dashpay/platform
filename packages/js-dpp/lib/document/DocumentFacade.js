@@ -40,7 +40,7 @@ class DocumentFacade {
    * Create Document
    *
    * @param {DataContract} dataContract
-   * @param {Buffer} ownerId
+   * @param {Identifier|Buffer} ownerId
    * @param {string} type
    * @param {Object} [data]
    * @return {Document}

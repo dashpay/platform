@@ -1,22 +1,26 @@
 const AbstractStateError = require('../AbstractStateError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class DocumentTimestampsMismatchError extends AbstractStateError {
   /**
-   * @param {DocumentCreateTransition} documentTransition
+   * @param {Buffer} documentId
    */
-  constructor(documentTransition) {
-    super('Document createdAt and updatedAt timestamps are not equal');
+  constructor(documentId) {
+    super(`Document ${Identifier.from(documentId)} createdAt and updatedAt timestamps are not equal`);
 
-    this.documentTransition = documentTransition;
+    this.documentId = documentId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
    * Get document create transition
    *
-   * @return {DocumentCreateTransition}
+   * @return {Buffer}
    */
-  getDocumentTransition() {
-    return this.documentTransition;
+  getDocumentId() {
+    return this.documentId;
   }
 }
 

@@ -4,7 +4,7 @@ const validateDataContractPatternsFactory = require('../../../../lib/dataContrac
 const { expectValidationError } = require(
   '../../../../lib/test/expect/expectError',
 );
-const IncompatibleRe2PatternError = require('../../../../lib/document/errors/IncompatibleRe2PatternError');
+const IncompatibleRe2PatternError = require('../../../../lib/errors/consensus/basic/dataContract/IncompatibleRe2PatternError');
 
 describe('validateDataContractPatternsFactory', () => {
   let validateDataContractPatterns;
@@ -56,10 +56,9 @@ describe('validateDataContractPatternsFactory', () => {
     expectValidationError(result, IncompatibleRe2PatternError);
     const [error] = result.getErrors();
 
+    expect(error.getCode()).to.equal(1009);
     expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
     expect(error.getPath()).to.equal('/properties/bar');
-    expect(error.getOriginalErrorMessage()).to.be.a('string').and.satisfy((msg) => (
-      msg.startsWith('Invalid regular expression')
-    ));
+    expect(error.getPatternError()).to.be.instanceOf(Error);
   });
 });

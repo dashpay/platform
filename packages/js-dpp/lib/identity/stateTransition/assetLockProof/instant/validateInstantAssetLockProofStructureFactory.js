@@ -3,9 +3,9 @@ const { InstantLock } = require('@dashevo/dashcore-lib');
 const instantAssetLockProofSchema = require('../../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json');
 
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
-const InvalidIdentityAssetLockProofError = require('../../../../errors/consensus/basic/identity/InvalidIdentityAssetLockProofError');
-const IdentityAssetLockProofMismatchError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockProofMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidIdentityAssetLockProofSignatureError');
+const InvalidInstantAssetLockProofError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
+const IdentityAssetLockProofLockedTransactionMismatchError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
+const InvalidIdentityAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -38,7 +38,9 @@ function validateInstantAssetLockProofStructureFactory(
     try {
       instantLock = InstantLock.fromBuffer(rawAssetLockProof.instantLock);
     } catch (e) {
-      const error = new InvalidIdentityAssetLockProofError(e.message);
+      const error = new InvalidInstantAssetLockProofError(e.message);
+
+      error.setValidationError(e);
 
       result.addError(error);
 
@@ -69,7 +71,12 @@ function validateInstantAssetLockProofStructureFactory(
     const { publicKeyHash, transaction } = validateAssetLockTransactionResult.getData();
 
     if (instantLock.txid !== transaction.id) {
-      result.addError(new IdentityAssetLockProofMismatchError());
+      result.addError(
+        new IdentityAssetLockProofLockedTransactionMismatchError(
+          Buffer.from(instantLock.txid, 'hex'),
+          Buffer.from(transaction.id, 'hex'),
+        ),
+      );
 
       return result;
     }

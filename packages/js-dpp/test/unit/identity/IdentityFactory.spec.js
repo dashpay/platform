@@ -9,7 +9,6 @@ const IdentityTopUpTransition = require('../../../lib/identity/stateTransition/I
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
 const ValidationResult = require('../../../lib/validation/ValidationResult');
-const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const InvalidIdentityError = require(
@@ -19,6 +18,7 @@ const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getI
 const InstantAssetLockProof = require('../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
 
 describe('IdentityFactory', () => {
   let factory;
@@ -92,7 +92,7 @@ describe('IdentityFactory', () => {
     });
 
     it('should throw an error if validation have failed', () => {
-      const errors = [new ConsensusError('error')];
+      const errors = [new SomeConsensusError('error')];
 
       validateIdentityMock.returns(new ValidationResult(errors));
 

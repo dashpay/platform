@@ -1,7 +1,9 @@
 const dataContractMetaSchema = require('../../schema/dataContract/dataContractMeta');
 
 const ValidationResult = require('./ValidationResult');
+
 const JsonSchemaError = require('../errors/consensus/basic/JsonSchemaError');
+const JsonSchemaCompilationError = require('../errors/consensus/basic/JsonSchemaCompilationError');
 
 class JsonSchemaValidator {
   constructor(ajv) {
@@ -37,7 +39,14 @@ class JsonSchemaValidator {
     });
 
     return new ValidationResult(
-      (this.ajv.errors || []).map((error) => new JsonSchemaError(error)),
+      (this.ajv.errors || []).map((error) => new JsonSchemaError(
+        error.message,
+        error.keyword,
+        error.instancePath,
+        error.schemaPath,
+        error.params,
+        error.propertyName,
+      )),
     );
   }
 
@@ -61,12 +70,25 @@ class JsonSchemaValidator {
       this.ajv.compile(schema);
     } catch (e) {
       result.addError(
-        new JsonSchemaError(e),
+        new JsonSchemaCompilationError(e.message),
       );
     } finally {
       Object.keys(additionalSchemas).forEach((schemaId) => {
         this.ajv.removeSchema(schemaId);
       });
+    }
+
+    if (this.ajv.errors) {
+      result.addError(
+        this.ajv.errors.map((error) => new JsonSchemaError(
+          error.message,
+          error.keyword,
+          error.instancePath,
+          error.schemaPath,
+          error.params,
+          error.propertyName,
+        )),
+      );
     }
 
     return result;

@@ -1,15 +1,19 @@
 const AbstractBasicError = require('../AbstractBasicError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class InvalidDocumentTypeError extends AbstractBasicError {
   /**
    * @param {string} type
-   * @param {DataContract} dataContract
+   * @param {Buffer} dataContractId
    */
-  constructor(type, dataContract) {
-    super(`Data Contract doesn't define document with type ${type}`);
+  constructor(type, dataContractId) {
+    super(`Data Contract ${Identifier.from(dataContractId)} doesn't define document with type ${type}`);
 
     this.type = type;
-    this.dataContract = dataContract;
+    this.dataContractId = dataContractId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
@@ -22,12 +26,12 @@ class InvalidDocumentTypeError extends AbstractBasicError {
   }
 
   /**
-   * Get Data Contract
+   * Get Data Contract ID
    *
-   * @return {DataContract}
+   * @return {Identifier}
    */
-  getDataContract() {
-    return this.dataContract;
+  getDataContractId() {
+    return this.dataContractId;
   }
 }
 

@@ -1,34 +1,48 @@
 const AbstractStateError = require('../AbstractStateError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class DocumentOwnerIdMismatchError extends AbstractStateError {
   /**
-   * @param {DocumentReplaceTransition
-   *        |DocumentDeleteTransition} documentTransition
-   * @param {Document} fetchedDocument
+   * @param {Buffer} documentId
+   * @param {Buffer} documentOwnerId
+   * @param {Buffer} existingDocumentOwnerId
    */
-  constructor(documentTransition, fetchedDocument) {
-    super('Document owner id mismatch with previous versions');
+  constructor(documentId, documentOwnerId, existingDocumentOwnerId) {
+    super(`Provided document ${Identifier.from(documentId)} owner ID ${Identifier.from(documentOwnerId)} mismatch with existing ${Identifier.from(existingDocumentOwnerId)}`);
 
-    this.documentTransition = documentTransition;
-    this.fetchedDocument = fetchedDocument;
+    this.documentId = documentId;
+    this.documentOwnerId = documentOwnerId;
+    this.existingDocumentOwnerId = existingDocumentOwnerId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get Document Action Transition
+   * Get document ID
    *
-   * @return {DocumentReplaceTransition|DocumentDeleteTransition}
+   * @returns {Buffer}
    */
-  getDocumentTransition() {
-    return this.documentTransition;
+  getDocumentId() {
+    return this.documentId;
   }
 
   /**
-   * Get fetched Document
+   * Get document owner ID
    *
-   * @return {Document}
+   * @return {Buffer}
    */
-  getFetchedDocument() {
-    return this.fetchedDocument;
+  getDocumentOwnerId() {
+    return this.documentOwnerId;
+  }
+
+  /**
+   * Get existing Document owner ID
+   *
+   * @return {Buffer}
+   */
+  getExistingDocumentOwnerId() {
+    return this.existingDocumentOwnerId;
   }
 }
 

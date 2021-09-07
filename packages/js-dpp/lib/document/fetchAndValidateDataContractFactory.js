@@ -20,7 +20,7 @@ function fetchAndValidateDataContractFactory(stateRepository) {
 
     if (!Object.prototype.hasOwnProperty.call(rawDocument, '$dataContractId')) {
       result.addError(
-        new MissingDataContractIdError(rawDocument),
+        new MissingDataContractIdError(),
       );
     }
 
@@ -42,7 +42,7 @@ function fetchAndValidateDataContractFactory(stateRepository) {
 
     if (!dataContract) {
       result.addError(
-        new DataContractNotPresentError(dataContractId),
+        new DataContractNotPresentError(dataContractId.toBuffer()),
       );
     }
 

@@ -2,21 +2,24 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class InvalidStateTransitionTypeError extends AbstractBasicError {
   /**
-   * @param {RawStateTransition} rawStateTransition
+   * @param {number} type
    */
-  constructor(rawStateTransition) {
-    super(`Invalid State Transition type ${rawStateTransition.type}`);
+  constructor(type) {
+    super(`Invalid State Transition type ${type}`);
 
-    this.rawStateTransition = rawStateTransition;
+    this.type = type;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get raw State Transition
+   * Get state transition type
    *
-   * @return {RawStateTransition}
+   * @return {number}
    */
-  getRawStateTransition() {
-    return this.rawStateTransition;
+  getType() {
+    return this.type;
   }
 }
 

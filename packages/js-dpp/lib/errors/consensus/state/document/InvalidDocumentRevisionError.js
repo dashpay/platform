@@ -1,33 +1,37 @@
 const AbstractStateError = require('../AbstractStateError');
+const Identifier = require('../../../../identifier/Identifier');
 
 class InvalidDocumentRevisionError extends AbstractStateError {
   /**
-   * @param {DocumentReplaceTransition} documentTransition
-   * @param {Document} fetchedDocument
+   * @param {Buffer} documentId
+   * @param {number} currentRevision
    */
-  constructor(documentTransition, fetchedDocument) {
-    super('Invalid Document revision');
+  constructor(documentId, currentRevision) {
+    super(`Document ${Identifier.from(documentId)} has invalid revision. The current revision is ${currentRevision}`);
 
-    this.documentTransition = documentTransition;
-    this.fetchedDocument = fetchedDocument;
+    this.documentId = documentId;
+    this.currentRevision = currentRevision;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get Document replace transition
+   * Get Document ID
    *
-   * @return {DocumentReplaceTransition}
+   * @return {Buffer}
    */
-  getDocumentTransition() {
-    return this.documentTransition;
+  getDocumentId() {
+    return this.documentId;
   }
 
   /**
-   * Get fetched Document
+   * Get current revision
    *
-   * @return {Document}
+   * @return {number}
    */
-  getFetchedDocument() {
-    return this.fetchedDocument;
+  getCurrentRevision() {
+    return this.currentRevision;
   }
 }
 

@@ -2,7 +2,7 @@ const DPPError = require('../../errors/DPPError');
 
 class InvalidIdentityError extends DPPError {
   /**
-   * @param {ConsensusError[]} errors
+   * @param {AbstractConsensusError[]} errors
    * @param {RawIdentity} rawIdentity
    */
   constructor(errors, rawIdentity) {
@@ -20,7 +20,7 @@ class InvalidIdentityError extends DPPError {
   /**
    * Get validation errors
    *
-   * @return {ConsensusError[]}
+   * @return {AbstractConsensusError[]}
    */
   getErrors() {
     return this.errors;

@@ -2,21 +2,24 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class DuplicatedIdentityPublicKeyError extends AbstractBasicError {
   /**
-   * @param {RawIdentityPublicKey[]} rawPublicKeys
+   * @param {number[]} duplicatedPublicKeyIds
    */
-  constructor(rawPublicKeys) {
-    super('Duplicated public keys found');
+  constructor(duplicatedPublicKeyIds) {
+    super(`Duplicated public keys ${duplicatedPublicKeyIds.join(', ')} found`);
 
-    this.rawPublicKeys = rawPublicKeys;
+    this.duplicatedPublicKeyIds = duplicatedPublicKeyIds;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get public keys
+   * Get duplicated public key ids
    *
-   * @return {RawIdentityPublicKey[]}
+   * @return {number[]}
    */
-  getRawPublicKeys() {
-    return this.rawPublicKeys;
+  getDuplicatedPublicKeysIds() {
+    return this.duplicatedPublicKeyIds;
   }
 }
 

@@ -1,5 +1,5 @@
 const ValidationResult = require('../../../../../validation/ValidationResult');
-const DuplicateDocumentError = require('../../../../../errors/consensus/state/document/DuplicateDocumentError');
+const DuplicateUniqueIndexError = require('../../../../../errors/consensus/state/document/DuplicateUniqueIndexError');
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
 /**
@@ -101,14 +101,7 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
         });
       });
 
-    let fetchedDocumentsByIndices;
-
-    try {
-      fetchedDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
-    } catch (e) {
-      result.addError(e);
-      return result;
-    }
+    const fetchedDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
 
     // 3. Create errors if duplicates found
     fetchedDocumentsByIndices
@@ -120,9 +113,9 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
         return !isEmpty && !onlyOriginDocument;
       }).forEach((rawDocuments) => {
         result.addError(
-          new DuplicateDocumentError(
-            rawDocuments.documentTransition,
-            rawDocuments.indexDefinition,
+          new DuplicateUniqueIndexError(
+            rawDocuments.documentTransition.getId().toBuffer(),
+            rawDocuments.indexDefinition.properties.map((i) => Object.keys(i)[0]),
           ),
         );
       });

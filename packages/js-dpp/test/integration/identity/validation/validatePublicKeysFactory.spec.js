@@ -55,9 +55,9 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('id');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('id');
     });
 
     it('should be a number', () => {
@@ -69,8 +69,8 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/id');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/id');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should be an integer', () => {
@@ -82,8 +82,8 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/id');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/id');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should be greater or equal to one', () => {
@@ -95,8 +95,8 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/id');
-      expect(error.keyword).to.equal('minimum');
+      expect(error.getInstancePath()).to.equal('/id');
+      expect(error.getKeyword()).to.equal('minimum');
     });
   });
 
@@ -110,8 +110,8 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/data');
-      expect(error.keyword).to.equal('minItems');
+      expect(error.getInstancePath()).to.equal('/data');
+      expect(error.getKeyword()).to.equal('minItems');
     });
 
     it('should be a number', () => {
@@ -123,8 +123,8 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/type');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/type');
+      expect(error.getKeyword()).to.equal('type');
     });
   });
 
@@ -138,9 +138,9 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('data');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('data');
     });
 
     it('should be a byte array', () => {
@@ -152,10 +152,10 @@ describe('validatePublicKeysFactory', () => {
 
       const [error, byteArrayError] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/data/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/data/0');
+      expect(error.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.keyword).to.equal('byteArray');
+      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     describe('ECDSA_SECP256K1', () => {
@@ -168,8 +168,8 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/data');
-        expect(error.keyword).to.equal('minItems');
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('minItems');
       });
 
       it('should be no longer than 33 bytes', () => {
@@ -181,8 +181,8 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/data');
-        expect(error.keyword).to.equal('maxItems');
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('maxItems');
       });
     });
 
@@ -197,8 +197,8 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/data');
-        expect(error.keyword).to.equal('minItems');
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('minItems');
       });
 
       it('should be no longer than 48 bytes', () => {
@@ -211,8 +211,8 @@ describe('validatePublicKeysFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.instancePath).to.equal('/data');
-        expect(error.keyword).to.equal('maxItems');
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('maxItems');
       });
     });
   });
@@ -226,7 +226,8 @@ describe('validatePublicKeysFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getRawPublicKeys()).to.equal(rawPublicKeys);
+    expect(error.getCode()).to.equal(1030);
+    expect(error.getDuplicatedIds()).to.deep.equal([rawPublicKeys[1].id]);
   });
 
   it('should return invalid result if there are duplicate keys', () => {
@@ -238,7 +239,8 @@ describe('validatePublicKeysFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getRawPublicKeys()).to.equal(rawPublicKeys);
+    expect(error.getCode()).to.equal(1029);
+    expect(error.getDuplicatedPublicKeysIds()).to.deep.equal([rawPublicKeys[1].id]);
   });
 
   it('should return invalid result if key data is not a valid DER', () => {
@@ -250,8 +252,10 @@ describe('validatePublicKeysFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getPublicKey()).to.deep.equal(rawPublicKeys[1]);
-    expect(error.getValidationError()).to.be.an.instanceOf(TypeError);
+    expect(error.getCode()).to.equal(1040);
+    expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[1].id);
+    expect(error.getValidationError()).to.be.instanceOf(TypeError);
+    expect(error.getValidationError().message).to.equal('Invalid DER format public key');
   });
 
   it('should pass valid public keys', () => {

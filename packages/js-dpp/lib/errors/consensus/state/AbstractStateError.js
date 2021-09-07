@@ -1,6 +1,6 @@
-const ConsensusError = require('../ConsensusError');
+const AbstractConsensusError = require('../AbstractConsensusError');
 
-class AbstractStateError extends ConsensusError {
+class AbstractStateError extends AbstractConsensusError {
 
 }
 

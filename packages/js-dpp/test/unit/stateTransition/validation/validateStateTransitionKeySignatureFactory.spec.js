@@ -40,6 +40,10 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
     expectValidationError(result, InvalidStateTransitionSignatureError);
 
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(2002);
+
     expect(fetchAssetLockPublicKeyHashMock).to.be.calledOnceWithExactly(
       stateTransition.getAssetLockProof(),
     );

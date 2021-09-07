@@ -45,6 +45,7 @@ describe('validateIdentityPublicKeysUniquenessFactory', () => {
 
     const [error] = result.getErrors();
 
+    expect(error.getCode()).to.equal(4012);
     expect(error.getPublicKeyHash()).to.deep.equal(identity.getPublicKeyById(0).hash());
   });
 

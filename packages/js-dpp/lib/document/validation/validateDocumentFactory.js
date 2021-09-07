@@ -27,7 +27,7 @@ module.exports = function validateDocumentFactory(
 
     if (!Object.prototype.hasOwnProperty.call(rawDocument, '$type')) {
       result.addError(
-        new MissingDocumentTypeError(rawDocument),
+        new MissingDocumentTypeError(),
       );
 
       return result;
@@ -35,7 +35,10 @@ module.exports = function validateDocumentFactory(
 
     if (!dataContract.isDocumentDefined(rawDocument.$type)) {
       result.addError(
-        new InvalidDocumentTypeError(rawDocument.$type, dataContract),
+        new InvalidDocumentTypeError(
+          rawDocument.$type,
+          dataContract.getId().toBuffer(),
+        ),
       );
 
       return result;
@@ -62,6 +65,10 @@ module.exports = function validateDocumentFactory(
         additionalSchemas,
       ),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
 
     return result;
   }

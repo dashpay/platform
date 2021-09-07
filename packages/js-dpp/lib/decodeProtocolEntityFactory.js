@@ -19,16 +19,16 @@ function decodeProtocolEntityFactory(versionCompatibilityMap) {
     try {
       protocolVersion = buffer.slice(0, 4).readUInt32LE(0);
     } catch (error) {
-      throw new ProtocolVersionParsingError(
-        buffer,
-        error,
-      );
+      const consensusError = new ProtocolVersionParsingError(error.message);
+
+      consensusError.setParsingError(error);
+
+      throw consensusError;
     }
 
     // Parsed protocol version must be equal or lower than current version
     if (protocolVersion > currentProtocolVersion) {
       throw new UnsupportedProtocolVersionError(
-        buffer,
         protocolVersion,
         currentProtocolVersion,
       );
@@ -43,7 +43,6 @@ function decodeProtocolEntityFactory(versionCompatibilityMap) {
     // Parsed protocol version must higher or equal to the minimum compatible version
     if (protocolVersion < minimalProtocolVersion) {
       throw new IncompatibleProtocolVersionError(
-        buffer,
         protocolVersion,
         minimalProtocolVersion,
       );
@@ -55,10 +54,11 @@ function decodeProtocolEntityFactory(versionCompatibilityMap) {
         buffer.slice(4, buffer.length),
       );
     } catch (error) {
-      throw new SerializedObjectParsingError(
-        buffer,
-        error,
-      );
+      const consensusError = new SerializedObjectParsingError(error.message);
+
+      consensusError.setParsingError(error);
+
+      throw consensusError;
     }
 
     return [protocolVersion, rawEntity];

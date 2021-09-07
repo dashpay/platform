@@ -2,22 +2,23 @@ const AbstractIndexError = require('./AbstractIndexError');
 
 class UndefinedIndexPropertyError extends AbstractIndexError {
   /**
-   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    * @param {Object} indexDefinition
    * @param {string} propertyName
    */
-  constructor(rawDataContract, documentType, indexDefinition, propertyName) {
-    const message = `'${propertyName}' property is not defined in the document`;
+  constructor(documentType, indexDefinition, propertyName) {
+    const message = `'${propertyName}' property is not defined in the ${documentType} document`;
 
     super(
       message,
-      rawDataContract,
       documentType,
       indexDefinition,
     );
 
     this.propertyName = propertyName;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**

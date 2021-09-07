@@ -4,21 +4,23 @@ class InconsistentCompoundIndexDataError extends AbstractBasicError {
   /**
    *
    * @param {string} documentType
-   * @param {Object} indexDefinition
+   * @param {string[]} indexedProperties
    */
-  constructor(documentType, indexDefinition) {
-    super('Unique compound index properties are partially set');
+  constructor(documentType, indexedProperties) {
+    super(`Unique compound index properties ${indexedProperties.join(', ')} are partially set for ${documentType} document`);
 
     this.documentType = documentType;
-    this.indexDefinition = indexDefinition;
+    this.indexedProperties = indexedProperties;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   *
-   * @return {Object}
+   * @return {string[]}
    */
-  getIndexDefinition() {
-    return this.indexDefinition;
+  getIndexedProperties() {
+    return this.indexedProperties;
   }
 
   /**

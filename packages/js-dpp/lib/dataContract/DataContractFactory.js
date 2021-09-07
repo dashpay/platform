@@ -6,7 +6,7 @@ const generateDataContractId = require('./generateDataContractId');
 const DataContractCreateTransition = require('./stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
 const generateEntropy = require('../util/generateEntropy');
-const ConsensusError = require('../errors/consensus/ConsensusError');
+const AbstractConsensusError = require('../errors/consensus/AbstractConsensusError');
 
 class DataContractFactory {
   /**
@@ -88,7 +88,7 @@ class DataContractFactory {
 
       rawDataContract.protocolVersion = protocolVersion;
     } catch (error) {
-      if (error instanceof ConsensusError) {
+      if (error instanceof AbstractConsensusError) {
         throw new InvalidDataContractError([error]);
       }
 

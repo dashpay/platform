@@ -119,7 +119,6 @@ module.exports = function validateDataContractFactory(
               isUniqueIndexLimitReached = true;
 
               result.addError(new UniqueIndicesLimitReachedError(
-                rawDataContract,
                 documentType,
               ));
             }
@@ -133,7 +132,6 @@ module.exports = function validateDataContractFactory(
 
               if (isSingleIndex) {
                 result.addError(new SystemPropertyIndexAlreadyPresentError(
-                  rawDataContract,
                   documentType,
                   indexDefinition,
                   propertyName,
@@ -159,7 +157,6 @@ module.exports = function validateDataContractFactory(
             .map(([propertyName]) => {
               result.addError(
                 new UndefinedIndexPropertyError(
-                  rawDataContract,
                   documentType,
                   indexDefinition,
                   propertyName,
@@ -205,7 +202,6 @@ module.exports = function validateDataContractFactory(
 
             if (invalidPropertyType) {
               result.addError(new InvalidIndexPropertyTypeError(
-                rawDataContract,
                 documentType,
                 indexDefinition,
                 propertyName,
@@ -219,7 +215,6 @@ module.exports = function validateDataContractFactory(
               if (maxLength === undefined) {
                 result.addError(
                   new InvalidIndexedPropertyConstraintError(
-                    rawDataContract,
                     documentType,
                     indexDefinition,
                     propertyName,
@@ -232,7 +227,6 @@ module.exports = function validateDataContractFactory(
               if (maxLength !== undefined && maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH) {
                 result.addError(
                   new InvalidIndexedPropertyConstraintError(
-                    rawDataContract,
                     documentType,
                     indexDefinition,
                     propertyName,
@@ -254,7 +248,7 @@ module.exports = function validateDataContractFactory(
 
             if (!allAreRequired && !allAreNotRequired) {
               result.addError(
-                new InvalidCompoundIndexError(rawDataContract, documentType, indexDefinition),
+                new InvalidCompoundIndexError(documentType, indexDefinition),
               );
             }
           }
@@ -265,7 +259,6 @@ module.exports = function validateDataContractFactory(
           if (indicesFingerprints.includes(indicesFingerprint)) {
             result.addError(
               new DuplicateIndexError(
-                rawDataContract,
                 documentType,
                 indexDefinition,
               ),

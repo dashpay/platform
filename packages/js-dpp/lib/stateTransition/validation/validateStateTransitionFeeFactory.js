@@ -60,7 +60,7 @@ function validateStateTransitionFeeFactory(
 
     if (balance < feeSize) {
       result.addError(
-        new BalanceIsNotEnoughError(balance),
+        new BalanceIsNotEnoughError(balance, feeSize),
       );
     }
 

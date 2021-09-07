@@ -19,7 +19,7 @@ const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 
 const MissingOptionError = require('../../../lib/errors/MissingOptionError');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
-const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
+const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
 
 describe('StateTransitionFacade', () => {
   let dpp;
@@ -214,7 +214,7 @@ describe('StateTransitionFacade', () => {
     });
 
     it('should return invalid result if not enough balance to pay fee for State Transition', async () => {
-      const consensusError = new ConsensusError('error');
+      const consensusError = new SomeConsensusError('error');
 
       dpp.stateTransition.validateStateTransitionFee = () => new ValidationResult([consensusError]);
 
@@ -230,7 +230,7 @@ describe('StateTransitionFacade', () => {
     });
 
     it('should return invalid result if State Transition is invalid against state', async () => {
-      const consensusError = new ConsensusError('error');
+      const consensusError = new SomeConsensusError('error');
 
       dpp.stateTransition.validateStateTransitionState = () => (
         new ValidationResult([consensusError])

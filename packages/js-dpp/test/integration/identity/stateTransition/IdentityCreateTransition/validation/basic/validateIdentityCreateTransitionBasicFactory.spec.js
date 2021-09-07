@@ -16,9 +16,9 @@ const {
 } = require('../../../../../../../lib/test/expect/expectError');
 
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
-const ConsensusError = require('../../../../../../../lib/errors/consensus/ConsensusError');
 const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
+const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validateIdentityCreateTransitionBasic;
@@ -76,9 +76,9 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('protocolVersion');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
 
     it('should be an integer', async () => {
@@ -90,8 +90,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/protocolVersion');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should not be less than 0', async () => {
@@ -103,8 +103,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minimum');
-      expect(error.instancePath).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('minimum');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
     });
 
     it('should not be greater than current version (0)', async () => {
@@ -116,8 +116,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maximum');
-      expect(error.instancePath).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('maximum');
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
     });
   });
 
@@ -131,9 +131,9 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('type');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('type');
     });
 
     it('should be equal to 2', async () => {
@@ -145,9 +145,9 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/type');
-      expect(error.keyword).to.equal('const');
-      expect(error.params.allowedValue).to.equal(2);
+      expect(error.getInstancePath()).to.equal('/type');
+      expect(error.getKeyword()).to.equal('const');
+      expect(error.getParams().allowedValue).to.equal(2);
     });
   });
 
@@ -163,9 +163,9 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.params.missingProperty).to.equal('assetLockProof');
-      expect(error.keyword).to.equal('required');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getParams().missingProperty).to.equal('assetLockProof');
+      expect(error.getKeyword()).to.equal('required');
     });
 
     it('should be an object', async () => {
@@ -177,12 +177,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/assetLockProof');
-      expect(error.keyword).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/assetLockProof');
+      expect(error.getKeyword()).to.equal('type');
     });
 
     it('should be valid', async () => {
-      const assetLockError = new ConsensusError('test');
+      const assetLockError = new SomeConsensusError('test');
       const assetLockResult = new ValidationResult([
         assetLockError,
       ]);
@@ -218,9 +218,9 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
-      expect(error.params.missingProperty).to.equal('publicKeys');
-      expect(error.keyword).to.equal('required');
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getParams().missingProperty).to.equal('publicKeys');
+      expect(error.getKeyword()).to.equal('required');
     });
 
     it('should not be empty', async () => {
@@ -234,8 +234,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('minItems');
-      expect(error.instancePath).to.equal('/publicKeys');
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getInstancePath()).to.equal('/publicKeys');
     });
 
     it('should not have more than 10 items', async () => {
@@ -253,8 +253,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('maxItems');
-      expect(error.instancePath).to.equal('/publicKeys');
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getInstancePath()).to.equal('/publicKeys');
     });
 
     it('should be unique', async () => {
@@ -268,12 +268,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const [error] = result.getErrors();
 
-      expect(error.keyword).to.equal('uniqueItems');
-      expect(error.instancePath).to.equal('/publicKeys');
+      expect(error.getKeyword()).to.equal('uniqueItems');
+      expect(error.getInstancePath()).to.equal('/publicKeys');
     });
 
     it('should be valid', async () => {
-      const publicKeysError = new ConsensusError('test');
+      const publicKeysError = new SomeConsensusError('test');
       const publicKeysResult = new ValidationResult([
         publicKeysError,
       ]);
@@ -305,8 +305,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('');
-      expect(error.keyword).to.equal('required');
-      expect(error.params.missingProperty).to.equal('signature');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('signature');
     });
 
     it('should be a byte array', async () => {
@@ -319,9 +319,9 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const [error, byteArrayError] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signature/0');
-      expect(error.keyword).to.equal('type');
+      expect(error.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.keyword).to.equal('byteArray');
+      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be not shorter than 65 bytes', async () => {
@@ -334,7 +334,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signature');
-      expect(error.keyword).to.equal('minItems');
+      expect(error.getKeyword()).to.equal('minItems');
     });
 
     it('should be not longer than 65 bytes', async () => {
@@ -347,7 +347,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.instancePath).to.equal('/signature');
-      expect(error.keyword).to.equal('maxItems');
+      expect(error.getKeyword()).to.equal('maxItems');
     });
   });
 

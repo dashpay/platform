@@ -1,16 +1,16 @@
 const { expect } = require('chai');
 
 const ValidationResult = require('../../validation/ValidationResult');
-const ConsensusError = require('../../errors/consensus/ConsensusError');
+const AbstractConsensusError = require('../../errors/consensus/AbstractConsensusError');
 const JsonSchemaError = require('../../errors/consensus/basic/JsonSchemaError');
 
 const expectError = {
   /**
    * @param {ValidationResult} result
-   * @param {ConsensusError} [errorClass]
+   * @param {AbstractConsensusError} [errorClass]
    * @param {number} [count]
    */
-  expectValidationError(result, errorClass = ConsensusError, count = 1) {
+  expectValidationError(result, errorClass = AbstractConsensusError, count = 1) {
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.getErrors()).to.have.lengthOf(count);
 

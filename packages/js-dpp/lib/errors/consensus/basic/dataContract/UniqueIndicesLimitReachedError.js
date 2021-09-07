@@ -2,19 +2,20 @@ const AbstractIndexError = require('./AbstractIndexError');
 
 class UniqueIndicesLimitReachedError extends AbstractIndexError {
   /**
-   * @param {RawDataContract} rawDataContract
    * @param {string} documentType
    */
-  constructor(rawDataContract, documentType) {
+  constructor(documentType) {
     const message = `'${documentType}' document has more `
-      + `than ${UniqueIndicesLimitReachedError.UNIQUE_INDEX_LIMIT} unique index $defs`;
+      + `than ${UniqueIndicesLimitReachedError.UNIQUE_INDEX_LIMIT} unique indexes`;
 
     super(
       message,
-      rawDataContract,
       documentType,
       {},
     );
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 }
 

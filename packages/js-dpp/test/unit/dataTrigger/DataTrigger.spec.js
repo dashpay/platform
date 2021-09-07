@@ -100,8 +100,12 @@ describe('DataTrigger', () => {
       const result = await trigger.execute(document, context);
 
       expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-      expect(result.getErrors()[0]).to.be.an.instanceOf(DataTriggerExecutionError);
-      expect(result.getErrors()[0].getError()).to.equal(triggerError);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.be.an.instanceOf(DataTriggerExecutionError);
+
+      expect(error.getExecutionError()).to.equal(triggerError);
     });
 
     it('should return a result with invalid result error if trigger function have not returned any result', async () => {
@@ -118,8 +122,11 @@ describe('DataTrigger', () => {
       const result = await trigger.execute(document, context);
 
       expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-      expect(result.getErrors()[0]).to.be.an.instanceOf(DataTriggerInvalidResultError);
-      expect(result.getErrors()[0].message).to.equal('Data trigger have not returned any result');
+
+      const [error] = result.getErrors();
+
+      expect(error).to.be.an.instanceOf(DataTriggerInvalidResultError);
+      expect(error.message).to.equal('Data trigger have not returned any result');
     });
   });
 });

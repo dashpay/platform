@@ -2,34 +2,33 @@ const AbstractDataTriggerError = require('./AbstractDataTriggerError');
 
 class DataTriggerExecutionError extends AbstractDataTriggerError {
   /**
-   * @param {DataTrigger} dataTrigger
-   * @param {DataContract} dataContract
-   * @param {Identifier|Buffer} ownerId
-   * @param {Error} error
+   * @param {Buffer} dataContractId
+   * @param {Buffer} documentTransitionId
+   * @param {string} message
    */
-  constructor(dataTrigger, dataContract, ownerId, error) {
-    super(error.message, dataContract, ownerId);
+  constructor(dataContractId, documentTransitionId, message) {
+    super(dataContractId, documentTransitionId, message);
 
-    this.error = error;
-    this.dataTrigger = dataTrigger;
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Return internal error instance
+   * Set internal error
+   *
+   * @param {Error} error
+   */
+  setExecutionError(error) {
+    this.executionError = error;
+  }
+
+  /**
+   * Return internal error
    *
    * @return {Error}
    */
-  getError() {
-    return this.error;
-  }
-
-  /**
-   * Get data trigger
-   *
-   * @return {DataTrigger}
-   */
-  getDataTrigger() {
-    return this.dataTrigger;
+  getExecutionError() {
+    return this.executionError;
   }
 }
 

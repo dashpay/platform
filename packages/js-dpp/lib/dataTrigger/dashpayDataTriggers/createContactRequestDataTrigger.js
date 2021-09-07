@@ -32,14 +32,16 @@ async function createContactRequestDataTrigger(documentTransition, context) {
   const heightWindowEnd = coreChainLockedHeight + BLOCKS_WINDOW_SIZE;
 
   if (coreHeightCreatedAt < heightWindowStart || coreHeightCreatedAt > heightWindowEnd) {
-    result.addError(
-      new DataTriggerConditionError(
-        documentTransition,
-        context.getDataContract(),
-        context.getOwnerId(),
-        'Core height is out of block height window',
-      ),
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      `Core height ${coreHeightCreatedAt} is out of block height window from ${heightWindowStart} to ${heightWindowEnd}`,
     );
+
+    error.setOwnerId(context.getOwnerId());
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
   }
 
   return result;

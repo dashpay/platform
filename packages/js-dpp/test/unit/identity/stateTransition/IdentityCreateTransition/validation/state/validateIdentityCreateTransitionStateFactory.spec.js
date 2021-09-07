@@ -51,8 +51,9 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.message).to.equal(`Identity with id ${stateTransition.getIdentityId()} already exists`);
-    expect(error.getStateTransition()).to.deep.equal(stateTransition);
+    expect(error.getCode()).to.equal(4011);
+    expect(Buffer.isBuffer(error.getIdentityId())).to.be.true();
+    expect(error.getIdentityId()).to.deep.equal(stateTransition.getIdentityId());
   });
 
   it('should return invalid result if identity public key already exists', async () => {

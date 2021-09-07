@@ -35,7 +35,7 @@ function validateStateTransitionKeySignatureFactory(
     }
 
     if (!signatureIsVerified) {
-      result.addError(new InvalidStateTransitionSignatureError(stateTransition));
+      result.addError(new InvalidStateTransitionSignatureError());
     }
 
     return result;

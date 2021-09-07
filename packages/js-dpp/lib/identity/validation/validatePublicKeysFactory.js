@@ -63,12 +63,14 @@ function validatePublicKeysFactory(validator) {
     });
 
     if (duplicatedIds.length > 0) {
-      result.addError(new DuplicatedIdentityPublicKeyIdError(rawPublicKeys));
+      result.addError(
+        new DuplicatedIdentityPublicKeyIdError(duplicatedIds),
+      );
     }
 
     // Check that there's no duplicated keys
     const keysCount = {};
-    const duplicatedKeys = [];
+    const duplicatedKeyIds = [];
     rawPublicKeys.forEach((rawPublicKey) => {
       const dataHex = rawPublicKey.data.toString('hex');
 
@@ -76,12 +78,14 @@ function validatePublicKeysFactory(validator) {
         ? 1 : keysCount[dataHex] + 1;
 
       if (keysCount[dataHex] > 1) {
-        duplicatedKeys.push(dataHex);
+        duplicatedKeyIds.push(rawPublicKey.id);
       }
     });
 
-    if (duplicatedKeys.length > 0) {
-      result.addError(new DuplicatedIdentityPublicKeyError(rawPublicKeys));
+    if (duplicatedKeyIds.length > 0) {
+      result.addError(
+        new DuplicatedIdentityPublicKeyError(duplicatedKeyIds),
+      );
     }
 
     // validate key data
@@ -90,12 +94,16 @@ function validatePublicKeysFactory(validator) {
         const dataHex = rawPublicKey.data.toString('hex');
 
         if (!PublicKey.isValid(dataHex)) {
-          result.addError(
-            new InvalidIdentityPublicKeyDataError(
-              rawPublicKey,
-              PublicKey.getValidationError(dataHex),
-            ),
+          const validationError = PublicKey.getValidationError(dataHex);
+
+          const consensusError = new InvalidIdentityPublicKeyDataError(
+            rawPublicKey.id,
+            validationError.message,
           );
+
+          consensusError.setValidationError(validationError);
+
+          result.addError(consensusError);
         }
       });
 

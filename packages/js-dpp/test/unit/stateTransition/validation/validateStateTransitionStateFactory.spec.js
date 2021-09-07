@@ -11,8 +11,8 @@ const ValidationResult = require('../../../../lib/validation/ValidationResult');
 const DataContractFactory = require('../../../../lib/dataContract/DataContractFactory');
 
 const InvalidStateTransitionTypeError = require('../../../../lib/stateTransition/errors/InvalidStateTransitionTypeError');
-const ConsensusError = require('../../../../lib/errors/consensus/ConsensusError');
 const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateStateTransitionStateFactory', () => {
   let validateDataContractSTDataMock;
@@ -56,7 +56,7 @@ describe('validateStateTransitionStateFactory', () => {
   });
 
   it('should return invalid result if Data Contract State Transition is not valid', async () => {
-    const dataContractError = new ConsensusError('test');
+    const dataContractError = new SomeConsensusError('test');
     const dataContractResult = new ValidationResult([
       dataContractError,
     ]);

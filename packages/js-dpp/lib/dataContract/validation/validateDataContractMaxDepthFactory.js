@@ -1,7 +1,7 @@
 const lodashCloneDeep = require('lodash.clonedeep');
 const ValidationResult = require('../../validation/ValidationResult');
-const JsonSchemaError = require('../../errors/consensus/basic/JsonSchemaError');
 const DataContractMaxDepthExceedError = require('../../errors/consensus/basic/dataContract/DataContractMaxDepthExceedError');
+const InvalidJsonSchemaRefError = require('../../errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
 
 /**
  * Check that JSON Schema max depth is less than max value
@@ -64,7 +64,11 @@ function validateDataContractMaxDepthFactory(refParser) {
         },
       });
     } catch (error) {
-      result.addError(new JsonSchemaError(error));
+      const consensusError = new InvalidJsonSchemaRefError(error.message);
+
+      consensusError.setRefError(error);
+
+      result.addError(consensusError);
 
       return result;
     }
@@ -74,7 +78,11 @@ function validateDataContractMaxDepthFactory(refParser) {
     } catch (error) {
       if (error instanceof DataContractMaxDepthExceedError) {
         result.addError(error);
+
+        return result;
       }
+
+      throw error;
     }
 
     return result;

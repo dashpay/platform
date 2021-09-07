@@ -2,28 +2,35 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class InvalidIdentityPublicKeyDataError extends AbstractBasicError {
   /**
-   * @param {RawIdentityPublicKey} publicKey
-   * @param {Error} validationError
+   * @param {number} publicKeyId
+   * @param {string} message
    */
-  constructor(publicKey, validationError) {
-    super(`Invalid identity public key data ${publicKey.data}`);
+  constructor(publicKeyId, message) {
+    super(`Invalid identity public key ${publicKeyId} data: ${message}`);
 
-    this.publicKey = publicKey;
-    this.validationError = validationError;
+    this.publicKeyId = publicKeyId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get identity public key
+   * Get identity public key ID
    *
-   * @return {RawIdentityPublicKey}
+   * @return {number}
    */
-  getPublicKey() {
-    return this.publicKey;
+  getPublicKeyId() {
+    return this.publicKeyId;
   }
 
   /**
-   * Get public key data validation error
-   *
+   * @param {Error} error
+   */
+  setValidationError(error) {
+    this.validationError = error;
+  }
+
+  /**
    * @return {Error}
    */
   getValidationError() {

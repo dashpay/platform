@@ -60,7 +60,11 @@ function validateChainAssetLockProofStructureFactory(
     const rawTransaction = await stateRepository.fetchTransaction(transactionHash);
 
     if (rawTransaction === null) {
-      result.addError(new IdentityAssetLockTransactionIsNotFoundError(outPointBuffer));
+      result.addError(
+        new IdentityAssetLockTransactionIsNotFoundError(
+          Buffer.from(transactionHash, 'hex'),
+        ),
+      );
 
       return result;
     }

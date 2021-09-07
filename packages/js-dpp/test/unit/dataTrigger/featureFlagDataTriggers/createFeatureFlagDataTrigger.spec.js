@@ -51,7 +51,7 @@ describe('createFeatureFlagDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('Feature flag cannot be enabled in the past');
+    expect(error.message).to.equal('Feature flag cannot be enabled in the past on block 1. Current block height is 42');
   });
 
   it('should return an error if owner id is not equal to top level identity id', async () => {

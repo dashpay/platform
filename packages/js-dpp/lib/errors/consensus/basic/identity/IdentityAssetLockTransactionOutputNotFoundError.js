@@ -8,6 +8,9 @@ class IdentityAssetLockTransactionOutputNotFoundError extends AbstractBasicError
     super(`Asset Lock Transaction Output with index ${outputIndex} not found`);
 
     this.outputIndex = outputIndex;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**

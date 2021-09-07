@@ -8,6 +8,9 @@ class InvalidIdentityPublicKeyTypeError extends AbstractSignatureError {
     super(`Invalid identity public key type ${type}`);
 
     this.type = type;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**

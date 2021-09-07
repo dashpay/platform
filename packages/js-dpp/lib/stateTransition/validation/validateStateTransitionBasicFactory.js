@@ -23,7 +23,7 @@ function validateStateTransitionBasicFactory(
 
     if (!Object.prototype.hasOwnProperty.call(rawStateTransition, 'type')) {
       result.addError(
-        new MissingStateTransitionTypeError(rawStateTransition),
+        new MissingStateTransitionTypeError(),
       );
 
       return result;
@@ -31,7 +31,7 @@ function validateStateTransitionBasicFactory(
 
     if (!validationFunctionsByType[rawStateTransition.type]) {
       result.addError(
-        new InvalidStateTransitionTypeError(rawStateTransition),
+        new InvalidStateTransitionTypeError(rawStateTransition.type),
       );
 
       return result;
@@ -54,7 +54,10 @@ function validateStateTransitionBasicFactory(
     } catch (e) {
       if (e instanceof MaxEncodedBytesReachedError) {
         result.addError(
-          new StateTransitionMaxSizeExceededError(rawStateTransition, e.getMaxSizeKBytes()),
+          new StateTransitionMaxSizeExceededError(
+            Math.floor(e.getPayload().length / 1024),
+            e.getMaxSizeKBytes(),
+          ),
         );
       } else {
         throw e;

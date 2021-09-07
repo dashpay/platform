@@ -3,10 +3,12 @@ const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
+const chaiString = require('chai-string');
 
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
+use(chaiString);
 
 beforeEach(function beforeEach() {
   if (!this.sinonSandbox) {

@@ -2,22 +2,24 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class InvalidIdentityAssetLockTransactionOutputError extends AbstractBasicError {
   /**
-   * @param {string} message
-   * @param {Object} output
+   * @param {number} outputIndex
    */
-  constructor(message, output) {
-    super(`Invalid asset lock transaction output: ${message}`);
+  constructor(outputIndex) {
+    super(`Asset lock output ${outputIndex} is not a valid standard OP_RETURN output`);
 
-    this.output = output;
+    this.outputIndex = outputIndex;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
    * Get lock transaction output
    *
-   * @return {Object}
+   * @return {number}
    */
-  getOutput() {
-    return this.output;
+  getOutputIndex() {
+    return this.outputIndex;
   }
 }
 

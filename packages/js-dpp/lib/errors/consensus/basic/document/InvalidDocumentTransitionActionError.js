@@ -2,14 +2,15 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class InvalidDocumentTransitionActionError extends AbstractBasicError {
   /**
-   * @param {*} action
-   * @param {Object} rawDocumentTransition
+   * @param {number} action
    */
-  constructor(action, rawDocumentTransition) {
+  constructor(action) {
     super(`Document transition action ${action} is not supported`);
 
     this.action = action;
-    this.rawDocumentTransition = rawDocumentTransition;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
@@ -19,15 +20,6 @@ class InvalidDocumentTransitionActionError extends AbstractBasicError {
    */
   getAction() {
     return this.action;
-  }
-
-  /**
-   * Get document transition
-   *
-   * @return {Object}
-   */
-  getRawDocumentTransition() {
-    return this.rawDocumentTransition;
   }
 }
 

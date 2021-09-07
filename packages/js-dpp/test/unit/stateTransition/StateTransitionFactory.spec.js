@@ -6,11 +6,11 @@ const ValidationResult = require('../../../lib/validation/ValidationResult');
 
 const InvalidStateTransitionError = require('../../../lib/stateTransition/errors/InvalidStateTransitionError');
 
-const ConsensusError = require('../../../lib/errors/consensus/ConsensusError');
 const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 const StateTransitionFactory = require('../../../lib/stateTransition/StateTransitionFactory');
+const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
 
 describe('StateTransitionFactory', () => {
   let validateStateTransitionBasicMock;
@@ -69,7 +69,7 @@ describe('StateTransitionFactory', () => {
     });
 
     it('should throw InvalidStateTransitionError if passed object is not valid', async () => {
-      const validationError = new ConsensusError('test');
+      const validationError = new SomeConsensusError('test');
 
       validateStateTransitionBasicMock.returns(new ValidationResult([validationError]));
 

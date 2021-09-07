@@ -2,18 +2,21 @@ const AbstractStateError = require('../AbstractStateError');
 
 class IdentityPublicKeyAlreadyExistsError extends AbstractStateError {
   /**
-   * @param {string} publicKeyHash
+   * @param {Buffer} publicKeyHash
    */
   constructor(publicKeyHash) {
-    super('Identity public key already exists');
+    super(`Identity public key ${publicKeyHash.toString('hex')} already exists`);
 
     this.publicKeyHash = publicKeyHash;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
    * Get public key hash
    *
-   * @return {string}
+   * @return {Buffer}
    */
   getPublicKeyHash() {
     return this.publicKeyHash;

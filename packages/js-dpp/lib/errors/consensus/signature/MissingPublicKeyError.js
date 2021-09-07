@@ -5,9 +5,12 @@ class MissingPublicKeyError extends AbstractSignatureError {
    * @param {number} publicKeyId
    */
   constructor(publicKeyId) {
-    super("Public key with such id doesn't exist");
+    super(`Public key ${publicKeyId} doesn't exist`);
 
     this.publicKeyId = publicKeyId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**

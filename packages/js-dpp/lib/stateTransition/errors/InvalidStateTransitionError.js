@@ -2,7 +2,7 @@ const DPPError = require('../../errors/DPPError');
 
 class InvalidStateTransitionError extends DPPError {
   /**
-   * @param {ConsensusError[]} errors
+   * @param {AbstractConsensusError[]} errors
    * @param {RawStateTransition} [rawStateTransition]
    */
   constructor(errors, rawStateTransition = undefined) {
@@ -20,7 +20,7 @@ class InvalidStateTransitionError extends DPPError {
   /**
    * Get validation errors
    *
-   * @return {ConsensusError[]}
+   * @return {AbstractConsensusError[]}
    */
   getErrors() {
     return this.errors;

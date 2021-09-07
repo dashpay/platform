@@ -4,27 +4,29 @@ const AbstractDocumentTransition = require('../../../../document/stateTransition
 
 class DocumentNotFoundError extends AbstractStateError {
   /**
-   * @param {DocumentReplaceTransition
-   *        |DocumentDeleteTransition} documentTransition
+   * @param {Buffer} documentId
    */
-  constructor(documentTransition) {
+  constructor(documentId) {
     const noun = {
       [AbstractDocumentTransition.ACTIONS.REPLACE]: 'Updated',
       [AbstractDocumentTransition.ACTIONS.DELETE]: 'Deleted',
     };
 
-    super(`${noun[documentTransition.getAction()]} Document not found`);
+    super(`${noun[documentId]} document not found`);
 
-    this.documentTransition = documentTransition;
+    this.documentId = documentId;
+
+    // eslint-disable-next-line prefer-rest-params
+    this.setConstructorArguments(arguments);
   }
 
   /**
-   * Get Document Transition
+   * Get Document ID
    *
-   * @return {DocumentReplaceTransition|DocumentDeleteTransition}
+   * @return {Buffer}
    */
-  getDocumentTransition() {
-    return this.documentTransition;
+  getDocumentId() {
+    return this.documentId;
   }
 }
 
