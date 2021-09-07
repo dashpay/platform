@@ -65,7 +65,7 @@ function dataContractQueryHandlerFactory(
       const {
         rootTreeProof,
         storeTreeProof,
-      } = previousRootTree.getFullProof(previousDataContractsStoreRootTreeLeaf, [id]);
+      } = previousRootTree.getFullProofForOneLeaf(previousDataContractsStoreRootTreeLeaf, [id]);
 
       storeTreeProofs.setDataContractsProof(storeTreeProof);
 

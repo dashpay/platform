@@ -1,7 +1,6 @@
-const { MerkleTree } = require('merkletreejs');
+const { MerkleTree } = require('js-merkle');
 
 const { hashFunction } = require('./hashFunction');
-const convertRootTreeProofToBuffer = require('./convertRootTreeProofToBuffer');
 
 const InvalidLeafIndexError = require('./errors/InvalidLeafIndexError');
 
@@ -37,13 +36,12 @@ class RootTree {
 
   /**
    *
-   * @param {AbstractRootTreeLeaf} leaf
+   * @param {AbstractRootTreeLeaf[]} leaves
    * @return {Buffer}
    */
-  getProof(leaf) {
-    const hash = this.leafHashes[leaf.getIndex()];
-
-    return convertRootTreeProofToBuffer(this.tree.getProof(hash));
+  getProof(leaves) {
+    const indicies = leaves.map((leaf) => leaf.getIndex());
+    return this.tree.getProof(indicies).toBuffer();
   }
 
   /**
@@ -54,9 +52,9 @@ class RootTree {
    * @return {Buffer} proof.rootTreeProof
    * @return {Buffer} proof.storeTreeProof
    */
-  getFullProof(leaf, leafKeys) {
+  getFullProofForOneLeaf(leaf, leafKeys) {
     const storeTreeProof = leaf.getProof(leafKeys);
-    const rootTreeProof = this.getProof(leaf);
+    const rootTreeProof = this.getProof([leaf]);
 
     return {
       rootTreeProof,
@@ -69,9 +67,7 @@ class RootTree {
    */
   rebuild() {
     this.leafHashes = this.leaves.map((leaf) => leaf.getHash());
-    this.tree = new MerkleTree(this.leafHashes, hashFunction, {
-      isBitcoinTree: true,
-    });
+    this.tree = new MerkleTree(this.leafHashes, hashFunction);
   }
 }
 

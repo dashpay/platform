@@ -41,7 +41,7 @@ describe('identityQueryHandlerFactory', () => {
     };
 
     previousRootTreeMock = {
-      getFullProof: this.sinon.stub(),
+      getFullProofForOneLeaf: this.sinon.stub(),
     };
 
     previousIdentitiesStoreRootTreeLeafMock = this.sinon.stub();
@@ -128,7 +128,7 @@ describe('identityQueryHandlerFactory', () => {
     };
 
     previousIdentityRepositoryMock.fetch.resolves(identity);
-    previousRootTreeMock.getFullProof.returns(proof);
+    previousRootTreeMock.getFullProofForOneLeaf.returns(proof);
 
     const result = await identityQueryHandler(params, data, { prove: true });
     expect(previousIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
@@ -136,7 +136,7 @@ describe('identityQueryHandlerFactory', () => {
     expect(result.code).to.equal(0);
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
-    expect(previousRootTreeMock.getFullProof).to.be.calledOnceWith(
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.be.calledOnceWith(
       previousIdentitiesStoreRootTreeLeafMock,
       [identity.getId()],
     );

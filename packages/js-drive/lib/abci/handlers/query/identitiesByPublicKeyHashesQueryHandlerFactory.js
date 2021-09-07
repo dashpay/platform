@@ -95,11 +95,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       const proof = response.getProof();
       const storeTreeProofs = new StoreTreeProofs();
 
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProof(
-        previousIdentitiesStoreRootTreeLeaf,
+      const identitiesStoreTreeProof = previousIdentitiesStoreRootTreeLeaf.getProof(
         foundIdentityIds.map((identityId) => {
           if (identityId) {
             return identityId.toBuffer();
@@ -109,14 +105,16 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
         }),
       );
 
-      const {
-        storeTreeProof: publicKeyStoreTreeProof,
-      } = previousRootTree.getFullProof(
-        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
+      const publicKeyStoreTreeProof = previousPublicKeyToIdentityIdStoreRootTreeLeaf.getProof(
         notFoundIdentityPublicKeyHashes,
       );
 
-      storeTreeProofs.setIdentitiesProof(storeTreeProof);
+      const rootTreeProof = previousRootTree.getProof([
+        previousIdentitiesStoreRootTreeLeaf,
+        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
+      ]);
+
+      storeTreeProofs.setIdentitiesProof(identitiesStoreTreeProof);
       storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(publicKeyStoreTreeProof);
 
       proof.setRootTreeProof(rootTreeProof);

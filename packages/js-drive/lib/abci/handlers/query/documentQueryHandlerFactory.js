@@ -118,7 +118,7 @@ function documentQueryHandlerFactory(
       const {
         rootTreeProof,
         storeTreeProof,
-      } = previousRootTree.getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds);
+      } = previousRootTree.getFullProofForOneLeaf(previousDocumentsStoreRootTreeLeaf, documentIds);
 
       storeTreeProofs.setDocumentsProof(storeTreeProof);
 

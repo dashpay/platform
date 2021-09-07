@@ -52,11 +52,16 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     };
 
     previousRootTreeMock = {
-      getFullProof: this.sinon.stub(),
+      getFullProofForOneLeaf: this.sinon.stub(),
+      getProof: this.sinon.stub(),
     };
 
-    previousIdentitiesStoreRootTreeLeafMock = this.sinon.stub();
-    previousPublicKeyToIdentityIdStoreRootTreeLeafMock = this.sinon.stub();
+    previousIdentitiesStoreRootTreeLeafMock = {
+      getProof: this.sinon.stub(),
+    };
+    previousPublicKeyToIdentityIdStoreRootTreeLeafMock = {
+      getProof: this.sinon.stub(),
+    };
 
     maxIdentitiesPerRequest = 5;
 
@@ -130,7 +135,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
 
     expect(previousPublicKeyIdentityIdRepositoryMock.fetch).to.have.not.been.called();
-    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
   });
 
   it('should return empty response if previousBlockExecutionContext is empty', async () => {
@@ -148,7 +153,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
 
     expect(previousPublicKeyIdentityIdRepositoryMock.fetch).to.have.not.been.called();
-    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
   });
 
   it('should throw an error if maximum requested items exceeded', async () => {
@@ -218,7 +223,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
     };
 
-    previousRootTreeMock.getFullProof.returns(proof);
+    previousRootTreeMock.getFullProofForOneLeaf.returns(proof);
 
     const result = await identitiesByPublicKeyHashesQueryHandler(params, data, { prove: true });
 
@@ -243,9 +248,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
-    expect(previousRootTreeMock.getFullProof).to.be.calledTwice();
-    expect(previousRootTreeMock.getFullProof.getCall(0).args).to.deep.equal([
-      previousIdentitiesStoreRootTreeLeafMock,
+    expect(previousIdentitiesStoreRootTreeLeafMock.getProof).to.have.been.calledOnceWithExactly(
       // Fetch only found identity ids to optimize proof size
       identityIds.map((identityId) => {
         if (identityId) {
@@ -254,13 +257,12 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
         return null;
       }),
-    ]);
-
-    expect(previousRootTreeMock.getFullProof.getCall(1).args).to.deep.equal([
+    );
+    expect(previousRootTreeMock.getProof).to.be.calledOnce();
+    expect(previousRootTreeMock.getProof.getCall(0).args).to.deep.equal([[
+      previousIdentitiesStoreRootTreeLeafMock,
       previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
-      // Fetch proof only for not found identities to optimize proof size
-      [publicKeyHashes[2]],
-    ]);
+    ]]);
   });
 
   it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {

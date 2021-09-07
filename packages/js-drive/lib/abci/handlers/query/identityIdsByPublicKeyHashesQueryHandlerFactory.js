@@ -81,7 +81,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
       const {
         rootTreeProof,
         storeTreeProof,
-      } = previousRootTree.getFullProof(
+      } = previousRootTree.getFullProofForOneLeaf(
         previousPublicKeyToIdentityIdStoreRootTreeLeaf,
         publicKeyHashes,
       );

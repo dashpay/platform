@@ -65,7 +65,7 @@ function identityQueryHandlerFactory(
       const {
         rootTreeProof,
         storeTreeProof,
-      } = previousRootTree.getFullProof(
+      } = previousRootTree.getFullProofForOneLeaf(
         previousIdentitiesStoreRootTreeLeaf,
         [id],
       );

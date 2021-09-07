@@ -78,7 +78,7 @@ function getProofsQueryHandlerFactory(
       response.documentsProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProof(previousDocumentsStoreRootTreeLeaf, documentIds),
+        ...previousRootTree.getFullProofForOneLeaf(previousDocumentsStoreRootTreeLeaf, documentIds),
       };
     }
 
@@ -86,7 +86,9 @@ function getProofsQueryHandlerFactory(
       response.identitiesProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProof(previousIdentitiesStoreRootTreeLeaf, identityIds),
+        ...previousRootTree.getFullProofForOneLeaf(
+          previousIdentitiesStoreRootTreeLeaf, identityIds,
+        ),
       };
     }
 
@@ -94,7 +96,9 @@ function getProofsQueryHandlerFactory(
       response.dataContractsProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProof(previousDataContractsStoreRootTreeLeaf, dataContractIds),
+        ...previousRootTree.getFullProofForOneLeaf(
+          previousDataContractsStoreRootTreeLeaf, dataContractIds,
+        ),
       };
     }
 

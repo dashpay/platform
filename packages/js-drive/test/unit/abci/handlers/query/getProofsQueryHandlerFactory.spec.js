@@ -42,7 +42,7 @@ describe('getProofsQueryHandlerFactory', () => {
     };
 
     previousRootTreeMock = {
-      getFullProof: this.sinon.stub(),
+      getFullProofForOneLeaf: this.sinon.stub(),
     };
 
     previousDataContractsStoreRootTreeLeafMock = this.sinon.stub();
@@ -90,7 +90,7 @@ describe('getProofsQueryHandlerFactory', () => {
 
     const result = await getProofsQueryHandler({}, {}, {});
 
-    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
@@ -114,7 +114,7 @@ describe('getProofsQueryHandlerFactory', () => {
 
     const result = await getProofsQueryHandler({}, {}, {});
 
-    expect(previousRootTreeMock.getFullProof).to.have.not.been.called();
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
@@ -142,7 +142,7 @@ describe('getProofsQueryHandlerFactory', () => {
     };
 
     previousDataContractRepositoryMock.fetch.resolves(dataContract);
-    previousRootTreeMock.getFullProof.returns(expectedProof);
+    previousRootTreeMock.getFullProofForOneLeaf.returns(expectedProof);
 
     const result = await getProofsQueryHandler({}, {
       dataContractIds: [dataContractData.id],
@@ -150,16 +150,16 @@ describe('getProofsQueryHandlerFactory', () => {
       documentIds: documentsData.ids,
     });
 
-    expect(previousRootTreeMock.getFullProof).to.be.calledThrice();
-    expect(previousRootTreeMock.getFullProof.getCall(0).args).to.be.deep.equal([
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.be.calledThrice();
+    expect(previousRootTreeMock.getFullProofForOneLeaf.getCall(0).args).to.be.deep.equal([
       previousDocumentsStoreRootTreeLeafMock,
       documentsData.ids,
     ]);
-    expect(previousRootTreeMock.getFullProof.getCall(1).args).to.be.deep.equal([
+    expect(previousRootTreeMock.getFullProofForOneLeaf.getCall(1).args).to.be.deep.equal([
       previousIdentitiesStoreRootTreeLeafMock,
       [identity.getId()],
     ]);
-    expect(previousRootTreeMock.getFullProof.getCall(2).args).to.be.deep.equal([
+    expect(previousRootTreeMock.getFullProofForOneLeaf.getCall(2).args).to.be.deep.equal([
       previousDataContractsStoreRootTreeLeafMock,
       [dataContract.getId()],
     ]);
@@ -188,11 +188,11 @@ describe('getProofsQueryHandlerFactory', () => {
     };
 
     previousDataContractRepositoryMock.fetch.resolves(dataContract);
-    previousRootTreeMock.getFullProof.returns(expectedProof);
+    previousRootTreeMock.getFullProofForOneLeaf.returns(expectedProof);
 
     const result = await getProofsQueryHandler({}, {});
 
-    expect(previousRootTreeMock.getFullProof).to.not.be.called();
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.not.be.called();
 
     expect(result).to.be.deep.equal(new ResponseQuery({
       value: cbor.encode({
@@ -214,7 +214,7 @@ describe('getProofsQueryHandlerFactory', () => {
     };
 
     previousDataContractRepositoryMock.fetch.resolves(dataContract);
-    previousRootTreeMock.getFullProof.returns(expectedProof);
+    previousRootTreeMock.getFullProofForOneLeaf.returns(expectedProof);
 
     const result = await getProofsQueryHandler({}, {
       dataContractIds: [],
@@ -222,7 +222,7 @@ describe('getProofsQueryHandlerFactory', () => {
       documentIds: [],
     });
 
-    expect(previousRootTreeMock.getFullProof).to.not.be.called();
+    expect(previousRootTreeMock.getFullProofForOneLeaf).to.not.be.called();
 
     expect(result).to.be.deep.equal(new ResponseQuery({
       value: cbor.encode({
