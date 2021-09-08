@@ -8,7 +8,7 @@ const ECDSA_KEY_TYPE = 0;
  */
 function getIdentityHDKeyByIndex(identityIndex, keyIndex) {
   const { keyChain } = this;
-  const hardenedFeatureRootKey = keyChain.getHardenedDIP9FeaturePath('HDPrivateKey');
+  const hardenedFeatureRootKey = keyChain.getHardenedDIP9FeatureHDKey('HDPrivateKey');
 
   const identityFeatureKey = hardenedFeatureRootKey.deriveChild(5, true);
 

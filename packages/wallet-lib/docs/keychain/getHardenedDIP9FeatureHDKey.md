@@ -1,5 +1,5 @@
-**Usage**: `keychain.getHardenedBIP44Path(type)`    
-**Description**: Return a safier root path to derivate from
+**Usage**: `keychain.getHardenedDIP9FeatureHDKey(type)`    
+**Description**: Return a safier root key to derivate from
 
 Parameters: 
 
@@ -7,10 +7,12 @@ Parameters:
 |-------------------|-------------|---------------------------| -------------------------------------------------|
 | **type**          | string      | no (default:HDPrivateKey) | Enter a valid type (one of: ['HDPrivateKey','HDPublicKey']) |
 
-Returns : HDPrivateKey
+Returns : HDPrivateKey (of path: `m/9'/1'` on testnet or `m/9'/5'` on livenet)
 
 Example: 
 ```js
-const hdPrivateKey = keychain.getHardenedBIP44Path();
-const { privateKey } = hdPrivateKey
+
+const hdPrivateKey = keychain.getHardenedDIP9FeatureHDKey();
+const { privateKey } = hdPrivateKey;
+
 ```
