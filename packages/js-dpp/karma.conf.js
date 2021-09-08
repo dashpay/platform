@@ -18,9 +18,9 @@ module.exports = (config) => {
       mode: 'development',
       optimization: {
         minimize: false,
+        moduleIds: 'named',
       },
       plugins: [
-        new webpack.NamedModulesPlugin(),
         new webpack.HotModuleReplacementPlugin(),
         new RewiremockPlugin(),
       ],
