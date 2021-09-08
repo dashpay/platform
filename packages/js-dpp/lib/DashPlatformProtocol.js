@@ -1,7 +1,7 @@
 const { default: getRE2Class } = require('@dashevo/re2-wasm');
 const createAjv = require('./ajv/createAjv');
 
-const protocolVersion = require('./protocolVersion');
+const protocolVersion = require('./version/protocolVersion');
 
 const JsonSchemaValidator = require('./validation/JsonSchemaValidator');
 

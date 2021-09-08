@@ -3,7 +3,7 @@ const rewiremock = require('rewiremock/node');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const DataContract = require('../../../lib/dataContract/DataContract');
-const protocolVersion = require('../../../lib/protocolVersion');
+const protocolVersion = require('../../../lib/version/protocolVersion');
 
 const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 

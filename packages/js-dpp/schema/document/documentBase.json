@@ -4,9 +4,7 @@
   "properties": {
     "$protocolVersion": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 0,
-      "$comment": "Maximum is the latest Document protocol version"
+      "$comment": "Maximum is the latest protocol version"
     },
     "$id": {
       "type": "array",

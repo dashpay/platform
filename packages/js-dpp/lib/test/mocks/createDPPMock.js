@@ -1,4 +1,4 @@
-const protocolVersion = require('../../protocolVersion');
+const protocolVersion = require('../../version/protocolVersion');
 
 /**
  * @param {Sandbox} [sinonSandbox]

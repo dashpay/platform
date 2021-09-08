@@ -4,6 +4,7 @@ const getDataContractFixture = require('../../../../../lib/test/fixtures/getData
 const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 const createDPPMock = require('../../../../../lib/test/mocks/createDPPMock');
+const protocolVersion = require('../../../../../lib/version/protocolVersion');
 
 describe('DocumentsBatchTransition', () => {
   let stateTransition;
@@ -35,7 +36,7 @@ describe('DocumentsBatchTransition', () => {
     it('should return the current protocol version', () => {
       const result = stateTransition.getProtocolVersion();
 
-      expect(result).to.equal(0);
+      expect(result).to.equal(protocolVersion.latestVersion);
     });
   });
 
@@ -58,7 +59,7 @@ describe('DocumentsBatchTransition', () => {
   describe('#toJSON', () => {
     it('should return State Transition as JSON', () => {
       expect(stateTransition.toJSON()).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
         ownerId: documents[0].getOwnerId().toString(),
         transitions: stateTransition.getTransitions().map((d) => d.toJSON()),
@@ -71,7 +72,7 @@ describe('DocumentsBatchTransition', () => {
   describe('#toObject', () => {
     it('should return State Transition as plain object', () => {
       expect(stateTransition.toObject()).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
         ownerId: documents[0].getOwnerId(),
         transitions: stateTransition.getTransitions().map((d) => d.toObject()),

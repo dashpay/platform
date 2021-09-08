@@ -1,6 +1,6 @@
 const { default: Ajv } = require('ajv/dist/2020');
 
-const protocolVersion = require('../../lib/protocolVersion');
+const protocolVersion = require('../../lib/version/protocolVersion');
 
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
 const JsonSchemaValidator = require('../../lib/validation/JsonSchemaValidator');

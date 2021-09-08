@@ -10,7 +10,7 @@ const DocumentCreateTransition = require(
 
 const Identifier = require('../../../lib/identifier/Identifier');
 
-const protocolVersion = require('../../../lib/protocolVersion');
+const protocolVersion = require('../../../lib/version/protocolVersion');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
 describe('Document', () => {

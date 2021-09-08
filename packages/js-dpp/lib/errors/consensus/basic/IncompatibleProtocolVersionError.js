@@ -1,4 +1,4 @@
-const AbstractConsensusError = require('../../AbstractConsensusError');
+const AbstractConsensusError = require('../AbstractConsensusError');
 
 class IncompatibleProtocolVersionError extends AbstractConsensusError {
   /**

@@ -1,5 +1,5 @@
 const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
-const protocolVersion = require('../../lib/protocolVersion');
+const protocolVersion = require('../../lib/version/protocolVersion');
 const getChainAssetLockProofFixture = require('../../lib/test/fixtures/getChainAssetLockProofFixture');
 const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
 

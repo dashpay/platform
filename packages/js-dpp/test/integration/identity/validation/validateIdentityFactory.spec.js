@@ -21,12 +21,14 @@ const JsonSchemaError = require(
 );
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
+const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateIdentityFactory', () => {
   let rawIdentity;
   let validateIdentity;
   let identity;
   let validatePublicKeysMock;
+  let validateProtocolVersionMock;
 
   beforeEach(async function beforeEach() {
     const RE2 = await getRE2Class();
@@ -36,14 +38,69 @@ describe('validateIdentityFactory', () => {
 
     validatePublicKeysMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
+    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+
     validateIdentity = validateIdentityFactory(
       schemaValidator,
       validatePublicKeysMock,
+      validateProtocolVersionMock,
     );
 
     identity = getIdentityFixture();
 
     rawIdentity = identity.toObject();
+  });
+
+  describe('protocolVersion', () => {
+    it('should be present', async () => {
+      delete rawIdentity.protocolVersion;
+
+      const result = validateIdentity(rawIdentity);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('protocolVersion');
+    });
+
+    it('should be an integer', async () => {
+      rawIdentity.protocolVersion = '1';
+
+      const result = validateIdentity(rawIdentity);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('type');
+    });
+
+    it('should be valid', async () => {
+      rawIdentity.protocolVersion = -1;
+
+      const protocolVersionError = new SomeConsensusError('test');
+      const protocolVersionResult = new ValidationResult([
+        protocolVersionError,
+      ]);
+
+      validateProtocolVersionMock.returns(protocolVersionResult);
+
+      const result = validateIdentity(rawIdentity);
+
+      expectValidationError(result, SomeConsensusError);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(protocolVersionError);
+
+      expect(validateProtocolVersionMock).to.be.calledOnceWith(
+        rawIdentity.protocolVersion,
+      );
+    });
   });
 
   describe('id', () => {

@@ -2,7 +2,7 @@ const { default: getRE2Class } = require('@dashevo/re2-wasm');
 
 const createAjv = require('../../../../../../../lib/ajv/createAjv');
 
-const protocolVersion = require('../../../../../../../lib/protocolVersion');
+const protocolVersion = require('../../../../../../../lib/version/protocolVersion');
 
 const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
 
@@ -50,6 +50,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let enrichSpy;
   let documentTransitions;
   let validatePartialCompoundIndicesMock;
+  let validateProtocolVersionMock;
 
   beforeEach(async function beforeEach() {
     dataContract = getDataContractFixture();
@@ -92,6 +93,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       new ValidationResult(),
     );
 
+    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+
     validateDocumentsBatchTransitionBasic = validateDocumentsBatchTransitionBasicFactory(
       findDuplicatesByIdMock,
       findDuplicatesByIndicesMock,
@@ -99,6 +102,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       validator,
       enrichSpy,
       validatePartialCompoundIndicesMock,
+      validateProtocolVersionMock,
     );
   });
 
@@ -130,30 +134,27 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       expect(error.getKeyword()).to.equal('type');
     });
 
-    it('should not be less than 0', async () => {
+    it('should be valid', async () => {
       rawStateTransition.protocolVersion = -1;
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const protocolVersionError = new SomeConsensusError('test');
+      const protocolVersionResult = new ValidationResult([
+        protocolVersionError,
+      ]);
 
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.getKeyword()).to.equal('minimum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-    });
-
-    it('should not be greater than current version (0)', async () => {
-      rawStateTransition.protocolVersion = 1;
+      validateProtocolVersionMock.returns(protocolVersionResult);
 
       const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, SomeConsensusError);
 
       const [error] = result.getErrors();
 
-      expect(error.getKeyword()).to.equal('maximum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error).to.equal(protocolVersionError);
+
+      expect(validateProtocolVersionMock).to.be.calledOnceWith(
+        rawStateTransition.protocolVersion,
+      );
     });
   });
 

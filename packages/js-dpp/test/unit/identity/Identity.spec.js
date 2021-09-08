@@ -4,7 +4,7 @@ const generateRandomIdentifier = require('../../../lib/test/utils/generateRandom
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 const Metadata = require('../../../lib/Metadata');
-const protocolVersion = require('../../../lib/protocolVersion');
+const protocolVersion = require('../../../lib/version/protocolVersion');
 
 describe('Identity', () => {
   let rawIdentity;

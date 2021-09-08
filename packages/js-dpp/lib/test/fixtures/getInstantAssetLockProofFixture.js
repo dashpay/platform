@@ -5,6 +5,7 @@ const {
   Script,
   Opcode,
 } = require('@dashevo/dashcore-lib');
+
 const InstantAssetLockProof = require('../../identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 
 /**

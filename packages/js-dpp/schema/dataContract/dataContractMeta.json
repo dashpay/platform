@@ -337,9 +337,7 @@
   "properties": {
     "protocolVersion": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 0,
-      "$comment": "Maximum is the latest Data Contract protocol version"
+      "$comment": "Maximum is the latest protocol version"
     },
     "$schema": {
       "type": "string",

@@ -9,11 +9,14 @@ const dataContractCreateTransitionSchema = require('../../../../../../schema/dat
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validateDataContract} validateDataContract
+ * @param {validateProtocolVersion} validateProtocolVersion
+ *
  * @return {validateDataContractCreateTransitionBasic}
  */
 function validateDataContractCreateTransitionBasicFactory(
   jsonSchemaValidator,
   validateDataContract,
+  validateProtocolVersion,
 ) {
   /**
    * @typedef validateDataContractCreateTransitionBasic
@@ -24,6 +27,14 @@ function validateDataContractCreateTransitionBasicFactory(
     const result = jsonSchemaValidator.validate(
       dataContractCreateTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      validateProtocolVersion(rawStateTransition.protocolVersion),
     );
 
     if (!result.isValid()) {

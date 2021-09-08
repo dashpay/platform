@@ -1,6 +1,6 @@
 const ProtocolVersionParsingError = require('./basic/decode/ProtocolVersionParsingError');
-const UnsupportedProtocolVersionError = require('./basic/decode/UnsupportedProtocolVersionError');
-const IncompatibleProtocolVersionError = require('./basic/decode/IncompatibleProtocolVersionError');
+const UnsupportedProtocolVersionError = require('./basic/UnsupportedProtocolVersionError');
+const IncompatibleProtocolVersionError = require('./basic/IncompatibleProtocolVersionError');
 const SerializedObjectParsingError = require('./basic/decode/SerializedObjectParsingError');
 const JsonSchemaError = require('./basic/JsonSchemaError');
 const InvalidIdentifierError = require('./basic/InvalidIdentifierError');
@@ -73,11 +73,11 @@ const codes = {
 
   // Decoding
   1000: ProtocolVersionParsingError,
-  1001: UnsupportedProtocolVersionError,
-  1002: IncompatibleProtocolVersionError,
-  1003: SerializedObjectParsingError,
+  1001: SerializedObjectParsingError,
 
   // General
+  1002: UnsupportedProtocolVersionError,
+  1003: IncompatibleProtocolVersionError,
   1004: JsonSchemaCompilationError,
   1005: JsonSchemaError,
   1006: InvalidIdentifierError,

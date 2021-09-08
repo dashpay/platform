@@ -30,6 +30,7 @@ const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../err
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
  * @param {validatePartialCompoundIndices} validatePartialCompoundIndices
+ * @param {validateProtocolVersion} validateProtocolVersion
  *
  * @return {validateDocumentsBatchTransitionBasic}
  */
@@ -40,6 +41,7 @@ function validateDocumentsBatchTransitionBasicFactory(
   jsonSchemaValidator,
   enrichDataContractWithBaseSchema,
   validatePartialCompoundIndices,
+  validateProtocolVersion,
 ) {
   const { ACTIONS } = AbstractDocumentTransition;
 
@@ -237,6 +239,14 @@ function validateDocumentsBatchTransitionBasicFactory(
     const result = jsonSchemaValidator.validate(
       documentsBatchTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      validateProtocolVersion(rawStateTransition.protocolVersion),
     );
 
     if (!result.isValid()) {

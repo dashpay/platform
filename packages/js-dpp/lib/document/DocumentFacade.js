@@ -8,7 +8,8 @@ const DocumentFactory = require('./DocumentFactory');
 const MissingOptionError = require('../errors/MissingOptionError');
 const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 
-const protocolVersion = require('../protocolVersion');
+const protocolVersion = require('../version/protocolVersion');
+const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 
 class DocumentFacade {
   /**
@@ -17,16 +18,22 @@ class DocumentFacade {
   constructor(dpp) {
     this.stateRepository = dpp.getStateRepository();
 
+    const validateProtocolVersion = validateProtocolVersionFactory(
+      dpp,
+      protocolVersion.compatibility,
+    );
+
     this.validateDocument = validateDocumentFactory(
       dpp.getJsonSchemaValidator(),
       enrichDataContractWithBaseSchema,
+      validateProtocolVersion,
     );
 
     this.fetchAndValidateDataContract = fetchAndValidateDataContractFactory(
       this.stateRepository,
     );
 
-    const decodeProtocolEntity = decodeProtocolEntityFactory(protocolVersion.compatibility);
+    const decodeProtocolEntity = decodeProtocolEntityFactory();
 
     this.factory = new DocumentFactory(
       dpp,

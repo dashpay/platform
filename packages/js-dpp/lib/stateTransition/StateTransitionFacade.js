@@ -72,7 +72,8 @@ const validateStateTransitionKeySignatureFactory = require('./validation/validat
 const fetchAssetLockPublicKeyHashFactory = require('../identity/stateTransition/assetLockProof/fetchAssetLockPublicKeyHashFactory');
 
 const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
-const protocolVersion = require('../protocolVersion');
+const protocolVersion = require('../version/protocolVersion');
+const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 
 class StateTransitionFacade {
   /**
@@ -87,12 +88,18 @@ class StateTransitionFacade {
     const validateDataContractMaxDepth = validateDataContractMaxDepthFactory($RefParser);
     const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
 
+    const validateProtocolVersion = validateProtocolVersionFactory(
+      dpp,
+      protocolVersion.compatibility,
+    );
+
     const validateDataContract = validateDataContractFactory(
       validator,
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
       RE2,
+      validateProtocolVersion,
     );
 
     const validateIdentityExistence = validateIdentityExistenceFactory(this.stateRepository);
@@ -118,6 +125,7 @@ class StateTransitionFacade {
     const validateDataContractCreateTransitionBasic = validateDataContractCreateTransitionBasicFactory(
       validator,
       validateDataContract,
+      validateProtocolVersion,
     );
 
     this.createStateTransition = createStateTransitionFactory(this.stateRepository);
@@ -130,6 +138,7 @@ class StateTransitionFacade {
         validator,
         enrichDataContractWithBaseSchema,
         validatePartialCompoundIndices,
+        validateProtocolVersion,
       )
     );
 
@@ -161,6 +170,7 @@ class StateTransitionFacade {
         validator,
         validatePublicKeys,
         proofValidationFunctionsByType,
+        validateProtocolVersion,
       )
     );
 
@@ -168,6 +178,7 @@ class StateTransitionFacade {
       validateIdentityTopUpTransitionBasicFactory(
         validator,
         proofValidationFunctionsByType,
+        validateProtocolVersion,
       )
     );
 

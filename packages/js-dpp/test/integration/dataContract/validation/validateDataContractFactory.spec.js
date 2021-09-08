@@ -27,6 +27,7 @@ const InvalidCompoundIndexError = require('../../../../lib/errors/consensus/basi
 const IncompatibleRe2PatternError = require('../../../../lib/errors/consensus/basic/dataContract/IncompatibleRe2PatternError');
 const InvalidJsonSchemaRefError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
 const JsonSchemaCompilationError = require('../../../../lib/errors/consensus/basic/JsonSchemaCompilationError');
+const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateDataContractFactory', function main() {
   this.timeout(15000);
@@ -35,12 +36,13 @@ describe('validateDataContractFactory', function main() {
   let rawDataContract;
   let validateDataContract;
   let RE2;
+  let validateProtocolVersionMock;
 
   before(async () => {
     RE2 = await getRE2Class();
   });
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
     dataContract = getDataContractFixture();
     rawDataContract = dataContract.toObject();
 
@@ -51,12 +53,15 @@ describe('validateDataContractFactory', function main() {
 
     const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
 
+    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+
     validateDataContract = validateDataContractFactory(
       jsonSchemaValidator,
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
       RE2,
+      validateProtocolVersionMock,
     );
   });
 
@@ -95,30 +100,27 @@ describe('validateDataContractFactory', function main() {
       expect(error.getKeyword()).to.equal('type');
     });
 
-    it('should not be less than 0', async () => {
+    it('should be valid', async () => {
       rawDataContract.protocolVersion = -1;
 
-      const result = await validateDataContract(rawDataContract);
+      const protocolVersionError = new SomeConsensusError('test');
+      const protocolVersionResult = new ValidationResult([
+        protocolVersionError,
+      ]);
 
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.getKeyword()).to.equal('minimum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-    });
-
-    it('should not be greater than current version (0)', async () => {
-      rawDataContract.protocolVersion = 1;
+      validateProtocolVersionMock.returns(protocolVersionResult);
 
       const result = await validateDataContract(rawDataContract);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, SomeConsensusError);
 
       const [error] = result.getErrors();
 
-      expect(error.getKeyword()).to.equal('maximum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error).to.equal(protocolVersionError);
+
+      expect(validateProtocolVersionMock).to.be.calledOnceWith(
+        rawDataContract.protocolVersion,
+      );
     });
   });
 

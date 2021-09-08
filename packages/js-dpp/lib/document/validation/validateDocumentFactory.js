@@ -10,11 +10,14 @@ const MissingDocumentTypeError = require('../../errors/consensus/basic/document/
 /**
  * @param {JsonSchemaValidator} validator
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
+ * @param {validateProtocolVersion} validateProtocolVersion
+ *
  * @return {validateDocument}
  */
 module.exports = function validateDocumentFactory(
   validator,
   enrichDataContractWithBaseSchema,
+  validateProtocolVersion,
 ) {
   /**
    * @typedef validateDocument
@@ -69,6 +72,10 @@ module.exports = function validateDocumentFactory(
     if (!result.isValid()) {
       return result;
     }
+
+    result.merge(
+      validateProtocolVersion(rawDocument.$protocolVersion),
+    );
 
     return result;
   }

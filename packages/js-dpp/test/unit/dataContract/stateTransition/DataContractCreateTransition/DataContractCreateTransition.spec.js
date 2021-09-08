@@ -4,7 +4,7 @@ const getDataContractFixture = require('../../../../../lib/test/fixtures/getData
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 
 const Identifier = require('../../../../../lib/identifier/Identifier');
-const protocolVersion = require('../../../../../lib/protocolVersion');
+const protocolVersion = require('../../../../../lib/version/protocolVersion');
 
 describe('DataContractCreateTransition', () => {
   let stateTransition;
@@ -34,7 +34,7 @@ describe('DataContractCreateTransition', () => {
     it('should return the current protocol version', () => {
       const result = stateTransition.getProtocolVersion();
 
-      expect(result).to.equal(0);
+      expect(result).to.equal(protocolVersion.latestVersion);
     });
   });
 

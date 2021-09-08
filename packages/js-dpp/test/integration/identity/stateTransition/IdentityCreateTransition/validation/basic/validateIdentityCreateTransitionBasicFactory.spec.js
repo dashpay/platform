@@ -27,6 +27,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validatePublicKeysMock;
   let assetLockPublicKeyHash;
   let proofValidationFunctionsByTypeMock;
+  let validateProtocolVersionMock;
 
   beforeEach(async function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
@@ -51,10 +52,13 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       [ChainAssetLockProof.type]: this.sinonSandbox.stub().resolves(proofValidationResult),
     };
 
+    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+
     validateIdentityCreateTransitionBasic = validateIdentityCreateTransitionBasicFactory(
       jsonSchemaValidator,
       validatePublicKeysMock,
       proofValidationFunctionsByTypeMock,
+      validateProtocolVersionMock,
     );
 
     stateTransition = getIdentityCreateTransitionFixture();
@@ -94,30 +98,27 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       expect(error.getKeyword()).to.equal('type');
     });
 
-    it('should not be less than 0', async () => {
+    it('should be valid', async () => {
       rawStateTransition.protocolVersion = -1;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const protocolVersionError = new SomeConsensusError('test');
+      const protocolVersionResult = new ValidationResult([
+        protocolVersionError,
+      ]);
 
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.getKeyword()).to.equal('minimum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-    });
-
-    it('should not be greater than current version (0)', async () => {
-      rawStateTransition.protocolVersion = 1;
+      validateProtocolVersionMock.returns(protocolVersionResult);
 
       const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, SomeConsensusError);
 
       const [error] = result.getErrors();
 
-      expect(error.getKeyword()).to.equal('maximum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error).to.equal(protocolVersionError);
+
+      expect(validateProtocolVersionMock).to.be.calledOnceWith(
+        rawStateTransition.protocolVersion,
+      );
     });
   });
 

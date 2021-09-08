@@ -20,6 +20,7 @@ const {
   expectValidationError,
   expectJsonSchemaError,
 } = require('../../../../lib/test/expect/expectError');
+const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateDocumentFactory', () => {
   let dataContract;
@@ -28,6 +29,7 @@ describe('validateDocumentFactory', () => {
   let documents;
   let validateDocument;
   let validator;
+  let validateProtocolVersionMock;
 
   beforeEach(async function beforeEach() {
     const RE2 = await getRE2Class();
@@ -39,9 +41,12 @@ describe('validateDocumentFactory', () => {
 
     dataContract = getDataContractFixture();
 
+    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+
     validateDocument = validateDocumentFactory(
       validator,
       enrichDataContractWithBaseSchema,
+      validateProtocolVersionMock,
     );
 
     documents = getDocumentsFixture(dataContract);
@@ -78,30 +83,27 @@ describe('validateDocumentFactory', () => {
         expect(error.getKeyword()).to.equal('type');
       });
 
-      it('should not be less than 0', () => {
+      it('should be valid', async () => {
         rawDocument.$protocolVersion = -1;
 
-        const result = validateDocument(rawDocument, dataContract);
+        const protocolVersionError = new SomeConsensusError('test');
+        const protocolVersionResult = new ValidationResult([
+          protocolVersionError,
+        ]);
 
-        expectJsonSchemaError(result);
+        validateProtocolVersionMock.returns(protocolVersionResult);
 
-        const [error] = result.getErrors();
+        const result = await validateDocument(rawDocument, dataContract);
 
-        expect(error.getInstancePath()).to.equal('/$protocolVersion');
-        expect(error.getKeyword()).to.equal('minimum');
-      });
-
-      it('should not be greater than current Document protocol version (0)', () => {
-        rawDocument.$protocolVersion = 1;
-
-        const result = validateDocument(rawDocument, dataContract);
-
-        expectJsonSchemaError(result);
+        expectValidationError(result, SomeConsensusError);
 
         const [error] = result.getErrors();
 
-        expect(error.getInstancePath()).to.equal('/$protocolVersion');
-        expect(error.getKeyword()).to.equal('maximum');
+        expect(error).to.equal(protocolVersionError);
+
+        expect(validateProtocolVersionMock).to.be.calledOnceWith(
+          rawDocument.$protocolVersion,
+        );
       });
     });
 

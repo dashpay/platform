@@ -8,7 +8,8 @@ const validateDataContractMaxDepthFactory = require('./validation/validateDataCo
 const validateDataContractPatternsFactory = require('./validation/validateDataContractPatternsFactory');
 const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 
-const protocolVersion = require('../protocolVersion');
+const protocolVersion = require('../version/protocolVersion');
+const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 
 class DataContractFacade {
   /**
@@ -20,15 +21,21 @@ class DataContractFacade {
 
     const validateDataContractPatterns = validateDataContractPatternsFactory(RE2);
 
+    const validateProtocolVersion = validateProtocolVersionFactory(
+      dpp,
+      protocolVersion.compatibility,
+    );
+
     this.validateDataContract = validateDataContractFactory(
       dpp.getJsonSchemaValidator(),
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
       RE2,
+      validateProtocolVersion,
     );
 
-    const decodeProtocolEntity = decodeProtocolEntityFactory(protocolVersion.compatibility);
+    const decodeProtocolEntity = decodeProtocolEntityFactory();
 
     this.factory = new DataContractFactory(
       dpp,

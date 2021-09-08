@@ -28,6 +28,7 @@ const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
  * @param {validateDataContractPatterns} validateDataContractPatterns
  * @param {RE2} RE2
+ * @param {validateProtocolVersion} validateProtocolVersion
  * @return {validateDataContract}
  */
 module.exports = function validateDataContractFactory(
@@ -36,6 +37,7 @@ module.exports = function validateDataContractFactory(
   enrichDataContractWithBaseSchema,
   validateDataContractPatterns,
   RE2,
+  validateProtocolVersion,
 ) {
   /**
    * @typedef validateDataContract
@@ -51,6 +53,14 @@ module.exports = function validateDataContractFactory(
         JsonSchemaValidator.SCHEMAS.META.DATA_CONTRACT,
         convertBuffersToArrays(rawDataContract),
       ),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      validateProtocolVersion(rawDataContract.protocolVersion),
     );
 
     if (!result.isValid()) {

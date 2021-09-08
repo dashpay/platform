@@ -6,7 +6,7 @@ const createAjv = require('../../../../../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
 
-const protocolVersion = require('../../../../../../../lib/protocolVersion');
+const protocolVersion = require('../../../../../../../lib/version/protocolVersion');
 
 const validateDataContractCreateTransitionBasicFactory = require('../../../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/validation/basic/validateDataContractCreateTransitionBasicFactory');
 
@@ -31,9 +31,11 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
   let rawStateTransition;
   let dataContract;
   let rawDataContract;
+  let validateProtocolVersionMock;
 
   beforeEach(async function beforeEach() {
-    validateDataContractMock = this.sinonSandbox.stub();
+    validateDataContractMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
     dataContract = getDataContractFixture();
     rawDataContract = dataContract.toObject();
@@ -57,6 +59,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
     validateDataContractCreateTransitionBasic = validateDataContractCreateTransitionBasicFactory(
       jsonSchemaValidator,
       validateDataContractMock,
+      validateProtocolVersionMock,
     );
   });
 
@@ -88,30 +91,27 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       expect(error.getKeyword()).to.equal('type');
     });
 
-    it('should not be less than 0', async () => {
+    it('should be valid', async () => {
       rawStateTransition.protocolVersion = -1;
 
-      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const protocolVersionError = new SomeConsensusError('test');
+      const protocolVersionResult = new ValidationResult([
+        protocolVersionError,
+      ]);
 
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.getKeyword()).to.equal('minimum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-    });
-
-    it('should not be greater than current version (0)', async () => {
-      rawStateTransition.protocolVersion = 1;
+      validateProtocolVersionMock.returns(protocolVersionResult);
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, SomeConsensusError);
 
       const [error] = result.getErrors();
 
-      expect(error.getKeyword()).to.equal('maximum');
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error).to.equal(protocolVersionError);
+
+      expect(validateProtocolVersionMock).to.be.calledOnceWith(
+        rawStateTransition.protocolVersion,
+      );
     });
   });
 
@@ -347,10 +347,6 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const dataContractResult = new ValidationResult();
-
-    validateDataContractMock.returns(dataContractResult);
-
     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
     expect(result).to.be.an.instanceOf(ValidationResult);

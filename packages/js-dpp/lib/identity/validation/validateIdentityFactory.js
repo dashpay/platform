@@ -5,11 +5,14 @@ const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 /**
  * @param {JsonSchemaValidator} validator
  * @param {validatePublicKeys} validatePublicKeys
+ * @param {validateProtocolVersion} validateProtocolVersion
+ *
  * @return {validateIdentity}
  */
 function validateIdentityFactory(
   validator,
   validatePublicKeys,
+  validateProtocolVersion,
 ) {
   /**
    * Validates identity
@@ -22,6 +25,14 @@ function validateIdentityFactory(
     const result = validator.validate(
       identitySchema,
       convertBuffersToArrays(rawIdentity),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      validateProtocolVersion(rawIdentity.protocolVersion),
     );
 
     if (!result.isValid()) {

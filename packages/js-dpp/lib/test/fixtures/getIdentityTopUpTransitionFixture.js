@@ -6,13 +6,15 @@ const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
 const getInstantAssetLockProofFixture = require('./getInstantAssetLockProofFixture');
 
+const protocolVersion = require('../../version/protocolVersion');
+
 /**
  *
  * @return {IdentityTopUpTransition}
  */
 module.exports = function getIdentityTopUpTransitionFixture() {
   const rawStateTransition = {
-    protocolVersion: 0,
+    protocolVersion: protocolVersion.latestVersion,
     type: stateTransitionTypes.IDENTITY_CREATE,
     assetLockProof: getInstantAssetLockProofFixture().toObject(),
     identityId: generateRandomIdentifier(),

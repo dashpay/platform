@@ -4,7 +4,7 @@ const stateTransitionTypes = require(
   '../../../../../lib/stateTransition/stateTransitionTypes',
 );
 
-const protocolVersion = require('../../../../../lib/protocolVersion');
+const protocolVersion = require('../../../../../lib/version/protocolVersion');
 const IdentityCreateTransition = require('../../../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const Identifier = require('../../../../../lib/identifier/Identifier');
 

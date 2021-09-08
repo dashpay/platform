@@ -6,6 +6,8 @@ const Identifier = require('../../../../../lib/identifier/Identifier');
 
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
+const protocolVersion = require('../../../../../lib/version/protocolVersion');
+
 describe('IdentityTopUpTransition', () => {
   let rawStateTransition;
   let stateTransition;
@@ -69,7 +71,7 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
@@ -81,7 +83,7 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
@@ -94,7 +96,7 @@ describe('IdentityTopUpTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: 0,
+        protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         identityId: Identifier(rawStateTransition.identityId).toString(),
