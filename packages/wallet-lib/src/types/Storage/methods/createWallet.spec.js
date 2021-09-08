@@ -27,7 +27,13 @@ describe('Storage - createWallet', function suite() {
       },
       chains: {
         testnet: {
-          name: 'testnet', blockHeight: -1, blockHeaders: {}, mappedBlockHeaderHeights: {},
+          name: 'testnet',
+          blockHeight: -1,
+          blockHeaders: {},
+          mappedBlockHeaderHeights: {},
+          fees: {
+            minRelay: -1
+          }
         },
       },
     };
@@ -54,7 +60,13 @@ describe('Storage - createWallet', function suite() {
       },
       chains: {
         testnet: {
-          name: 'testnet', blockHeight: -1, blockHeaders: {}, mappedBlockHeaderHeights: {},
+          name: 'testnet',
+          blockHeight: -1,
+          blockHeaders: {},
+          mappedBlockHeaderHeights: {},
+          fees: {
+            minRelay: -1
+          }
         },
       },
     };

@@ -15,7 +15,13 @@ describe('Storage - createChain', function suite() {
       store: {
         chains: {
           testnet: {
-            name: 'testnet', blockHeight: -1, blockHeaders: {}, mappedBlockHeaderHeights: {},
+            name: 'testnet',
+            blockHeight: -1,
+            blockHeaders: {},
+            mappedBlockHeaderHeights: {},
+            fees: {
+              minRelay: -1
+            }
           },
         },
       },

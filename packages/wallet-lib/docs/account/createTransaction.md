@@ -55,3 +55,29 @@ const tx2 = account.createTransaction(txOpts2);
 ```
 
 See more information about [coinSelection](/usage/coinSelection).
+
+## Deduct Fee 
+
+In order to broadcast a transaction, a minimal relay fee is required for a node to accept to broadcast the transaction.  
+
+Such fee are used as a spam mechanism protection as a standard transaction would require slightly more than 0.0000012 Dash (varies per transaction and per node) as relay fee.  
+
+The deduct fee property, when set at true allows to automatically estimate the size and deduct from outputs the corresponding amount.  
+
+In case one user would want to not see that, he will be required to select an input to pay a fee by himself. 
+
+Expected minimal relay fee for your transaction can be estimated this way : 
+
+```js 
+const { storage, network } = account;
+const { chains } = storage.getStore();
+const txOpts = {
+deductFee: false,
+}
+const transaction = account.createTransaction(txOpts);
+
+const { minRelay: minRelayFeeRate } = chains[network.toString()].fees;
+
+const estimateKbSize = transaction._estimateSize() / 1000;
+const minFeeToPay = estimateKbSize * minRelayFeeRate;
+```

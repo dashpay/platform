@@ -14,7 +14,13 @@ describe('Account - broadcastTransaction', function suite() {
   let keysToSign;
   let oneToOneTx;
   let fee;
-
+  const storage = {
+    getStore: ()=>({
+      chains:{
+          "testnet": { fees: { minRelay: 888 }}
+      }
+    })
+  }
   beforeEach(() => {
     utxos = [
       {
@@ -41,6 +47,8 @@ describe('Account - broadcastTransaction', function suite() {
     const expectedException1 = 'A transport layer is needed to perform a broadcast';
     const self = {
       transport: null,
+      storage,
+      network: 'testnet'
     };
     expectThrowsAsync(async () => await broadcastTransaction.call(self, validRawTxs.tx2to2Testnet), expectedException1);
 
@@ -55,6 +63,8 @@ describe('Account - broadcastTransaction', function suite() {
     const expectedException1 = 'A valid transaction object or it\'s hex representation is required';
     const self = {
       transport: { },
+      storage,
+      network: 'testnet'
     };
 
     expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.notRelatedString), expectedException1);
@@ -63,6 +73,8 @@ describe('Account - broadcastTransaction', function suite() {
     const expectedException1 = 'A valid transaction object or it\'s hex representation is required';
     const self = {
       transport: { },
+      storage,
+      network: 'testnet'
     };
 
     expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.truncatedRawTx), expectedException1);
@@ -74,7 +86,9 @@ describe('Account - broadcastTransaction', function suite() {
       transport: {
         sendTransaction: () => sendCalled = +1,
       },
+      network: 'testnet',
       storage: {
+        getStore: storage.getStore,
         searchAddress: () => { searchCalled = +1; return { found: false }; },
         searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
       },
@@ -94,7 +108,9 @@ describe('Account - broadcastTransaction', function suite() {
       transport: {
         sendTransaction: () => sendCalled = +1,
       },
+      network: 'testnet',
       storage: {
+        getStore: storage.getStore,
         searchAddress: () => { searchCalled = +1; return { found: false }; },
         searchAddressesWithTx: (affectedTxId) => { searchCalled = +1; return { results: [] }; },
       },
@@ -105,5 +121,50 @@ describe('Account - broadcastTransaction', function suite() {
       .then(
         () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
       );
+  });
+  it('should throw error on fee not met', function () {
+    const expectedException1 = 'Expected minimum fee for transaction 149. Current: 0\n';
+
+    let sendCalled = +1;
+    let searchCalled = +1;
+    const self = {
+      transport: {
+        sendTransaction: () => sendCalled = +1,
+      },
+      network: 'testnet',
+      storage: {
+        getStore: storage.getStore,
+        searchAddress: () => { searchCalled = +1; return { found: false }; },
+        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
+      },
+    };
+
+    const tx = oneToOneTx;
+    tx.fee(0);
+    expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.truncatedRawTx), expectedException1);
+  });
+  it('should broadcast when force and fee not met', function () {
+    let sendCalled = +1;
+    let searchCalled = +1;
+    const self = {
+      transport: {
+        sendTransaction: () => sendCalled = +1,
+      },
+      network: 'testnet',
+      storage: {
+        getStore: storage.getStore,
+        searchAddress: () => { searchCalled = +1; return { found: false }; },
+        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
+      },
+    };
+
+    const tx = oneToOneTx;
+    tx.fee(0);
+
+    return broadcastTransaction
+        .call(self, tx, {skipFeeValidation: true})
+        .then(
+            () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
+        );
   });
 });

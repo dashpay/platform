@@ -83,7 +83,9 @@ export declare type AddressObj<T extends object = object> = T & {
 export declare type AddressInfoMap<T extends object = object> = T & {
     [pathName: string]: AddressInfo
 }
-
+export declare type broadcastTransactionOpts<T extends object = object> = T & {
+    skipFeeValidation?: boolean
+}
 export declare type AddressInfo<T extends AddressObj = AddressObj> = T & {
     path: string;
     address: string;

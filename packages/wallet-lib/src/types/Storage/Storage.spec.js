@@ -56,7 +56,13 @@ describe('Storage - constructor', function suite() {
       transactionsMetadata:{},
       chains: {
         testnet: {
-          name: 'testnet', blockHeight: -1, blockHeaders: {}, mappedBlockHeaderHeights: {},
+          name: 'testnet',
+          blockHeight: -1,
+          blockHeaders: {},
+          mappedBlockHeaderHeights: {},
+          fees: {
+            minRelay: -1
+          }
         },
       },
       instantLocks: {}
@@ -79,7 +85,13 @@ describe('Storage - constructor', function suite() {
       transactionsMetadata: {},
       chains: {
         testnet: {
-          name: 'testnet', blockHeight: -1, blockHeaders: {}, mappedBlockHeaderHeights: {},
+          name: 'testnet',
+          blockHeight: -1,
+          blockHeaders: {},
+          mappedBlockHeaderHeights: {},
+          fees: {
+            minRelay: -1
+          }
         },
       },
       instantLocks: {},

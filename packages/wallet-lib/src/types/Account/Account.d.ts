@@ -8,6 +8,7 @@ import {
     PrivateKey,
     Strategy,
     Network,
+    broadcastTransactionOpts,
     Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo
 } from "../types";
 import { KeyChain } from "../KeyChain/KeyChain";
@@ -42,7 +43,7 @@ export declare class Account {
     getBIP44Path(network?: Network, index?: number): string;
     getNetwork(): Network;
 
-    broadcastTransaction(rawtx: Transaction|RawTransaction): Promise<transactionId>;
+    broadcastTransaction(rawtx: Transaction|RawTransaction, options?: broadcastTransactionOpts): Promise<transactionId>;
     connect(): boolean;
     createTransaction(opts: Account.createTransactionOptions): Transaction;
     decode(method: string, data: any): any;

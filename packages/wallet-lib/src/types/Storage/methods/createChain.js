@@ -13,6 +13,10 @@ const createChain = function createChain(network) {
       // Map a blockheader to it's height (used by searchBlockheader for speed up the process)
       mappedBlockHeaderHeights: {},
       blockHeight: -1,
+      fees: {
+        // feeRate expressed per kb
+        minRelay: -1,
+      },
     };
     return true;
   }
