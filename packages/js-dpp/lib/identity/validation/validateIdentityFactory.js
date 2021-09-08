@@ -1,4 +1,4 @@
-const identitySchema = require('../../../schema/identity/identity');
+const identitySchema = require('../../../schema/identity/identity.json');
 
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 
