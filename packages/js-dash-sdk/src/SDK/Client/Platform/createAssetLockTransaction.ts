@@ -20,6 +20,7 @@ export default async function createAssetLockTransaction(platform : Platform, fu
     const assetLockOneTimePublicKey = assetLockOneTimePrivateKey.toPublicKey();
 
     const identityAddress = assetLockOneTimePublicKey.toAddress(platform.client.network).toString();
+
     const changeAddress = account.getUnusedAddress('internal').address;
 
     const lockTransaction = new Transaction(undefined);

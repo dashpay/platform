@@ -32,8 +32,8 @@ class StateRepository {
 
   async fetchTransaction(id: string): Promise<{ data: Buffer, height: number }> {
     const walletAccount = await this.client.getWalletAccount();
-
-    const transaction = await walletAccount.getTransaction(id);
+    // @ts-ignore
+    const { transaction } = await walletAccount.getTransaction(id);
 
     return {
       // @ts-ignore
