@@ -6,11 +6,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-
 const getTransactionFactory = require('../../../../../lib/methods/core/getTransaction/getTransactionFactory');
 const GetTransactionResponse = require('../../../../../lib/methods/core/getTransaction/GetTransactionResponse');
-const NotFoundError = require('../../../../../lib/methods/errors/NotFoundError');
 
 describe('getTransactionFactory', () => {
   let getTransaction;
@@ -68,49 +65,6 @@ describe('getTransactionFactory', () => {
       'getTransaction',
       request,
       options,
-    );
-  });
-
-  it('should return null if GRPC not found error has occurred', async () => {
-    const error = new Error('Nothing found');
-    error.code = grpcErrorCodes.NOT_FOUND;
-
-    grpcTransportMock.request.throws(error);
-
-    const id = '4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176';
-
-    try {
-      await getTransaction(id);
-      expect.fail('should throw not found error');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundError);
-    }
-  });
-
-  it('should throw NotFoundError if transaction is not found', async () => {
-    const error = new Error('Nothing found');
-    error.code = grpcErrorCodes.NOT_FOUND;
-
-    grpcTransportMock.request.throws(error);
-
-    const id = '4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176';
-
-    try {
-      await getTransaction(id);
-
-      expect.fail('should throw NotFoundError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundError);
-    }
-
-    const request = new GetTransactionRequest();
-    request.setId(id);
-
-    expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
-      CorePromiseClient,
-      'getTransaction',
-      request,
-      {},
     );
   });
 

@@ -1,8 +1,22 @@
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
-const MaxRetriesReachedError = require('./errors/MaxRetriesReachedError');
-const NoAvailableAddressesForRetry = require('./errors/NoAvailableAddressesForRetry');
-const NoAvailableAddresses = require('./errors/NoAvailableAddresses');
+const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
+const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
+const NoAvailableAddressesError = require('./errors/NoAvailableAddressesError');
+const ResponseError = require('../errors/response/ResponseError');
+const NotFoundError = require('../errors/response/NotFoundError');
+
+const RETRIABLE_ERROR_CODES = [
+  GrpcErrorCodes.RESOURCE_EXHAUSTED,
+  GrpcErrorCodes.UNAVAILABLE,
+  GrpcErrorCodes.CANCELLED,
+  GrpcErrorCodes.UNKNOWN,
+  GrpcErrorCodes.DATA_LOSS,
+  GrpcErrorCodes.UNIMPLEMENTED,
+  GrpcErrorCodes.ABORTED,
+  GrpcErrorCodes.INTERNAL,
+  GrpcErrorCodes.DEADLINE_EXCEEDED,
+];
 
 class GrpcTransport {
   /**
@@ -39,7 +53,7 @@ class GrpcTransport {
     const address = await dapiAddressProvider.getLiveAddress();
 
     if (!address) {
-      throw new NoAvailableAddresses();
+      throw new NoAvailableAddressesError();
     }
 
     // eslint-disable-next-line no-param-reassign
@@ -71,26 +85,39 @@ class GrpcTransport {
     } catch (error) {
       this.lastUsedAddress = address;
 
-      if (error.code !== GrpcErrorCodes.DEADLINE_EXCEEDED
-        && error.code !== GrpcErrorCodes.UNAVAILABLE
-        && error.code !== GrpcErrorCodes.INTERNAL
-        && error.code !== GrpcErrorCodes.CANCELLED
-        && error.code !== GrpcErrorCodes.UNIMPLEMENTED
-        && error.code !== GrpcErrorCodes.UNKNOWN) {
+      // for unknown errors
+      if (error.code === undefined) {
         throw error;
+      }
+
+      if (error.code === GrpcErrorCodes.NOT_FOUND) {
+        throw new NotFoundError(error.message, error.metadata, address);
       }
 
       if (options.throwDeadlineExceeded && error.code === GrpcErrorCodes.DEADLINE_EXCEEDED) {
-        throw error;
+        throw new ResponseError(error.code, error.message, error.metadata, address);
+      }
+
+      if (!RETRIABLE_ERROR_CODES.includes(error.code)) {
+        const metadataCode = error.metadata && error.metadata.get ? error.metadata.get('code') : undefined;
+
+        const code = metadataCode && metadataCode.length ? Number(metadataCode[0]) : error.code;
+
+        throw new ResponseError(code, error.message, error.metadata, address);
       }
 
       if (options.retries === 0) {
-        throw new MaxRetriesReachedError(error);
+        throw new MaxRetriesReachedError(error.code, error.message, error.metadata, address);
       }
 
       const hasAddresses = await dapiAddressProvider.hasLiveAddresses();
       if (!hasAddresses) {
-        throw new NoAvailableAddressesForRetry(error);
+        throw new NoAvailableAddressesForRetryError(
+          error.code,
+          error.message,
+          error.metadata,
+          address,
+        );
       }
 
       return this.request(

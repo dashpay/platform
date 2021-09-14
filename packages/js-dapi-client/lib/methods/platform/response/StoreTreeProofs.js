@@ -1,6 +1,6 @@
 class StoreTreeProofs {
   /**
-   * @param {Object} properties
+   * @param {object} properties
    * @param {Buffer} properties.publicKeyHashesToIdentityIdsProof
    * @param {Buffer} properties.identitiesProof
    * @param {Buffer} properties.documentsProof

@@ -3,7 +3,7 @@ const InvalidResponseError = require('../../platform/response/errors/InvalidResp
 class GetTransactionResponse {
   /**
    *
-   * @param {Object} properties
+   * @param {object} properties
    * @param {Buffer} properties.transaction
    * @param {Buffer} properties.blockHash
    * @param {number} properties.height

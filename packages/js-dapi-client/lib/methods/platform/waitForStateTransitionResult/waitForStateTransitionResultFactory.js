@@ -18,7 +18,7 @@ function waitForStateTransitionResultFactory(grpcTransport) {
    * @typedef waitForStateTransitionResult
    * @param {Buffer} stateTransitionHash
    * @param {DAPIClientOptions & getDocumentsOptions & {prove: boolean}} [options]
-   * @returns {Promise<Object>}
+   * @returns {Promise<object>}
    */
   async function waitForStateTransitionResult(stateTransitionHash, options = {}) {
     // eslint-disable-next-line no-param-reassign

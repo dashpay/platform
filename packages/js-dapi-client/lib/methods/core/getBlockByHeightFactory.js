@@ -5,8 +5,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-
 /**
  * @param {GrpcTransport} grpcTransport
  * @returns {getBlockByHeight}
@@ -24,21 +22,12 @@ function getBlockByHeightFactory(grpcTransport) {
     const getBlockRequest = new GetBlockRequest();
     getBlockRequest.setHeight(height);
 
-    let response;
-    try {
-      response = await grpcTransport.request(
-        CorePromiseClient,
-        'getBlock',
-        getBlockRequest,
-        options,
-      );
-    } catch (e) {
-      if (e.code === grpcErrorCodes.NOT_FOUND) {
-        return null;
-      }
-
-      throw e;
-    }
+    const response = await grpcTransport.request(
+      CorePromiseClient,
+      'getBlock',
+      getBlockRequest,
+      options,
+    );
 
     const blockBinaryArray = response.getBlock();
 

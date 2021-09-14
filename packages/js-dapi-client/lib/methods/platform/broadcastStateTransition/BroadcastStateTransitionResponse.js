@@ -1,6 +1,6 @@
 class BroadcastStateTransitionResponse {
   /**
-   * @return {BroadcastStateTransitionResponse}
+   * @returns {BroadcastStateTransitionResponse}
    */
   static createFromProto() {
     return new BroadcastStateTransitionResponse();

@@ -5,12 +5,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-
-const bs58 = require('bs58');
-
 const GetIdentityResponse = require('./GetIdentityResponse');
-const NotFoundError = require('../../errors/NotFoundError');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
@@ -54,9 +49,6 @@ function getIdentityFactory(grpcTransport) {
 
         return GetIdentityResponse.createFromProto(getIdentityResponse);
       } catch (e) {
-        if (e.code === grpcErrorCodes.NOT_FOUND) {
-          throw new NotFoundError(`Identity ${bs58.encode(id)} is not found`);
-        }
         if (e instanceof InvalidResponseError) {
           lastError = e;
         } else {

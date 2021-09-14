@@ -10,12 +10,10 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const getDataContractFactory = require('../../../../../lib/methods/platform/getDataContract/getDataContractFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const NotFoundError = require('../../../../../lib/methods/errors/NotFoundError');
 const ProofClass = require('../../../../../lib/methods/platform/response/Proof');
 
 describe('getDataContractFactory', () => {
@@ -122,34 +120,6 @@ describe('getDataContractFactory', () => {
     expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
       metadataFixture.coreChainLockedHeight,
     );
-  });
-
-  it('should throw NotFoundError if data contract not found', async () => {
-    const error = new Error('Nothing found');
-    error.code = grpcErrorCodes.NOT_FOUND;
-
-    grpcTransportMock.request.throws(error);
-
-    const contractId = dataContractFixture.getId();
-
-    try {
-      await getDataContract(contractId, options);
-
-      expect.fail('should throw NotFoundError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundError);
-    }
-
-    const request = new GetDataContractRequest();
-    request.setId(contractId);
-    request.setProve(false);
-
-    expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
-      PlatformPromiseClient,
-      'getDataContract',
-      request,
-      options,
-    ]);
   });
 
   it('should throw unknown error', async () => {

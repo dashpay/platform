@@ -10,11 +10,9 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const getIdentityFactory = require('../../../../../lib/methods/platform/getIdentity/getIdentityFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const NotFoundError = require('../../../../../lib/methods/errors/NotFoundError');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 
@@ -118,31 +116,6 @@ describe('getIdentityFactory', () => {
     expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
     expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
       metadataFixture.coreChainLockedHeight,
-    );
-  });
-
-  it('should throw NotFoundError if identity not found', async () => {
-    const error = new Error('Nothing found');
-    error.code = grpcErrorCodes.NOT_FOUND;
-
-    grpcTransportMock.request.throws(error);
-    try {
-      await getIdentity(identityId, options);
-
-      expect.fail('should throw NotFoundError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundError);
-    }
-
-    const request = new GetIdentityRequest();
-    request.setId(identityId.toBuffer());
-    request.setProve(false);
-
-    expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
-      PlatformPromiseClient,
-      'getIdentity',
-      request,
-      options,
     );
   });
 

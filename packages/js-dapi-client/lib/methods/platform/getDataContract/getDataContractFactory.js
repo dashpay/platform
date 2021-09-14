@@ -5,11 +5,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const bs58 = require('bs58');
-
 const GetDataContractResponse = require('./GetDataContractResponse');
-const NotFoundError = require('../../errors/NotFoundError');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
@@ -54,10 +50,6 @@ function getDataContractFactory(grpcTransport) {
 
         return GetDataContractResponse.createFromProto(getDataContractResponse);
       } catch (e) {
-        if (e.code === grpcErrorCodes.NOT_FOUND) {
-          throw new NotFoundError(`DataContract ${bs58.encode(contractId)} is not found`);
-        }
-
         if (e instanceof InvalidResponseError) {
           lastError = e;
         } else {

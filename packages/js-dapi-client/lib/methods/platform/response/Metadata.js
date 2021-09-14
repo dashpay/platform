@@ -1,6 +1,6 @@
 class Metadata {
   /**
-   * @param {Object} properties
+   * @param {object} properties
    * @param {number} properties.height - block height
    * @param {number} properties.coreChainLockedHeight - core chain locked height
    */

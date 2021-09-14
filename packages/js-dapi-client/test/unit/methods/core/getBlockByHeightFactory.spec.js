@@ -6,8 +6,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-
 const getBlockByHeightFactory = require('../../../../lib/methods/core/getBlockByHeightFactory');
 
 describe('getBlockByHeightFactory', () => {
@@ -45,28 +43,6 @@ describe('getBlockByHeightFactory', () => {
       'getBlock',
       request,
       options,
-    );
-  });
-
-  it('should return null if block is not found', async () => {
-    const error = new Error('Nothing found');
-    error.code = grpcErrorCodes.NOT_FOUND;
-
-    grpcTransportMock.request.throws(error);
-
-    const height = 1;
-
-    const result = await getBlockByHeight(height);
-
-    const request = new GetBlockRequest();
-    request.setHeight(height);
-
-    expect(result).to.equal(null);
-    expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
-      CorePromiseClient,
-      'getBlock',
-      request,
-      {},
     );
   });
 

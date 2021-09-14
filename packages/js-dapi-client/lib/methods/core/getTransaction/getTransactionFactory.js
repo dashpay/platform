@@ -5,9 +5,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const GetTransactionResponse = require('./GetTransactionResponse');
-const NotFoundError = require('../../errors/NotFoundError');
 const InvalidResponseError = require('../../platform/response/errors/InvalidResponseError');
 
 /**
@@ -42,9 +40,6 @@ function getTransactionFactory(grpcTransport) {
 
         return GetTransactionResponse.createFromProto(response);
       } catch (e) {
-        if (e.code === grpcErrorCodes.NOT_FOUND) {
-          throw new NotFoundError(`Transaction ${id} is not found`);
-        }
         if (e instanceof InvalidResponseError) {
           lastError = e;
         } else {

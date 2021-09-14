@@ -1,9 +1,9 @@
 const JsonRpcTransport = require('../../../../lib/transport/JsonRpcTransport/JsonRpcTransport');
 const DAPIAddress = require('../../../../lib/dapiAddressProvider/DAPIAddress');
 
-const MaxRetriesReachedError = require('../../../../lib/transport/errors/MaxRetriesReachedError');
-const NoAvailableAddressesForRetry = require('../../../../lib/transport/errors/NoAvailableAddressesForRetry');
-const NoAvailableAddresses = require('../../../../lib/transport/errors/NoAvailableAddresses');
+const MaxRetriesReachedError = require('../../../../lib/errors/response/MaxRetriesReachedError');
+const NoAvailableAddressesForRetryError = require('../../../../lib/errors/response/NoAvailableAddressesForRetryError');
+const NoAvailableAddressesError = require('../../../../lib/transport/errors/NoAvailableAddressesError');
 
 describe('JsonRpcTransport', () => {
   let jsonRpcTransport;
@@ -112,7 +112,7 @@ describe('JsonRpcTransport', () => {
 
         expect.fail('should throw NoAvailableAddresses');
       } catch (e) {
-        expect(e).to.be.an.instanceof(NoAvailableAddresses);
+        expect(e).to.be.an.instanceof(NoAvailableAddressesError);
         expect(requestJsonRpcMock).to.not.be.called();
       }
     });
@@ -130,7 +130,8 @@ describe('JsonRpcTransport', () => {
         expect.fail('should throw MaxRetriesReachedError');
       } catch (e) {
         expect(e).to.be.an.instanceof(MaxRetriesReachedError);
-        expect(e.getError()).to.equal(error);
+        expect(e.getCode()).to.equal(error.code);
+        expect(e.getMetadata()).to.deep.equal(error.metadata);
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
@@ -159,8 +160,9 @@ describe('JsonRpcTransport', () => {
 
         expect.fail('should throw NoAvailableAddressesForRetry');
       } catch (e) {
-        expect(e).to.be.an.instanceof(NoAvailableAddressesForRetry);
-        expect(e.getError()).to.equal(error);
+        expect(e).to.be.an.instanceof(NoAvailableAddressesForRetryError);
+        expect(e.getCode()).to.equal(error.code);
+        expect(e.getMetadata()).to.deep.equal(error.metadata);
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
