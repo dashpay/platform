@@ -1,4 +1,5 @@
-const { Metadata } = require('@grpc/grpc-js');
+// Import metadata directly to do not import Node.JS server logic in browsers
+const { Metadata } = require('@grpc/grpc-js/build/src/metadata');
 
 /**
  * Converts any JavaScript object to grpc metadata

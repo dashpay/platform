@@ -1,8 +1,9 @@
-const { Metadata } = require('@grpc/grpc-js');
+// Import metadata directly to do not import Node.JS server logic in browsers
+const { Metadata } = require('@grpc/grpc-js/build/src/metadata');
 
 const convertObjectToMetadata = require('../../lib/convertObjectToMetadata');
 
-describe('convertObjectToMerata', () => {
+describe('convertObjectToMetadata', () => {
   it('should successfully convert an object to Metadata', () => {
     const object = {
       some: 42,
