@@ -1,5 +1,5 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
-const NotFoundError = require('@dashevo/dapi-client/lib/methods/errors/NotFoundError');
+const NotFoundError = require('@dashevo/dapi-client/lib/errors/response/NotFoundError');
 const { is } = require('../../../utils');
 const logger = require('../../../logger');
 

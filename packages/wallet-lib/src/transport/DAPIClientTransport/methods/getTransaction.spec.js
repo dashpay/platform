@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 
 const DAPIClientTransport = require('../DAPIClientTransport');
-const NotFoundError = require('@dashevo/dapi-client/lib/methods/errors/NotFoundError');
+const NotFoundError = require('@dashevo/dapi-client/lib/errors/response/NotFoundError');
 const GetTransactionResponse = require('@dashevo/dapi-client/lib/methods/core/getTransaction/GetTransactionResponse');
 
 describe('transports - DAPIClientTransport .getTransaction', function suite() {
