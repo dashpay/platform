@@ -267,7 +267,6 @@ describe('DocumentFactory', () => {
 
       expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
         serializedDocument,
-        dppMock.getProtocolVersion(),
       );
     });
 

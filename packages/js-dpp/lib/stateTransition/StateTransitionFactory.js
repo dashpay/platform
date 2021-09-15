@@ -60,7 +60,6 @@ class StateTransitionFactory {
     try {
       [protocolVersion, rawStateTransition] = this.decodeProtocolEntity(
         buffer,
-        this.dpp.getProtocolVersion(),
       );
 
       rawStateTransition.protocolVersion = protocolVersion;

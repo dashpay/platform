@@ -87,7 +87,6 @@ class IdentityFactory {
     try {
       [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
         buffer,
-        this.dpp.getProtocolVersion(),
       );
 
       rawIdentity.protocolVersion = protocolVersion;

@@ -139,9 +139,8 @@ describe('IdentityFactory', () => {
 
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawIdentity);
 
-      expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
+      expect(decodeProtocolEntityMock).to.have.been.calledOnceWithExactly(
         serializedIdentity,
-        dppMock.getProtocolVersion(),
       );
     });
 

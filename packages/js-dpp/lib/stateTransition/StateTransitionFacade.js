@@ -245,7 +245,7 @@ class StateTransitionFacade {
       fetchAssetLockTransactionOutput,
     );
 
-    const decodeProtocolEntity = decodeProtocolEntityFactory(protocolVersion.compatibility);
+    const decodeProtocolEntity = decodeProtocolEntityFactory();
 
     this.factory = new StateTransitionFactory(
       this.validateStateTransitionBasic,

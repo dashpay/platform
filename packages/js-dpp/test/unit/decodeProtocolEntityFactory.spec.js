@@ -5,7 +5,6 @@ const SerializedObjectParsingError = require('../../lib/errors/consensus/basic/d
 const { encode } = require('../../lib/util/serializer');
 
 describe('decodeProtocolEntityFactory', () => {
-  let currentProtocolVersion;
   let decodeProtocolEntity;
   let versionCompatibilityMap;
   let parsedProtocolVersion;
@@ -15,7 +14,6 @@ describe('decodeProtocolEntityFactory', () => {
   let buffer;
 
   beforeEach(() => {
-    currentProtocolVersion = 1;
     parsedProtocolVersion = 0;
 
     protocolVersionBuffer = Buffer.alloc(4);
@@ -40,7 +38,7 @@ describe('decodeProtocolEntityFactory', () => {
     buffer = Buffer.alloc(0);
 
     try {
-      decodeProtocolEntity(buffer, currentProtocolVersion);
+      decodeProtocolEntity(buffer);
 
       expect.fail('should throw ProtocolVersionParsingError');
     } catch (e) {
@@ -57,7 +55,7 @@ describe('decodeProtocolEntityFactory', () => {
     buffer = Buffer.concat([protocolVersionBuffer, entityBuffer]);
 
     try {
-      decodeProtocolEntity(buffer, currentProtocolVersion);
+      decodeProtocolEntity(buffer);
 
       expect.fail('should throw SerializedObjectParsingError');
     } catch (e) {
@@ -69,7 +67,7 @@ describe('decodeProtocolEntityFactory', () => {
   });
 
   it('should decode protocol version and entity successfully', () => {
-    const [protocolVersion, actualRawEntity] = decodeProtocolEntity(buffer, currentProtocolVersion);
+    const [protocolVersion, actualRawEntity] = decodeProtocolEntity(buffer);
 
     expect(protocolVersion).to.equal(parsedProtocolVersion);
     expect(rawEntity).to.deep.equal(actualRawEntity);

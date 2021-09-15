@@ -169,7 +169,6 @@ class DocumentFactory {
     try {
       [protocolVersion, rawDocument] = this.decodeProtocolEntity(
         buffer,
-        this.dpp.getProtocolVersion(),
       );
 
       rawDocument.$protocolVersion = protocolVersion;

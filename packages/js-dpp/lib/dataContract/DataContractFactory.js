@@ -83,7 +83,6 @@ class DataContractFactory {
     try {
       [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
         buffer,
-        this.dpp.getProtocolVersion(),
       );
 
       rawDataContract.protocolVersion = protocolVersion;

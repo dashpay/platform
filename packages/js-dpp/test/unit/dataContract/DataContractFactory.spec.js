@@ -147,9 +147,8 @@ describe('DataContractFactory', () => {
 
       expect(factory.createFromObject).to.have.been.calledOnceWith(rawDataContract);
 
-      expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
+      expect(decodeProtocolEntityMock).to.have.been.calledOnceWithExactly(
         serializedDataContract,
-        dppMock.getProtocolVersion(),
       );
     });
 

@@ -116,7 +116,6 @@ describe('StateTransitionFactory', () => {
 
       expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
         serializedStateTransition,
-        dppMock.getProtocolVersion(),
       );
     });
 
