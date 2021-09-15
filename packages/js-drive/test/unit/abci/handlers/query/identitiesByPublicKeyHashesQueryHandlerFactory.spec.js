@@ -16,13 +16,12 @@ const {
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
+
+const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const identitiesByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory',
 );
-const InvalidArgumentAbciError = require(
-  '../../../../../lib/abci/errors/InvalidArgumentAbciError',
-);
-const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
@@ -174,8 +173,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       await identitiesByPublicKeyHashesQueryHandler(params, data, {});
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
-      expect(e.getData()).to.deep.equal({
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getRawMetadata()).to.deep.equal({
         maxIdentitiesPerRequest,
       });
     }
@@ -266,14 +265,14 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   });
 
   it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
-    createQueryResponseMock.throws(new UnavailableAbciError());
+    createQueryResponseMock.throws(new UnavailableGrpcError());
 
     try {
       await identitiesByPublicKeyHashesQueryHandler({}, {}, {});
 
       expect.fail('should throw UnavailableAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
+      expect(e).to.be.an.instanceof(UnavailableGrpcError);
       expect(previousIdentityRepositoryMock.fetch).to.have.not.been.called();
     }
   });

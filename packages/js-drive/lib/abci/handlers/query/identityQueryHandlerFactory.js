@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const NotFoundAbciError = require('../../errors/NotFoundAbciError');
+const NotFoundGrpcError = require('@dashevo/grpc-common/lib/server/error/NotFoundGrpcError');
 
 /**
  *
@@ -44,7 +44,7 @@ function identityQueryHandlerFactory(
   async function identityQueryHandler(params, { id }, request) {
     // There is no signed state (current committed block height less then 2)
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
-      throw new NotFoundAbciError('Identity not found');
+      throw new NotFoundGrpcError('Identity not found');
     }
 
     const response = createQueryResponse(GetIdentityResponse, request.prove);
@@ -53,7 +53,7 @@ function identityQueryHandlerFactory(
 
     let identityBuffer;
     if (!identity && !request.prove) {
-      throw new NotFoundAbciError('Identity not found');
+      throw new NotFoundGrpcError('Identity not found');
     } else if (identity) {
       identityBuffer = identity.toBuffer();
     }

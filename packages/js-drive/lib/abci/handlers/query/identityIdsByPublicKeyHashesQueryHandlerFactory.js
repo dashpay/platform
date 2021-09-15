@@ -14,7 +14,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 
 /**
  *
@@ -46,7 +46,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
    */
   async function identityIdsByPublicKeyHashesQueryHandler(params, { publicKeyHashes }, request) {
     if (publicKeyHashes && publicKeyHashes.length > maxIdentitiesPerRequest) {
-      throw new InvalidArgumentAbciError(
+      throw new InvalidArgumentGrpcError(
         `Maximum number of ${maxIdentitiesPerRequest} requested items exceeded.`, {
           maxIdentitiesPerRequest,
         },

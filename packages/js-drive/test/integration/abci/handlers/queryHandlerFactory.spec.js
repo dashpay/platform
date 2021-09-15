@@ -10,10 +10,9 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
 const { init: initializeHashFunction } = require('../../../../lib/rootTree/hashFunction');
-
-const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 describe('queryHandlerFactory', function main() {
   this.timeout(90000);
@@ -39,7 +38,7 @@ describe('queryHandlerFactory', function main() {
   });
 
   beforeEach(async function beforeEach() {
-    proof = Buffer.from('843176bc004504d6baf735cf0215e9d9a3fecf1d', 'hex');
+    proof = Buffer.from('GbYYWuLCU6u7nb4pdnMM1uzAeURhE7ZPxGqAbUARBsb3', 'hex');
 
     container = await createTestDIContainer(mongoDB);
 
@@ -156,7 +155,7 @@ describe('queryHandlerFactory', function main() {
         data: Buffer.alloc(0),
       });
     } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('Invalid path');
     }
   });

@@ -1,8 +1,7 @@
 const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
-const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/BalanceIsNotEnoughError');
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 
-const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const InsufficientFundsError = require('../../errors/InsufficientFundsError');
+const DPPValidationError = require('../errors/DPPValidationError');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -22,11 +21,9 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     const logger = (options.logger || noopLogger);
 
     if (!stateTransitionByteArray) {
-      const error = new InvalidArgumentAbciError('State Transition is not specified');
-
       logger.info('State transition is not specified');
 
-      throw error;
+      throw new InvalidArgumentGrpcError('State Transition is not specified');
     }
 
     const stateTransitionSerialized = Buffer.from(stateTransitionByteArray);
@@ -38,14 +35,12 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
         .createFromBuffer(stateTransitionSerialized);
     } catch (e) {
       if (e instanceof InvalidStateTransitionError) {
-        const error = new InvalidArgumentAbciError('State Transition is invalid', { errors: e.getErrors() });
-
-        logger.info('State transition structure is invalid');
+        logger.info('Invalid state transition');
         logger.debug({
           consensusErrors: e.getErrors(),
         });
 
-        throw error;
+        throw new DPPValidationError('Invalid state transition', e.getErrors());
       }
 
       throw e;
@@ -56,15 +51,13 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     if (!result.isValid()) {
       const consensusErrors = result.getErrors();
 
-      const error = new InvalidArgumentAbciError('State Transition is invalid', { errors: consensusErrors });
-
-      logger.info('State transition signature is invalid');
+      logger.info('Invalid state transition signature');
 
       logger.debug({
         consensusErrors,
       });
 
-      throw error;
+      throw new DPPValidationError('Invalid state transition signature', consensusErrors);
     }
 
     result = await dpp.stateTransition.validateFee(stateTransition);
@@ -72,23 +65,13 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     if (!result.isValid()) {
       const consensusErrors = result.getErrors();
 
-      let error;
-
-      if (consensusErrors.length === 1 && consensusErrors[0] instanceof BalanceIsNotEnoughError) {
-        error = new InsufficientFundsError(consensusErrors[0].getBalance());
-
-        logger.info('Insufficient funds to process state transition');
-      } else {
-        error = new InvalidArgumentAbciError('State Transition is invalid', { errors: consensusErrors });
-
-        logger.info('State transition structure is invalid');
-      }
+      logger.info('Insufficient funds to process state transition');
 
       logger.debug({
         consensusErrors,
       });
 
-      throw error;
+      throw new DPPValidationError('Insufficient funds to process state transition', consensusErrors);
     }
 
     return stateTransition;

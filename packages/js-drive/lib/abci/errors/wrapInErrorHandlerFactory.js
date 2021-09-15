@@ -1,15 +1,8 @@
-const {
-  tendermint: {
-    abci: {
-      Event,
-      EventAttribute,
-    },
-  },
-} = require('@dashevo/abci/types');
-
-const AbciError = require('./AbciError');
-const InternalAbciError = require('./InternalAbciError');
-const VerboseInternalAbciError = require('./VerboseInternalAbciError');
+const cbor = require('cbor');
+const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
+const InternalGrpcError = require('@dashevo/grpc-common/lib/server/error/InternalGrpcError');
+const VerboseInternalGrpcError = require('@dashevo/grpc-common/lib/server/error/VerboseInternalGrpcError');
+const DPPValidationError = require('../handlers/errors/DPPValidationError');
 
 /**
  * @param {BaseLogger} logger
@@ -45,13 +38,20 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
       } catch (e) {
         let error = e;
 
+        if (e instanceof DPPValidationError) {
+          return {
+            code: error.getCode(),
+            info: cbor.encode(error.getInfo()).toString('base64'),
+          };
+        }
+
         // Wrap all non ABCI errors to an internal ABCI error
-        if (!(e instanceof AbciError)) {
-          error = new InternalAbciError(e);
+        if (!(e instanceof GrpcError)) {
+          error = new InternalGrpcError(e);
         }
 
         // Log only internal ABCI errors
-        if (error instanceof InternalAbciError) {
+        if (error instanceof InternalGrpcError) {
           // in consensus ABCI handlers (blockBegin, deliverTx, blockEnd, commit)
           // we should propagate the error upwards
           // to halt the Drive
@@ -69,31 +69,18 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
           );
 
           if (!isProductionEnvironment) {
-            error = new VerboseInternalAbciError(error);
+            error = new VerboseInternalGrpcError(error);
           }
         }
 
-        const events = [];
-
-        const attributes = Object.entries(error.getTags())
-          .map(([key, value]) => new EventAttribute({ key, value, index: true }));
-
-        if (attributes.length > 0) {
-          events.push(new Event({
-            type: 'error',
-            attributes,
-          }));
-        }
+        const serializedError = cbor.encode({
+          message: error.getMessage(),
+          metadata: error.getRawMetadata(),
+        });
 
         return {
           code: error.getCode(),
-          log: JSON.stringify({
-            error: {
-              message: error.getMessage(),
-              data: error.getData(),
-            },
-          }),
-          events,
+          info: serializedError.toString('base64'),
         };
       }
     }

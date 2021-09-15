@@ -15,11 +15,10 @@ const {
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
+const NotFoundGrpcError = require('@dashevo/grpc-common/lib/server/error/NotFoundGrpcError');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const identityQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/identityQueryHandlerFactory');
-
-const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
-const AbciError = require('../../../../../lib/abci/errors/AbciError');
-const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('identityQueryHandlerFactory', () => {
@@ -81,7 +80,7 @@ describe('identityQueryHandlerFactory', () => {
 
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundAbciError);
+      expect(e).to.be.an.instanceOf(NotFoundGrpcError);
     }
   });
 
@@ -93,7 +92,7 @@ describe('identityQueryHandlerFactory', () => {
 
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundAbciError);
+      expect(e).to.be.an.instanceOf(NotFoundGrpcError);
     }
   });
 
@@ -114,8 +113,8 @@ describe('identityQueryHandlerFactory', () => {
 
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(NotFoundAbciError);
-      expect(e.getCode()).to.equal(AbciError.CODES.NOT_FOUND);
+      expect(e).to.be.an.instanceof(NotFoundGrpcError);
+      expect(e.getCode()).to.equal(GrpcErrorCodes.NOT_FOUND);
       expect(e.message).to.equal('Identity not found');
       expect(previousIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     }
@@ -143,14 +142,14 @@ describe('identityQueryHandlerFactory', () => {
   });
 
   it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
-    createQueryResponseMock.throws(new UnavailableAbciError());
+    createQueryResponseMock.throws(new UnavailableGrpcError());
 
     try {
       await identityQueryHandler(params, data, {});
 
       expect.fail('should throw UnavailableAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
+      expect(e).to.be.an.instanceof(UnavailableGrpcError);
       expect(previousIdentityRepositoryMock.fetch).to.have.not.been.called();
     }
   });

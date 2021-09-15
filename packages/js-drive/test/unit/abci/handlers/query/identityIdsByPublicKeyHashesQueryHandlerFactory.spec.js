@@ -16,13 +16,12 @@ const {
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
+const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory',
 );
-const InvalidArgumentAbciError = require(
-  '../../../../../lib/abci/errors/InvalidArgumentAbciError',
-);
-const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
+
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
@@ -151,8 +150,8 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
       await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
-      expect(e.getData()).to.deep.equal({
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getRawMetadata()).to.deep.equal({
         maxIdentitiesPerRequest,
       });
     }
@@ -219,14 +218,14 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
   });
 
   it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
-    createQueryResponseMock.throws(new UnavailableAbciError());
+    createQueryResponseMock.throws(new UnavailableGrpcError());
 
     try {
       await identityIdsByPublicKeyHashesQueryHandler({}, {}, {});
 
       expect.fail('should throw UnavailableAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
+      expect(e).to.be.an.instanceof(UnavailableGrpcError);
       expect(previousPublicKeyIdentityIdRepositoryMock.fetch).to.have.not.been.called();
     }
   });

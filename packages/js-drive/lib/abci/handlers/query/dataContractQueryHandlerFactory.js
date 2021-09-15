@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const NotFoundAbciError = require('../../errors/NotFoundAbciError');
+const NotFoundGrpcError = require('@dashevo/grpc-common/lib/server/error/NotFoundGrpcError');
 
 /**
  *
@@ -44,7 +44,7 @@ function dataContractQueryHandlerFactory(
   async function dataContractQueryHandler(params, { id }, request) {
     // There is no signed state (current committed block height less then 2)
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
-      throw new NotFoundAbciError('Data Contract not found');
+      throw new NotFoundGrpcError('Data Contract not found');
     }
 
     const response = createQueryResponse(GetDataContractResponse, request.prove);
@@ -53,7 +53,7 @@ function dataContractQueryHandlerFactory(
 
     let dataContractBuffer;
     if (!dataContract && !request.prove) {
-      throw new NotFoundAbciError('Data Contract not found');
+      throw new NotFoundGrpcError('Data Contract not found');
     } else if (dataContract) {
       dataContractBuffer = dataContract.toBuffer();
     }

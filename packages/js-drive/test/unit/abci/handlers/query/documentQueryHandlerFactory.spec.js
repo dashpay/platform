@@ -18,12 +18,13 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const documentQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/documentQueryHandlerFactory');
 const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQueryError');
 const ValidationError = require('../../../../../lib/document/query/errors/ValidationError');
-const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
-const AbciError = require('../../../../../lib/abci/errors/AbciError');
-const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
+
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('documentQueryHandlerFactory', () => {
@@ -188,8 +189,8 @@ describe('documentQueryHandlerFactory', () => {
 
       expect.fail('should throw UnavailableAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
-      expect(e.getCode()).to.equal(AbciError.CODES.UNAVAILABLE);
+      expect(e).to.be.an.instanceof(UnavailableGrpcError);
+      expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
       expect(fetchPreviousDocumentsMock).to.not.be.called();
       expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
     }
@@ -203,8 +204,8 @@ describe('documentQueryHandlerFactory', () => {
 
       expect.fail('should throw UnavailableAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
-      expect(e.getCode()).to.equal(AbciError.CODES.UNAVAILABLE);
+      expect(e).to.be.an.instanceof(UnavailableGrpcError);
+      expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
       expect(fetchPreviousDocumentsMock).to.not.be.called();
       expect(containerMock.resolve).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
       expect(previousBlockExecutionTransactionsMock.getTransaction).to.be.calledOnceWithExactly('dataContracts');
@@ -213,15 +214,15 @@ describe('documentQueryHandlerFactory', () => {
   });
 
   it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
-    createQueryResponseMock.throws(new UnavailableAbciError());
+    createQueryResponseMock.throws(new UnavailableGrpcError());
 
     try {
       await documentQueryHandler(params, data, {});
 
       expect.fail('should throw UnavailableAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
-      expect(e.getCode()).to.equal(AbciError.CODES.UNAVAILABLE);
+      expect(e).to.be.an.instanceof(UnavailableGrpcError);
+      expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
       expect(fetchPreviousDocumentsMock).to.not.be.called();
       expect(containerMock.resolve).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
       expect(previousBlockExecutionTransactionsMock.getTransaction).to.be.calledOnceWithExactly('dataContracts');
@@ -240,9 +241,9 @@ describe('documentQueryHandlerFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
-      expect(e.getCode()).to.equal(AbciError.CODES.INVALID_ARGUMENT);
-      expect(e.getData()).to.deep.equal({ errors: [error] });
+      expect(e).to.be.an.instanceof(InvalidArgumentGrpcError);
+      expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
+      expect(e.getRawMetadata()).to.deep.equal({ errors: [error] });
       expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
       expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
     }

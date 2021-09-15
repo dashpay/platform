@@ -1,6 +1,6 @@
 const cbor = require('cbor');
 
-const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 
 /**
  * @param {Object} queryHandlerRouter
@@ -22,7 +22,7 @@ function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
     const route = queryHandlerRouter.find('GET', sanitizeUrl(path));
 
     if (!route) {
-      throw new InvalidArgumentAbciError('Invalid path', { path });
+      throw new InvalidArgumentGrpcError('Invalid path', { path });
     }
 
     const invalidDataMessage = 'Invalid data format: it should be cbor encoded object.';
@@ -35,11 +35,11 @@ function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
       try {
         encodedData = decodeData ? Buffer.from(data) : cbor.decode(Buffer.from(data));
       } catch (e) {
-        throw new InvalidArgumentAbciError(invalidDataMessage);
+        throw new InvalidArgumentGrpcError(invalidDataMessage);
       }
 
       if (encodedData === null || typeof encodedData !== 'object') {
-        throw new InvalidArgumentAbciError(invalidDataMessage);
+        throw new InvalidArgumentGrpcError(invalidDataMessage);
       }
     }
 

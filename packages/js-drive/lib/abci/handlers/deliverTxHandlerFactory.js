@@ -13,7 +13,7 @@ const AbstractDocumentTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition',
 );
 
-const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
+const DPPValidationError = require('./errors/DPPValidationError');
 
 const DOCUMENT_ACTION_DESCRIPTONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
@@ -80,14 +80,14 @@ function deliverTxHandlerFactory(
     const result = await transactionalDpp.stateTransition.validateState(stateTransition);
 
     if (!result.isValid()) {
-      consensusLogger.info('State transition data is invalid');
+      consensusLogger.info('State transition is invalid against the state');
       consensusLogger.debug({
         consensusErrors: result.getErrors(),
       });
 
       blockExecutionContext.incrementInvalidTxCount();
 
-      throw new InvalidArgumentAbciError('Invalid state transition', { errors: result.getErrors() });
+      throw new DPPValidationError('State transition is invalid against the state', result.getErrors());
     }
 
     // Apply state transition to the state
