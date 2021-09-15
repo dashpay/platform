@@ -18,7 +18,7 @@ describe('FailedPreconditionGrpcError', () => {
     it('should return message', () => {
       const result = error.getMessage();
 
-      expect(result).to.equal(`Failed precondition: ${message}`);
+      expect(result).to.equal(message);
     });
   });
 

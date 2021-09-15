@@ -7,7 +7,7 @@ class FailedPreconditionGrpcError extends GrpcError {
    * @param {Object} [metadata]
    */
   constructor(message, metadata = undefined) {
-    super(GrpcErrorCodes.FAILED_PRECONDITION, `Failed precondition: ${message}`, metadata);
+    super(GrpcErrorCodes.FAILED_PRECONDITION, message, metadata);
   }
 }
 
