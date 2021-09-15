@@ -12,16 +12,13 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const AbciResponseError = require('../../../errors/AbciResponseError');
-
 /**
  *
  * @param {DriveClient} driveClient
- * @param {handleAbciResponseError} handleAbciResponseError
  * @return {getIdentityIdsByPublicKeyHashesHandler}
  */
 function getIdentityIdsByPublicKeyHashesHandlerFactory(
-  driveClient, handleAbciResponseError,
+  driveClient,
 ) {
   /**
    * @typedef getIdentityIdsByPublicKeyHashesHandler
@@ -39,20 +36,11 @@ function getIdentityIdsByPublicKeyHashesHandlerFactory(
 
     const prove = request.getProve();
 
-    let identityIdsResponseBuffer;
-
-    try {
-      identityIdsResponseBuffer = await driveClient
-        .fetchIdentityIdsByPublicKeyHashes(
-          publicKeyHashes,
-          prove,
-        );
-    } catch (e) {
-      if (e instanceof AbciResponseError) {
-        handleAbciResponseError(e);
-      }
-      throw e;
-    }
+    const identityIdsResponseBuffer = await driveClient
+      .fetchIdentityIdsByPublicKeyHashes(
+        publicKeyHashes,
+        prove,
+      );
 
     return GetIdentityIdsByPublicKeyHashesResponse.deserializeBinary(identityIdsResponseBuffer);
   }

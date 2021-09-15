@@ -46,7 +46,7 @@ const {
 
 const log = require('../../../log');
 
-const handleAbciResponseError = require('../handleAbciResponseError');
+const createGrpcErrorFromDriveResponse = require('../createGrpcErrorFromDriveResponse');
 
 const getIdentityHandlerFactory = require(
   './getIdentityHandlerFactory',
@@ -100,7 +100,7 @@ function platformHandlersFactory(
   // broadcastStateTransition
   const broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
     rpcClient,
-    handleAbciResponseError,
+    createGrpcErrorFromDriveResponse,
   );
 
   const wrappedBroadcastStateTransition = jsonToProtobufHandlerWrapper(
@@ -116,7 +116,7 @@ function platformHandlersFactory(
 
   // getIdentity
   const getIdentityHandler = getIdentityHandlerFactory(
-    driveClient, handleAbciResponseError,
+    driveClient,
   );
 
   const wrappedGetIdentity = jsonToProtobufHandlerWrapper(
@@ -132,7 +132,7 @@ function platformHandlersFactory(
 
   // getDocuments
   const getDocumentsHandler = getDocumentsHandlerFactory(
-    driveClient, handleAbciResponseError,
+    driveClient,
   );
 
   const wrappedGetDocuments = jsonToProtobufHandlerWrapper(
@@ -148,7 +148,7 @@ function platformHandlersFactory(
 
   // getDataContract
   const getDataContractHandler = getDataContractHandlerFactory(
-    driveClient, handleAbciResponseError,
+    driveClient,
   );
 
   const wrappedGetDataContract = jsonToProtobufHandlerWrapper(
@@ -164,7 +164,7 @@ function platformHandlersFactory(
 
   // getIdentitiesByPublicKeyHashes
   const getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
-    driveClient, handleAbciResponseError,
+    driveClient,
   );
 
   const wrappedGetIdentitiesByPublicKeyHashes = jsonToProtobufHandlerWrapper(
@@ -180,7 +180,7 @@ function platformHandlersFactory(
 
   // getIdentityIdsByPublicKeyHashes
   const getIdentityIdsByPublicKeyHashesHandler = getIdentityIdsByPublicKeyHashesHandlerFactory(
-    driveClient, handleAbciResponseError,
+    driveClient,
   );
 
   const wrappedGetIdentityIdsByPublicKeyHashes = jsonToProtobufHandlerWrapper(
@@ -214,6 +214,7 @@ function platformHandlersFactory(
     waitForTransactionToBeProvable,
     blockchainListener,
     dpp,
+    createGrpcErrorFromDriveResponse,
   );
 
   const wrappedWaitForStateTransitionResult = jsonToProtobufHandlerWrapper(

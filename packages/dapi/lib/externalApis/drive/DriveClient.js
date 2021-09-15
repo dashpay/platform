@@ -3,7 +3,7 @@ const jayson = require('jayson/promise');
 const cbor = require('cbor');
 
 const RPCError = require('../../rpcServer/RPCError');
-const AbciResponseError = require('../../errors/AbciResponseError');
+const createGrpcErrorFromDriveResponse = require('../../grpcServer/handlers/createGrpcErrorFromDriveResponse');
 
 class DriveClient {
   /**
@@ -54,9 +54,7 @@ class DriveClient {
       return Buffer.from(response.value, 'base64');
     }
 
-    const { error: abciError } = JSON.parse(response.log);
-
-    throw new AbciResponseError(response.code, abciError);
+    throw createGrpcErrorFromDriveResponse(response.code, response.info);
   }
 
   /**

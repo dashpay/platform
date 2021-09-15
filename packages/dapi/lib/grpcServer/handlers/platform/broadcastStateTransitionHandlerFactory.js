@@ -13,15 +13,13 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const AbciResponseError = require('../../../errors/AbciResponseError');
-
 /**
  * @param {jaysonClient} rpcClient
- * @param {handleAbciResponseError} handleAbciResponseError
+ * @param {createGrpcErrorFromDriveResponse} createGrpcErrorFromDriveResponse
  *
  * @returns {broadcastStateTransitionHandler}
  */
-function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseError) {
+function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDriveResponse) {
   /**
    * @typedef broadcastStateTransitionHandler
    *
@@ -52,12 +50,8 @@ function broadcastStateTransitionHandlerFactory(rpcClient, handleAbciResponseErr
       throw error;
     }
 
-    if (result.code !== undefined && result.code !== 0) {
-      const { error: abciError } = JSON.parse(result.log);
-
-      handleAbciResponseError(
-        new AbciResponseError(result.code, abciError),
-      );
+    if (result.code !== 0) {
+      throw createGrpcErrorFromDriveResponse(result.code, result.info);
     }
 
     return new BroadcastStateTransitionResponse();

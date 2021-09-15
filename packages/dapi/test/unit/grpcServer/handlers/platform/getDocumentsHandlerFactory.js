@@ -26,8 +26,6 @@ const getDocumentsHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/platform/getDocumentsHandlerFactory',
 );
 
-const AbciResponseError = require('../../../../../lib/errors/AbciResponseError');
-
 describe('getDocumentsHandlerFactory', () => {
   let call;
   let getDocumentsHandler;
@@ -41,7 +39,6 @@ describe('getDocumentsHandlerFactory', () => {
   let limit;
   let startAfter;
   let startAt;
-  let handleAbciResponseErrorMock;
   let documentsSerialized;
   let proofFixture;
   let response;
@@ -95,11 +92,8 @@ describe('getDocumentsHandlerFactory', () => {
       fetchDocuments: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
-    handleAbciResponseErrorMock = this.sinon.stub();
-
     getDocumentsHandler = getDocumentsHandlerFactory(
       driveStateRepositoryMock,
-      handleAbciResponseErrorMock,
     );
   });
 
@@ -130,7 +124,6 @@ describe('getDocumentsHandlerFactory', () => {
     );
 
     expect(documentsBinary[0]).to.deep.equal(documentsSerialized[0]);
-    expect(handleAbciResponseErrorMock).to.be.not.called();
 
     const proof = result.getProof();
 
@@ -157,8 +150,6 @@ describe('getDocumentsHandlerFactory', () => {
       true,
     );
 
-    expect(handleAbciResponseErrorMock).to.be.not.called();
-
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
@@ -181,7 +172,6 @@ describe('getDocumentsHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('dataContractId is not specified');
       expect(driveStateRepositoryMock.fetchDocuments).to.be.not.called();
-      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 
@@ -197,32 +187,10 @@ describe('getDocumentsHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('documentType is not specified');
       expect(driveStateRepositoryMock.fetchDocuments).to.be.not.called();
-      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 
-  it('should throw InvalidArgumentGrpcError if fetchDocuments throws AbciResponseError', async () => {
-    const code = 2;
-    const message = 'Some error';
-    const data = 42;
-    const abciResponseError = new AbciResponseError(code, { message, data });
-    const handleError = new InvalidArgumentGrpcError('Another error');
-
-    handleAbciResponseErrorMock.throws(handleError);
-
-    driveStateRepositoryMock.fetchDocuments.throws(abciResponseError);
-
-    try {
-      await getDocumentsHandler(call);
-
-      expect.fail('should throw InvalidArgumentGrpcError error');
-    } catch (e) {
-      expect(e).to.equal(handleError);
-      expect(handleAbciResponseErrorMock).to.be.calledOnceWith(abciResponseError);
-    }
-  });
-
-  it('should throw error if fetchDocuments throws unknown error', async () => {
+  it('should throw error if fetchDocuments throws an error', async () => {
     const error = new Error('Some error');
 
     driveStateRepositoryMock.fetchDocuments.throws(error);
@@ -233,7 +201,6 @@ describe('getDocumentsHandlerFactory', () => {
       expect.fail('should throw InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 });

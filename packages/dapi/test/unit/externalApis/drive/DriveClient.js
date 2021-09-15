@@ -7,10 +7,11 @@ const dirtyChai = require('dirty-chai');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const DriveClient = require('../../../../lib/externalApis/drive/DriveClient');
 
 const RPCError = require('../../../../lib/rpcServer/RPCError');
-const AbciResponseError = require('../../../../lib/errors/AbciResponseError');
 
 
 chai.use(chaiAsPromised);
@@ -45,26 +46,20 @@ describe('DriveClient', () => {
     }
   });
 
-  it('should throw ABCI error response have one', async () => {
+  it('should throw ABCI error if response have one', async () => {
     const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
-
-    const abciError = {
-      message: 'Some ABCI error',
-      data: {
-        name: 'someData',
-      },
-    };
-
-    const responseLog = JSON.stringify({
-      error: abciError,
-    });
 
     sinon.stub(drive.client, 'request')
       .resolves({
         result: {
           response: {
-            code: 42,
-            log: responseLog,
+            code: GrpcErrorCodes.INVALID_ARGUMENT,
+            info: cbor.encode({
+              metadata: {
+                name: 'someData',
+              },
+              message: 'some message',
+            }).toString('base64'),
           },
         },
       });
@@ -72,10 +67,12 @@ describe('DriveClient', () => {
     try {
       await drive.fetchDataContract('someId');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(AbciResponseError);
-      expect(e.getErrorCode()).to.equal(42);
-      expect(e.getMessage()).to.equal(abciError.message);
-      expect(e.getData()).to.deep.equal(abciError.data);
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getCode()).to.equal(3);
+      expect(e.getMessage()).to.equal('some message');
+      expect(e.getRawMetadata()).to.deep.equal({
+        name: 'someData',
+      });
     }
   });
 

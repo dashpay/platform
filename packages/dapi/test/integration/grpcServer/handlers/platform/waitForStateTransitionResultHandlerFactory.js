@@ -22,6 +22,7 @@ const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtur
 const { EventEmitter } = require('events');
 
 const cbor = require('cbor');
+const NotFoundGrpcError = require('@dashevo/grpc-common/lib/server/error/NotFoundGrpcError');
 const BlockchainListener = require('../../../../../lib/externalApis/tenderdash/BlockchainListener');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
@@ -48,10 +49,19 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let waitForTransactionToBeProvable;
   let transactionNotFoundError;
   let storeTreeProofs;
+  let createGrpcErrorFromDriveResponseMock;
+  let errorInfo;
 
   beforeEach(function beforeEach() {
     const hashString = '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E';
     hash = Buffer.from(hashString, 'hex');
+
+    errorInfo = {
+      message: 'Identity not found',
+      metadata: {
+        error: 'some data',
+      },
+    };
 
     wsMessagesFixture = {
       success: {
@@ -87,8 +97,8 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
               height: '135',
               tx: 'pWR0eXBlAmlhc3NldExvY2ujZXByb29momR0eXBlAGtpbnN0YW50TG9ja1ilAR272lhhsS11I/IKpeDUL1LePc0tXC/pGbpntZ8FDSBuAAAAAMfKlZZZ3oAHaxO0bEIYXCSEpwTuR/baTwASqjgFgDAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa291dHB1dEluZGV4AGt0cmFuc2FjdGlvbljfAwAAAAFl5SQeBBDkK7Us9JcOU+Gp1oi4NIl/01A+5GAKeHi2JwEAAABrSDBFAiEAq9XMPgtU9J0imH6YJ/RtbxwJsavuhIpECU5Lw9h0xpoCIEgkU1njDQCe06YqRyeVYc6wK8G7Y/M5X+XicfJKo5P6ASEDK3jwtdIToEQAgTPMXxpjon4geQaNbbRNT/Xz50UgdHH/////AgEAAAAAAAAAFmoU8HHK+aRqNJOWXjNlOO3iWwvV45CDkAAAAAAAABl2qRTFVGzrfaB6ZhmvE8h2unBNgcJIMIisAAAAAGlzaWduYXR1cmVYQR/OHDEQUcSxczLBvMP9Z0HmRaDoCS6tTyFLbWhn7bAfJTlPF9hIbh13260WSCiDceJjWaYB0JuOGsqu2ZB5F0dDanB1YmxpY0tleXOBo2JpZABkZGF0YVghA85GJWE321+kW0HIwl3M6wO9BIHDxY80HlQgc1wRalT5ZHR5cGUAb3Byb3RvY29sVmVyc2lvbgA=',
               result: {
-                code: 2,
-                log: '{"error":{"message":"Invalid state transition","data":{"errors":[{"name":"IdentityPublicKeyAlreadyExistsError","message":"Identity public key already exists","publicKeyHash":{"type":"Buffer","data":[216,100,221,206,173,76,253,13,66,247,118,172,153,161,161,189,154,91,240,205]}}]}}}',
+                code: 1043,
+                info: cbor.encode(errorInfo).toString('base64'),
               },
             },
           },
@@ -160,11 +170,16 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       waitForHeight,
     );
 
+    createGrpcErrorFromDriveResponseMock = this.sinon.stub().returns(
+      new NotFoundGrpcError(errorInfo.message, errorInfo.metadata),
+    );
+
     waitForStateTransitionResultHandler = waitForStateTransitionResultHandlerFactory(
       fetchProofForStateTransition,
       waitForTransactionToBeProvable,
       blockchainListener,
       dppMock,
+      createGrpcErrorFromDriveResponseMock,
       1000,
     );
   });
@@ -242,13 +257,14 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       const errorCode = error.getCode();
       const errorMessage = error.getMessage();
 
-      const { error: abciError } = JSON.parse(
-        wsMessagesFixture.error.data.value.TxResult.result.log,
+      expect(createGrpcErrorFromDriveResponseMock).to.be.calledOnceWithExactly(
+        wsMessagesFixture.error.data.value.TxResult.result.code,
+        wsMessagesFixture.error.data.value.TxResult.result.info,
       );
 
       expect(errorCode).to.equal(wsMessagesFixture.error.data.value.TxResult.result.code);
-      expect(errorData).to.deep.equal(cbor.encode(abciError.data));
-      expect(errorMessage).to.equal(abciError.message);
+      expect(errorData).to.deep.equal(cbor.encode(errorInfo.metadata));
+      expect(errorMessage).to.equal(errorInfo.message);
 
       done();
     });

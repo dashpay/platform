@@ -18,7 +18,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const cbor = require('cbor');
-
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
 const TransactionErrorResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
 
@@ -28,6 +27,7 @@ const TransactionErrorResult = require('../../../externalApis/tenderdash/waitFor
  * @param {waitForTransactionToBeProvable} waitForTransactionToBeProvable
  * @param {BlockchainListener} blockchainListener
  * @param {DashPlatformProtocol} dpp
+ * @param {createGrpcErrorFromDriveResponse} createGrpcErrorFromDriveResponse
  * @param {number} stateTransitionWaitTimeout
  * @return {waitForStateTransitionResultHandler}
  */
@@ -36,6 +36,7 @@ function waitForStateTransitionResultHandlerFactory(
   waitForTransactionToBeProvable,
   blockchainListener,
   dpp,
+  createGrpcErrorFromDriveResponse,
   stateTransitionWaitTimeout = 80000,
 ) {
   /**
@@ -43,18 +44,13 @@ function waitForStateTransitionResultHandlerFactory(
    * @return {StateTransitionBroadcastError}
    */
   function createStateTransitionDeliverError(txDeliverResult) {
-    const { error: abciError } = JSON.parse(txDeliverResult.log);
-
-    let errorData;
-    if (abciError.data) {
-      errorData = cbor.encode(abciError.data);
-    }
+    const grpcError = createGrpcErrorFromDriveResponse(txDeliverResult.code, txDeliverResult.info);
 
     const error = new StateTransitionBroadcastError();
 
     error.setCode(txDeliverResult.code);
-    error.setMessage(abciError.message);
-    error.setData(errorData);
+    error.setMessage(grpcError.getMessage());
+    error.setData(cbor.encode(grpcError.getRawMetadata()));
 
     return error;
   }

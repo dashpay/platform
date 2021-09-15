@@ -24,8 +24,6 @@ const getDataContractHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/platform/getDataContractHandlerFactory',
 );
 
-const AbciResponseError = require('../../../../../lib/errors/AbciResponseError');
-
 describe('getDataContractHandlerFactory', () => {
   let call;
   let getDataContractHandler;
@@ -33,7 +31,6 @@ describe('getDataContractHandlerFactory', () => {
   let request;
   let id;
   let dataContractFixture;
-  let handleAbciResponseErrorMock;
   let proofFixture;
   let proofMock;
   let response;
@@ -69,11 +66,8 @@ describe('getDataContractHandlerFactory', () => {
       fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
-    handleAbciResponseErrorMock = this.sinon.stub();
-
     getDataContractHandler = getDataContractHandlerFactory(
       driveStateRepositoryMock,
-      handleAbciResponseErrorMock,
     );
   });
 
@@ -84,8 +78,6 @@ describe('getDataContractHandlerFactory', () => {
 
     const contractBinary = result.getDataContract();
     expect(contractBinary).to.be.an.instanceOf(Uint8Array);
-
-    expect(handleAbciResponseErrorMock).to.not.be.called();
 
     expect(contractBinary).to.deep.equal(dataContractFixture.toBuffer());
 
@@ -128,33 +120,10 @@ describe('getDataContractHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('id is not specified');
       expect(driveStateRepositoryMock.fetchDataContract).to.be.not.called();
-      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 
-  it('should throw InvalidArgumentGrpcError if driveStateRepository throws AbciResponseError', async () => {
-    const code = 2;
-    const message = 'Some error';
-    const data = 42;
-    const abciResponseError = new AbciResponseError(code, { message, data });
-
-    const handleError = new InvalidArgumentGrpcError('Another error');
-
-    handleAbciResponseErrorMock.throws(handleError);
-
-    driveStateRepositoryMock.fetchDataContract.throws(abciResponseError);
-
-    try {
-      await getDataContractHandler(call);
-
-      expect.fail('should throw InvalidArgumentGrpcError');
-    } catch (e) {
-      expect(e).to.equal(handleError);
-      expect(handleAbciResponseErrorMock).to.be.calledOnceWith(abciResponseError);
-    }
-  });
-
-  it('should throw error if driveStateRepository throws unknown error', async () => {
+  it('should throw error if driveStateRepository throws an error', async () => {
     const message = 'Some error';
     const abciResponseError = new Error(message);
 
@@ -166,7 +135,6 @@ describe('getDataContractHandlerFactory', () => {
       expect.fail('should throw error');
     } catch (e) {
       expect(e).to.equal(abciResponseError);
-      expect(handleAbciResponseErrorMock).to.be.not.called();
     }
   });
 });

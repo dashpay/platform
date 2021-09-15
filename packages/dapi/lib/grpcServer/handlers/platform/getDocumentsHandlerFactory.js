@@ -14,16 +14,14 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const AbciResponseError = require('../../../errors/AbciResponseError');
 
 /**
  *
  * @param {DriveClient} driveClient
- * @param {handleAbciResponseError} handleAbciResponseError
  *
  * @returns {getDocumentsHandler}
  */
-function getDocumentsHandlerFactory(driveClient, handleAbciResponseError) {
+function getDocumentsHandlerFactory(driveClient) {
   /**
    * @typedef getDocumentsHandler
    *
@@ -110,17 +108,9 @@ function getDocumentsHandlerFactory(driveClient, handleAbciResponseError) {
 
     const prove = request.getProve();
 
-    let documentResponseBuffer;
-    try {
-      documentResponseBuffer = await driveClient.fetchDocuments(
-        dataContractId, documentType, options, prove,
-      );
-    } catch (e) {
-      if (e instanceof AbciResponseError) {
-        handleAbciResponseError(e);
-      }
-      throw e;
-    }
+    const documentResponseBuffer = await driveClient.fetchDocuments(
+      dataContractId, documentType, options, prove,
+    );
 
     return GetDocumentsResponse.deserializeBinary(documentResponseBuffer);
   }

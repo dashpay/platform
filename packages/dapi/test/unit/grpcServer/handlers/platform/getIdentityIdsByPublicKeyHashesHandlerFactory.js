@@ -22,12 +22,9 @@ const getIdentityIdsByPublicKeyHashesHandlerFactory = require(
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-const AbciResponseError = require('../../../../../lib/errors/AbciResponseError');
-
 describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
   let call;
   let driveStateRepositoryMock;
-  let handleAbciResponseErrorMock;
   let getIdentityIdsByPublicKeyHashesHandler;
   let identity;
   let publicKeyHash;
@@ -47,8 +44,6 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
     });
 
     identity = getIdentityFixture();
-
-    handleAbciResponseErrorMock = this.sinon.stub();
 
     proofFixture = {
       rootTreeProof: Buffer.alloc(1, 1),
@@ -72,7 +67,6 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
 
     getIdentityIdsByPublicKeyHashesHandler = getIdentityIdsByPublicKeyHashesHandlerFactory(
       driveStateRepositoryMock,
-      handleAbciResponseErrorMock,
     );
   });
 
@@ -90,8 +84,6 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
 
     expect(driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes)
       .to.be.calledOnceWith([publicKeyHash], false);
-
-    expect(handleAbciResponseErrorMock).to.not.be.called();
 
     const proof = result.getProof();
     expect(proof).to.be.undefined();
@@ -127,33 +119,10 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('No public key hashes were provided');
       expect(driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes).to.not.be.called();
-      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 
-  it('should throw an error when fetchIdentity throws an AbciResponseError', async () => {
-    const code = 2;
-    const message = 'Some error';
-    const data = 42;
-    const abciResponseError = new AbciResponseError(code, { message, data });
-    const handleError = new InvalidArgumentGrpcError('Another error');
-
-    driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.throws(abciResponseError);
-    handleAbciResponseErrorMock.throws(handleError);
-
-    try {
-      await getIdentityIdsByPublicKeyHashesHandler(call);
-
-      expect.fail('should throw an error');
-    } catch (e) {
-      expect(e).to.equal(handleError);
-      expect(driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes)
-        .to.be.calledOnceWith([publicKeyHash]);
-      expect(handleAbciResponseErrorMock).to.be.calledOnceWith(abciResponseError);
-    }
-  });
-
-  it('should throw an error when fetchIdentity throws unknown error', async () => {
+  it('should throw an error when fetchIdentity throws an error', async () => {
     const error = new Error('Unknown error');
 
     driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.throws(error);
@@ -166,7 +135,6 @@ describe('getIdentityIdsByPublicKeyHashesHandlerFactory', () => {
       expect(e).to.equal(error);
       expect(driveStateRepositoryMock.fetchIdentityIdsByPublicKeyHashes)
         .to.be.calledOnceWith([publicKeyHash]);
-      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 });

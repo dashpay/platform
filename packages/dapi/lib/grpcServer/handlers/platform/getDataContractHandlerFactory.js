@@ -12,15 +12,12 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const AbciResponseError = require('../../../errors/AbciResponseError');
-
 /**
  * @param {DriveClient} driveClient
- * @param {handleAbciResponseError} handleAbciResponseError
  *
  * @returns {getDataContractHandler}
  */
-function getDataContractHandlerFactory(driveClient, handleAbciResponseError) {
+function getDataContractHandlerFactory(driveClient) {
   /**
    * @typedef getDataContractHandler
    *
@@ -37,16 +34,7 @@ function getDataContractHandlerFactory(driveClient, handleAbciResponseError) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
-    let dataContractResponseBuffer;
-    try {
-      dataContractResponseBuffer = await driveClient
-        .fetchDataContract(id, prove);
-    } catch (e) {
-      if (e instanceof AbciResponseError) {
-        handleAbciResponseError(e);
-      }
-      throw e;
-    }
+    const dataContractResponseBuffer = await driveClient.fetchDataContract(id, prove);
 
     return GetDataContractResponse.deserializeBinary(dataContractResponseBuffer);
   }

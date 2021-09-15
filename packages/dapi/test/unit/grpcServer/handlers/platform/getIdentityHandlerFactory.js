@@ -22,14 +22,10 @@ const getIdentityHandlerFactory = require('../../../../../lib/grpcServer/handler
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-const AbciResponseError = require('../../../../../lib/errors/AbciResponseError');
-
-
 describe('getIdentityHandlerFactory', () => {
   let call;
   let driveStateRepositoryMock;
   let id;
-  let handleAbciResponseErrorMock;
   let getIdentityHandler;
   let identity;
   let proofFixture;
@@ -62,15 +58,12 @@ describe('getIdentityHandlerFactory', () => {
     response.setProof(proofMock);
     response.setIdentity(identity.toBuffer());
 
-    handleAbciResponseErrorMock = this.sinon.stub();
-
     driveStateRepositoryMock = {
       fetchIdentity: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     getIdentityHandler = getIdentityHandlerFactory(
       driveStateRepositoryMock,
-      handleAbciResponseErrorMock,
     );
   });
 
@@ -83,7 +76,6 @@ describe('getIdentityHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
     expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
     expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id, false);
-    expect(handleAbciResponseErrorMock).to.not.be.called();
 
     const proof = result.getProof();
     expect(proof).to.be.undefined();
@@ -119,28 +111,6 @@ describe('getIdentityHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('id is not specified');
       expect(driveStateRepositoryMock.fetchIdentity).to.not.be.called();
-      expect(handleAbciResponseErrorMock).to.not.be.called();
-    }
-  });
-
-  it('should throw an error when fetchIdentity throws an AbciResponseError', async () => {
-    const code = 2;
-    const message = 'Some error';
-    const data = 42;
-    const abciResponseError = new AbciResponseError(code, { message, data });
-    const handleError = new InvalidArgumentGrpcError('Another error');
-
-    driveStateRepositoryMock.fetchIdentity.throws(abciResponseError);
-    handleAbciResponseErrorMock.throws(handleError);
-
-    try {
-      await getIdentityHandler(call);
-
-      expect.fail('should throw an error');
-    } catch (e) {
-      expect(e).to.equal(handleError);
-      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
-      expect(handleAbciResponseErrorMock).to.be.calledOnceWith(abciResponseError);
     }
   });
 
@@ -156,7 +126,6 @@ describe('getIdentityHandlerFactory', () => {
     } catch (e) {
       expect(e).to.equal(error);
       expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
-      expect(handleAbciResponseErrorMock).to.not.be.called();
     }
   });
 });
