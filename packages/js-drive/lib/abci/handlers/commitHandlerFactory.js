@@ -32,6 +32,7 @@ const BlockExecutionContextRepository = require('../../blockExecution/BlockExecu
  * @param {BaseLogger} logger
  * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
  * @param {getLatestFeatureFlag} getLatestFeatureFlag
+ * @param {RootTree} previousRootTree
  *
  * @return {commitHandler}
  */
@@ -52,6 +53,7 @@ function commitHandlerFactory(
   logger,
   cloneToPreviousStoreTransactions,
   getLatestFeatureFlag,
+  previousRootTree,
 ) {
   /**
    * Commit ABCI Handler
@@ -174,6 +176,8 @@ function commitHandlerFactory(
 
       // Commit previous block changes from the previous transactions to the previous stores
       await previousBlockExecutionStoreTransactions.commit();
+
+      previousRootTree.rebuild();
     }
 
     // Update previous transactions with changes from the current block

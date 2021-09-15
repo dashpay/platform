@@ -47,6 +47,7 @@ describe('commitHandlerFactory', () => {
   let getLatestFeatureFlagMock;
   let previousBlockExecutionContextMock;
   let blockExecutionContextRepositoryMock;
+  let previousRootTreeMock;
 
   beforeEach(function beforeEach() {
     nextPreviousBlockExecutionStoreTransactionsMock = 'nextPreviousBlockExecutionStoreTransactionsMock';
@@ -89,6 +90,8 @@ describe('commitHandlerFactory', () => {
 
     rootTreeMock = new RootTreeMock(this.sinon);
     rootTreeMock.getRootHash.returns(appHash);
+
+    previousRootTreeMock = new RootTreeMock(this.sinon);
 
     dppMock = createDPPMock(this.sinon);
     dppMock.dataContract.createFromBuffer.resolves(dataContract);
@@ -157,6 +160,7 @@ describe('commitHandlerFactory', () => {
       loggerMock,
       cloneToPreviousStoreTransactionsMock,
       getLatestFeatureFlagMock,
+      previousRootTreeMock,
     );
   });
 

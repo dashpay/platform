@@ -82,7 +82,7 @@
     "dotenv-expand": "^5.1.0",
     "dotenv-safe": "^8.2.0",
     "find-my-way": "^2.2.2",
-    "js-merkle": "^0.1.4",
+    "js-merkle": "^0.1.5",
     "level-rocksdb": "^4.0.0",
     "level-transactions": "^2.1.4",
     "lodash.escaperegexp": "^4.1.2",
