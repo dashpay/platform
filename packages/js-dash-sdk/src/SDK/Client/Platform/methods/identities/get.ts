@@ -2,7 +2,7 @@ import {Platform} from "../../Platform";
 // @ts-ignore
 import Identifier from "@dashevo/dpp/lib/Identifier";
 import Metadata from "@dashevo/dpp/lib/Metadata";
-const NotFoundError = require('@dashevo/dapi-client/lib/methods/errors/NotFoundError');
+const NotFoundError = require('@dashevo/dapi-client/lib/errors/response/NotFoundError');
 
 /**
  * Get an identity from the platform

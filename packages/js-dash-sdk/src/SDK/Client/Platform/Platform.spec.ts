@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { Platform } from "./index";
 import 'mocha';
 import Client from '../Client';
-import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/protocolVersion";
+import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
 
 describe('Dash - Platform', () => {
 
@@ -27,7 +27,10 @@ describe('Dash - Platform', () => {
       network: 'testnet',
     });
 
-    expect(platform.dpp.protocolVersion).to.equal(0);
+    // @ts-ignore
+    const testnetProtocolVersion = Platform.networkToProtocolVersion.get('testnet');
+
+    expect(platform.dpp.protocolVersion).to.equal(testnetProtocolVersion);
   });
 
   it('should set protocol version for DPP using latest version', () => {

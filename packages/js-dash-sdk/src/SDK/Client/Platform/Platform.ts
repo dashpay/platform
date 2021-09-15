@@ -22,7 +22,7 @@ import searchName from "./methods/names/search";
 import broadcastStateTransition from "./broadcastStateTransition";
 import { IPlatformStateProof } from "./IPlatformStateProof";
 import StateRepository from './StateRepository';
-import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/protocolVersion";
+import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
 
 /**
  * Interface for PlatformOpts
@@ -106,8 +106,7 @@ export class Platform {
     client: Client;
 
     private static readonly networkToProtocolVersion: Map<string, number> = new Map([
-        ['testnet', 0],
-        ['regtest', 0],
+        ['testnet', 1],
     ]);
 
     /**
