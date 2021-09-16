@@ -213,7 +213,7 @@ module.exports = {
 
           config.core.docker.image = systemConfigs.base.core.docker.image;
 
-          config.core.sentinel.image = systemConfigs.base.sentinel.docker.image;
+          config.core.sentinel.docker.image = systemConfigs.base.core.sentinel.docker.image;
         }
       });
 
@@ -225,7 +225,7 @@ module.exports = {
       .platform.drive.abci.validatorSet.llmqType;
 
     Object.entries(configFile.configs)
-      .filter(([, config]) => config.group === 'local')
+      .filter(([, config]) => config.group === 'local' && config.platform)
       .forEach(([, config]) => {
         config.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
           .platform.drive.abci.validatorSet.llmqType;
