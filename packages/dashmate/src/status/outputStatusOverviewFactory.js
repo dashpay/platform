@@ -90,7 +90,7 @@ function outputStatusOverviewFactory(
     let platformCatchingUp;
     let platformStatus;
 
-    if (config.options.network !== 'mainnet') {
+    if (config.options.network !== 'mainnet' && config.name !== 'local_seed') {
       if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
         try {
           ({
@@ -211,7 +211,7 @@ function outputStatusOverviewFactory(
       coreStatus = chalk.red(coreStatus);
     }
 
-    if (config.options.network !== 'mainnet') {
+    if (config.options.network !== 'mainnet' && config.name !== 'local_seed') {
       if (platformStatus === 'running') {
         platformStatus = chalk.green(platformStatus);
       } else if (platformStatus.startsWith('syncing')) {
@@ -235,7 +235,7 @@ function outputStatusOverviewFactory(
       rows.push(['Masternode Status', (masternodeStatus)]);
     }
 
-    if (config.options.network !== 'mainnet') {
+    if (config.options.network !== 'mainnet' && config.name !== 'local_seed') {
       if (coreIsSynced === true
         && platformStatus !== chalk.red('not started')
         && platformStatus !== chalk.red('restarting')) {
