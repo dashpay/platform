@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/feature-flags-contract",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Data Contract to store Dash Platform feature flags",
   "scripts": {
     "lint": "eslint .",
