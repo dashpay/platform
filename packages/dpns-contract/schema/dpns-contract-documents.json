@@ -1,5 +1,6 @@
 {
   "domain": {
+    "type": "object",
     "indices": [
       {
         "properties": [
@@ -31,21 +32,21 @@
     "properties": {
       "label": {
         "type": "string",
-        "pattern": "^((?!-)[a-zA-Z0-9-]{0,62}[a-zA-Z0-9])$",
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
         "minLength": 3,
         "maxLength": 63,
         "description": "Domain label. e.g. 'Bob'."
       },
       "normalizedLabel": {
         "type": "string",
-        "pattern": "^((?!-)[a-z0-9-]{0,62}[a-z0-9])$",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$",
         "maxLength": 63,
         "description": "Domain label in lowercase for case-insensitive uniqueness validation. e.g. 'bob'",
         "$comment": "Must be equal to the label in lowercase. This property will be deprecated due to case insensitive indices"
       },
       "normalizedParentDomainName": {
         "type": "string",
-        "pattern": "^$|^((?!-)[a-z0-9-\\.]{0,189}[a-z0-9])$",
+        "pattern": "^$|^[[a-z0-9][a-z0-9-\\.]{0,188}[a-z0-9]$",
         "minLength": 0,
         "maxLength": 190,
         "description": "A full parent domain name in lowercase for case-insensitive uniqueness validation. e.g. 'dash'",
@@ -111,6 +112,7 @@
     "$comment": "In order to register a domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"
   },
   "preorder": {
+    "type": "object",
     "indices": [
       {
         "properties": [

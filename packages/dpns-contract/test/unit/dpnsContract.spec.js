@@ -11,7 +11,7 @@ describe('DPNS Contract', () => {
   let dataContract;
   let identityId;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const fetchContractStub = this.sinon.stub();
 
     dpp = new DashPlatformProtocol({
@@ -19,6 +19,8 @@ describe('DPNS Contract', () => {
         fetchDataContract: fetchContractStub,
       },
     });
+
+    await dpp.initialize();
 
     identityId = generateRandomIdentifier();
 
@@ -78,7 +80,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('minItems');
-            expect(error.dataPath).to.equal('.saltedDomainHash');
+            expect(error.instancePath).to.equal('/saltedDomainHash');
           }
         });
 
@@ -97,7 +99,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('minItems');
-            expect(error.dataPath).to.equal('.saltedDomainHash');
+            expect(error.instancePath).to.equal('/saltedDomainHash');
           }
         });
 
@@ -116,7 +118,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('maxItems');
-            expect(error.dataPath).to.equal('.saltedDomainHash');
+            expect(error.instancePath).to.equal('/saltedDomainHash');
           }
         });
       });
@@ -202,7 +204,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('pattern');
-            expect(error.dataPath).to.equal('.label');
+            expect(error.instancePath).to.equal('/label');
           }
         });
 
@@ -221,7 +223,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('minLength');
-            expect(error.dataPath).to.equal('.label');
+            expect(error.instancePath).to.equal('/label');
           }
         });
 
@@ -240,7 +242,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('maxLength');
-            expect(error.dataPath).to.equal('.label');
+            expect(error.instancePath).to.equal('/label');
           }
         });
       });
@@ -280,7 +282,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('pattern');
-            expect(error.dataPath).to.equal('.normalizedLabel');
+            expect(error.instancePath).to.equal('/normalizedLabel');
           }
         });
 
@@ -299,7 +301,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('maxLength');
-            expect(error.dataPath).to.equal('.normalizedLabel');
+            expect(error.instancePath).to.equal('/normalizedLabel');
           }
         });
       });
@@ -339,7 +341,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('maxLength');
-            expect(error.dataPath).to.equal('.normalizedParentDomainName');
+            expect(error.instancePath).to.equal('/normalizedParentDomainName');
           }
         });
 
@@ -358,7 +360,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('pattern');
-            expect(error.dataPath).to.equal('.normalizedParentDomainName');
+            expect(error.instancePath).to.equal('/normalizedParentDomainName');
           }
         });
       });
@@ -398,7 +400,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('minItems');
-            expect(error.dataPath).to.equal('.preorderSalt');
+            expect(error.instancePath).to.equal('/preorderSalt');
           }
         });
 
@@ -417,7 +419,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('minItems');
-            expect(error.dataPath).to.equal('.preorderSalt');
+            expect(error.instancePath).to.equal('/preorderSalt');
           }
         });
 
@@ -436,7 +438,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('maxItems');
-            expect(error.dataPath).to.equal('.preorderSalt');
+            expect(error.instancePath).to.equal('/preorderSalt');
           }
         });
       });
@@ -503,7 +505,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('minProperties');
-            expect(error.dataPath).to.equal('.records');
+            expect(error.instancePath).to.equal('/records');
           }
         });
 
@@ -524,7 +526,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('additionalProperties');
-            expect(error.dataPath).to.equal('.records');
+            expect(error.instancePath).to.equal('/records');
             expect(error.params.additionalProperty).to.equal('someOtherProperty');
           }
         });
@@ -548,7 +550,7 @@ describe('DPNS Contract', () => {
 
               expect(error.name).to.equal('JsonSchemaError');
               expect(error.keyword).to.equal('maxProperties');
-              expect(error.dataPath).to.equal('.records');
+              expect(error.instancePath).to.equal('/records');
             }
           });
 
@@ -570,7 +572,7 @@ describe('DPNS Contract', () => {
 
                 expect(error.name).to.equal('JsonSchemaError');
                 expect(error.keyword).to.equal('minItems');
-                expect(error.dataPath).to.equal('.records.dashUniqueIdentityId');
+                expect(error.instancePath).to.equal('/records/dashUniqueIdentityId');
               }
             });
 
@@ -591,7 +593,7 @@ describe('DPNS Contract', () => {
 
                 expect(error.name).to.equal('JsonSchemaError');
                 expect(error.keyword).to.equal('maxItems');
-                expect(error.dataPath).to.equal('.records.dashUniqueIdentityId');
+                expect(error.instancePath).to.equal('/records/dashUniqueIdentityId');
               }
             });
           });
@@ -614,7 +616,7 @@ describe('DPNS Contract', () => {
 
                 expect(error.name).to.equal('JsonSchemaError');
                 expect(error.keyword).to.equal('minItems');
-                expect(error.dataPath).to.equal('.records.dashAliasIdentityId');
+                expect(error.instancePath).to.equal('/records/dashAliasIdentityId');
               }
             });
 
@@ -635,7 +637,7 @@ describe('DPNS Contract', () => {
 
                 expect(error.name).to.equal('JsonSchemaError');
                 expect(error.keyword).to.equal('maxItems');
-                expect(error.dataPath).to.equal('.records.dashAliasIdentityId');
+                expect(error.instancePath).to.equal('/records/dashAliasIdentityId');
               }
             });
           });
@@ -677,7 +679,7 @@ describe('DPNS Contract', () => {
 
             expect(error.name).to.equal('JsonSchemaError');
             expect(error.keyword).to.equal('additionalProperties');
-            expect(error.dataPath).to.equal('.subdomainRules');
+            expect(error.instancePath).to.equal('/subdomainRules');
           }
         });
 
@@ -697,7 +699,7 @@ describe('DPNS Contract', () => {
 
               expect(error.name).to.equal('JsonSchemaError');
               expect(error.keyword).to.equal('type');
-              expect(error.dataPath).to.equal('.subdomainRules.allowSubdomains');
+              expect(error.instancePath).to.equal('/subdomainRules/allowSubdomains');
             }
           });
         });
