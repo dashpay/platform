@@ -1,3 +1,5 @@
+const cbor = require('cbor');
+
 const InternalGrpcError = require('./InternalGrpcError');
 
 class VerboseInternalGrpcError extends InternalGrpcError {
@@ -16,7 +18,7 @@ class VerboseInternalGrpcError extends InternalGrpcError {
     const message = `${originalError.message} ${errorPath.trim()}`;
 
     const rawMetadata = error.getRawMetadata() || {};
-    rawMetadata.stack = originalError.stack;
+    rawMetadata['stack-bin'] = cbor.encode(originalError.stack);
 
     super(
       originalError,

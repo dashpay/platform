@@ -1,3 +1,5 @@
+const cbor = require('cbor');
+
 const wrapInErrorHandlerFactory = require('../../../../lib/server/error/wrapInErrorHandlerFactory');
 const InternalGrpcError = require('../../../../lib/server/error/InternalGrpcError');
 const VerboseInternalGrpcError = require('../../../../lib/server/error/VerboseInternalGrpcError');
@@ -90,9 +92,6 @@ describe('wrapInErrorHandlerFactory', () => {
       const [, errorPath] = someError.stack.toString().split(/\r\n|\n/);
 
       const errorMessage = `${someError.message} ${errorPath.trim()}`;
-      const metadata = {
-        stack: someError.stack,
-      };
 
       rpcMethod.throws(someError);
 
@@ -110,7 +109,9 @@ describe('wrapInErrorHandlerFactory', () => {
       expect(grpcError).to.be.instanceOf(VerboseInternalGrpcError);
       expect(grpcError.getError()).to.equal(someError);
       expect(grpcError.getMessage()).to.equal(errorMessage);
-      expect(grpcError.getRawMetadata()).to.deep.equal(metadata);
+      expect(grpcError.getRawMetadata()).to.deep.equal({
+        'stack-bin': cbor.encode(someError.stack),
+      });
 
       expect(loggerMock.error).to.be.calledOnceWith(someError);
     });
