@@ -11,6 +11,7 @@ class AcknowledgingWritable {
    * @return {Promise<any>}
    */
   write(data) {
+    let handler;
     return new Promise((resolve, reject) => {
       const callback = (error) => {
         if (error) {
@@ -18,8 +19,10 @@ class AcknowledgingWritable {
         }
         return resolve(true);
       };
-      const handler = this.attachHandler(callback);
+      handler = this.attachHandler(callback);
       this.writable.write(data, handler);
+    }).finally(() => {
+      this.detachHandler(handler);
     });
   }
 
@@ -30,7 +33,6 @@ class AcknowledgingWritable {
    */
   createHandler(callback) {
     const handler = (error) => {
-      this.detachHandler(handler);
       callback(error);
     };
     return handler;

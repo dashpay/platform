@@ -62,8 +62,9 @@ describe('AcknowledgingWritable', () => {
 
       const promise = wrapper.write('123');
 
+      // event error is still not detached
       // eslint-disable-next-line no-underscore-dangle
-      expect(wrapper.writable._eventsCount).to.be.equal(0);
+      expect(wrapper.writable._eventsCount).to.be.equal(1);
 
       const result = await promise;
 
