@@ -29,7 +29,7 @@
     "@grpc/proto-loader": "^0.5.2",
     "cbor": "^7.0.6",
     "lodash.get": "^4.4.2",
-    "protobufjs": "git+https:github.com/jawid-h/protobuf.js#fix/buffer-conversion",
+    "protobufjs": "git+https://git@github.com/jawid-h/protobuf.js#fix/buffer-conversion",
     "semver": "^7.3.2"
   }
 }
