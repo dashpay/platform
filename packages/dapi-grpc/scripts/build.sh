@@ -28,7 +28,7 @@ rm -rf "$CORE_WEB_OUT_PATH/*"
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            -v "$CORE_WEB_OUT_PATH:$CORE_WEB_OUT_PATH" \
            --rm \
-           grpcweb/common \
+           dashpay/grpc-web-common \
            protoc -I="$CORE_PROTO_PATH" "core.proto" \
                    --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
                    --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$CORE_WEB_OUT_PATH"
@@ -59,7 +59,7 @@ rm -rf "$PLATFORM_WEB_OUT_PATH/*"
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            -v "$PLATFORM_WEB_OUT_PATH:$PLATFORM_WEB_OUT_PATH" \
            --rm \
-           grpcweb/common \
+           dashpay/grpc-web-common \
            protoc -I="$PLATFORM_PROTO_PATH" "platform.proto" \
                    --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
                    --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$PLATFORM_WEB_OUT_PATH"
