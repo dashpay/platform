@@ -1,3 +1,6 @@
+/**
+ * @returns {{coreChainLockedHeight: number, height: number}}
+ */
 function getMetadataFixture() {
   return {
     height: 10,

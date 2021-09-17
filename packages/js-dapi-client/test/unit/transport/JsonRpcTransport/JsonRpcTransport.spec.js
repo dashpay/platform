@@ -1,9 +1,12 @@
 const JsonRpcTransport = require('../../../../lib/transport/JsonRpcTransport/JsonRpcTransport');
 const DAPIAddress = require('../../../../lib/dapiAddressProvider/DAPIAddress');
 
-const MaxRetriesReachedError = require('../../../../lib/errors/response/MaxRetriesReachedError');
-const NoAvailableAddressesForRetryError = require('../../../../lib/errors/response/NoAvailableAddressesForRetryError');
+const MaxRetriesReachedError = require('../../../../lib/transport/errors/response/MaxRetriesReachedError');
+const NoAvailableAddressesForRetryError = require('../../../../lib/transport/errors/response/NoAvailableAddressesForRetryError');
 const NoAvailableAddressesError = require('../../../../lib/transport/errors/NoAvailableAddressesError');
+const ResponseError = require('../../../../lib/transport/errors/response/ResponseError');
+const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
+const RetriableResponseError = require('../../../../lib/transport/errors/response/RetriableResponseError');
 
 describe('JsonRpcTransport', () => {
   let jsonRpcTransport;
@@ -13,6 +16,7 @@ describe('JsonRpcTransport', () => {
   let dapiAddress;
   let host;
   let requestJsonRpcMock;
+  let createJsonTransportErrorMock;
 
   beforeEach(function beforeEach() {
     host = '127.0.0.1';
@@ -31,10 +35,13 @@ describe('JsonRpcTransport', () => {
 
     requestJsonRpcMock = this.sinon.stub();
 
+    createJsonTransportErrorMock = this.sinon.stub();
+
     jsonRpcTransport = new JsonRpcTransport(
       createDAPIAddressProviderFromOptionsMock,
       requestJsonRpcMock,
       dapiAddressProviderMock,
+      createJsonTransportErrorMock,
       globalOptions,
     );
   });
@@ -44,6 +51,8 @@ describe('JsonRpcTransport', () => {
     let params;
     let options;
     let data;
+    let requestInfo;
+    let jsonRpcErrorObject;
 
     beforeEach(() => {
       params = {
@@ -54,6 +63,14 @@ describe('JsonRpcTransport', () => {
       };
       method = 'method';
       data = 'result';
+
+      requestInfo = {};
+
+      jsonRpcErrorObject = {
+        code: 1,
+        message: 'hello',
+        data: {},
+      };
 
       requestJsonRpcMock.resolves(data);
     });
@@ -90,6 +107,7 @@ describe('JsonRpcTransport', () => {
         expect.fail('should throw error');
       } catch (e) {
         expect(e).to.deep.equal(error);
+
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
@@ -117,10 +135,59 @@ describe('JsonRpcTransport', () => {
       }
     });
 
-    it('should throw MaxRetriesReachedError', async () => {
-      const error = new Error('Internal error');
-      error.code = 'ECONNABORTED';
+    it('should throw non-retriable response error', async () => {
+      const error = new JsonRpcError(requestInfo, jsonRpcErrorObject);
+
       requestJsonRpcMock.throws(error);
+
+      const responseError = new ResponseError(
+        error.getCode(),
+        error.getMessage(),
+        error.getData(),
+        dapiAddress,
+      );
+
+      createJsonTransportErrorMock.returns(responseError);
+
+      try {
+        await jsonRpcTransport.request(
+          method,
+          params,
+        );
+
+        expect.fail('should throw ResponseError');
+      } catch (e) {
+        expect(e).to.equal(responseError);
+
+        expect(createJsonTransportErrorMock).to.be.calledOnceWithExactly(error, dapiAddress);
+
+        expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
+        expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
+        expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getHost(),
+          dapiAddress.getHttpPort(),
+          method,
+          params,
+          {},
+        );
+      }
+    });
+
+    it('should throw MaxRetriesReachedError', async () => {
+      const error = new JsonRpcError(requestInfo, jsonRpcErrorObject);
+
+      requestJsonRpcMock.throws(error);
+
+      const responseError = new RetriableResponseError(
+        error.getCode(),
+        error.getMessage(),
+        error.getData(),
+        dapiAddress,
+      );
+
+      createJsonTransportErrorMock.returns(responseError);
+
+      options.retries = 0;
 
       try {
         await jsonRpcTransport.request(
@@ -130,8 +197,10 @@ describe('JsonRpcTransport', () => {
         expect.fail('should throw MaxRetriesReachedError');
       } catch (e) {
         expect(e).to.be.an.instanceof(MaxRetriesReachedError);
-        expect(e.getCode()).to.equal(error.code);
-        expect(e.getMetadata()).to.deep.equal(error.metadata);
+        expect(e.getCause()).to.equal(responseError);
+
+        expect(createJsonTransportErrorMock).to.be.calledOnceWithExactly(error, dapiAddress);
+
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
@@ -145,9 +214,18 @@ describe('JsonRpcTransport', () => {
     });
 
     it('should throw NoAvailableAddressesForRetry error', async () => {
-      const error = new Error('Internal error');
-      error.code = 'ECONNABORTED';
+      const error = new JsonRpcError(requestInfo, jsonRpcErrorObject);
+
       requestJsonRpcMock.throws(error);
+
+      const responseError = new RetriableResponseError(
+        error.getCode(),
+        error.getMessage(),
+        error.getData(),
+        dapiAddress,
+      );
+
+      createJsonTransportErrorMock.returns(responseError);
 
       options.retries = 1;
 
@@ -161,112 +239,10 @@ describe('JsonRpcTransport', () => {
         expect.fail('should throw NoAvailableAddressesForRetry');
       } catch (e) {
         expect(e).to.be.an.instanceof(NoAvailableAddressesForRetryError);
-        expect(e.getCode()).to.equal(error.code);
-        expect(e.getMetadata()).to.deep.equal(error.metadata);
-        expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
-        expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
-        expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
-          dapiAddress.getHost(),
-          dapiAddress.getHttpPort(),
-          method,
-          params,
-          { timeout: options.timeout },
-        );
-      }
-    });
+        expect(e.getCause()).to.equal(responseError);
 
-    it('should retry the request if a connection aborted error has thrown', async () => {
-      dapiAddressProviderMock.hasLiveAddresses.resolves(true);
-      const error = new Error('Internal error');
-      error.code = 'ECONNABORTED';
-      requestJsonRpcMock.onCall(0).throws(error);
+        expect(createJsonTransportErrorMock).to.be.calledOnceWithExactly(error, dapiAddress);
 
-      options.retries = 1;
-      const receivedData = await jsonRpcTransport.request(
-        method,
-        params,
-        options,
-      );
-
-      expect(receivedData).to.equal(data);
-      expect(createDAPIAddressProviderFromOptionsMock).to.be.calledTwice();
-      expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
-      expect(requestJsonRpcMock).to.be.calledTwice();
-    });
-
-    it('should retry the request if a connection refused error has thrown', async () => {
-      dapiAddressProviderMock.hasLiveAddresses.resolves(true);
-      const error = new Error('Internal error');
-      error.code = 'ECONNREFUSED';
-      requestJsonRpcMock.onCall(0).throws(error);
-
-      options.retries = 1;
-      const receivedData = await jsonRpcTransport.request(
-        method,
-        params,
-        options,
-      );
-
-      expect(receivedData).to.equal(data);
-      expect(createDAPIAddressProviderFromOptionsMock).to.be.calledTwice();
-      expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
-      expect(requestJsonRpcMock).to.be.calledTwice();
-    });
-
-    it('should retry the request if a connection timeout error has thrown', async () => {
-      dapiAddressProviderMock.hasLiveAddresses.resolves(true);
-      const error = new Error('Internal error');
-      error.code = 'ETIMEDOUT';
-      requestJsonRpcMock.onCall(0).throws(error);
-
-      options.retries = 1;
-      const receivedData = await jsonRpcTransport.request(
-        method,
-        params,
-        options,
-      );
-
-      expect(receivedData).to.equal(data);
-      expect(createDAPIAddressProviderFromOptionsMock).to.be.calledTwice();
-      expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
-      expect(requestJsonRpcMock).to.be.calledTwice();
-    });
-
-    it('should retry the request if error with code -32603 has thrown', async () => {
-      dapiAddressProviderMock.hasLiveAddresses.resolves(true);
-      const error = new Error('Internal error');
-      error.code = -32603;
-      requestJsonRpcMock.onCall(0).throws(error);
-
-      options.retries = 1;
-      const receivedData = await jsonRpcTransport.request(
-        method,
-        params,
-        options,
-      );
-
-      expect(receivedData).to.equal(data);
-      expect(createDAPIAddressProviderFromOptionsMock).to.be.calledTwice();
-      expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
-      expect(requestJsonRpcMock).to.be.calledTwice();
-    });
-
-    it('should throw unknown error if error with code -32000 has thrown', async () => {
-      dapiAddressProviderMock.hasLiveAddresses.resolves(true);
-      const error = new Error('Internal error');
-      error.code = -32000;
-      requestJsonRpcMock.onCall(0).throws(error);
-
-      try {
-        await jsonRpcTransport.request(
-          method,
-          params,
-          options,
-        );
-
-        expect.fail('should throw error');
-      } catch (e) {
-        expect(e).to.deep.equal(error);
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(

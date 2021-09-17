@@ -9,6 +9,7 @@ const SimplifiedMasternodeListDAPIAddressProvider = require('./SimplifiedMastern
 
 const JsonRpcTransport = require('../transport/JsonRpcTransport/JsonRpcTransport');
 const requestJsonRpc = require('../transport/JsonRpcTransport/requestJsonRpc');
+const createJsonTransportError = require('../transport/JsonRpcTransport/createJsonTransportError');
 
 const DAPIClientError = require('../errors/DAPIClientError');
 
@@ -62,6 +63,7 @@ function createDAPIAddressProviderFromOptions(options) {
       createDAPIAddressProviderFromOptions,
       requestJsonRpc,
       listDAPIAddressProvider,
+      createJsonTransportError,
       options,
     );
 

@@ -14,12 +14,11 @@ class JsonRpcError extends DAPIClientError {
    * @param {object} jsonRpcError.data
    */
   constructor(requestInfo, jsonRpcError) {
-    super(`DAPI JSON RPC error: ${requestInfo.method} - ${jsonRpcError.message}`);
+    super(jsonRpcError.message);
 
     this.requestInfo = requestInfo;
-    this.errorCode = jsonRpcError.code;
-    this.errorMessage = jsonRpcError.message;
-    this.errorData = jsonRpcError.data;
+    this.code = jsonRpcError.code;
+    this.data = jsonRpcError.data;
   }
 
   /**
@@ -34,8 +33,8 @@ class JsonRpcError extends DAPIClientError {
    *
    * @returns {string}
    */
-  getErrorMessage() {
-    return this.errorMessage;
+  getMessage() {
+    return this.message;
   }
 
   /**
@@ -43,8 +42,8 @@ class JsonRpcError extends DAPIClientError {
    *
    * @returns {object}
    */
-  getErrorData() {
-    return this.errorData;
+  getData() {
+    return this.data;
   }
 
   /**
@@ -52,8 +51,8 @@ class JsonRpcError extends DAPIClientError {
    *
    * @returns {number}
    */
-  getErrorCode() {
-    return this.errorCode;
+  getCode() {
+    return this.code;
   }
 }
 

@@ -1,3 +1,16 @@
+/**
+ * @returns {{
+ *   rootTreeProof: Buffer,
+ *   signature: Buffer,
+ *   storeTreeProofs: {
+ *      documentsProof: Buffer,
+ *      publicKeyHashesToIdentityIdsProof: Buffer,
+ *      dataContractsProof: Buffer,
+ *      identitiesProof: Buffer
+ *   },
+ *   signatureLLMQHash: Buffer
+ * }}
+ */
 function getProofFixture() {
   return {
     signatureLLMQHash: Buffer.from('AQEBAQEBAQEBAQEB', 'base64'),

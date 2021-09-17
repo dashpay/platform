@@ -1,4 +1,4 @@
-const GrpcTransport = require('./transport/GrpcTransport');
+const GrpcTransport = require('./transport/GrpcTransport/GrpcTransport');
 const JsonRpcTransport = require('./transport/JsonRpcTransport/JsonRpcTransport');
 
 const CoreMethodsFacade = require('./methods/core/CoreMethodsFacade');
@@ -6,6 +6,8 @@ const PlatformMethodsFacade = require('./methods/platform/PlatformMethodsFacade'
 
 const createDAPIAddressProviderFromOptions = require('./dapiAddressProvider/createDAPIAddressProviderFromOptions');
 const requestJsonRpc = require('./transport/JsonRpcTransport/requestJsonRpc');
+const createGrpcTransportError = require('./transport/GrpcTransport/createGrpcTransportError');
+const createJsonTransportError = require('./transport/JsonRpcTransport/createJsonTransportError');
 
 class DAPIClient {
   /**
@@ -24,6 +26,7 @@ class DAPIClient {
     const grpcTransport = new GrpcTransport(
       createDAPIAddressProviderFromOptions,
       this.dapiAddressProvider,
+      createGrpcTransportError,
       this.options,
     );
 
@@ -31,6 +34,7 @@ class DAPIClient {
       createDAPIAddressProviderFromOptions,
       requestJsonRpc,
       this.dapiAddressProvider,
+      createJsonTransportError,
       this.options,
     );
 

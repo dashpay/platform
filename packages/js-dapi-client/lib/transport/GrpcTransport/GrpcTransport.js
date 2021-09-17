@@ -1,22 +1,8 @@
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-
 const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
 const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
-const NoAvailableAddressesError = require('./errors/NoAvailableAddressesError');
-const ResponseError = require('../errors/response/ResponseError');
-const NotFoundError = require('../errors/response/NotFoundError');
-
-const RETRIABLE_ERROR_CODES = [
-  GrpcErrorCodes.RESOURCE_EXHAUSTED,
-  GrpcErrorCodes.UNAVAILABLE,
-  GrpcErrorCodes.CANCELLED,
-  GrpcErrorCodes.UNKNOWN,
-  GrpcErrorCodes.DATA_LOSS,
-  GrpcErrorCodes.UNIMPLEMENTED,
-  GrpcErrorCodes.ABORTED,
-  GrpcErrorCodes.INTERNAL,
-  GrpcErrorCodes.DEADLINE_EXCEEDED,
-];
+const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
+const TimeoutError = require('./errors/TimeoutError');
+const RetriableResponseError = require('../errors/response/RetriableResponseError');
 
 class GrpcTransport {
   /**
@@ -26,11 +12,18 @@ class GrpcTransport {
    *    SimplifiedMasternodeListDAPIAddressProvider|
    *    DAPIAddressProvider
    * } dapiAddressProvider
+   * @param {createGrpcTransportError} createGrpcTransportError
    * @param {DAPIClientOptions} globalOptions
    */
-  constructor(createDAPIAddressProviderFromOptions, dapiAddressProvider, globalOptions) {
+  constructor(
+    createDAPIAddressProviderFromOptions,
+    dapiAddressProvider,
+    createGrpcTransportError,
+    globalOptions,
+  ) {
     this.createDAPIAddressProviderFromOptions = createDAPIAddressProviderFromOptions;
     this.dapiAddressProvider = dapiAddressProvider;
+    this.createGrpcTransportError = createGrpcTransportError;
     this.globalOptions = globalOptions;
 
     this.lastUsedAddress = null;
@@ -90,34 +83,23 @@ class GrpcTransport {
         throw error;
       }
 
-      if (error.code === GrpcErrorCodes.NOT_FOUND) {
-        throw new NotFoundError(error.message, error.metadata, address);
+      const responseError = this.createGrpcTransportError(error, address);
+
+      if (!(responseError instanceof RetriableResponseError)) {
+        throw responseError;
       }
 
-      if (options.throwDeadlineExceeded && error.code === GrpcErrorCodes.DEADLINE_EXCEEDED) {
-        throw new ResponseError(error.code, error.message, error.metadata, address);
-      }
-
-      if (!RETRIABLE_ERROR_CODES.includes(error.code)) {
-        const metadataCode = error.metadata && error.metadata.get ? error.metadata.get('code') : undefined;
-
-        const code = metadataCode && metadataCode.length ? Number(metadataCode[0]) : error.code;
-
-        throw new ResponseError(code, error.message, error.metadata, address);
+      if (options.throwDeadlineExceeded && responseError instanceof TimeoutError) {
+        throw responseError;
       }
 
       if (options.retries === 0) {
-        throw new MaxRetriesReachedError(error.code, error.message, error.metadata, address);
+        throw new MaxRetriesReachedError(responseError);
       }
 
       const hasAddresses = await dapiAddressProvider.hasLiveAddresses();
       if (!hasAddresses) {
-        throw new NoAvailableAddressesForRetryError(
-          error.code,
-          error.message,
-          error.metadata,
-          address,
-        );
+        throw new NoAvailableAddressesForRetryError(responseError);
       }
 
       return this.request(

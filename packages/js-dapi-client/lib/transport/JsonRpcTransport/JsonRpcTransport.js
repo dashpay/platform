@@ -1,6 +1,7 @@
-const MaxRetriesReachedError = require('../../errors/response/MaxRetriesReachedError');
-const NoAvailableAddressesForRetryError = require('../../errors/response/NoAvailableAddressesForRetryError');
+const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
+const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
 const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
+const RetriableResponseError = require('../errors/response/RetriableResponseError');
 
 class JsonRpcTransport {
   /**
@@ -11,18 +12,22 @@ class JsonRpcTransport {
    *    SimplifiedMasternodeListDAPIAddressProvider|
    *    DAPIAddressProvider
    * } dapiAddressProvider
+   * @param {createJsonTransportError} createJsonTransportError
    * @param {DAPIClientOptions} globalOptions
    */
   constructor(
     createDAPIAddressProviderFromOptions,
     requestJsonRpc,
     dapiAddressProvider,
+    createJsonTransportError,
     globalOptions,
   ) {
     this.createDAPIAddressProviderFromOptions = createDAPIAddressProviderFromOptions;
     this.requestJsonRpc = requestJsonRpc;
     this.dapiAddressProvider = dapiAddressProvider;
     this.globalOptions = globalOptions;
+
+    this.createJsonTransportError = createJsonTransportError;
 
     this.lastUsedAddress = null;
   }
@@ -75,20 +80,25 @@ class JsonRpcTransport {
     } catch (error) {
       this.lastUsedAddress = address;
 
-      if (!['ECONNABORTED', 'ECONNREFUSED', 'ETIMEDOUT'].includes(error.code)
-        && error.code !== -32603 && !(error.code >= -32000 && error.code <= -32099)) {
+      if (error.code === undefined) {
         throw error;
       }
 
       address.markAsBanned();
 
+      const responseError = this.createJsonTransportError(error, address);
+
+      if (!(responseError instanceof RetriableResponseError)) {
+        throw responseError;
+      }
+
       if (options.retries === 0) {
-        throw new MaxRetriesReachedError(error.code, error.message, undefined, address);
+        throw new MaxRetriesReachedError(responseError);
       }
 
       const hasAddresses = await dapiAddressProvider.hasLiveAddresses();
       if (!hasAddresses) {
-        throw new NoAvailableAddressesForRetryError(error.code, error.message, undefined, address);
+        throw new NoAvailableAddressesForRetryError(responseError);
       }
 
       return this.request(

@@ -28,6 +28,8 @@
   "dependencies": {
     "@dashevo/dapi-grpc": "~0.21.0-dev.9",
     "@dashevo/dashcore-lib": "~0.19.26",
+    "@dashevo/dpp": "~0.21.0-dev.4",
+    "@dashevo/grpc-common": "~0.5.2",
     "axios": "^0.21.1",
     "bs58": "^4.0.1",
     "cbor": "^7.0.5",
@@ -36,7 +38,6 @@
   },
   "devDependencies": {
     "@babel/core": "^7.10.2",
-    "@dashevo/dpp": "~0.21.0-dev.5",
     "assert-browserify": "^2.0.0",
     "babel-loader": "^8.0.6",
     "buffer": "^6.0.3",
@@ -66,9 +67,6 @@
     "url": "^0.11.0",
     "webpack": "^5.52.1",
     "webpack-cli": "^4.8.0"
-  },
-  "peerDependencies": {
-    "@dashevo/grpc-common": "^0.5.1"
   },
   "files": [
     "docs",

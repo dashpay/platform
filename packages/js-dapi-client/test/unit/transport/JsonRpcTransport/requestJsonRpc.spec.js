@@ -137,7 +137,7 @@ describe('requestJsonRpc', () => {
 
       expect.fail('should throw error');
     } catch (e) {
-      expect(e.message).to.equal('DAPI JSON RPC error: invalidData - invalid data');
+      expect(e.message).to.equal('invalid data');
     }
   });
 
@@ -155,7 +155,7 @@ describe('requestJsonRpc', () => {
       expect.fail('should throw error');
     } catch (e) {
       expect(e).to.be.an.instanceof(JsonRpcError);
-      expect(e.message).to.equal('DAPI JSON RPC error: errorData - Invalid data for error.data');
+      expect(e.message).to.equal('Invalid data for error.data');
       expect(e.getRequestInfo()).to.deep.equal({
         host,
         port,
@@ -163,9 +163,9 @@ describe('requestJsonRpc', () => {
         params,
         options: {},
       });
-      expect(e.getErrorMessage()).to.equal('Invalid data for error.data');
-      expect(e.getErrorData()).to.equal('additional data here');
-      expect(e.getErrorCode()).to.equal(-1);
+      expect(e.getMessage()).to.equal('Invalid data for error.data');
+      expect(e.getData()).to.equal('additional data here');
+      expect(e.getCode()).to.equal(-1);
     }
   });
 });

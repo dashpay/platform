@@ -1,16 +1,16 @@
 const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
-const ResponseError = require('./ResponseError');
+const ResponseError = require('../../errors/response/ResponseError');
 
 class NotFoundError extends ResponseError {
   /**
    *
    * @param {string} message
-   * @param {object} metadata
+   * @param {object} data
    * @param {DAPIAddress} dapiAddress
    */
-  constructor(message, metadata, dapiAddress) {
-    super(grpcErrorCodes.NOT_FOUND, message, metadata, dapiAddress);
+  constructor(message, data, dapiAddress) {
+    super(grpcErrorCodes.NOT_FOUND, message, data, dapiAddress);
   }
 }
 

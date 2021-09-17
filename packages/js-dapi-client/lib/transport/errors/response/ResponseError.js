@@ -1,31 +1,28 @@
-const DAPIClientError = require('../DAPIClientError');
+const DAPIClientError = require('../../../errors/DAPIClientError');
 
 class ResponseError extends DAPIClientError {
   /**
-   *
    * @param {number} code
    * @param {string} message
-   * @param {module:grpc.Metadata} metadata
+   * @param {object} data
    * @param {DAPIAddress} dapiAddress
    */
-  constructor(code, message, metadata, dapiAddress) {
+  constructor(code, message, data, dapiAddress) {
     super(message);
 
     this.code = code;
-    this.metadata = metadata;
+    this.data = data;
     this.dapiAddress = dapiAddress;
   }
 
   /**
-   *
    * @returns {DAPIAddress}
    */
-  getDapiAddress() {
+  getDAPIAddress() {
     return this.dapiAddress;
   }
 
   /**
-   *
    * @returns {number}
    */
   getCode() {
@@ -33,11 +30,10 @@ class ResponseError extends DAPIClientError {
   }
 
   /**
-   *
-   * @returns {module:grpc.Metadata}
+   * @returns {object}
    */
-  getMetadata() {
-    return this.metadata;
+  getData() {
+    return this.data;
   }
 }
 
