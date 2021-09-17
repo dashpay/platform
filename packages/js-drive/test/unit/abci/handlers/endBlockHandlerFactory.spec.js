@@ -10,12 +10,13 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const Long = require('long');
+
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHandlerFactory');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-
 const NoDPNSContractFoundError = require('../../../../lib/abci/handlers/errors/NoDPNSContractFoundError');
 const NoDashpayContractFoundError = require('../../../../lib/abci/handlers/errors/NoDashpayContractFoundError');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
@@ -42,6 +43,9 @@ describe('endBlockHandlerFactory', () => {
   beforeEach(function beforeEach() {
     headerMock = {
       coreChainLockedHeight: 2,
+      version: {
+        app: Long.fromInt(1),
+      },
     };
 
     lastCommitInfoMock = {

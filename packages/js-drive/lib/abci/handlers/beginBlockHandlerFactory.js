@@ -6,7 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolVersionError');
+const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedProtocolVersionError');
+const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
 
 /**
  * Begin Block ABCI Handler
@@ -14,7 +15,9 @@ const NotSupportedProtocolVersionError = require('./errors/NotSupportedProtocolV
  * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContext} previousBlockExecutionContext
- * @param {Number} protocolVersion - Protocol version
+ * @param {Long} latestProtocolVersion
+ * @param {DashPlatformProtocol} dpp
+ * @param {DashPlatformProtocol} transactionalDpp
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {BaseLogger} logger
@@ -25,7 +28,9 @@ function beginBlockHandlerFactory(
   blockExecutionStoreTransactions,
   blockExecutionContext,
   previousBlockExecutionContext,
-  protocolVersion,
+  latestProtocolVersion,
+  dpp,
+  transactionalDpp,
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
   logger,
@@ -53,6 +58,19 @@ function beginBlockHandlerFactory(
     consensusLogger.debug('BeginBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
+    // Validate protocol version
+
+    if (version.app.eq(0)) {
+      throw new NetworkProtocolVersionIsNotSetError();
+    }
+
+    if (version.app.gt(latestProtocolVersion)) {
+      throw new NotSupportedNetworkProtocolVersionError(
+        version.app,
+        latestProtocolVersion,
+      );
+    }
+
     // in case previous block execution failed in process
     // and not committed. We need to make sure
     // previous context copied and reset.
@@ -74,13 +92,6 @@ function beginBlockHandlerFactory(
       logger: consensusLogger,
     });
 
-    if (version.app.gt(protocolVersion)) {
-      throw new NotSupportedProtocolVersionError(
-        version.app,
-        protocolVersion,
-      );
-    }
-
     if (blockExecutionStoreTransactions.isStarted()) {
       // in case previous block execution failed in process
       // and not commited. We need to make sure
@@ -89,6 +100,9 @@ function beginBlockHandlerFactory(
     }
 
     await blockExecutionStoreTransactions.start();
+
+    dpp.setProtocolVersion(version.app.toNumber());
+    transactionalDpp.setProtocolVersion(version.app.toNumber());
 
     consensusLogger.info(`Block begin #${height}`);
 

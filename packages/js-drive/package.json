@@ -62,7 +62,7 @@
     "sinon-chai": "^3.5.0"
   },
   "dependencies": {
-    "@dashevo/abci": "~0.20.0",
+    "@dashevo/abci": "~0.21.0-dev.1",
     "@dashevo/dapi-grpc": "~0.21.0-dev.8",
     "@dashevo/dashcore-lib": "~0.19.25",
     "@dashevo/dashd-rpc": "^2.3.0",

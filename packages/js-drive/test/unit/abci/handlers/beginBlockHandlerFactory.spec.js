@@ -13,6 +13,8 @@ const beginBlockHandlerFactory = require('../../../../lib/abci/handlers/beginBlo
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
+const NotSupportedNetworkProtocolVersionError = require('../../../../lib/abci/handlers/errors/NotSupportedProtocolVersionError');
+const NetworkProtocolVersionIsNotSetError = require('../../../../lib/abci/handlers/errors/NetworkProtocolVersionIsNotSetError');
 
 describe('beginBlockHandlerFactory', () => {
   let protocolVersion;
@@ -28,9 +30,11 @@ describe('beginBlockHandlerFactory', () => {
   let waitForChainLockedHeightMock;
   let loggerMock;
   let lastCommitInfo;
+  let dppMock;
+  let transactionalDppMock;
 
   beforeEach(function beforeEach() {
-    protocolVersion = Long.fromInt(0);
+    protocolVersion = Long.fromInt(1);
 
     blockExecutionDBTransactionsMock = new BlockExecutionDBTransactionsMock(this.sinon);
 
@@ -38,6 +42,13 @@ describe('beginBlockHandlerFactory', () => {
     previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
+
+    dppMock = {
+      setProtocolVersion: this.sinon.stub(),
+    };
+    transactionalDppMock = {
+      setProtocolVersion: this.sinon.stub(),
+    };
 
     updateSimplifiedMasternodeListMock = this.sinon.stub();
     waitForChainLockedHeightMock = this.sinon.stub();
@@ -47,6 +58,8 @@ describe('beginBlockHandlerFactory', () => {
       blockExecutionContextMock,
       previousBlockExecutionContextMock,
       protocolVersion,
+      dppMock,
+      transactionalDppMock,
       updateSimplifiedMasternodeListMock,
       waitForChainLockedHeightMock,
       loggerMock,
@@ -95,19 +108,37 @@ describe('beginBlockHandlerFactory', () => {
     );
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
     expect(blockExecutionDBTransactionsMock.abort).to.be.not.called();
+    expect(dppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
+      protocolVersion.toNumber(),
+    );
+    expect(transactionalDppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
+      protocolVersion.toNumber(),
+    );
   });
 
-  it('should reject not supported protocol version', async () => {
+  it('should throw NotSupportedProtocolVersionError if protocol version is not supported', async () => {
     request.header.version.app = Long.fromInt(42);
 
     try {
       await beginBlockHandler(request);
 
-      expect.fail('Expected exception to be thrown');
+      expect.fail('should throw NotSupportedProtocolVersionError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(NotSupportedNetworkProtocolVersionError);
+      expect(e.getNetworkProtocolVersion()).to.equal(request.header.version.app);
+      expect(e.getLatestProtocolVersion()).to.equal(protocolVersion);
+    }
+  });
+
+  it('should throw an NetworkProtocolVersionIsNotSetError if network protocol version is not set', async () => {
+    request.header.version.app = Long.fromInt(0);
+
+    try {
+      await beginBlockHandler(request);
+
+      expect.fail('should throw NetworkProtocolVersionIsNotSetError');
     } catch (err) {
-      expect(err).to.be.an('Error');
-      expect(err.message).to.equal('Block protocol version 42 not supported. Expected to be less or equal to 0.');
-      expect(err.name).to.equal('NotSupportedProtocolVersionError');
+      expect(err).to.be.an.instanceOf(NetworkProtocolVersionIsNotSetError);
     }
   });
 

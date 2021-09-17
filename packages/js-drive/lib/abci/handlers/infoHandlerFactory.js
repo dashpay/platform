@@ -16,7 +16,7 @@ const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/No
 
 /**
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {Number} protocolVersion
+ * @param {Long} latestProtocolVersion
  * @param {RootTree} rootTree
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
@@ -28,7 +28,7 @@ const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/No
  */
 function infoHandlerFactory(
   blockExecutionContext,
-  protocolVersion,
+  latestProtocolVersion,
   rootTree,
   updateSimplifiedMasternodeList,
   logger,
@@ -40,7 +40,7 @@ function infoHandlerFactory(
    *
    * @typedef infoHandler
    *
-   * @param {abci.RequestDeliverTx} request
+   * @param {abci.RequestInfo} request
    * @return {Promise<ResponseInfo>}
    */
   async function infoHandler(request) {
@@ -98,13 +98,15 @@ function infoHandlerFactory(
         lastHeight: lastHeight.toString(),
         lastCoreChainLockedHeight,
         appHash: appHash.toString('hex').toUpperCase(),
+        driveVersion,
+        latestProtocolVersion: latestProtocolVersion.toString(),
       },
       `Start processing from block #${lastHeight} with appHash ${appHash.toString('hex').toUpperCase() || 'nil'}`,
     );
 
     return new ResponseInfo({
       version: driveVersion,
-      appVersion: protocolVersion,
+      appVersion: latestProtocolVersion,
       lastBlockHeight: lastHeight,
       lastBlockAppHash: appHash,
       lastCoreChainLockedHeight,

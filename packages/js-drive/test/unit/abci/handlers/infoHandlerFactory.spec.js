@@ -35,7 +35,7 @@ describe('infoHandlerFactory', () => {
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
     lastBlockAppHash = Buffer.alloc(0);
-    protocolVersion = Long.fromInt(0);
+    protocolVersion = Long.fromInt(1);
     lastCoreChainLockedHeight = 0;
 
     rootTreeMock = new RootTreeMock(this.sinon);

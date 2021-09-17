@@ -123,11 +123,27 @@ function endBlockHandlerFactory(
 
     let consensusParamUpdates;
     if (updateConsensusParamsFeatureFlag) {
+      // Use previous version if we aren't going to update it
+      let version = {
+        appVersion: header.version.app,
+      };
+
+      if (updateConsensusParamsFeatureFlag.get('version')) {
+        version = updateConsensusParamsFeatureFlag.get('version');
+      }
+
       consensusParamUpdates = new ConsensusParams({
         block: updateConsensusParamsFeatureFlag.get('block'),
         evidence: updateConsensusParamsFeatureFlag.get('evidence'),
-        version: updateConsensusParamsFeatureFlag.get('version'),
+        version,
       });
+
+      consensusLogger.info(
+        {
+          consensusParamUpdates,
+        },
+        'Update consensus params',
+      );
     }
 
     const validTxCount = blockExecutionContext.getValidTxCount();

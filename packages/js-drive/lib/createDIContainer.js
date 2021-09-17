@@ -29,6 +29,8 @@ const pinoMultistream = require('pino-multi-stream');
 
 const createABCIServer = require('@dashevo/abci');
 
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+
 const packageJSON = require('../package.json');
 
 const ZMQClient = require('./core/ZmqClient');
@@ -197,11 +199,11 @@ function createDIContainer(options) {
   });
 
   /**
-   * Register protocolVersion
+   * Register latest protocol version
    * Define highest supported protocol version
    */
   container.register({
-    protocolVersion: asValue(Long.fromInt(0)),
+    latestProtocolVersion: asValue(Long.fromInt(protocolVersion.latestVersion)),
   });
 
   /**

@@ -1,15 +1,30 @@
-class NotSupportedProtocolVersionError extends Error {
-  /**
-   * @param {number} blockProtocolVersion
-   * @param {number} localProtocolVersion
-   */
-  constructor(blockProtocolVersion, localProtocolVersion) {
-    const message = `Block protocol version ${blockProtocolVersion} not supported. Expected to be less or equal to ${localProtocolVersion}.`;
-    super(message);
-    this.name = this.constructor.name;
+const DriveError = require('../../../errors/DriveError');
 
-    Error.captureStackTrace(this, this.constructor);
+class NotSupportedNetworkProtocolVersionError extends DriveError {
+  /**
+   * @param {Long} networkProtocolVersion
+   * @param {Long} latestProtocolVersion
+   */
+  constructor(networkProtocolVersion, latestProtocolVersion) {
+    super(`Block protocol version ${networkProtocolVersion} not supported. Expected to be less or equal to ${latestProtocolVersion}.`);
+
+    this.networkProtocolVersion = networkProtocolVersion;
+    this.latestProtocolVersion = latestProtocolVersion;
+  }
+
+  /**
+   * @returns {Long}
+   */
+  getNetworkProtocolVersion() {
+    return this.networkProtocolVersion;
+  }
+
+  /**
+   * @returns {Long}
+   */
+  getLatestProtocolVersion() {
+    return this.latestProtocolVersion;
   }
 }
 
-module.exports = NotSupportedProtocolVersionError;
+module.exports = NotSupportedNetworkProtocolVersionError;

@@ -40,10 +40,10 @@ console.log(chalk.hex('#008de4')(banner));
   const dpp = container.resolve('dpp');
   const transactionalDpp = container.resolve('transactionalDpp');
   const errorHandler = container.resolve('errorHandler');
-  const protocolVersion = container.resolve('protocolVersion');
+  const latestProtocolVersion = container.resolve('latestProtocolVersion');
   const closeAbciServer = container.resolve('closeAbciServer');
 
-  logger.info(`Starting Drive ABCI application v${driveVersion} (protocol v${protocolVersion})`);
+  logger.info(`Starting Drive ABCI application v${driveVersion} (latest protocol v${latestProtocolVersion})`);
 
   /**
    * Ensure graceful shutdown
