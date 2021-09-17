@@ -123,7 +123,7 @@ describe('Account - broadcastTransaction', function suite() {
       );
   });
   it('should throw error on fee not met', function () {
-    const expectedException1 = 'Expected minimum fee for transaction 149. Current: 0\n';
+    const expectedException1 = 'Expected minimum fee for transaction 149. Current: 0';
 
     let sendCalled = +1;
     let searchCalled = +1;
@@ -141,7 +141,7 @@ describe('Account - broadcastTransaction', function suite() {
 
     const tx = oneToOneTx;
     tx.fee(0);
-    expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.truncatedRawTx), expectedException1);
+    expectThrowsAsync(async () => await broadcastTransaction.call(self, tx), expectedException1);
   });
   it('should broadcast when force and fee not met', function () {
     let sendCalled = +1;
