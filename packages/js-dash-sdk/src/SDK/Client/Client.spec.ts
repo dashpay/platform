@@ -171,7 +171,6 @@ describe('Dash - Client', function suite() {
       expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(error.getCode()).to.be.equal(errorResponse.error.code);
       expect(error.getMessage()).to.be.equal(errorResponse.error.message);
-      expect(error.getData()).to.be.equal(errorResponse.error.data);
 
       const importedIdentityIds = account.identities.getIdentityIds();
       // Check that no identities were imported
@@ -226,7 +225,6 @@ describe('Dash - Client', function suite() {
       expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(error.getCode()).to.be.equal(errorResponse.error.code);
       expect(error.getMessage()).to.be.equal(errorResponse.error.message);
-      expect(error.getData()).to.be.equal(errorResponse.error.data);
     });
   });
 
@@ -254,7 +252,6 @@ describe('Dash - Client', function suite() {
       expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(error.getCode()).to.be.equal(errorResponse.error.code);
       expect(error.getMessage()).to.be.equal(errorResponse.error.message);
-      expect(error.getData()).to.be.equal(errorResponse.error.data);
     });
 
     it('should broadcast documents', async () => {
@@ -303,7 +300,6 @@ describe('Dash - Client', function suite() {
       expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(error.getCode()).to.be.equal(errorResponse.error.code);
       expect(error.getMessage()).to.be.equal(errorResponse.error.message);
-      expect(error.getData()).to.be.equal(errorResponse.error.data);
     });
 
     it('should broadcast data contract', async () => {

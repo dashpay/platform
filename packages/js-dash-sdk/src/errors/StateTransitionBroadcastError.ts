@@ -1,32 +1,19 @@
 export class StateTransitionBroadcastError extends Error {
     code: number;
     message: string;
-    data: any;
+    cause: Error;
 
     /**
-     *
      * @param {number} code
      * @param {string} message
-     * @param {*} data
+     * @param {Error} cause
      */
-    constructor(code: number, message: string, data: any) {
-        let detailedMessage = message;
-
-        if (data && data.errors && data.errors.length > 0) {
-            const [firstError] = data.errors;
-            
-            detailedMessage += `: ${firstError.name}: ${firstError.message}`;
-            
-            if (data.errors.length > 1) {
-              detailedMessage += ` and ${data.errors.length} more`;
-            }
-        }
-
-        super(detailedMessage);
+    constructor(code: number, message: string, cause: Error) {
+        super(message);
 
         this.code = code;
-        this.message = detailedMessage;
-        this.data = data;
+        this.message = message;
+        this.cause = cause;
 
         if (Error.captureStackTrace) {
             Error.captureStackTrace(this, this.constructor);
@@ -54,11 +41,11 @@ export class StateTransitionBroadcastError extends Error {
     }
 
     /**
-     * Get error data
+     * Get error that was a cause
      *
-     * @return {*}
+     * @return {Error}
      */
-    getData(): any {
-        return this.data;
+    getCause(): any {
+        return this.cause;
     }
 }

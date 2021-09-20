@@ -9,7 +9,7 @@ import Identifier from "@dashevo/dpp/lib/Identifier";
 import 'mocha';
 import { ClientApps } from "../../../ClientApps";
 const GetDataContractResponse = require("@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse");
-const NotFoundError = require('@dashevo/dapi-client/lib/errors/response/NotFoundError');
+const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
 const factory = new DataContractFactory(
     undefined,
