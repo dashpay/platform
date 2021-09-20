@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/drive",
-  "version": "0.21.0-dev.2",
+  "version": "0.21.0-dev.3",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -67,7 +67,7 @@
     "@dashevo/dashcore-lib": "~0.19.25",
     "@dashevo/dashd-rpc": "^2.3.0",
     "@dashevo/dashd-zmq": "^1.2.0",
-    "@dashevo/dpp": "~0.21.0-dev.4",
+    "@dashevo/dpp": "~0.21.0-dev.6",
     "@dashevo/feature-flags-contract": "~0.2.0",
     "@dashevo/grpc-common": "~0.5.3",
     "@dashevo/merk": "git+https://github.com/dashevo/node-merk.git",
