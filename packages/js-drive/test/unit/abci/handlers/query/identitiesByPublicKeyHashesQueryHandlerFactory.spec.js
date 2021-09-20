@@ -16,13 +16,11 @@ const {
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
-
-const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const identitiesByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory',
 );
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
+const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let identitiesByPublicKeyHashesQueryHandler;
@@ -164,6 +162,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       maxIdentitiesPerRequest,
       previousRootTreeMock,
       previousIdentitiesStoreRootTreeLeafMock,
+      previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
       createQueryResponseMock,
       blockExecutionContextMock,
       previousBlockExecutionContextMock,
@@ -173,8 +172,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       await identitiesByPublicKeyHashesQueryHandler(params, data, {});
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getRawMetadata()).to.deep.equal({
+      expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
+      expect(e.getData()).to.deep.equal({
         maxIdentitiesPerRequest,
       });
     }
@@ -262,18 +261,5 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       previousIdentitiesStoreRootTreeLeafMock,
       previousPublicKeyToIdentityIdStoreRootTreeLeafMock,
     ]]);
-  });
-
-  it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
-    createQueryResponseMock.throws(new UnavailableGrpcError());
-
-    try {
-      await identitiesByPublicKeyHashesQueryHandler({}, {}, {});
-
-      expect.fail('should throw UnavailableAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableGrpcError);
-      expect(previousIdentityRepositoryMock.fetch).to.have.not.been.called();
-    }
   });
 });

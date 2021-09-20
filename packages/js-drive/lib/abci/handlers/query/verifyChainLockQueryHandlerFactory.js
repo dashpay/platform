@@ -6,7 +6,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
+const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
  *
@@ -44,7 +44,7 @@ function verifyChainLockQueryHandlerFactory(
         'Invalid chainLock format',
       );
 
-      throw new InvalidArgumentGrpcError(
+      throw new InvalidArgumentAbciError(
         'Invalid ChainLock format', { chainLock: data.toString('hex') },
       );
     }
@@ -69,7 +69,7 @@ function verifyChainLockQueryHandlerFactory(
     if (!isVerified) {
       logger.debug(`Invalid chainLock for height ${chainLock.height}`);
 
-      throw new InvalidArgumentGrpcError(
+      throw new InvalidArgumentAbciError(
         'ChainLock verification failed', chainLock.toJSON(),
       );
     }

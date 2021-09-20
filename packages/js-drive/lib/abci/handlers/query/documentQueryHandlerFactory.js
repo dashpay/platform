@@ -14,8 +14,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
-const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
+const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
+const UnavailableAbciError = require('../../errors/UnavailableAbciError');
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 
 /**
@@ -77,13 +77,13 @@ function documentQueryHandlerFactory(
     }
 
     if (!container.has('previousBlockExecutionStoreTransactions')) {
-      throw new UnavailableGrpcError();
+      throw new UnavailableAbciError('Documents temporary unavailable');
     }
 
     const previousBlockExecutionTransactions = container.resolve('previousBlockExecutionStoreTransactions');
     const dataContractTransaction = previousBlockExecutionTransactions.getTransaction('dataContracts');
     if (!dataContractTransaction.isStarted()) {
-      throw new UnavailableGrpcError();
+      throw new UnavailableAbciError('Documents temporary unavailable');
     }
 
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
@@ -100,7 +100,7 @@ function documentQueryHandlerFactory(
       });
     } catch (e) {
       if (e instanceof InvalidQueryError) {
-        throw new InvalidArgumentGrpcError(
+        throw new InvalidArgumentAbciError(
           `Invalid query: ${e.getErrors()[0].message}`,
           { errors: e.getErrors() },
         );

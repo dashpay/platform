@@ -1,8 +1,6 @@
-const cbor = require('cbor');
-const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
-const InternalGrpcError = require('@dashevo/grpc-common/lib/server/error/InternalGrpcError');
-const VerboseInternalGrpcError = require('@dashevo/grpc-common/lib/server/error/VerboseInternalGrpcError');
-const DPPValidationError = require('../handlers/errors/DPPValidationError');
+const AbstractAbciError = require('./AbstractAbciError');
+const InternalAbciError = require('./InternalAbciError');
+const VerboseInternalAbciError = require('./VerboseInternalAbciError');
 
 /**
  * @param {BaseLogger} logger
@@ -18,7 +16,7 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
    *
    * @param {Function} method
    * @param {Object} [options={}]
-   * @param {boolean} [options.throwNonABCIErrors=true]
+   * @param {boolean} [options.respondWithInternalError=false]
    *
    * @return {Function}
    */
@@ -38,20 +36,13 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
       } catch (e) {
         let error = e;
 
-        if (e instanceof DPPValidationError) {
-          return {
-            code: error.getCode(),
-            info: cbor.encode(error.getInfo()).toString('base64'),
-          };
-        }
-
         // Wrap all non ABCI errors to an internal ABCI error
-        if (!(e instanceof GrpcError)) {
-          error = new InternalGrpcError(e);
+        if (!(e instanceof AbstractAbciError)) {
+          error = new InternalAbciError(e);
         }
 
         // Log only internal ABCI errors
-        if (error instanceof InternalGrpcError) {
+        if (error instanceof InternalAbciError) {
           // in consensus ABCI handlers (blockBegin, deliverTx, blockEnd, commit)
           // we should propagate the error upwards
           // to halt the Drive
@@ -69,19 +60,11 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
           );
 
           if (!isProductionEnvironment) {
-            error = new VerboseInternalGrpcError(error);
+            error = new VerboseInternalAbciError(error);
           }
         }
 
-        const serializedError = cbor.encode({
-          message: error.getMessage(),
-          metadata: error.getRawMetadata(),
-        });
-
-        return {
-          code: error.getCode(),
-          info: serializedError.toString('base64'),
-        };
+        return error.getAbciResponse();
       }
     }
 

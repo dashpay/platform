@@ -8,22 +8,24 @@ const {
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-const ValidationResult = require('../../../../lib/document/query/ValidationResult');
 
 const deliverTxHandlerFactory = require('../../../../lib/abci/handlers/deliverTxHandlerFactory');
 
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const DPPValidationError = require('../../../../lib/abci/handlers/errors/DPPValidationError');
+const DPPValidationAbciError = require('../../../../lib/abci/errors/DPPValidationAbciError');
+
+const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 describe('deliverTxHandlerFactory', () => {
   let deliverTxHandler;
@@ -37,6 +39,7 @@ describe('deliverTxHandlerFactory', () => {
   let dpp;
   let unserializeStateTransitionMock;
   let blockExecutionContextMock;
+  let validationResult;
 
   beforeEach(async function beforeEach() {
     const dataContractFixture = getDataContractFixture();
@@ -62,12 +65,12 @@ describe('deliverTxHandlerFactory', () => {
 
     dppMock = createDPPMock(this.sinon);
 
+    validationResult = new ValidationResult();
+
     dppMock
       .stateTransition
       .validateState
-      .resolves({
-        isValid: this.sinon.stub().returns(true),
-      });
+      .resolves(validationResult);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
@@ -154,29 +157,30 @@ describe('deliverTxHandlerFactory', () => {
     );
   });
 
-  it('should throw DPPValidationError if a state transition is invalid against state', async () => {
+  it('should throw DPPValidationAbciError if a state transition is invalid against state', async () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
     const error = new SomeConsensusError('Consensus error');
-    const invalidResult = new ValidationResult([error]);
 
-    dppMock.stateTransition.validateState.resolves(invalidResult);
+    validationResult.addError(error);
 
     try {
       await deliverTxHandler(documentRequest);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
-      expect(e).to.be.instanceOf(DPPValidationError);
+      expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
-      expect(e.getInfo()).to.deep.equal(['Consensus error']);
+      expect(e.getData()).to.deep.equal({
+        arguments: ['Consensus error'],
+      });
       expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();
     }
   });
 
-  it('should throw DPPValidationError if a state transition is not valid', async () => {
+  it('should throw DPPValidationAbciError if a state transition is not valid', async () => {
     const errorMessage = 'Invalid structure';
-    const error = new InvalidArgumentGrpcError(errorMessage);
+    const error = new InvalidArgumentAbciError(errorMessage);
 
     unserializeStateTransitionMock.throws(error);
 
@@ -185,7 +189,7 @@ describe('deliverTxHandlerFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getMessage()).to.equal(errorMessage);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();

@@ -10,9 +10,10 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
 const { init: initializeHashFunction } = require('../../../../lib/rootTree/hashFunction');
+
+const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 describe('queryHandlerFactory', function main() {
   this.timeout(90000);
@@ -155,7 +156,7 @@ describe('queryHandlerFactory', function main() {
         data: Buffer.alloc(0),
       });
     } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.an.instanceOf(InvalidArgumentAbciError);
       expect(e.getMessage()).to.equal('Invalid path');
     }
   });

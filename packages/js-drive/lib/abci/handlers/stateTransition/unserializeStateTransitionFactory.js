@@ -1,7 +1,7 @@
 const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
+const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
-const DPPValidationError = require('../errors/DPPValidationError');
+const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -23,7 +23,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     if (!stateTransitionByteArray) {
       logger.info('State transition is not specified');
 
-      throw new InvalidArgumentGrpcError('State Transition is not specified');
+      throw new InvalidArgumentAbciError('State Transition is not specified');
     }
 
     const stateTransitionSerialized = Buffer.from(stateTransitionByteArray);
@@ -35,12 +35,15 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
         .createFromBuffer(stateTransitionSerialized);
     } catch (e) {
       if (e instanceof InvalidStateTransitionError) {
-        logger.info('Invalid state transition');
+        const consensusError = e.getErrors()[0];
+        const message = 'Invalid state transition';
+
+        logger.info(message);
         logger.debug({
-          consensusErrors: e.getErrors(),
+          consensusError,
         });
 
-        throw new DPPValidationError('Invalid state transition', e.getErrors());
+        throw new DPPValidationAbciError(message, consensusError);
       }
 
       throw e;
@@ -49,29 +52,31 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     let result = await dpp.stateTransition.validateSignature(stateTransition);
 
     if (!result.isValid()) {
-      const consensusErrors = result.getErrors();
+      const consensusError = result.getFirstError();
+      const message = 'Invalid state transition signature';
 
-      logger.info('Invalid state transition signature');
+      logger.info(message);
 
       logger.debug({
-        consensusErrors,
+        consensusError,
       });
 
-      throw new DPPValidationError('Invalid state transition signature', consensusErrors);
+      throw new DPPValidationAbciError(message, consensusError);
     }
 
     result = await dpp.stateTransition.validateFee(stateTransition);
 
     if (!result.isValid()) {
-      const consensusErrors = result.getErrors();
+      const consensusError = result.getFirstError();
+      const message = 'Insufficient funds to process state transition';
 
-      logger.info('Insufficient funds to process state transition');
+      logger.info(message);
 
       logger.debug({
-        consensusErrors,
+        consensusError,
       });
 
-      throw new DPPValidationError('Insufficient funds to process state transition', consensusErrors);
+      throw new DPPValidationAbciError(message, consensusError);
     }
 
     return stateTransition;

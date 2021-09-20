@@ -6,12 +6,12 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const verifyChainLockQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/verifyChainLockQueryHandlerFactory');
 
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
+const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 describe('verifyChainLockQueryHandlerFactory', () => {
   let simplifiedMasternodeListMock;
@@ -93,7 +93,7 @@ describe('verifyChainLockQueryHandlerFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(InvalidArgumentGrpcError);
+      expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(e.message).to.equal('ChainLock verification failed');
     }

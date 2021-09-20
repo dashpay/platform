@@ -1,9 +1,9 @@
 const cbor = require('cbor');
 
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const queryHandlerFactory = require('../../../../lib/abci/handlers/queryHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
+const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 describe('queryHandlerFactory', () => {
   let queryHandler;
@@ -50,7 +50,7 @@ describe('queryHandlerFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
 
       expect(sanitizeUrlMock).to.be.calledOnceWith(request.path);
@@ -71,7 +71,7 @@ describe('queryHandlerFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
 
       expect(sanitizeUrlMock).to.be.calledOnceWith(request.path);
@@ -92,7 +92,7 @@ describe('queryHandlerFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
 
       expect(sanitizeUrlMock).to.be.calledOnceWith(request.path);

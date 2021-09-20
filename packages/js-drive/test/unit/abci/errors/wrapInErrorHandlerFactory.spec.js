@@ -1,11 +1,10 @@
-const cbor = require('cbor');
-const InternalGrpcError = require('@dashevo/grpc-common/lib/server/error/InternalGrpcError');
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const wrapInErrorHandlerFactory = require('../../../../lib/abci/errors/wrapInErrorHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const DPPValidationError = require('../../../../lib/abci/handlers/errors/DPPValidationError');
+const InternalAbciError = require('../../../../lib/abci/errors/InternalAbciError');
+const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
+const VerboseInternalAbciError = require('../../../../lib/abci/errors/VerboseInternalAbciError');
+const DPPValidationAbciError = require('../../../../lib/abci/errors/DPPValidationAbciError');
 
 describe('wrapInErrorHandlerFactory', () => {
   let loggerMock;
@@ -46,7 +45,7 @@ describe('wrapInErrorHandlerFactory', () => {
   it('should throw en internal error if an InternalAbciError is thrown in handler', async () => {
     const originError = new Error();
     const metadata = { sample: 'data' };
-    const error = new InternalGrpcError(originError, metadata);
+    const error = new InternalAbciError(originError, metadata);
 
     methodMock.throws(error);
 
@@ -70,13 +69,9 @@ describe('wrapInErrorHandlerFactory', () => {
 
     const response = await handler(request);
 
-    expect(response).to.deep.equal({
-      code: GrpcErrorCodes.INTERNAL,
-      info: cbor.encode({
-        message: 'Internal error',
-        metadata: undefined,
-      }).toString('base64'),
-    });
+    const expectedError = new InternalAbciError(error);
+
+    expect(response).to.deep.equal(expectedError.getAbciResponse());
   });
 
   it('should respond with internal error code if an InternalAbciError is thrown in handler and respondWithInternalError enabled', async () => {
@@ -85,53 +80,24 @@ describe('wrapInErrorHandlerFactory', () => {
     );
 
     const data = { sample: 'data' };
-    const error = new InternalGrpcError(new Error(), data);
+    const error = new InternalAbciError(new Error(), data);
 
     methodMock.throws(error);
 
     const response = await handler(request);
 
-    expect(response).to.deep.equal({
-      code: error.getCode(),
-      info: cbor.encode({
-        message: error.getMessage(),
-        metadata: error.getRawMetadata(),
-      }).toString('base64'),
-    });
+    expect(response).to.deep.equal(error.getAbciResponse());
   });
 
   it('should respond with invalid argument error if it is thrown in handler', async () => {
     const data = { sample: 'data' };
-    const error = new InvalidArgumentGrpcError('test', data);
+    const error = new InvalidArgumentAbciError('test', data);
 
     methodMock.throws(error);
 
     const response = await handler(request);
 
-    expect(response).to.deep.equal({
-      code: error.getCode(),
-      info: cbor.encode({
-        message: error.getMessage(),
-        metadata: error.getRawMetadata(),
-      }).toString('base64'),
-    });
-  });
-
-  it('should rethrow internal errors in case `rethrowInternalErrors` options is set', async () => {
-    const unknownError = new Error('Some internal error indicating a bug');
-
-    methodMock.throws(unknownError);
-
-    handler = wrapInErrorHandler(
-      methodMock, { throwNonABCIErrors: true },
-    );
-
-    try {
-      await handler(request);
-      expect.fail('Error was not re-thrown');
-    } catch (e) {
-      expect(e).to.equal(unknownError);
-    }
+    expect(response).to.deep.equal(error.getAbciResponse());
   });
 
   it('should respond with verbose error containing message and stack in debug mode', async () => {
@@ -147,21 +113,18 @@ describe('wrapInErrorHandlerFactory', () => {
 
     const response = await handler(request);
 
-    const [, errorPath] = error.stack.toString().split(/\r\n|\n/);
+    const expectedError = new VerboseInternalAbciError(
+      new InternalAbciError(error),
+    );
 
-    expect(response).to.deep.equal({
-      code: GrpcErrorCodes.INTERNAL,
-      info: cbor.encode({
-        message: `${error.message} ${errorPath.trim()}`,
-        metadata: {
-          stack: error.stack,
-        },
-      }).toString('base64'),
-    });
+    expect(response).to.deep.equal(expectedError.getAbciResponse());
   });
 
-  it('should respond with error if method throws DPPValidationError', async () => {
-    const dppValidationError = new DPPValidationError('Some error', [new SomeConsensusError('Consensus error')]);
+  it('should respond with error if method throws DPPValidationAbciError', async () => {
+    const dppValidationError = new DPPValidationAbciError(
+      'Some error',
+      new SomeConsensusError('Consensus error'),
+    );
 
     methodMock.throws(dppValidationError);
 
@@ -171,9 +134,6 @@ describe('wrapInErrorHandlerFactory', () => {
 
     const response = await handler(request);
 
-    expect(response).to.deep.equal({
-      code: dppValidationError.getCode(),
-      info: cbor.encode(dppValidationError.getInfo()).toString('base64'),
-    });
+    expect(response).to.deep.equal(dppValidationError.getAbciResponse());
   });
 });

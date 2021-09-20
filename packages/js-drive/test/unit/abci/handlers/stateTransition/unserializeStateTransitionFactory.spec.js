@@ -5,13 +5,13 @@ const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/er
 const BalanceNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
 const ValidatorResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const unserializeStateTransitionFactory = require('../../../../../lib/abci/handlers/stateTransition/unserializeStateTransitionFactory');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
-const DPPValidationError = require('../../../../../lib/abci/handlers/errors/DPPValidationError');
+const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
+const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 
 describe('unserializeStateTransitionFactory', () => {
   let unserializeStateTransition;
@@ -44,7 +44,7 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+      expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getMessage()).to.equal('State Transition is not specified');
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
 
@@ -66,9 +66,11 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
-      expect(e).to.be.instanceOf(DPPValidationError);
+      expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(dppError.getCode());
-      expect(e.getInfo()).to.deep.equal([-1]);
+      expect(e.getData()).to.deep.equal({
+        arguments: [-1],
+      });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
       expect(dppMock.stateTransition.validateFee).to.not.be.called();
@@ -105,9 +107,11 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect.fail('should throw an InsufficientFundsError');
     } catch (e) {
-      expect(e).to.be.instanceOf(DPPValidationError);
+      expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
-      expect(e.getInfo()).to.deep.equal([balance, fee]);
+      expect(e.getData()).to.deep.equal({
+        arguments: [balance, fee],
+      });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
       expect(dppMock.stateTransition.validateFee).to.be.calledOnce();
@@ -127,9 +131,11 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect.fail('should throw an InsufficientFundsError');
     } catch (e) {
-      expect(e).to.be.instanceOf(DPPValidationError);
+      expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
-      expect(e.getInfo()).to.deep.equal([identity.getId()]);
+      expect(e.getData()).to.deep.equal({
+        arguments: [identity.getId()],
+      });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
       expect(dppMock.stateTransition.validateFee).to.have.not.been.called();
@@ -166,9 +172,11 @@ describe('unserializeStateTransitionFactory', () => {
 
       expect.fail('should throw an InsufficientFundsError');
     } catch (e) {
-      expect(e).to.be.instanceOf(DPPValidationError);
+      expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
-      expect(e.getInfo()).to.deep.equal([balance, fee]);
+      expect(e.getData()).to.deep.equal({
+        arguments: [balance, fee],
+      });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
       expect(dppMock.stateTransition.validateFee).to.be.calledOnce();
@@ -180,7 +188,7 @@ describe('unserializeStateTransitionFactory', () => {
         'Insufficient funds to process state transition',
       );
       expect(loggerMock.debug).to.have.been.calledOnceWithExactly({
-        consensusErrors: [error],
+        consensusError: error,
       });
     }
   });

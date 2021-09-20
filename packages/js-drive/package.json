@@ -69,7 +69,7 @@
     "@dashevo/dashd-zmq": "^1.2.0",
     "@dashevo/dpp": "~0.21.0-dev.4",
     "@dashevo/feature-flags-contract": "~0.2.0",
-    "@dashevo/grpc-common": "~0.4.1",
+    "@dashevo/grpc-common": "~0.5.3",
     "@dashevo/merk": "git+https://github.com/dashevo/node-merk.git",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
