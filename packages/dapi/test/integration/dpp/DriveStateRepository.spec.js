@@ -55,10 +55,12 @@ describe('DriveStateRepository', () => {
 
       expect(result.toObject()).to.be.deep.equal(dataContractFixture.toObject());
 
-      expect(dpp.dataContract.createFromBuffer).to.be.calledOnce();
-      expect(dpp.dataContract.createFromBuffer.getCall(0).args).to.have.deep.members([
+      expect(dpp.dataContract.createFromBuffer).to.be.calledOnceWithExactly(
         proto.getDataContract_asU8(),
-      ]);
+        {
+          skipValidation: true,
+        },
+      );
 
       expect(driveClientMock.fetchDataContract).to.be.calledOnce();
       expect(driveClientMock.fetchDataContract).to.be.calledWithExactly(contractId, false);

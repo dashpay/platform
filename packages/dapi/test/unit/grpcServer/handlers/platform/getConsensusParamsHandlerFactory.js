@@ -89,7 +89,7 @@ describe('getConsensusParamsHandlerFactory', () => {
       expect.fail('should throw FailedPreconditionGrpcError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(FailedPreconditionGrpcError);
-      expect(e.getMessage()).to.equal('Failed precondition: Invalid height: some data');
+      expect(e.getMessage()).to.equal('Invalid height: some data');
       expect(e.getCode()).to.equal(9);
     }
   });

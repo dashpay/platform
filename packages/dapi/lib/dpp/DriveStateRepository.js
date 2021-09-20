@@ -33,6 +33,7 @@ class DriveStateRepository {
 
     return this.dpp.dataContract.createFromBuffer(
       Buffer.from(dataContractResponse.getDataContract()),
+      { skipValidation: true },
     );
   }
 }

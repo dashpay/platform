@@ -18,7 +18,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
     message = 'message';
     info = {
       message,
-      metadata: {
+      data: {
         error: 'some data',
       },
     };
@@ -35,16 +35,12 @@ describe('createGrpcErrorFromDriveResponse', () => {
       it(`should throw ${codeClass} if response code is ${code}`, () => {
         const error = createGrpcErrorFromDriveResponse(code, encodedInfo);
 
-        let messageToCheck = message;
-
-        if (code === GrpcErrorCodes.FAILED_PRECONDITION) {
-          messageToCheck = `Failed precondition: ${messageToCheck}`;
-        }
-
         expect(error).to.be.an.instanceOf(GrpcError);
-        expect(error.getMessage()).to.equal(messageToCheck);
+        expect(error.getMessage()).to.equal(message);
         expect(error.getCode()).to.equal(code);
-        expect(error.getRawMetadata()).to.deep.equal(info.metadata);
+        expect(error.getRawMetadata()).to.deep.equal({
+          'drive-error-data-bin': cbor.encode(info.data),
+        });
       });
     });
 
@@ -54,43 +50,71 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error).to.be.an.instanceOf(GrpcError);
     expect(error.getMessage()).to.equal(message);
     expect(error.getCode()).to.equal(GrpcErrorCodes.UNKNOWN);
-    expect(error.getRawMetadata()).to.deep.equal(info.metadata);
+    expect(error.getRawMetadata()).to.deep.equal({
+      'drive-error-data-bin': cbor.encode(info.data),
+    });
   });
 
-  it('should throw ConsensusError if error code = 1000', () => {
-    const error = createGrpcErrorFromDriveResponse(1000);
+  it('should throw basic consensus error if error code = 1000', () => {
+    const data = { };
+    info = { data };
+
+    const error = createGrpcErrorFromDriveResponse(1000, cbor.encode(info).toString('base64'));
 
     expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
-    expect(error.getRawMetadata()).to.deep.equal({ code: 1000 });
+    expect(error.getRawMetadata()).to.deep.equal({
+      code: 1000,
+    });
   });
 
-  it('should throw ConsensusError if error code = 2000', () => {
+  it('should throw signature consensus error if error code = 2000', () => {
     const id = generateRandomIdentifier();
+
+    const data = { arguments: [id] };
+    info = { data };
 
     const error = createGrpcErrorFromDriveResponse(
       2000,
-      cbor.encode([id]).toString('base64'),
+      cbor.encode(info).toString('base64'),
     );
 
     expect(error).to.be.an.instanceOf(GrpcError);
     expect(error.getCode()).to.equal(GrpcErrorCodes.UNAUTHENTICATED);
-    expect(error.getRawMetadata()).to.deep.equal({ code: 2000 });
+    expect(error.getRawMetadata()).to.deep.equal({
+      code: 2000,
+      'drive-error-data-bin': cbor.encode(data),
+    });
   });
 
-  it('should throw ConsensusError if error code = 3000', () => {
-    const error = createGrpcErrorFromDriveResponse(3000, cbor.encode([20, 10]).toString('base64'));
+  it('should throw fee consensus error if error code = 3000', () => {
+    const data = { arguments: [20, 10] };
+    info = { data };
+
+    const error = createGrpcErrorFromDriveResponse(3000, cbor.encode(info).toString('base64'));
 
     expect(error).to.be.an.instanceOf(FailedPreconditionGrpcError);
-    expect(error.getRawMetadata()).to.deep.equal({ code: 3000 });
+    expect(error.getRawMetadata()).to.deep.equal({
+      code: 3000,
+      'drive-error-data-bin': cbor.encode(data),
+    });
   });
 
-  it('should throw ConsensusError if error code = 4000', () => {
+  it('should throw state consensus error if error code = 4000', () => {
     const dataContractId = generateRandomIdentifier();
 
-    const error = createGrpcErrorFromDriveResponse(4000, cbor.encode([dataContractId]).toString('base64'));
+    const data = { arguments: [dataContractId] };
+    info = { data };
+
+    const error = createGrpcErrorFromDriveResponse(
+      4000,
+      cbor.encode(info).toString('base64'),
+    );
 
     expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
-    expect(error.getRawMetadata()).to.deep.equal({ code: 4000 });
+    expect(error.getRawMetadata()).to.deep.equal({
+      code: 4000,
+      'drive-error-data-bin': cbor.encode(data),
+    });
   });
 
   it('should throw Unknown error code >= 5000', () => {
@@ -112,11 +136,9 @@ describe('createGrpcErrorFromDriveResponse', () => {
   it('should return InternalGrpcError if code = 13', () => {
     const errorInfo = {
       message,
-      metadata: {
-        ...info.metadata,
-        stack: {
-          data: 'stack info',
-        },
+      data: {
+        ...info.data,
+        stack: 'long \n long \n long \n string',
       },
     };
 
@@ -129,7 +151,9 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error.getMessage()).to.equal('Internal error');
     expect(error.getCode()).to.equal(GrpcErrorCodes.INTERNAL);
     expect(error.getError().message).to.deep.equal(message);
-    expect(error.getError().stack).to.deep.equal(errorInfo.metadata.stack);
-    expect(error.getRawMetadata()).to.deep.equal(info.metadata);
+    expect(error.getError().stack).to.deep.equal(errorInfo.data.stack);
+    expect(error.getRawMetadata()).to.deep.equal({
+      'drive-error-data-bin': cbor.encode(info.data),
+    });
   });
 });

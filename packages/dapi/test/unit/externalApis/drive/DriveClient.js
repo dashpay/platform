@@ -55,7 +55,7 @@ describe('DriveClient', () => {
           response: {
             code: GrpcErrorCodes.INVALID_ARGUMENT,
             info: cbor.encode({
-              metadata: {
+              data: {
                 name: 'someData',
               },
               message: 'some message',
@@ -71,7 +71,9 @@ describe('DriveClient', () => {
       expect(e.getCode()).to.equal(3);
       expect(e.getMessage()).to.equal('some message');
       expect(e.getRawMetadata()).to.deep.equal({
-        name: 'someData',
+        'drive-error-data-bin': cbor.encode({
+          name: 'someData',
+        }),
       });
     }
   });
