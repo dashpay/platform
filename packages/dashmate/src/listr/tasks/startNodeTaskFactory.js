@@ -42,7 +42,7 @@ function startNodeTaskFactory(
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
 
       // Remove directory that could potentially be created by Docker mount
-      if (fs.lstatSync(prettyFilePath).isDirectory()) {
+      if (fs.existsSync(prettyFilePath) && fs.lstatSync(prettyFilePath).isDirectory()) {
         fs.rmdirSync(prettyFilePath, { recursive: true });
       }
 
@@ -54,7 +54,7 @@ function startNodeTaskFactory(
       const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
 
       // Remove directory that could potentially be created by Docker mount
-      if (fs.lstatSync(jsonFilePath).isDirectory()) {
+      if (fs.existsSync(jsonFilePath) && fs.lstatSync(jsonFilePath).isDirectory()) {
         fs.rmdirSync(jsonFilePath, { recursive: true });
       }
 
