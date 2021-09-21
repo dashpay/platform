@@ -63,6 +63,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Reconfigure git to use HTTPS authentication
+        run: >
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+
       - name: Install NPM dependencies
         run: npm ci
 
