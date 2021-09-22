@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dashmate",
-  "version": "0.21.0-dev.3",
+  "version": "0.21.0-dev.4",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
