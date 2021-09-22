@@ -45,6 +45,7 @@ function initTaskFactory(
         task: async (ctx, task) => {
           const clientOpts = {
             network: config.get('network'),
+            driveProtocolVersion: 1,
           };
 
           if (ctx.dapiAddress) {
