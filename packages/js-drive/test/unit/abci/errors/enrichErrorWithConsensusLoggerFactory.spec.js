@@ -11,7 +11,7 @@ describe('enrichErrorWithConsensusLoggerFactory', () => {
     loggerMock = new LoggerMock(this.sinon);
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getConsensusLogger.returns(loggerMock);
+    blockExecutionContextMock.consensusLogger = loggerMock;
 
     enrichErrorWithConsensusLogger = enrichErrorWithConsensusLoggerFactory(
       blockExecutionContextMock,
@@ -33,7 +33,6 @@ describe('enrichErrorWithConsensusLoggerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(blockExecutionContextMock.getConsensusLogger).to.be.calledOnceWithExactly();
       expect(e.consensusLogger).to.equal(loggerMock);
     }
   });

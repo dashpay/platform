@@ -98,7 +98,6 @@ function infoHandlerFactory(
         lastHeight: lastHeight.toString(),
         lastCoreChainLockedHeight,
         appHash: appHash.toString('hex').toUpperCase(),
-        driveVersion,
         latestProtocolVersion: latestProtocolVersion.toString(),
       },
       `Start processing from block #${lastHeight} with appHash ${appHash.toString('hex').toUpperCase() || 'nil'}`,

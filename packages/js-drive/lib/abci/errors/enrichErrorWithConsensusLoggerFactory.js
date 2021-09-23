@@ -23,7 +23,7 @@ function enrichErrorWithConsensusLoggerFactory(blockExecutionContext) {
       try {
         return await method(request);
       } catch (e) {
-        const consensusLogger = blockExecutionContext.getConsensusLogger();
+        const { consensusLogger } = blockExecutionContext;
 
         if (consensusLogger) {
           e.consensusLogger = consensusLogger;
