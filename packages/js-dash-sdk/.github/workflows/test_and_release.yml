@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v2
         with:
-          node-version: '12'
+          node-version: '16'
 
       - name: Set up Docker BuildX
         id: buildx
@@ -70,6 +70,9 @@ jobs:
 
       - name: Check NPM package lock version is updated
         uses: dashevo/gh-action-check-package-lock@v1
+
+      - name: Show NPM version
+        run: npm --version
 
       - name: Install NPM dependencies
         run: npm ci
@@ -129,12 +132,16 @@ jobs:
     if: ${{ github.event_name == 'release' }}
     steps:
       - uses: actions/checkout@v2
-      
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
       - name: Check package version matches tag
         uses: geritol/match-tag-to-package-version@0.1.0
         env:
           TAG_PREFIX: refs/tags/v
-      
+
       - name: Enable NPM cache
         uses: actions/cache@v2
         with:
