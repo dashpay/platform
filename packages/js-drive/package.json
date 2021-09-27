@@ -67,7 +67,7 @@
     "@dashevo/dashcore-lib": "~0.19.26",
     "@dashevo/dashd-rpc": "^2.3.1",
     "@dashevo/dashd-zmq": "^1.2.1",
-    "@dashevo/dpp": "~0.21.0-dev.7",
+    "@dashevo/dpp": "~0.21.0-dev.8",
     "@dashevo/feature-flags-contract": "~0.2.1",
     "@dashevo/grpc-common": "~0.5.4",
     "@dashevo/merk": "github:dashevo/node-merk",
