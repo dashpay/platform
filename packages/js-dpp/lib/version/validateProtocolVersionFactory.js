@@ -1,7 +1,9 @@
 const UnsupportedProtocolVersionError = require('../errors/consensus/basic/UnsupportedProtocolVersionError');
 const CompatibleProtocolVersionIsNotDefinedError = require('../errors/CompatibleProtocolVersionIsNotDefinedError');
-const IncompatibleProtocolVersionError = require('../errors/consensus/basic/IncompatibleProtocolVersionError');
 const ValidationResult = require('../validation/ValidationResult');
+
+const IncompatibleProtocolVersionError = require('../errors/consensus/basic/IncompatibleProtocolVersionError');
+const { latestVersion } = require('./protocolVersion');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -17,32 +19,42 @@ function validateProtocolVersionFactory(dpp, versionCompatibilityMap) {
   function validateProtocolVersion(protocolVersion) {
     const result = new ValidationResult();
 
-    // Parsed protocol version must be equal or lower than current version
-    if (protocolVersion > dpp.getProtocolVersion()) {
+    // Parsed protocol version must be equal or lower than latest protocol version
+    if (protocolVersion > latestVersion) {
       result.addError(
         new UnsupportedProtocolVersionError(
           protocolVersion,
-          dpp.getProtocolVersion(),
+          latestVersion,
         ),
       );
 
       return result;
     }
 
-    if (!Object.prototype.hasOwnProperty.call(versionCompatibilityMap, dpp.getProtocolVersion())) {
-      throw new CompatibleProtocolVersionIsNotDefinedError(dpp.getProtocolVersion());
+    // The highest version should be used for the compatibility map
+    // to get minimal compatible version
+    const maxProtocolVersion = Math.max(protocolVersion, dpp.getProtocolVersion());
+
+    // The lowest version should be used to compare with the minimal compatible version
+    const minProtocolVersion = Math.min(protocolVersion, dpp.getProtocolVersion());
+
+    if (!Object.prototype.hasOwnProperty.call(versionCompatibilityMap, maxProtocolVersion)) {
+      throw new CompatibleProtocolVersionIsNotDefinedError(maxProtocolVersion);
     }
 
-    const minimalProtocolVersion = versionCompatibilityMap[dpp.getProtocolVersion()];
+    const minimalCompatibleProtocolVersion = versionCompatibilityMap[maxProtocolVersion];
 
-    // Parsed protocol version must higher or equal to the minimum compatible version
-    if (protocolVersion < minimalProtocolVersion) {
+    // Parsed protocol version (or current network protocol version) must higher
+    // or equal to the minimum compatible version
+    if (minProtocolVersion < minimalCompatibleProtocolVersion) {
       result.addError(
         new IncompatibleProtocolVersionError(
           protocolVersion,
-          minimalProtocolVersion,
+          minimalCompatibleProtocolVersion,
         ),
       );
+
+      return result;
     }
 
     return result;

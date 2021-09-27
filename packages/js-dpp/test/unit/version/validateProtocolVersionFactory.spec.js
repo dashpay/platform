@@ -6,6 +6,7 @@ const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 const validateProtocolVersionFactory = require('../../../lib/version/validateProtocolVersionFactory');
 
 const { expectValidationError } = require('../../../lib/test/expect/expectError');
+const { latestVersion } = require('../../../lib/version/protocolVersion');
 
 describe('validateProtocolVersionFactory', () => {
   let validateProtocolVersion;
@@ -31,8 +32,8 @@ describe('validateProtocolVersionFactory', () => {
     );
   });
 
-  it('should throw UnsupportedProtocolVersionError if protocolVersion is higher than the current one', () => {
-    protocolVersion = 2;
+  it('should throw UnsupportedProtocolVersionError if protocolVersion is higher than latestVersion', () => {
+    protocolVersion = latestVersion + 1;
 
     const result = validateProtocolVersion(protocolVersion);
 
@@ -41,7 +42,7 @@ describe('validateProtocolVersionFactory', () => {
     const error = result.getFirstError();
 
     expect(error.getParsedProtocolVersion()).to.equal(protocolVersion);
-    expect(error.getCurrentProtocolVersion()).to.equal(1);
+    expect(error.getLatestVersion()).to.equal(latestVersion);
     expect(error.getCode()).to.equal(1002);
   });
 

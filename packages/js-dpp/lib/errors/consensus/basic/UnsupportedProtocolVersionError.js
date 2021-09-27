@@ -3,15 +3,15 @@ const AbstractConsensusError = require('../AbstractConsensusError');
 class UnsupportedProtocolVersionError extends AbstractConsensusError {
   /**
    * @param {number} parsedProtocolVersion
-   * @param {number} currentProtocolVersion
+   * @param {number} latestVersion
    */
-  constructor(parsedProtocolVersion, currentProtocolVersion) {
+  constructor(parsedProtocolVersion, latestVersion) {
     super(
-      `Protocol version ${parsedProtocolVersion} is not supported. Current version is ${currentProtocolVersion}`,
+      `Protocol version ${parsedProtocolVersion} is not supported. Latest supported version is ${latestVersion}`,
     );
 
     this.parsedProtocolVersion = parsedProtocolVersion;
-    this.currentProtocolVersion = currentProtocolVersion;
+    this.latestVersion = latestVersion;
 
     // eslint-disable-next-line prefer-rest-params
     this.setConstructorArguments(arguments);
@@ -27,8 +27,8 @@ class UnsupportedProtocolVersionError extends AbstractConsensusError {
   /**
    * @return {number}
    */
-  getCurrentProtocolVersion() {
-    return this.currentProtocolVersion;
+  getLatestVersion() {
+    return this.latestVersion;
   }
 }
 
