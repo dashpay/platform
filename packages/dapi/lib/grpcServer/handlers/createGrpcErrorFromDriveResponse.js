@@ -55,30 +55,38 @@ function createGrpcErrorFromDriveResponse(code, info) {
 
   const decodedInfo = info ? cbor.decode(Buffer.from(info, 'base64')) : { };
 
+  // eslint-disable-next-line prefer-destructuring
+  const message = decodedInfo.message;
+  const data = decodedInfo.data || {};
+
   // gRPC error codes
   if (code <= 16) {
     const CommonErrorClass = COMMON_ERROR_CLASSES[code.toString()];
     if (CommonErrorClass) {
       return new CommonErrorClass(
-        decodedInfo.message,
-        createRawMetadata(decodedInfo.data),
+        message,
+        createRawMetadata(data),
       );
     }
 
     // Restore stack for internal error
     if (code === GrpcErrorCodes.INTERNAL) {
-      const error = new Error(decodedInfo.message);
-      error.stack = decodedInfo.data.stack;
+      const error = new Error(message);
 
-      delete decodedInfo.data.stack;
+      // in case of verbose internal error
+      if (data.stack) {
+        error.stack = data.stack;
 
-      return new InternalGrpcError(error, createRawMetadata(decodedInfo.data));
+        delete data.stack;
+      }
+
+      return new InternalGrpcError(error, createRawMetadata(data));
     }
 
     return new GrpcError(
       code,
-      decodedInfo.message,
-      createRawMetadata(decodedInfo.data),
+      message,
+      createRawMetadata(data),
     );
   }
 
@@ -86,20 +94,20 @@ function createGrpcErrorFromDriveResponse(code, info) {
   if (code >= 17 && code < 1000) {
     return new GrpcError(
       GrpcErrorCodes.UNKNOWN,
-      decodedInfo.message,
-      createRawMetadata(decodedInfo.data),
+      message,
+      createRawMetadata(data),
     );
   }
 
   // DPP errors
   if (code >= 1000 && code < 5000) {
-    const consensusError = createConsensusError(code, decodedInfo.data.arguments || []);
+    const consensusError = createConsensusError(code, data.arguments || []);
 
     // Basic
     if (code >= 1000 && code < 2000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata(decodedInfo.data) },
+        { code, ...createRawMetadata(data) },
       );
     }
 
@@ -108,7 +116,7 @@ function createGrpcErrorFromDriveResponse(code, info) {
       return new GrpcError(
         GrpcErrorCodes.UNAUTHENTICATED,
         consensusError.message,
-        { code, ...createRawMetadata(decodedInfo.data) },
+        { code, ...createRawMetadata(data) },
       );
     }
 
@@ -116,7 +124,7 @@ function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 3000 && code < 4000) {
       return new FailedPreconditionGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata(decodedInfo.data) },
+        { code, ...createRawMetadata(data) },
       );
     }
 
@@ -124,7 +132,7 @@ function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 4000 && code < 5000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata(decodedInfo.data) },
+        { code, ...createRawMetadata(data) },
       );
     }
   }
