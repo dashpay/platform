@@ -78,6 +78,7 @@ module.exports = async function injectPlugin(
               const watcher = {
                 ready: false,
                 started: false,
+                announced: false,
               };
               self.plugins.watchers[pluginName] = watcher;
 
@@ -103,6 +104,7 @@ module.exports = async function injectPlugin(
               const watcher = {
                 ready: false,
                 started: false,
+                announced: false,
               };
               self.plugins.watchers[pluginName] = watcher;
               // eslint-disable-next-line no-return-assign,no-param-reassign,max-len

@@ -67,14 +67,16 @@ async function _initializeAccount(account, userUnsafePlugins) {
         }
       };
 
+      let readyPlugins = 0;
       // eslint-disable-next-line no-param-reassign,consistent-return
       account.readinessInterval = setInterval(() => {
         const watchedPlugins = Object.keys(account.plugins.watchers);
-        let readyPlugins = 0;
         watchedPlugins.forEach((pluginName) => {
-          if (account.plugins.watchers[pluginName].ready === true) {
+          const watchedPlugin = account.plugins.watchers[pluginName];
+          if (watchedPlugin.ready === true && !watchedPlugin.announced) {
             logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
             readyPlugins += 1;
+            watchedPlugin.announced = true;
             logger.debug(`Initialized ${pluginName} - ${readyPlugins}/${watchedPlugins.length} plugins`);
           }
         });
