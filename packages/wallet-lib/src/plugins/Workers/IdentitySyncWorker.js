@@ -94,7 +94,7 @@ class IdentitySyncWorker extends Worker {
       // it means gaps are not sequential
       gapCount = 0;
 
-      logger.silly(`IdentitySyncWorker - got ${fetchedId} at ${index}`);
+      logger.silly(`IdentitySyncWorker - got ${Identifier.from(fetchedId)} at ${index}`);
 
       // eslint-disable-next-line no-await-in-loop
       await this.storage.insertIdentityIdAtIndex(
