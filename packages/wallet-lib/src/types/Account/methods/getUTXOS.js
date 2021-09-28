@@ -1,12 +1,16 @@
 /* eslint-disable no-continue, no-restricted-syntax */
 const { Address, Transaction } = require('@dashevo/dashcore-lib');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+const { WALLET_TYPES, COINBASE_MATURITY } = require('../../../CONSTANTS');
 
 /**
  * Return all the utxos
+ * @param {getUTXOSOptions} options - Options object
+ * @param {Number} [options.coinbaseMaturity] - Allow to override coinbase maturity
  * @return {UnspentOutput[]}
  */
-function getUTXOS() {
+function getUTXOS(options = {
+  coinbaseMaturity: COINBASE_MATURITY,
+}) {
   const self = this;
   const {
     walletId,
@@ -44,12 +48,18 @@ function getUTXOS() {
           if (!transaction.isSpecialTransaction()) {
             continue;
           }
+
+          const transactionHeight = (this.store.transactionsMetadata[txid])
+            ? this.store.transactionsMetadata[txid].height
+            : transaction.extraPayload.height;
+
           // We check maturity is at least 100 blocks.
           // another way is to just read _scriptBuffer height value.
-          if (transaction.extraPayload.height + 100 > currentBlockHeight) {
+          if (transactionHeight + options.coinbaseMaturity > currentBlockHeight) {
             continue;
           }
         }
+
         utxos.push(new Transaction.UnspentOutput(
           {
             txId: txid,

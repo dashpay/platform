@@ -1,10 +1,10 @@
-**Usage**: `account.getUTXOS(onyAvailable)`      
+**Usage**: `account.getUTXOS(options)`      
 **Description**: This method will return the list of all available UTXOS for this account.
 
 Parameters: 
 
 | parameters           | type      | required       | Description                                                                             |  
 |----------------------|-----------|----------------| ----------------------------------------------------------------------------------------|
-| **onlyAvailable**    | boolean   | no (def: true) | When set at true, returns only the UTXOS that are available for use (spendable outputs) |
+| **options.coinbaseMaturity** | Number    | no (def: 100)  | Allow to override coinbase maturity |
 
 Returns : Array[utxos].

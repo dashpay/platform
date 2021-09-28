@@ -79,6 +79,9 @@ export declare interface RecipientOptions {
     amount?: number;
     address: PublicAddress,
 }
+export declare interface getUTXOSOptions {
+    coinbaseMaturity?: number;
+}
 
 export declare namespace Account {
     interface Options {
