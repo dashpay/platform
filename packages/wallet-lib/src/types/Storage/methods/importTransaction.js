@@ -32,22 +32,32 @@ const importTransaction = function importTransaction(transaction, transactionMet
   let outputIndex = -1;
   const processedAddressesForTx = {};
 
-  // If we already had this transaction locally, we won't add it again,
-  // but we still need to continue processing it as we might have new
-  // address generated (on BIP44 wallets) since the first checkup.
-  if (!transactions[transaction.hash]) {
-    transactions[transaction.hash] = transaction;
-    if (transactionMetadata) {
+  transactions[transaction.hash] = transaction;
+  if (transactionMetadata) {
+    const { height } = transactionMetadata;
+    if (Number.isInteger(height) && height !== 0) {
       transactionsMetadata[transaction.hash] = transactionMetadata;
-      const { height } = transactionMetadata;
+      const mappedTransactionObject = { hash: transaction.hash, ...transactionMetadata };
+
       if (mappedTransactionsHeight[height]) {
-        mappedTransactionsHeight[height].push({ hash: transaction.hash, ...transactionMetadata });
+        // If we had this transaction locally, and it might have not been final (confirmed)
+        // We require to look if it previously existed and need replace or to add it
+        const findIndex = mappedTransactionsHeight[height]
+          .findIndex((el) => el.hash === transaction.hash);
+
+        if (findIndex >= 0) {
+          mappedTransactionsHeight[height][findIndex] = mappedTransactionObject;
+        } else {
+          mappedTransactionsHeight[height].push(mappedTransactionObject);
+        }
       } else {
-        mappedTransactionsHeight[height] = ([{ hash: transaction.hash, ...transactionMetadata }]);
+        mappedTransactionsHeight[height] = ([mappedTransactionObject]);
       }
     }
   }
 
+  // even if we had this transaction locally, we need to
+  // process it to ensure no new address (BIP44) needs to be generated
   [...inputs, ...outputs].forEach((element) => {
     const isOutput = (element instanceof Output);
     if (isOutput) outputIndex += 1;

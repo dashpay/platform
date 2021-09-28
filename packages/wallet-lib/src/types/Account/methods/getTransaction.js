@@ -1,3 +1,5 @@
+const EVENTS = require('../../../EVENTS');
+
 /**
  * Get a transaction from a provided txid
  * @param {transactionId} txid - Transaction Hash
@@ -30,13 +32,26 @@ async function getTransaction(txid = null) {
     chainLocked,
   };
   if (this.cacheTx) {
+    // We cache even if transaction / metadata are not final (case of unconfirmed tx)
     await this.importTransactions([[transaction, metadata]]);
-    if (this.cacheBlockHeaders) {
-      const searchBlockHeader = this.storage.searchBlockHeader(height);
-      if (!searchBlockHeader.found) {
-        // Trigger caching of blockheader
-        await this.getBlockHeader(height);
+
+    if (height) {
+      if (this.cacheBlockHeaders) {
+        const searchBlockHeader = this.storage.searchBlockHeader(height);
+        if (!searchBlockHeader.found) {
+          // Trigger caching of blockheader
+          await this.getBlockHeader(height);
+        }
       }
+    } else {
+      const self = this;
+      // If not yet confirmed, recall at next block.
+      this.once(
+        EVENTS.BLOCKHEIGHT_CHANGED,
+        () => {
+          self.getTransaction(txid);
+        },
+      );
     }
   }
   return { transaction, metadata };

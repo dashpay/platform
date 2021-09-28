@@ -53,7 +53,6 @@ function categorizeTransactions(transactionsWithMetadata, accountStore, accountI
     let inputsHasOtherAccountAddress = false;
 
     // For each vout, we will look at matching known addresses
-    // console.log('tx', transaction);
     transaction.outputs.forEach((vout) => {
       const { satoshis, script } = vout;
       const address = script.toAddress(network).toString();
