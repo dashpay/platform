@@ -110,7 +110,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
   // DPP consensus errors
   if (code >= 1000 && code < 5000) {
-    const consensusError = createConsensusError(code, data.arguments);
+    const consensusError = createConsensusError(code, data.arguments || []);
 
     delete data.arguments;
 
