@@ -34,7 +34,6 @@ class TransactionSyncStreamWorker extends Worker {
     this.stream = null;
     this.incomingSyncPromise = null;
     this.pendingRequest = {};
-    this.delayedRequests = {};
   }
 
   /**
@@ -210,7 +209,6 @@ TransactionSyncStreamWorker.prototype.getBestBlockHeightFromTransport = require(
 TransactionSyncStreamWorker.prototype.setLastSyncedBlockHeight = require('./methods/setLastSyncedBlockHeight');
 TransactionSyncStreamWorker.prototype.getLastSyncedBlockHeight = require('./methods/getLastSyncedBlockHeight');
 TransactionSyncStreamWorker.prototype.startHistoricalSync = require('./methods/startHistoricalSync');
-TransactionSyncStreamWorker.prototype.handleTransactionFromStream = require('./methods/handleTransactionFromStream');
 TransactionSyncStreamWorker.prototype.startIncomingSync = require('./methods/startIncomingSync');
 TransactionSyncStreamWorker.prototype.syncUpToTheGapLimit = require('./methods/syncUpToTheGapLimit');
 

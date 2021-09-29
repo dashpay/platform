@@ -35,13 +35,12 @@ module.exports = async function injectPlugin(
       const { pluginType } = plugin;
 
       const {
-        on, emit, once, removeListener,
+        on, emit,
         _conf, _maxListeners, _on, _events, _all, _newListener, _removeListener, listenerTree,
       } = self;
 
       plugin.inject('parentEvents', {
         on,
-        once,
         emit,
         _conf,
         _maxListeners,
@@ -51,7 +50,6 @@ module.exports = async function injectPlugin(
         _all,
         _newListener,
         _removeListener,
-        removeListener,
         listenerTree,
       });
 

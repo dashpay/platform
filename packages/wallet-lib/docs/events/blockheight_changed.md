@@ -4,9 +4,9 @@
 Example: 
 ```js
 const {EVENTS} = require('@dashevo/wallet-lib');
-
-account.events.on(EVENTS.BLOCKHEIGHT_CHANGED, ({payload: blockHeight})=>{
-  console.log(`Blockheight changed to ${blockHeight}`);
-});
+const onReady = ()=>{
+  console.log("Blockheight changed to");
+}
+account.events.on(EVENTS.BLOCKHEIGHT_CHANGED, onReady);
 ```
 

@@ -59,14 +59,39 @@ module.exports = async function syncUpToTheGapLimit({
           .filterWalletTransactions(transactionsFromResponse, addresses, network);
 
         if (walletTransactions.transactions.length) {
+          const transactionsWithMetadata = [];
           // As we require height information, we fetch transaction using client.
-          const awaitingPromises = walletTransactions.transactions
-            .map((transaction) => self.handleTransactionFromStream(transaction).then(({
-              transactionResponse,
-              metadata,
-            }) => [transactionResponse.transaction, metadata]));
+          // eslint-disable-next-line no-restricted-syntax
+          for (const transaction of walletTransactions.transactions) {
+            const transactionHash = transaction.hash;
 
-          const transactionsWithMetadata = await Promise.all(awaitingPromises);
+            self.pendingRequest[transactionHash] = { isProcessing: true, type: 'transaction' };
+            // eslint-disable-next-line no-await-in-loop
+            const getTransactionResponse = await this.transport.getTransaction(transactionHash);
+
+            if (!getTransactionResponse.blockHash) {
+              // TODO: We should set-up a retry of fetching the tx and it's blockhash
+            }
+            if (getTransactionResponse.blockHash) {
+              self.pendingRequest[getTransactionResponse.blockHash.toString('hex')] = { isProcessing: true, type: 'blockheader' };
+              // eslint-disable-next-line no-await-in-loop
+              const getBlockHeaderResponse = await this
+                .transport
+                .getBlockHeaderByHash(getTransactionResponse.blockHash);
+              // eslint-disable-next-line no-await-in-loop
+              await this.importBlockHeader(getBlockHeaderResponse);
+              delete self.pendingRequest[getTransactionResponse.blockHash.toString('hex')];
+            }
+
+            const metadata = {
+              blockHash: getTransactionResponse.blockHash,
+              height: getTransactionResponse.height,
+              instantLocked: getTransactionResponse.instantLocked,
+              chainLocked: getTransactionResponse.chainLocked,
+            };
+            transactionsWithMetadata.push([getTransactionResponse.transaction, metadata]);
+            delete self.pendingRequest[transactionHash];
+          }
 
           const addressesGeneratedCount = await self
             .importTransactions(transactionsWithMetadata);

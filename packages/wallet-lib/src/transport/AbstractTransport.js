@@ -30,7 +30,6 @@ class AbstractTransport extends EventEmitter {
     logger.silly(`Transporter.announce(${eventName})`);
     switch (eventName) {
       case EVENTS.BLOCKHEADER:
-      case EVENTS.BLOCKHEIGHT_CHANGED:
       case EVENTS.BLOCK:
       case EVENTS.TRANSACTION:
       case EVENTS.FETCHED_TRANSACTION:

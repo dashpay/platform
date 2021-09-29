@@ -9,10 +9,6 @@ module.exports = async function subscribeToBlocks() {
     if (!self.state.block || self.state.block.hash !== chainHash) {
       self.state.block = await self.getBlockByHash(await self.getBestBlockHash());
       self.announce(EVENTS.BLOCK, self.state.block);
-      if (self.state.block && self.state.block.transactions[0].extraPayload.height) {
-        const { height } = self.state.block.transactions[0].extraPayload;
-        self.announce(EVENTS.BLOCKHEIGHT_CHANGED, height);
-      }
     }
   };
   await executor();
