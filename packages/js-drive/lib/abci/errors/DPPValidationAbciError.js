@@ -9,9 +9,12 @@ class DPPValidationAbciError extends AbstractAbciError {
    * @param {AbstractConsensusError} consensusError
    */
   constructor(message, consensusError) {
-    const data = {
-      arguments: consensusError.getConstructorArguments(),
-    };
+    const args = consensusError.getConstructorArguments();
+
+    const data = { };
+    if (args.length > 0) {
+      data.arguments = args;
+    }
 
     super(consensusError.getCode(), message, data);
   }
@@ -20,13 +23,20 @@ class DPPValidationAbciError extends AbstractAbciError {
    * @returns {{code: number, info: string}}
    */
   getAbciResponse() {
-    const info = {
-      data: this.getData(),
-    };
+    const info = { };
+
+    const data = this.getData();
+
+    let encodedInfo;
+    if (Object.keys(data).length > 0) {
+      info.data = data;
+
+      encodedInfo = cbor.encode(info).toString('base64');
+    }
 
     return {
       code: this.getCode(),
-      info: cbor.encode(info).toString('base64'),
+      info: encodedInfo,
     };
   }
 }

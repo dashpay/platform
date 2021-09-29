@@ -50,8 +50,13 @@ class AbstractAbciError extends DriveError {
   getAbciResponse() {
     const info = {
       message: this.getMessage(),
-      data: this.getData(),
     };
+
+    const data = this.getData();
+
+    if (Object.keys(data).length > 0) {
+      info.data = data;
+    }
 
     return {
       code: this.getCode(),
