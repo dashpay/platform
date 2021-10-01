@@ -67,6 +67,28 @@ describe('createGrpcTransportError', () => {
     expect(error.getData()).to.deep.equal(errorData);
   });
 
+  it('should get code from metadata in browser environment', () => {
+    metadata.code = GrpcErrorCodes.INVALID_ARGUMENT;
+
+    const grpcError = new Error(
+      'Not found',
+    );
+
+    grpcError.code = GrpcErrorCodes.NOT_FOUND;
+    grpcError.metadata = metadata;
+
+    const error = createGrpcTransportError(
+      grpcError,
+      dapiAddress,
+    );
+
+    expect(error).to.be.an.instanceOf(InvalidRequestError);
+    expect(error.message).to.equal(grpcError.message);
+    expect(error.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
+    expect(error.getDAPIAddress()).to.deep.equal(dapiAddress);
+    expect(error.getData()).to.deep.equal(errorData);
+  });
+
   it('should return InvalidRequestError', () => {
     const grpcError = new GrpcError(
       GrpcErrorCodes.INVALID_ARGUMENT,

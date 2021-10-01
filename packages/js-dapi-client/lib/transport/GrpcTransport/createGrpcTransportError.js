@@ -2,6 +2,7 @@ const cbor = require('cbor');
 
 const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const { Metadata } = require('@grpc/grpc-js/build/src/metadata');
 
 const NotFoundError = require('./errors/NotFoundError');
 const TimeoutError = require('./errors/TimeoutError');
@@ -48,16 +49,30 @@ function createGrpcTransportError(grpcError, dapiAddress) {
   let { code } = grpcError;
 
   if (grpcError.metadata) {
-    const cboredMetaData = grpcError.metadata.get('drive-error-data-bin');
-    if (cboredMetaData && cboredMetaData.length > 0) {
-      data = cbor.decode(cboredMetaData[0]);
+    let encodedData;
+
+    if (grpcError.metadata instanceof Metadata) {
+      const cboredMetaData = grpcError.metadata.get('drive-error-data-bin');
+      if (cboredMetaData && cboredMetaData.length > 0) {
+        [encodedData] = cboredMetaData;
+      }
+
+      // since gRPC doesn't allow to use custom error codes
+      // DAPI pass them as a part of metadata
+      const metaCode = grpcError.metadata.get('code');
+      if (metaCode && metaCode.length > 0) {
+        [code] = metaCode;
+      }
+    } else {
+      encodedData = Buffer.from(grpcError.metadata['drive-error-data-bin'], 'base64');
+      const metaCode = grpcError.metadata.code;
+      if (metaCode !== undefined) {
+        code = Number(metaCode);
+      }
     }
 
-    // since gRPC doesn't allow to use custom error codes
-    // DAPI pass them as a part of metadata
-    const metaCode = grpcError.metadata.get('code');
-    if (metaCode && metaCode.length > 0) {
-      [code] = metaCode;
+    if (encodedData) {
+      data = cbor.decode(encodedData);
     }
   }
 
