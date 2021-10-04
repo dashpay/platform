@@ -1,9 +1,11 @@
 const { Listr } = require('listr2');
 
-const os = require('os');
 const path = require('path');
 
-const { PRESET_LOCAL } = require('../../../constants');
+const {
+  PRESET_LOCAL,
+  HOME_DIR_PATH,
+} = require('../../../constants');
 
 /**
  * @param {ConfigFile} configFile
@@ -139,8 +141,8 @@ function setupLocalPresetTaskFactory(
                     });
                   }
 
-                  const drivePrettyLogFile = path.join(os.tmpdir(), `drive_pretty_${nodeIndex}.log`);
-                  const driveJsonLogFile = path.join(os.tmpdir(), `drive_json_${nodeIndex}.log`);
+                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_pretty.log');
+                  const driveJsonLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_json.log');
 
                   config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
                   config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);

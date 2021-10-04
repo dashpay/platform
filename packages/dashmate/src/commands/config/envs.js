@@ -3,6 +3,8 @@ const path = require('path');
 
 const { flags: flagTypes } = require('@oclif/command');
 
+const { HOME_DIR_PATH } = require('../../constants');
+
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
 class ConfigEnvsCommand extends ConfigBaseCommand {
@@ -10,7 +12,6 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {string} homeDirPath
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -19,7 +20,6 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
       'output-file': outputFile,
     },
     config,
-    homeDirPath,
   ) {
     let envOutput = '';
 
@@ -27,7 +27,7 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
       envOutput += `${key}=${value}\n`;
     }
 
-    envOutput += `DASHMATE_HOME_DIR=${homeDirPath}\n`;
+    envOutput += `DASHMATE_HOME_DIR=${HOME_DIR_PATH}\n`;
 
     if (outputFile !== null) {
       const outputFilePath = path.resolve(process.cwd(), outputFile);

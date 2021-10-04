@@ -1,8 +1,8 @@
-const os = require('os');
 const path = require('path');
 
 const {
   NETWORK_TESTNET,
+  HOME_DIR_PATH,
 } = require('../../src/constants');
 
 module.exports = {
@@ -91,11 +91,11 @@ module.exports = {
           },
           prettyFile: {
             level: 'silent',
-            path: path.join(os.tmpdir(), '/base-drive-pretty.log'),
+            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-pretty.log'),
           },
           jsonFile: {
             level: 'silent',
-            path: path.join(os.tmpdir(), '/base-drive-json.log'),
+            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-json.log'),
           },
         },
         validatorSet: {

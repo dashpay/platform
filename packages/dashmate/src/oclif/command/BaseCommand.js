@@ -25,7 +25,7 @@ class BaseCommand extends Command {
     this.parsedArgs = args;
     this.parsedFlags = flags;
 
-    this.container = await createDIContainer(process.env);
+    this.container = await createDIContainer();
 
     // Set up home dir
     /**
