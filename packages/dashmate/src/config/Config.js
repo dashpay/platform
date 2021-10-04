@@ -143,10 +143,6 @@ class Config {
   toEnvs() {
     const dockerComposeFiles = ['docker-compose.yml'];
 
-    if (this.get('core.masternode.enable') === true) {
-      dockerComposeFiles.push('docker-compose.sentinel.yml');
-    }
-
     if (this.has('platform')) {
       dockerComposeFiles.push('docker-compose.platform.yml');
 

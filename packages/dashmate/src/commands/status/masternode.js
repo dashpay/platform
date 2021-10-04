@@ -38,7 +38,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       dockerCompose.docker.getContainer('core'),
     );
 
-    if (config.get('core.masternode.enable') === false) {
+    if (config.options.core.masternode.enable === false) {
       // eslint-disable-next-line no-console
       console.log('This is not a masternode!');
       this.exit();
