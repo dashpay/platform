@@ -64,7 +64,10 @@ function createGrpcTransportError(grpcError, dapiAddress) {
         [code] = metaCode;
       }
     } else {
-      encodedData = Buffer.from(grpcError.metadata['drive-error-data-bin'], 'base64');
+      if (grpcError.metadata['drive-error-data-bin']) {
+        encodedData = Buffer.from(grpcError.metadata['drive-error-data-bin'], 'base64');
+      }
+
       const metaCode = grpcError.metadata.code;
       if (metaCode !== undefined) {
         code = Number(metaCode);
