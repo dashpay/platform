@@ -50,7 +50,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     };
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
-      throw new ServiceIsNotRunningError(config.options.network, 'drive_tenderdash');
+      throw new ServiceIsNotRunningError(config.get('network'), 'drive_tenderdash');
     }
 
     // Collect core data
@@ -68,7 +68,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     }
 
     // Collect platform data
-    const tenderdashStatusRes = await fetch(`http://localhost:${config.options.platform.drive.tenderdash.rpc.port}/status`);
+    const tenderdashStatusRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
     const {
       result: {
         node_info: {
@@ -83,7 +83,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       },
     } = await tenderdashStatusRes.json();
 
-    const tenderdashNetInfoRes = await fetch(`http://localhost:${config.options.platform.drive.tenderdash.rpc.port}/net_info`);
+    const tenderdashNetInfoRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`);
     const {
       result: {
         n_peers: platformPeers,
@@ -91,9 +91,9 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     } = await tenderdashNetInfoRes.json();
 
     let explorerLatestBlockHeight;
-    if (explorerURLs[config.options.network]) {
+    if (explorerURLs[config.get('network')]) {
       try {
-        const explorerBlockHeightRes = await fetch(`${explorerURLs[config.options.network]}/status`);
+        const explorerBlockHeightRes = await fetch(`${explorerURLs[config.get('network')]}/status`);
         ({
           result: {
             sync_info: {
@@ -115,11 +115,11 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     let gRpcPortState;
     let p2pPortState;
     try {
-      const httpPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.envoy.http.port}/`);
+      const httpPortStateRes = await fetch(`https://mnowatch.org/${config.get('platform.dapi.envoy.http.port')}/`);
       httpPortState = await httpPortStateRes.text();
-      const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.dapi.envoy.grpc.port}/`);
+      const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.get('platform.dapi.envoy.grpc.port')}/`);
       gRpcPortState = await gRpcPortStateRes.text();
-      const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.options.platform.drive.tenderdash.p2p.port}/`);
+      const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.get('platform.drive.tenderdash.p2p.port')}/`);
       p2pPortState = await p2pPortStateRes.text();
     } catch (e) {
       if (e.name === 'FetchError') {
@@ -144,7 +144,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         status = 'not started';
       }
     }
-    if (status === 'running' && platformCatchingUp === true && explorerURLs[config.options.network]) {
+    if (status === 'running' && platformCatchingUp === true && explorerURLs[config.get('network')]) {
       status = `syncing ${((platformLatestBlockHeight / explorerLatestBlockHeight) * 100).toFixed(2)}%`;
     }
 
@@ -158,7 +158,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     }
 
     let blocks;
-    if (explorerURLs[config.options.network]) {
+    if (explorerURLs[config.get('network')]) {
       if (platformLatestBlockHeight >= explorerLatestBlockHeight) {
         blocks = chalk.green(platformLatestBlockHeight);
       } else {
@@ -189,18 +189,18 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     rows.push(['Network', platformNetwork]);
     rows.push(['Status', status]);
     rows.push(['Block height', blocks]);
-    if (explorerURLs[config.options.network]) {
+    if (explorerURLs[config.get('network')]) {
       rows.push(['Remote block height', explorerLatestBlockHeight]);
     }
     rows.push(['Peer count', platformPeers]);
     rows.push(['App hash', platformLatestAppHash]);
-    rows.push(['HTTP service', `${config.options.externalIp}:${config.options.platform.dapi.envoy.http.port}`]);
-    rows.push(['HTTP port', `${config.options.platform.dapi.envoy.http.port} ${httpPortState}`]);
-    rows.push(['gRPC service', `${config.options.externalIp}:${config.options.platform.dapi.envoy.grpc.port}`]);
-    rows.push(['gRPC port', `${config.options.platform.dapi.envoy.grpc.port} ${gRpcPortState}`]);
-    rows.push(['P2P service', `${config.options.externalIp}:${config.options.platform.drive.tenderdash.p2p.port}`]);
-    rows.push(['P2P port', `${config.options.platform.drive.tenderdash.p2p.port} ${p2pPortState}`]);
-    rows.push(['RPC service', `127.0.0.1:${config.options.platform.drive.tenderdash.rpc.port}`]);
+    rows.push(['HTTP service', `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`]);
+    rows.push(['HTTP port', `${config.get('platform.dapi.envoy.http.port')} ${httpPortState}`]);
+    rows.push(['gRPC service', `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`]);
+    rows.push(['gRPC port', `${config.get('platform.dapi.envoy.grpc.port')} ${gRpcPortState}`]);
+    rows.push(['P2P service', `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`]);
+    rows.push(['P2P port', `${config.get('platform.drive.tenderdash.p2p.port')} ${p2pPortState}`]);
+    rows.push(['RPC service', `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`]);
     const output = table(rows, { singleLine: true });
 
     // eslint-disable-next-line no-console

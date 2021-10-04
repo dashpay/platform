@@ -14,19 +14,5 @@ services:
       - dashd
       - -masternodeblsprivkey=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
 
-  sentinel:
-    image: ${CORE_SENTINEL_DOCKER_IMAGE:?err}
-    restart: unless-stopped
-    depends_on:
-      - core
-    environment:
-      - DEBUG=false
-      - RPCUSER=${CORE_RPC_USER:?err}
-      - RPCPASSWORD=${CORE_RPC_PASSWORD:?err}
-      - RPCHOST=core
-      - RPCPORT=${CORE_RPC_PORT:?err}
-      - NETWORK=${NETWORK?:err}
-      - SENTINEL_ARGS=-b
-
 volumes:
   core_data:

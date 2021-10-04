@@ -40,7 +40,7 @@ function outputStatusOverviewFactory(
     );
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
-      throw new ServiceIsNotRunningError(config.options.network, 'core');
+      throw new ServiceIsNotRunningError(config.get('network'), 'core');
     }
 
     // Collect core data
@@ -70,7 +70,7 @@ function outputStatusOverviewFactory(
     let masternodeState;
     let masternodeStatus;
     let masternodeEnabledCount;
-    if (config.options.core.masternode.enable === true) {
+    if (config.get('core.masternode.enable')) {
       ({
         result: {
           dmnState: masternodeState,
@@ -90,7 +90,7 @@ function outputStatusOverviewFactory(
     let platformCatchingUp;
     let platformStatus;
 
-    if (config.options.network !== 'mainnet' && config.name !== 'local_seed') {
+    if (config.get('network') !== 'mainnet' && config.name !== 'local_seed') {
       if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
         try {
           ({
@@ -137,9 +137,9 @@ function outputStatusOverviewFactory(
     };
 
     let explorerBlockHeight;
-    if (platformExplorerURLs[config.options.network] !== '') {
+    if (platformExplorerURLs[config.get('network')] !== '') {
       try {
-        const explorerBlockHeightRes = await fetch(`${platformExplorerURLs[config.options.network]}/status`);
+        const explorerBlockHeightRes = await fetch(`${platformExplorerURLs[config.get('network')]}/status`);
         ({
           result: {
             sync_info: {
@@ -175,7 +175,7 @@ function outputStatusOverviewFactory(
       coreStatus = `syncing ${(coreVerificationProgress * 100).toFixed(2)}%`;
     }
 
-    if (config.options.network !== 'mainnet') {
+    if (config.get('network') !== 'mainnet') {
       try {
         ({
           State: {
@@ -196,7 +196,7 @@ function outputStatusOverviewFactory(
 
     // Determine payment queue position
     let paymentQueuePosition;
-    if (config.options.core.masternode.enable === true && masternodeStatus === 'Ready') {
+    if (config.get('core.masternode.enable') && masternodeStatus === 'Ready') {
       paymentQueuePosition = getPaymentQueuePosition(
         masternodeState, masternodeEnabledCount, coreBlocks,
       );
@@ -211,7 +211,7 @@ function outputStatusOverviewFactory(
       coreStatus = chalk.red(coreStatus);
     }
 
-    if (config.options.network !== 'mainnet' && config.name !== 'local_seed') {
+    if (config.get('network') !== 'mainnet' && config.name !== 'local_seed') {
       if (platformStatus === 'running') {
         platformStatus = chalk.green(platformStatus);
       } else if (platformStatus.startsWith('syncing')) {
@@ -231,11 +231,11 @@ function outputStatusOverviewFactory(
     rows.push(['Network', coreChain]);
     rows.push(['Core Version', coreVersion.replace(/\/|\(.*?\)/g, '')]);
     rows.push(['Core Status', coreStatus]);
-    if (config.options.core.masternode.enable === true) {
+    if (config.get('core.masternode.enable')) {
       rows.push(['Masternode Status', (masternodeStatus)]);
     }
 
-    if (config.options.network !== 'mainnet' && config.name !== 'local_seed') {
+    if (config.get('network') !== 'mainnet' && config.name !== 'local_seed') {
       if (coreIsSynced === true
         && platformStatus !== chalk.red('not started')
         && platformStatus !== chalk.red('restarting')) {
@@ -243,7 +243,7 @@ function outputStatusOverviewFactory(
       }
       rows.push(['Platform Status', platformStatus]);
     }
-    if (config.options.core.masternode.enable === true) {
+    if (config.get('core.masternode.enable')) {
       if (masternodeStatus === 'Ready') {
         rows.push(['PoSe Penalty', masternodeState.PoSePenalty]);
         rows.push(['Last paid block', masternodeState.lastPaidHeight]);

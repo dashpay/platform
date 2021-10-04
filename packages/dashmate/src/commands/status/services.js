@@ -21,10 +21,15 @@ class ServicesStatusCommand extends ConfigBaseCommand {
   ) {
     const serviceHumanNames = {
       core: 'Core',
-      sentinel: 'Sentinel',
     };
 
-    if (config.options.network !== 'mainnet') {
+    if (config.get('core.masternode.enable')) {
+      Object.assign(serviceHumanNames, {
+        sentinel: 'Sentinel',
+      });
+    }
+
+    if (config.get('network') !== 'mainnet') {
       Object.assign(serviceHumanNames, {
         drive_mongodb: 'Drive MongoDB',
         drive_abci: 'Drive ABCI',
