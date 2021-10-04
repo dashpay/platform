@@ -136,6 +136,8 @@ function setupLocalPresetTaskFactory(
                   // Setup logs
                   if (ctx.debugLogs) {
                     config.set('platform.drive.abci.log.stdout.level', 'trace');
+                    config.set('platform.drive.abci.log.prettyFile.level', 'trace');
+
                     config.set('platform.drive.tenderdash.log.level', {
                       '*': 'debug',
                     });
