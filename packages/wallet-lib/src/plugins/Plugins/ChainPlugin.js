@@ -41,10 +41,16 @@ class ChainPlugin extends StandardPlugin {
         this.parentEvents.emit(EVENTS.BLOCK, { type: EVENTS.BLOCK, payload: block });
         // We do not announce BLOCKHEADER as this is done by Storage
         await self.storage.importBlockHeader(block.header);
+      });
+      self.transport.on(EVENTS.BLOCKHEIGHT_CHANGED, async (ev) => {
+        const { payload: blockheight } = ev;
 
-        const blockHeight = await self.transport.getBestBlockHeight();
-        this.storage.store.chains[network.toString()].blockHeight = blockHeight;
-        logger.debug(`ChainPlugin - setting chain blockheight ${blockHeight}`);
+        this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, {
+          type: EVENTS.BLOCKHEIGHT_CHANGED, payload: blockheight,
+        });
+
+        this.storage.store.chains[network.toString()].blockHeight = blockheight;
+        logger.debug(`ChainPlugin - setting chain blockheight ${blockheight}`);
       });
       await self.transport.subscribeToBlocks();
     }

@@ -1,9 +1,11 @@
 const logger = require('../../logger');
-const { BIP44_ADDRESS_GAP, WALLET_TYPES } = require('../../CONSTANTS');
+const { BIP44_ADDRESS_GAP } = require('../../CONSTANTS');
 const is = require('../is');
 
 const getMissingIndexes = require('./getMissingIndexes');
 const isContiguousPath = require('./isContiguousPath');
+
+const sortByIndex = (a, b) => parseInt(a.split('/')[5], 10) - parseInt(b.split('/')[5], 10);
 
 /**
  * This method ensures there will always be enough local addresses up to gap limit as per BIP44
@@ -16,70 +18,94 @@ const isContiguousPath = require('./isContiguousPath');
 function ensureAccountAddressesToGapLimit(walletStore, walletType, accountIndex, getAddress) {
   let generated = 0;
 
-  const externalAddresses = walletStore.addresses.external;
-  let externalAddressesPaths = Object.keys(externalAddresses);
+  const { addresses } = walletStore;
 
-  let prevPath;
+  const addressesPaths = {
+    external: Object.keys(addresses.external),
+    internal: Object.keys(addresses.internal),
+  };
 
-  // Ensure that all our above external paths are contiguous
-  const missingIndexes = getMissingIndexes(externalAddressesPaths);
-
+  // We need to ensure that all our paths are contiguous, so we first fetch the
+  // missing indexes
+  const missingIndexes = {
+    external: getMissingIndexes(addressesPaths.external),
+    internal: getMissingIndexes(addressesPaths.internal),
+  };
   // Gets missing addresses and adds them to the storage
   // Please note that getAddress adds new addresses to storage, which it probably shouldn't
-  missingIndexes.forEach((index) => {
-    getAddress(index, 'external');
-    if (walletType === WALLET_TYPES.HDWALLET) {
-      getAddress(index, 'internal');
-    }
-  });
+  Object.entries(missingIndexes)
+    .forEach(([addressesType, indexes]) => {
+      indexes.forEach((index) => {
+        getAddress(index, addressesType);
+      });
+    });
 
-  const sortByIndex = (a, b) => parseInt(a.split('/')[5], 10) - parseInt(b.split('/')[5], 10);
-  externalAddressesPaths = Object
-    .keys(externalAddresses)
-    .filter((el) => parseInt(el.split('/')[3], 10) === accountIndex)
-    .sort(sortByIndex);
+  Object.entries(addressesPaths)
+    .forEach(([type, paths]) => {
+      addressesPaths[type] = paths
+        .filter((el) => parseInt(el.split('/')[3], 10) === accountIndex)
+        .sort(sortByIndex);
+    });
 
-  let lastUsedIndex = 0;
-  let lastGeneratedIndex = 0;
+  const lastUsedIndexes = {
+    external: -1,
+    internal: -1,
+  };
+  const lastGeneratedIndexes = {
+    external: -1,
+    internal: -1,
+  };
 
   // Scan already generated addresses and count how many are unused
-  externalAddressesPaths.forEach((path) => {
-    const address = externalAddresses[path];
+  Object.entries(addressesPaths)
+    .forEach(([type, paths]) => {
+      let prevPath;
+      paths.forEach((path) => {
+        const address = addresses[type][path];
+        if (!isContiguousPath(path, prevPath)) {
+          throw new Error('Addresses are expected to be contiguous');
+        }
 
-    if (!isContiguousPath(path, prevPath)) {
-      throw new Error('Addresses are expected to be contiguous');
-    }
+        if (address.used) {
+          lastUsedIndexes[type] = address.index;
+        }
 
-    if (address.used) {
-      lastUsedIndex = address.index;
-    }
+        lastGeneratedIndexes[type] = address.index;
+        prevPath = path;
+      });
+    });
 
-    lastGeneratedIndex = address.index;
-    prevPath = path;
-  });
+  const gapBetweenLastUsedAndLastGenerated = {
+    external: lastGeneratedIndexes.external - lastUsedIndexes.external,
+    internal: lastGeneratedIndexes.internal - lastUsedIndexes.internal,
+  };
+  const addressesToGenerate = {
+    external: BIP44_ADDRESS_GAP - gapBetweenLastUsedAndLastGenerated.external,
+    internal: BIP44_ADDRESS_GAP - gapBetweenLastUsedAndLastGenerated.internal,
+  };
 
-  const gapBetweenLastUsedAndLastGenerated = lastGeneratedIndex - lastUsedIndex;
-  const addressToGenerate = BIP44_ADDRESS_GAP - gapBetweenLastUsedAndLastGenerated;
-
-  if (addressToGenerate > 0) {
-    const lastElemPath = externalAddressesPaths[externalAddressesPaths.length - 1];
-    const lastElem = externalAddresses[lastElemPath];
-
-    const startingIndex = (is.def(lastElem)) ? lastElem.index + 1 : 0;
-    const lastIndex = addressToGenerate + startingIndex - 1;
-
-    if (lastIndex > startingIndex) {
-      for (let i = startingIndex; i <= lastIndex; i += 1) {
-        getAddress(i, 'external');
-        generated += 1;
-        if (walletType === WALLET_TYPES.HDWALLET) {
-          getAddress(i, 'internal');
+  Object.entries(addressesToGenerate)
+    .forEach(([typeToGenerate, numberToGenerate]) => {
+      if (numberToGenerate > 0) {
+        const pathLength = addressesPaths[typeToGenerate].length;
+        const lastElemPath = addressesPaths[typeToGenerate][pathLength - 1];
+        const lastElem = addresses[typeToGenerate][lastElemPath];
+        const lastExistingIndex = (is.def(lastElem)) ? lastElem.index : -1;
+        const lastIndexToGenerate = lastExistingIndex + numberToGenerate;
+        if (lastIndexToGenerate > lastExistingIndex) {
+          for (
+            let index = lastExistingIndex + 1;
+            index <= lastIndexToGenerate;
+            index += 1) {
+            getAddress(index, typeToGenerate);
+            generated += 1;
+          }
         }
       }
-    }
-  }
-  logger.silly(`BIP44 - ensured addresses to gap limit - generated: ${generated}`);
+    });
 
+  logger.silly(`BIP44 - ensured addresses to gap limit - generated: ${generated}`);
   return generated;
 }
+
 module.exports = ensureAccountAddressesToGapLimit;

@@ -76,3 +76,36 @@ Due to the risk from running a plugin that have access to your keychain, these a
 One would need to initialize a Wallet with the option `allowSensitiveOperations` set to `true`.  
 
 You can see the list of thoses [sensitive functions and properties](https://github.com/dashevo/wallet-lib/blob/master/src/CONSTANTS.js#L67), anything under `UNSAFE_*` will require this option to be set to true in order to be use from within a plugin.  
+
+
+## Accessing events 
+
+From a plugin, you have the ability to listen to account's emitted events. 
+
+```js
+const { EVENT, plugins: { Worker } } = require('@dashevo/wallet-lib');
+class NewBlockWorker extends Worker {
+  constructor(options) {
+    super({
+      name: 'NewBlockWorker',
+      executeOnStart: true,
+      firstExecutionRequired: true,
+      workerIntervalTime: 60 * 1000,
+      gapLimit: 10,
+      dependencies: [
+        'storage',
+        'transport',
+        'walletId',
+        'identities',
+      ],
+      ...options,
+    });
+  }
+
+  async onStart() {
+    this.parentEvents.on(EVENT.BLOCKHEIGHT_CHANGED, ({payload: blockHeight}) => {
+      // on new blockheight do something.
+    });
+  }
+}
+```
