@@ -253,4 +253,13 @@ module.exports = {
 
     return configFile;
   },
+  '0.21.0': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        // Add median time to config
+        config.core.miner.mediantime = systemConfigs.base.core.miner.mediantime;
+      });
+
+    return configFile;
+  },
 };

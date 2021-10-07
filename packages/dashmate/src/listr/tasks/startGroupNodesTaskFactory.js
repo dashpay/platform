@@ -81,7 +81,7 @@ function startGroupNodesTaskFactory(
         },
       },
       {
-        title: 'Adjust Core mock time',
+        title: 'Mock core node time',
         enabled: () => minerConfig && minerConfig.get('network') === NETWORK_LOCAL,
         task: async () => {
           // TASK RATIONALE:

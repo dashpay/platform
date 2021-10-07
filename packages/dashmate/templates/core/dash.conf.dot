@@ -46,6 +46,7 @@ regtest=1
 [regtest]
 sporkaddr={{=it.core.spork.address}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
+{{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
 {{?? it.network === 'devnet'}}

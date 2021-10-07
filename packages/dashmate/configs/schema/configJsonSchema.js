@@ -178,11 +178,15 @@ module.exports = {
               type: 'string',
               pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
             },
+            mediantime: {
+              type: ['integer', 'null'],
+              minimum: 0,
+            },
             address: {
               type: ['string', 'null'],
             },
           },
-          required: ['enable', 'interval', 'address'],
+          required: ['enable', 'interval', 'mediantime', 'address'],
           additionalProperties: false,
         },
         sentinel: {

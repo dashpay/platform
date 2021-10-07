@@ -34,6 +34,7 @@ module.exports = {
     miner: {
       enable: false,
       interval: '2.5m',
+      mediantime: null,
       address: null,
     },
     sentinel: {
