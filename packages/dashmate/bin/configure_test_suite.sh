@@ -25,10 +25,11 @@ echo "Mint 100 Dash to faucet address"
 
 $DASHMATE_BIN group:stop
 
-$DASHMATE_BIN wallet:mint --verbose --config=local_seed 100 | tee ${PATH_TO_PROJECT_ROOT}/mint.log
+MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/mint.log
 
-FAUCET_ADDRESS=$(grep -m 1 "Address:" mint.log | awk '{printf $3}')
-FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" mint.log | awk '{printf $4}')
+$DASHMATE_BIN wallet:mint --verbose --config=local_seed 100 | tee "${MINT_FILE_PATH}"
+FAUCET_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
+FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 
 TEST_ENV_FILE_PATH=${TEST_SUITE_PATH}/.env
 rm ${TEST_ENV_FILE_PATH}
