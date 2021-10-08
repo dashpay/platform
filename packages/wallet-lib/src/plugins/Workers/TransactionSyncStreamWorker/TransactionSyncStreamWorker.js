@@ -166,11 +166,11 @@ class TransactionSyncStreamWorker extends Worker {
     }
     this.syncIncomingTransactions = false;
 
-    if (this.stream) {
-      // Wrapping `cancel` in `setImmediate` due to bug with double-free
-      // explained here (https://github.com/grpc/grpc-node/issues/1652)
-      // and here (https://github.com/nodejs/node/issues/38964)
-      return new Promise((resolve) => setImmediate(() => {
+    // Wrapping `cancel` in `setImmediate` due to bug with double-free
+    // explained here (https://github.com/grpc/grpc-node/issues/1652)
+    // and here (https://github.com/nodejs/node/issues/38964)
+    return new Promise((resolve) => setImmediate(() => {
+      if (this.stream) {
         this.stream.cancel();
         // When calling stream.cancel(), the stream will emit 'error' event
         // with the code 'CANCELLED'.
@@ -181,11 +181,9 @@ class TransactionSyncStreamWorker extends Worker {
         // that the old stream object is present or not. When it is set to null, it won't try to
         // reconnect to the stream.
         this.stream = null;
-
-        resolve(true);
-      }));
-    }
-    return true;
+      }
+      resolve(true);
+    }));
   }
 
   setLastSyncedBlockHash(hash) {
