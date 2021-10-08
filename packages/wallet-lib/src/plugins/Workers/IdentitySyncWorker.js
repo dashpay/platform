@@ -13,6 +13,7 @@ class IdentitySyncWorker extends Worker {
       executeOnStart: true,
       firstExecutionRequired: true,
       workerIntervalTime: 60 * 1000,
+      awaitOnInjection: true,
       gapLimit: 10,
       dependencies: [
         'storage',

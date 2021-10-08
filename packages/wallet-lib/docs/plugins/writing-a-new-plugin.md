@@ -77,6 +77,35 @@ One would need to initialize a Wallet with the option `allowSensitiveOperations`
 
 You can see the list of thoses [sensitive functions and properties](https://github.com/dashevo/wallet-lib/blob/master/src/CONSTANTS.js#L67), anything under `UNSAFE_*` will require this option to be set to true in order to be use from within a plugin.  
 
+## Injection order
+
+While system plugins will by default be first injected in the system, in the case of a need for specific injection order.  
+Plugin can be sorted in such a way that in got injected before or after another set of plugins.  
+For this, use injectionOrder properties before and/or after.  
+
+
+In below example, this worker will be dependent on the methods getUTXOS to be internally available, and will be expected to be injected before TransactionSyncStreamWorker and after ChainPlugin.  
+
+```js 
+ class WithInjectBeforeDependenciesWorker extends Worker {
+  constructor() {
+    super({
+      name: 'withInjectBeforeDependenciesWorker',
+      dependencies: [
+        'getUTXOS',
+      ],
+      injectionOrder: {
+        after: [
+          'ChainPlugin'
+        ],
+        before: [
+          'TransactionSyncStreamWorker'
+        ]
+      }
+    });
+  }
+ }
+  ```
 
 ## Accessing events 
 

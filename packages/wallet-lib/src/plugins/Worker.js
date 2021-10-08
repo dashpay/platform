@@ -18,6 +18,10 @@ class Worker extends StandardPlugin {
     this.workerPass = 0;
     this.isWorkerRunning = false;
 
+    this.awaitOnInjection = _.has(opts, 'awaitOnInjection')
+      ? opts.awaitOnInjection
+      : false;
+
     this.firstExecutionRequired = _.has(opts, 'firstExecutionRequired')
       ? opts.firstExecutionRequired
       : defaultOpts.firstExecutionRequired;

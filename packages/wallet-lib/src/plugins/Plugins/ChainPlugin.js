@@ -14,6 +14,7 @@ class ChainPlugin extends StandardPlugin {
       name: 'ChainPlugin',
       executeOnStart: defaultOpts.executeOnStart,
       firstExecutionRequired: defaultOpts.firstExecutionRequired,
+      awaitOnInjection: true,
       dependencies: [
         'storage',
         'transport',

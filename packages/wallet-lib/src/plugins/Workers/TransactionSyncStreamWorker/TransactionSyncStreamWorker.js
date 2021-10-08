@@ -12,6 +12,7 @@ class TransactionSyncStreamWorker extends Worker {
       name: 'TransactionSyncStreamWorker',
       executeOnStart: true,
       firstExecutionRequired: true,
+      awaitOnInjection: true,
       workerIntervalTime: 0,
       gapLimit: 10,
       dependencies: [
