@@ -1,11 +1,5 @@
 # Examples
 
-### Table of Contents
-
-- [Offline / Cold-wallet usage](#offline-cold-wallet-usage)
-- [Server usage](#server-usage)
-- [Client usage](#client-usage)
-
 ## Offline cold-wallet usage : 
 
 The wallet can handle a lack of connectivity. This could allow the use of the wallet library in an offline way.   

@@ -30,7 +30,7 @@ const coinSelection = coinSelection(utxosList, outputsList);
 const selectedUTXO = coinSelection(utxosList, outputsList);
 ```
 
-## Implements your own algorithm
+## Implement your own algorithm
 
 By creating a simple function algorithm that you pass to the createTransaction parameter, you can provide your own algorithm that will be used to the coinSelection.   
 
