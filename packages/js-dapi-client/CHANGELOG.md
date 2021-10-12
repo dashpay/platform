@@ -1,3 +1,20 @@
+# [0.21.0](https://github.com/dashevo/dapi-client/compare/v0.20.0...v0.21.0) (2021-10-12)
+
+
+### Features
+
+* improve error handling ([#268](https://github.com/dashevo/dapi-client/issues/268))
+* convenient response errors ([#272](https://github.com/dashevo/dapi-client/issues/272), [#280](https://github.com/dashevo/dapi-client/issues/280), [#282](https://github.com/dashevo/dapi-client/issues/282), [#284](https://github.com/dashevo/dapi-client/issues/284), [#286](https://github.com/dashevo/dapi-client/issues/286))
+* implement getConsensusParams method ([#261](https://github.com/dashevo/dapi-client/issues/261))
+* support returning of a multiproof ([#257](https://github.com/dashevo/dapi-client/issues/257))
+
+
+### BREAKING CHANGES
+
+* `getBlockByHash` and `getBlockByHeight` will throw `NotFoundError` instead of `null` result
+
+
+
 ## [0.20.1](https://github.com/dashevo/dapi-client/compare/v0.20.0...v0.20.1) (2021-05-26)
 
 
