@@ -1,4 +1,4 @@
-# [0.21.0](https://github.com/dashevo/js-dpp/compare/v0.20.0...v0.21.0) (2021-10-12)
+# [0.21.0](https://github.com/dashevo/js-dpp/compare/v0.20.1...v0.21.0) (2021-10-12)
 
 
 ### Features
@@ -24,6 +24,15 @@
 
 
 
+## [0.20.1](https://github.com/dashevo/js-dpp/compare/v0.20.0...v0.20.1) (2021-07-14)
+
+
+### Features
+
+* remove verify SML flag triggers ([#324](https://github.com/dashevo/js-dpp/issues/324))
+
+
+
 # [0.20.0](https://github.com/dashevo/js-dpp/compare/v0.19.2...v0.20.0) (2021-07-08)
 
 
@@ -45,6 +54,7 @@
 * `definitions` is now defined using `$defs` keyword
 * JSON Schema strict validation is enabled. Previous contract schemas invalid in case they are not respecting strict mode constraints (reference [this link](https://ajv.js.org/strict-mode.html) for more information)
 * usage of `if`, `then`, `else`, `allOf`, `anyOf`, `oneOf`, `patternProperties` in document properties is prohibited
+* `.initialize()` must be called before using DashPlatformProtocol
 
 
 
