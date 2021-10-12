@@ -80,14 +80,9 @@ class GetTransactionResponse {
       throw new InvalidResponseError('Transaction is not defined');
     }
 
-    const blockHashBinaryArray = proto.getBlockHash();
-    if (!blockHashBinaryArray) {
-      throw new InvalidResponseError('BlockHash is not defined');
-    }
-
     return new GetTransactionResponse({
       transaction: Buffer.from(transactionBinaryArray),
-      blockHash: Buffer.from(blockHashBinaryArray),
+      blockHash: Buffer.from(proto.getBlockHash()),
       height: proto.getHeight(),
       confirmations: proto.getConfirmations(),
       isInstantLocked: proto.getIsInstantLocked(),

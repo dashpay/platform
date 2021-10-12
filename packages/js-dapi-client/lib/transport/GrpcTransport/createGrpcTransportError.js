@@ -47,6 +47,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
   // Extract error code and data
   let data = {};
   let { code } = grpcError;
+  const message = grpcError.details || grpcError.message;
 
   if (grpcError.metadata) {
     let encodedData;
@@ -84,7 +85,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
   if (ErrorClass) {
     return new ErrorClass(
-      grpcError.message,
+      message,
       data,
       dapiAddress,
     );
@@ -94,7 +95,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
   if (INVALID_REQUEST_CODES.includes(code)) {
     return new InvalidRequestError(
       code,
-      grpcError.message,
+      message,
       data,
       dapiAddress,
     );
@@ -110,7 +111,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
     return new InternalServerError(
       code,
-      grpcError.message,
+      message,
       data,
       dapiAddress,
     );
@@ -120,7 +121,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
   if (SERVER_ERROR_CODES.includes(code)) {
     return new ServerError(
       code,
-      grpcError.message,
+      message,
       data,
       dapiAddress,
     );
@@ -137,7 +138,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
   return new ResponseError(
     code,
-    grpcError.message,
+    message,
     data,
     dapiAddress,
   );

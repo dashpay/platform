@@ -91,16 +91,4 @@ describe('GetTransactionResponse', () => {
       expect(e).to.be.an.instanceOf(InvalidResponseError);
     }
   });
-
-  it('should throw InvalidResponseError if BlockHash is not defined', () => {
-    proto.setBlockHash(undefined);
-
-    try {
-      GetTransactionResponse.createFromProto(proto);
-
-      expect.fail('should throw InvalidResponseError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidResponseError);
-    }
-  });
 });
