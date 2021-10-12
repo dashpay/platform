@@ -1,5 +1,5 @@
 module.exports = {
-  latestVersion: 2,
+  latestVersion: 1,
   // Even if we bumping protocol version, previous versions of entity structures
   // can be still compatible, that allow to not update clients so often.
   //
@@ -7,6 +7,5 @@ module.exports = {
   // [protocolVersion]: [minimumCompatibleProtocolVersions]
   compatibility: {
     1: 1,
-    2: 1,
   },
 };
