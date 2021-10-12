@@ -1,3 +1,23 @@
+# [0.21.0](https://github.com/dashevo/dapi-grpc/compare/v0.20.0...v0.21.0) (2021-10-12)
+
+
+### Features
+
+* support returning of a multiproof ([#127](https://github.com/dashevo/dapi-grpc/issues/127))
+* implement getConsensusParams method ([#126](https://github.com/dashevo/dapi-grpc/issues/126), [#130](https://github.com/dashevo/dapi-grpc/issues/130), [#132](https://github.com/dashevo/dapi-grpc/issues/132), [#134](https://github.com/dashevo/dapi-grpc/issues/134))
+
+
+### Bug Fixes
+
+* height type was uint32 instead of int64 ([#123](https://github.com/dashevo/dapi-grpc/issues/123))
+
+
+### BREAKING CHANGES
+
+* `getStoreTreeProof` now returns `StoreTreeProof` message instead of `Buffer`
+
+
+
 # [0.20.0](https://github.com/dashevo/dapi-grpc/compare/v0.19.0...v0.20.0) (2021-07-08)
 
 
