@@ -16,7 +16,7 @@ const { BLOOM_FALSE_POSITIVE_RATE } = require('../../../CONSTANTS');
  * @return {Promise<void>}
  */
 
-module.exports = async function subscribeToTransactionWithProofs(
+module.exports = async function subscribeToTransactionsWithProofs(
   addressList,
   opts = { fromBlockHeight: 1, count: 0 },
 ) {

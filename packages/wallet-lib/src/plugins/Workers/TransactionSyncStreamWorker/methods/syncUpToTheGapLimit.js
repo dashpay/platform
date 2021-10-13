@@ -41,7 +41,7 @@ module.exports = async function syncUpToTheGapLimit({
   self.network = network;
   self.hasReachedGapLimit = false;
   // The order is important, however, some async calls are being performed
-  // in order to additionnaly fetch metadata for each valid tx chunks.
+  // in order to additionally fetch metadata for each valid tx chunks.
   // We therefore need to temporarily store chunks for handling.
   self.chunksQueue = new Queue();
 
