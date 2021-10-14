@@ -1,3 +1,21 @@
+# [0.21.0](https://github.com/dashevo/js-drive/compare/v0.20.0...v0.21.0) (2021-10-14)
+
+
+### Features
+
+* support higher protocol version ([#571](https://github.com/dashevo/js-drive/issues/571))
+* set protocol version on `begin block` ([#558](https://github.com/dashevo/js-drive/issues/558))
+* comprehensive error codes ([#564](https://github.com/dashevo/js-drive/issues/564), [#572](https://github.com/dashevo/js-drive/issues/572))
+* multiproof for the identity non inclusion proof root tree ([#560](https://github.com/dashevo/js-drive/issues/560))
+
+
+### Bug Fixes
+
+* consensus logger wasn't set on error ([#567](https://github.com/dashevo/js-drive/issues/567))
+* previousRootTree not rebuilt on commit, resulting in a wrong proof ([#563](https://github.com/dashevo/js-drive/issues/563))
+
+
+
 # [0.20.0](https://github.com/dashevo/js-drive/compare/v0.19.3...v0.20.0) (2021-07-22)
 
 
