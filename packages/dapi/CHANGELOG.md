@@ -1,3 +1,19 @@
+# [0.21.0](https://github.com/dashevo/dapi/compare/v0.20.0...v0.21.0) (2021-10-14)
+
+
+### Features
+
+* `getConsensusParams` endpoint ([#393](https://github.com/dashevo/dapi/issues/393))
+* support multiple store tree proofs in responses ([#398](https://github.com/dashevo/dapi/issues/398))
+* comprehensive error codes ([#394](https://github.com/dashevo/dapi/issues/394), [#397](https://github.com/dashevo/dapi/issues/397), [#405](https://github.com/dashevo/dapi/issues/405), [#406](https://github.com/dashevo/dapi/issues/406), [67c4da3](https://github.com/dashevo/dapi/commit/67c4da395750af774e68f9c75d3af4c6b2fd0643))
+
+
+### BREAKING CHANGES
+
+* DAPI responds with new error codes
+
+
+
 # [0.20.0](https://github.com/dashevo/dapi/compare/v0.19.0...v0.20.0) (2021-07-22)
 
 
