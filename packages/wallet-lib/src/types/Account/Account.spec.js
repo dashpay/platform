@@ -57,7 +57,6 @@ describe('Account - class', function suite() {
       expect(account).to.be.deep.equal(mockWallet.accounts[0]);
       expect(account.index).to.be.deep.equal(0);
       expect(account.injectDefaultPlugins).to.be.deep.equal(false);
-      expect(account.allowSensitiveOperations).to.be.deep.equal(false);
       expect(account.state.isReady).to.be.deep.equal(true);
       expect(account.type).to.be.deep.equal(undefined);
       expect(account.transactions).to.be.deep.equal({});

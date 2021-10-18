@@ -31,7 +31,6 @@ const defaultOptions = {
   network: 'testnet',
   cacheTx: true,
   cacheBlockHeaders: true,
-  allowSensitiveOperations: false,
   plugins: [],
   injectDefaultPlugins: true,
   debug: false,
@@ -61,7 +60,6 @@ class Account extends EventEmitter {
       isDisconnecting: false,
     };
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
-    this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
     this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
     // if (this.debug) process.env.LOG_LEVEL = 'debug';
 

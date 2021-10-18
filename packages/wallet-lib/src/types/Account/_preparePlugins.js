@@ -1,9 +1,9 @@
 const sortPlugins = require('./_sortPlugins');
 
 const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
-  function reducer(accumulatorPromise, [plugin, allowSensitiveOperation, awaitOnInjection]) {
+  function reducer(accumulatorPromise, [plugin, awaitOnInjection]) {
     return accumulatorPromise
-      .then(() => account.injectPlugin(plugin, allowSensitiveOperation, awaitOnInjection));
+      .then(() => account.injectPlugin(plugin, awaitOnInjection));
   }
 
   return new Promise((resolve, reject) => {

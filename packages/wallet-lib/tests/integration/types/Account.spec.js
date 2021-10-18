@@ -48,7 +48,6 @@ describe('Account', function suite() {
         wallet = new Wallet({
             offlineMode: true,
             plugins: [worker],
-            allowSensitiveOperations: true,
             HDPrivateKey: new HDPrivateKey(testHDKey),
             adapter: storageAdapterMock
         });
@@ -79,7 +78,6 @@ describe('Account', function suite() {
             const restoredWallet = new Wallet({
                 offlineMode: true,
                 plugins: [worker],
-                allowSensitiveOperations: true,
                 HDPrivateKey: new HDPrivateKey(testHDKey),
                 adapter: storageAdapterMock
             });

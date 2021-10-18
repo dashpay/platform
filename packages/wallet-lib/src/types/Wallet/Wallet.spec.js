@@ -25,7 +25,6 @@ describe('Wallet - class', function suite() {
     expect(wallet1.accounts).to.be.deep.equal([]);
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
-    expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.length(10);
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
@@ -52,7 +51,6 @@ describe('Wallet - class', function suite() {
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
-    expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(knifeMnemonic.walletIdTestnet);
 
@@ -79,7 +77,6 @@ describe('Wallet - class', function suite() {
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
-    expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(knifeMnemonic.walletIdTestnet);
     wallet1.storage.on('CONFIGURED', () => {
@@ -97,7 +94,6 @@ describe('Wallet - class', function suite() {
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('HDPublicKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
-    expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(gatherSailMnemonic.testnet.external.walletId);
     wallet1.storage.on('CONFIGURED', () => {
@@ -114,7 +110,6 @@ describe('Wallet - class', function suite() {
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('privateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
-    expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal(cR4t6ePrivateKey.walletIdTestnet);
 
@@ -134,7 +129,6 @@ describe('Wallet - class', function suite() {
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet1.keyChain.type).to.be.deep.equal('publicKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
-    expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet1.walletId).to.be.equal('9f1f6f37f7');
 
@@ -151,7 +145,6 @@ describe('Wallet - class', function suite() {
     expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
     expect(wallet2.keyChain.type).to.be.deep.equal('publicKey');
     expect(wallet2.passphrase).to.be.deep.equal(null);
-    expect(wallet2.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet2.injectDefaultPlugins).to.be.deep.equal(true);
     expect(wallet2.walletId).to.be.equal('9f1f6f37f7');
 

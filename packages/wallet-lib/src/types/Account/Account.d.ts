@@ -24,7 +24,6 @@ export declare class Account {
 
     index: number;
     injectDefaultPlugins?: boolean;
-    allowSensitiveOperations?: boolean;
     debug?: boolean;
     cacheTx?: boolean;
     cacheBlockHeaders?: boolean;
@@ -69,7 +68,7 @@ export declare class Account {
     getUnusedIdentityIndex(): Promise<number>;
     getWorker(workerName: string): Object;
     hasPlugins([Plugin]): {found:Boolean, results:[{name: string}]};
-    injectPlugin(unsafePlugin: Plugins, allowSensitiveOperation?: boolean, awaitOnInjection?: boolean): Promise<any>;
+    injectPlugin(unsafePlugin: Plugins, awaitOnInjection?: boolean): Promise<any>;
     sign(object: Transaction, privateKeys: [PrivateKey], sigType?: number): Transaction;
     waitForInstantLock(transactionHash: string): Promise<InstantLock>;
 }
@@ -92,7 +91,6 @@ export declare namespace Account {
         plugins?: [Plugins];
         cacheBlockHeaders?: boolean;
         cacheTx?: boolean;
-        allowSensitiveOperations?: boolean;
         injectDefaultPlugins?: boolean;
         strategy?: Strategy;
         cache?:{

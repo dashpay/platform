@@ -70,13 +70,6 @@ const wallet = new Wallet({
 });
 ```
 
-## Accessing secure dependencies 
-
-Due to the risk from running a plugin that have access to your keychain, these are, by default, not accessible.  
-One would need to initialize a Wallet with the option `allowSensitiveOperations` set to `true`.  
-
-You can see the list of thoses [sensitive functions and properties](https://github.com/dashevo/wallet-lib/blob/master/src/CONSTANTS.js#L67), anything under `UNSAFE_*` will require this option to be set to true in order to be use from within a plugin.  
-
 ## Injection order
 
 While system plugins will by default be first injected in the system, in the case of a need for specific injection order.  

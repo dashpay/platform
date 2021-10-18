@@ -164,7 +164,6 @@ const userDefinedComplexPluginDependenciesPlugins = {
 
 const baseAccount = {
   walletType: WALLET_TYPES.HDWALLET,
-  allowSensitiveOperations: false
 }
 const accountOnlineWithDefaultPlugins = {
   ...baseAccount,
@@ -192,9 +191,9 @@ describe('Account - _sortPlugins', () => {
       const sortedPluginsOnlineWithDefault = sortPlugins(accountOnlineWithDefaultPlugins);
 
       expect(sortedPluginsOnlineWithDefault).to.deep.equal([
-        [ChainPlugin, true, true],
-        [TransactionSyncStreamWorker, true, true],
-        [IdentitySyncWorker, true, true],
+        [ChainPlugin, true],
+        [TransactionSyncStreamWorker, true],
+        [IdentitySyncWorker, true],
       ])
 
       const sortedPluginsOnlineWithoutDefault = sortPlugins(accountOnlineWithoutDefaultPlugins);
@@ -211,65 +210,65 @@ describe('Account - _sortPlugins', () => {
     it('should handle userDefinedWithoutPluginDependenciesPlugins', async function () {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithoutPluginDependenciesPlugins);
       expect(sortedPlugins).to.deep.equal([
-        [ChainPlugin, true, true],
-        [TransactionSyncStreamWorker, true,true],
-        [IdentitySyncWorker, true,true],
-        [dummyWorker, false, false],
-        [withoutPluginDependenciesWorker, false,false],
+        [ChainPlugin, true],
+        [TransactionSyncStreamWorker, true],
+        [IdentitySyncWorker, true],
+        [dummyWorker, false],
+        [withoutPluginDependenciesWorker, false],
       ]);
     });
     it('should handle userDefinedWithSinglePluginDependenciesPlugins1', async function () {
       const sortedPlugins =  sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSinglePluginDependenciesPlugins1);
       expect(sortedPlugins).to.deep.equal([
-        [ChainPlugin, true, true],
-        [TransactionSyncStreamWorker, true, true],
-        [IdentitySyncWorker, true, true],
-        [withSinglePluginDependenciesWorker, false, false],
-        [dummyWorker, false, false],
+        [ChainPlugin, true],
+        [TransactionSyncStreamWorker, true],
+        [IdentitySyncWorker, true],
+        [withSinglePluginDependenciesWorker, false],
+        [dummyWorker, false],
       ])
     });
     it('should handle userDefinedWithSinglePluginDependenciesPlugins1', async function () {
       const sortedPlugins =  sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSingleInjectBeforePluginDependenciesPlugins1);
       expect(sortedPlugins).to.deep.equal([
-        [ChainPlugin, true, true],
-        [TransactionSyncStreamWorker, true, true],
-        [withSingleInjectBeforePluginDependenciesWorker, false, false],
-        [IdentitySyncWorker, true, true],
-        [dummyWorker, false, false],
+        [ChainPlugin, true],
+        [TransactionSyncStreamWorker, true],
+        [withSingleInjectBeforePluginDependenciesWorker, false],
+        [IdentitySyncWorker, true],
+        [dummyWorker, false],
       ])
     });
 
     it('should handle userDefinedWithSinglePluginDependenciesPlugins2', async function () {
       const sortedPlugins =  sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSinglePluginDependenciesPlugins2);
       expect(sortedPlugins).to.deep.equal([
-        [ChainPlugin, true, true],
-        [withSinglePluginDependenciesWorker2, false, false],
-        [TransactionSyncStreamWorker, true, true],
-        [IdentitySyncWorker, true, true],
-        [dummyWorker, false, false],
+        [ChainPlugin, true],
+        [withSinglePluginDependenciesWorker2, false],
+        [TransactionSyncStreamWorker, true],
+        [IdentitySyncWorker, true],
+        [dummyWorker, false],
       ])
     });
 
     it('should handle withSinglePluginAndSingleInjectBeforeDependenciesWorker', function () {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSinglePluginAndSingleInjectBeforeDependenciesWorker);
       expect(sortedPlugins).to.deep.equal([
-        [ChainPlugin, true, true],
-        [withSinglePluginAndSingleInjectBeforeDependenciesWorker, false, false],
-        [TransactionSyncStreamWorker, true, true],
-        [IdentitySyncWorker, true, true],
-        [dummyWorker, false, false],
+        [ChainPlugin, true],
+        [withSinglePluginAndSingleInjectBeforeDependenciesWorker, false],
+        [TransactionSyncStreamWorker, true],
+        [IdentitySyncWorker, true],
+        [dummyWorker, false],
       ])
     });
 
     it('should handle userDefinedWithMultiplePluginDependenciesPlugins', async function () {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithMultiplePluginDependenciesPlugins);
       expect(sortedPlugins).to.deep.equal([
-        [ChainPlugin, true, true],
-        [withSinglePluginDependenciesWorker2, false, false],
-        [TransactionSyncStreamWorker, true, true],
-        [IdentitySyncWorker, true, true],
-        [withSinglePluginDependenciesWorker, false, false],
-        [dummyWorker, false, false],
+        [ChainPlugin, true],
+        [withSinglePluginDependenciesWorker2, false],
+        [TransactionSyncStreamWorker, true],
+        [IdentitySyncWorker, true],
+        [withSinglePluginDependenciesWorker, false],
+        [dummyWorker, false],
       ]);
     });
     it('should handle userDefinedConflictingDependencies', function () {
@@ -281,12 +280,12 @@ describe('Account - _sortPlugins', () => {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedSimpleDependencyPluginDependenciesPlugins);
 
       expect(sortedPlugins).to.deep.equal([
-        [ChainPlugin, true, true],
-        [pluginWithMultiplePluginDependencies, false, false],
-        [TransactionSyncStreamWorker, true, true],
-        [IdentitySyncWorker, true, true],
-        [withSinglePluginDependenciesWorker, false, false],
-        [dummyWorker, false, false],
+        [ChainPlugin, true],
+        [pluginWithMultiplePluginDependencies, false],
+        [TransactionSyncStreamWorker, true],
+        [IdentitySyncWorker, true],
+        [withSinglePluginDependenciesWorker, false],
+        [dummyWorker, false],
       ])
     });
 

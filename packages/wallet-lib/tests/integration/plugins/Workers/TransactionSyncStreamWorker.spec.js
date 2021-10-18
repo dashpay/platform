@@ -53,7 +53,6 @@ describe('TransactionSyncStreamWorker', function suite() {
     wallet = new Wallet({
       offlineMode: true,
       plugins: [worker],
-      allowSensitiveOperations: true,
       HDPrivateKey: new HDPrivateKey(testHDKey),
     });
 

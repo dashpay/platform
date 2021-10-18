@@ -14,7 +14,6 @@ const defaultOptions = {
   plugins: [],
   passphrase: null,
   injectDefaultPlugins: true,
-  allowSensitiveOperations: false,
   unsafeOptions: {},
   waitForInstantLockTimeout: 60000,
 };
@@ -64,7 +63,7 @@ class Wallet extends EventEmitter {
     this.passphrase = _.has(opts, 'passphrase') ? opts.passphrase : defaultOptions.passphrase;
     this.offlineMode = _.has(opts, 'offlineMode') ? opts.offlineMode : defaultOptions.offlineMode;
     this.debug = _.has(opts, 'debug') ? opts.debug : defaultOptions.debug;
-    this.allowSensitiveOperations = _.has(opts, 'allowSensitiveOperations') ? opts.allowSensitiveOperations : defaultOptions.allowSensitiveOperations;
+
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.unsafeOptions = _.has(opts, 'unsafeOptions') ? opts.unsafeOptions : defaultOptions.unsafeOptions;
     this.waitForInstantLockTimeout = _.has(opts, 'waitForInstantLockTimeout') ? opts.waitForInstantLockTimeout : defaultOptions.waitForInstantLockTimeout;
