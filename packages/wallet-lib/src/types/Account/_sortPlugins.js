@@ -19,7 +19,7 @@ const initPlugin = (UnsafePlugin) => {
  * @param userUnsafePlugins
  * @returns {*[]}
  */
-const sortUserPlugins = (defaultSortedPlugins, userUnsafePlugins) => {
+const sortUserPlugins = (defaultSortedPlugins, userUnsafePlugins, allowSensitiveOperations) => {
   const sortedPlugins = [];
   const initializedSortedPlugins = [];
 
@@ -106,7 +106,7 @@ const sortUserPlugins = (defaultSortedPlugins, userUnsafePlugins) => {
     sortedPlugins.splice(
       injectionIndex,
       0,
-      [UnsafePlugin, awaitOnInjection],
+      [UnsafePlugin, allowSensitiveOperations, awaitOnInjection],
     );
   });
   initializedSortedPlugins.forEach((initializedSortedPlugin, i) => {
@@ -127,14 +127,14 @@ const sortPlugins = (account, userUnsafePlugins) => {
   // eslint-disable-next-line no-async-promise-executor
   if (account.injectDefaultPlugins) {
     if (!account.offlineMode) {
-      plugins.push([ChainPlugin, true]);
-      plugins.push([TransactionSyncStreamWorker, true]);
+      plugins.push([ChainPlugin, true, true]);
+      plugins.push([TransactionSyncStreamWorker, true, true]);
 
       if (account.walletType === WALLET_TYPES.HDWALLET) {
-        plugins.push([IdentitySyncWorker, true]);
+        plugins.push([IdentitySyncWorker, true, true]);
       }
     }
   }
-  return sortUserPlugins(plugins, userUnsafePlugins);
+  return sortUserPlugins(plugins, userUnsafePlugins, account.allowSensitiveOperations);
 };
 module.exports = sortPlugins;

@@ -2,6 +2,7 @@ const CreateTransactionError = require('./CreateTransactionError');
 const CoinSelectionUnsufficientUTXOS = require('./CoinSelectionUnsufficientUTXOS');
 const InjectionErrorCannotInject = require('./InjectionErrorCannotInject');
 const InjectionErrorCannotInjectUnknownDependency = require('./InjectionErrorCannotInjectUnknownDependency');
+const InjectionToPluginUnallowed = require('./InjectionToPluginUnallowed');
 
 const PluginFailedOnStart = require('./PluginFailedOnStart');
 const WorkerFailedOnStart = require('./WorkerFailedOnStart');
@@ -36,6 +37,7 @@ module.exports = {
   CoinSelectionUnsufficientUTXOS,
   InjectionErrorCannotInject,
   InjectionErrorCannotInjectUnknownDependency,
+  InjectionToPluginUnallowed,
   InvalidAddress,
   InvalidAddressObject,
   InvalidOutput,

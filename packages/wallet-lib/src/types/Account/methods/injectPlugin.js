@@ -8,11 +8,13 @@ const logger = require('../../../logger');
 /**
  * Will try to inject a given plugin. If needed, it will construct the object first (new).
  * @param {Plugin} UnsafePlugin - Either a child object, or it's parent class to inject
+ * @param {Boolean} [allowSensitiveOperations=false] - forcing injection discarding unsafeOp checks.
  * @param {Boolean} [awaitOnInjection=true] - When true, wait for onInjected resolve first
  * @return {Promise<*>} plugin - instance of the plugin
  */
 module.exports = async function injectPlugin(
   UnsafePlugin,
+  allowSensitiveOperations = false,
   awaitOnInjection = true,
 ) {
   // TODO : Only called internally, it might be worth to remove public access to it.
@@ -59,9 +61,9 @@ module.exports = async function injectPlugin(
       const injectedPlugins = Object.keys(this.plugins.standard).map((key) => key.toLowerCase());
       deps.forEach((dependencyName) => {
         if (_.has(self, dependencyName)) {
-          plugin.inject(dependencyName, self[dependencyName]);
+          plugin.inject(dependencyName, self[dependencyName], allowSensitiveOperations);
         } else if (typeof self[dependencyName] === 'function') {
-          plugin.inject(dependencyName, self[dependencyName].bind(self));
+          plugin.inject(dependencyName, self[dependencyName].bind(self), allowSensitiveOperations);
         } else {
           const loweredDependencyName = dependencyName.toLowerCase();
           if (injectedPlugins.includes(loweredDependencyName)) {

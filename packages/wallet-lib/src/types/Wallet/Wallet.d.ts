@@ -6,6 +6,7 @@ import { Transport } from "../../transport/Transport";
 
 export declare class Wallet {
     offlineMode: boolean;
+    allowSensitiveOperations: boolean;
     injectDefaultPlugins: boolean;
     plugins: [Plugins];
     passphrase?: string;
@@ -52,6 +53,7 @@ export declare namespace Wallet {
         plugins?: undefined[]|[Plugins];
         passphrase?: string|null;
         injectDefaultPlugins?: boolean;
+        allowSensitiveOperations?: boolean;
         mnemonic?: Mnemonic | string | null;
         seed?: Mnemonic | string;
         privateKey?: PrivateKey | string;

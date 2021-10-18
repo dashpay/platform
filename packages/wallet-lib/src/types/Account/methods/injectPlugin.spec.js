@@ -21,6 +21,10 @@ describe('Account - injectPlugin', function suite() {
     on: emitter.on,
     emit: emitter.emit,
   }
+  it('should prevent sensible access', async function () {
+    const expectedException1 = 'Injection of plugin : storage Unallowed';
+    await expectThrowsAsync(async () => await injectPlugin.call(mockedSelf, WorkingWorker), expectedException1);
+  });
   it('should work', function (done) {
     // Time of exec is 10000 ms
     injectPlugin.call(mockedSelf, WorkingWorker, true).then(() => {
