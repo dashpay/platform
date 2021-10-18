@@ -77,16 +77,27 @@ class Worker extends StandardPlugin {
     }
   }
 
-  async stopWorker(reason = null) {
-    let payloadResult = reason;
+  /**
+   * @param {Object} [options]
+   * @param {Boolean} [options.force=false]
+   * @param {Boolean} [options.reason]
+   * @returns {Promise<void>}
+   */
+  async stopWorker(options = {}) {
+    let payloadResult = options.reason;
+
     clearInterval(this.worker);
+
     this.worker = null;
     this.workerPass = 0;
     this.isWorkerRunning = false;
+
     const eventType = `WORKER/${this.name.toUpperCase()}/STOPPED`;
+
     if (this.onStop) {
-      payloadResult = await this.onStop();
+      payloadResult = await this.onStop(options);
     }
+
     this.state.started = false;
     logger.debug(JSON.stringify({ eventType, result: payloadResult }));
     this.parentEvents.emit(eventType, { type: eventType, payload: payloadResult });
@@ -107,7 +118,10 @@ class Worker extends StandardPlugin {
       try {
         payloadResult = await this.execute();
       } catch (e) {
-        await this.stopWorker(e.message);
+        await this.stopWorker({
+          reason: e.message,
+        });
+
         this.emit('error', e, {
           type: 'plugin',
           pluginType: 'worker',

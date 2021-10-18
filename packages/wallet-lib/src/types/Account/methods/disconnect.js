@@ -15,7 +15,7 @@ module.exports = async function disconnect() {
     // eslint-disable-next-line no-restricted-syntax
     for (const key of workersKey) {
       // eslint-disable-next-line no-await-in-loop
-      await this.plugins.workers[key].stopWorker();
+      await this.plugins.workers[key].stopWorker({ force: true });
     }
   }
   if (this.storage) {

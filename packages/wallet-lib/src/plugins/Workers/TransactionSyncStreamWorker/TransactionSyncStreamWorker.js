@@ -159,15 +159,26 @@ class TransactionSyncStreamWorker extends Worker {
     this.incomingSyncPromise = this.startIncomingSync();
   }
 
-  async onStop() {
-    // Sync, will require transaction and their blockHeader to be fetched before resolving.
-    // As await onStop() is a way to wait for execution before continuing,
-    // this ensure onStop will properly let the plugin to warn about all
-    // completion of pending request.
-    if (Object.keys(this.pendingRequest).length !== 0) {
-      await sleep(200);
-      return this.onStop();
+  /**
+   * @param {Object} [options]
+   * @param {Boolean} [options.force=false]
+   * @param {Boolean} [options.reason]
+   *
+   * @returns {Promise<boolean>}
+   */
+  async onStop(options = {}) {
+    if (!options.force) {
+      // Sync, will require transaction and their blockHeader to be fetched before resolving.
+      // As await onStop() is a way to wait for execution before continuing,
+      // this ensure onStop will properly let the plugin to warn about all
+      // completion of pending request.
+      if (Object.keys(this.pendingRequest).length !== 0) {
+        await sleep(200);
+
+        return this.onStop();
+      }
     }
+
     this.syncIncomingTransactions = false;
 
     if (isBrowser()) {
