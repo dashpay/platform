@@ -10,6 +10,10 @@ class AbstractTransport extends EventEmitter {
   constructor() {
     super();
 
+    // we dynamically add blockheight_changed events, that cause MaxListenersExceededWarning
+    // to disable this warning, we set max listeners to 0
+    this.setMaxListeners(0);
+
     this.state = {
       block: null,
       blockHeaders: null,
