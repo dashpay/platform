@@ -1,3 +1,12 @@
+## [0.21.1](https://github.com/dashevo/dapi-client/compare/v0.21.0...v0.21.1) (2021-10-21)
+
+
+### Features
+
+* DAPI addresses white list ([#288](https://github.com/dashevo/dapi-client/issues/288))
+
+
+
 # [0.21.0](https://github.com/dashevo/dapi-client/compare/v0.20.0...v0.21.0) (2021-10-12)
 
 
