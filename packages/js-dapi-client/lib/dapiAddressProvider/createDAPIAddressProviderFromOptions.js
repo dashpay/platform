@@ -39,12 +39,20 @@ function createDAPIAddressProviderFromOptions(options) {
       throw new DAPIClientError("Can't use 'seeds' with 'dapiAddressProvider' option");
     }
 
+    if (options.dapiAddressesWhiteList) {
+      throw new DAPIClientError("Can't use 'dapiAddressesWhiteList' with 'dapiAddressProvider' option");
+    }
+
     return options.dapiAddressProvider;
   }
 
   if (options.dapiAddresses) {
     if (options.seeds) {
       throw new DAPIClientError("Can't use 'seeds' with 'dapiAddresses' option");
+    }
+
+    if (options.dapiAddressesWhiteList) {
+      throw new DAPIClientError("Can't use 'dapiAddressesWhiteList' with 'dapiAddresses' option");
     }
 
     return new ListDAPIAddressProvider(
@@ -54,6 +62,15 @@ function createDAPIAddressProviderFromOptions(options) {
   }
 
   if (options.seeds) {
+    let dapiAddressesWhiteList = options.dapiAddressesWhiteList || [];
+
+    // Since we don't have PoSe atm, 3rd party masternodes sometimes provide wrong data
+    // that breaks test suite and application logic. Temporary solution is to hardcode
+    // reliable DCG testnet masternodes to connect. Should be removed when PoSe is introduced.
+    if (options.network === 'testnet' && dapiAddressesWhiteList.length === 0) {
+      dapiAddressesWhiteList = networkConfigs.testnet.dapiAddressesWhiteList;
+    }
+
     const listDAPIAddressProvider = new ListDAPIAddressProvider(
       options.seeds.map((rawAddress) => new DAPIAddress(rawAddress)),
       options,
@@ -72,7 +89,11 @@ function createDAPIAddressProviderFromOptions(options) {
       { network: options.network },
     );
 
-    return new SimplifiedMasternodeListDAPIAddressProvider(smlProvider, listDAPIAddressProvider);
+    return new SimplifiedMasternodeListDAPIAddressProvider(
+      smlProvider,
+      listDAPIAddressProvider,
+      dapiAddressesWhiteList.map((rawAddress) => new DAPIAddress(rawAddress)),
+    );
   }
 
   if (options.network) {

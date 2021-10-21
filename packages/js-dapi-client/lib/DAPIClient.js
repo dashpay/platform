@@ -47,7 +47,8 @@ class DAPIClient {
  * @typedef {DAPIClientOptions} DAPIClientOptions
  * @property {DAPIAddressProvider} [dapiAddressProvider]
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddresses]
- * @property {string[]|RawDAPIAddress[]} [seeds]
+ * @property {Array<RawDAPIAddress|DAPIAddress|string>} [seeds]
+ * @property {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddressesWhiteList]
  * @property {string|Network} [network=testnet]
  * @property {number} [timeout=2000]
  * @property {number} [retries=3]

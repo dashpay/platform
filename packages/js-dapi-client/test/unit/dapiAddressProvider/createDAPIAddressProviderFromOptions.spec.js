@@ -28,7 +28,7 @@ describe('createDAPIAddressProviderFromOptions', () => {
       expect(result).to.equal(dapiAddressProvider);
     });
 
-    it('should throw DAPIClientError if `addresses` option is passed too', async () => {
+    it('should throw DAPIClientError if `dapiAddresses` option is passed too', async () => {
       options.dapiAddresses = ['localhost'];
 
       try {
@@ -51,9 +51,21 @@ describe('createDAPIAddressProviderFromOptions', () => {
         expect(e).to.be.an.instanceOf(DAPIClientError);
       }
     });
+
+    it('should throw DAPIClientError if `dapiAddressesWhiteList` option is passed too', async () => {
+      options.dapiAddressesWhiteList = ['127.0.0.1'];
+
+      try {
+        createDAPIAddressProviderFromOptions(options);
+
+        expect.fail('should throw DAPIClientError');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(DAPIClientError);
+      }
+    });
   });
 
-  describe('addresses', () => {
+  describe('dapiAddresses', () => {
     let options;
 
     beforeEach(() => {
@@ -71,6 +83,18 @@ describe('createDAPIAddressProviderFromOptions', () => {
 
     it('should throw DAPIClientError if `seeds` option is passed too', async () => {
       options.seeds = ['127.0.0.1'];
+
+      try {
+        createDAPIAddressProviderFromOptions(options);
+
+        expect.fail('should throw DAPIClientError');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(DAPIClientError);
+      }
+    });
+
+    it('should throw DAPIClientError if `dapiAddressesWhiteList` option is passed too', async () => {
+      options.dapiAddressesWhiteList = ['127.0.0.1'];
 
       try {
         createDAPIAddressProviderFromOptions(options);

@@ -2,13 +2,14 @@ const DAPIAddress = require('./DAPIAddress');
 
 class SimplifiedMasternodeListDAPIAddressProvider {
   /**
-   *
    * @param {SimplifiedMasternodeListProvider} smlProvider
    * @param {ListDAPIAddressProvider} listDAPIAddressProvider
+   * @param {DAPIAddress[]} addressWhiteList
    */
-  constructor(smlProvider, listDAPIAddressProvider) {
+  constructor(smlProvider, listDAPIAddressProvider, addressWhiteList) {
     this.smlProvider = smlProvider;
     this.listDAPIAddressProvider = listDAPIAddressProvider;
+    this.addressWhiteStrings = addressWhiteList.map((dapiAddress) => dapiAddress.toString());
   }
 
   /**
@@ -44,7 +45,14 @@ class SimplifiedMasternodeListDAPIAddressProvider {
       return address;
     });
 
-    this.listDAPIAddressProvider.setAddresses(updatedAddresses);
+    let filteredAddresses = updatedAddresses;
+    if (this.addressWhiteStrings.length > 0) {
+      filteredAddresses = updatedAddresses.filter((dapiAddress) => (
+        this.addressWhiteStrings.includes(dapiAddress.toString())
+      ));
+    }
+
+    this.listDAPIAddressProvider.setAddresses(filteredAddresses);
 
     return this.listDAPIAddressProvider.getLiveAddress();
   }

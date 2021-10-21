@@ -54,11 +54,12 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
     smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
       smlProviderMock,
       listDAPIAddressProviderMock,
+      [],
     );
   });
 
   describe('#getLiveAddress', () => {
-    it('should get SML from provider, update ListAddressProvider and return live address', async () => {
+    it('should return live address', async () => {
       const liveAddress = await smlDAPIAddressProvider.getLiveAddress();
 
       expect(liveAddress).to.equal(addresses[0]);
@@ -83,6 +84,50 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
         grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
         proRegTxHash: validMasternodeList[0].proRegTxHash,
       });
+
+      expect(secondAddress).to.be.instanceOf(DAPIAddress);
+      expect(secondAddress).to.equal(addresses[1]);
+      expect(secondAddress.toJSON()).to.deep.equal({
+        host: validMasternodeList[1].getIp(),
+        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
+        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        proRegTxHash: validMasternodeList[1].proRegTxHash,
+      });
+
+      expect(thirdAddress).to.be.instanceOf(DAPIAddress);
+      expect(thirdAddress).to.not.equal(addresses[2]);
+      expect(thirdAddress.toJSON()).to.deep.equal({
+        host: validMasternodeList[2].getIp(),
+        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
+        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        proRegTxHash: validMasternodeList[2].proRegTxHash,
+      });
+
+      expect(smlMock.getValidMasternodesList).to.be.calledOnceWithExactly();
+      expect(smlProviderMock.getSimplifiedMNList).to.be.calledOnceWithExactly();
+      expect(listDAPIAddressProviderMock.getAllAddresses).to.be.calledOnceWithExactly();
+      expect(listDAPIAddressProviderMock.getLiveAddress).to.be.calledOnceWithExactly();
+    });
+
+    it('should return filtered live address', async () => {
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        listDAPIAddressProviderMock,
+        [new DAPIAddress(validMasternodeList[1].getIp())],
+      );
+
+      await smlDAPIAddressProvider.getLiveAddress();
+
+      expect(listDAPIAddressProviderMock.setAddresses).to.be.calledOnce();
+
+      expect(listDAPIAddressProviderMock.setAddresses.getCall(0).args).to.have.lengthOf(1);
+      expect(listDAPIAddressProviderMock.setAddresses.getCall(0).args[0]).to.be.an('array');
+      expect(listDAPIAddressProviderMock.setAddresses.getCall(0).args[0]).to.have.lengthOf(2);
+
+      const [
+        secondAddress,
+        thirdAddress,
+      ] = listDAPIAddressProviderMock.setAddresses.getCall(0).args[0];
 
       expect(secondAddress).to.be.instanceOf(DAPIAddress);
       expect(secondAddress).to.equal(addresses[1]);
