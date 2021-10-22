@@ -1,3 +1,11 @@
+## [0.21.2](https://github.com/dashevo/dapi-client/compare/v0.21.1...v0.21.2) (2021-10-22)
+
+
+### Features
+
+* DAPI addresses white list must not be applied in Regtest mode ([#289](https://github.com/dashevo/js-dapi-client/pull/289))
+
+
 ## [0.21.1](https://github.com/dashevo/dapi-client/compare/v0.21.0...v0.21.1) (2021-10-21)
 
 
