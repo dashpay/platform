@@ -18,12 +18,16 @@ class ListDAPIAddressProvider {
   /**
    * Get random address
    *
-   * @returns {Promise<DAPIAddress>}
+   * @returns {Promise<DAPIAddress|undefined>}
    */
   async getLiveAddress() {
     const liveAddresses = this.getLiveAddresses();
 
     const liveAddress = sample(liveAddresses);
+
+    if (liveAddress === undefined) {
+      return liveAddress;
+    }
 
     // This is a temporary fix for a localhost masternode.
     // On mac os, internal docker IP is used to register masternode, and it's
