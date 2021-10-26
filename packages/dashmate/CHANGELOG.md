@@ -3,23 +3,22 @@
 
 ### Features
 
-* add a script to configure test suite ([#410](https://github.com/dashevo/dashmate/issues/410)) ([1402fa4](https://github.com/dashevo/dashmate/commit/1402fa411b398178351bf8170487e022e78d8c25))
+* add a script to configure test suite ([#410](https://github.com/dashevo/dashmate/issues/410), [#447](https://github.com/dashevo/dashmate/issues/447))
 
 
 ### Bug Fixes
 
-* incorrect queue predictions returned by status command ([#416](https://github.com/dashevo/dashmate/issues/416)) ([fc22e47](https://github.com/dashevo/dashmate/commit/fc22e47f4a6edd23bb20ad47e9f7c92c7d98f443))
-* drive log files were missing upon setup ([#428](https://github.com/dashevo/dashmate/issues/428)) ([a1a5298](https://github.com/dashevo/dashmate/commit/a1a52984d2b1d87ccb3470117967da5a11c974dd))
-* error running status command on seed node ([#424](https://github.com/dashevo/dashmate/issues/424)) ([e9afa78](https://github.com/dashevo/dashmate/commit/e9afa7861e5921742b563fabf1b03ded1b8e49e4))
-* migration to v0.20.0 fails ([#426](https://github.com/dashevo/dashmate/issues/426)) ([150e0be](https://github.com/dashevo/dashmate/commit/150e0be7b92f16dd1dc591cfe67a189a0d75f2e6))
-* no such file or directory, drive_pretty_1.log ([#431](https://github.com/dashevo/dashmate/issues/431)) ([62366fa](https://github.com/dashevo/dashmate/commit/62366facbe008989d1e1e077c933c18743c576d8))
-* unavailable log settings on seed node ([#427](https://github.com/dashevo/dashmate/issues/427)) ([a59fd6a](https://github.com/dashevo/dashmate/commit/a59fd6a93ad262a0093b568f4c8453353e5a2777))
-* `debug-logs` option doesn't apply to file logs ([#442](https://github.com/dashevo/dashmate/issues/442)) ([6b08a1c](https://github.com/dashevo/dashmate/commit/6b08a1cc45a039c0c72c47b2084217e5b571f999))
-* Dash JSON-RPC: Request Error: socket hang up ([#444](https://github.com/dashevo/dashmate/issues/444)) ([bcc2438](https://github.com/dashevo/dashmate/commit/bcc24387621071c24f025b62b17e5e8f84108fa5))
-* issues related to keeping log files in /tmp ([#437](https://github.com/dashevo/dashmate/issues/437)) ([3c2f48e](https://github.com/dashevo/dashmate/commit/3c2f48ea12d20317ec60f091a5cc640a95df95b5))
-* various sentinel container errors on full nodes ([#443](https://github.com/dashevo/dashmate/issues/443)) ([1ec20e4](https://github.com/dashevo/dashmate/commit/1ec20e4d8c752b5678793848adc229405c6eff93))
-* block database contains a block from the future ([#448](https://github.com/dashevo/dashmate/issues/448)) ([4c2698d](https://github.com/dashevo/dashmate/commit/4c2698d270d7bcfe3d9e5855a5e6d488f08ce3cd))
-* test configuration script can't figure out faucet key if run from the outside of the project root ([#447](https://github.com/dashevo/dashmate/issues/447)) ([204ac29](https://github.com/dashevo/dashmate/commit/204ac2966a04bd409bc9d68283fafddfd2ed08d6))
+* incorrect queue predictions returned by status command ([#416](https://github.com/dashevo/dashmate/issues/416))
+* drive log files were missing upon setup ([#428](https://github.com/dashevo/dashmate/issues/428))
+* error running status command on seed node ([#424](https://github.com/dashevo/dashmate/issues/424))
+* migration to v0.20.0 fails ([#426](https://github.com/dashevo/dashmate/issues/426))
+* no such file or directory, drive_pretty_1.log ([#431](https://github.com/dashevo/dashmate/issues/431))
+* unavailable log settings on seed node ([#427](https://github.com/dashevo/dashmate/issues/427))
+* `debug-logs` option doesn't apply to file logs ([#442](https://github.com/dashevo/dashmate/issues/442))
+* Dash JSON-RPC: Request Error: socket hang up ([#444](https://github.com/dashevo/dashmate/issues/444))
+* issues related to keeping log files in /tmp ([#437](https://github.com/dashevo/dashmate/issues/437))
+* various sentinel container errors on full nodes ([#443](https://github.com/dashevo/dashmate/issues/443))
+* core database contains a block from the future ([#448](https://github.com/dashevo/dashmate/issues/448))
 
 
 
