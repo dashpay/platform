@@ -21,23 +21,23 @@ module.exports = lodashMerge({}, baseConfig, {
   platform: {
     dpns: {
       contract: {
-        id: 'H2P7t8e3z2Naf55RiUrEK63fLfeGzaza5x5etm9J1ppG',
-        blockHeight: 16,
+        id: 'Bw9PUC3aSEGQ4j5qrvpNLrRNFPVMiUHZLr1atgfYJcmf',
+        blockHeight: 19,
       },
-      ownerId: '2uLGDXCTQ4LsQJ1KzaF6mcgvx6CyQBqoXkQr9D2L9yjE',
+      ownerId: '3nJjUPiVbwvKRpZ6pLUwVjcFoEJdeqPqakobctF3uECU',
     },
     dashpay: {
       contract: {
-        id: 'HpJZGdjnHjUucndek2kc1P9RBhTQZxjHFeQKnanxVVJp',
-        blockHeight: 25,
+        id: '2Vuou3EfbrtunwCZvQp1XS5PXZ5CgC1pGBz4VPT4ojmy',
+        blockHeight: 28,
       },
     },
     featureFlags: {
       contract: {
-        id: '2ddvAY6hEb514Bog78DLcdAzP8PuiqdmijpAXP5nyVX5',
+        id: '7jr118TzVYZoA9XcwYBjUghVF1RT77vfeTzxJEgbaKEU',
         blockHeight: 34,
       },
-      ownerId: 'GUEC6do7hbKcWPf2LkBq1mCY28WMsuhoT8svNYeJhLbz',
+      ownerId: 'CQSDSPkdCXRQWX74SQHddWfBEQbKPW3XhqkeEoa7jZXn',
     },
     drive: {
       abci: {
@@ -67,7 +67,7 @@ module.exports = lodashMerge({}, baseConfig, {
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'dash-testnet-5',
+          chain_id: 'dash-testnet-6',
           initial_height: '0',
           initial_core_chain_locked_height: 542300,
           initial_proposal_core_chain_lock: null,
@@ -83,7 +83,9 @@ module.exports = lodashMerge({}, baseConfig, {
               max_age_duration: '172800000000000',
             },
             validator: {
-              pub_key_types: ['bls12381'],
+              pub_key_types: [
+                'bls12381',
+              ],
             },
             version: {},
           },

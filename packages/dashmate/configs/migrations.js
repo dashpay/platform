@@ -209,7 +209,7 @@ module.exports = {
             .drive.abci.docker.image;
 
           config.platform.dapi.api.docker.image = systemConfigs.base.platform
-            .drive.tenderdash.docker.image;
+            .dapi.api.docker.image;
 
           config.core.docker.image = systemConfigs.base.core.docker.image;
 
@@ -258,7 +258,26 @@ module.exports = {
       .forEach(([, config]) => {
         // Add median time to config
         config.core.miner.mediantime = systemConfigs.base.core.miner.mediantime;
+
+        if (config.platform) {
+          // Update images
+          config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
+            .drive.tenderdash.docker.image;
+
+          config.platform.drive.abci.docker.image = systemConfigs.base.platform
+            .drive.abci.docker.image;
+
+          config.platform.dapi.api.docker.image = systemConfigs.base.platform
+            .dapi.api.docker.image;
+        }
       });
+
+    // Update contracts
+    configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
+      .drive.tenderdash.genesis;
+    configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
+    configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
+    configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
 
     return configFile;
   },
