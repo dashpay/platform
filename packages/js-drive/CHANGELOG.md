@@ -1,3 +1,12 @@
+## [0.21.1](https://github.com/dashevo/js-drive/compare/v0.21.0...v0.21.1) (2021-10-28)
+
+
+### Bug Fixes
+
+* getFeatureFlagForHeight must not try to fetch feature flags before they were created ([#575](https://github.com/dashevo/js-drive/issues/575))
+
+
+
 # [0.21.0](https://github.com/dashevo/js-drive/compare/v0.20.0...v0.21.0) (2021-10-14)
 
 
