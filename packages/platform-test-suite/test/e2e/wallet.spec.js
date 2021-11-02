@@ -36,6 +36,7 @@ describe('e2e', () => {
           mnemonic,
           waitForInstantLockTimeout: 120000,
         },
+        driveProtocolVersion: 1,
       });
     });
 
@@ -101,6 +102,7 @@ describe('e2e', () => {
           },
           seeds: getDAPISeeds(),
           network: process.env.NETWORK,
+          driveProtocolVersion: 1,
         });
 
         restoredAccount = await restoredWallet.getWalletAccount();

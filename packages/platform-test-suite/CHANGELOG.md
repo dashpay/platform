@@ -1,3 +1,27 @@
+# [0.21.0](https://github.com/dashevo/platform-test-suite/compare/v0.20.0...v0.21.0) (2021-10-26)
+
+
+
+### Features
+
+* `skip-sync-before-height` option to speedup tests ([#180](https://github.com/dashevo/platform-test-suite/issues/180))
+* run tests in browser by demand ([#172](https://github.com/dashevo/platform-test-suite/issues/172))
+* add a test for parsing waitForStateTransitionResult proof ([#173](https://github.com/dashevo/platform-test-suite/issues/173))
+* add proof test for all endpoints and appHash extraction ([#163](https://github.com/dashevo/platform-test-suite/issues/163))
+* use DPP error classes ([#164](https://github.com/dashevo/platform-test-suite/issues/164))
+* use new Drive's error codes ([#162](https://github.com/dashevo/platform-test-suite/issues/162))
+* add feature flags e2e test ([#155](https://github.com/dashevo/platform-test-suite/issues/155))
+* proof verification tests ([#159](https://github.com/dashevo/platform-test-suite/issues/159))
+* update tests to reflect lastest dapi changes ([#149](https://github.com/dashevo/platform-test-suite/issues/149))
+
+
+### Bug Fixes
+
+* don't upgrade evidence maxBytes value ([#177](https://github.com/dashevo/platform-test-suite/issues/177))
+* transaction queried to soon propagation ([#176](https://github.com/dashevo/platform-test-suite/issues/176))
+* testnet latency problems ([#182](https://github.com/dashevo/platform-test-suite/issues/182))
+
+
 # [0.20.0](https://github.com/dashevo/platform-test-suite/compare/v0.19.1...v0.20.0) (2021-07-21)
 
 

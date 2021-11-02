@@ -3,11 +3,17 @@ const { expect } = require('chai');
 const getDataContractFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
 );
+
 const getIdentityFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getIdentityFixture',
 );
 
 const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
+
+const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTypeError');
+const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
+
+const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
@@ -25,9 +31,19 @@ describe('Platform', () => {
 
       identity = await client.platform.identities.register(10);
 
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
+
       dataContractFixture = getDataContractFixture(identity.getId());
 
       await client.platform.contracts.broadcast(dataContractFixture, identity);
+
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
 
       client.getApps().set('customContracts', {
         contractId: dataContractFixture.getId(),
@@ -65,10 +81,10 @@ describe('Platform', () => {
         },
       );
 
-      // mock validateStructure to skip validation in SDK
-      this.sinon.stub(client.platform.dpp.stateTransition, 'validateStructure');
+      // mock validateBasic to skip validation in SDK
+      this.sinon.stub(client.platform.dpp.stateTransition, 'validateBasic');
 
-      client.platform.dpp.stateTransition.validateStructure.returns({
+      client.platform.dpp.stateTransition.validateBasic.returns({
         isValid: () => true,
       });
 
@@ -82,11 +98,8 @@ describe('Platform', () => {
         broadcastError = e;
       }
 
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('State Transition is invalid: InvalidDocumentTypeError: Contract doesn\'t contain type undefinedType');
-      expect(broadcastError.code).to.be.equal(3);
-      const [error] = broadcastError.data.errors;
-      expect(error.name).to.equal('InvalidDocumentTypeError');
+      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDocumentTypeError);
     });
 
     it('should fail to create a new document with an unknown owner', async () => {
@@ -134,6 +147,11 @@ describe('Platform', () => {
         create: [firstDocument],
       }, identity);
 
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
+
       const secondDocument = await client.platform.documents.create(
         'customContracts.indexedDocument',
         identity,
@@ -154,18 +172,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('Invalid state transition: DuplicateDocumentError: Duplicate Document found');
-      expect(broadcastError.code).to.be.equal(2);
-
-      const [error] = broadcastError.data.errors;
-      expect(error.name).to.equal('DuplicateDocumentError');
-      expect(error.indexDefinition).to.deep.equal({
-        unique: true,
-        properties: [
-          { $ownerId: 'asc' },
-          { firstName: 'desc' },
-        ],
-      });
+      expect(/Document \w* has duplicate unique properties \$ownerId, firstName with other documents/.test(broadcastError.message)).to.be.true();
+      expect(broadcastError.code).to.be.equal(4009);
     });
 
     it('should be able to create new document', async () => {
@@ -181,6 +189,11 @@ describe('Platform', () => {
       await client.platform.documents.broadcast({
         create: [document],
       }, identity);
+
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
     });
 
     it('should fetch created document', async () => {
@@ -189,7 +202,8 @@ describe('Platform', () => {
         { where: [['$id', '==', document.getId()]] },
       );
 
-      expect(document.toJSON()).to.deep.equal(fetchedDocument.toJSON());
+      expect(fetchedDocument).to.exist();
+      expect(document.toObject()).to.deep.equal(fetchedDocument.toObject());
       expect(fetchedDocument.getUpdatedAt().getTime())
         .to.be.equal(fetchedDocument.getCreatedAt().getTime());
     });
@@ -200,7 +214,8 @@ describe('Platform', () => {
         { where: [['$createdAt', '==', document.getCreatedAt().getTime()]] },
       );
 
-      expect(document.toJSON()).to.deep.equal(fetchedDocument.toJSON());
+      expect(fetchedDocument).to.exist();
+      expect(document.toObject()).to.deep.equal(fetchedDocument.toObject());
     });
 
     it('should be able to update document', async () => {
@@ -214,6 +229,11 @@ describe('Platform', () => {
       await client.platform.documents.broadcast({
         replace: [storedDocument],
       }, identity);
+
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
 
       const [fetchedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
@@ -237,6 +257,11 @@ describe('Platform', () => {
         replace: [storedDocument],
       }, identity);
 
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
+
       documentsBatchTransition.transitions[0].data.firstName = 'nameToProve';
       documentsBatchTransition.transitions[0].updatedAt = new Date();
       documentsBatchTransition.transitions[0].revision += 1;
@@ -246,11 +271,17 @@ describe('Platform', () => {
 
       const proof = await client.platform.broadcastStateTransition(signedTransition);
 
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
+
       expect(proof.rootTreeProof).to.be.an.instanceof(Uint8Array);
       expect(proof.rootTreeProof.length).to.be.greaterThan(0);
 
-      expect(proof.storeTreeProof).to.be.an.instanceof(Uint8Array);
-      expect(proof.storeTreeProof.length).to.be.greaterThan(0);
+      expect(proof.storeTreeProofs).to.exist();
+      expect(proof.storeTreeProofs.documentsProof).to.be.an.instanceof(Uint8Array);
+      expect(proof.storeTreeProofs.documentsProof.length).to.be.greaterThan(0);
 
       expect(proof.signatureLLMQHash).to.be.an.instanceof(Uint8Array);
       expect(proof.signatureLLMQHash.length).to.be.equal(32);
@@ -275,6 +306,11 @@ describe('Platform', () => {
         replace: [storedDocument],
       }, identity);
 
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
+
       documentsBatchTransition.transitions[0].updatedAt = updatedAt;
       documentsBatchTransition.transitions[0].revision += 1;
       const signedTransition = await signStateTransition(
@@ -288,11 +324,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('Invalid state transition: DocumentTimestampWindowViolationError: Document updatedAt timestamp are out of block time window');
-      expect(broadcastError.code).to.be.equal(2);
-
-      const [error] = broadcastError.data.errors;
-      expect(error.name).to.equal('DocumentTimestampWindowViolationError');
+      expect(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
+      expect(broadcastError.code).to.be.equal(4008);
     });
 
     it('should fail to create a new document with timestamp in violated time frame', async () => {
@@ -322,11 +355,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('Invalid state transition: DocumentTimestampWindowViolationError: Document createdAt timestamp are out of block time window and 2 more');
-      expect(broadcastError.code).to.be.equal(2);
-
-      const [error] = broadcastError.data.errors;
-      expect(error.name).to.equal('DocumentTimestampWindowViolationError');
+      expect(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
+      expect(broadcastError.code).to.be.equal(4008);
     });
   });
 });

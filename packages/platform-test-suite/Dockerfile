@@ -1,4 +1,4 @@
-FROM node:12-alpine
+FROM node:16-alpine
 
 RUN apk update && \
     apk --no-cache upgrade && \
@@ -14,7 +14,7 @@ RUN npm config set unsafe-perm true
 COPY package.json package-lock.json ./
 RUN npm ci --production
 
-FROM node:12-alpine
+FROM node:16-alpine
 
 RUN apk add --no-cache bash \
                        git

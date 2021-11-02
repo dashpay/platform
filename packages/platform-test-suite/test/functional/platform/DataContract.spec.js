@@ -2,6 +2,11 @@ const getDataContractFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
 );
 
+const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
+const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
+
+const wait = require('../../../lib/wait');
+
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Platform', () => {
@@ -37,9 +42,8 @@ describe('Platform', () => {
         broadcastError = e;
       }
 
-      expect(broadcastError).to.exist();
-      const [error] = JSON.parse(broadcastError.message.replace('StateTransition is invalid - ', ''));
-      expect(error.name).to.equal('IdentityNotFoundError');
+      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(IdentityNotFoundError);
     });
 
     it('should create new data contract with previously created identity as an owner', async () => {
@@ -49,6 +53,11 @@ describe('Platform', () => {
     });
 
     it('should be able to get newly created data contract', async () => {
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
+
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
       );

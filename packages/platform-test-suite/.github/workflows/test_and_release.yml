@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v2
         with:
-          node-version: '12'
+          node-version: '16'
 
       - name: Set up Docker BuildX
         id: buildx
@@ -119,7 +119,9 @@ jobs:
           --network=regtest \
           --dpns-tld-identity-private-key=${{ steps.start-local-network.outputs.dpns-top-level-identity-private-key }} \
           --dpns-tld-identity-id=${{ steps.start-local-network.outputs.dpns-top-level-identity-id }} \
-          --dpns-contract-id=${{ steps.start-local-network.outputs.dpns-contract-id }}
+          --dpns-contract-id=${{ steps.start-local-network.outputs.dpns-contract-id }} \
+          --feature-flags-identity-id=${{ steps.start-local-network.outputs.feature-flags-identity-id }} \
+          --feature-flags-contract-id=${{ steps.start-local-network.outputs.feature-flags-contract-id }}
 
   release:
     name: Release Docker image

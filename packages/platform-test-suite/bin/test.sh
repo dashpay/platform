@@ -13,9 +13,12 @@ Usage: test <seed> [options]
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
   -k=key      --faucet-key=key                              - faucet private key string
   -n=network  --network=network                             - use regtest, devnet or testnet
+              --skip-sync-before-height=H                   - start sync funding wallet from specific height
               --dpns-tld-identity-private-key=private_key   - top level identity private key
-              --dpns-tld-identity-id=identity_id            - top level identity id
-              --dpns-contract-id=contract_id                - dpns contract id
+              --dpns-tld-identity-id=tld_identity_id        - top level identity id
+              --dpns-contract-id=tld_contract_id            - dpns contract id
+              --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
+              --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
   -t          --timeout                                     - test timeout in milliseconds
   -h          --help                                        - show help
 
@@ -55,14 +58,23 @@ case ${i} in
     -n=*|--network=*)
     network="${i#*=}"
     ;;
+    --skip-sync-before-height=*)
+    skip_sync_before_height="${i#*=}"
+    ;;
     --dpns-tld-identity-private-key=*)
     identity_private_key="${i#*=}"
     ;;
     --dpns-tld-identity-id=*)
-    identity_id="${i#*=}"
+    tld_identity_id="${i#*=}"
     ;;
     --dpns-contract-id=*)
-    contract_id="${i#*=}"
+    tld_contract_id="${i#*=}"
+    ;;
+    --feature-flags-identity-id=*)
+    ff_identity_id="${i#*=}"
+    ;;
+    --feature-flags-contract-id=*)
+    ff_contract_id="${i#*=}"
     ;;
     -t=*|--timeout=*)
     timeout="${i#*=}"
@@ -145,14 +157,29 @@ then
   cmd="${cmd} NETWORK=${network}"
 fi
 
-if [ -n "$contract_id" ]
+if [ -n "$skip_sync_before_height" ]
 then
-  cmd="${cmd} DPNS_CONTRACT_ID=${contract_id}"
+  cmd="${cmd} SKIP_SYNC_BEFORE_HEIGHT=${skip_sync_before_height}"
 fi
 
-if [ -n "$identity_id" ]
+if [ -n "$tld_contract_id" ]
 then
-  cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_ID=${identity_id}"
+  cmd="${cmd} DPNS_CONTRACT_ID=${tld_contract_id}"
+fi
+
+if [ -n "$tld_identity_id" ]
+then
+  cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_ID=${tld_identity_id}"
+fi
+
+if [ -n "$ff_identity_id" ]
+then
+  cmd="${cmd} FEATURE_FLAGS_IDENTITY_ID=${ff_identity_id}"
+fi
+
+if [ -n "$ff_contract_id" ]
+then
+  cmd="${cmd} FEATURE_FLAGS_CONTRACT_ID=${ff_contract_id}"
 fi
 
 if [ -n "$identity_private_key" ]

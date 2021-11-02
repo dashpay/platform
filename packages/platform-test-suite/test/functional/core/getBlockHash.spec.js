@@ -37,8 +37,9 @@ describe('Core', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.name).to.equal('JsonRpcError');
+      expect(broadcastError.name).to.equal('ResponseError');
       expect(broadcastError.message).contains('Block height out of range');
+      expect(broadcastError.code).to.equal(-32602);
     });
   });
 });

@@ -1,6 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
+const wait = require('../../lib/wait');
 
 describe('e2e', () => {
   describe('Contacts', function contacts() {
@@ -82,6 +83,11 @@ describe('e2e', () => {
 
         bobIdentity = await bobClient.platform.identities.register(10);
 
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
+
         expect(bobIdentity.constructor.name).to.be.equal('Identity');
       });
 
@@ -92,6 +98,11 @@ describe('e2e', () => {
         );
 
         await bobClient.platform.contracts.broadcast(dataContract, bobIdentity);
+
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
 
         bobClient.getApps().set('contacts', {
           contractId: dataContract.getId(),
@@ -117,6 +128,11 @@ describe('e2e', () => {
           create: [profile],
         }, bobIdentity);
 
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
+
         // 2. Fetch and compare profiles
         const [fetchedProfile] = await bobClient.platform.documents.get(
           'contacts.profile',
@@ -139,6 +155,11 @@ describe('e2e', () => {
 
         aliceIdentity = await aliceClient.platform.identities.register(10);
 
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
+
         expect(aliceIdentity.constructor.name).to.be.equal('Identity');
       });
 
@@ -152,6 +173,11 @@ describe('e2e', () => {
         await aliceClient.platform.documents.broadcast({
           create: [aliceProfile],
         }, aliceIdentity);
+
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
 
         // 2. Fetch and compare profile
         const [fetchedProfile] = await aliceClient.platform.documents.get(
@@ -170,6 +196,11 @@ describe('e2e', () => {
         await aliceClient.platform.documents.broadcast({
           replace: [aliceProfile],
         }, aliceIdentity);
+
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
 
         // 3. Fetch and compare profile
         const [fetchedProfile] = await aliceClient.platform.documents.get(
@@ -196,6 +227,11 @@ describe('e2e', () => {
           create: [bobContactRequest],
         }, bobIdentity);
 
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
+
         // 2. Fetch and compare contacts
         const [fetchedContactRequest] = await bobClient.platform.documents.get(
           'contacts.contact',
@@ -220,6 +256,11 @@ describe('e2e', () => {
           create: [aliceContactAcceptance],
         }, aliceIdentity);
 
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
+
         // 2. Fetch and compare contacts
         const [fetchedAliceContactAcceptance] = await aliceClient.platform.documents.get(
           'contacts.contact',
@@ -236,6 +277,11 @@ describe('e2e', () => {
         await aliceClient.platform.documents.broadcast({
           delete: [aliceContactAcceptance],
         }, aliceIdentity);
+
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
 
         // 2. Fetch contact documents and check it does not exists
         const [fetchedAliceContactAcceptance] = await aliceClient.platform.documents.get(

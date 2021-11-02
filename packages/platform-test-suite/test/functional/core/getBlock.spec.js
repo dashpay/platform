@@ -38,23 +38,28 @@ describe('Core', () => {
       expect(block).to.be.an.instanceOf(Block);
     });
 
-    it('should respond with an invalid argument error if the block by height was not found', async () => {
-      let broadcastError;
+    it('should throw NotFound error when the block by height was not found', async () => {
       try {
-        await client.getDAPIClient().core.getBlockByHeight(1000000000);
-      } catch (e) {
-        broadcastError = e;
-      }
+        await client.getDAPIClient()
+          .core
+          .getBlockByHeight(1000000000);
 
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.equal('3 INVALID_ARGUMENT: Invalid block height');
-      expect(broadcastError.code).to.equal(3);
+        expect.fail('should throw NotFound error');
+      } catch (e) {
+        expect(e.message).to.equal('Invalid block height');
+        expect(e.code).to.equal(5);
+      }
     });
 
-    it('should respond with null if the block by hash was not found', async () => {
-      const block = await client.getDAPIClient().core.getBlockByHash('hash');
+    it('should throw NotFound error when the block by hash was not found', async () => {
+      try {
+        await client.getDAPIClient().core.getBlockByHash('hash');
 
-      expect(block).to.equal(null);
+        expect.fail('should throw NotFound error');
+      } catch (e) {
+        expect(e.message).to.equal('Block not found');
+        expect(e.code).to.equal(5);
+      }
     });
   });
 });

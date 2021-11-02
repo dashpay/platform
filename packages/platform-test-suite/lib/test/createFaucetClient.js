@@ -19,13 +19,22 @@ function createFaucetClient() {
         contractId: process.env.DPNS_CONTRACT_ID,
       },
     },
+    driveProtocolVersion: 1,
   };
+
+  const walletOptions = {
+    privateKey: process.env.FAUCET_PRIVATE_KEY,
+  };
+
+  if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
+    walletOptions.unsafeOptions = {
+      skipSynchronizationBeforeHeight: process.env.SKIP_SYNC_BEFORE_HEIGHT,
+    };
+  }
 
   faucetClient = new Dash.Client({
     ...clientOpts,
-    wallet: {
-      privateKey: process.env.FAUCET_PRIVATE_KEY,
-    },
+    wallet: walletOptions,
   });
 
   return faucetClient;

@@ -3,7 +3,7 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
-const NotFoundError = require('@dashevo/dapi-client/lib/methods/errors/NotFoundError');
+const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
 const createFaucetClient = require('../../../lib/test/createFaucetClient');
 const wait = require('../../../lib/wait');
@@ -27,6 +27,8 @@ describe('Core', () => {
       });
 
       await faucetWalletAccount.broadcastTransaction(transaction);
+
+      await wait(5000);
 
       const result = await faucetClient.getDAPIClient().core.getTransaction(transaction.id);
       const receivedTx = new Transaction(result.getTransaction());

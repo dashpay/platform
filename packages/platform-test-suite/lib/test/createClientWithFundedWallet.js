@@ -23,6 +23,7 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
         contractId: process.env.DPNS_CONTRACT_ID,
       },
     },
+    driveProtocolVersion: 1,
   };
 
   const faucetClient = createFaucetClient();
@@ -30,6 +31,12 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
   const walletOptions = {
     waitForInstantLockTimeout: 120000,
   };
+
+  if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
+    walletOptions.unsafeOptions = {
+      skipSynchronizationBeforeHeight: process.env.SKIP_SYNC_BEFORE_HEIGHT,
+    };
+  }
 
   if (HDPrivateKey) {
     walletOptions.HDPrivateKey = HDPrivateKey;
