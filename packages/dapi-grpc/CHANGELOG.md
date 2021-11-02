@@ -1,3 +1,12 @@
+# [0.21.1](https://github.com/dashevo/dapi-grpc/compare/v0.20.0...v0.21.0) (2021-10-12)
+
+
+### Bug Fixes
+
+* cannot read properties of undefined (reading 'MethodInfo') ([#152](https://github.com/dashevo/dapi-grpc/pull/152))
+
+
+
 # [0.21.0](https://github.com/dashevo/dapi-grpc/compare/v0.20.0...v0.21.0) (2021-10-12)
 
 
