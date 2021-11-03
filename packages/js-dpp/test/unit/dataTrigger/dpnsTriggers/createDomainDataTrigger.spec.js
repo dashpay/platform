@@ -9,7 +9,7 @@ const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsCon
 const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
-const hash = require('../../../../lib/util/hash');
+const { hash } = require('../../../../lib/util/hash');
 
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const Identifier = require('../../../../lib/identifier/Identifier');

@@ -1,4 +1,4 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+const DashCoreLib = require('@dashevo/dashcore-lib');
 
 const InvalidIdentityAssetLockTransactionError = require('../../../errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
 const IdentityAssetLockTransactionOutputNotFoundError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionOutputNotFoundError');
@@ -22,6 +22,8 @@ function validateAssetLockTransactionFactory(stateRepository) {
 
   async function validateAssetLockTransaction(rawTransaction, outputIndex) {
     const result = new ValidationResult();
+    const { Transaction } = DashCoreLib;
+
     /**
      * @type {Transaction}
      */

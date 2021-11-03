@@ -9,4 +9,4 @@ function generate() {
   return crypto.randomBytes(32);
 }
 
-module.exports = generate;
+module.exports = { generate };

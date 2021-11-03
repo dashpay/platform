@@ -1,8 +1,6 @@
-const rewiremock = require('rewiremock/node');
 const bs58 = require('bs58');
 
 const Document = require('../../../lib/document/Document');
-const DocumentsBatchTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
 const DocumentCreateTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
@@ -25,13 +23,14 @@ const SerializedObjectParsingError = require('../../../lib/errors/consensus/basi
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
+const entropyGenerator = require('../../../lib/util/entropyGenerator');
+const DocumentFactory = require('../../../lib/document/DocumentFactory');
 
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;
   let generateEntropyMock;
   let validateDocumentMock;
   let fetchAndValidateDataContractMock;
-  let DocumentFactory;
   let ownerId;
   let dataContract;
   let document;
@@ -52,7 +51,7 @@ describe('DocumentFactory', () => {
     rawDocument = document.toObject();
 
     decodeProtocolEntityMock = this.sinonSandbox.stub();
-    generateEntropyMock = this.sinonSandbox.stub();
+    generateEntropyMock = this.sinonSandbox.stub(entropyGenerator, 'generate');
     validateDocumentMock = this.sinonSandbox.stub();
 
     validateDocumentMock.returns(new ValidationResult());
@@ -65,12 +64,6 @@ describe('DocumentFactory', () => {
     fetchContractResult.setData(dataContract);
 
     fetchAndValidateDataContractMock = this.sinonSandbox.stub().returns(fetchContractResult);
-
-    DocumentFactory = rewiremock.proxy('../../../lib/document/DocumentFactory', {
-      '../../../lib/util/generateEntropy': generateEntropyMock,
-      '../../../lib/document/Document': Document,
-      '../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition': DocumentsBatchTransition,
-    });
 
     dppMock = createDPPMock();
 
@@ -87,6 +80,7 @@ describe('DocumentFactory', () => {
 
   afterEach(() => {
     fakeTime.reset();
+    generateEntropyMock.restore();
   });
 
   describe('create', () => {
@@ -252,6 +246,10 @@ describe('DocumentFactory', () => {
 
       serializedDocument = document.toBuffer();
       rawDocument = document.toObject();
+    });
+
+    afterEach(() => {
+      factory.createFromObject.restore();
     });
 
     it('should return new Document from serialized one', async () => {

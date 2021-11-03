@@ -1,5 +1,3 @@
-const rewiremock = require('rewiremock/node');
-
 const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
@@ -13,34 +11,20 @@ const Identifier = require('../../../lib/identifier/Identifier');
 const protocolVersion = require('../../../lib/version/protocolVersion');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 
+const Document = require('../../../lib/document/Document');
+
+const hash = require('../../../lib/util/hash');
+const serializer = require('../../../lib/util/serializer');
+
 describe('Document', () => {
-  let lodashGetMock;
-  let lodashSetMock;
-  let lodashCloneDeepMock;
   let hashMock;
   let encodeMock;
-  let Document;
   let rawDocument;
   let document;
   let dataContract;
 
   beforeEach(function beforeEach() {
-    lodashGetMock = this.sinonSandbox.stub();
-    lodashSetMock = this.sinonSandbox.stub();
-    lodashCloneDeepMock = this.sinonSandbox.stub().returnsArg(0);
-    hashMock = this.sinonSandbox.stub();
-    const serializerMock = { encode: this.sinonSandbox.stub() };
-    encodeMock = serializerMock.encode;
-
     const now = new Date().getTime();
-
-    Document = rewiremock.proxy('../../../lib/document/Document', {
-      '../../../node_modules/lodash.get': lodashGetMock,
-      '../../../node_modules/lodash.set': lodashSetMock,
-      '../../../node_modules/lodash.clonedeep': lodashCloneDeepMock,
-      '../../../lib/util/hash': hashMock,
-      '../../../lib/util/serializer': serializerMock,
-    });
 
     const ownerId = generateRandomIdentifier().toBuffer();
 
@@ -85,13 +69,17 @@ describe('Document', () => {
     };
 
     document = new Document(rawDocument, dataContract);
+
+    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
+    hashMock = this.sinonSandbox.stub(hash, 'hash');
+  });
+
+  afterEach(() => {
+    encodeMock.restore();
+    hashMock.restore();
   });
 
   describe('constructor', () => {
-    beforeEach(function beforeEach() {
-      Document.prototype.setData = this.sinonSandbox.stub();
-    });
-
     it('should create Document with $id and data if present', () => {
       const data = {
         test: 1,
@@ -106,7 +94,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.id).to.deep.equal(rawDocument.$id);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with $type and data if present', () => {
@@ -122,7 +109,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.type).to.equal(rawDocument.$type);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with $dataContractId and data if present', () => {
@@ -139,7 +125,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.dataContractId).to.deep.equal(rawDocument.$dataContractId);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with $ownerId and data if present', () => {
@@ -156,7 +141,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.ownerId.toBuffer()).to.deep.equal(rawDocument.$ownerId);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with undefined action and data if present', () => {
@@ -172,7 +156,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.action).to.equal(undefined);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with $revision and data if present', () => {
@@ -189,7 +172,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.revision).to.equal(rawDocument.$revision);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with $createdAt and data if present', async () => {
@@ -208,7 +190,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.getCreatedAt().getTime()).to.equal(rawDocument.$createdAt);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
 
     it('should create Document with $updatedAt and data if present', async () => {
@@ -227,7 +208,6 @@ describe('Document', () => {
       document = new Document(rawDocument, dataContract);
 
       expect(document.getUpdatedAt().getTime()).to.equal(rawDocument.$updatedAt);
-      expect(Document.prototype.setData).to.have.been.calledOnceWith(data);
     });
   });
 
@@ -286,10 +266,6 @@ describe('Document', () => {
   });
 
   describe('#setData', () => {
-    beforeEach(function beforeEach() {
-      Document.prototype.set = this.sinonSandbox.stub();
-    });
-
     it('should call set for each document property', () => {
       const data = {
         test1: 1,
@@ -299,11 +275,6 @@ describe('Document', () => {
       const result = document.setData(data);
 
       expect(result).to.equal(document);
-
-      expect(Document.prototype.set).to.have.been.calledTwice();
-
-      expect(Document.prototype.set).to.have.been.calledWith('test1', 1);
-      expect(Document.prototype.set).to.have.been.calledWith('test2', 2);
     });
   });
 
@@ -328,8 +299,6 @@ describe('Document', () => {
       const result = document.set(path, value);
 
       expect(result).to.equal(document);
-
-      expect(lodashSetMock).to.have.been.calledOnceWith(document.data, path, value);
     });
 
     it('should set identifier', () => {
@@ -339,14 +308,6 @@ describe('Document', () => {
       const result = document.set(path, buffer);
 
       expect(result).to.equal(document);
-
-      expect(lodashSetMock).to.have.been.calledOnce();
-
-      expect(lodashSetMock.getCall(0).args).to.have.deep.members(
-        [document.data, path, buffer],
-      );
-
-      expect(lodashSetMock.getCall(0).args[2]).to.be.instanceof(Identifier);
     });
 
     it('should set identifier as part of object', () => {
@@ -354,38 +315,22 @@ describe('Document', () => {
       const path = 'dataObject.binaryObject';
       const value = { identifier: buffer };
 
-      lodashGetMock.returns(value.identifier);
-
       const result = document.set(path, value);
 
       expect(result).to.equal(document);
-
-      expect(lodashSetMock).to.have.been.calledTwice();
-
-      expect(lodashSetMock.getCall(0).args).to.have.deep.members(
-        [value, 'identifier', buffer],
-      );
-
-      expect(lodashSetMock.getCall(0).args[2]).to.be.instanceof(Identifier);
-
-      expect(lodashSetMock.getCall(1).args).to.have.deep.members(
-        [document.data, path, value],
-      );
     });
   });
 
   describe('#get', () => {
     it('should return value for specified property name', () => {
-      const path = 'test[0].$my';
-      const value = 2;
+      const path = 'dataObject.binaryObject.identifier';
+      const buffer = Buffer.alloc(32);
 
-      lodashGetMock.returns(value);
+      document.set(path, buffer);
 
       const result = document.get(path);
 
-      expect(result).to.equal(value);
-
-      expect(lodashGetMock).to.have.been.calledOnceWith(document.data, path);
+      expect(result).to.deep.equal(buffer);
     });
   });
 
@@ -425,15 +370,21 @@ describe('Document', () => {
   });
 
   describe('#hash', () => {
+    let toBufferMock;
+
     beforeEach(function beforeEach() {
-      Document.prototype.toBuffer = this.sinonSandbox.stub();
+      toBufferMock = this.sinonSandbox.stub(Document.prototype, 'toBuffer');
+    });
+
+    afterEach(() => {
+      toBufferMock.restore();
     });
 
     it('should return Document hash', () => {
       const serializedDocument = '123';
       const hashedDocument = '456';
 
-      Document.prototype.toBuffer.returns(serializedDocument);
+      toBufferMock.returns(serializedDocument);
 
       hashMock.returns(hashedDocument);
 
@@ -441,7 +392,7 @@ describe('Document', () => {
 
       expect(result).to.equal(hashedDocument);
 
-      expect(Document.prototype.toBuffer).to.have.been.calledOnce();
+      expect(toBufferMock).to.have.been.calledOnce();
 
       expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
     });
