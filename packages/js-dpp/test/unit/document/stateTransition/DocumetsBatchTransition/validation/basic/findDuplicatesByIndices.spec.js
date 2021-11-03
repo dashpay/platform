@@ -6,7 +6,7 @@ const getDataContractFixture = require('../../../../../../../lib/test/fixtures/g
 const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const generateEntropy = require('../../../../../../../lib/util/generateEntropy');
+const { generate: generateEntropy } = require('../../../../../../../lib/util/entropyGenerator');
 
 describe('findDuplicatesByIndices', () => {
   let documents;

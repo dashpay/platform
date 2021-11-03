@@ -1,4 +1,4 @@
-const hash = require('../util/hash');
+const hashModule = require('../util/hash');
 
 /**
  * Generate data contract id based on owner id and entropy
@@ -9,6 +9,8 @@ const hash = require('../util/hash');
  * @return {Buffer}
  */
 function generateDataContractId(ownerId, entropy) {
+  const { hash } = hashModule;
+
   return hash(
     Buffer.concat([
       ownerId,
