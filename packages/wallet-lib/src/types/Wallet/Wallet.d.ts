@@ -30,6 +30,15 @@ export declare class Wallet {
     generateNewWalletId():string;
     getAccount(accOptions?: Account.Options): Promise<Account>;
     sweepWallet(): Promise<Account>
+
+    /**
+     * <b>Warning:</b> Storage dump may contain sensitive data.
+     * Please, do not share the output of this function for mainnet wallets.
+     * @param options
+     */
+    dumpStorage(options?: {
+        log: boolean
+    }): string;
 }
 
 declare interface DAPIClientOptions {

@@ -188,5 +188,6 @@ Wallet.prototype.getAccount = require('./methods/getAccount');
 Wallet.prototype.generateNewWalletId = generateNewWalletId;
 Wallet.prototype.exportWallet = require('./methods/exportWallet');
 Wallet.prototype.sweepWallet = require('./methods/sweepWallet');
+Wallet.prototype.dumpStorage = require('./methods/dumpStorage');
 
 module.exports = Wallet;
