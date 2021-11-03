@@ -26,11 +26,12 @@ externalip={{=it.externalIp}}
 whitelist={{=it.externalIp}}
 {{?}}
 
-# Indices
+{{? it.network !== 'mainnet'}}# Indices
 txindex=1
 addressindex=1
 timestampindex=1
 spentindex=1
+{{?}}
 
 # ZeroMQ notifications
 zmqpubrawtx=tcp://0.0.0.0:29998
