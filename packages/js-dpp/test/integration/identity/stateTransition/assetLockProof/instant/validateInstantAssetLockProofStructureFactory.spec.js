@@ -1,8 +1,6 @@
 const { default: getRE2Class } = require('@dashevo/re2-wasm');
 
-const rewiremock = require('rewiremock/node');
-
-const { Transaction } = require('@dashevo/dashcore-lib');
+const DashCoreLib = require('@dashevo/dashcore-lib');
 
 const createAjv = require('../../../../../../lib/ajv/createAjv');
 
@@ -19,16 +17,16 @@ const { expectValidationError, expectJsonSchemaError } = require(
 
 const ValidationResult = require('../../../../../../lib/validation/ValidationResult');
 const InvalidIdentityAssetLockTransactionError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
+const validateInstantAssetLockProofStructureFactory = require('../../../../../../lib/identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
 
 describe('validateInstantAssetLockProofStructureFactory', () => {
   let rawProof;
   let transaction;
   let stateRepositoryMock;
-  let InstantLockClassMock;
+  let instantLockFromBufferMock;
   let instantLockMock;
   let validateInstantAssetLockProofStructure;
   let jsonSchemaValidator;
-  let validateInstantAssetLockProofStructureFactory;
   let validateAssetLockTransactionResult;
   let publicKeyHash;
   let validateAssetLockTransactionMock;
@@ -52,19 +50,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       verify: this.sinonSandbox.stub().resolves(true),
     };
 
-    InstantLockClassMock = {
-      fromBuffer: this.sinonSandbox.stub().returns(instantLockMock),
-    };
-
-    validateInstantAssetLockProofStructureFactory = rewiremock.proxy(
-      '../../../../../../lib/identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory',
-      {
-        '../../../../../../node_modules/@dashevo/dashcore-lib': {
-          InstantLock: InstantLockClassMock,
-          Transaction,
-        },
-      },
-    );
+    instantLockFromBufferMock = this.sinonSandbox.stub(DashCoreLib.InstantLock, 'fromBuffer').returns(instantLockMock);
 
     publicKeyHash = Buffer.from('152073ca2300a86b510fa2f123d3ea7da3af68dc', 'hex');
 
@@ -82,6 +68,10 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       stateRepositoryMock,
       validateAssetLockTransactionMock,
     );
+  });
+
+  afterEach(() => {
+    instantLockFromBufferMock.restore();
   });
 
   describe('type', () => {
@@ -196,7 +186,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be valid', async () => {
       const instantLockError = new Error('something is wrong');
 
-      InstantLockClassMock.fromBuffer.throws(instantLockError);
+      instantLockFromBufferMock.throws(instantLockError);
 
       rawProof.instantLock = Buffer.alloc(200);
 

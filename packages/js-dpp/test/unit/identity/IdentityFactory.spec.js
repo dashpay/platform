@@ -1,5 +1,3 @@
-const rewiremock = require('rewiremock/node');
-
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
 const Identity = require('../../../lib/identity/Identity');
@@ -19,12 +17,12 @@ const InstantAssetLockProof = require('../../../lib/identity/stateTransition/ass
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
+const IdentityFactory = require('../../../lib/identity/IdentityFactory');
 
 describe('IdentityFactory', () => {
   let factory;
   let validateIdentityMock;
   let decodeProtocolEntityMock;
-  let IdentityFactory;
   let identity;
   let instantAssetLockProof;
   let chainAssetLockProof;
@@ -36,15 +34,6 @@ describe('IdentityFactory', () => {
 
     instantAssetLockProof = getInstantAssetLockProofFixture();
     chainAssetLockProof = getChainAssetLockProofFixture();
-
-    IdentityFactory = rewiremock.proxy(
-      '../../../lib/identity/IdentityFactory',
-      {
-        '../../../lib/identity/Identity': Identity,
-        '../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition': IdentityCreateTransition,
-        '../../../lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition': IdentityTopUpTransition,
-      },
-    );
 
     dppMock = createDPPMock();
 
@@ -126,6 +115,10 @@ describe('IdentityFactory', () => {
 
       serializedIdentity = identity.toBuffer();
       rawIdentity = identity.toObject();
+    });
+
+    afterEach(() => {
+      factory.createFromObject.restore();
     });
 
     it('should return new Identity from serialized one', () => {

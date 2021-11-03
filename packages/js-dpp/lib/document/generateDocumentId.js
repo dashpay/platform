@@ -1,4 +1,4 @@
-const hash = require('../util/hash');
+const hashModule = require('../util/hash');
 
 /**
  * Generates document ID
@@ -10,6 +10,8 @@ const hash = require('../util/hash');
  * @returns {Buffer}
  */
 function generateDocumentId(contractId, ownerId, type, entropy) {
+  const { hash } = hashModule;
+
   return hash(Buffer.concat([
     contractId,
     ownerId,
