@@ -42,6 +42,7 @@
         - [`.fromSeed()`](wallet/fromSeed.md)
         - [`.generateNewWalletId()`](wallet/generateNewWalletId.md)
         - [`.getAccount()`](wallet/getAccount.md)
+        - [`.dumpStorage()`](wallet/dumpStorage.md)
     - Identities
         - [`new Identities()`](identities/Identities.md)
         - [`.getIdentityHDKeyByIndex()`](identities/getIdentityHDKeyByIndex.md)
