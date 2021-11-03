@@ -19,9 +19,6 @@ const baseConfig = {
   },
   resolve: {
     extensions: ['.ts', '.js', '.json'],
-    alias: {
-      'bn.js': path.resolve(__dirname, 'node_modules', 'bn.js')
-    }
   }
 }
 module.exports = baseConfig;

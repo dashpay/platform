@@ -43,7 +43,7 @@ rm -rf "$CORE_CLIENTS_PATH/nodejs/*_pbjs.js"
 cp "$CORE_WEB_OUT_PATH/core_pb.js" "$CORE_CLIENTS_PATH/nodejs/core_protoc.js"
 
 # Generate node message classes
-$PWD/node_modules/protobufjs/bin/pbjs \
+pbjs \
   -t static-module \
   -w commonjs \
   -r core_root \
@@ -73,7 +73,7 @@ rm -rf "$PLATFORM_CLIENTS_PATH/nodejs/*_pbjs.js"
 
 cp "$PLATFORM_WEB_OUT_PATH/platform_pb.js" "$PLATFORM_CLIENTS_PATH/nodejs/platform_protoc.js"
 
-$PWD/node_modules/protobufjs/bin/pbjs \
+pbjs \
   -t static-module \
   -w commonjs \
   -r platform_root \

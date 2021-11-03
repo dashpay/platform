@@ -18,9 +18,6 @@ const webConfig =  {
   },
   resolve: {
     extensions: ['.js', '.json'],
-    alias: {
-      'bn.js': path.resolve(__dirname, 'node_modules', 'bn.js')
-    }
   },
 }
 

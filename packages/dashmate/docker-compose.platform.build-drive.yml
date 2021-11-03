@@ -2,5 +2,7 @@ version: '3.7'
 
 services:
   drive_abci:
-    build: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_PATH:?err}
+    build:
+      context: ../../
+      dockerfile: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_PATH:?err}/Dockerfile
     image: drive:local
