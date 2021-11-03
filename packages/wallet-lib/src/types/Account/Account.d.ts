@@ -9,7 +9,7 @@ import {
     Strategy,
     Network,
     broadcastTransactionOpts,
-    Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo
+    Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo, TransactionsHistory
 } from "../types";
 import { KeyChain } from "../KeyChain/KeyChain";
 import { InstantLock } from "@dashevo/dashcore-lib";
@@ -62,6 +62,7 @@ export declare class Account {
     getPrivateKeys(addressList: [PublicAddress]): [PrivateKey];
     getTotalBalance(displayDuffs?: boolean): number;
     getTransaction(txid: transactionId): Transaction;
+    getTransactionHistory(): TransactionsHistory;
     getTransactions(): [Transaction];
     getUTXOS(): [UnspentOutput];
     getUnconfirmedBalance(displayDuffs?: boolean): number;

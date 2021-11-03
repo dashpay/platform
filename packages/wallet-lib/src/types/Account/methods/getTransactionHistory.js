@@ -11,9 +11,9 @@ const sortByHeightDescending = (a, b) => (b.height - a.height);
 
 /**
  * Get all the transaction history already formated
- * @return {Promise<TransactionsHistory>}
+ * @return {TransactionsHistory}
  */
-async function getTransactionHistory() {
+function getTransactionHistory() {
   const transactionHistory = [];
 
   const {
