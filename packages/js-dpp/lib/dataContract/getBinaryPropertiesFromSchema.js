@@ -106,4 +106,4 @@ function getBinaryPropertiesFromSchema(documentSchema) {
   return buildBinaryPropertiesMap(documentSchema);
 }
 
-module.exports = getBinaryPropertiesFromSchema;
+module.exports = { getBinaryPropertiesFromSchema };

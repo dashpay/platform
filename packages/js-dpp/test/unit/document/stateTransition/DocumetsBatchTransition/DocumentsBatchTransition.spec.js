@@ -1,10 +1,11 @@
-const rewiremock = require('rewiremock/node');
-
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 const createDPPMock = require('../../../../../lib/test/mocks/createDPPMock');
 const protocolVersion = require('../../../../../lib/version/protocolVersion');
+const DocumentFactory = require('../../../../../lib/document/DocumentFactory');
+const serializer = require('../../../../../lib/util/serializer');
+const hash = require('../../../../../lib/util/hash');
 
 describe('DocumentsBatchTransition', () => {
   let stateTransition;
@@ -17,19 +18,18 @@ describe('DocumentsBatchTransition', () => {
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture(dataContract);
 
-    hashMock = this.sinonSandbox.stub();
-    const serializerMock = { encode: this.sinonSandbox.stub() };
-    encodeMock = serializerMock.encode;
-
-    const DocumentFactory = rewiremock.proxy('../../../../../lib/document/DocumentFactory', {
-      '../../../../../lib/util/hash': hashMock,
-      '../../../../../lib/util/serializer': serializerMock,
-    });
+    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
+    hashMock = this.sinonSandbox.stub(hash, 'hash');
 
     const factory = new DocumentFactory(createDPPMock(), undefined, undefined);
     stateTransition = factory.createStateTransition({
       create: documents,
     });
+  });
+
+  afterEach(() => {
+    encodeMock.restore();
+    hashMock.restore();
   });
 
   describe('#getProtocolVersion', () => {

@@ -1,7 +1,7 @@
-const hash = require('../util/hash');
-const { encode } = require('../util/serializer');
+const hashModule = require('../util/hash');
+const serializer = require('../util/serializer');
 
-const getBinaryPropertiesFromSchema = require('./getBinaryPropertiesFromSchema');
+const getBinaryPropertiesFromSchemaModule = require('./getBinaryPropertiesFromSchema');
 
 const InvalidDocumentTypeError = require('../errors/InvalidDocumentTypeError');
 const Identifier = require('../identifier/Identifier');
@@ -197,6 +197,8 @@ class DataContract {
       return this.binaryProperties[type];
     }
 
+    const { getBinaryPropertiesFromSchema } = getBinaryPropertiesFromSchemaModule;
+
     this.binaryProperties[type] = getBinaryPropertiesFromSchema(
       this.documents[type],
     );
@@ -284,7 +286,7 @@ class DataContract {
     const protocolVersionUInt32 = Buffer.alloc(4);
     protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
 
-    return Buffer.concat([protocolVersionUInt32, encode(serializedData)]);
+    return Buffer.concat([protocolVersionUInt32, serializer.encode(serializedData)]);
   }
 
   /**
@@ -293,6 +295,8 @@ class DataContract {
    * @return {Buffer}
    */
   hash() {
+    const { hash } = hashModule;
+
     return hash(this.toBuffer());
   }
 }

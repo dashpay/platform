@@ -4,8 +4,8 @@ const lodashCloneDeepWith = require('lodash.clonedeepwith');
 
 const cloneDeepWithIdentifiers = require('../util/cloneDeepWithIdentifiers');
 
-const hash = require('../util/hash');
-const { encode } = require('../util/serializer');
+const hashModule = require('../util/hash');
+const serializer = require('../util/serializer');
 const Identifier = require('../identifier/Identifier');
 
 class Document {
@@ -371,7 +371,7 @@ class Document {
     const protocolVersionUInt32 = Buffer.alloc(4);
     protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
 
-    return Buffer.concat([protocolVersionUInt32, encode(serializedData)]);
+    return Buffer.concat([protocolVersionUInt32, serializer.encode(serializedData)]);
   }
 
   /**
@@ -380,6 +380,8 @@ class Document {
    * @return {Buffer}
    */
   hash() {
+    const { hash } = hashModule;
+
     return hash(this.toBuffer());
   }
 }
