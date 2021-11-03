@@ -79,8 +79,14 @@ class Wallet extends EventEmitter {
 
     this.network = network.toString();
 
+    let createdFromNewMnemonic = false;
     if ('mnemonic' in opts) {
-      this.fromMnemonic((opts.mnemonic === null) ? generateNewMnemonic() : opts.mnemonic);
+      let { mnemonic } = opts;
+      if (mnemonic === null) {
+        mnemonic = generateNewMnemonic();
+        createdFromNewMnemonic = true;
+      }
+      this.fromMnemonic(mnemonic);
     } else if ('seed' in opts) {
       this.fromSeed(opts.seed);
     } else if ('HDPrivateKey' in opts) {
@@ -97,6 +103,7 @@ class Wallet extends EventEmitter {
       this.fromAddress(opts.address);
     } else {
       this.fromMnemonic(generateNewMnemonic());
+      createdFromNewMnemonic = true;
     }
 
     // Notice : Most of the time, wallet id is deterministic
@@ -114,10 +121,20 @@ class Wallet extends EventEmitter {
 
     this.store = this.storage.store;
 
-    if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
+    if (createdFromNewMnemonic) {
       // As it is pretty complicated to pass any of wallet options
       // to a specific plugin, using `store` as an options mediator
       // is easier.
+
+      this.store.syncOptions = {
+        skipSynchronization: true,
+      };
+
+      if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
+        throw new Error('"unsafeOptions.skipSynchronizationBeforeHeight" will have no effect because wallet has been'
+          + ' created from the new mnemonic');
+      }
+    } else if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
       this.store.syncOptions = {
         skipSynchronizationBeforeHeight: this.unsafeOptions.skipSynchronizationBeforeHeight,
       };
