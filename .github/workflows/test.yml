@@ -1,0 +1,53 @@
+name: Package Tests
+
+on:
+  release:
+    types:
+      - published
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+
+jobs:
+  test:
+    name: Test Dash Platform component
+    runs-on: ubuntu-20.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Set up the network
+        run: npm run setup
+
+      - name: Install Packster
+        run: npm install -g packster
+
+      - name: Run Packster
+        run: packster check --all --error
+
+      - name: Run ESLinter
+        run: npm run lint
+
+      - name: Get list of packages to test
+        id: packster
+        run: echo "::set-output name=dependants::$(packster list ${{ inputs.package }} --json)"
+
+      - name: Run tests on packages
+        run: |
+          ./scripts/configure_dotenv.sh
+          npm run test

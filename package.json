@@ -1,0 +1,42 @@
+{
+  "name": "js-dash-platform",
+  "private": true,
+  "scripts": {
+    "setup": "npm ci && npm run build && packster fix --all && npm run clean:data && npm run configure && npm run stop",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "packster run test --except @dashevo/platform-test-suite",
+    "configure:dashmate": "./scripts/configure_dashmate.sh",
+    "configure:network": "./scripts/setup_local_network.sh",
+    "configure:tests": "./packages/dashmate/bin/configure_test_suite.sh",
+    "configure:dotenv": "./scripts/configure_dotenv.sh",
+    "configure": "npm run configure:dashmate && npm run configure:network && npm run configure:tests && npm run configure:dotenv",
+    "clean:data": "./scripts/clean_data.sh",
+    "clean:build": "",
+    "clean": "npm run clean:data && npm run clean:build && npm run build",
+    "start": "./packages/dashmate/bin/dashmate group:start --wait-for-readiness --verbose",
+    "stop": "./packages/dashmate/bin/dashmate group:stop",
+    "test:suite": "npm run start && npm run test --workspace=@dashevo/platform-test-suite ; npm run stop",
+    "setup_and_test": "npm run setup && npm run test:suite"
+  },
+  "devDependencies": {
+    "lerna": "3.22.1",
+    "packster": "~0.3.0"
+  },
+  "workspaces": [
+    "packages/js-grpc-common",
+    "packages/dapi-grpc",
+    "packages/js-abci",
+    "packages/js-dpp",
+    "packages/dashpay-contract",
+    "packages/dpns-contract",
+    "packages/feature-flags-contract",
+    "packages/js-dapi-client",
+    "packages/wallet-lib",
+    "packages/js-dash-sdk",
+    "packages/dapi",
+    "packages/js-drive",
+    "packages/dashmate",
+    "packages/platform-test-suite"
+  ]
+}
