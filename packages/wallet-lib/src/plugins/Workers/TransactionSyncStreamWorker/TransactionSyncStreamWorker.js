@@ -9,6 +9,8 @@ const sleep = require('../../../utils/sleep');
 const Worker = require('../../Worker');
 const isBrowser = require('../../../utils/isBrowser');
 
+const logger = require('../../../logger');
+
 class TransactionSyncStreamWorker extends Worker {
   constructor(options) {
     super({
@@ -132,7 +134,15 @@ class TransactionSyncStreamWorker extends Worker {
     // instead of usual injection process
     const {
       skipSynchronizationBeforeHeight,
+      skipSynchronization,
     } = (this.storage.store.syncOptions || {});
+
+    if (skipSynchronization) {
+      logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
+      const bestBlockHeight = this.storage.store.chains[this.network.toString()].blockHeight;
+      this.setLastSyncedBlockHeight(bestBlockHeight);
+      return;
+    }
 
     if (skipSynchronizationBeforeHeight) {
       this.setLastSyncedBlockHeight(
