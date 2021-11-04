@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
   "scripts": {
-    "build": "webpack --display-error-details",
+    "build": "webpack --stats-error-details",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test:unit": "nyc mocha 'src/**/*.spec.js'",
