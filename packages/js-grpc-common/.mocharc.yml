@@ -1,0 +1,3 @@
+file:
+  - lib/test/bootstrap.js
+recursive: true
