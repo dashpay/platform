@@ -5,12 +5,11 @@ const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 const createDPPMock = require('../mocks/createDPPMock');
 
 const ownerId = generateRandomIdentifier();
-const dataContract = getDpnsContractFixture();
 
 /**
  * @return {Document}
  */
-function getTopDocumentFixture(options = {}) {
+function getTopDocumentFixture(dataContract = getDpnsContractFixture(), options = {}) {
   const factory = new DocumentFactory(
     createDPPMock(),
     () => ({
@@ -41,7 +40,7 @@ function getTopDocumentFixture(options = {}) {
 /**
  * @return {Document}
  */
-function getParentDocumentFixture(options = {}) {
+function getParentDocumentFixture(dataContract = getDpnsContractFixture(), options = {}) {
   const factory = new DocumentFactory(
     createDPPMock(),
     () => ({
@@ -72,7 +71,7 @@ function getParentDocumentFixture(options = {}) {
 /**
  * @return {Document}
  */
-function getChildDocumentFixture(options = {}) {
+function getChildDocumentFixture(dataContract = getDpnsContractFixture(), options = {}) {
   const factory = new DocumentFactory(
     createDPPMock(),
     () => ({
@@ -107,5 +106,3 @@ module.exports = {
   getParentDocumentFixture,
   getChildDocumentFixture,
 };
-
-module.exports.dataContract = dataContract;

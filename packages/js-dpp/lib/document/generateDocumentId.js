@@ -1,4 +1,4 @@
-const hash = require('../util/hash');
+const { hash } = require('../util/hash');
 
 /**
  * Generates document ID

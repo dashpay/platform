@@ -4,12 +4,14 @@ const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 const createDPPMock = require('../mocks/createDPPMock');
 
 const ownerId = generateRandomIdentifier();
-const dataContract = getDashPayContractFixture();
 
 /**
  * @return {Document}
  */
-function getContactRequestDocumentFixture(options = {}) {
+function getContactRequestDocumentFixture(
+  dataContract = getDashPayContractFixture(),
+  options = {},
+) {
   const factory = new DocumentFactory(
     createDPPMock(),
     () => ({
@@ -33,5 +35,3 @@ function getContactRequestDocumentFixture(options = {}) {
 module.exports = {
   getContactRequestDocumentFixture,
 };
-
-module.exports.dataContract = dataContract;

@@ -49,9 +49,14 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
     let privateKeyModel;
     let pubKeyBase;
 
+    let privateKeyBase = privateKey;
+    if (Buffer.isBuffer(privateKey) || Array.isArray(privateKey)) {
+      privateKeyBase = Buffer.from(privateKeyBase).toString('hex');
+    }
+
     switch (identityPublicKey.getType()) {
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
-        privateKeyModel = new PrivateKey(privateKey);
+        privateKeyModel = new PrivateKey(privateKeyBase);
 
         /* We store compressed public key in the identity as a base64 string,
         /* and here we compare the private key used to sign the state transition

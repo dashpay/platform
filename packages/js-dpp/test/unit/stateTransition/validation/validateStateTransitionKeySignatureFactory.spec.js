@@ -7,6 +7,8 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
+const { hash } = require('../../../../lib/util/hash');
+
 describe('validateStateTransitionKeySignatureFactory', () => {
   let publicKeyHash;
   let stateTransition;
@@ -19,7 +21,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
     publicKeyHash = Buffer.alloc(20).fill(1);
 
     stateTransition = getIdentityCreateTransitionFixture();
-    stateTransitionHash = stateTransition.hash({ skipSignature: true });
+    stateTransitionHash = hash(stateTransition.toBuffer({ skipSignature: true }));
 
     verifyHashSignatureMock = this.sinonSandbox.stub();
 

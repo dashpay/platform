@@ -1,4 +1,4 @@
-const hash = require('../util/hash');
+const { hash } = require('../util/hash');
 const { encode } = require('../util/serializer');
 
 const getBinaryPropertiesFromSchema = require('./getBinaryPropertiesFromSchema');

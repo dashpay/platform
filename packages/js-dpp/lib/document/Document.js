@@ -4,7 +4,7 @@ const lodashCloneDeepWith = require('lodash.clonedeepwith');
 
 const cloneDeepWithIdentifiers = require('../util/cloneDeepWithIdentifiers');
 
-const hash = require('../util/hash');
+const { hash } = require('../util/hash');
 const { encode } = require('../util/serializer');
 const Identifier = require('../identifier/Identifier');
 

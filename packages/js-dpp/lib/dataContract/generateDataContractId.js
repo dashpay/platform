@@ -1,4 +1,4 @@
-const hash = require('../util/hash');
+const { hash } = require('../util/hash');
 
 /**
  * Generate data contract id based on owner id and entropy

@@ -22,7 +22,7 @@ describe('DocumentsBatchTransition', () => {
     encodeMock = serializerMock.encode;
 
     const DocumentFactory = rewiremock.proxy('../../../../../lib/document/DocumentFactory', {
-      '../../../../../lib/util/hash': hashMock,
+      '../../../../../lib/util/hash': { hash: hashMock },
       '../../../../../lib/util/serializer': serializerMock,
     });
 

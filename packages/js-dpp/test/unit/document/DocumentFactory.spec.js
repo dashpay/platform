@@ -118,7 +118,7 @@ describe('DocumentFactory', () => {
 
       expect(newDocument.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
 
-      expect(newDocument.getId()).to.deep.equal(bs58.decode('B99gjrjq6R1FXwGUQnoP7VrmCDDT1PbKprUNzjVbxXfz'));
+      expect(newDocument.getId()).to.deep.equal(bs58.decode('E6ZqBauuv4LnFXhhnikuqQ9itmAbrCjQqzbL5jJgAK2h'));
 
       expect(newDocument.getCreatedAt().getTime()).to.be.equal(fakeTimeDate.getTime());
       expect(newDocument.getCreatedAt().getTime()).to.equal(newDocument.getUpdatedAt().getTime());

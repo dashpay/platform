@@ -10,6 +10,7 @@ const createDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/c
 const rejectDataTrigger = require('../../../lib/dataTrigger/rejectDataTrigger');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
 
 describe('getDataTriggers', () => {
   let getDataTriggers;
@@ -29,12 +30,13 @@ describe('getDataTriggers', () => {
   let topLevelIdentity;
 
   beforeEach(function beforeEach() {
-    createDocument = getDpnsDocumentFixture.getChildDocumentFixture();
-    updateDocument = getDpnsDocumentFixture.getChildDocumentFixture();
-    deleteDocument = getDpnsDocumentFixture.getChildDocumentFixture();
+    const dataContract = getDpnsContractFixture();
+    createDocument = getDpnsDocumentFixture.getChildDocumentFixture(dataContract);
+    updateDocument = getDpnsDocumentFixture.getChildDocumentFixture(dataContract);
+    deleteDocument = getDpnsDocumentFixture.getChildDocumentFixture(dataContract);
     deleteDocument.data = {};
 
-    dataContractId = getDpnsDocumentFixture.dataContract.getId();
+    dataContractId = dataContract.getId();
     topLevelIdentity = generateRandomIdentifier().toBuffer();
 
     createTrigger = new DataTrigger(

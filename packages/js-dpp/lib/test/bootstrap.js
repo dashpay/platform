@@ -4,11 +4,16 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
+const { initBlake3 } = require('../util/hash');
 
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
 use(chaiString);
+
+before(async () => {
+  await initBlake3();
+});
 
 beforeEach(function beforeEach() {
   if (!this.sinonSandbox) {

@@ -1,4 +1,4 @@
-const hash = require('../../util/hash');
+const { hash } = require('../../util/hash');
 
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');

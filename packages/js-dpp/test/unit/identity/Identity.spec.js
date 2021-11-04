@@ -21,7 +21,7 @@ describe('Identity', () => {
     Identity = rewiremock.proxy(
       '../../../lib/identity/Identity',
       {
-        '../../../lib/util/hash': hashMock,
+        '../../../lib/util/hash': { hash: hashMock },
         '../../../lib/util/serializer': {
           encode: encodeMock,
         },

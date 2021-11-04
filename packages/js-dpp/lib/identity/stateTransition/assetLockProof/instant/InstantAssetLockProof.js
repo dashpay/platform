@@ -1,5 +1,5 @@
 const { InstantLock, Transaction } = require('@dashevo/dashcore-lib');
-const hash = require('../../../../util/hash');
+const { hash } = require('../../../../util/hash');
 const Identifier = require('../../../../identifier/Identifier');
 
 class InstantAssetLockProof {

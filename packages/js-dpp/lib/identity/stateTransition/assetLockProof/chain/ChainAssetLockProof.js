@@ -1,5 +1,5 @@
 const Identifier = require('../../../../identifier/Identifier');
-const hash = require('../../../../util/hash');
+const { hash } = require('../../../../util/hash');
 
 class ChainAssetLockProof {
   /**

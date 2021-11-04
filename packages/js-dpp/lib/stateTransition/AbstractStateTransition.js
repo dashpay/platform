@@ -1,7 +1,7 @@
 const {
   PublicKey,
   PrivateKey,
-  Signer: { sign, verifySignature },
+  Signer: { signHash, verifyHashSignature },
 } = require('@dashevo/dashcore-lib');
 
 const StateTransitionIsNotSignedError = require(
@@ -10,7 +10,7 @@ const StateTransitionIsNotSignedError = require(
 
 const stateTransitionTypes = require('./stateTransitionTypes');
 
-const hash = require('../util/hash');
+const { hash } = require('../util/hash');
 const { encode } = require('../util/serializer');
 
 const calculateStateTransitionFee = require('./calculateStateTransitionFee');
@@ -155,10 +155,10 @@ class AbstractStateTransition {
    * @return {AbstractStateTransition}
    */
   signByPrivateKey(privateKey) {
-    const data = this.toBuffer({ skipSignature: true });
+    const stHash = this.hash({ skipSignature: true });
     const privateKeyModel = new PrivateKey(privateKey);
 
-    this.setSignature(sign(data, privateKeyModel));
+    this.setSignature(signHash(stHash, privateKeyModel));
 
     return this;
   }
@@ -174,13 +174,13 @@ class AbstractStateTransition {
       throw new StateTransitionIsNotSignedError(this);
     }
 
-    const data = this.toBuffer({ skipSignature: true });
+    const stHash = this.hash({ skipSignature: true });
 
     const publicKeyModel = new PublicKey(publicKey, {});
 
     let isSignatureVerified;
     try {
-      isSignatureVerified = verifySignature(data, signature, publicKeyModel);
+      isSignatureVerified = verifyHashSignature(stHash, signature, publicKeyModel.hash);
     } catch (e) {
       isSignatureVerified = false;
     }

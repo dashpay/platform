@@ -4,12 +4,11 @@ const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 const createDPPMock = require('../mocks/createDPPMock');
 
 const ownerId = generateRandomIdentifier();
-const dataContract = getFeatureFlagsContractFixture();
 
 /**
  * @return {Document}
  */
-function getFeatureFlagsDocumentsFixture() {
+function getFeatureFlagsDocumentsFixture(dataContract = getFeatureFlagsContractFixture()) {
   const factory = new DocumentFactory(
     createDPPMock(),
     () => ({
@@ -27,5 +26,3 @@ function getFeatureFlagsDocumentsFixture() {
 }
 
 module.exports = getFeatureFlagsDocumentsFixture;
-
-module.exports.dataContract = dataContract;

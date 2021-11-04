@@ -9,7 +9,7 @@ const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsCon
 const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
-const hash = require('../../../../lib/util/hash');
+const { hash } = require('../../../../lib/util/hash');
 
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const Identifier = require('../../../../lib/identifier/Identifier');
@@ -28,10 +28,10 @@ describe('createDomainDataTrigger', () => {
   beforeEach(function beforeEach() {
     dataContract = getDpnsContractFixture();
 
-    topDocument = getTopDocumentFixture();
-    parentDocument = getParentDocumentFixture();
-    childDocument = getChildDocumentFixture();
-    const preorderDocument = getPreorderDocumentFixture();
+    topDocument = getTopDocumentFixture(dataContract);
+    parentDocument = getParentDocumentFixture(dataContract);
+    childDocument = getChildDocumentFixture(dataContract);
+    const preorderDocument = getPreorderDocumentFixture(dataContract);
 
     [parentDocumentTransition] = getDocumentTransitionFixture({
       create: [parentDocument],
@@ -112,7 +112,10 @@ describe('createDomainDataTrigger', () => {
   });
 
   it('should fail with invalid normalizedLabel', async () => {
-    childDocument = getChildDocumentFixture({ normalizedLabel: childDocument.getData().label });
+    childDocument = getChildDocumentFixture(
+      dataContract,
+      { normalizedLabel: childDocument.getData().label },
+    );
     stateRepositoryMock.fetchTransaction
       .withArgs(
         childDocument.getData().records.dashUniqueIdentityId,
@@ -137,11 +140,14 @@ describe('createDomainDataTrigger', () => {
   });
 
   it('should fail with invalid parent domain', async () => {
-    childDocument = getChildDocumentFixture({
-      label: 'label',
-      normalizedLabel: 'label',
-      normalizedParentDomainName: 'parent.invalidname',
-    });
+    childDocument = getChildDocumentFixture(
+      dataContract,
+      {
+        label: 'label',
+        normalizedLabel: 'label',
+        normalizedParentDomainName: 'parent.invalidname',
+      },
+    );
 
     stateRepositoryMock.fetchTransaction
       .withArgs(
@@ -182,7 +188,7 @@ describe('createDomainDataTrigger', () => {
       Buffer.alloc(32, 5),
     );
 
-    childDocument = getChildDocumentFixture({
+    childDocument = getChildDocumentFixture(dataContract, {
       records: {
         dashUniqueIdentityId: dashUniqueIdentityId.toBuffer(),
       },
@@ -210,7 +216,7 @@ describe('createDomainDataTrigger', () => {
       Buffer.alloc(32, 2),
     );
 
-    childDocument = getChildDocumentFixture({
+    childDocument = getChildDocumentFixture(dataContract, {
       records: {
         dashAliasIdentityId: dashUniqueIdentityId.toBuffer(),
       },
@@ -234,7 +240,7 @@ describe('createDomainDataTrigger', () => {
   });
 
   it('should fail with preorder document was not found', async () => {
-    childDocument = getChildDocumentFixture({
+    childDocument = getChildDocumentFixture(dataContract, {
       preorderSalt: Buffer.alloc(256, '012fd'),
     });
 
@@ -256,7 +262,7 @@ describe('createDomainDataTrigger', () => {
   });
 
   it('should fail with invalid full domain name length', async () => {
-    childDocument = getChildDocumentFixture({
+    childDocument = getChildDocumentFixture(dataContract, {
       normalizedParentDomainName: 'a'.repeat(512),
     });
 
@@ -317,7 +323,9 @@ describe('createDomainDataTrigger', () => {
   });
 
   it('should fail with allowing subdomains for non top level domain', async () => {
-    childDocument = getChildDocumentFixture({ subdomainRules: { allowSubdomains: true } });
+    childDocument = getChildDocumentFixture(
+      dataContract, { subdomainRules: { allowSubdomains: true } },
+    );
 
     [childDocumentTransition] = getDocumentTransitionFixture({
       create: [childDocument],
