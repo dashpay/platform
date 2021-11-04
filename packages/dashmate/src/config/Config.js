@@ -4,6 +4,7 @@ const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 const lodashCloneDeep = require('lodash.clonedeep');
 
+const addFormats = require('ajv-formats');
 const configJsonSchema = require('../../configs/schema/configJsonSchema');
 
 const convertObjectToEnvs = require('./convertObjectToEnvs');
@@ -172,5 +173,6 @@ class Config {
 }
 
 Config.ajv = new Ajv({ coerceTypes: true });
+addFormats(Config.ajv, { mode: 'fast', formats: ['ipv4'] });
 
 module.exports = Config;
