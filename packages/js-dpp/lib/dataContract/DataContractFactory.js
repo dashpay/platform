@@ -5,7 +5,7 @@ const generateDataContractId = require('./generateDataContractId');
 
 const DataContractCreateTransition = require('./stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const entropyGenerator = require('../util/entropyGenerator');
+const generateEntropy = require('../util/generateEntropy');
 const AbstractConsensusError = require('../errors/consensus/AbstractConsensusError');
 
 class DataContractFactory {
@@ -28,7 +28,7 @@ class DataContractFactory {
    * @return {DataContract}
    */
   create(ownerId, documents) {
-    const { generate } = entropyGenerator;
+    const { generate } = generateEntropy;
     const dataContractEntropy = generate();
 
     const dataContractId = generateDataContractId(ownerId, dataContractEntropy);

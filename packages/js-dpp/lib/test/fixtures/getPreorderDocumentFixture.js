@@ -1,6 +1,6 @@
 const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
-const { generate: generateEntropy } = require('../../util/entropyGenerator');
+const { generate: generateEntropy } = require('../../util/generateEntropy');
 
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 const createDPPMock = require('../mocks/createDPPMock');
