@@ -51,7 +51,9 @@ class StartCommand extends ConfigBaseCommand {
     );
 
     try {
-      await tasks.run();
+      await tasks.run({
+        isVerbose,
+      });
     } catch (e) {
       throw new MuteOneLineError(e);
     }

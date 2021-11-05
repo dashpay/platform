@@ -109,6 +109,7 @@ class GroupResetCommand extends GroupBaseCommand {
       await tasks.run({
         isHardReset,
         isPlatformOnlyReset,
+        isVerbose,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
