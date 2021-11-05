@@ -49,6 +49,7 @@ class GroupStartCommand extends GroupBaseCommand {
     try {
       await tasks.run({
         waitForReadiness,
+        isVerbose,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
