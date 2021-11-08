@@ -59,7 +59,9 @@ jobs:
       - name: Check NPM package lock version is updated
         uses: dashevo/gh-action-check-package-lock@v1
 
+      - name: Setup repo and local network
+        run: npm run setup
+
       - name: Run test suite
-        run: |
-          npm run setup
-          npm run test:suite
+        run: npm run test:suite
+

@@ -54,14 +54,11 @@ jobs:
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
 
-      - name: Set up the network
+      - name: Setup repo and local network
         run: npm run setup
 
-      - name: Install Packster
-        run: npm install -g packster
-
       - name: Run Packster
-        run: packster check --all --error
+        run: node_modules/.bin/packster check --all --error
 
       - name: Run ESLinter
         run: npm run lint
@@ -70,7 +67,9 @@ jobs:
         id: packster
         run: echo "::set-output name=dependants::$(packster list ${{ inputs.package }} --json)"
 
+      - name: Start local network
+        run: npm run start
+
       - name: Run tests on packages
-        run: |
-          ./scripts/configure_dotenv.sh
-          npm run test
+        run: npm run test
+
