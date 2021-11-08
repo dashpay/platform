@@ -13,7 +13,7 @@ jobs:
   test:
     name: Test Dash Platform component
     runs-on: ubuntu-20.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
