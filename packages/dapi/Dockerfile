@@ -1,35 +1,49 @@
-# syntax = docker/dockerfile:1.2
+# syntax = docker/dockerfile:1.3
+FROM node:16-alpine as node_gyp_cache
+
+RUN apk update && \
+    apk --no-cache upgrade && \
+    apk add --no-cache git \
+                      openssh-client \
+                      python3 \
+                      alpine-sdk \
+                      zeromq-dev
+
+WORKDIR /platform
+
+ENV npm_config_zmq_external=true
+
+# Install slow native modules in order to cache them for forthcomming stages
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --no-audit --loglevel info --production --global-style true \
+    zeromq@5.2.0
+
 FROM node:16-alpine as node_modules
 
 RUN apk update && \
     apk --no-cache upgrade && \
     apk add --no-cache git \
                        openssh-client \
-                       python3 \
-                       alpine-sdk \
-                       zeromq-dev
-
-# Enable node-gyp cache
-RUN npm install -g node-gyp-cache@0.2.1 && \
-    npm config set node_gyp node-gyp-cache
-
-# Update npm to version 7 to work with workspaces
-RUN npm install -g npm@7
-
-# Install npm modules
-ENV npm_config_zmq_external=true
+                       jq
 
 WORKDIR /platform
 
+# Downgrade NPM to 7.18.1 to fix https://github.com/npm/cli/issues/3847https://github.com/npm/cli/issues/3847
+RUN npm install --global  --production --no-audit npm@7.18.1
+
 COPY package.json package-lock.json /platform/
 
-COPY packages/ /platform/packages/
+# Copy only necessary packages from monorepo
+COPY packages/dapi packages/dapi
+COPY packages/js-dpp packages/js-dpp
+COPY packages/js-grpc-common packages/js-grpc-common
 
-# Remove packages that dapi won't need
-RUN rm -rf /platform/packages/drive /platform/packages/dashmate /platform/packages/platform-test-suite platform/packages/js-dash-sdk /platform/packages/wallet-lib
+# Do not install already built native modules
+RUN echo "$( jq -M 'del(.dependencies | .zeromq)' packages/dapi/package.json )" > packages/dapi/package.json
 
 # Install dapi-specific dependencies
-RUN --mount=type=cache,target=/root/.npm --mount=type=cache,target=/root/.cache npm ci -w @dashevo/dapi --production
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --loglevel info -w @dashevo/dapi --production
 
 FROM node:16-alpine
 
@@ -39,24 +53,27 @@ ENV NODE_ENV ${NODE_ENV}
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
 
-# Install ZMQ shared library
-RUN apk update && apk add --no-cache zeromq-dev
-
-# Copy packages dir to create symlinks to modules available locally
-COPY --from=node_modules /platform/packages/ /packages
-# Copy hoisted NPM modules
-COPY --from=node_modules /platform/node_modules/ /node_modules
-COPY --from=node_modules /platform/package.json /package.json
-COPY --from=node_modules /platform/package-lock.json /package-lock.json
-
 ENV PATH /node_modules/.bin:$PATH
 
 # Copy project files
 WORKDIR /usr/src/app
 
-COPY packages/dapi/ .
-# Copy dapi-specific NPM modules that are in conflict with the root node_modules (if any)
-COPY --from=node_modules /platform/packages/dapi/node_modules/ ./node_modules
+# Install ZMQ shared library
+RUN apk update && apk add --no-cache zeromq-dev
+
+# Copy cached packages with native modules
+COPY --from=node_gyp_cache /platform/node_modules/zeromq ./node_modules/zeromq
+
+# Copy packages dir to create symlinks to modules available locally
+COPY --from=node_modules /platform/packages/ /packages
+
+# Copy hoisted NPM modules
+COPY --from=node_modules /platform/node_modules/ /node_modules
+COPY --from=node_modules /platform/package.json /package.json
+COPY --from=node_modules /platform/package-lock.json /package-lock.json
+
+# Copy app code
+COPY --from=node_modules /platform/packages/dapi .
 
 RUN cp .env.example .env
 
