@@ -35,8 +35,10 @@ COPY package.json package-lock.json /platform/
 
 # Copy only necessary packages from monorepo
 COPY packages/dapi packages/dapi
+COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
+COPY packages/feature-flags-contract packages/feature-flags-contract
 
 # Do not install already built native modules
 RUN echo "$( jq -M 'del(.dependencies | .zeromq)' packages/dapi/package.json )" > packages/dapi/package.json
