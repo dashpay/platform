@@ -54,13 +54,14 @@ jobs:
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
-          cache-max-size: 2g
+          cache-max-size: 3g
 
       - name: Check NPM package lock version is updated
         uses: dashevo/gh-action-check-package-lock@v1
 
-      - name: Install NPM dependencies
-        run: npm ci
+      - name: Setup repo and local network
+        run: npm run setup
 
       - name: Run test suite
-        run: npm run setup_and_test
+        run: npm run test:suite
+

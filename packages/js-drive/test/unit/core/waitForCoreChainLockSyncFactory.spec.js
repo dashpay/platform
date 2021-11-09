@@ -1,6 +1,6 @@
 const EventEmitter = require('events');
-const ZMQClient = require('@dashevo/dashd-zmq');
 const LatestCoreChainLock = require('../../../lib/core/LatestCoreChainLock');
+const ZMQClient = require('../../../lib/core/ZmqClient');
 const waitForCoreChainLockSyncFactory = require('../../../lib/core/waitForCoreChainLockSyncFactory');
 const LoggerMock = require('../../../lib/test/mock/LoggerMock');
 
