@@ -29,7 +29,7 @@ FAUCET_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 
 TEST_ENV_FILE_PATH=${TEST_SUITE_PATH}/.env
-rm ${TEST_ENV_FILE_PATH}
+rm -f ${TEST_ENV_FILE_PATH}
 touch ${TEST_ENV_FILE_PATH}
 
 #cat << 'EOF' >> ${TEST_ENV_FILE_PATH}
