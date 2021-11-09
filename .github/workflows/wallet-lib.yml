@@ -24,6 +24,7 @@ on:
 jobs:
   js-dash-sdk-tests:
     name: Run Wallet lib tests
-    uses: dashevo/platform/.github/workflows/test.yml@${{GITHUB_REF}}
+    uses: dashevo/platform/.github/workflows/test.yml@parallel-ci
     with:
       package: '@dashevo/wallet-lib'
+      start-local-network: true
