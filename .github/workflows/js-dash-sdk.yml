@@ -28,3 +28,4 @@ jobs:
     uses: dashevo/platform/.github/workflows/test.yml@parallel-ci
     with:
       package: 'dash'
+      start-local-network: true
