@@ -1,4 +1,4 @@
-name: DashPay Contract Tests
+name: DashPay Contract
 
 on:
   workflow_dispatch:

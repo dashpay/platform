@@ -1,6 +1,7 @@
-name: Platform Test Suite
+name: All Packages
 
 on:
+  workflow_dispatch:
   release:
     types:
       - published
@@ -10,7 +11,35 @@ on:
       - v[0-9]+\.[0-9]+-dev
 
 jobs:
-  test:
+  local-deps:
+    name: Check local package dependencies
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Check local dependencies
+        run: node_modules/.bin/packster check --all --error
+
+  # TODO: Use sync pack to check remote deps are the same in all packages: https://www.npmjs.com/package/syncpack
+
+  test-suite:
     name: Run Platform Test Suite
     runs-on: ubuntu-20.04
     steps:

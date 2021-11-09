@@ -1,4 +1,4 @@
-name: DPP Tests
+name: DPP
 
 on:
   workflow_dispatch:

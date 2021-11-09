@@ -1,4 +1,4 @@
-name: DAPI gRPC Tests
+name: DAPI gRPC
 
 on:
   workflow_dispatch:

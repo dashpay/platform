@@ -1,4 +1,4 @@
-name: DAPI Tests
+name: DAPI
 
 on:
   workflow_dispatch:

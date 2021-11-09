@@ -1,4 +1,4 @@
-name: Wallet Lib Tests
+name: Wallet Lib
 
 on:
   workflow_dispatch:

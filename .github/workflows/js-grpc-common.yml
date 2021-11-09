@@ -1,4 +1,4 @@
-name: gRPC Common Tests
+name: gRPC Common
 
 on:
   workflow_dispatch:

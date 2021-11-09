@@ -1,4 +1,4 @@
-name: Drive Tests
+name: Drive
 
 on:
   workflow_dispatch:
