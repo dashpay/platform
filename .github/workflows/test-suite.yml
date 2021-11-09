@@ -19,11 +19,21 @@ jobs:
         with:
           access_token: ${{ github.token }}
 
-      - uses: actions/checkout@v2
+      - name: Check out repo
+        uses: actions/checkout@v2
 
-      - uses: actions/setup-node@v2
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
         with:
           node-version: '16'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Set up Docker BuildX
         id: buildx
@@ -32,14 +42,6 @@ jobs:
           version: v0.6.3
           install: true
           driver-opts: image=moby/buildkit:buildx-stable-1
-
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
 
       - name: Enable buildkit cache
         uses: actions/cache@v2
@@ -56,12 +58,17 @@ jobs:
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
 
-      - name: Check NPM package lock version is updated
-        uses: dashevo/gh-action-check-package-lock@v1
+      - name: Install NPM dependencies
+        run: npm ci
 
-      - name: Setup repo and local network
-        run: npm run setup
+      - name: Build packages
+        run: npm run build
+
+      - name: Setup local network
+        run: npm run configure
+
+      - name: Start local network
+        run: npm run start
 
       - name: Run test suite
         run: npm run test:suite
-

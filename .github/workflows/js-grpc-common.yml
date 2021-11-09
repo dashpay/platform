@@ -1,0 +1,22 @@
+name: gRPC Common Tests
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+    paths:
+      - .github/workflows/js-grpc-common.yml
+      - .github/workflows/test.yml
+      - packages/js-grpc-common/**
+
+jobs:
+  js-dpp-tests:
+    name: Run gRPC Common tests
+    uses: dashevo/platform/.github/workflows/test.yml@${{GITHUB_REF}}
+    with:
+      package: '@dashevo/grpc-common'

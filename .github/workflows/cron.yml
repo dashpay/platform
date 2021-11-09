@@ -1,20 +1,13 @@
-name: Package Tests
+name: Run All Tests Every Day
 
 on:
-  workflow_call:
-    inputs:
-      package:
-        description: The package name to run tests for
-        type: string
-        required: true
-      start-local-network:
-        description: Does the specified package require local network to run tests
-        type: boolean
-        default: false
-        required: false
+  schedule:
+    # TODO: Run everyday
+    - cron: '49 */160 * * *'
+
 jobs:
   test:
-    name: Test package
+    name: Test all packages
     runs-on: ubuntu-20.04
     timeout-minutes: 30
     steps:
@@ -46,7 +39,6 @@ jobs:
           version: v0.6.3
           install: true
           driver-opts: image=moby/buildkit:buildx-stable-1
-        if: ${{ inputs.start-local-network }}
 
       - name: Enable buildkit cache
         uses: actions/cache@v2
@@ -55,7 +47,6 @@ jobs:
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildkit-
-        if: ${{ inputs.start-local-network }}
 
       - name: Load buildkit state from cache
         uses: dashevo/gh-action-cache-buildkit-state@v1
@@ -63,24 +54,22 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-        if: ${{ inputs.start-local-network }}
 
       - name: Install NPM dependencies
-        run: npm ci -w ${{ inputs.package }}
+        run: npm ci
 
       - name: Run ESLinter
-        run: npm run lint -w ${{ inputs.package }} --if-present
+        run: npm run lint
 
-      - name: Build package
-        run: npm run build # TODO: Run only for specified package and deps
+      - name: Build packages
+        run: npm run build
 
       - name: Setup local network
         run: npm run configure
-        if: ${{ inputs.start-local-network }}
 
       - name: Start local network
         run: npm run start
-        if: ${{ inputs.start-local-network }}
 
       - name: Run tests
-        run: npm run test -w ${{ inputs.package }}
+        run: npm run test
+
