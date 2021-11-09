@@ -1,0 +1,31 @@
+name: Drive
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+    paths:
+      - .github/workflows/js-drive.yml
+      - .github/workflows/test.yml
+      - packages/js-drive/**
+      - packages/feature-flags-contract/**
+      - packages/dpns-contract/**
+      - packages/dashpay-contract/**
+      - packages/js-dpp/**
+      - packages/feature-flags-contract/**
+      - packages/dpns-contract/**
+      - packages/dashpay-contract/**
+      - packages/dapi-grpc/**
+      - packages/js-grpc-common/**
+
+jobs:
+  js-dpp-tests:
+    name: Run Drive tests
+    uses: dashevo/platform/.github/workflows/test.yml@master
+    with:
+      package: '@dashevo/drive'
