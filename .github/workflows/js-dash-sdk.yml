@@ -25,6 +25,6 @@ on:
 jobs:
   js-dash-sdk-tests:
     name: Run Dash SDK tests
-    uses: dashevo/platform/.github/workflows/test.yml@${{GITHUB_REF}}
+    uses: dashevo/platform/.github/workflows/test.yml@parallel-ci
     with:
       package: 'dash'
