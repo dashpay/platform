@@ -14,7 +14,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-
 /**
  *
  * @param {DriveClient} driveClient

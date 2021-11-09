@@ -195,7 +195,7 @@ describe('testTransactionAgainstFilter', () => {
     const tx = new Transaction().addOutput(output);
 
     filter.nFlags = BloomFilter.BLOOM_UPDATE_P2PUBKEY_ONLY;
-    pubKeys.forEach(pubKey => filter.insert(pubKey.toBuffer()));
+    pubKeys.forEach((pubKey) => filter.insert(pubKey.toBuffer()));
 
     let result = testTransactionAgainstFilter(filter, tx);
     expect(result).to.be.true();
@@ -227,7 +227,7 @@ describe('testTransactionAgainstFilter', () => {
     const tx = new Transaction().addOutput(output);
 
     filter.nFlags = BloomFilter.BLOOM_UPDATE_NONE;
-    pubKeys.forEach(pubKey => filter.insert(pubKey.toBuffer()));
+    pubKeys.forEach((pubKey) => filter.insert(pubKey.toBuffer()));
 
     let result = testTransactionAgainstFilter(filter, tx);
     expect(result).to.be.true();

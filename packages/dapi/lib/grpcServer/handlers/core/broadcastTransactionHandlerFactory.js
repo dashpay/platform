@@ -4,7 +4,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-
 const {
   server: {
     error: {
