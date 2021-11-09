@@ -49,5 +49,3 @@ NETWORK=regtest" >> ${TEST_ENV_FILE_PATH}
 #EOF
 
 echo "Platform test suite is configured. The config is written to ${TEST_ENV_FILE_PATH}"
-
-$DASHMATE_BIN group:start --wait-for-readiness --verbose
