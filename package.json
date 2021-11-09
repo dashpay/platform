@@ -5,7 +5,7 @@
     "setup": "npm ci && npm run build && packster fix --all && npm run clean:data && npm run configure && npm run stop",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "packster run test --except @dashevo/platform-test-suite --except @dashevo/drive",
+    "test": "packster run test --except @dashevo/platform-test-suite",
     "configure:dashmate": "./scripts/configure_dashmate.sh",
     "configure:network": "./scripts/setup_local_network.sh",
     "configure:tests": "./packages/dashmate/bin/configure_test_suite.sh",
