@@ -8,15 +8,15 @@ DAPI_PATH="${PACKAGES_PATH}"/dapi
 DRIVE_PATH="${PACKAGES_PATH}"/js-drive
 SDK_PATH="${PACKAGES_PATH}"/js-dash-sdk
 WALLET_LIB_PATH="${PACKAGES_PATH}"/wallet-lib
-DASHMTAE_PATH="${PACKAGES_PATH}"/dashmate
-DASHMATE_BIN=${DASHMTAE_PATH}/bin/dashmate
+DASHMATE_PATH="${PACKAGES_PATH}"/dashmate
+DASHMATE_BIN=${DASHMATE_PATH}/bin/dashmate
 
 # DAPI:
 cp "${DAPI_PATH}"/.env.example "${DAPI_PATH}"/.env
 
 # JS-SDK:
-FAUCET_ADDRESS=$(grep -m 1 "Address:" "${DASHMTAE_PATH}"/mint.log | awk '{printf $3}')
-FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${DASHMTAE_PATH}"/mint.log | awk '{printf $4}')
+FAUCET_ADDRESS=$(grep -m 1 "Address:" "${DASHMATE_PATH}"/mint.log | awk '{printf $3}')
+FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${DASHMATE_PATH}"/mint.log | awk '{printf $4}')
 DPNS_CONTRACT_ID=$($DASHMATE_BIN config:get --config="${CONFIG}_1" platform.dpns.contract.id)
 
 SDK_ENV_FILE_PATH=${SDK_PATH}/.env
