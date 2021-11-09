@@ -22,4 +22,4 @@ jobs:
     name: Run DAPI gRPC tests
     uses: dashevo/platform/.github/workflows/test.yml@master
     with:
-      package: '@dashevo/dapi-grpc'
+      package: '@dashevo/dashpay-contract'
