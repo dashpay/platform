@@ -7,9 +7,19 @@ on:
 
 jobs:
   release-npm:
-    name: Release Dash Platform to NPM
+    name: Release NPM packages
     runs-on: ubuntu-20.04
     steps:
+      # TODO: We need to make sure that other tests are passed
+
+#  Can we just use?
+#
+#     on:
+#        workflow_run:
+#          workflows: [ 'Test' ]
+#          types:
+#            - completed
+
       - name: Wait for tests to succeed
         uses: lewagon/wait-on-check-action@v1.1.1
         with:
@@ -18,9 +28,11 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 60
 
-      - uses: actions/checkout@v2
+      - name: Check out repo
+        uses: actions/checkout@v2
 
-      - uses: actions/setup-node@v2
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
         with:
           node-version: '16'
 
@@ -28,7 +40,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
@@ -38,7 +50,7 @@ jobs:
       - name: Build packages
         run: npm run build
 
-      - name: Set release tag
+      - name: Set NPM release tag
         uses: actions/github-script@v5
         id: tag
         with:
@@ -51,14 +63,34 @@ jobs:
       - name: Publish NPM package
         run: npm publish --workspaces --tag ${{ steps.tag.outputs.result }}
 
-  release-docker:
-    name: Release Dash Platform to Docker Hub
+  release-drive-docker-image:
+    name: Release Drive to Docker Hub
     runs-on: ubuntu-20.04
     needs: release-npm
     steps:
-      - uses: actions/checkout@v2
+      - name: Check out repo
+        uses: actions/checkout@v2
 
-      - name: Set up QEMU
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Build packages
+        run: npm run build # TODO: Build only for Drive and deps
+
+      - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v1
 
       - name: Set up Docker BuildX
@@ -82,7 +114,7 @@ jobs:
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
-          cache-max-size: 2g
+          cache-max-size: 3g
 
       - name: Login to DockerHub
         uses: docker/login-action@v1
@@ -97,8 +129,100 @@ jobs:
           result-encoding: string
           script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
 
-      - name: Set Docker tags and labels for DAPI
-        id: dapi_docker_meta
+      - name: Set Docker tags and labels
+        id: docker_meta
+        uses: docker/metadata-action@v3
+        with:
+          images: dashpay/drive
+          tags: |
+            type=match,pattern=v(\d+),group=1
+            type=match,pattern=v(\d+.\d+),group=1
+            type=match,pattern=v(\d+.\d+.\d+),group=1
+            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+          flavor: |
+            latest=${{ !contains(github.event.release.tag_name, '-dev') }}
+            suffix=${{ steps.suffix.outputs.result }}
+
+      - name: Build and push Docker image for Drive
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./packages/js-drive/Dockerfile
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+
+  release-dapi-docker-image:
+    name: Release DAPI to Docker Hub
+    runs-on: ubuntu-20.04
+    needs: release-npm
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Build packages
+        run: npm run build # TODO: Build only for DAPI and deps
+
+      - name: Set up QEMU to run multi-arch builds
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          version: v0.6.3
+          install: true
+          driver-opts: image=moby/buildkit:buildx-stable-1
+
+      - name: Enable buildkit cache
+        uses: actions/cache@v2
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 3g
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set suffix to Docker tags
+        uses: actions/github-script@v5
+        id: suffix
+        with:
+          result-encoding: string
+          script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
+
+      - name: Set Docker tags and labels
+        id: docker_meta
         uses: docker/metadata-action@v3
         with:
           images: dashpay/dapi
@@ -111,16 +235,13 @@ jobs:
             latest=${{ !contains(github.event.release.tag_name, '-dev') }}
             suffix=${{ steps.suffix.outputs.result }}
 
-      - name: Build packages
-        run: npm run build
-
-      - name: Build and push Docker image for DAPI
-        id: dapi_docker_build
+      - name: Build and push Docker image
+        id: docker_build
         uses: docker/build-push-action@v2
         with:
-          context: ./dapi
+          context: .
           builder: ${{ steps.buildx.outputs.name }}
-          file: ./dapi/Dockerfile
+          file: ./packages/dapi/Dockerfile
           push: true
           tags: ${{ steps.dapi_docker_meta.outputs.tags }}
           labels: ${{ steps.dapi_docker_meta.outputs.labels }}

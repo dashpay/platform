@@ -11,7 +11,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "configure:dashmate": "./scripts/configure_dashmate.sh",
     "configure:network": "./scripts/setup_local_network.sh",
-    "configure:tests": "./packages/dashmate/bin/configure_test_suite.sh",
+    "configure:tests": "scripts/configure_test_suite.sh",
     "configure:dotenv": "./scripts/configure_dotenv.sh",
     "configure": "npm run configure:dashmate && npm run configure:network && npm run configure:tests && npm run configure:dotenv",
     "clean:data": "npm run dashmate group:reset -- --group=local --hard",
