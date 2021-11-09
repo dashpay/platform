@@ -18,6 +18,6 @@ on:
 jobs:
   dapi-tests:
     name: Run DAPI gRPC tests
-    uses: dashevo/platform/.github/workflows/test.yml@parallel-ci
+    uses: dashevo/platform/.github/workflows/test.yml@${{ GITHUB_REF_NAME }}
     with:
       package: '@dashevo/dapi-grpc'
