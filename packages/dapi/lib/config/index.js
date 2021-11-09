@@ -49,7 +49,7 @@ Object
     }
   });
 
-const config = Object.assign({}, DEFAULT_CONFIG, envConfig);
+const config = { ...DEFAULT_CONFIG, ...envConfig };
 
 module.exports = {
   livenet: Boolean(config[OPTIONS.LIVENET]),

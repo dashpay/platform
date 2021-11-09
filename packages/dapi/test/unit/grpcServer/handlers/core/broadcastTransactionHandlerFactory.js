@@ -80,7 +80,7 @@ describe('broadcastTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('invalid transaction:'));
+      expect(e.getMessage()).to.be.a('string').and.satisfy((msg) => msg.startsWith('invalid transaction:'));
       expect(coreRPCClientMock.sendRawTransaction).to.be.not.called();
     }
   });
@@ -95,7 +95,7 @@ describe('broadcastTransactionHandlerFactory', () => {
       expect.fail('should thrown InvalidArgumentGrpcError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.be.a('string').and.satisfy(msg => msg.startsWith('invalid transaction:'));
+      expect(e.getMessage()).to.be.a('string').and.satisfy((msg) => msg.startsWith('invalid transaction:'));
       expect(coreRPCClientMock.sendRawTransaction).to.be.not.called();
     }
   });

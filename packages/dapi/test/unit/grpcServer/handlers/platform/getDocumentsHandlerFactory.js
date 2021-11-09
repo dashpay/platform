@@ -71,7 +71,7 @@ describe('getDocumentsHandlerFactory', () => {
 
     documentsFixture = [document];
 
-    documentsSerialized = documentsFixture.map(documentItem => documentItem.toBuffer());
+    documentsSerialized = documentsFixture.map((documentItem) => documentItem.toBuffer());
     proofFixture = {
       rootTreeProof: Buffer.alloc(1, 1),
       storeTreeProof: Buffer.alloc(1, 2),
