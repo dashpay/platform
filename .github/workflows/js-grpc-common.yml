@@ -17,6 +17,6 @@ on:
 jobs:
   js-dpp-tests:
     name: Run gRPC Common tests
-    uses: dashevo/platform/.github/workflows/test.yml@parallel-ci
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: '@dashevo/grpc-common'

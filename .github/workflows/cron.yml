@@ -2,8 +2,7 @@ name: Run All Tests Every Day
 
 on:
   schedule:
-    # TODO: Run everyday
-    - cron: '49 */160 * * *'
+    - cron: '30 4 * * *'
 
 jobs:
   test:
