@@ -1,7 +1,7 @@
 const TransactionHashesCache = require('./TransactionHashesCache');
 const BloomFilterEmitter = require('../bloomFilter/emitter/BloomFilterEmitter');
 
-const ProcessMediator = require('../transactionsFilter/ProcessMediator');
+const ProcessMediator = require('./ProcessMediator');
 
 const wait = require('../utils/wait');
 
@@ -36,7 +36,7 @@ function subscribeToNewTransactions(
     // in case we've missed some or all transactions and got a block
     if (transactionsAndBlocksCache.getBlockCount() === 0) {
       // test transactions and emit `match` events
-      block.transactions.forEach(tx => filterEmitter.test(tx));
+      block.transactions.forEach((tx) => filterEmitter.test(tx));
     }
 
     // put block in the cache executing queue logic
@@ -87,7 +87,7 @@ function subscribeToNewTransactions(
       //  Proto messages already support that
       const unsentTransactions = transactionsAndBlocksCache.getUnretrievedTransactions();
       unsentTransactions
-        .forEach(tx => mediator.emit(ProcessMediator.EVENTS.TRANSACTION, tx));
+        .forEach((tx) => mediator.emit(ProcessMediator.EVENTS.TRANSACTION, tx));
 
       const unretrievedInstantLocks = transactionsAndBlocksCache.getUnretrievedInstantLocks();
       unretrievedInstantLocks.forEach((instantLock) => {
@@ -98,7 +98,7 @@ function subscribeToNewTransactions(
 
       const unsentMerkleBlocks = transactionsAndBlocksCache.getUnretrievedMerkleBlocks();
       unsentMerkleBlocks
-        .forEach(merkleBlock => mediator.emit(ProcessMediator.EVENTS.MERKLE_BLOCK, merkleBlock));
+        .forEach((merkleBlock) => mediator.emit(ProcessMediator.EVENTS.MERKLE_BLOCK, merkleBlock));
 
       await wait(50);
     }

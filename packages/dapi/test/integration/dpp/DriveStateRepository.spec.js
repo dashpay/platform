@@ -17,7 +17,6 @@ const {
 
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 
-
 chai.use(chaiAsPromised);
 chai.use(dirtyChai);
 

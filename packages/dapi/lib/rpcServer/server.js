@@ -10,13 +10,13 @@ const generateToAddress = require('./commands/generateToAddress');
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
 
-const createCommands = dashcoreAPI => ({
+const createCommands = (dashcoreAPI) => ({
   getBestBlockHash: getBestBlockHash(dashcoreAPI),
   getBlockHash: getBlockHash(dashcoreAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
 });
 
-const createRegtestCommands = dashcoreAPI => ({
+const createRegtestCommands = (dashcoreAPI) => ({
   generateToAddress: generateToAddress(dashcoreAPI),
 });
 
