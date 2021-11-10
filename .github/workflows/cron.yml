@@ -55,13 +55,13 @@ jobs:
           cache-max-size: 3g
 
       - name: Install NPM dependencies
-        run: npm ci
+        run: npm ci --no-audit
 
       - name: Run ESLinter
         run: npm run lint
 
       - name: Build packages
-        run: npm run build
+        run: node_modules/.bin/ultra -r --build
 
       - name: Setup local network
         run: npm run configure

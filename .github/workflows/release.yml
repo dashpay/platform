@@ -12,13 +12,13 @@ jobs:
     steps:
       # TODO: We need to make sure that other tests are passed
 
-#  Can we just use?
-#
-#     on:
-#        workflow_run:
-#          workflows: [ 'Test' ]
-#          types:
-#            - completed
+      #  Can we just use?
+      #
+      #     on:
+      #        workflow_run:
+      #          workflows: [ 'Test' ]
+      #          types:
+      #            - completed
 
       - name: Wait for tests to succeed
         uses: lewagon/wait-on-check-action@v1.1.1
@@ -45,7 +45,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install NPM dependencies
-        run: npm ci
+        run: npm ci --no-audit
 
       - name: Build packages
         run: npm run build
@@ -85,7 +85,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install NPM dependencies
-        run: npm ci
+        run: npm ci --no-audit
 
       - name: Build packages
         run: npm run build # TODO: Build only for Drive and deps
@@ -177,7 +177,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install NPM dependencies
-        run: npm ci
+        run: npm ci --no-audit
 
       - name: Build packages
         run: npm run build # TODO: Build only for DAPI and deps
@@ -272,3 +272,5 @@ jobs:
           tags: ${{ steps.drive_docker_meta.outputs.tags }}
           labels: ${{ steps.drive_docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+
+# TOOD: release test suite docker image

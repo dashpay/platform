@@ -40,13 +40,13 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install NPM dependencies
-        run: npm ci # TODO: Run only for specified package
+        run: npm ci --no-audit
 
       - name: Run ESLinter
         run: npm run lint -w ${{ inputs.package }} --if-present
 
       - name: Build package
-        run: npm run build # TODO: Run only for specified package and deps
+        run: node_modules/.bin/ultra -r --build --filter "+${{ inputs.package }}"
 
       - name: Setup dotenv files
         run: npm run configure:dotenv
