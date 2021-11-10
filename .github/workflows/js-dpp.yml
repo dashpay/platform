@@ -20,6 +20,6 @@ on:
 jobs:
   js-dpp-tests:
     name: Run DPP tests
-    uses: dashevo/platform/.github/workflows/test.yml@optimize-build
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: '@dashevo/dpp'

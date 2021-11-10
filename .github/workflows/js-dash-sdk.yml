@@ -25,7 +25,7 @@ on:
 jobs:
   js-dash-sdk-tests:
     name: Run Dash SDK tests
-    uses: dashevo/platform/.github/workflows/test.yml@optimize-build
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: 'dash'
       start-local-network: true
