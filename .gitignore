@@ -16,3 +16,6 @@ node_modules
 .nyc_output
 
 *.log
+
+# Ultra runner build cache
+.ultra.cache.json

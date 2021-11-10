@@ -35,7 +35,7 @@ jobs:
         run: npm ci
 
       - name: Check local dependencies
-        run: node_modules/.bin/packster check --all --error
+        run: packster check --all --error
 
   # TODO: Use sync pack to check remote deps are the same in all packages: https://www.npmjs.com/package/syncpack
 
@@ -91,7 +91,7 @@ jobs:
         run: npm ci
 
       - name: Build packages
-        run: npm run build
+        run: ultra -r --build
 
       - name: Setup local network
         run: npm run configure

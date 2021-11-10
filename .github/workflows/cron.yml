@@ -61,7 +61,7 @@ jobs:
         run: npm run lint
 
       - name: Build packages
-        run: npm run build
+        run: ultra -r --build
 
       - name: Setup local network
         run: npm run configure
