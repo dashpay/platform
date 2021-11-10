@@ -12,13 +12,13 @@ jobs:
     steps:
       # TODO: We need to make sure that other tests are passed
 
-#  Can we just use?
-#
-#     on:
-#        workflow_run:
-#          workflows: [ 'Test' ]
-#          types:
-#            - completed
+      #  Can we just use?
+      #
+      #     on:
+      #        workflow_run:
+      #          workflows: [ 'Test' ]
+      #          types:
+      #            - completed
 
       - name: Wait for tests to succeed
         uses: lewagon/wait-on-check-action@v1.1.1
