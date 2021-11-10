@@ -11,7 +11,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "configure:dashmate": "./scripts/configure_dashmate.sh",
     "configure:network": "./scripts/setup_local_network.sh",
-    "configure:tests": "scripts/configure_test_suite.sh",
+    "configure:tests": "./scripts/configure_test_suite.sh",
     "configure:dotenv": "./scripts/configure_dotenv.sh",
     "configure": "npm run configure:dashmate && npm run configure:network && npm run configure:tests && npm run configure:dotenv",
     "clean:data": "npm run dashmate group:reset -- --group=local --hard",
@@ -21,7 +21,9 @@
   },
   "devDependencies": {
     "lerna": "3.22.1",
-    "packster": "~0.3.0"
+    "packster": "~0.3.0",
+    "syncpack": "^5.8.15",
+    "ultra-runner": "^3.10.5"
   },
   "workspaces": [
     "packages/js-grpc-common",
