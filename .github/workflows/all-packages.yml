@@ -35,7 +35,7 @@ jobs:
         run: npm ci
 
       - name: Check dependencies
-        run: packster check --all --error
+        run: node_modules/.bin/packster check --all --error
 
   remote-deps:
     name: Check mismatched package dependencies
@@ -61,7 +61,7 @@ jobs:
         run: npm ci
 
       - name: Check dependencies
-        run: syncpack-list-mismatches
+        run: node_modules/.bin/syncpack-list-mismatches
 
   test-suite:
     name: Run Platform Test Suite
