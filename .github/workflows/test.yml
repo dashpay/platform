@@ -46,7 +46,7 @@ jobs:
         run: npm run lint -w ${{ inputs.package }} --if-present
 
       - name: Build package
-        run: ultra -r --build --filter "+${{ inputs.package }}"
+        run: node_modules/.bin/ultra -r --build --filter "+${{ inputs.package }}"
 
       - name: Setup dotenv files
         run: npm run configure:dotenv

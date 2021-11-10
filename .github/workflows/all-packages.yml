@@ -115,7 +115,7 @@ jobs:
         run: npm ci
 
       - name: Build packages
-        run: ultra -r --build
+        run: node_modules/.bin/ultra -r --build
 
       - name: Setup local network
         run: npm run configure
