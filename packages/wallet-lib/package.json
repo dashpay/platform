@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
   "scripts": {
-    "build": "webpack --stats-error-details",
+    "build:web": "webpack --stats-error-details",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test:unit": "nyc mocha 'src/**/*.spec.js'",
@@ -13,7 +13,7 @@
     "test:integration": "nyc mocha 'tests/integration/**/*.spec.js'",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test": "npm run test:unit && npm run test:integration && npm run test:functional && npm run test:browsers",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build:web"
   },
   "files": [
     "dist",

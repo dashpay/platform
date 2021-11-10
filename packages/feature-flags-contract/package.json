@@ -3,6 +3,7 @@
   "version": "0.2.1",
   "description": "Data Contract to store Dash Platform feature flags",
   "scripts": {
+    "build": "",
     "lint": "eslint .",
     "test": "npm run test:unit",
     "test:unit": "mocha 'test/unit/**/*.spec.js'"

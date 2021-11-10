@@ -1,2 +1,6 @@
 node_modules
+
 .DS_Store
+
+# Ultra runner build cache
+.ultra.cache.json
