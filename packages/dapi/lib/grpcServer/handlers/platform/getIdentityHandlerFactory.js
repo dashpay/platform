@@ -37,7 +37,7 @@ function getIdentityHandlerFactory(driveClient) {
     const prove = request.getProve();
 
     const identityResponseBuffer = await driveClient
-      .fetchIdentity(id, prove);
+      .fetchIdentity(Buffer.from(id), prove);
 
     return GetIdentityResponse.deserializeBinary(identityResponseBuffer);
   }
