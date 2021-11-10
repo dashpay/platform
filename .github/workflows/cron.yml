@@ -55,7 +55,7 @@ jobs:
           cache-max-size: 3g
 
       - name: Install NPM dependencies
-        run: npm ci --prefer-offline --no-audit
+        run: npm ci
 
       - name: Run ESLinter
         run: npm run lint
