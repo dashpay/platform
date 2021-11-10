@@ -40,7 +40,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install NPM dependencies
-        run: npm ci # TODO: Run only for specified package
+        run: npm ci --prefer-offline --no-audit
 
       - name: Run ESLinter
         run: npm run lint -w ${{ inputs.package }} --if-present

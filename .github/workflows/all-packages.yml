@@ -32,7 +32,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install NPM dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
       - name: Check dependencies
         run: node_modules/.bin/packster check --all --error
@@ -58,7 +58,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install NPM dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
       - name: Check dependencies
         run: node_modules/.bin/syncpack-list-mismatches
@@ -112,7 +112,7 @@ jobs:
           cache-max-size: 3g
 
       - name: Install NPM dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
       - name: Build packages
         run: node_modules/.bin/ultra -r --build
