@@ -273,4 +273,4 @@ jobs:
           labels: ${{ steps.drive_docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
 
-# Release test suite
+# TOOD: release test suite docker image
