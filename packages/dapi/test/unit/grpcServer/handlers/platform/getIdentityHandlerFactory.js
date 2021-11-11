@@ -75,7 +75,7 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
     expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id, false);
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), false);
 
     const proof = result.getProof();
     expect(proof).to.be.undefined();
@@ -97,7 +97,7 @@ describe('getIdentityHandlerFactory', () => {
     expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
     expect(resultStoreTreeProof).to.deep.equal(storeTreeProofs);
 
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id, true);
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), true);
   });
 
   it('should throw an InvalidArgumentGrpcError if id is not specified', async () => {
@@ -125,7 +125,7 @@ describe('getIdentityHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id);
+      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer());
     }
   });
 });
