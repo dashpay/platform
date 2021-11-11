@@ -22,7 +22,7 @@ function fetchProofForStateTransitionFactory(driveClient) {
     } else if (stateTransition.isIdentityStateTransition()) {
       ({ identitiesProof: proof, metadata } = await driveClient.fetchProofs(
         {
-          identityIds: modifiedIds((identifier) => identifier.toBuffer()),
+          identityIds: modifiedIds.map((identifier) => identifier.toBuffer()),
         },
       ));
     } else if (stateTransition.isDataContractStateTransition()) {
