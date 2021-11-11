@@ -241,7 +241,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     expect(resultStoreTreeProof).to.deep.equal(storeTreeProofs);
 
     expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly({
-      identityIds: stateTransitionFixture.getModifiedDataIds(),
+      identityIds: stateTransitionFixture.getModifiedDataIds().map(Buffer.from),
     });
   });
 
