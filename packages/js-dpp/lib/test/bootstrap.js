@@ -4,8 +4,8 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
-const { initBlake3 } = require('../util/hash');
 const chaiExclude = require('chai-exclude');
+const { initBlake3 } = require('../util/hash');
 
 use(sinonChai);
 use(chaiAsPromised);
