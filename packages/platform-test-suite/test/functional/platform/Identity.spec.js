@@ -13,13 +13,11 @@ const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
 const IdentityPublicKeyAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyAlreadyExistsError');
 
-const waitForBlocks = require('../../../lib/waitForBlocks');
-
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 
 describe('Platform', () => {
-  describe('Identity', () => {
+  describe.only('Identity', () => {
     let dpp;
     let client;
     let identity;
@@ -257,19 +255,27 @@ describe('Platform', () => {
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-        // Wait for a chain lock on a block with the transaction
-        await waitForBlocks(client.getDAPIClient(), 1);
+        // Wait for transaction to be mined anc chain locked
+        let transactionHeight = 0;
+        do {
+          ({ height: transactionHeight } = await client.getDAPIClient().core
+            .getTransaction(transaction.id));
 
-        const { chain } = await client.getDAPIClient().core.getStatus();
+          if (transactionHeight > 0) {
+            break;
+          }
+
+          await wait(1000);
+        } while (!transactionHeight);
 
         const outPoint = transaction.getOutPointBuffer(outputIndex);
         const assetLockProof = await dpp.identity.createChainAssetLockProof(
-          chain.blocksCount,
+          transactionHeight,
           outPoint,
         );
 
         let coreChainLockedHeight = 0;
-        while (coreChainLockedHeight < chain.blocksCount) {
+        while (coreChainLockedHeight < transactionHeight) {
           const identityResponse = await client.platform.identities.get(identity.getId());
 
           expect(identityResponse).to.exist();
@@ -277,9 +283,7 @@ describe('Platform', () => {
           const metadata = identityResponse.getMetadata();
           coreChainLockedHeight = metadata.getCoreChainLockedHeight();
 
-          console.log(`Core chain locked: ${coreChainLockedHeight} Transaction height: ${chain.blocksCount}`);
-
-          if (coreChainLockedHeight >= chain.blocksCount) {
+          if (coreChainLockedHeight >= transactionHeight) {
             break;
           }
 
