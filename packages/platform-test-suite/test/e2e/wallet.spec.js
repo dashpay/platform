@@ -12,7 +12,7 @@ const waitForBalanceToChange = require('../../lib/test/waitForBalanceToChange');
 const { EVENTS } = Dash.WalletLib;
 
 describe('e2e', () => {
-  describe('Wallet', function main() {
+  describe.only('Wallet', function main() {
     this.timeout(950000);
 
     let failed = false;
@@ -25,7 +25,6 @@ describe('e2e', () => {
     let mnemonic;
     let firstTransaction;
     let secondTransaction;
-    let walletHeight;
 
     before(async () => {
       mnemonic = new Mnemonic();
@@ -90,11 +89,6 @@ describe('e2e', () => {
         expect(transactionIds).to.have.lengthOf(1);
 
         expect(transactionIds[0]).to.equal(firstTransaction.id);
-
-        do {
-          ({ height: walletHeight } = await fundedWallet.getDAPIClient()
-            .core.getTransaction(firstTransaction.id));
-        } while (!walletHeight);
       });
     });
 
@@ -104,9 +98,6 @@ describe('e2e', () => {
           wallet: {
             mnemonic,
             waitForInstantLockTimeout: 120000,
-            unsafeOptions: {
-              skipSynchronizationBeforeHeight: walletHeight - 1,
-            },
           },
           seeds: getDAPISeeds(),
           network: process.env.NETWORK,
