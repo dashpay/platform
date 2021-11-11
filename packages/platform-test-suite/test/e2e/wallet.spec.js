@@ -12,7 +12,7 @@ const waitForBalanceToChange = require('../../lib/test/waitForBalanceToChange');
 const { EVENTS } = Dash.WalletLib;
 
 describe('e2e', () => {
-  describe.only('Wallet', function main() {
+  describe('Wallet', function main() {
     this.timeout(950000);
 
     let failed = false;
