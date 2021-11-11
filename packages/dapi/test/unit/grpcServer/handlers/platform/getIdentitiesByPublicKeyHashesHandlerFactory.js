@@ -34,7 +34,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   let storeTreeProofs;
 
   beforeEach(function beforeEach() {
-    publicKeyHash = '556c2910d46fda2b327ef9d9bda850cc84d30db0';
+    publicKeyHash = Buffer.from('556c2910d46fda2b327ef9d9bda850cc84d30db0', 'hex');
 
     call = new GrpcCallMock(this.sinon, {
       getPublicKeyHashesList: this.sinon.stub().returns(
