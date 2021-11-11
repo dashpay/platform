@@ -129,6 +129,12 @@ BaseCommand.flags = {
     description: 'use verbose mode for output',
     default: false,
   }),
+  format: flagTypes.string({
+    char: 'f',
+    description: 'display output format',
+    default: 'table',
+    options: ['json', 'table'],
+  }),
 };
 
 module.exports = BaseCommand;

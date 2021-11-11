@@ -1,4 +1,5 @@
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+const getFormat = require('../../util/getFormat');
 
 class StatusCommand extends ConfigBaseCommand {
   /**
@@ -14,7 +15,7 @@ class StatusCommand extends ConfigBaseCommand {
     outputStatusOverview,
     config,
   ) {
-    await outputStatusOverview(config);
+    await outputStatusOverview(config, getFormat(flags));
   }
 }
 

@@ -1,10 +1,11 @@
-const { table } = require('table');
 const chalk = require('chalk');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
 const blocksToTime = require('../../util/blocksToTime');
 const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
+const getFormat = require('../../util/getFormat');
+const printObject = require('../../printers/printObject');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
@@ -24,8 +25,6 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     createRpcClient,
     config,
   ) {
-    const rows = [];
-
     const coreService = new CoreService(
       config,
       createRpcClient(
@@ -133,22 +132,21 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       }
     }
 
-    // Build table
-    rows.push(['Masternode status', (masternodeState === 'READY' ? chalk.green : chalk.red)(masternodeStatus)]);
-    rows.push(['Sentinel status', (sentinelState !== '' ? sentinelState : 'No errors')]);
+    const outputRows = {
+      'Masternode status': (masternodeState === 'READY' ? chalk.green : chalk.red)(masternodeStatus),
+      'Sentinel status': (sentinelState !== '' ? sentinelState : 'No errors'),
+    };
+
     if (masternodeState === 'READY') {
-      rows.push(['ProTx Hash', masternodeProTxHash]);
-      rows.push(['PoSe Penalty', masternodePoSePenalty]);
-      rows.push(['Last paid block', masternodeDmnState.lastPaidHeight]);
-      rows.push(['Last paid time', lastPaidTime]);
-      rows.push(['Payment queue position', `${paymentQueuePosition}/${masternodeEnabledCount}`]);
-      rows.push(['Next payment time', `in ${blocksToTime(paymentQueuePosition)}`]);
+      outputRows['ProTx Hash'] = masternodeProTxHash;
+      outputRows['PoSe Penalty'] = masternodePoSePenalty;
+      outputRows['Last paid block'] = masternodeDmnState.lastPaidHeight;
+      outputRows['Last paid time'] = lastPaidTime;
+      outputRows['Payment queue position'] = `${paymentQueuePosition}/${masternodeEnabledCount}`;
+      outputRows['Next payment time'] = `in ${blocksToTime(paymentQueuePosition)}`;
     }
 
-    const output = table(rows, { singleLine: true });
-
-    // eslint-disable-next-line no-console
-    console.log(output);
+    printObject(outputRows, getFormat(flags));
   }
 }
 

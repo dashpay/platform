@@ -87,6 +87,7 @@
     "rimraf": "^3.0.2",
     "rxjs": "^6.6.7",
     "semver": "^7.3.2",
+    "strip-ansi": "^6.0.1",
     "table": "^5.4.6"
   },
   "devDependencies": {

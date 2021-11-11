@@ -1,5 +1,6 @@
-const { table } = require('table');
 const chalk = require('chalk');
+const getFormat = require('../../util/getFormat');
+const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
@@ -40,9 +41,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
       });
     }
 
-    const tableRows = [
-      ['Service', 'Container ID', 'Image', 'Status'],
-    ];
+    const outputRows = [];
 
     for (const [serviceName, serviceDescription] of Object.entries(serviceHumanNames)) {
       let containerId;
@@ -70,23 +69,15 @@ class ServicesStatusCommand extends ConfigBaseCommand {
         statusText = (status === 'running' ? chalk.green : chalk.red)(status);
       }
 
-      tableRows.push([
-        serviceDescription,
-        containerId ? containerId.slice(0, 12) : undefined,
-        image,
-        statusText,
-      ]);
+      outputRows.push({
+        Service: serviceDescription,
+        'Container ID': containerId ? containerId.slice(0, 12) : undefined,
+        Image: image,
+        Status: statusText,
+      });
     }
 
-    const tableConfig = {
-      // singleLine: true,
-      drawHorizontalLine: (index, size) => index === 0 || index === 1 || index === size,
-    };
-
-    const tableOutput = table(tableRows, tableConfig);
-
-    // eslint-disable-next-line no-console
-    console.log(tableOutput);
+    printArrayOfObjects(outputRows, getFormat(flags));
   }
 }
 
