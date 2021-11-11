@@ -256,6 +256,8 @@ describe('Platform', () => {
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+
+        // Wait for a chain lock on a block with the transaction
         await waitForBlocks(client.getDAPIClient(), 1);
 
         const { chain } = await client.getDAPIClient().core.getStatus();
@@ -274,6 +276,8 @@ describe('Platform', () => {
 
           const metadata = identityResponse.getMetadata();
           coreChainLockedHeight = metadata.getCoreChainLockedHeight();
+
+          console.log(`Core chain locked: ${coreChainLockedHeight} Transaction height: ${chain.blocksCount}`);
 
           if (coreChainLockedHeight >= chain.blocksCount) {
             break;
