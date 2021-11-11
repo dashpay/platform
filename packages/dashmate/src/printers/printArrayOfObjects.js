@@ -1,6 +1,9 @@
 const stripAnsi = require('strip-ansi');
 const { table } = require('table');
+
 const { OUTPUT_FORMATS } = require('../constants');
+
+const UnsupportedFormatError = require('./errors/UnsupportedFormatError');
 
 /**
  * Prints object using specified output format
@@ -36,9 +39,7 @@ function printArrayofObjects(array, format) {
       break;
     }
     default: {
-      // eslint-disable-next-line no-console
-      console.log('Unsupported format!');
-      break;
+      throw new UnsupportedFormatError(format);
     }
   }
 
