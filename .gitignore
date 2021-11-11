@@ -4,3 +4,4 @@ node_modules
 /.env
 .nyc_output
 *.log
+.vscode/launch.json
