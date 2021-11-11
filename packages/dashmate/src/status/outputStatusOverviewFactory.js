@@ -1,4 +1,3 @@
-const { table } = require('table');
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 
@@ -8,6 +7,7 @@ const ServiceIsNotRunningError = require('../docker/errors/ServiceIsNotRunningEr
 const CoreService = require('../core/CoreService');
 const blocksToTime = require('../util/blocksToTime');
 const getPaymentQueuePosition = require('../util/getPaymentQueuePosition');
+const printObject = require('../printers/printObject');
 
 /**
  *
@@ -22,11 +22,10 @@ function outputStatusOverviewFactory(
   /**
    * @typedef {outputStatusOverview}
    * @param {Config} config
+   * @param {string} format
    * @return void
    */
-  async function outputStatusOverview(config) {
-    const rows = [];
-
+  async function outputStatusOverview(config, format) {
     const coreService = new CoreService(
       config,
       createRpcClient(
@@ -227,36 +226,35 @@ function outputStatusOverviewFactory(
       masternodeStatus = chalk.red(masternodeStatus);
     }
 
-    // Build table
-    rows.push(['Network', coreChain]);
-    rows.push(['Core Version', coreVersion.replace(/\/|\(.*?\)/g, '')]);
-    rows.push(['Core Status', coreStatus]);
+    const outputRows = {
+      Network: coreChain,
+      'Core Version': coreVersion.replace(/\/|\(.*?\)/g, ''),
+      'Core Status': coreStatus,
+    };
+
     if (config.get('core.masternode.enable')) {
-      rows.push(['Masternode Status', (masternodeStatus)]);
+      outputRows['Masternode Status'] = masternodeStatus;
     }
 
     if (config.get('network') !== 'mainnet' && config.name !== 'local_seed') {
       if (coreIsSynced === true
         && platformStatus !== chalk.red('not started')
         && platformStatus !== chalk.red('restarting')) {
-        rows.push(['Platform Version', platformVersion]);
+        outputRows['Platform Version'] = platformVersion;
       }
-      rows.push(['Platform Status', platformStatus]);
+      outputRows['Platform Status'] = platformStatus;
     }
     if (config.get('core.masternode.enable')) {
       if (masternodeStatus === 'Ready') {
-        rows.push(['PoSe Penalty', masternodeState.PoSePenalty]);
-        rows.push(['Last paid block', masternodeState.lastPaidHeight]);
-        rows.push(['Last paid time', `${blocksToTime(coreBlocks - masternodeState.lastPaidHeight)} ago`]);
-        rows.push(['Payment queue position', `${paymentQueuePosition}/${masternodeEnabledCount}`]);
-        rows.push(['Next payment time', `in ${blocksToTime(paymentQueuePosition)}`]);
+        outputRows['PoSe Penalty'] = masternodeState.PoSePenalty;
+        outputRows['Last paid block'] = masternodeState.lastPaidHeight;
+        outputRows['Last paid time'] = `${blocksToTime(coreBlocks - masternodeState.lastPaidHeight)} ago`;
+        outputRows['Payment queue position'] = `${paymentQueuePosition}/${masternodeEnabledCount}`;
+        outputRows['Next payment time'] = `in ${blocksToTime(paymentQueuePosition)}`;
       }
     }
 
-    const output = table(rows, { singleLine: true });
-
-    // eslint-disable-next-line no-console
-    console.log(output);
+    printObject(outputRows, format);
   }
 
   return outputStatusOverview;

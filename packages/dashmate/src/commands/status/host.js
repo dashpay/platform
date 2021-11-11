@@ -2,35 +2,43 @@ const os = require('os');
 const publicIp = require('public-ip');
 const prettyMs = require('pretty-ms');
 const prettyByte = require('pretty-bytes');
-const { table } = require('table');
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
 
-class HostStatusCommand extends BaseCommand {
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+const printObject = require('../../printers/printObject');
+
+class HostStatusCommand extends ConfigBaseCommand {
   /**
    * @return {Promise<void>}
    */
-  async runWithDependencies() {
-    const rows = [];
+  async runWithDependencies(args, flags) {
+    const outputRows = {
+      Hostname: os.hostname(),
+      Uptime: prettyMs(os.uptime() * 1000),
+      Platform: os.platform(),
+      Arch: os.arch(),
+      Username: os.userInfo().username,
+      Diskfree: 0, // Waiting for feature: https://github.com/nodejs/node/pull/31351
+      Memory: `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`,
+      CPUs: os.cpus().length,
+      IP: await publicIp.v4(),
+    };
 
-    rows.push(['Hostname', os.hostname()]);
-    rows.push(['Uptime', prettyMs(os.uptime() * 1000)]);
-    rows.push(['Platform', os.platform()]);
-    rows.push(['Arch', os.arch()]);
-    rows.push(['Username', os.userInfo().username]);
-    rows.push(['Loadavg', os.loadavg().map((load) => load.toFixed(2))]);
-    rows.push(['Diskfree', 0]); // Waiting for feature: https://github.com/nodejs/node/pull/31351
-    rows.push(['Memory', `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`]);
-    rows.push(['CPUs', os.cpus().length]);
-    rows.push(['IP', await publicIp.v4()]);
-
-    const output = table(rows, { singleLine: true });
-
-    // eslint-disable-next-line no-console
-    console.log(output);
+    printObject(outputRows, flags.format);
   }
 }
 
 HostStatusCommand.description = 'Show host status details';
+
+HostStatusCommand.flags = {
+  ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.PLAIN,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
+};
 
 module.exports = HostStatusCommand;

@@ -30,6 +30,11 @@ const HOME_DIR_PATH = process.env.DASHMATE_HOME_DIR
   : path.resolve(os.homedir(), '.dashmate');
 const CONFIG_FILE_PATH = path.join(HOME_DIR_PATH, 'config.json');
 
+const OUTPUT_FORMATS = {
+  JSON: 'json',
+  PLAIN: 'plain',
+};
+
 module.exports = {
   ...networks,
   ...presets,
@@ -42,4 +47,5 @@ module.exports = {
   MASTERNODE_DASH_AMOUNT,
   HOME_DIR_PATH,
   CONFIG_FILE_PATH,
+  OUTPUT_FORMATS,
 };
