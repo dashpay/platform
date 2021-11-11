@@ -1,40 +1,63 @@
-# syntax = docker/dockerfile:1.2
-FROM node:16-alpine as node_modules
+# syntax = docker/dockerfile:1.3
+FROM node:16-alpine as node_gyp_cache
 
 RUN apk update && \
     apk --no-cache upgrade && \
     apk add --no-cache linux-headers \
-                       git \
-                       openssh-client \
-                       python3 \
-                       alpine-sdk \
-                       cmake \
-                       zeromq-dev
-
-# Enable node-gyp cache
-# and replacing github url https://github.com/actions/setup-node/issues/214
-RUN npm install -g node-gyp-cache@0.2.1 && \
-    npm config set node_gyp node-gyp-cache && \
-    git config --global url."https://github.com/".insteadOf ssh://git@github.com/
-
-# Install npm modules
-# Update npm to version 7 to work with workspaces
-RUN npm install -g npm@7
-
-ENV npm_config_zmq_external=true
+            git \
+            openssh-client \
+            python3 \
+            alpine-sdk \
+            cmake \
+            zeromq-dev
 
 WORKDIR /platform
 
+# Replacing github url https://github.com/actions/setup-node/issues/214
+RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+
+ENV npm_config_zmq_external=true
+
+# Install native modules in order to cache them for forthcomming stages
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --no-audit --loglevel info --production --global-style true \
+    github:dashevo/node-merk \
+    blake3@2.1.4 \
+    level-rocksdb@4.0.0 \
+    zeromq@5.2.0
+
+FROM node:16-alpine as node_modules
+
+RUN apk update && \
+    apk --no-cache upgrade && \
+    apk add --no-cache git \
+                      openssh-client \
+                      jq
+
+WORKDIR /platform
+
+# Replacing github url https://github.com/actions/setup-node/issues/214
+RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+
+# Downgrade NPM to 7.18.1 to fix https://github.com/npm/cli/issues/3847https://github.com/npm/cli/issues/3847
+# and install build dependecies
+RUN npm install --global  --production --no-audit npm@7.18.1
+
 COPY package.json package-lock.json /platform/
 
-COPY packages/ /platform/packages/
+# Copy only necessary packages from monorepo
+COPY packages/js-drive packages/js-drive
+COPY packages/dapi-grpc packages/dapi-grpc
+COPY packages/feature-flags-contract packages/feature-flags-contract
+COPY packages/js-dpp packages/js-dpp
+COPY packages/js-grpc-common packages/js-grpc-common
 
-# Remove packages that drive won't need
-RUN rm -rf /platform/packages/dapi /platform/packages/dashmate /platform/packages/platform-test-suite platform/packages/js-dash-sdk /platform/packages/wallet-lib
+# Do not install already built native modules
+RUN echo "$( jq -M 'del(.dependencies | ."@dashevo/merk", .zeromq, ."level-rocksdb", .blake3)' packages/js-drive/package.json )" > packages/js-drive/package.json
 
 # Install drive-specific dependencies
-RUN --mount=type=cache,target=/root/.npm --mount=type=cache,target=/root/.cache npm ci -w @dashevo/drive --production
-
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --loglevel info --no-audit -w @dashevo/drive --production
 
 FROM node:16-alpine
 
@@ -44,23 +67,29 @@ ENV NODE_ENV ${NODE_ENV}
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Drive Node.JS"
 
-RUN apk update && apk add --no-cache zeromq-dev
-
-# Copy packages dir to create symlinks to modules available locally
-COPY --from=node_modules /platform/packages/ /packages
-# Copy hoisted NPM modules
-COPY --from=node_modules /platform/node_modules/ /node_modules
-COPY --from=node_modules /platform/package.json /package.json
-COPY --from=node_modules /platform/package-lock.json /package-lock.json
-
 ENV PATH /node_modules/.bin:$PATH
 
 # Copy project files
 WORKDIR /usr/src/app
 
-COPY packages/js-drive/ .
-# Copy drive-specific NPM modules that are in conflict with the root node_modules (if any)
-COPY --from=node_modules /platform/packages/js-drive/node_modules/ ./node_modules
+RUN apk update && apk add --no-cache zeromq-dev
+
+# Copy cached packages with native modules
+COPY --from=node_gyp_cache /platform/node_modules/zeromq ./node_modules/zeromq
+COPY --from=node_gyp_cache /platform/node_modules/@dashevo/merk ./node_modules/@dashevo/merk
+COPY --from=node_gyp_cache /platform/node_modules/level-rocksdb ./node_modules/level-rocksdb
+COPY --from=node_gyp_cache /platform/node_modules/blake3 ./node_modules/blake3
+
+# Copy packages dir to create symlinks to modules available locally
+COPY --from=node_modules /platform/packages/ /packages
+
+# Copy hoisted NPM modules
+COPY --from=node_modules /platform/node_modules/ /node_modules
+COPY --from=node_modules /platform/package.json /package.json
+COPY --from=node_modules /platform/package-lock.json /package-lock.json
+
+# Copy app code
+COPY --from=node_modules /platform/packages/js-drive .
 
 RUN cp .env.example .env
 

@@ -1,5 +1,5 @@
 const { InstantLock, Transaction } = require('@dashevo/dashcore-lib');
-const hash = require('../../../../util/hash');
+const hashModule = require('../../../../util/hash');
 const Identifier = require('../../../../identifier/Identifier');
 
 class InstantAssetLockProof {
@@ -53,6 +53,8 @@ class InstantAssetLockProof {
    * @returns {Identifier}
    */
   createIdentifier() {
+    const { hash } = hashModule;
+
     return new Identifier(
       hash(this.getTransaction().getOutPointBuffer(this.getOutputIndex())),
     );

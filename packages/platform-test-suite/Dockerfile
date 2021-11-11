@@ -12,7 +12,7 @@ WORKDIR /
 RUN npm config set unsafe-perm true
 
 COPY package.json package-lock.json ./
-RUN npm ci --production
+RUN npm ci --loglevel info --no-audit --production
 
 FROM node:16-alpine
 

@@ -1,8 +1,5 @@
-const rewiremock = require('rewiremock/node');
-
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const DataContract = require('../../../lib/dataContract/DataContract');
 const protocolVersion = require('../../../lib/version/protocolVersion');
 
 const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
@@ -14,11 +11,12 @@ const SerializedObjectParsingError = require('../../../lib/errors/consensus/basi
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
 
+const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
+const entropyGenerator = require('../../../lib/util/entropyGenerator');
+
 describe('DataContractFactory', () => {
-  let DataContractFactory;
   let decodeProtocolEntityMock;
   let validateDataContractMock;
-  let DataContractMock;
   let factory;
   let dataContract;
   let rawDataContract;
@@ -27,33 +25,23 @@ describe('DataContractFactory', () => {
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
+    dppMock = createDPPMock();
+
     rawDataContract = dataContract.toObject();
 
     decodeProtocolEntityMock = this.sinonSandbox.stub();
     validateDataContractMock = this.sinonSandbox.stub();
-
-    DataContractMock = this.sinonSandbox.stub().returns(dataContract);
-    DataContractMock.DEFAULTS = DataContract.DEFAULTS;
-
-    generateEntropyMock = this.sinonSandbox.stub();
-
-    // Require Factory module for webpack
-    // eslint-disable-next-line global-require
-    require('../../../lib/dataContract/DataContractFactory');
-
-    DataContractFactory = rewiremock.proxy('../../../lib/dataContract/DataContractFactory', {
-      '../../../lib/util/generateEntropy': generateEntropyMock,
-      '../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition': DataContractCreateTransition,
-      '../../../lib/dataContract/DataContract': DataContractMock,
-    });
-
-    dppMock = createDPPMock();
+    generateEntropyMock = this.sinonSandbox.stub(entropyGenerator, 'generate');
 
     factory = new DataContractFactory(
       dppMock,
       validateDataContractMock,
       decodeProtocolEntityMock,
     );
+  });
+
+  afterEach(() => {
+    generateEntropyMock.restore();
   });
 
   describe('create', () => {
@@ -64,16 +52,7 @@ describe('DataContractFactory', () => {
         rawDataContract.documents,
       );
 
-      expect(result).to.equal(dataContract);
-
-      expect(DataContractMock).to.have.been.calledOnceWith({
-        protocolVersion: protocolVersion.latestVersion,
-        $schema: DataContract.DEFAULTS.SCHEMA,
-        $id: dataContract.id.toBuffer(),
-        ownerId: dataContract.ownerId.toBuffer(),
-        documents: rawDataContract.documents,
-        $defs: {},
-      });
+      expect(result).excluding('$defs').to.deep.equal(dataContract);
     });
   });
 
@@ -83,21 +62,17 @@ describe('DataContractFactory', () => {
 
       const result = await factory.createFromObject(rawDataContract);
 
-      expect(result).to.equal(dataContract);
+      expect(result).excluding('entropy').to.deep.equal(dataContract);
 
       expect(validateDataContractMock).to.have.been.calledOnceWith(rawDataContract);
-
-      expect(DataContractMock).to.have.been.calledOnceWith(rawDataContract);
     });
 
     it('should return new Data Contract without validation if "skipValidation" option is passed', async () => {
       const result = await factory.createFromObject(rawDataContract, { skipValidation: true });
 
-      expect(result).to.equal(dataContract);
+      expect(result).excluding('entropy').to.deep.equal(dataContract);
 
       expect(validateDataContractMock).to.have.not.been.called();
-
-      expect(DataContractMock).to.have.been.calledOnceWith(rawDataContract);
     });
 
     it('should throw an error if passed object is not valid', async () => {
@@ -122,8 +97,6 @@ describe('DataContractFactory', () => {
       expect(consensusError).to.equal(validationError);
 
       expect(validateDataContractMock).to.have.been.calledOnceWith(rawDataContract);
-
-      expect(DataContractMock).to.have.not.been.called();
     });
   });
 
@@ -134,6 +107,10 @@ describe('DataContractFactory', () => {
       this.sinonSandbox.stub(factory, 'createFromObject');
 
       serializedDataContract = dataContract.toBuffer();
+    });
+
+    afterEach(() => {
+      factory.createFromObject.restore();
     });
 
     it('should return new Data Contract from serialized contract', async () => {

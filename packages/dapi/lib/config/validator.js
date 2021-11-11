@@ -51,8 +51,8 @@ function validateConfig(config) {
   validationResults.push(validatePort(config.txFilterStream.grpcServer.port.toString(), 'TX_FILTER_STREAM_GRPC_PORT'));
 
   const validationErrors = validationResults
-    .filter(validationResult => !validationResult.isValid)
-    .map(validationResult => validationResult.validationError);
+    .filter((validationResult) => !validationResult.isValid)
+    .map((validationResult) => validationResult.validationError);
 
   return {
     isValid: validationErrors.length < 1,

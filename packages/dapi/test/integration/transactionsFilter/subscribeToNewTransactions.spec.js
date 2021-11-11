@@ -181,7 +181,7 @@ describe('subscribeToNewTransactions', () => {
     );
 
     expectedMerkleBlock.hashes = expectedMerkleBlock.hashes
-      .map(hash => reverseHash(hash));
+      .map((hash) => reverseHash(hash));
 
     expect(receivedBlocks).to.have.a.lengthOf(1);
     expect(receivedBlocks[0]).to.deep.equal(expectedMerkleBlock);
@@ -229,7 +229,7 @@ describe('subscribeToNewTransactions', () => {
     );
 
     expectedMerkleBlock.hashes = expectedMerkleBlock.hashes
-      .map(hash => reverseHash(hash));
+      .map((hash) => reverseHash(hash));
 
     expect(receivedBlocks).to.have.a.lengthOf(1);
     expect(receivedBlocks[0]).to.deep.equal(expectedMerkleBlock);
@@ -284,7 +284,7 @@ describe('subscribeToNewTransactions', () => {
     );
 
     expectedMerkleBlock.hashes = expectedMerkleBlock.hashes
-      .map(hash => reverseHash(hash));
+      .map((hash) => reverseHash(hash));
 
     expect(receivedBlocks).to.have.a.lengthOf(1);
     expect(receivedBlocks[0]).to.deep.equal(expectedMerkleBlock);
@@ -350,7 +350,7 @@ describe('subscribeToNewTransactions', () => {
     );
 
     expectedMerkleBlock.hashes = expectedMerkleBlock.hashes
-      .map(hash => reverseHash(hash));
+      .map((hash) => reverseHash(hash));
 
     expect(receivedBlocks).to.have.a.lengthOf(1);
     expect(receivedBlocks[0]).to.deep.equal(expectedMerkleBlock);
@@ -438,7 +438,7 @@ describe('subscribeToNewTransactions', () => {
     );
 
     expectedMerkleBlock.hashes = expectedMerkleBlock.hashes
-      .map(hash => reverseHash(hash));
+      .map((hash) => reverseHash(hash));
 
     expect(receivedBlocks).to.have.a.lengthOf(10);
 

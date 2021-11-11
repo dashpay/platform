@@ -1,0 +1,29 @@
+name: DAPI
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+    paths:
+      - .github/workflows/dapi.yml
+      - .github/workflows/test.yml
+      - packages/dapi/**
+      - packages/dapi-grpc/**
+      - packages/js-dpp/**
+      - packages/js-grpc-common/**
+      - packages/js-dapi-client/**
+      - packages/dashpay-contract/**
+      - packages/feature-flags-contract/**
+      - packages/dpns-contract/**
+
+jobs:
+  dapi-tests:
+    name: Run DAPI tests
+    uses: dashevo/platform/.github/workflows/test.yml@master
+    with:
+      package: '@dashevo/dapi'

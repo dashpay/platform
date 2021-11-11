@@ -1,6 +1,21 @@
-# WebStorm settings
+# ignore Mac OS metadata
+.DS_Store
+
+# ignore JetBrains IDE project specific files
 .idea
+
+# ignore VSCode project specific files
+.vscode
+
+# Env file
+.env
+
+# NodeJs dependencies
 node_modules
-/.env
+
 .nyc_output
+
 *.log
+
+# Ultra runner build cache
+.ultra.cache.json

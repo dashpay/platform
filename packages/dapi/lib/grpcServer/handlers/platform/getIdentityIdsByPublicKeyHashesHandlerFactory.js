@@ -38,7 +38,7 @@ function getIdentityIdsByPublicKeyHashesHandlerFactory(
 
     const identityIdsResponseBuffer = await driveClient
       .fetchIdentityIdsByPublicKeyHashes(
-        publicKeyHashes,
+        publicKeyHashes.map(Buffer.from),
         prove,
       );
 

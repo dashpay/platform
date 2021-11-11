@@ -43,7 +43,7 @@ class BlockchainListener extends EventEmitter {
 
     // Emit blocks and contained transactions
     this.wsClient.subscribe(NEW_BLOCK_QUERY);
-    this.wsClient.on(NEW_BLOCK_QUERY, message => this.emit(EVENTS.NEW_BLOCK, message));
+    this.wsClient.on(NEW_BLOCK_QUERY, (message) => this.emit(EVENTS.NEW_BLOCK, message));
   }
 }
 

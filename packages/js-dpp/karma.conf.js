@@ -1,7 +1,4 @@
-// eslint-disable-next-line import/no-extraneous-dependencies
 const webpack = require('webpack');
-// eslint-disable-next-line import/no-extraneous-dependencies
-const RewiremockPlugin = require('rewiremock/webpack/plugin');
 
 module.exports = (config) => {
   config.set({
@@ -21,11 +18,24 @@ module.exports = (config) => {
         moduleIds: 'named',
       },
       plugins: [
+        new webpack.ProvidePlugin({
+          Buffer: ['buffer', 'Buffer'],
+          process: 'process/browser',
+        }),
         new webpack.HotModuleReplacementPlugin(),
-        new RewiremockPlugin(),
       ],
-      node: {
-        fs: 'empty',
+      resolve: {
+        fallback: {
+          fs: false,
+          crypto: require.resolve('crypto-browserify'),
+          http: require.resolve('stream-http'),
+          https: require.resolve('https-browserify'),
+          stream: require.resolve('stream-browserify'),
+          path: require.resolve('path-browserify'),
+          url: require.resolve('url/'),
+          util: require.resolve('util/'),
+          assert: require.resolve('assert/'),
+        },
       },
     },
     reporters: ['mocha'],
