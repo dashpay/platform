@@ -8,7 +8,7 @@ const { OUTPUT_FORMATS } = require('../constants');
  * @param {[Object[]]} array
  * @param {string} format
  */
-function printObject(array, format) {
+function printArrayofObjects(array, format) {
   let output;
   if (format === OUTPUT_FORMATS.TABLE) {
     // Init array with headings
@@ -37,4 +37,4 @@ function printObject(array, format) {
   console.log(output);
 }
 
-module.exports = printObject;
+module.exports = printArrayofObjects;
