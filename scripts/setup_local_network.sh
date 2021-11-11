@@ -7,4 +7,6 @@ DIR_PATH=$(dirname $FULL_PATH)
 ROOT_PATH=$(dirname $DIR_PATH)
 PACKAGES_PATH="$ROOT_PATH/packages"
 
+"${packages_path}"/dashmate/bin/dashmate update -v
+
 "${PACKAGES_PATH}"/dashmate/bin/dashmate setup ${CONFIG_NAME} --verbose --debug-logs --miner-interval="${MINING_INTERVAL_IN_SECONDS}s" --node-count=${MASTERNODES_COUNT} | tee "${ROOT_PATH}"/logs/setup.log

@@ -39,12 +39,13 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
 
   if (HDPrivateKey) {
     walletOptions.HDPrivateKey = HDPrivateKey;
+  } else {
+    walletOptions.mnemonic = null;
   }
 
   const client = new Dash.Client({
     ...clientOpts,
     wallet: walletOptions,
-    // TODO: Must be mnemonic: null?
   });
 
   const amount = 40000;

@@ -84,6 +84,8 @@ describe('e2e', () => {
           waitForBalanceToChange(emptyAccount),
         ]);
 
+        // TODO: Get height for skip option here
+
         const transactionIds = Object.keys(emptyAccount.getTransactions());
 
         expect(transactionIds).to.have.lengthOf(1);
