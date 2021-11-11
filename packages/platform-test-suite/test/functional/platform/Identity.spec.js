@@ -49,6 +49,7 @@ describe('Platform', () => {
 
       expect(identity).to.exist();
 
+      // TODO: Does it really changes here?
       await waitForBalanceToChange(walletAccount);
     });
 
@@ -98,6 +99,7 @@ describe('Platform', () => {
       } = await createAssetLockTransaction({ client }, 1);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+      // TODO: Do we really need it here?
       await waitForBlocks(client.getDAPIClient(), 1);
 
       const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
@@ -157,6 +159,7 @@ describe('Platform', () => {
       } = await createAssetLockTransaction({ client }, 1);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+      // TODO: Do we really need it here?
       await waitForBlocks(client.getDAPIClient(), 1);
 
       const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
@@ -270,6 +273,8 @@ describe('Platform', () => {
           chain.blocksCount,
           outPoint,
         );
+
+        // TODO: Reduce empty block time for local network in dashmate
 
         let coreChainLockedHeight = 0;
         while (coreChainLockedHeight < chain.blocksCount) {
@@ -414,6 +419,8 @@ describe('Platform', () => {
       });
 
       it('should be able to top-up credit balance', async () => {
+        // TODO: Something wrong with it.
+        //  It seems it just waits or MAX_TIME_TO_WAIT_MS and that's it
         await waitForBalanceToChange(walletAccount);
 
         const identityBeforeTopUp = await client.platform.identities.get(
@@ -462,6 +469,7 @@ describe('Platform', () => {
         } = await createAssetLockTransaction({ client }, 1);
 
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+        // TODO: Do we really need it here?
         await waitForBlocks(client.getDAPIClient(), 1);
 
         const assetLockProof = await createAssetLockProof(

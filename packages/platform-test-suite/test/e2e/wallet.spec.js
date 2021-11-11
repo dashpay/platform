@@ -36,7 +36,6 @@ describe('e2e', () => {
           mnemonic,
           waitForInstantLockTimeout: 120000,
         },
-        driveProtocolVersion: 1,
       });
     });
 
@@ -102,7 +101,7 @@ describe('e2e', () => {
           },
           seeds: getDAPISeeds(),
           network: process.env.NETWORK,
-          driveProtocolVersion: 1,
+          // TODO: Skip blocks to height when we started the test suite? (takes 60000)
         });
 
         restoredAccount = await restoredWallet.getWalletAccount();

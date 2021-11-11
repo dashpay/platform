@@ -89,6 +89,8 @@ describe('Platform', () => {
           create: [documentUpdate, documentRevert],
         }, identity);
 
+        // TODO: Reduce empty block time for local network in dashmate
+
         // wait for block and check consensus params were changed
         let height;
         do {
