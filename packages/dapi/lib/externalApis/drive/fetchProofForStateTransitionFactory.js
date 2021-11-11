@@ -15,15 +15,21 @@ function fetchProofForStateTransitionFactory(driveClient) {
     let metadata;
     if (stateTransition.isDocumentStateTransition()) {
       ({ documentsProof: proof, metadata } = await driveClient.fetchProofs(
-        { documentIds: modifiedIds.map(Buffer.from) },
+        {
+          documentIds: modifiedIds.map((identifier) => identifier.toBuffer()),
+        },
       ));
     } else if (stateTransition.isIdentityStateTransition()) {
       ({ identitiesProof: proof, metadata } = await driveClient.fetchProofs(
-        { identityIds: modifiedIds.map(Buffer.from) },
+        {
+          identityIds: modifiedIds((identifier) => identifier.toBuffer()),
+        },
       ));
     } else if (stateTransition.isDataContractStateTransition()) {
       ({ dataContractsProof: proof, metadata } = await driveClient.fetchProofs(
-        { dataContractIds: modifiedIds.map(Buffer.from) },
+        {
+          dataContractIds: modifiedIds.map((identifier) => identifier.toBuffer()),
+        },
       ));
     }
 
