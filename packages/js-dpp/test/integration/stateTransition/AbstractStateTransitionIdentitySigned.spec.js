@@ -13,13 +13,13 @@ describe('AbstractStateTransitionIdentitySigned', () => {
   let stateTransition;
   let protocolVersion;
   let privateKeyHex;
-  let privateKeyBuffer;
+  let privateKeyWIF;
   let publicKeyId;
   let identityPublicKey;
 
   beforeEach(() => {
     const privateKeyModel = new PrivateKey();
-    privateKeyBuffer = privateKeyModel.toBuffer();
+    privateKeyWIF = privateKeyModel.toWIF();
     privateKeyHex = privateKeyModel.toBuffer().toString('hex');
     const publicKey = privateKeyModel.toPublicKey().toBuffer();
     publicKeyId = 1;
@@ -114,7 +114,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     });
 
     it('should sign data and validate signature with private key in buffer format', () => {
-      stateTransition.sign(identityPublicKey, privateKeyBuffer);
+      stateTransition.sign(identityPublicKey, privateKeyWIF);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
