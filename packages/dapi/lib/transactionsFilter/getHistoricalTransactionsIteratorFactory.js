@@ -13,9 +13,9 @@ const MAX_HEADERS_PER_REQUEST = 2000;
  */
 async function getTransactions(coreRpcApi, transactionHashes) {
   const rawTransactions = await Promise.all(transactionHashes.map(
-    transactionHash => coreRpcApi.getRawTransaction(transactionHash),
+    (transactionHash) => coreRpcApi.getRawTransaction(transactionHash),
   ));
-  return rawTransactions.map(tx => new Transaction(tx));
+  return rawTransactions.map((tx) => new Transaction(tx));
 }
 
 /**

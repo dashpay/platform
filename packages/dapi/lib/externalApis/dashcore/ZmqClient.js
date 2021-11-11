@@ -76,7 +76,7 @@ class ZmqClient extends EventEmitter {
    * Subscribes to zmq messages
    */
   initMessageHandlers() {
-    Object.keys(this.topics).forEach(key => this.subscriberSocket.subscribe(this.topics[key]));
+    Object.keys(this.topics).forEach((key) => this.subscriberSocket.subscribe(this.topics[key]));
     this.subscriberSocket.on('message', this.emit.bind(this));
   }
 }

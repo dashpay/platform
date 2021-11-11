@@ -103,6 +103,10 @@ describe('StateTransitionFactory', () => {
       serializedStateTransition = stateTransition.toBuffer();
     });
 
+    afterEach(() => {
+      factory.createFromObject.restore();
+    });
+
     it('should return new State Transition from serialized contract', async () => {
       decodeProtocolEntityMock.returns([rawStateTransition.protocolVersion, rawStateTransition]);
 

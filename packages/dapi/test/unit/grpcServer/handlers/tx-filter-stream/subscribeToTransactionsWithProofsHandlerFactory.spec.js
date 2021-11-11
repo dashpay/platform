@@ -268,7 +268,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     const firstResponse = new TransactionsWithProofsResponse();
     const rawTransactions = new RawTransactions();
     rawTransactions.setTransactionsList(
-      historicalTxData[0].transactions.map(tx => tx.toBuffer()),
+      historicalTxData[0].transactions.map((tx) => tx.toBuffer()),
     );
     firstResponse.setRawTransactions(rawTransactions);
 

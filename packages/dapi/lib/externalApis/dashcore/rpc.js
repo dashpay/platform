@@ -55,7 +55,7 @@ const getBlock = (hash, isParsed = 1) => new Promise((resolve, reject) => {
   });
 });
 
-const getBlockHash = index => new Promise((resolve, reject) => {
+const getBlockHash = (index) => new Promise((resolve, reject) => {
   client.getblockhash(index, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -65,7 +65,7 @@ const getBlockHash = index => new Promise((resolve, reject) => {
   });
 });
 
-const getBlockHeader = blockHash => new Promise((resolve, reject) => {
+const getBlockHeader = (blockHash) => new Promise((resolve, reject) => {
   client.getblockheader(blockHash, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -105,7 +105,7 @@ const getMempoolInfo = () => new Promise((resolve, reject) => {
   });
 });
 
-const getRawMemPool = verbose => new Promise((resolve, reject) => {
+const getRawMemPool = (verbose) => new Promise((resolve, reject) => {
   client.getrawmempool(verbose, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -125,7 +125,7 @@ const getMnListDiff = (baseBlockHash, blockHash) => new Promise((resolve, reject
   });
 });
 
-const getMnSync = command => new Promise((resolve, reject) => {
+const getMnSync = (command) => new Promise((resolve, reject) => {
   client.mnsync(command, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -135,7 +135,7 @@ const getMnSync = command => new Promise((resolve, reject) => {
   });
 });
 
-const getMasternode = command => new Promise((resolve, reject) => {
+const getMasternode = (command) => new Promise((resolve, reject) => {
   client.masternode(command, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -155,10 +155,10 @@ const getRawTransaction = (txid, verboseMode = 0) => new Promise((resolve, rejec
   });
 });
 
-const getRawBlock = blockhash => getBlock(blockhash, false);
+const getRawBlock = (blockhash) => getBlock(blockhash, false);
 
 // This is only for in-wallet transaction
-const getTransaction = txid => new Promise((resolve, reject) => {
+const getTransaction = (txid) => new Promise((resolve, reject) => {
   client.gettransaction(txid, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -168,7 +168,7 @@ const getTransaction = txid => new Promise((resolve, reject) => {
   });
 });
 
-const getTransactionFirstInputAddress = txId => new Promise((resolve, reject) => {
+const getTransactionFirstInputAddress = (txId) => new Promise((resolve, reject) => {
   client.gettransaction(txId, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -178,7 +178,7 @@ const getTransactionFirstInputAddress = txId => new Promise((resolve, reject) =>
   });
 });
 
-const getUser = txId => new Promise((resolve, reject) => { // not exist?
+const getUser = (txId) => new Promise((resolve, reject) => { // not exist?
   client.getuser(txId, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -189,7 +189,7 @@ const getUser = txId => new Promise((resolve, reject) => { // not exist?
 });
 
 // Address indexing needs to be enabled
-const getUTXO = addr => new Promise((resolve, reject) => {
+const getUTXO = (addr) => new Promise((resolve, reject) => {
   client.getaddressutxos(addr, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -222,7 +222,7 @@ const getMerkleBlocks = (bloomFilter, fromBlockHash, count) => new Promise((reso
  *  and can be requested only from members of the quorum assigned to a specific DAPI-client
  */
 
-const sendRawTransition = ts => new Promise((resolve, reject) => { // not exist?
+const sendRawTransition = (ts) => new Promise((resolve, reject) => { // not exist?
   client.sendrawtransition(ts, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -244,7 +244,7 @@ const sendRawTransition = ts => new Promise((resolve, reject) => { // not exist?
  *  all DAPI nodes or just it's quorum member nodes
  */
 
-const sendRawTransaction = tx => new Promise((resolve, reject) => {
+const sendRawTransaction = (tx) => new Promise((resolve, reject) => {
   client.sendrawtransaction(tx, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -254,7 +254,7 @@ const sendRawTransaction = tx => new Promise((resolve, reject) => {
   });
 });
 
-const sendRawIxTransaction = tx => new Promise((resolve, reject) => {
+const sendRawIxTransaction = (tx) => new Promise((resolve, reject) => {
   client.sendrawtransaction(tx, false, true, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
@@ -283,7 +283,6 @@ const getBlockchainInfo = () => new Promise((resolve, reject) => {
     }
   });
 });
-
 
 /**
  * @typedef CoreRpcClient

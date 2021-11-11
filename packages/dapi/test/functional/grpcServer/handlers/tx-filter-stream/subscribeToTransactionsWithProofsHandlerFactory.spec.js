@@ -72,13 +72,13 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     ({ result: fromBlockHash } = await coreAPI.getBestBlockHash());
 
     // Prepare historical transactions
-    const filterUnspentInputs = input => input.address === addressString;
+    const filterUnspentInputs = (input) => input.address === addressString;
     for (let i = 0; i < 10; i++) {
       const { result: unspent } = await coreAPI.listUnspent();
-      const inputs = unspent.filter(input => filterUnspentInputs(input));
+      const inputs = unspent.filter((input) => filterUnspentInputs(input));
 
       const transaction = new Transaction()
-        .from(inputs.filter(inp => inp.amount > 0.000107)[0])
+        .from(inputs.filter((inp) => inp.amount > 0.000107)[0])
         .to(address, 10000)
         .change(address)
         .fee(668)
@@ -159,10 +159,10 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     expect(streamEnded).to.be.true();
 
     const receivedTransactionsHashes = receivedTransactions
-      .map(tx => tx.hash);
+      .map((tx) => tx.hash);
 
     const historicalTransactionsHashes = historicalTransactions
-      .map(tx => tx.hash);
+      .map((tx) => tx.hash);
 
     historicalTransactionsHashes.forEach((txHash) => {
       expect(receivedTransactionsHashes).to.include(txHash);
@@ -230,7 +230,7 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     }
 
     const { result: unspent } = await coreAPI.listUnspent();
-    const inputs = unspent.filter(input => input.address === addressString);
+    const inputs = unspent.filter((input) => input.address === addressString);
 
     const transaction = new Transaction()
       .from(inputs.slice(-1)[0])
@@ -252,24 +252,24 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     ));
 
     const receivedTransactionsHashes = receivedTransactions
-      .map(tx => tx.hash);
+      .map((tx) => tx.hash);
 
     const historicalTransactionsHashes = historicalTransactions
-      .map(tx => tx.hash);
+      .map((tx) => tx.hash);
 
     historicalTransactionsHashes.forEach((txHash) => {
       expect(receivedTransactionsHashes).to.include(txHash);
     });
 
     const rcvMB = receivedMerkleBlocks
-      .map(s => Buffer.from(s, 'hex'))
-      .map(b => new MerkleBlock(b))
-      .map(b => b.toObject());
+      .map((s) => Buffer.from(s, 'hex'))
+      .map((b) => new MerkleBlock(b))
+      .map((b) => b.toObject());
 
     const hstMB = merkleBlockStrings
-      .map(s => Buffer.from(s, 'hex'))
-      .map(b => new MerkleBlock(b))
-      .map(b => b.toObject());
+      .map((s) => Buffer.from(s, 'hex'))
+      .map((b) => new MerkleBlock(b))
+      .map((b) => b.toObject());
 
     expect(rcvMB).to.deep.equal(hstMB);
   });
@@ -333,10 +333,10 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     }
 
     const { result: unspent } = await coreAPI.listUnspent();
-    const inputs = unspent.filter(input => input.address === addressString);
+    const inputs = unspent.filter((input) => input.address === addressString);
 
     const transaction = new Transaction()
-      .from(inputs.filter(inp => inp.amount > 0.000107)[0])
+      .from(inputs.filter((inp) => inp.amount > 0.000107)[0])
       .to(address, 10000)
       .change(address)
       .fee(668)
@@ -357,24 +357,24 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     ));
 
     const receivedTransactionsHashes = receivedTransactions
-      .map(tx => tx.hash);
+      .map((tx) => tx.hash);
 
     const historicalTransactionsHashes = historicalTransactions
-      .map(tx => tx.hash);
+      .map((tx) => tx.hash);
 
     historicalTransactionsHashes.forEach((txHash) => {
       expect(receivedTransactionsHashes).to.include(txHash);
     });
 
     const rcvMB = receivedMerkleBlocks
-      .map(s => Buffer.from(s, 'hex'))
-      .map(b => new MerkleBlock(b))
-      .map(b => b.toObject());
+      .map((s) => Buffer.from(s, 'hex'))
+      .map((b) => new MerkleBlock(b))
+      .map((b) => b.toObject());
 
     const hstMB = merkleBlockStrings
-      .map(s => Buffer.from(s, 'hex'))
-      .map(b => new MerkleBlock(b))
-      .map(b => b.toObject());
+      .map((s) => Buffer.from(s, 'hex'))
+      .map((b) => new MerkleBlock(b))
+      .map((b) => b.toObject());
 
     expect(rcvMB).to.deep.equal(hstMB);
 
@@ -429,10 +429,10 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     // Send some transaction so it would located in mempool
     // by the time we're going to connect (we should not receive it)
     const { result: unspent } = await coreAPI.listUnspent();
-    const inputs = unspent.filter(input => input.address === addressString);
+    const inputs = unspent.filter((input) => input.address === addressString);
 
     const transaction = new Transaction()
-      .from(inputs.filter(inp => inp.amount > 0.000107)[0])
+      .from(inputs.filter((inp) => inp.amount > 0.000107)[0])
       .to(address, 10000)
       .change(address)
       .fee(668)

@@ -13,7 +13,6 @@ const DriveClient = require('../../../../lib/externalApis/drive/DriveClient');
 
 const RPCError = require('../../../../lib/rpcServer/RPCError');
 
-
 chai.use(chaiAsPromised);
 chai.use(dirtyChai);
 

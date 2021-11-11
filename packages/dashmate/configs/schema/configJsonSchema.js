@@ -23,6 +23,7 @@ module.exports = {
           minLength: 1,
         },
         build: {
+          type: 'object',
           properties: {
             path: {
               type: ['string', 'null'],
@@ -59,6 +60,7 @@ module.exports = {
       additionalProperties: false,
     },
     abciLogFile: {
+      type: 'object',
       properties: {
         level: {
           type: 'string',
@@ -297,13 +299,16 @@ module.exports = {
               additionalProperties: false,
             },
             abci: {
+              type: 'object',
               properties: {
                 docker: {
                   $ref: '#/definitions/dockerBuild',
                 },
                 log: {
+                  type: 'object',
                   properties: {
                     stdout: {
+                      type: 'object',
                       properties: {
                         level: {
                           $ref: '#/definitions/abciLogFile/properties/level',
@@ -339,6 +344,7 @@ module.exports = {
               required: ['docker', 'log', 'validatorSet'],
             },
             tenderdash: {
+              type: 'object',
               properties: {
                 docker: {
                   $ref: '#/definitions/docker',
@@ -458,6 +464,7 @@ module.exports = {
           type: 'object',
           properties: {
             contract: {
+              type: 'object',
               properties: {
                 id: {
                   type: ['string', 'null'],
@@ -483,6 +490,7 @@ module.exports = {
           type: 'object',
           properties: {
             contract: {
+              type: 'object',
               properties: {
                 id: {
                   type: ['string', 'null'],
@@ -504,6 +512,7 @@ module.exports = {
           type: 'object',
           properties: {
             contract: {
+              type: 'object',
               properties: {
                 id: {
                   type: ['string', 'null'],

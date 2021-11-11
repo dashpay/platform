@@ -112,10 +112,10 @@ class WsClient extends EventEmitter {
     this.connectionRetries = 0;
     this.subscribedQueries.clear();
 
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       // If a max number of retries is set, we reject when exceeding retry number
       if (this.maxRetries !== -1) {
-        this.on('connect:max_retry_exceeded', async () => reject(new Error('Connection dropped. Max retries exceeded.')));
+        this.on('connect:max_retry_exceeded', () => reject(new Error('Connection dropped. Max retries exceeded.')));
       }
 
       this.open();

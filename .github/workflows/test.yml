@@ -1,24 +1,32 @@
 name: Package Tests
 
 on:
-  release:
-    types:
-      - published
-  pull_request:
-    branches:
-      - master
-      - v[0-9]+\.[0-9]+-dev
-
+  workflow_call:
+    inputs:
+      package:
+        description: The package name to run tests for
+        type: string
+        required: true
+      start-local-network:
+        description: Does the specified package require local network to run tests
+        type: boolean
+        default: false
+        required: false
 jobs:
   test:
-    name: Test Dash Platform component
+    name: Test package
     runs-on: ubuntu-20.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          access_token: ${{ github.token }}
+
       - name: Check out repo
         uses: actions/checkout@v2
 
-      - name: Setup Node.js
+      - name: Setup Node.JS
         uses: actions/setup-node@v2
         with:
           node-version: '16'
@@ -27,27 +35,56 @@ jobs:
         uses: actions/cache@v2
         with:
           path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - name: Set up the network
-        run: npm run setup
-
-      - name: Install Packster
-        run: npm install -g packster
-
-      - name: Run Packster
-        run: packster check --all --error
+      - name: Install NPM dependencies
+        run: npm ci --no-audit
 
       - name: Run ESLinter
-        run: npm run lint
+        run: npm run lint -w ${{ inputs.package }} --if-present
 
-      - name: Get list of packages to test
-        id: packster
-        run: echo "::set-output name=dependants::$(packster list ${{ inputs.package }} --json)"
+      - name: Build package
+        run: node_modules/.bin/ultra -r --build --filter "+${{ inputs.package }}"
 
-      - name: Run tests on packages
-        run: |
-          ./scripts/configure_dotenv.sh
-          npm run test
+      - name: Setup dotenv files
+        run: npm run configure:dotenv
+        if: ${{ !inputs.start-local-network }}
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          version: v0.6.3
+          install: true
+          driver-opts: image=moby/buildkit:buildx-stable-1
+        if: ${{ inputs.start-local-network }}
+
+      - name: Enable buildkit cache
+        uses: actions/cache@v2
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
+        if: ${{ inputs.start-local-network }}
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 3g
+        if: ${{ inputs.start-local-network }}
+
+      - name: Setup local network
+        run: npm run configure
+        if: ${{ inputs.start-local-network }}
+
+      - name: Start local network
+        run: npm run start
+        if: ${{ inputs.start-local-network }}
+
+      - name: Run tests
+        run: npm run test -w ${{ inputs.package }}

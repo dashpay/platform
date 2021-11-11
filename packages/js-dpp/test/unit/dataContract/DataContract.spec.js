@@ -1,4 +1,3 @@
-const rewiremock = require('rewiremock/node');
 const bs58 = require('bs58');
 
 const Identifier = require('../../../lib/identifier/Identifier');
@@ -7,11 +6,15 @@ const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTyp
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const Metadata = require('../../../lib/Metadata');
+const DataContract = require('../../../lib/dataContract/DataContract');
+
+const hash = require('../../../lib/util/hash');
+const serializer = require('../../../lib/util/serializer');
+const getBinaryPropertiesFromSchema = require('../../../lib/dataContract/getBinaryPropertiesFromSchema');
 
 describe('DataContract', () => {
   let hashMock;
   let encodeMock;
-  let DataContract;
   let documentType;
   let documentSchema;
   let documents;
@@ -23,17 +26,9 @@ describe('DataContract', () => {
   let metadataFixture;
 
   beforeEach(function beforeEach() {
-    hashMock = this.sinonSandbox.stub();
-    const serializerMock = { encode: this.sinonSandbox.stub() };
-    encodeMock = serializerMock.encode;
-
-    getBinaryPropertiesFromSchemaMock = this.sinonSandbox.stub();
-
-    DataContract = rewiremock.proxy('../../../lib/dataContract/DataContract', {
-      '../../../lib/util/hash': hashMock,
-      '../../../lib/util/serializer': serializerMock,
-      '../../../lib/dataContract/getBinaryPropertiesFromSchema': getBinaryPropertiesFromSchemaMock,
-    });
+    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
+    hashMock = this.sinonSandbox.stub(hash, 'hash');
+    getBinaryPropertiesFromSchemaMock = this.sinonSandbox.stub(getBinaryPropertiesFromSchema, 'getBinaryPropertiesFromSchema');
 
     documentType = 'niceDocument';
 
@@ -72,6 +67,12 @@ describe('DataContract', () => {
     metadataFixture = new Metadata(42, 0);
 
     dataContract.setMetadata(metadataFixture);
+  });
+
+  afterEach(() => {
+    encodeMock.restore();
+    hashMock.restore();
+    getBinaryPropertiesFromSchemaMock.restore();
   });
 
   describe('constructor', () => {
@@ -302,15 +303,21 @@ describe('DataContract', () => {
   });
 
   describe('#hash', () => {
+    let toBufferMock;
+
     beforeEach(function beforeEach() {
-      DataContract.prototype.toBuffer = this.sinonSandbox.stub();
+      toBufferMock = this.sinonSandbox.stub(DataContract.prototype, 'toBuffer');
+    });
+
+    afterEach(() => {
+      toBufferMock.restore();
     });
 
     it('should return DataContract hash', () => {
       const serializedDataContract = '123';
       const hashedDocument = '456';
 
-      DataContract.prototype.toBuffer.returns(serializedDataContract);
+      toBufferMock.returns(serializedDataContract);
 
       hashMock.returns(hashedDocument);
 
@@ -318,7 +325,7 @@ describe('DataContract', () => {
 
       expect(result).to.equal(hashedDocument);
 
-      expect(DataContract.prototype.toBuffer).to.have.been.calledOnce();
+      expect(toBufferMock).to.have.been.calledOnce();
 
       expect(hashMock).to.have.been.calledOnceWith(serializedDataContract);
     });
@@ -352,8 +359,6 @@ describe('DataContract', () => {
           byteArray: true,
         },
       });
-
-      expect(getBinaryPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
     });
 
     it('should return cached flat map of properties with `contentEncoding` keywords', () => {

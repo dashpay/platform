@@ -1,5 +1,0 @@
-# WebStorm settings
-.idea
-node_modules
-/.env
-.nyc_output

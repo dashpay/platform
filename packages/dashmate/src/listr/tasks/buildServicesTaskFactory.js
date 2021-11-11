@@ -16,7 +16,7 @@ function buildServicesTaskFactory(
   function buildServicesTask(config) {
     return new Listr({
       title: 'Build services',
-      task: async () => {
+      task: async (ctx, task) => {
         const envs = config.toEnvs();
 
         const doDriveBuild = config.get('platform.drive.abci.docker.build.path');
@@ -31,7 +31,14 @@ function buildServicesTaskFactory(
           serviceName = 'drive_abci';
         }
 
-        await dockerCompose.build(envs, serviceName);
+        const buildProcess = await dockerCompose.build(envs, serviceName);
+
+        if (ctx.isVerbose) {
+          buildProcess.stdout.pipe(task.stdout());
+          buildProcess.stderr.pipe(task.stdout());
+        }
+
+        await buildProcess.isReady;
       },
     });
   }

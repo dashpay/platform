@@ -4,6 +4,7 @@
   "description": "Common GRPC library",
   "main": "index.js",
   "scripts": {
+    "build": "",
     "lint": "eslint .",
     "test": "npm run test:coverage",
     "test:coverage": "nyc --check-coverage --stmts=95 --branch=95 --funcs=95 --lines=95 mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
@@ -12,22 +13,22 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "chai": "^4.2.0",
+    "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
-    "eslint": "^6.5.1",
-    "eslint-config-airbnb-base": "^14.0.0",
-    "eslint-plugin-import": "^2.18.2",
-    "mocha": "^6.2.1",
-    "mocha-sinon": "^2.1.0",
-    "nyc": "^14.1.1",
-    "sinon": "^7.5.0",
-    "sinon-chai": "^3.3.0"
+    "eslint": "^7.32.0",
+    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint-plugin-import": "^2.24.2",
+    "mocha": "^9.1.2",
+    "mocha-sinon": "^2.1.2",
+    "nyc": "^15.1.0",
+    "sinon": "^11.1.2",
+    "sinon-chai": "^3.7.0"
   },
   "dependencies": {
-    "@grpc/grpc-js": "^1.3.6",
+    "@grpc/grpc-js": "^1.3.7",
     "@grpc/proto-loader": "^0.5.2",
-    "cbor": "^7.0.6",
+    "cbor": "^8.0.0",
     "lodash.get": "^4.4.2",
     "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
     "semver": "^7.3.2"

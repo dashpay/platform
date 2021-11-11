@@ -55,6 +55,7 @@ class ResetCommand extends ConfigBaseCommand {
       await tasks.run({
         isHardReset,
         isPlatformOnlyReset,
+        isVerbose,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
