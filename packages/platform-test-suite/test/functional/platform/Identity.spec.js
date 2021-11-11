@@ -17,7 +17,7 @@ const createClientWithFundedWallet = require('../../../lib/test/createClientWith
 const wait = require('../../../lib/wait');
 
 describe('Platform', () => {
-  describe.only('Identity', () => {
+  describe('Identity', () => {
     let dpp;
     let client;
     let identity;
