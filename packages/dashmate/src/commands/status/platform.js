@@ -215,7 +215,7 @@ PlatformStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
   format: flagTypes.string({
     description: 'display output format',
-    default: OUTPUT_FORMATS.TABLE,
+    default: OUTPUT_FORMATS.PLAIN,
     options: Object.values(OUTPUT_FORMATS),
   }),
 };

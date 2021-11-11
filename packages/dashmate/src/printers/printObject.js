@@ -14,7 +14,7 @@ const UnsupportedFormatError = require('./errors/UnsupportedFormatError');
 function printObject(object, format) {
   let output;
   switch (format) {
-    case OUTPUT_FORMATS.TABLE: {
+    case OUTPUT_FORMATS.PLAIN: {
       const rows = Object.entries(object);
       output = table(rows, { singleLine: true });
       break;

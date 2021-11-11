@@ -14,7 +14,7 @@ const UnsupportedFormatError = require('./errors/UnsupportedFormatError');
 function printArrayofObjects(array, format) {
   let output;
   switch (format) {
-    case OUTPUT_FORMATS.TABLE: {
+    case OUTPUT_FORMATS.PLAIN: {
       // Init array with headings
       const rows = [Object.keys(array[0])];
       array.map((obj) => rows.push(Object.values(obj)));

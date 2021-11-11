@@ -32,7 +32,7 @@ const CONFIG_FILE_PATH = path.join(HOME_DIR_PATH, 'config.json');
 
 const OUTPUT_FORMATS = {
   JSON: 'json',
-  TABLE: 'table',
+  PLAIN: 'plain',
 };
 
 module.exports = {
