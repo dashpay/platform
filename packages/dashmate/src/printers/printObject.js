@@ -10,18 +10,25 @@ const { OUTPUT_FORMATS } = require('../constants');
  */
 function printObject(object, format) {
   let output;
-  if (format === OUTPUT_FORMATS.TABLE) {
-    const rows = [];
-    for (const [key, value] of Object.entries(object)) {
-      rows.push([key, value]);
+  switch (format) {
+    case OUTPUT_FORMATS.TABLE: {
+      const rows = Object.entries(object);
+      output = table(rows, { singleLine: true });
+      break;
     }
-    output = table(rows, { singleLine: true });
-  } else if (format === OUTPUT_FORMATS.JSON) {
-    Object.keys(object).forEach((key) => {
-      // eslint-disable-next-line no-param-reassign
-      object[key] = stripAnsi(object[key]);
-    });
-    output = JSON.stringify(object);
+    case OUTPUT_FORMATS.JSON: {
+      const cleanObject = {};
+      Object.keys(object).forEach((key) => {
+        cleanObject[key] = stripAnsi(object[key]);
+      });
+      output = JSON.stringify(cleanObject);
+      break;
+    }
+    default: {
+      // eslint-disable-next-line no-console
+      console.log('Unsupported format!');
+      break;
+    }
   }
 
   // eslint-disable-next-line no-console

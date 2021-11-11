@@ -10,27 +10,36 @@ const { OUTPUT_FORMATS } = require('../constants');
  */
 function printArrayofObjects(array, format) {
   let output;
-  if (format === OUTPUT_FORMATS.TABLE) {
-    // Init array with headings
-    const rows = [Object.keys(array[0])];
+  switch (format) {
+    case OUTPUT_FORMATS.TABLE: {
+      // Init array with headings
+      const rows = [Object.keys(array[0])];
+      array.map((obj) => rows.push(Object.values(obj)));
 
-    array.map((obj) => rows.push(Object.values(obj)));
+      const tableConfig = {
+        drawHorizontalLine: (index, size) => index === 0 || index === 1 || index === size,
+      };
 
-    const tableConfig = {
-      drawHorizontalLine: (index, size) => index === 0 || index === 1 || index === size,
-    };
-
-    output = table(rows, tableConfig);
-  } else if (format === OUTPUT_FORMATS.JSON) {
-    array.forEach((outputRow, i) => {
-      Object.keys(outputRow).forEach((key) => {
-        // eslint-disable-next-line no-param-reassign
-        outputRow[key] = stripAnsi(outputRow[key]);
+      output = table(rows, tableConfig);
+      break;
+    }
+    case OUTPUT_FORMATS.JSON: {
+      const cleanArray = [];
+      array.forEach((outputRow, i) => {
+        const cleanRow = {};
+        Object.keys(outputRow).forEach((key) => {
+          cleanRow[key] = stripAnsi(outputRow[key]);
+        });
+        cleanArray[i] = cleanRow;
       });
-      // eslint-disable-next-line no-param-reassign
-      array[i] = outputRow;
-    });
-    output = JSON.stringify(array);
+      output = JSON.stringify(cleanArray);
+      break;
+    }
+    default: {
+      // eslint-disable-next-line no-console
+      console.log('Unsupported format!');
+      break;
+    }
   }
 
   // eslint-disable-next-line no-console
