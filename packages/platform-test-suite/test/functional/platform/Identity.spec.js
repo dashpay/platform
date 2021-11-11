@@ -14,7 +14,6 @@ const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/B
 const IdentityPublicKeyAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyAlreadyExistsError');
 
 const waitForBlocks = require('../../../lib/waitForBlocks');
-// const waitForBalanceToChange = require('../../../lib/test/waitForBalanceToChange');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
@@ -301,8 +300,6 @@ describe('Platform', () => {
         if (process.env.NETWORK === 'testnet') {
           await wait(5000);
         }
-        //
-        // await waitForBalanceToChange(walletAccount);
       });
 
       it('should be able to get newly created identity', async () => {
@@ -369,8 +366,6 @@ describe('Platform', () => {
       });
 
       it.skip('should fail top-up if instant lock is not valid', async () => {
-        // await waitForBalanceToChange(walletAccount);
-
         const {
           transaction,
           privateKey,
