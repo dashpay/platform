@@ -13,6 +13,7 @@ const {
  * @param {configureTenderdashTask} configureTenderdashTask
  * @param {initializePlatformTask} initializePlatformTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
+ * @param {configFileRepository} configFileRepository
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -20,6 +21,7 @@ function setupLocalPresetTaskFactory(
   configureTenderdashTask,
   initializePlatformTask,
   resolveDockerHostIp,
+  configFileRepository,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -153,6 +155,16 @@ function setupLocalPresetTaskFactory(
             }
           ));
 
+          subTasks.push({
+            title: 'Save configs',
+            task: async () => {
+              configFile.setDefaultGroupName(PRESET_LOCAL);
+
+              // Persist configs
+              await configFileRepository.write(configFile);
+            },
+          });
+
           return new Listr(subTasks);
         },
       },
@@ -167,15 +179,6 @@ function setupLocalPresetTaskFactory(
       {
         title: 'Initialize Platform',
         task: (ctx) => initializePlatformTask(ctx.configGroup),
-      },
-      {
-        title: 'Set default config group',
-        task: (ctx, task) => {
-          configFile.setDefaultGroupName(PRESET_LOCAL);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `${PRESET_LOCAL} set as default group`;
-        },
       },
     ]);
   }

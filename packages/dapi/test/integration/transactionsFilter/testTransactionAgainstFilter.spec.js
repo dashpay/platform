@@ -29,7 +29,7 @@ describe('testTransactionAgainstFilter', () => {
     await coreApi.generateToAddress(101, addressBase58);
 
     const { result: unspent } = await coreApi.listunspent();
-    const inputs = unspent.filter(input => input.address === addressBase58);
+    const inputs = unspent.filter((input) => input.address === addressBase58);
 
     const transaction = new Transaction()
       .from(inputs)
@@ -60,8 +60,8 @@ describe('testTransactionAgainstFilter', () => {
     expect(merkleBlockStrings).to.be.an('array');
 
     const merkleBlockWithTransaction = merkleBlockStrings
-      .map(merkleBlockString => new MerkleBlock(Buffer.from(merkleBlockString, 'hex')))
-      .find(merkleBlock => merkleBlock.hasTransaction(transaction));
+      .map((merkleBlockString) => new MerkleBlock(Buffer.from(merkleBlockString, 'hex')))
+      .find((merkleBlock) => merkleBlock.hasTransaction(transaction));
 
     expect(merkleBlockWithTransaction).to.be.instanceOf(MerkleBlock);
     expect(merkleBlockWithTransaction.hasTransaction(transaction)).to.be.true();

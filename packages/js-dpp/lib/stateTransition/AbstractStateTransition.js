@@ -10,8 +10,8 @@ const StateTransitionIsNotSignedError = require(
 
 const stateTransitionTypes = require('./stateTransitionTypes');
 
-const { hash } = require('../util/hash');
-const { encode } = require('../util/serializer');
+const hashModule = require('../util/hash');
+const serializer = require('../util/serializer');
 
 const calculateStateTransitionFee = require('./calculateStateTransitionFee');
 
@@ -135,7 +135,7 @@ class AbstractStateTransition {
     const protocolVersionUInt32 = Buffer.alloc(4);
     protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
 
-    return Buffer.concat([protocolVersionUInt32, encode(serializedData)]);
+    return Buffer.concat([protocolVersionUInt32, serializer.encode(serializedData)]);
   }
 
   /**
@@ -146,6 +146,8 @@ class AbstractStateTransition {
    * @return {Buffer}
    */
   hash(options = {}) {
+    const { hash } = hashModule;
+
     return hash(this.toBuffer(options));
   }
 

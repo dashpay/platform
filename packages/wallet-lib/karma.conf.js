@@ -21,13 +21,29 @@ module.exports = (config) => {
       mode: 'development',
       devtool: 'inline-source-map',
       plugins: [
+        new webpack.ProvidePlugin({
+          Buffer: ['buffer', 'Buffer'],
+          process: 'process/browser',
+        }),
         new webpack.EnvironmentPlugin(
           dotenvResult.parsed,
         ),
       ],
-      node: {
-        // Prevent embedded winston to throw error with FS not existing.
-        fs: 'empty',
+      resolve: {
+        fallback: {
+          fs: false,
+          crypto: require.resolve('crypto-browserify'),
+          buffer: require.resolve('buffer/'),
+          assert: require.resolve('assert/'),
+          url: require.resolve('url/'),
+          path: require.resolve('path-browserify'),
+          http: require.resolve('stream-http'),
+          https: require.resolve('https-browserify'),
+          stream: require.resolve('stream-browserify'),
+          util: require.resolve('util/'),
+          os: require.resolve('os-browserify/browser'),
+          zlib: require.resolve('browserify-zlib'),
+        },
       },
     },
     reporters: ['mocha'],

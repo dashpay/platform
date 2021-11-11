@@ -1,33 +1,21 @@
-const rewiremock = require('rewiremock/node');
-
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 const Metadata = require('../../../lib/Metadata');
 const protocolVersion = require('../../../lib/version/protocolVersion');
 
+const Identity = require('../../../lib/identity/Identity');
+const serializer = require('../../../lib/util/serializer');
+const hash = require('../../../lib/util/hash');
+
 describe('Identity', () => {
   let rawIdentity;
   let identity;
-  let Identity;
   let hashMock;
   let encodeMock;
   let metadataFixture;
 
   beforeEach(function beforeEach() {
-    hashMock = this.sinonSandbox.stub();
-    encodeMock = this.sinonSandbox.stub();
-
-    Identity = rewiremock.proxy(
-      '../../../lib/identity/Identity',
-      {
-        '../../../lib/util/hash': { hash: hashMock },
-        '../../../lib/util/serializer': {
-          encode: encodeMock,
-        },
-      },
-    );
-
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
       id: generateRandomIdentifier(),
@@ -47,6 +35,14 @@ describe('Identity', () => {
     metadataFixture = new Metadata(42, 0);
 
     identity.setMetadata(metadataFixture);
+
+    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
+    hashMock = this.sinonSandbox.stub(hash, 'hash');
+  });
+
+  afterEach(() => {
+    encodeMock.restore();
+    hashMock.restore();
   });
 
   describe('#constructor', () => {

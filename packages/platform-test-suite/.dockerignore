@@ -1,7 +1,0 @@
-Dockerfile
-.dockerignore
-.git
-.idea
-.eslintrc
-npm-debug.log
-node_modules

@@ -1,5 +1,5 @@
 const Identifier = require('../../../../identifier/Identifier');
-const { hash } = require('../../../../util/hash');
+const hashModule = require('../../../../util/hash');
 
 class ChainAssetLockProof {
   /**
@@ -43,6 +43,8 @@ class ChainAssetLockProof {
    * @returns {Identifier}
    */
   createIdentifier() {
+    const { hash } = hashModule;
+
     return new Identifier(
       hash(this.getOutPoint()),
     );

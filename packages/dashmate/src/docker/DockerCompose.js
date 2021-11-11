@@ -127,7 +127,7 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string} [serviceName]
-   * @return {Promise<void>}
+   * @return {Promise<ChildProcess>}
    */
   async build(envs, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
@@ -144,10 +144,22 @@ class DockerCompose {
 
       // Temporarily build with buildx bake until docker compose build selects correct builder
       // https://github.com/docker/compose-cli/issues/1840
-      await execAsync(
-        `docker buildx bake --load ${driveArg} ${dapiArg}`,
+      const childProcess = exec(
+        `docker buildx bake --progress plain --load ${driveArg} ${dapiArg}`,
         this.getOptions(envs),
       );
+
+      childProcess.isReady = new Promise((resolve, reject) => {
+        childProcess.on('exit', (code) => {
+          if (code === 0) {
+            resolve(childProcess);
+          } else {
+            reject(childProcess);
+          }
+        });
+      });
+
+      return childProcess;
     } catch (e) {
       throw new DockerComposeError(e);
     }

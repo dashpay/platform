@@ -75,7 +75,7 @@ class TransactionHashesCache {
       }
     }
 
-    const blockTransactionHashes = block.transactions.map(tx => tx.hash);
+    const blockTransactionHashes = block.transactions.map((tx) => tx.hash);
     const cacheTransactionHashes = this.transactions
       .map(({ transaction }) => transaction.hash);
 
@@ -97,7 +97,7 @@ class TransactionHashesCache {
 
     // Merkle block accepts only buffers
     const transactionHashesBuffers = blockTransactionHashes
-      .map(hash => Buffer.from(hash, 'hex'));
+      .map((hash) => Buffer.from(hash, 'hex'));
 
     const merkleBlock = MerkleBlock.build(
       block.header,
@@ -143,7 +143,7 @@ class TransactionHashesCache {
    * @param {string} blockHash
    */
   removeDataByBlockHash(blockHash) {
-    const [block] = this.blocks.filter(b => b.hash === blockHash);
+    const [block] = this.blocks.filter((b) => b.hash === blockHash);
 
     if (block) {
       this.removeDataByBlock(block);
@@ -159,7 +159,7 @@ class TransactionHashesCache {
    */
   removeDataByBlock(block) {
     const blockTransactionHashes = block.transactions
-      .map(tx => tx.hash);
+      .map((tx) => tx.hash);
 
     // Removing matching transactions
     for (let i = this.transactions.length - 1; i >= 0; i--) {

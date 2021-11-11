@@ -1,4 +1,4 @@
-const { hash } = require('../../util/hash');
+const hashModule = require('../../util/hash');
 
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
@@ -165,6 +165,7 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
     Buffer.from(fullDomainName),
   ]);
 
+  const { hash } = hashModule;
   const saltedDomainHash = hash(saltedDomainBuffer);
 
   const [preorderDocument] = await context.getStateRepository()

@@ -1,10 +1,11 @@
-const rewiremock = require('rewiremock/node');
-
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 
 const Identifier = require('../../../../../lib/identifier/Identifier');
 const protocolVersion = require('../../../../../lib/version/protocolVersion');
+const DataContractCreateTransition = require('../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const hash = require('../../../../../lib/util/hash');
+const serializer = require('../../../../../lib/util/serializer');
 
 describe('DataContractCreateTransition', () => {
   let stateTransition;
@@ -13,21 +14,21 @@ describe('DataContractCreateTransition', () => {
   let encodeMock;
 
   beforeEach(function beforeEach() {
-    hashMock = this.sinonSandbox.stub();
-    const serializerMock = { encode: this.sinonSandbox.stub() };
-    encodeMock = serializerMock.encode;
-
-    const DataContractCreateTransition = rewiremock.proxy('../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition', {
-      '../../../../../lib/util/hash': { hash: hashMock },
-      '../../../../../lib/util/serializer': serializerMock,
-    });
-
     dataContract = getDataContractFixture();
+
+    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
+    hashMock = this.sinonSandbox.stub(hash, 'hash');
+
     stateTransition = new DataContractCreateTransition({
       protocolVersion: protocolVersion.latestVersion,
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
+  });
+
+  afterEach(() => {
+    encodeMock.restore();
+    hashMock.restore();
   });
 
   describe('#getProtocolVersion', () => {

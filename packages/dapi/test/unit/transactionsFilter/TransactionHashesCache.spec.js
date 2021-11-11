@@ -53,7 +53,7 @@ describe('TransactionHashesCache', () => {
       },
     ];
 
-    merkleBlocks = blocks.map(block => ({ header: { hash: block.hash } }));
+    merkleBlocks = blocks.map((block) => ({ header: { hash: block.hash } }));
 
     sinon.stub(MerkleBlock, 'build');
 

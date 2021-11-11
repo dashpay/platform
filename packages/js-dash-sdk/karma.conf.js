@@ -25,6 +25,7 @@ module.exports = (config) => {
       ...webpackBaseConfig,
       mode: 'development',
       plugins: [
+        ...webpackBaseConfig.plugins,
         new webpack.EnvironmentPlugin(
           dotenvResult.parsed,
         ),

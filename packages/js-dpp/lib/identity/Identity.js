@@ -1,5 +1,5 @@
-const { hash } = require('../util/hash');
-const { encode } = require('../util/serializer');
+const hashModule = require('../util/hash');
+const serializer = require('../util/serializer');
 const IdentityPublicKey = require('./IdentityPublicKey');
 const Identifier = require('../identifier/Identifier');
 
@@ -114,13 +114,15 @@ class Identity {
     const protocolVersionUInt32 = Buffer.alloc(4);
     protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
 
-    return Buffer.concat([protocolVersionUInt32, encode(serializedData)]);
+    return Buffer.concat([protocolVersionUInt32, serializer.encode(serializedData)]);
   }
 
   /**
    * @return {Buffer}
    */
   hash() {
+    const { hash } = hashModule;
+
     return hash(this.toBuffer());
   }
 

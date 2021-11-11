@@ -31,7 +31,7 @@ describe('StateTransitionFacade', () => {
 
   beforeEach(async function beforeEach() {
     const privateKeyModel = new PrivateKey();
-    const privateKey = privateKeyModel.toBuffer();
+    const privateKey = privateKeyModel.toWIF();
     const publicKey = privateKeyModel.toPublicKey().toBuffer();
     const publicKeyId = 1;
 
