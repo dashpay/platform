@@ -1,9 +1,11 @@
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
+
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
-const getFormat = require('../../util/getFormat');
 const printObject = require('../../printers/printObject');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
@@ -195,7 +197,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
       outputRows['Remote block height'] = explorerBlockHeight;
     }
 
-    printObject(outputRows, getFormat(flags));
+    printObject(outputRows, flags.format);
   }
 }
 
@@ -203,6 +205,11 @@ CoreStatusCommand.description = 'Show core status details';
 
 CoreStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.TABLE,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = CoreStatusCommand;

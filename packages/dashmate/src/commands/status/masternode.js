@@ -1,10 +1,12 @@
 const chalk = require('chalk');
 
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
+
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
 const blocksToTime = require('../../util/blocksToTime');
 const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
-const getFormat = require('../../util/getFormat');
 const printObject = require('../../printers/printObject');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
@@ -146,7 +148,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       outputRows['Next payment time'] = `in ${blocksToTime(paymentQueuePosition)}`;
     }
 
-    printObject(outputRows, getFormat(flags));
+    printObject(outputRows, flags.format);
   }
 }
 
@@ -154,6 +156,11 @@ MasternodeStatusCommand.description = 'Show masternode status details';
 
 MasternodeStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.TABLE,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = MasternodeStatusCommand;

@@ -3,8 +3,10 @@ const publicIp = require('public-ip');
 const prettyMs = require('pretty-ms');
 const prettyByte = require('pretty-bytes');
 
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
+
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const getFormat = require('../../util/getFormat');
 const printObject = require('../../printers/printObject');
 
 class HostStatusCommand extends ConfigBaseCommand {
@@ -24,7 +26,7 @@ class HostStatusCommand extends ConfigBaseCommand {
       IP: await publicIp.v4(),
     };
 
-    printObject(outputRows, getFormat(flags));
+    printObject(outputRows, flags.format);
   }
 }
 
@@ -32,6 +34,11 @@ HostStatusCommand.description = 'Show host status details';
 
 HostStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.TABLE,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = HostStatusCommand;

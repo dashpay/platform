@@ -1,5 +1,7 @@
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
+
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const getFormat = require('../../util/getFormat');
 
 class StatusCommand extends ConfigBaseCommand {
   /**
@@ -15,7 +17,7 @@ class StatusCommand extends ConfigBaseCommand {
     outputStatusOverview,
     config,
   ) {
-    await outputStatusOverview(config, getFormat(flags));
+    await outputStatusOverview(config, flags.format);
   }
 }
 
@@ -23,6 +25,11 @@ StatusCommand.description = 'Show status overview';
 
 StatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.TABLE,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = StatusCommand;

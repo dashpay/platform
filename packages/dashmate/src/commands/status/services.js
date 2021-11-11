@@ -1,10 +1,13 @@
 const chalk = require('chalk');
-const getFormat = require('../../util/getFormat');
+
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
+
 const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 
-const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
-
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+
+const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
 class ServicesStatusCommand extends ConfigBaseCommand {
   /**
@@ -77,7 +80,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
       });
     }
 
-    printArrayOfObjects(outputRows, getFormat(flags));
+    printArrayOfObjects(outputRows, flags.format);
   }
 }
 
@@ -85,6 +88,11 @@ ServicesStatusCommand.description = 'Show service status details';
 
 ServicesStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.TABLE,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = ServicesStatusCommand;
