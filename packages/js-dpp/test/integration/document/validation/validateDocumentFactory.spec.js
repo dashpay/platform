@@ -165,6 +165,14 @@ describe('validateDocumentFactory', () => {
     });
 
     describe('$type', () => {
+      let DataContractMock;
+
+      afterEach(() => {
+        if (DataContractMock) {
+          DataContractMock.restore();
+        }
+      });
+
       it('should be present', () => {
         delete rawDocument.$type;
 
@@ -199,7 +207,7 @@ describe('validateDocumentFactory', () => {
       it('should throw an error if getDocumentSchemaRef throws error', function it() {
         const someError = new Error();
 
-        this.sinonSandbox.stub(DataContract.prototype, 'getDocumentSchemaRef').throws(someError);
+        DataContractMock = this.sinonSandbox.stub(DataContract.prototype, 'getDocumentSchemaRef').throws(someError);
 
         let error;
         try {

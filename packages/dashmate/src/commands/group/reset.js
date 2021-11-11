@@ -18,6 +18,7 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {configureTenderdashTask} configureTenderdashTask
    * @param {initializePlatformTask} initializePlatformTask
    * @param {generateToAddressTask} generateToAddressTask
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -34,6 +35,7 @@ class GroupResetCommand extends GroupBaseCommand {
     configureTenderdashTask,
     initializePlatformTask,
     generateToAddressTask,
+    configFile,
   ) {
     const groupName = configGroup[0].get('group');
 
@@ -72,6 +74,13 @@ class GroupResetCommand extends GroupBaseCommand {
           }))),
         },
         {
+          enabled: (ctx) => ctx.isHardReset,
+          title: 'Delete node configs',
+          task: () => (
+            configGroup.forEach((config) => configFile.removeConfig(config.getName()))
+          ),
+        },
+        {
           enabled: (ctx) => !ctx.isHardReset,
           title: 'Configure Tenderdash nodes',
           task: () => configureTenderdashTask(configGroup),
@@ -84,7 +93,7 @@ class GroupResetCommand extends GroupBaseCommand {
         {
           // in case we don't need to register masternodes
           title: `Generate ${amount} dash to local wallet`,
-          enabled: () => !isHardReset,
+          enabled: (ctx) => !ctx.isHardReset,
           skip: (ctx) => !!ctx.fundingPrivateKeyString,
           task: () => generateToAddressTask(configGroup[0], amount),
         },
@@ -109,6 +118,7 @@ class GroupResetCommand extends GroupBaseCommand {
       await tasks.run({
         isHardReset,
         isPlatformOnlyReset,
+        isVerbose,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

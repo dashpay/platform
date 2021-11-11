@@ -1,4 +1,4 @@
-const { InstantLock } = require('@dashevo/dashcore-lib');
+const DashCoreLib = require('@dashevo/dashcore-lib');
 
 const instantAssetLockProofSchema = require('../../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json');
 
@@ -33,6 +33,8 @@ function validateInstantAssetLockProofStructureFactory(
     if (!result.isValid()) {
       return result;
     }
+
+    const { InstantLock } = DashCoreLib;
 
     let instantLock;
     try {

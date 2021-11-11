@@ -1,7 +1,7 @@
 import {Platform} from "../../Platform";
 import Identifier from "@dashevo/dpp/lib/Identifier";
 
-const hash = require('@dashevo/dpp/lib/util/hash');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
 const crypto = require('crypto');
 
 /**

@@ -28,6 +28,8 @@ describe('getDataTriggers', () => {
   let dataContractId;
   let topLevelIdentity;
 
+  let processMock;
+
   beforeEach(function beforeEach() {
     createDocument = getDpnsDocumentFixture.getChildDocumentFixture();
     updateDocument = getDpnsDocumentFixture.getChildDocumentFixture();
@@ -53,12 +55,16 @@ describe('getDataTriggers', () => {
       dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger,
     );
 
-    this.sinonSandbox.stub(process, 'env').value({
+    processMock = this.sinonSandbox.stub(process, 'env').value({
       DPNS_CONTRACT_ID: dataContractId,
       DPNS_TOP_LEVEL_IDENTITY: topLevelIdentity,
     });
 
     getDataTriggers = getDataTriggersFactory();
+  });
+
+  afterEach(() => {
+    processMock.restore();
   });
 
   it('should return matching triggers', () => {

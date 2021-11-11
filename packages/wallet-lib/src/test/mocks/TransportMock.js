@@ -13,7 +13,7 @@ class TransportMock {
     this.sendTransaction = sinonSandbox.stub();
     this.getTransaction = sinonSandbox.stub();
     this.getBlockHeaderByHash = sinonSandbox.stub();
-    this.getStatus = sinonSandbox.stub().resolves(getStatus());
+    this.getStatus = sinonSandbox.stub().resolves(getStatus.call(this));
   }
 }
 

@@ -34,7 +34,7 @@ const wait = require('../../../utils/wait');
 async function sendTransactionsResponse(call, transactions) {
   const rawTransactions = new RawTransactions();
   rawTransactions.setTransactionsList(
-    transactions.map(tx => tx.toBuffer()),
+    transactions.map((tx) => tx.toBuffer()),
   );
 
   const response = new TransactionsWithProofsResponse();

@@ -102,6 +102,7 @@ class SetupCommand extends BaseCommand {
         externalIp,
         operatorBlsPrivateKey,
         fundingPrivateKeyString,
+        isVerbose,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

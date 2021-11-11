@@ -37,7 +37,7 @@ function getIdentitiesByPublicKeyHashesHandlerFactory(
     const prove = request.getProve();
 
     const identitiesResponseBuffer = await driveClient
-      .fetchIdentitiesByPublicKeyHashes(publicKeyHashes, prove);
+      .fetchIdentitiesByPublicKeyHashes(publicKeyHashes.map(Buffer.from), prove);
 
     return GetIdentitiesByPublicKeyHashesResponse.deserializeBinary(identitiesResponseBuffer);
   }

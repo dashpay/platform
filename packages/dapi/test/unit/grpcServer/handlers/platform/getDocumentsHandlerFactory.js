@@ -71,7 +71,7 @@ describe('getDocumentsHandlerFactory', () => {
 
     documentsFixture = [document];
 
-    documentsSerialized = documentsFixture.map(documentItem => documentItem.toBuffer());
+    documentsSerialized = documentsFixture.map((documentItem) => documentItem.toBuffer());
     proofFixture = {
       rootTreeProof: Buffer.alloc(1, 1),
       storeTreeProof: Buffer.alloc(1, 2),
@@ -111,7 +111,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(documentsBinary).to.have.lengthOf(documentsFixture.length);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId,
+      dataContractId.toBuffer(),
       documentType,
       {
         where,
@@ -138,7 +138,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId,
+      dataContractId.toBuffer(),
       documentType,
       {
         where,

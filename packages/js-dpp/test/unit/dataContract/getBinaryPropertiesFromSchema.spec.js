@@ -1,4 +1,4 @@
-const getBinaryPropertiesFromSchema = require(
+const { getBinaryPropertiesFromSchema } = require(
   '../../../lib/dataContract/getBinaryPropertiesFromSchema',
 );
 

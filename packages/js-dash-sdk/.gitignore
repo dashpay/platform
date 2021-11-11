@@ -1,8 +1,4 @@
-node_modules
-.vscode
-.idea
 build
 dist
-/.env
 
-.DS_Store
+

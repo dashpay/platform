@@ -11,6 +11,8 @@ function sha256(payload) {
  * @param {Buffer} buffer
  * @return {Buffer}
  */
-module.exports = function hash(buffer) {
+function hash(buffer) {
   return sha256(sha256(buffer));
-};
+}
+
+module.exports = { hash };
