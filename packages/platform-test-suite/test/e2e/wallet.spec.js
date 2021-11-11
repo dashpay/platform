@@ -25,6 +25,7 @@ describe('e2e', () => {
     let mnemonic;
     let firstTransaction;
     let secondTransaction;
+    let walletHeight;
 
     before(async () => {
       mnemonic = new Mnemonic();
@@ -84,13 +85,16 @@ describe('e2e', () => {
           waitForBalanceToChange(emptyAccount),
         ]);
 
-        // TODO: Get height for skip option here
-
         const transactionIds = Object.keys(emptyAccount.getTransactions());
 
         expect(transactionIds).to.have.lengthOf(1);
 
         expect(transactionIds[0]).to.equal(firstTransaction.id);
+
+        do {
+          ({ height: walletHeight } = await fundedWallet.getDAPIClient()
+            .core.getTransaction(firstTransaction.id));
+        } while (!walletHeight);
       });
     });
 
@@ -100,10 +104,12 @@ describe('e2e', () => {
           wallet: {
             mnemonic,
             waitForInstantLockTimeout: 120000,
+            unsafeOptions: {
+              skipSynchronizationBeforeHeight: walletHeight - 1,
+            },
           },
           seeds: getDAPISeeds(),
           network: process.env.NETWORK,
-          // TODO: Skip blocks to height when we started the test suite? (takes 60000)
         });
 
         restoredAccount = await restoredWallet.getWalletAccount();
