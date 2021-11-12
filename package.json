@@ -36,7 +36,6 @@
     ]
   },
   "devDependencies": {
-    "lerna": "3.22.1",
     "packster": "~0.3.0",
     "syncpack": "^5.8.15",
     "ultra-runner": "^3.10.5"
