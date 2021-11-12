@@ -46,7 +46,7 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
       { timeout: options.timeout },
     );
   } catch (error) {
-    if (error.response && error.response.status === 502) {
+    if (error.response && error.response.status >= 500) {
       throw new WrongHttpCodeError(requestInfo, error.response.status, error.response.statusText);
     }
 
