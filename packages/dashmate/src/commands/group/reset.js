@@ -26,6 +26,7 @@ class GroupResetCommand extends GroupBaseCommand {
     {
       verbose: isVerbose,
       hard: isHardReset,
+      force: isForceReset,
       'platform-only': isPlatformOnlyReset,
     },
     isSystemConfig,
@@ -117,6 +118,7 @@ class GroupResetCommand extends GroupBaseCommand {
     try {
       await tasks.run({
         isHardReset,
+        isForceReset,
         isPlatformOnlyReset,
         isVerbose,
       });
@@ -130,8 +132,20 @@ GroupResetCommand.description = 'Reset group nodes';
 
 GroupResetCommand.flags = {
   ...GroupBaseCommand.flags,
-  hard: flagTypes.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
-  'platform-only': flagTypes.boolean({ char: 'p', description: 'reset platform data only', default: false }),
+  hard: flagTypes.boolean({
+    description: 'reset config as well as data',
+    default: false,
+  }),
+  force: flagTypes.boolean({
+    char: 'f',
+    description: 'reset config as well as data',
+    default: false,
+  }),
+  'platform-only': flagTypes.boolean({
+    char: 'p',
+    description: 'reset platform data only',
+    default: false,
+  }),
 };
 
 module.exports = GroupResetCommand;
