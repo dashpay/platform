@@ -20,6 +20,6 @@ on:
 jobs:
   dapi-tests:
     name: Run DAPI gRPC tests
-    uses: dashevo/platform/.github/workflows/test.yml@master
+    uses: dashevo/platform/.github/workflows/test.yml@parallel-scripts
     with:
       package: '@dashevo/dashpay-contract'
