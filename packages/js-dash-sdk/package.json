@@ -10,6 +10,7 @@
     "build": "npm run build:ts",
     "build:web": "npm run build:ts && webpack --stats-error-details",
     "build:ts": "tsc",
+    "lint": "",
     "test": "npm run test:unit && npm run test:functional && npm run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:unit": "TS_NODE_COMPILER_OPTIONS={\"target\":\"es6\"} mocha -r ts-node/register/transpile-only \"src/**/*.spec.ts\"",
