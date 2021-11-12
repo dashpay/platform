@@ -1,9 +1,12 @@
-const { table } = require('table');
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
+
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
+const printObject = require('../../printers/printObject');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
@@ -23,8 +26,6 @@ class CoreStatusCommand extends ConfigBaseCommand {
     createRpcClient,
     config,
   ) {
-    const rows = [];
-
     const coreService = new CoreService(
       config,
       createRpcClient(
@@ -172,31 +173,31 @@ class CoreStatusCommand extends ConfigBaseCommand {
       }
     }
 
-    // Build table
-    rows.push(['Version', coreVersion]);
-    rows.push(['Latest version', latestVersion]);
-    rows.push(['Network', coreChain]);
-    rows.push(['Status', status]);
-    rows.push(['Sync asset', mnsyncStatus.AssetName]);
-    rows.push(['Peer count', peerInfo.length]);
-    rows.push(['P2P service', `${config.get('externalIp')}:${config.get('core.p2p.port')}`]);
-    rows.push(['P2P port', `${config.get('core.p2p.port')} ${corePortState}`]);
-    rows.push(['RPC service', `127.0.0.1:${config.get('core.rpc.port')}`]);
-    rows.push(['Block height', blocks]);
-    rows.push(['Header height', coreHeaders]);
-    if (insightURLs[config.get('network')]) {
-      rows.push(['Remote block height', explorerBlockHeight]);
-    }
-    rows.push(['Difficulty', coreDifficulty]);
+    const outputRows = {
+      Version: coreVersion,
+      'Latest version': latestVersion,
+      Network: coreChain,
+      Status: status,
+      'Sync asset': mnsyncStatus.AssetName,
+      'Peer count': peerInfo.length,
+      'P2P service': `${config.get('externalIp')}:${config.get('core.p2p.port')}`,
+      'P2P port': `${config.get('core.p2p.port')} ${corePortState}`,
+      'RPC service': `127.0.0.1:${config.get('core.rpc.port')}`,
+      'Block height': blocks,
+      'Header height': coreHeaders,
+      Difficulty: coreDifficulty,
+    };
+
     if (config.get('core.masternode.enable')) {
-      rows.push(['Sentinel version', sentinelVersion]);
-      rows.push(['Sentinel status', (sentinelState)]);
+      outputRows['Sentinel version'] = sentinelVersion;
+      outputRows['Sentinel status'] = (sentinelState);
     }
 
-    const output = table(rows, { singleLine: true });
+    if (insightURLs[config.get('network')]) {
+      outputRows['Remote block height'] = explorerBlockHeight;
+    }
 
-    // eslint-disable-next-line no-console
-    console.log(output);
+    printObject(outputRows, flags.format);
   }
 }
 
@@ -204,6 +205,11 @@ CoreStatusCommand.description = 'Show core status details';
 
 CoreStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.PLAIN,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = CoreStatusCommand;

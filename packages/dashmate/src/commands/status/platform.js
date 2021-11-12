@@ -1,9 +1,12 @@
-const { table } = require('table');
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 
+const { flags: flagTypes } = require('@oclif/command');
+const { OUTPUT_FORMATS } = require('../../constants');
+
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
+const printObject = require('../../printers/printObject');
 
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
@@ -29,8 +32,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       console.log('Platform is not supported on mainnet yet!');
       this.exit();
     }
-
-    const rows = [];
 
     const coreService = new CoreService(
       config,
@@ -184,27 +185,27 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       p2pPortState = chalk.red(p2pPortState);
     }
 
-    // Build table
-    rows.push(['Tenderdash Version', platformVersion]);
-    rows.push(['Network', platformNetwork]);
-    rows.push(['Status', status]);
-    rows.push(['Block height', blocks]);
-    if (explorerURLs[config.get('network')]) {
-      rows.push(['Remote block height', explorerLatestBlockHeight]);
-    }
-    rows.push(['Peer count', platformPeers]);
-    rows.push(['App hash', platformLatestAppHash]);
-    rows.push(['HTTP service', `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`]);
-    rows.push(['HTTP port', `${config.get('platform.dapi.envoy.http.port')} ${httpPortState}`]);
-    rows.push(['gRPC service', `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`]);
-    rows.push(['gRPC port', `${config.get('platform.dapi.envoy.grpc.port')} ${gRpcPortState}`]);
-    rows.push(['P2P service', `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`]);
-    rows.push(['P2P port', `${config.get('platform.drive.tenderdash.p2p.port')} ${p2pPortState}`]);
-    rows.push(['RPC service', `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`]);
-    const output = table(rows, { singleLine: true });
+    const outputRows = {
+      'Tenderdash Version': platformVersion,
+      Network: platformNetwork,
+      Status: status,
+      'Block height': blocks,
+      'Peer count': platformPeers,
+      'App hash': platformLatestAppHash,
+      'HTTP service': `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`,
+      'HTTP port': `${config.get('platform.dapi.envoy.http.port')} ${httpPortState}`,
+      'gRPC service': `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`,
+      'gRPC port': `${config.get('platform.dapi.envoy.grpc.port')} ${gRpcPortState}`,
+      'P2P service': `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`,
+      'P2P port': `${config.get('platform.drive.tenderdash.p2p.port')} ${p2pPortState}`,
+      'RPC service': `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`,
+    };
 
-    // eslint-disable-next-line no-console
-    console.log(output);
+    if (explorerURLs[config.get('network')]) {
+      outputRows['Remote block height'] = explorerLatestBlockHeight;
+    }
+
+    printObject(outputRows, flags.format);
   }
 }
 
@@ -212,6 +213,11 @@ PlatformStatusCommand.description = 'Show platform status details';
 
 PlatformStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: flagTypes.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.PLAIN,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = PlatformStatusCommand;
