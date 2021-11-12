@@ -87,4 +87,4 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Run tests
-        run: npm test --filter "${{ inputs.package }}"
+        run: npm run test --filter "${{ inputs.package }}"
