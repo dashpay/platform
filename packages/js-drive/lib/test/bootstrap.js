@@ -8,6 +8,8 @@ const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
 
+const { initBlake3 } = require('@dashevo/dpp/lib/util/hash');
+
 use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);
@@ -24,6 +26,10 @@ const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
 dotenvExpand(dotenvConfig);
+
+before(async () => {
+  await initBlake3();
+});
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {
