@@ -13,7 +13,7 @@ const RetriableResponseError = require('../errors/response/RetriableResponseErro
 function createJsonTransportError(error, dapiAddress) {
   if (error instanceof WrongHttpCodeError) {
     return new ServerError(
-      error.statusCode,
+      error.getCode(),
       error.message,
       {},
       dapiAddress,
