@@ -124,4 +124,4 @@ jobs:
         run: npm run start
 
       - name: Run test suite
-        run: npm run test -w @dashevo/platform-test-suite
+        run: npm run test:suite
