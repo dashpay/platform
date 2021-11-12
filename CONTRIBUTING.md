@@ -26,20 +26,22 @@ All new features PRs must be made to the current dev branch.
 All commits and pull request titles should follow the conventional commits scheme.
 PR titles follow the `<type>(optional scope): <description> scheme`. Please check the link above
 to see valid types. When making a change to a specific component, please specify the name of
-the component inside scope. So, for example, if you're making a new feature for the js-sdk,
+the component inside scope. So, for example, if you're developing a new feature for the js-sdk,
 the PR title should look like this: `js-sdk(feat): new amazing feature`.
 
 For more details on allowed types and more info about conventional commits, please check the 
 [conventional commits docs](https://www.conventionalcommits.org/en/v1.0.0/)
 
+
+### Workflow
+
 If a pull request is not to be considered for merging (yet), please set its status as "Draft" in
 GitHub.
 
-The body of the pull request should contain enough description about what the
-patch does together with any justification/reasoning. You should include
-references to any discussions (for example other tickets or mailing list
-discussions).
-
+The body of the PR also should be following the default PR template that will appear one you
+open a PR through GitHub. Please fill all template field with enough description about what the
+patch does together with any justification/reasoning. You should include references to any 
+discussions (for example other tickets or mailing list discussions).
 
 
 Contributor Workflow
