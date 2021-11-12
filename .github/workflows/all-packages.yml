@@ -12,7 +12,7 @@ on:
 
 jobs:
   local-deps:
-    name: Check local package dependencies
+    name: Check local dependency references
     runs-on: ubuntu-20.04
     steps:
       - name: Check out repo
@@ -38,7 +38,7 @@ jobs:
         run: node_modules/.bin/packster check --all --error
 
   remote-deps:
-    name: Check mismatched package dependencies
+    name: Check mismatched dependencies
     runs-on: ubuntu-20.04
     steps:
       - name: Check out repo

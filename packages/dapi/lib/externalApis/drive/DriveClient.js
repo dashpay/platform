@@ -75,7 +75,7 @@ class DriveClient {
   /**
    * Fetch serialized data contract
    *
-   * @param {string} contractId
+   * @param {Buffer|Identifier} contractId
    * @param {boolean} prove - include proofs into the response
    *
    * @return {Promise<Buffer>}
@@ -93,7 +93,7 @@ class DriveClient {
   /**
    * Fetch serialized documents
    *
-   * @param {string} contractId
+   * @param {Buffer} contractId
    * @param {string} type - Documents type to fetch
    *
    * @param options
@@ -121,7 +121,7 @@ class DriveClient {
   /**
    * Fetch serialized identity
    *
-   * @param {string} id
+   * @param {Buffer} id
    * @param {boolean} prove - include proofs into the response
    *
    * @return {Promise<Buffer>}

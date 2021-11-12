@@ -111,7 +111,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(documentsBinary).to.have.lengthOf(documentsFixture.length);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId,
+      dataContractId.toBuffer(),
       documentType,
       {
         where,
@@ -138,7 +138,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId,
+      dataContractId.toBuffer(),
       documentType,
       {
         where,

@@ -11,7 +11,6 @@ function createClientWithoutWallet() {
         contractId: process.env.DPNS_CONTRACT_ID,
       },
     },
-    driveProtocolVersion: 1,
   });
 }
 

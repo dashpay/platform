@@ -19,7 +19,6 @@ function createFaucetClient() {
         contractId: process.env.DPNS_CONTRACT_ID,
       },
     },
-    driveProtocolVersion: 1,
   };
 
   const walletOptions = {

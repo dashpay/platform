@@ -90,7 +90,7 @@ describe('getDataContractHandlerFactory', () => {
     expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
     expect(resultStoreTreeProofs).to.deep.equal(storeTreeProofs);
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id, true);
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), true);
   });
 
   it('should not include proof', async () => {
@@ -105,7 +105,7 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(proof).to.be.undefined();
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id, false);
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), false);
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {
