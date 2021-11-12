@@ -88,7 +88,7 @@ jobs:
         run: npm ci --no-audit
 
       - name: Build packages
-        run: npm run build --filter "+@dashevo/drive"
+        run: npm run build --filter="+@dashevo/drive"
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v1
@@ -179,7 +179,7 @@ jobs:
         run: npm ci --no-audit
 
       - name: Build packages
-        run: npm run build --filter "+@dashevo/dapi"
+        run: npm run build --filter="+@dashevo/dapi"
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v1
