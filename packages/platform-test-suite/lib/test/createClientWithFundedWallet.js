@@ -23,7 +23,6 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
         contractId: process.env.DPNS_CONTRACT_ID,
       },
     },
-    driveProtocolVersion: 1,
   };
 
   const faucetClient = createFaucetClient();
@@ -40,6 +39,8 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
 
   if (HDPrivateKey) {
     walletOptions.HDPrivateKey = HDPrivateKey;
+  } else {
+    walletOptions.mnemonic = null;
   }
 
   const client = new Dash.Client({

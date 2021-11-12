@@ -8,6 +8,8 @@ packages_path="$root_path/packages"
 DAPI_REPO_PATH="${packages_path}/dapi"
 DRIVE_REPO_PATH="${packages_path}/js-drive"
 
-"${packages_path}"/dashmate/bin/dashmate update -v
 "${packages_path}"/dashmate/bin/dashmate config:set --config=${CONFIG_NAME} platform.dapi.api.docker.build.path "$DAPI_REPO_PATH"
 "${packages_path}"/dashmate/bin/dashmate config:set --config=${CONFIG_NAME} platform.drive.abci.docker.build.path "$DRIVE_REPO_PATH"
+
+# create tenderdash blocks every 10s to speed up test suite
+"${packages_path}"/dashmate/bin/dashmate config:set --config=${CONFIG_NAME} platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"

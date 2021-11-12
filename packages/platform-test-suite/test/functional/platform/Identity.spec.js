@@ -13,9 +13,6 @@ const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
 const IdentityPublicKeyAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyAlreadyExistsError');
 
-const waitForBlocks = require('../../../lib/waitForBlocks');
-const waitForBalanceToChange = require('../../../lib/test/waitForBalanceToChange');
-
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 
@@ -48,8 +45,6 @@ describe('Platform', () => {
       identity = await client.platform.identities.register(3);
 
       expect(identity).to.exist();
-
-      await waitForBalanceToChange(walletAccount);
     });
 
     it('should fail to create an identity if instantLock is not valid', async () => {
@@ -98,7 +93,6 @@ describe('Platform', () => {
       } = await createAssetLockTransaction({ client }, 1);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
-      await waitForBlocks(client.getDAPIClient(), 1);
 
       const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
 
@@ -157,7 +151,6 @@ describe('Platform', () => {
       } = await createAssetLockTransaction({ client }, 1);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
-      await waitForBlocks(client.getDAPIClient(), 1);
 
       const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
 
@@ -261,18 +254,28 @@ describe('Platform', () => {
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
-        await waitForBlocks(client.getDAPIClient(), 1);
 
-        const { chain } = await client.getDAPIClient().core.getStatus();
+        // Wait for transaction to be mined anc chain locked
+        let transactionHeight = 0;
+        do {
+          ({ height: transactionHeight } = await client.getDAPIClient().core
+            .getTransaction(transaction.id));
+
+          if (transactionHeight > 0) {
+            break;
+          }
+
+          await wait(1000);
+        } while (!transactionHeight);
 
         const outPoint = transaction.getOutPointBuffer(outputIndex);
         const assetLockProof = await dpp.identity.createChainAssetLockProof(
-          chain.blocksCount,
+          transactionHeight,
           outPoint,
         );
 
         let coreChainLockedHeight = 0;
-        while (coreChainLockedHeight < chain.blocksCount) {
+        while (coreChainLockedHeight < transactionHeight) {
           const identityResponse = await client.platform.identities.get(identity.getId());
 
           expect(identityResponse).to.exist();
@@ -280,7 +283,7 @@ describe('Platform', () => {
           const metadata = identityResponse.getMetadata();
           coreChainLockedHeight = metadata.getCoreChainLockedHeight();
 
-          if (coreChainLockedHeight >= chain.blocksCount) {
+          if (coreChainLockedHeight >= transactionHeight) {
             break;
           }
 
@@ -305,8 +308,6 @@ describe('Platform', () => {
         if (process.env.NETWORK === 'testnet') {
           await wait(5000);
         }
-
-        await waitForBalanceToChange(walletAccount);
       });
 
       it('should be able to get newly created identity', async () => {
@@ -373,8 +374,6 @@ describe('Platform', () => {
       });
 
       it.skip('should fail top-up if instant lock is not valid', async () => {
-        await waitForBalanceToChange(walletAccount);
-
         const {
           transaction,
           privateKey,
@@ -414,8 +413,6 @@ describe('Platform', () => {
       });
 
       it('should be able to top-up credit balance', async () => {
-        await waitForBalanceToChange(walletAccount);
-
         const identityBeforeTopUp = await client.platform.identities.get(
           identity.getId(),
         );
@@ -425,7 +422,10 @@ describe('Platform', () => {
 
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
 
-        await waitForBalanceToChange(walletAccount);
+        // Additional wait time to mitigate testnet latency
+        if (process.env.NETWORK === 'testnet') {
+          await wait(5000);
+        }
 
         const identityAfterTopUp = await client.platform.identities.get(
           identity.getId(),
@@ -462,7 +462,6 @@ describe('Platform', () => {
         } = await createAssetLockTransaction({ client }, 1);
 
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
-        await waitForBlocks(client.getDAPIClient(), 1);
 
         const assetLockProof = await createAssetLockProof(
           client.platform,
