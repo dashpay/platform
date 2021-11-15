@@ -14,7 +14,11 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Collect docs
-        run: cp -r ./packages/js-dapi-client/docs/ ./docs/docs/DAPI-client
+        run: |
+          cp -r ./packages/js-dapi-client/docs/ ./docs/docs/DAPI-Client
+          cp -r ./packages/js-dpp/docs/ ./docs/docs/DPP
+          cp -r ./packages/js-dash-sdk/docs/ ./docs/docs/SDK
+          cp -r ./packages/wallet-lib/docs/ ./docs/docs/Wallet-lib
 
       - name: Deploy docs
         uses: mhausenblas/mkdocs-deploy-gh-pages@master
