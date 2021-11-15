@@ -1,5 +1,5 @@
 Contributing to Dash Platform
-============================
+=============================
 
 The Dash Platform project operates an open contributor model where anyone is
 welcome to contribute towards development in the form of peer review, testing
