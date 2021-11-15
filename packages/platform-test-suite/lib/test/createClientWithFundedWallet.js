@@ -31,7 +31,7 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
     waitForInstantLockTimeout: 120000,
   };
 
-  if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
+  if (process.env.SKIP_SYNC_BEFORE_HEIGHT && HDPrivateKey) {
     walletOptions.unsafeOptions = {
       skipSynchronizationBeforeHeight: process.env.SKIP_SYNC_BEFORE_HEIGHT,
     };

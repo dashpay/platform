@@ -16,7 +16,7 @@ class WrongHttpCodeError extends DAPIClientError {
     super(`DAPI JSON RPC wrong http code: ${statusMessage}`);
 
     this.requestInfo = requestInfo;
-    this.statusCode = statusCode;
+    this.code = statusCode;
   }
 
   /**
@@ -30,8 +30,8 @@ class WrongHttpCodeError extends DAPIClientError {
    *
    * @returns {number}
    */
-  getStatusCode() {
-    return this.statusCode;
+  getCode() {
+    return this.code;
   }
 }
 
