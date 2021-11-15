@@ -6,65 +6,70 @@ welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for
 contributing.
 
-Branches, bugfixes and new features
+
+Branches, Bugfixes and New Features
 -----------------------------------
 
-Current stable release is in the `master` branch. This branch is meant to be stable, so the
-only PRs that are made to master should be bugfixes. The development of the next release 
-happens in the `vX-dev` branch, where `X` is the next version number that's going to be released.
-All new features PRs must be made to the current dev branch.
+The current stable release is in the `master` branch. This branch is meant to be stable, so the
+only PRs made to master should be bugfixes. Development of the next release happens
+on the `vX-dev` branch, where `X` is the next version number to be released.
+All new feature PRs must be made to the current dev branch.
 
-The body of the PR also should be following the default PR template that will appear one you
-open a PR through GitHub. Please fill all template field with enough description about what the
-patch does together with any justification/reasoning. You should include references to any
+The body of the PR should also follow the default PR template that appears when you
+open a PR on GitHub. Please fill all template fields with a sufficient description of what the
+patch does, together with any justification/reasoning. You should include references to any
 discussions (for example other tickets or mailing list discussions).
 
-If a pull request is not to be considered for merging (yet), please set its status as "Draft" in
+If a pull request is not (yet) ready to be considered for merging, please set its status to "Draft" on
 GitHub.
 
-Conventional commits
+
+Conventional Commits
 --------------------
 
-All commits and pull request titles should follow the conventional commits scheme.
-PR titles follow the `<type>(optional scope): <description> scheme`. Please check the link above
-to see valid types. When making a change to a specific component, please specify the name of
-the component inside scope. So, for example, if you're developing a new feature for the js-sdk,
-the PR title should look like this: `js-sdk(feat): new amazing feature`.
+All commits and pull request titles should follow the Conventional Commits specification.
+PR titles follow the `<type>(optional scope): <description>` scheme. Please see the specification linked below
+for valid types. When making a change to a specific component, please specify the name of
+the component inside the scope. For example, if you are developing a new feature for the SDK,
+the PR title should look like this: `feat(sdk): amazing new feature`.
 
-For more details on allowed types and more info about conventional commits, please check the 
-[conventional commits docs](https://www.conventionalcommits.org/en/v1.0.0/). For available scopes
-please check [.github/semantic.yml](.github/semantic.yml) file.
+For more details on allowed types and more information about Conventional Commits, please see the 
+[Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/). For available scopes,
+please see the [.github/semantic.yml](.github/semantic.yml) file.
 
-In general [commits should be atomic](https://en.wikipedia.org/wiki/Atomic_commit#Atomic_commit_convention)
-and diffs should be easy to read. For this reason do not mix any formatting
-fixes or code moves with actual code changes.
+In general, [commits should be atomic](https://en.wikipedia.org/wiki/Atomic_commit#Atomic_commit_convention)
+and diffs should be easy to read. For this reason, do not mix any formatting
+fixes or code movement with actual code changes.
 
-Code conventions
+
+Code Conventions
 ----------------
 
-Please ensure that the code you wrote adheres to the code style adopted in the project - AirBnB 
-style for JS code, and that all linting check are passing.
+Please ensure that the code you write adheres to the code style adopted in the project, and that all linting checks are passing. We use [AirBnB 
+style](https://github.com/airbnb/javascript) for JS code.
+
 
 Testing
 -------
 
-The code must be acompanied by the tests that check the functionality. Test for individual
-components are stored inside `packages/<component_name>/tests`, and for e2e test inside
+The code must be accompanied by tests to check the functionality. Tests for individual
+components are stored inside `packages/<component_name>/tests`, while e2e test are inside
 `packages/platform-test-suite`.
 
-Test case name should start with a lowercase "should", i.e. "should do x".
+Test case names should start with a lowercase "should", i.e. "should do x".
 Unit and integration tests should mirror the file structure of `/src` or `/lib` (depending
 on the component).
 
-Code generally should be covered with unit and integration tests, and for larger chucks of
-functionality functional or e2e tests should be written (when appropriate). Unit and integration
-test should not make any network calls, and unit tests should mock all of its dependencies.
+Code should generally be covered by unit and integration tests, and functional or e2e tests should be written for larger chunks of
+functionality (when appropriate). Unit and integration
+tests should not make any network calls, and unit tests should mock all dependencies.
+
 
 Squashing Commits
 -----------------
 
 If your pull request is accepted for merging, you may be asked by a maintainer
-to squash and or [rebase](https://git-scm.com/docs/git-rebase) your commits
+to squash and/or [rebase](https://git-scm.com/docs/git-rebase) your commits
 before it will be merged. The basic squashing workflow is shown below.
 
     git checkout your_branch_name
@@ -116,8 +121,11 @@ In general, all pull requests must:
 - Where bugs are fixed, where possible, there should be unit tests
   demonstrating the bug and also proving the fix. This helps prevent regression.
 
+
 Release process
 ---------------
+
+Coming soon.
 
 Copyright
 ---------
