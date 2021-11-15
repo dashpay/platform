@@ -13,6 +13,9 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v2
 
+      - name: Collect docs
+        run: cp -r ./packages/js-dapi-client/docs/ ./docs/docs/DAPI-client
+
       - name: Deploy docs
         uses: mhausenblas/mkdocs-deploy-gh-pages@master
         # Or use mhausenblas/mkdocs-deploy-gh-pages@nomaterial to build without the mkdocs-material theme
