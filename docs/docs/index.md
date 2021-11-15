@@ -1,17 +1,23 @@
-# Welcome to MkDocs
+<p align="center">
+  <a href="https://dashplatform.readme.io/docs/introduction-what-is-dash-platform/">
+    <img alt="babel" src="https://media.dash.org/wp-content/uploads/dash_digital-cash_logo_2018_rgb_for_screens.png" width="546">
+  </a>
+</p>
 
-For full documentation visit [mkdocs.org](https://www.mkdocs.org).
+<p align="center">
+  Fastest decentralized applications for the Dash network.
+</p>
 
-## Commands
+<p align="center">
+  <a href="https://github.com/dashevo/platform/actions/workflows/all-packages.yml"><img alt="GitHub CI Status" src="https://github.com/dashevo/platform/actions/workflows/all-packages.yml/badge.svg"></a>
+  <a href="https://chat.dashdevs.org/"><img alt="Devs Chat" src="https://img.shields.io/badge/discord-Dev_chat-738adb"></a>
+  <a href="https://discordapp.com/invite/PXbUxJB"><img alt="General Chat" src="https://img.shields.io/badge/discord-General_chat-738adb"></a>
+  <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
+</p>
 
-* `mkdocs new [dir-name]` - Create a new project.
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
+Dash Platform is a technology stack for building decentralized applications on the Dash network. 
+The two main architectural components, Drive and DAPI, turn the Dash P2P network into a cloud that 
+developers can integrate with their applications.
 
-## Project layout
-
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+If you are looking for how to contribute to the project or need any help with building an app on 
+the Dash Platform - message us in [Devs Discord](https://chat.dashdevs.org/)!
