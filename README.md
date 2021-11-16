@@ -24,44 +24,42 @@ the Dash Platform - message us in [Devs Discord](https://chat.dashdevs.org/)!
 
 ## Intro
 
-Babel is a tool that helps you write code in the latest version of JavaScript. When your supported environments don't support certain features natively, Babel will help you compile those features down to a supported version.
-
-
-Try it out at our [REPL](https://babel.dev/repl#?browsers=defaults%2C%20not%20ie%2011&loose=true&code_lz=GYVwdgxgLglg9mABAcwE4FN1QBQzABxCgEpEBvAKEUQyhFST0KkQH5XEAiACXQBs-cRAHc4qPgBNOAbgoBfIA&shippedProposals=true&sourceType=script&lineWrap=true&presets=env%2Cenv&prettier=true).
+This is a multi-package repository - sometimes also known as monorepository - that contains
+all packages that comprise the Dash platform - for example, Drive, which is the 
+storage component of Dash Platform, the JavaScript SDK, wallet-lib, DAPI and others. 
+Every individual package contains its own readme. Packages are located under the
+[packages](./packages) directory.
 
 ## FAQ
 
 ### Looking for support?
 
-For questions and support please join our [Slack Community](https://slack.babeljs.io/) (you can [sign up here](https://slack.babeljs.io/) for an invite), ask a question on [Stack Overflow](https://stackoverflow.com/questions/tagged/babeljs), or ping us on [Twitter](https://twitter.com/babeljs).
+For questions and support please join our [Devs Discord](https://chat.dashdevs.org/)
 
 ### Where are the docs?
 
-Check out our website: [babeljs.io](https://babeljs.io/), and report issues/features at [babel/website](https://github.com/babel/website/issues).
+Our docs are hosted on the [readme.io](https://dashplatform.readme.io/docs/introduction-what-is-dash-platform), 
+and report issues/features at this repository [issues](https://github.com/dashevo/platform/issues).
 
 ### Want to report a bug or request a feature?
 
-Please read through our [CONTRIBUTING.md](CONTRIBUTING.md) and fill out the issue template at [babel/issues](https://github.com/babel/babel/issues)!
+Please read through our [CONTRIBUTING.md](CONTRIBUTING.md) and fill 
+out the issue template at [platform/issues](https://github.com/dashevo/platform/issues)!
 
 ### Want to contribute to Dash Platform?
 
 Check out:
 
-- Our [#development](https://babeljs.slack.com/messages/development) Slack channel and say hi! ([sign-up](https://slack.babeljs.io))
-- Issues with the [good first issue](https://github.com/babel/babel/labels/good%20first%20issue) and [help wanted](https://github.com/babel/babel/labels/help%20wanted) label. We suggest also looking at the [closed ones](https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aclosed+label%3A%22good+first+issue%22) to get a sense of the kinds of issues you can tackle.
+- Our [Developers Discord](https://chat.dashdevs.org/)
 
 Some resources:
 
 - Our [CONTRIBUTING.md](CONTRIBUTING.md) to get started with setting up the repo.
-- Our discussions/notes/roadmap: [babel/notes](https://github.com/babel/notes)
-- Our progress on TC39 proposals: [babel/proposals](https://github.com/babel/proposals)
-- Our blog which contains release posts and explanations: [/blog](https://babeljs.io/blog)
-- Our videos page with talks about open source and Babel: [/videos](https://babeljs.io/videos)
-- Our [podcast](https://podcast.babeljs.io)
+- Our blog which contains release posts and explanations: [/blog](https://www.dash.org/blog/)
 
 ### How is the repo structured?
 
-The Babel repo is managed as a [monorepo](doc/design/monorepo.md) that is composed of many [npm packages](packages/README.md).
+The Dash Platform repo is managed as a that is composed of many [packages](packages/README.md).
 
 ## License
 
