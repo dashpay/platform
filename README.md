@@ -46,7 +46,7 @@ located in the [packages](./packages) directory.
  `npm test -w @dashevo/dapi-client` will run tests for the JS DAPI client. To see 
  all available packages, please check out [packages readme](./packages/README.md)
 - `npm run stop` will stop the local dev env. Running a dev env requires some resources,
- so you should stop the local node when you not need it anymore.
+ so you should stop the local node when it's not in use
 - Run `npm run build` to rebuild project after changes. If you have a local node
  running, you may need to restart by running `npm run stop && npm run start`
 - To completely reset all local data and builds, run `npm run reset`
