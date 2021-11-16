@@ -37,18 +37,21 @@ located in the [packages](./packages) directory.
 ### How to build and set up a node from the code in this repo?
 
 - Clone the repo
-- Install prerequisites - nodejs v16.0.0 or above and docker/docker compose v20.10/1.29.2 and above
-- Run `npm run setup` - it will install dependencies and configure and build all packages
+- Install prerequisites:
+  - [node.js](https://nodejs.org/) v16.0.0+ 
+  - [docker](https://docs.docker.com/get-docker/) v20.10+
+  - [docker-compose](https://docs.docker.com/compose/install/) v1.29.2+
+- Run `npm run setup` to install dependencies and configure and build all packages
 - Run `npm run start` to start the local dev environment built from the sources
-- Run `npm test` to run whole test suite (note that running tests requires a node running 
+- Run `npm test` to run the whole test suite (note that running tests requires a running node, 
  so be sure to call `npm run start` first). Alternatively, you can run tests for a specific 
  package by running `npm test -w <package_name>`, for example running 
  `npm test -w @dashevo/dapi-client` will run tests for the JS DAPI client. To see 
- all available packages, please check out [packages readme](./packages/README.md)
-- `npm run stop` will stop the local dev env. Running a dev env requires some resources,
- so you should stop the local node when it's not in use
-- Run `npm run build` to rebuild project after changes. If you have a local node
- running, you may need to restart by running `npm run stop && npm run start`
+ all available packages, please see the [packages readme](./packages/README.md)
+- `npm run stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
+ so it is best to stop the local node when not in use
+- Run `npm run build` to rebuild the project after changes. If you have a local node
+ running, you may need to restart it by running `npm run stop && npm run start`
 - To completely reset all local data and builds, run `npm run reset`
 
 ### Looking for support?
