@@ -37,7 +37,7 @@ located in the [packages](./packages) directory.
 ### How to build and set up a node from the code in this repo?
 
 - Clone the repo
-- Install prerequisites - nodejs and docker
+- Install prerequisites - nodejs v16.0.0 or above and docker/docker compose v20.10/1.29.2 and above
 - Run `npm run setup` - it will install dependencies and configure and build all packages
 - Run `npm run start` to start the local dev environment built from the sources
 - Run `npm test` to run whole test suite (note that running tests requires a node running 
