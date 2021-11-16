@@ -17,7 +17,7 @@
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| [`js-sdk`](/packages/js-dash-sdk) | [![npm](https://img.shields.io/npm/v/dash.svg?maxAge=3600)](https://www.npmjs.com/package/dash) | JavaScript SDK and light client |
+| [`dash`](/packages/js-dash-sdk) | [![npm](https://img.shields.io/npm/v/dash.svg?maxAge=3600)](https://www.npmjs.com/package/dash) | JavaScript SDK and light client |
 | [`@dashevo/wallet-lib`](/packages/wallet-lib) | [![npm](https://img.shields.io/npm/v/@dashevo/wallet-lib.svg?maxAge=3600)](https://www.npmjs.com/package/@dashevo/wallet-lib) | JavaScript light client wallet library |
 | [`@dashevo/dapi-client`](/packages/js-dapi-client) | [![npm](https://img.shields.io/npm/v/@dashevo/dapi-client.svg?maxAge=3600)](https://www.npmjs.com/package/@dashevo/js-dapi-client) | JavaScript client to connect to DAPI |
 | [`@dashevo/dapi-grpc`](/packages/dapi-grpc) | [![npm](https://img.shields.io/npm/v/@dashevo/dapi-grpc.svg?maxAge=3600)](https://www.npmjs.com/package/@dashevo/dapi-grpc) | GRPC clients for various platforms (Web, Android, iOS, Java, Python) to interact with DAPI |
