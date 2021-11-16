@@ -26,7 +26,7 @@ the Dash Platform - message us in [Devs Discord](https://chat.dashdevs.org/)!
 
 This is a multi-package repository - sometimes also known as monorepository - that contains
 all packages that comprise the Dash platform - for example, Drive, which is the 
-storage component of Dash Platform, the JavaScript SDK, wallet-lib, DAPI and others. 
+storage component of Dash Platform, the JavaScript SDK, wallet-lib, DAPI, and others. 
 Every individual package contains its own readme. Packages are located under the
 [packages](./packages) directory.
 
