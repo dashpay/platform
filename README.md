@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Fastest decentralized applications for the Dash network
+  Seriously fast decentralized applications for the Dash network
 </p>
 
 <p align="center">
