@@ -29,12 +29,6 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
     postOptions.timeout = options.timeout;
   }
 
-  const response = await axios.post(
-    url,
-    payload,
-    { timeout: options.timeout },
-  );
-
   const requestInfo = {
     host,
     port,
@@ -42,6 +36,22 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
     params,
     options,
   };
+
+  let response;
+
+  try {
+    response = await axios.post(
+      url,
+      payload,
+      { timeout: options.timeout },
+    );
+  } catch (error) {
+    if (error.response && error.response.status >= 500) {
+      throw new WrongHttpCodeError(requestInfo, error.response.status, error.response.statusText);
+    }
+
+    throw error;
+  }
 
   if (response.status !== 200) {
     throw new WrongHttpCodeError(requestInfo, response.status, response.statusMessage);

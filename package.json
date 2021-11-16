@@ -17,7 +17,7 @@
     "configure": "npm run configure:dashmate && npm run configure:network && npm run configure:tests && npm run configure:dotenv",
     "clean:data": "npm run dashmate group:reset -- --group=local --hard",
     "clean": "npm run clean:data && npm run build",
-    "reset": "npm run clean:data && npm run setup",
+    "reset": "npm run clean:data -- --force && npm run setup",
     "dashmate": "./packages/dashmate/bin/dashmate",
     "bump": "packster bump"
   },
