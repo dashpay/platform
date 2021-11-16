@@ -32,6 +32,22 @@ Every individual package contains its own readme. Packages are located under the
 
 ## FAQ
 
+### How to build and set up a node from the code in this repo?
+
+- Clone the repo
+- Install prerequisites - nodejs and docker
+- Run `npm run setup` - it will install dependencies and configure and build all packages
+- Run `npm run start` to start the local dev environment built from the sources
+- Run `npm test` to run whole test suite (note that running tests requires a node running 
+ so be sure to call `npm run start` first). You also can run tests for a specific package
+ by running `npm test -w <package_name>`, for example running 
+ `npm test -w @dashevo/dapi-client` will run tests for the JS DAPI client.
+- `npm run stop` will stop the local dev env. Running a dev env requires some resources,
+ so you should stop the local node when you not need it anymore.
+- Run `npm run build` to rebuild project after changes. If you have a local node
+ running, you may need to restart by running `npm run stop && npm run start`
+- To completely reset all local data and builds, run `npm run reset`
+
 ### Looking for support?
 
 For questions and support please join our [Devs Discord](https://chat.dashdevs.org/)
