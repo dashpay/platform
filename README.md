@@ -63,4 +63,4 @@ The Dash Platform repo is managed as a that is composed of many [packages](packa
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE.md)
