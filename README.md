@@ -41,7 +41,7 @@ located in the [packages](./packages) directory.
 - Run `npm run setup` - it will install dependencies and configure and build all packages
 - Run `npm run start` to start the local dev environment built from the sources
 - Run `npm test` to run whole test suite (note that running tests requires a node running 
- so be sure to call `npm run start` first). You also can run tests for a specific package
+ so be sure to call `npm run start` first). Alternatively, you can run tests for a specific package
  by running `npm test -w <package_name>`, for example running 
  `npm test -w @dashevo/dapi-client` will run tests for the JS DAPI client.
 - `npm run stop` will stop the local dev env. Running a dev env requires some resources,
