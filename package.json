@@ -1,5 +1,6 @@
 {
   "name": "js-dash-platform",
+  "version": "0.21.0",
   "private": true,
   "scripts": {
     "setup": "npm ci && npm run build && npm run configure",
@@ -17,7 +18,8 @@
     "clean:data": "npm run dashmate group:reset -- --group=local --hard",
     "clean": "npm run clean:data && npm run build",
     "reset": "npm run clean:data && npm run setup",
-    "dashmate": "./packages/dashmate/bin/dashmate"
+    "dashmate": "./packages/dashmate/bin/dashmate",
+    "bump": "packster bump"
   },
   "devDependencies": {
     "lerna": "3.22.1",
