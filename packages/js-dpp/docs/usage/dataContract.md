@@ -10,7 +10,7 @@ This method will generate the entropy and dataContractId for the user.
 | **ownerId**                  | Buffer          | yes       |                                                        |
 | **documents**                | Object          | yes       |                                                        |
 
-Returns : {[DataContract](../primitives/DataContract)}
+Returns : {[DataContract](../primitives/DataContract.md)}
 
 ## dpp.dataContract.createFromObject(rawDataContract, options)
 
@@ -25,7 +25,7 @@ By default, the provided rawDataContract will be validated.
 | **options**                  | Object          | no       |                                                         |
 | **options.skipValidation**   | boolean[=false] | no       |                                                         |
 
-Returns : {Promise<[DataContract](../primitives/DataContract)>}
+Returns : {Promise<[DataContract](../primitives/DataContract.md)>}
 
 ## dpp.dataContract.createFromBuffer(buffer, options)
 
@@ -39,7 +39,7 @@ Returns : {Promise<[DataContract](../primitives/DataContract)>}
 | **options**                  | Object          | no       |                                                         |
 | **options.skipValidation**   | boolean[=false] | no       |                                                         |
 
-Returns : {Promise<[DataContract](../primitives/DataContract)>}
+Returns : {Promise<[DataContract](../primitives/DataContract.md)>}
 
 ## dpp.dataContract.createStateTransition(dataContract)
 

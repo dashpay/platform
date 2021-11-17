@@ -12,7 +12,7 @@ This method will populate it with specified data and validate upon creation.
 | **type**                     | string          | yes       |                                                        |
 | **data**                     | Object[={}]     | no        |                                                        |
 
-Returns : {[Document](/primitives/Document)}
+Returns : {[Document](../primitives/Document.md)}
 
 ## dpp.document.createFromObject(rawDocument, options)
 
@@ -28,7 +28,7 @@ By default, the provided Document will be validated.
 | **options.skipValidation**   | boolean[=false] | no       |                                                         |
 | **options.action**           | boolean         | no       |                                                         |
 
-Returns : {Promise<[Document](/primitives/Document)>}
+Returns : {Promise<[Document](../primitives/Document.md)>}
 
 ## dpp.document.createFromBuffer(buffer, options)
 
@@ -43,7 +43,7 @@ Returns : {Promise<[Document](/primitives/Document)>}
 | **options.skipValidation**   | boolean[=false] | no       |                                                         |
 | **options.action**           | boolean         | no       |                                                         |
 
-Returns : {Promise<[Document](/primitives/Document)>}
+Returns : {Promise<[Document](../primitives/Document.md)>}
 
 ## dpp.document.createStateTransition(documents)
 
