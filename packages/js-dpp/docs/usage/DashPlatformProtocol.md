@@ -13,10 +13,11 @@
 **Returns**: {DashPlatformProtocol}
 
 **Notes**: DPP will provide multiples facades: 
-- [dpp.dataContract](/usage/dataContract)
-- [dpp.document](/usage/document)
-- [dpp.identity](/usage/identity)
-- [dpp.stateTransition](/usage/stateTransition)
+
+- [dpp.dataContract](usage/dataContract)
+- [dpp.document](usage/document)
+- [dpp.identity](usage/identity)
+- [dpp.stateTransition](usage/stateTransition)
 
 ## .getJsonSchemaValidator()
 
