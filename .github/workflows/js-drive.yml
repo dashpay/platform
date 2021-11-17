@@ -26,6 +26,6 @@ on:
 jobs:
   js-dpp-tests:
     name: Run Drive tests
-    uses: dashevo/platform/.github/workflows/test.yml@parallel-scripts
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: '@dashevo/drive'
