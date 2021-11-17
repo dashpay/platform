@@ -4,11 +4,22 @@
   "scripts": {
     "setup": "npm ci && npm run build && npm run configure",
     "start": "./packages/dashmate/bin/dashmate group:start --wait-for-readiness --verbose",
-    "test": "packster run test --except @dashevo/platform-test-suite",
-    "test:suite": "npm run test --workspace=@dashevo/platform-test-suite",
-    "stop": "./packages/dashmate/bin/dashmate group:stop",
-    "build": "npm run build --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
+    "test": "ultra -r --filter \"$npm_config_filter\" test",
+    "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
+    "test:dapi-grpc": "ultra -r --filter \"packages/@(dapi|js-dapi-client|dapi-grpc|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:dashpay-contract": "ultra -r --filter \"packages/@(dashpay-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dpns-contract": "ultra -r --filter \"packages/@(dpns-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:feature-flags-contract": "ultra -r --filter \"packages/@(feature-flags-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
+    "test:dpp": "ultra -r test",
+    "test:drive": "ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
+    "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
+    "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "stop": "./packages/dashmate/bin/dashmate group:stop --verbose",
+    "build": "ultra --recursive --filter \"${npm_config_filter}\" --build",
+    "lint": "ultra --recursive --filter \"${npm_config_filter}\" lint",
     "configure:dashmate": "./scripts/configure_dashmate.sh",
     "configure:network": "./scripts/setup_local_network.sh",
     "configure:tests": "./scripts/configure_test_suite.sh",
@@ -19,8 +30,12 @@
     "reset": "npm run clean:data -- --force && npm run setup",
     "dashmate": "./packages/dashmate/bin/dashmate"
   },
+  "ultra": {
+    "concurrent": [
+      "clean"
+    ]
+  },
   "devDependencies": {
-    "lerna": "3.22.1",
     "packster": "~0.3.0",
     "syncpack": "^5.8.15",
     "ultra-runner": "^3.10.5"
