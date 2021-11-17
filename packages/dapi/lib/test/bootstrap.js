@@ -9,6 +9,8 @@ const chaiAsPromised = require('chai-as-promised');
 
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 
+const { initBlake3 } = require('@dashevo/dpp/lib/util/hash');
+
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
@@ -49,6 +51,11 @@ if (process.env.SERVICE_IMAGE_CORE) {
     },
   });
 }
+
+// Initialize blake3 hashing for DPP
+before(async () => {
+  await initBlake3();
+});
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {

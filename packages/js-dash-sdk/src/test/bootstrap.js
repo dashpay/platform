@@ -1,5 +1,6 @@
 const dotenvSafe = require('dotenv-safe');
 const path = require('path');
+const { initBlake3 } = require('@dashevo/dpp/lib/util/hash');
 
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
@@ -12,6 +13,11 @@ dotenvSafe.config({
 
 use(dirtyChai);
 use(sinonChai);
+
+// Initialize blake3 hashing for DPP
+before(async () => {
+  await initBlake3();
+});
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {
