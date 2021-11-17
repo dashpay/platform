@@ -88,7 +88,7 @@ jobs:
         run: npm ci --no-audit
 
       - name: Build packages
-        run: npm run build # TODO: Build only for Drive and deps
+        run: npm run build --filter="+@dashevo/drive"
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v1
@@ -144,7 +144,6 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }}
 
       - name: Build and push Docker image for Drive
-        id: docker_build
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -180,7 +179,7 @@ jobs:
         run: npm ci --no-audit
 
       - name: Build packages
-        run: npm run build # TODO: Build only for DAPI and deps
+        run: npm run build --filter="+@dashevo/dapi"
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v1
@@ -236,7 +235,6 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }}
 
       - name: Build and push Docker image
-        id: docker_build
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -245,32 +243,6 @@ jobs:
           push: true
           tags: ${{ steps.dapi_docker_meta.outputs.tags }}
           labels: ${{ steps.dapi_docker_meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
-
-      - name: Set Docker tags and labels for Drive
-        id: drive_docker_meta
-        uses: docker/metadata-action@v3
-        with:
-          images: dashpay/dapi
-          tags: |
-            type=match,pattern=v(\d+),group=1
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\d+),group=1
-            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
-          flavor: |
-            latest=${{ !contains(github.event.release.tag_name, '-dev') }}
-            suffix=${{ steps.suffix.outputs.result }}
-
-      - name: Build and push Docker image for Drive
-        id: drive_docker_build
-        uses: docker/build-push-action@v2
-        with:
-          context: ./drive
-          builder: ${{ steps.buildx.outputs.name }}
-          file: ./drive/Dockerfile
-          push: true
-          tags: ${{ steps.drive_docker_meta.outputs.tags }}
-          labels: ${{ steps.drive_docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
 
 # TOOD: release test suite docker image

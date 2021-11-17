@@ -43,10 +43,10 @@ jobs:
         run: npm ci --no-audit
 
       - name: Run ESLinter
-        run: npm run lint -w ${{ inputs.package }} --if-present
+        run: npm run lint --filter="${{ inputs.package }}"
 
-      - name: Build package
-        run: node_modules/.bin/ultra -r --build --filter "+${{ inputs.package }}"
+      - name: Build package and dependencies
+        run: npm run build --filter="+${{ inputs.package }}"
 
       - name: Setup dotenv files
         run: npm run configure:dotenv
@@ -87,4 +87,4 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Run tests
-        run: npm run test -w ${{ inputs.package }}
+        run: npm run test --filter="${{ inputs.package }}"
