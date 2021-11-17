@@ -1,7 +1,5 @@
 const dotenvSafe = require('dotenv-safe');
 const path = require('path');
-const { initBlake3 } = require('@dashevo/dpp/lib/util/hash');
-
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const { expect, use } = require('chai');
