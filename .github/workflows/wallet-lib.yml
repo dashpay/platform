@@ -22,7 +22,7 @@ on:
       - packages/dpns-contract/**
 
 jobs:
-  js-dash-sdk-tests:
+  js-wallet-lib-tests:
     name: Run Wallet lib tests
     uses: dashevo/platform/.github/workflows/test.yml@master
     with:
