@@ -114,7 +114,7 @@ describe('requestJsonRpc', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(WrongHttpCodeError);
       expect(e.message).to.equal('DAPI JSON RPC wrong http code: Status message');
-      expect(e.getStatusCode()).to.equal(400);
+      expect(e.getCode()).to.equal(400);
       expect(e.getRequestInfo()).to.deep.equal({
         host,
         port,
