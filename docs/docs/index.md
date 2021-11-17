@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Fastest decentralized applications for the Dash network.
+  Seriously fast decentralized applications for the Dash network
 </p>
 
 <p align="center">
@@ -15,9 +15,11 @@
   <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
 </p>
 
-Dash Platform is a technology stack for building decentralized applications on the Dash network. 
-The two main architectural components, Drive and DAPI, turn the Dash P2P network into a cloud that 
-developers can integrate with their applications.
+Dash Platform is a technology stack for building decentralized applications on
+the Dash network. The two main architectural components, Drive and DAPI, turn
+the Dash P2P network into a cloud that developers can integrate with their
+applications.
 
-If you are looking for how to contribute to the project or need any help with building an app on 
-the Dash Platform - message us in [Devs Discord](https://chat.dashdevs.org/)!
+If you are looking for how to contribute to the project or need any help with
+building an app on the Dash Platform - message us on the [Devs
+Discord](https://chat.dashdevs.org/)!
