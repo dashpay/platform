@@ -7,8 +7,14 @@ const sinonChai = require('sinon-chai');
 const { expect, use } = require('chai');
 const dirtyChai = require('dirty-chai');
 
+const { initBlake3 } = require('@dashevo/dpp/lib/util/hash');
+
 dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
+});
+
+before(async () => {
+  await initBlake3();
 });
 
 use(dirtyChai);
