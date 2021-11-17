@@ -1,6 +1,6 @@
 ## Receive money and display balance
 
-Initialize the SDK Client with your [generated mnemonic](/examples/generate-a-new-mnemonic) passed as an option.  
+Initialize the SDK Client with your [generated mnemonic](../examples/generate-a-new-mnemonic.md) passed as an option.  
 By default, the SDK Client will work on Evonet, the only network having DAPI at the time of writing.
 
 ```js
@@ -13,7 +13,7 @@ const client = new Dash.Client({
 
 Having set up your `client` instance, you be able to access the `account` and `wallet` instance generated from your mnemonic.
 
-You can read more on [how to use a different account](/examples/use-different-account) as by default, you are on the first BIP44 account. 
+You can read more on [how to use a different account](../examples/use-different-account.md) as by default, you are on the first BIP44 account. 
 
 
 ## Generate a receiving address

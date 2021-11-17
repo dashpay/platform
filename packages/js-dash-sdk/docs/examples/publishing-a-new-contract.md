@@ -2,7 +2,7 @@
 
 Right now, Evonet does not support publishing a public contract. You will have to run a local instance or wait for updates to the [Dash Platform documentation](https://dashplatform.readme.io/docs) regarding how to run a devnet locally and publish a contract.
 
-For now you can try your luck using the [Dash Network Deploy tool](https://github.com/dashevo/dash-network-deploy) and refer to [how to use a local evonet](/examples/use-local-evonet.md).
+For now you can try your luck using the [Dash Network Deploy tool](https://github.com/dashevo/dash-network-deploy) and refer to [how to use a local evonet](../examples/use-local-evonet.md).
 
 ## Create your contract 
 
