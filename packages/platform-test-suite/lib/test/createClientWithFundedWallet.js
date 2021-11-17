@@ -52,6 +52,8 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
 
   await fundWallet(faucetClient.wallet, client.wallet, amount);
 
+  await client.platform.initialize();
+
   return client;
 }
 
