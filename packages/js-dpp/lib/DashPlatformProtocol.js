@@ -74,7 +74,7 @@ class DashPlatformProtocol {
             this,
           );
         }),
-      initBlake3,
+      initBlake3(),
     ]).then(() => true);
 
     return this.initialized;
