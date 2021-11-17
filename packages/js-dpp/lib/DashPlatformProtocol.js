@@ -44,37 +44,38 @@ class DashPlatformProtocol {
       return this.initialized;
     }
 
-    this.initialized = getRE2Class()
-      .then((RE2) => {
-        this.stateRepository = this.options.stateRepository;
+    this.initialized = Promise.all([
+      getRE2Class()
+        .then((RE2) => {
+          this.stateRepository = this.options.stateRepository;
 
-        this.jsonSchemaValidator = this.options.jsonSchemaValidator;
-        if (this.jsonSchemaValidator === undefined) {
-          const ajv = createAjv(RE2);
+          this.jsonSchemaValidator = this.options.jsonSchemaValidator;
+          if (this.jsonSchemaValidator === undefined) {
+            const ajv = createAjv(RE2);
 
-          this.jsonSchemaValidator = new JsonSchemaValidator(ajv);
-        }
+            this.jsonSchemaValidator = new JsonSchemaValidator(ajv);
+          }
 
-        this.dataContract = new DataContractFacade(
-          this,
-          RE2,
-        );
+          this.dataContract = new DataContractFacade(
+            this,
+            RE2,
+          );
 
-        this.document = new DocumentFacade(
-          this,
-        );
+          this.document = new DocumentFacade(
+            this,
+          );
 
-        this.stateTransition = new StateTransitionFacade(
-          this,
-          RE2,
-        );
+          this.stateTransition = new StateTransitionFacade(
+            this,
+            RE2,
+          );
 
-        this.identity = new IdentityFacade(
-          this,
-        );
-      })
-      .then(initBlake3)
-      .then(() => true);
+          this.identity = new IdentityFacade(
+            this,
+          );
+        }),
+      initBlake3,
+    ]).then(() => true);
 
     return this.initialized;
   }
