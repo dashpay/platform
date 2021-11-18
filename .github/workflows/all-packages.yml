@@ -125,3 +125,7 @@ jobs:
 
       - name: Run test suite
         run: npm run test:suite
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2
