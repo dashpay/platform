@@ -144,6 +144,8 @@ describe('IdentityPublicKey', () => {
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       });
     });
   });

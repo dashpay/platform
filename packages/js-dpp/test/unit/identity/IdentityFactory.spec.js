@@ -57,11 +57,7 @@ describe('IdentityFactory', () => {
 
   describe('#create', () => {
     it('should create Identity from asset lock transaction, output index, proof and public keys', () => {
-      const publicKeys = identity.getPublicKeys().map((identityPublicKey) => {
-        const publicKeyData = Buffer.from(identityPublicKey.getData(), 'base64');
-
-        return new PublicKey(publicKeyData);
-      });
+      const publicKeys = identity.getPublicKeys().map((identityPublicKey) => identityPublicKey.toObject());
 
       const result = factory.create(
         instantAssetLockProof,
