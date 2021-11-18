@@ -2,7 +2,7 @@
   "name": "js-dash-platform",
   "private": true,
   "scripts": {
-    "setup": "npm ci && npm run build && npm run configure",
+    "setup": "npm install && npm run build && npm run configure",
     "start": "./packages/dashmate/bin/dashmate group:start --wait-for-readiness --verbose",
     "test": "ultra -r --filter \"$npm_config_filter\" test",
     "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
