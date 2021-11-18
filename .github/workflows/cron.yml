@@ -72,3 +72,7 @@ jobs:
       - name: Run tests
         run: npm run test
 
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2
+
