@@ -45,7 +45,7 @@ describe('IdentityFacade', () => {
   describe('#create', () => {
     it('should create Identity', () => {
       const publicKeys = identity.getPublicKeys().map(
-        (identityPublicKey) => new PublicKey(identityPublicKey.getData()),
+        (identityPublicKey) => identityPublicKey.toObject(),
       );
 
       const result = dpp.identity.create(

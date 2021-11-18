@@ -29,7 +29,7 @@ class IdentityFactory {
    * Create Identity
    *
    * @param {InstantAssetLockProof} assetLockProof
-   * @param {PublicKey[]} publicKeys
+   * @param {RawIdentityPublicKey[]} publicKeys
    * @return {Identity}
    */
   create(assetLockProof, publicKeys) {
@@ -37,10 +37,13 @@ class IdentityFactory {
       protocolVersion: this.dpp.getProtocolVersion(),
       id: assetLockProof.createIdentifier(),
       balance: 0,
-      publicKeys: publicKeys.map((publicKey, i) => ({
-        id: i,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: publicKey.toBuffer(),
+      publicKeys: publicKeys.map((publicKey) => ({
+        id: publicKey.id,
+        type: publicKey.type,
+        purpose: publicKey.purpose,
+        securityLevel: publicKey.securityLevel,
+        // Copy data buffer
+        data: Buffer.from(publicKey.data),
       })),
       revision: 0,
     });

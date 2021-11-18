@@ -17,6 +17,12 @@ const DuplicatedIdentityPublicKeyIdError = require(
   '../../errors/consensus/basic/identity/DuplicatedIdentityPublicKeyIdError',
 );
 
+const InvalidIdentityPublicKeySecurityLevelError = require(
+  '../../errors/consensus/basic/identity/InvalidIdentityPublicKeySecurityLevelError',
+);
+
+const IdentityPublicKey = require('../IdentityPublicKey');
+
 /**
  * Validate public keys (factory)
  *
@@ -104,6 +110,24 @@ function validatePublicKeysFactory(validator) {
           consensusError.setValidationError(validationError);
 
           result.addError(consensusError);
+        }
+      });
+
+    // Validate that public keys have correct purpose and security level
+    rawPublicKeys
+      .forEach((rawPublicKey) => {
+        const keyPurpose = rawPublicKey.purpose;
+        const allowedSecurityLevels = IdentityPublicKey.ALLOWED_SECURITY_LEVELS[keyPurpose];
+
+        if (!allowedSecurityLevels || !allowedSecurityLevels.includes(rawPublicKey.securityLevel)) {
+          const error = new InvalidIdentityPublicKeySecurityLevelError(
+            rawPublicKey.id,
+            rawPublicKey.purpose,
+            rawPublicKey.securityLevel,
+            allowedSecurityLevels,
+          );
+
+          result.addError(error);
         }
       });
 

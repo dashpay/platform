@@ -214,4 +214,18 @@ IdentityPublicKey.SECURITY_LEVELS = {
   MEDIUM: 3,
 };
 
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS = {};
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.AUTHENTICATION] = [
+  IdentityPublicKey.SECURITY_LEVELS.MASTER,
+  IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+  IdentityPublicKey.SECURITY_LEVELS.HIGH,
+  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.ENCRYPTION] = [
+  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.DECRYPTION] = [
+  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
+
 module.exports = IdentityPublicKey;
