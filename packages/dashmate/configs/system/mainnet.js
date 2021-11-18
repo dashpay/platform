@@ -6,9 +6,7 @@ const {
 
 const baseConfig = require('./base');
 
-delete baseConfig.platform;
-
-module.exports = lodashMerge({}, baseConfig, {
+const mainnetConfig = lodashMerge({}, baseConfig, {
   description: 'node with mainnet configuration',
   core: {
     p2p: {
@@ -20,3 +18,7 @@ module.exports = lodashMerge({}, baseConfig, {
   },
   network: NETWORK_MAINNET,
 });
+
+delete mainnetConfig.platform;
+
+module.exports = mainnetConfig;
