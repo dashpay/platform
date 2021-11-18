@@ -2,8 +2,6 @@ const { Listr } = require('listr2');
 
 const { flags: flagTypes } = require('@oclif/command');
 
-const baseConfig = require('../../../configs/system/base');
-
 const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
@@ -19,6 +17,7 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {initializePlatformTask} initializePlatformTask
    * @param {generateToAddressTask} generateToAddressTask
    * @param {ConfigFile} configFile
+   * @param {Object[]} systemConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -37,12 +36,15 @@ class GroupResetCommand extends GroupBaseCommand {
     initializePlatformTask,
     generateToAddressTask,
     configFile,
+    systemConfigs,
   ) {
     const groupName = configGroup[0].get('group');
 
     if (isHardReset && !isSystemConfig(groupName)) {
       throw new Error(`Cannot hard reset non-system config group "${configGroup[0].get('group')}"`);
     }
+
+    const baseConfig = systemConfigs.base;
 
     const amount = 100;
 

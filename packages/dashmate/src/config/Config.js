@@ -77,7 +77,7 @@ class Config {
   set(path, value) {
     const clonedOptions = lodashCloneDeep(this.options);
 
-    lodashSet(clonedOptions, path, value);
+    lodashSet(clonedOptions, path, lodashCloneDeep(value));
 
     const isValid = Config.ajv.validate(configJsonSchema, clonedOptions);
 
