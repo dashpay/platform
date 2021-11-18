@@ -15,6 +15,11 @@
     "oas:setversion": "jq -r .version package.json | xargs -I{} sed -i \"s/version:.*/version: '{}',/\" doc/swaggerDef.js",
     "oas:generate": "npm run oas:setversion && swagger-jsdoc -d doc/swaggerDef.js lib/rpcServer/**/*.js -o doc/swagger.json"
   },
+  "ultra": {
+    "concurrent": [
+      "test"
+    ]
+  },
   "nyc": {
     "include": [
       "lib/**/*.js"
