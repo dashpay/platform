@@ -30,7 +30,9 @@ describe('Dashpay Contract', () => {
     fetchContractStub.resolves(contract);
   });
 
-  it('should have a valid contract definition', async () => {
+  it('should have a valid contract definition', async function shouldHaveValidContract() {
+    this.timeout(5000);
+
     const validationResult = await dpp.dataContract.validate(contract);
 
     expect(validationResult.isValid()).to.be.true();

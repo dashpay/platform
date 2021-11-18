@@ -29,7 +29,9 @@ describe('DPNS Contract', () => {
     fetchContractStub.resolves(dataContract);
   });
 
-  it('should have a valid contract definition', async () => {
+  it('should have a valid contract definition', async function shouldHaveValidContract() {
+    this.timeout(5000);
+
     const validationResult = await dpp.dataContract.validate(dataContract);
 
     expect(validationResult.isValid()).to.be.true();

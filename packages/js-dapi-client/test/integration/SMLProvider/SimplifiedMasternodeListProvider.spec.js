@@ -91,7 +91,7 @@ describe('SimplifiedMasternodeListProvider', () => {
     });
 
     it('should use updated baseBlockHash for the second call', async function it() {
-      this.timeout(3000);
+      this.timeout(5000);
 
       const firstSML = await smlProvider.getSimplifiedMNList();
 
@@ -128,7 +128,7 @@ describe('SimplifiedMasternodeListProvider', () => {
     });
 
     it('should reset simplifiedMNList and update masternode list from scratch', async function it() {
-      this.timeout(3000);
+      this.timeout(5000);
 
       jsonTransportMock.request.withArgs('getBestBlockHash').onCall(1).resolves(
         mnListDiffsFixture[0].blockHash,

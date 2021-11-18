@@ -39,7 +39,9 @@ module.exports = (config) => {
     browsers: ['ChromeHeadless', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
-    browserNoActivityTimeout: 7 * 60 * 1000,
+    browserNoActivityTimeout: 7 * 60 * 1000, // 30000 default
+    browserDisconnectTimeout: 3 * 2000, // 2000 default
+    pingTimeout: 3 * 5000, // 5000 default
     plugins: [
       'karma-mocha',
       'karma-mocha-reporter',
