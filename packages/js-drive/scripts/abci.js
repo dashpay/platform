@@ -67,8 +67,12 @@ console.log(chalk.hex('#008de4')(banner));
    * Initialize DPP
    */
 
+  console.log('Initializing DPP !!!!!!!!!!!!!!!!!!!!!');
+
   await dpp.initialize();
   await transactionalDpp.initialize();
+
+  console.log('DPP Initialized !!!!!!!!!!!!!!!!!!!!!');
 
   /**
    * Initialize Block Execution Contexts
