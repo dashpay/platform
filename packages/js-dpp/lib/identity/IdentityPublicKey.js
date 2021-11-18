@@ -201,4 +201,17 @@ IdentityPublicKey.TYPES = {
   BLS12_381: 1,
 };
 
+IdentityPublicKey.PURPOSES = {
+  AUTHENTICATION: 0,
+  ENCRYPTION: 1,
+  DECRYPTION: 2,
+};
+
+IdentityPublicKey.SECURITY_LEVELS = {
+  MASTER: 0,
+  CRITICAL: 1,
+  HIGH: 2,
+  MEDIUM: 3,
+};
+
 module.exports = IdentityPublicKey;
