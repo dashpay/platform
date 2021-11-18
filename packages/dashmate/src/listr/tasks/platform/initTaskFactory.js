@@ -66,11 +66,6 @@ function initTaskFactory(
             },
           });
 
-          await Promise.all([
-            ctx.client.platform.initialize(),
-            faucetClient.platform.initialize(),
-          ]);
-
           const amount = 40000;
 
           await fundWallet(faucetClient.wallet, ctx.client.wallet, amount);

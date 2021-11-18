@@ -35,8 +35,6 @@ function featureFlagTaskFactory() {
             },
           });
 
-          await ctx.client.platform.initialize();
-
           const featureFlagsContractId = config.get('platform.featureFlags.contract.id');
 
           const featureFlagsContract = await ctx.client.platform.contracts.get(
