@@ -18,6 +18,11 @@
     "prepublishOnly": "npm run build:web",
     "prepare": "npm run build"
   },
+  "ultra": {
+    "concurrent": [
+      "test"
+    ]
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dashevo/DashJS.git"
