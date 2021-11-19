@@ -1,5 +1,6 @@
 {
   "name": "@dashevo/drive",
+  "private": true,
   "version": "0.21.1",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
